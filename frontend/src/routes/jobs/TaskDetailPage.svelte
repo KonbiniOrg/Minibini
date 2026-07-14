@@ -12,11 +12,16 @@
   import BlepEditModal from '../../components/tasks/BlepEditModal.svelte';
   import TaskTree from '../../components/TaskTree.svelte';
   import LinkifiedText from '../../components/LinkifiedText.svelte';
+  import MaterialRow from '../../components/materials/MaterialRow.svelte';
+  import MaterialFulfillmentModals from '../../components/materials/MaterialFulfillmentModals.svelte';
+  import ExpenseModal from '../../components/expenses/ExpenseModal.svelte';
+  import { consumeMaterial, restockMaterial, drawMoreMaterial, moveMaterial }
+    from '../../lib/materialOps.js';
   import MaterialModal from '../../components/MaterialModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
-  import JobHeader from '../../components/jobs/JobHeader.svelte';
-  import { formatQtyUnits, formatDuration } from '../../lib/format.js';
+  import JobShell from '../../components/jobs/JobShell.svelte';
+  import { formatDuration } from '../../lib/format.js';
 
   let { params = {} } = $props();
 
@@ -42,18 +47,14 @@
   let subtasks = $state([]);
   let subtaskModalOpen = $state(false);
   let assignModalOpen = $state(false);
-  let actualQtyError = $state('');
-  let actualQtyInput = $state('');
-  let actualQtySaving = $state(false);
-  let actualQtySaved = $state(false);
-
-  // Keep the local input in sync when the task reloads (e.g., after a save
-  // round-trip), but don't fight the user while they're typing.
-  $effect(() => {
-    if (task && !actualQtySaving) {
-      actualQtyInput = task.actual_qty ?? '';
-    }
-  });
+  // The actual-qty surface is add-only: the running total displays
+  // read-only and the input is a signed delta (negative = correction).
+  // Adds are NOT idempotent, so nothing commits implicitly — only the
+  // Add button / Enter, never blur, never a client retry.
+  let addQtyError = $state('');
+  let addQtyInput = $state('');
+  let addQtySaving = $state(false);
+  let addQtyAdded = $state(false);
 
   // Edit-task modal
   let editTaskOpen = $state(false);
@@ -76,6 +77,38 @@
   const taskIsTerminal = $derived(
     task?.status === 'complete' || task?.status === 'cancelled'
   );
+  // The add-qty widget takes new production entries; a blocked task takes none.
+  const canAddQty = $derived(!taskIsTerminal && task?.status !== 'blocked');
+
+  // Same lock the job task list uses: terminal jobs freeze everything.
+  const jobLocked = $derived(
+    job != null && ['completed', 'cancelled', 'rejected'].includes(job.status)
+  );
+
+  // Material rows here are the same shared fragment (MaterialRow) the job
+  // task list renders, with the same full action set — gating is by
+  // material status / permissions / job state, never by which page this is.
+  let selectedTaskId = $state(null);          // Move-target radio (subtask rows)
+  let attachExpenseMaterial = $state(null);
+  let fulfillModals = $state(null);           // Order + Mark-received dialogs
+
+  const handleConsumeMaterial = (material) => consumeMaterial(material, refresh);
+  const handleRestockMaterial = (material) => restockMaterial(material, refresh);
+  const handleDrawMoreMaterial = (material) => drawMoreMaterial(material, refresh);
+  async function handleMoveMaterial(material, targetTaskId) {
+    await moveMaterial(material, targetTaskId, refresh);
+    selectedTaskId = null;
+  }
+
+  const materialCallbacks = $derived({
+    onConsumeMaterial: handleConsumeMaterial,
+    onRestockMaterial: handleRestockMaterial,
+    onDrawMoreMaterial: handleDrawMoreMaterial,
+    onMoveMaterial: handleMoveMaterial,
+    onOrderMaterial: (m) => fulfillModals?.startOrder(m),
+    onMarkOnHand: (m) => fulfillModals?.startReceipt(m),
+    onAttachExpense: (m) => { attachExpenseMaterial = m; },
+  });
 
   function handleConflict(c) { conflict = c; }
   function handleResolved() { conflict = null; refresh(); }
@@ -88,11 +121,24 @@
   });
 
 
+  // Deliberately NOT $state: loadTask runs inside $effects, and reading
+  // reactive state it also writes (e.g. `task`) would make those effects
+  // depend on it — an infinite refetch loop. A plain variable adds no
+  // dependency.
+  let loadedTaskId = null;
+
   async function loadTask() {
-    loading = true;
+    // Blank the page only on first load or when navigating to a different
+    // task. Background refetches (blep activity, post-add refresh) must
+    // not flip `loading` — that unmounts TaskActions mid-interaction and
+    // destroys any open prompt modal (e.g. the stop-work session prompt).
+    if (loadedTaskId === null || String(loadedTaskId) !== String(params.taskId)) {
+      loading = true;
+    }
     error = '';
     try {
       task = await api.get(`/api/tasks/${params.taskId}/`);
+      loadedTaskId = params.taskId;
       if (task?.job?.id) {
         await loadJobContext(task.job.id);
       }
@@ -119,20 +165,30 @@
     }
   }
 
-  async function saveActualQty(value) {
+  async function addActualQty() {
     if (!task) return;
-    actualQtyError = '';
-    actualQtySaved = false;
-    actualQtySaving = true;
+    addQtyError = '';
+    addQtyAdded = false;
+    const delta = parseFloat(addQtyInput);
+    if (!Number.isFinite(delta) || delta === 0) {
+      addQtyError = 'Enter a non-zero amount to add (negative to correct).';
+      return;
+    }
+    addQtySaving = true;
     try {
-      await api.patch(`/api/tasks/${task.task_id}/actual-qty/`, { actual_qty: value });
-      await loadTask();
-      actualQtySaved = true;
-      setTimeout(() => { actualQtySaved = false; }, 1500);
+      const resp = await api.post(
+        `/api/tasks/${task.task_id}/actual-qty/add/`, { actual_qty: delta });
+      addQtyInput = '';
+      addQtyAdded = true;
+      setTimeout(() => { addQtyAdded = false; }, 1500);
+      // Refresh silently (no loading flip — it would remount the row
+      // mid-interaction); the response total is authoritative.
+      const fresh = await api.get(`/api/tasks/${task.task_id}/`);
+      task = { ...fresh, actual_qty: resp.actual_qty };
     } catch (e) {
-      actualQtyError = e.message || 'Could not save actual qty';
+      addQtyError = e.message || 'Could not add to actual qty';
     } finally {
-      actualQtySaving = false;
+      addQtySaving = false;
     }
   }
 
@@ -208,6 +264,16 @@
     }
   });
 
+  // The Rate chip's tooltip carries the estimating detail (scheme name,
+  // active modifiers) that used to occupy its own table rows.
+  const rateTooltip = $derived.by(() => {
+    if (!task?.scheme_name) return '';
+    const mods = Array.isArray(task.active_modifiers) && task.active_modifiers.length > 0
+      ? ` · Modifiers: ${task.active_modifiers.join(', ')}`
+      : '';
+    return `Scheme: ${task.scheme_name}${mods}`;
+  });
+
   // Material modal handlers
   function openAddMaterial() {
     matModalMaterial = null;
@@ -219,16 +285,6 @@
     matModalMaterial = material;
     matModalMode = 'edit';
     matModalOpen = true;
-  }
-
-  async function handleDeleteMaterial(material) {
-    if (!confirm('Delete this material?')) return;
-    try {
-      await api.delete(`/api/tasks/${params.taskId}/materials/${material.material_id}/`);
-      await loadMaterials();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not delete material.'));
-    }
   }
 
   function handleMaterialSaved() {
@@ -263,13 +319,18 @@
     subtaskMatTaskId = parentTask.task_id;
   }
 
-  async function handleSubtaskDeleteMaterial(material, parentTask) {
-    if (!confirm('Delete this material?')) return;
+  // Subtasks reorder among their siblings here — the job task list page
+  // deliberately offers no subtask reordering (B3). Same endpoint as
+  // top-level reorder; the backend scopes the swap to the peer group.
+  async function handleSubtaskReorder(taskId, direction) {
     try {
-      await api.delete(`/api/tasks/${parentTask.task_id}/materials/${material.material_id}/`);
+      await api.post(`/api/jobs/${task.job.id}/reorder-tasks/`, {
+        task_id: taskId,
+        direction,
+      });
       await loadSubtasks();
     } catch (e) {
-      showError(errorMessage(e, 'Could not delete material.'));
+      showError(errorMessage(e, 'Could not reorder.'));
     }
   }
 
@@ -298,33 +359,121 @@
   }
 </script>
 
+{#snippet invoicedLink(inv)}
+  <a class="badge-invoiced" href={`#/invoices/${inv.id}`} use:link
+     title="Billed on this invoice">INVOICED</a>
+{/snippet}
+
 {#if loading}
   <p>Loading…</p>
 {:else if error}
   <p class="error">{error}</p>
 {:else if task}
-  {#if job}
-    <JobHeader {job} {contact} onStatusChange={refresh} />
-  {/if}
-  {#if task.job}
-    <div class="toolbar">
-      <a href={`/jobs/${task.job.id}`} use:link class="back-link">&laquo; back to overview</a>
-      <a href={`/jobs/${task.job.id}/tasklist`} use:link class="back-link">task list</a>
-      {#if !taskIsTerminal}
-        <button type="button" onclick={() => { editTaskOpen = true; }}>edit task</button>
+  <JobShell {job} {contact} current="tasks" onJobChange={refresh}>
+  <!-- Task header: crumbs, pill + title left, stat chips right -->
+  <div class="task-head">
+    <!-- No task-list crumb: the nav rail's Tasks link covers it. The only
+         crumb is the parent link on a subtask. -->
+    {#if task.job && task.parent_task}
+      <div class="crumbs">
+        subtask of <a href={`/jobs/${task.job.id}/tasks/${task.parent_task}`} use:link>{task.parent_task_name}</a>
+      </div>
+    {/if}
+    <div class="title-row">
+      <div class="title-cluster">
+        {#if task.invoice}
+          {@render invoicedLink(task.invoice)}
+        {:else}
+          <TaskActivityIndicator {task} pill />
+        {/if}
+        <h1 class="task-title">{task.name}</h1>
+      </div>
+      <div class="stat-chips">
+        <div class="stat-chip">
+          <div class="stat-chip-header">Assignee</div>
+          <div class="stat-chip-body">
+            {#if task.can_manage}
+              <button type="button" class="chip-link" class:muted={!task.assignee_name}
+                onclick={() => { assignModalOpen = true; }}>{task.assignee_name || 'Unassigned'}</button>
+            {:else}
+              <span class:muted={!task.assignee_name}>{task.assignee_name || 'Unassigned'}</span>
+            {/if}
+          </div>
+        </div>
+        {#if task.est_worker_time}
+          <div class="stat-chip">
+            <div class="stat-chip-header">Est Time</div>
+            <div class="stat-chip-body">{formatDuration(task.est_worker_time)}</div>
+          </div>
+        {/if}
+        {#if task.scheme_name && task.est_qty}
+          <div class="stat-chip">
+            <div class="stat-chip-header">Est Qty</div>
+            <div class="stat-chip-body">{task.est_qty} {task.scheme_unit_label}</div>
+          </div>
+        {/if}
+        {#if task.scheme_algorithm === 'entered_qty'}
+          <div class="stat-chip">
+            <div class="stat-chip-header">{addQtyAdded ? 'added ✓' : 'Actual'}</div>
+            <div class="stat-chip-body">
+              {task.actual_qty ?? 0} {task.scheme_unit_label}
+              {#if canAddQty}
+                <label class="add-qty">
+                  <span class="sr-only">Add ({task.scheme_unit_label})</span>
+                  <input
+                    type="number" step="any" placeholder="+ / −"
+                    bind:value={addQtyInput}
+                    onkeydown={(e) => { if (e.key === 'Enter') addActualQty(); }}>
+                </label>
+                <button type="button" class="chip-add" onclick={addActualQty} disabled={addQtySaving}>
+                  {addQtySaving ? 'Adding…' : 'Add'}
+                </button>
+              {/if}
+            </div>
+          </div>
+        {:else if task.scheme_algorithm === 'elapsed_time'}
+          <div class="stat-chip">
+            <div class="stat-chip-header">Actual</div>
+            <div class="stat-chip-body">{Number(task.actual_hours) || 0} {task.scheme_unit_label || 'hour'}</div>
+          </div>
+        {/if}
+        {#if task.scheme_name && task.effective_rate}
+          <div class="stat-chip money">
+            <div class="stat-chip-header">Rate</div>
+            <div class="stat-chip-body" title={rateTooltip}>${task.effective_rate}/{task.scheme_unit_label}</div>
+          </div>
+        {/if}
+        {#if task.scheme_name && task.computed_charge}
+          <div class="stat-chip money">
+            <div class="stat-chip-header">Charge</div>
+            <div class="stat-chip-body">${task.computed_charge}</div>
+          </div>
+        {/if}
+      </div>
+    </div>
+    {#if addQtyError}
+      <div class="field-error">{addQtyError}</div>
+    {/if}
+    {#if task.status === 'blocked' && task.blocked_reason}
+      <div class="blocked-line preserve-breaks">Blocked: {task.blocked_reason}</div>
+    {/if}
+  </div>
+
+  {#if !job?.on_hold}
+    <div class="action-band">
+      <TaskActions
+        {task}
+        user={$userStore}
+        {activeBlepOnThisTask}
+        hideStop={true}
+        onChanged={refresh}
+        onConflict={handleConflict}
+      />
+      {#if !taskIsTerminal && (task.can_edit ?? true)}
+        <button type="button" class="quiet" onclick={() => { editTaskOpen = true; }}>Edit Task</button>
       {/if}
-      <h2 class="task-title">Task: {task.name}</h2>
     </div>
   {/if}
-
-  <TaskActions
-    {task}
-    user={$userStore}
-    canManage={task?.can_manage}
-    {activeBlepOnThisTask}
-    onChanged={refresh}
-    onConflict={handleConflict}
-  />
 
   <StartWorkConflictModal
     {conflict}
@@ -333,63 +482,61 @@
     onCancel={handleCancel}
   />
 
-  {#snippet invoicedLink(inv)}
-    <a class="badge-invoiced" href={`#/invoices/${inv.id}`} use:link
-       title="Billed on this invoice">INVOICED</a>
-  {/snippet}
+  <div class="page-body">
 
-  <table class="data-table">
-    <tbody>
-      <tr><td>Status</td><td>{#if task.invoice}{@render invoicedLink(task.invoice)}{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}{/if}</td></tr>
-      <tr><td>Description</td><td class="preserve-breaks"><LinkifiedText text={task.description || '-'} /></td></tr>
-      <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} {#if task?.can_manage}<button type="button" onclick={() => { assignModalOpen = true; }}>assign</button>{/if}</td></tr>
-      <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.scheme_unit_label || ''}</td></tr>
-      <tr><td>Est. worker time</td><td>{formatDuration(task.est_worker_time)}</td></tr>
-      <tr><td>Rate</td><td>{task.effective_rate ? `$${task.effective_rate}` : '-'}</td></tr>
-    </tbody>
-  </table>
+  <h3>Description</h3>
+  <div class="description preserve-breaks"><LinkifiedText text={task.description || '-'} /></div>
 
-  <!-- Charge section -->
-  {#if task && task.scheme_name}
-    <h3>Charge</h3>
-    <table class="data-table"><tbody>
-      <tr><td><strong>Scheme</strong></td><td>{task.scheme_name}</td></tr>
-      <tr><td><strong>Rate</strong></td><td>${task.effective_rate}/{task.scheme_unit_label}</td></tr>
-      {#if Array.isArray(task.active_modifiers) && task.active_modifiers.length > 0}
-        <tr><td><strong>Modifiers</strong></td>
-          <td>{task.active_modifiers.join(', ')}</td></tr>
-      {/if}
-      {#if task.scheme_algorithm === 'entered_qty'}
-        <tr><td><strong>Actual {task.scheme_unit_label}s</strong></td>
-          <td>
-            <input
-              type="number" step="0.01"
-              bind:value={actualQtyInput}
-              onkeydown={(e) => { if (e.key === 'Enter') saveActualQty(actualQtyInput); }}>
-            <button type="button" onclick={() => saveActualQty(actualQtyInput)} disabled={actualQtySaving}>
-              {actualQtySaving ? 'Saving…' : 'Save'}
-            </button>
-            {#if actualQtySaved}<span class="saved-flash">saved</span>{/if}
-            {#if actualQtyError}<span class="field-error">{actualQtyError}</span>{/if}
-          </td></tr>
-      {:else if task.scheme_algorithm === 'elapsed_time'}
-        <tr><td><strong>Actual {task.scheme_unit_label || 'hour'}s</strong></td>
-          <td>{Number(task.actual_hours) || 0}</td></tr>
-      {/if}
-      {#if task.computed_charge}
-        <tr><td><strong>Charge</strong></td><td>${task.computed_charge}</td></tr>
-      {/if}
-    </tbody></table>
+  <!-- Subtasks section — only on top-level tasks: one level of subtasks
+       (B1), so a subtask has no subtasks of its own and no section at all. -->
+  {#if !task.parent_task}
+    <h3>Subtasks</h3>
+    {#if subtasks.length > 0}
+      <!-- Deliberately passive rows (A3): no edit/del/cancel here — a
+           subtask's own detail page is its editing surface. Wired: material
+           add/edit and sibling reorder (B3). -->
+      <TaskTree
+        tasks={subtasks}
+        readonly={taskIsTerminal}
+        {jobLocked}
+        jobOnHold={job?.on_hold ?? false}
+        canManage={task?.can_manage}
+        showStatus={true}
+        showAssignee={true}
+        onTaskClick={handleSubtaskTaskClick}
+        onAddMaterial={handleSubtaskAddMaterial}
+        onEditMaterial={handleSubtaskEditMaterial}
+        onReorder={handleSubtaskReorder}
+        onConsumeMaterial={materialCallbacks.onConsumeMaterial}
+        onRestockMaterial={materialCallbacks.onRestockMaterial}
+        onDrawMoreMaterial={materialCallbacks.onDrawMoreMaterial}
+        onMoveMaterial={materialCallbacks.onMoveMaterial}
+        onOrderMaterial={materialCallbacks.onOrderMaterial}
+        onMarkOnHand={materialCallbacks.onMarkOnHand}
+        onAttachExpense={materialCallbacks.onAttachExpense}
+        bind:selectedTaskId
+      />
+    {:else}
+      <p>No subtasks.</p>
+    {/if}
+    {#if !taskIsTerminal && !job?.on_hold}
+      <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
+    {/if}
   {/if}
 
-  <!-- Materials section -->
+  <!-- Materials section — the shared MaterialRow fragment, same status
+       vocabulary and full action set as the job task list (Move targets are
+       the subtask radios above; removal is the release action). -->
   <h3>Materials</h3>
   {#if materials.length > 0}
     <table class="materials-table">
       <thead>
         <tr>
+          {#if !taskIsTerminal && !jobLocked}<th class="move-col" aria-label="Move target"></th>{/if}
           <th>Description</th>
+          <th>Status</th>
           <th class="text-right">Qty</th>
+          <th class="text-right">Units</th>
           <th class="text-right">Unit Cost</th>
           <th class="text-right">Sell Price</th>
           <th class="text-right">Total</th>
@@ -397,29 +544,22 @@
         </tr>
       </thead>
       <tbody>
-        {#each materials as mat}
-          <tr>
-            <td class="preserve-breaks">{mat.description || '(no description)'}{#if mat.invoice} {@render invoicedLink(mat.invoice)}{/if}</td>
-            <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
-            <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
-            <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
-            <td class="text-right">{(Number(mat.quantity) && Number(mat.sell_price)) ? `$${(Number(mat.quantity) * Number(mat.sell_price)).toFixed(2)}` : '-'}</td>
-            {#if !taskIsTerminal}
-              <td>
-                <button type="button" onclick={() => openEditMaterial(mat)}>edit</button>
-                <button type="button" onclick={() => handleDeleteMaterial(mat)}>del</button>
-              </td>
-            {:else}
-              <td></td>
-            {/if}
-          </tr>
+        {#each materials as mat (mat.material_id)}
+          <MaterialRow
+            material={mat} ownerTask={task} ownerTerminal={taskIsTerminal}
+            indentClass="" taskAligned={false} showAssignee={false}
+            showStatus={true} readonly={taskIsTerminal} {jobLocked}
+            jobOnHold={job?.on_hold ?? false} {selectedTaskId}
+            onEditMaterial={(m) => openEditMaterial(m)}
+            {...materialCallbacks}
+          />
         {/each}
       </tbody>
     </table>
   {:else}
     <p>No materials.</p>
   {/if}
-  {#if !taskIsTerminal}
+  {#if !taskIsTerminal && !job?.on_hold}
     <p><button type="button" onclick={openAddMaterial}>Add Material</button></p>
   {/if}
 
@@ -433,31 +573,16 @@
     onClose={handleMatModalClose}
   />
 
-  <!-- Subtasks section -->
-  <h3>Subtasks</h3>
-  {#if subtasks.length > 0}
-      <TaskTree
-        tasks={subtasks}
-        readonly={taskIsTerminal}
-        jobOnHold={job?.on_hold ?? false}
-        canManage={task?.can_manage}
-        showStatus={true}
-        showAssignee={true}
-        onTaskClick={handleSubtaskTaskClick}
-        onEditTask={(sub) => {}}
-        onDeleteTask={(sub) => {}}
-        onAddMaterial={handleSubtaskAddMaterial}
-        onEditMaterial={handleSubtaskEditMaterial}
-        onDeleteMaterial={handleSubtaskDeleteMaterial}
-        onAddSubtask={() => {}}
-        onReorder={() => {}}
-      />
-    {:else}
-      <p>No subtasks.</p>
-    {/if}
-  {#if !taskIsTerminal}
-    <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
-  {/if}
+  <!-- Order chooser + Mark-received receipt dialogs (shared component). -->
+  <MaterialFulfillmentModals bind:this={fulfillModals} onDone={refresh} />
+
+  <ExpenseModal
+    open={attachExpenseMaterial != null}
+    initialJob={job ? { job_id: job.job_id, job_number: job.job_number } : null}
+    initialMaterial={attachExpenseMaterial}
+    onSaved={() => { attachExpenseMaterial = null; refresh(); }}
+    onClose={() => { attachExpenseMaterial = null; }}
+  />
 
   <WorkItemForm
     open={subtaskModalOpen}
@@ -505,30 +630,55 @@
     onSaved={() => { assignModalOpen = false; refresh(); }}
     onClose={() => { assignModalOpen = false; }}
   />
+  </div>
+  </JobShell>
 {/if}
 
 <style>
   .error { color: #a8071a; }
-  .field-error { color: #a8071a; font-size: 13px; margin-left: 6px; }
-  .saved-flash { color: #166534; font-size: 12px; margin-left: 6px; }
-  .toolbar {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px;
-    padding: 8px 24px;
+  .field-error { color: #a8071a; font-size: 13px; margin-top: 6px; }
+
+  .task-head {
+    padding: 10px 20px 12px;
+    background: #fafafa;
+    border-bottom: 1px solid #e5e7eb;
   }
-  .back-link { font-size: 13px; }
-  .task-title { font-size: 18px; margin: 0; margin-left: auto; }
+  .crumbs { font-size: 12px; color: #6b7280; }
+  .title-row {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 18px; margin-top: 6px; flex-wrap: wrap;
+  }
+  .title-cluster { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .task-title { font-size: 22px; margin: 0; }
+  .blocked-line { margin-top: 6px; font-size: 13px; color: #991b1b; }
+
+  /* Assignee opens a modal — an action, so a button — but reads as a link. */
+  .chip-link {
+    border: none; background: none; padding: 0; cursor: pointer;
+    font: inherit; color: inherit; text-decoration: underline;
+  }
+  .add-qty input { width: 70px; font-size: 12px; padding: 2px 6px; }
+  .chip-add {
+    font-size: 11px; font-weight: 600; border: 1px solid #94a3b8;
+    background: #f1f5f9; border-radius: 4px; padding: 3px 10px; cursor: pointer;
+  }
+  .chip-add:hover { background: #e2e8f0; }
+
+  /* TaskActions renders its own .actions flex row; flatten it so its buttons
+     sit as direct band items with uniform gap. */
+  .action-band :global(.actions) { display: contents; }
+
+  .description { font-size: 14px; line-height: 1.6; max-width: 900px; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
   .materials-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 8px; }
+  /* Headerless radio column — just wide enough for the radio button. */
+  .move-col { width: 24px; }
   .materials-table th { padding: 6px 10px; text-align: left; background: #fefce8; }
   .materials-table td { padding: 6px 10px; }
   .text-right { text-align: right; }
-  .materials-table button {
-    font-size: 11px; padding: 2px 6px; margin-right: 2px;
-    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
-  }
-  .materials-table button:hover { background: #f0f0f0; }
-  .badge-invoiced {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.3px; color: #047857; text-decoration: none;
-  }
-  .badge-invoiced:hover { text-decoration: underline; }
+  /* Row buttons use .row-actions, INVOICED uses .badge-invoiced (app.css). */
 </style>

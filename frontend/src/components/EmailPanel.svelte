@@ -1,5 +1,7 @@
 <script>
-  let { emails = null } = $props();
+  // showHeading renders the component's own <h3>Email</h3>. Callers that box
+  // the panel with their own micro-cap head (the job context band) pass false.
+  let { emails = null, showHeading = true } = $props();
 
   let items = $derived.by(() => {
     const results = emails?.results || [];
@@ -21,7 +23,7 @@
   }
 </script>
 
-<h3>Email</h3>
+{#if showHeading}<h3>Email</h3>{/if}
 
 <div class="email-scroll">
   {#if items.length > 0}

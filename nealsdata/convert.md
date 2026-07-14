@@ -87,12 +87,19 @@ python nealsdata/convert_neals_data.py [--limit N] [--verbose]
 ```
 
 The default `--limit 100` caps how many Jobs are built from the most recent
-matched Kanban cards. The output is `nealsdata/datasets/converted.json` (the
-file is git-ignored — regenerate it whenever inputs change).
+matched Kanban cards — except that **non-archived cards in an active stage
+(In Progress / Invoice) are always included**, whatever their age (live
+board work must never silently age out; the 2026-07-13 Barbara Freeman
+regression). Actives consume limit slots; the total exceeds the limit only
+when the actives alone do. The output is `nealsdata/datasets/converted.json`
+(the file is git-ignored — regenerate it whenever inputs change).
 
 Loading the result into Minibini is the user's job — the script never writes
-to a database. Tests load it into the auto-created test DB via
-`call_command('loaddata', ...)`.
+to a database, and it always emits **one** self-contained dataset file.
+Tests load it into the auto-created test DB via
+`call_command('loaddata', ...)`. (Hand-curated extras — config, catalog
+service items, manual shifts — live in separate RM-managed fixture files
+loaded after the dataset; they are not the converter's concern.)
 
 ## 3. Pipeline at a glance
 
@@ -100,11 +107,13 @@ to a database. Tests load it into the auto-created test DB via
 
 1. **Load**: Excel sheets into memory; Kanban CSV into a list of dicts.
 2. **Select spine**: pair each recent Kanban card with the Estimates-sheet
-   rows whose `Reference` base matches the card's `External ID`. The
-   newest `--limit` matched cards become the Jobs we'll build.
+   rows whose `Reference` base matches the card's `External ID`. All
+   non-archived active-stage matches plus the newest other matches (up to
+   `--limit` total) become the Jobs we'll build (§2).
 3. **`build_seed`**: copies users, accounting categories and rate schemes
-   from `fixtures/large_datasets/nealseed.json`, then creates one extra shared
-   "Flat Fee" RateScheme for tasks that don't fit a seeded one. **Assigns
+   verbatim from `fixtures/large_datasets/nealseed.json`. (Fixed charges no
+   longer need a "Flat Fee" scheme — they become `jobs.fee` atoms in
+   `derive_atoms`.) **Assigns
    explicit pks to the (otherwise pk-less) seed users** and builds
    `c.user_by_username`, the blep-rotation pool `c.rotation_user_pks` (every
    active seed user except `system`), and `c.scheme_algorithm_by_pk` (used for
@@ -183,19 +192,19 @@ to a database. Tests load it into the auto-created test DB via
    so the customer-portal URL (`/portal/?token=…`) works for seeded data.
    Estimate line items are **kept**; downstream atoms (Task, Material,
    Deliverable) are *copies*, not moves.
-9. **`derive_atoms`**: for each Job, builds Tasks/PlanTasks,
-   Materials/PlanMaterials, and Deliverables from the Kanban Checklist
-   and/or the estimate line items. Branches on the Job's as-built status:
-   `draft`/`submitted` route to the plan side (one EstWorksheet per Job,
-   PlanTasks + PlanMaterials on it, and an EstimateLineItemSource per
-   LI-derived atom); everything else routes to the real side. Deliverables
-   stay on the Job either way. Materials get a `unit_cost` and an optional
-   `inventory_item` link via fuzzy matching (§4). This is where most of the
-   interesting logic lives — see §4.
-9a. **`assign_worker_times`**: gives every Task and PlanTask an invented
-    per-task `est_worker_time` — random in `[0.5, 4.0]` hours, 2 sig figs,
+9. **`derive_atoms`**: for each Job, builds Tasks, Fees, Materials, and
+   Deliverables from the Kanban Checklist and/or the estimate line items.
+   Atoms live **directly on the Job at every status** (draft included) —
+   there is no plan layer (the app's job-owns-atoms model; EstWorksheet /
+   PlanTask / PlanMaterial no longer exist). A task-classified estimate
+   line that bills as a fixed charge becomes a `jobs.fee` claimed by its
+   source line (`source_type='fee'`). Materials get a `unit_cost` and an
+   `inventory_item` link via fuzzy matching (§4). This is where most of
+   the interesting logic lives — see §4.
+9a. **`assign_worker_times`**: gives every Task an invented per-task
+    `est_worker_time` — random in `[0.5, 4.0]` hours, 2 sig figs,
     minute granularity (§4).
-9b. **`assign_est_quantities`**: fills `est_qty` on every real Task by its
+9b. **`assign_est_quantities`**: fills `est_qty` on every Task by its
     rate-scheme algorithm (hourly = worker hours; flat fee = 1; entered_qty =
     piece count tied to worker time) — §4.
 10. **`build_invoices`**: emits Invoices + line items via the
@@ -204,33 +213,37 @@ to a database. Tests load it into the auto-created test DB via
     next phase. Sets `sent_date` on `open`/`paid` invoices (= the FreeAgent
     invoice Date) and `qbo_amount_paid` on `paid` invoices (= that invoice's
     own line-item total; `draft` invoices stay null-dated — §8).
-11. **`build_invoice_line_item_sources`**: heuristic source-link wiring
-    — for each Invoice, claim Tasks/Materials on the Job in deterministic
-    order against the invoice's line items so the SPA shows them as
-    "billed" rather than orphaned. Honours the model's global
-    `unique_together(source_type, source_pk)`. Leftover lines stay
-    freeform.
-12. **`reconcile`**: cross-model fixups in a fixed order — see §5.
-13. **`build_shipments`**: runs *after* reconcile so it can see final Job
+11. **`reconcile`**: cross-model fixups in a fixed order — see §5.
+12. **`build_shipments`**: runs *after* reconcile so it can see final Job
     status / dates. Builds a Shipment + ShipmentItems for any card whose
     checklist has a checked `Picked up/Delivered` line OR for any Job that
     landed in `completed` status without a marker (synthesised — see §4).
-13a. **`assign_project_managers`**: runs *after* reconcile (needs final job
+12a. **`assign_project_managers`**: runs *after* reconcile (needs final job
     status). Assigns a random `project_manager` from the seed rotation pool to
     every Job beyond `draft`; draft jobs keep a null PM.
-14. **`build_bleps_and_shifts`**: runs *after* reconcile (needs final task
+13. **`build_bleps_and_shifts`**: runs *after* reconcile (needs final task
     statuses + job dates). Emits one Blep per complete Task **within a three-week
     horizon**, the Shifts that enclose them, and `actual_qty` for complete
     `entered_qty` tasks (§4).
-14a. **`assign_current_work`**: runs *after* `build_bleps_and_shifts`. Gives each
+13a. **`assign_current_work`**: runs *after* `build_bleps_and_shifts`. Gives each
     rotation worker up to three random **pending** Tasks drawn from
     **in_progress** Jobs (assignee + `worker_queue`), so the board and schedule
     show current work (§4).
-14b. **`build_purchasing`**: runs *after* reconcile (needs final job/task status)
+13b. **`build_purchasing`**: runs *after* reconcile (needs final job/task status)
     and *before* `build_history`. Reconciles the **inventory side of Materials**
     and synthesizes **POs/Bills** — see §4a.
-15. **`build_history`**: last — emits a created/transition entry per tracked
-    object. (Reads each Material's `consumption_state`, set in 14b, to narrate
+13c. **`build_invoice_line_item_sources`**: heuristic source-link wiring
+    — for each Invoice, claim Tasks/Materials on the Job in deterministic
+    order against the invoice's line items so the SPA shows them as
+    "billed" rather than orphaned. Runs *after* reconcile AND
+    `build_purchasing`: **only settled work links to an invoice** — the
+    task pool is `complete` tasks only, the material pool `consumed`
+    materials only (the app's terminal-billability line; converter
+    cancelled tasks carry no actuals, so they never claim). Honours the
+    model's global `unique_together(source_type, source_pk)`. Leftover
+    lines stay freeform.
+14. **`build_history`**: last — emits a created/transition entry per tracked
+    object. (Reads each Material's `consumption_state`, set in 13b, to narrate
     the consume event.)
 
 The RNG is seeded with a fixed constant at the top of `convert()` so the
@@ -242,30 +255,18 @@ unless the inputs change.
 This is the most-rewritten part of the script and the part most likely to
 need tweaking again.
 
-### Plan side vs real side
+### Atoms live on the Job (no plan layer)
 
-`derive_atoms` branches on the Job's as-built status (set by `build_jobs`,
-read from `c.jobs[base_ref]['status']`).
+`derive_atoms` emits every atom **directly on the Job**, whatever its
+status — the app's job-owns-atoms model (the old EstWorksheet / PlanTask /
+PlanMaterial plan layer is gone from Minibini and from the converter).
+Checklist subtask hierarchy and `[X]`/`[ ]` status are preserved; each
+LI-derived atom gets an `estimates.estimatelineitemsource` row linking back
+to its source line so the estimate lens projects it.
 
-- **`draft` and `submitted` → plan side.** No estimate has been accepted
-  yet (per §2.3 the accept event is what copies plan atoms onto the Job),
-  so the atoms live on an `estimates.estworksheet`. Tasks become
-  `jobs.plantask` (flat — no hierarchy; PlanTask's `clean()` requires
-  non-null `est_qty`, so checklist-derived plan tasks get `Decimal('1')`),
-  Materials become `inventory.planmaterial`. Each LI-derived plan atom
-  also gets an `estimates.estimatelineitemsource` row linking back to its
-  source line item so the worksheet/estimate relationship is traceable.
-- **Every other status → real side** (existing behaviour): Tasks on Job
-  with full lifecycle, Materials on Job. Checklist subtask hierarchy and
-  `[X]`/`[ ]` status preserved.
-
-Deliverables go on the Job in both modes (deliverables are job-scoped, not
-plan-scoped).
-
-A Job that was draft/submitted at derive time but later expired and was
-rejected by the reconcile pass keeps its plan-side state — the worksheet
-and plan atoms become the historical record of "we estimated this; the
-customer never accepted."
+A Job that later expires and is rejected by the reconcile pass simply keeps
+its atoms (its tasks get cancelled by reconcile pass 7) — the historical
+record of "we estimated this; the customer never accepted."
 
 ### Tasks
 
@@ -298,10 +299,14 @@ Every task is assigned a RateScheme:
   - `laser`      → `Laser`
   - `draw` / `cad` / `model` → `CAD`
   - everything else → `Shop labor`
-- Line-item tasks: same keyword rule; if no keyword hits, try to match a
-  seeded scheme by `(algorithm, rate)`; failing that, fall back to the
-  shared **Flat Fee** scheme and stash the price in
-  `Task.active_modifiers = {'flat_fee_price': '…'}`.
+- Line-item tasks: same keyword rule first (a `cut`/`laser`/`cad` line is
+  always work); otherwise `_line_billing` infers the billing shape — a
+  line with a time/quantity signal matches a seeded scheme by
+  `(algorithm, rate)` (`_match_seed_scheme`), and a line with **no**
+  time/quantity signal is a **fixed charge → it becomes a `jobs.fee`
+  atom, not a Task** (`_emit_fee`; the retired flat-fee RateScheme and
+  the `active_modifiers` price-dict hack are gone — `active_modifiers`
+  is always a list of modifier keys).
 
 If the named scheme isn't in nealseed, the closest match is used (see
 `_match_seed_scheme`). When you add new schemes to nealseed, this will pick
@@ -309,11 +314,11 @@ them up automatically.
 
 ### Estimated worker time
 
-Every Task **and** PlanTask gets an invented per-task `est_worker_time` in a
-single pass (`assign_worker_times`, run after `derive_atoms`): a random value
-uniform in `[0.5, 4.0]` hours, rounded to 2 significant figures and stored at
-minute granularity. The pass iterates in `(model, pk)` order with the seeded
-RNG, so output is deterministic.
+Every Task gets an invented per-task `est_worker_time` in a single pass
+(`assign_worker_times`, run after `derive_atoms`): a random value uniform
+in `[0.5, 4.0]` hours, rounded to 2 significant figures and stored at
+minute granularity. The pass iterates in pk order with the seeded RNG, so
+output is deterministic.
 
 The old `est *cut*`/`est ASS` Kanban columns are **no longer consumed** — they
 were rare *whole-job* estimates wrongly stamped onto a single task, which made
@@ -323,19 +328,18 @@ no per-task time data, so a real estimate isn't derivable from it anyway.
 ### Estimated quantity (real Tasks)
 
 `assign_est_quantities` (after `assign_worker_times`) fills `est_qty` on every
-real Task by its rate-scheme algorithm. `est_qty` is optional on `Task` (nullable
-at the DB level and unenforced; only `PlanTask` requires it), but the dataset
-wants it populated:
+Task by its rate-scheme algorithm. `est_qty` is optional on `Task` (nullable
+at the DB level and unenforced), but the dataset wants it populated:
 
 - **elapsed_time** (hourly, the most common): `est_qty` = the worker-time
   estimate in hours (`02:30:00` → `2.50`), set always — so estimated billable
   hours equal the estimated worker time.
-- **flat_fee**: `1.00` (a single fixed charge), unless a source line set a qty.
 - **entered_qty** (piece counts): tied to the worker time — `round(worker_hours
   × pieces_per_hour)`, `pieces_per_hour` random 2–6 (min 1) — unless a source
   line set a qty. This also feeds the `entered_qty` actuals.
 
-PlanTasks keep the `est_qty` they were built with.
+(Fixed charges are `jobs.fee` atoms, not Tasks, so there is no flat-fee
+case.)
 
 ### Bleps, Shifts, and entered_qty actuals
 
@@ -378,8 +382,8 @@ PlanTasks keep the `est_qty` they were built with.
   `actual_qty = est_qty × {thirds}` (fallback base `1` when `est_qty` is null)
   so it doesn't invoice at zero. This is set for **every** complete task — even
   ones too old for a blep under the horizon — so historical work never invoices
-  at zero. `elapsed_time` tasks derive qty from their bleps; `flat_fee` uses
-  `est_qty`/1 — neither needs an explicit actual.
+  at zero. `elapsed_time` tasks derive qty from their bleps and need no
+  explicit actual (fixed charges are Fee atoms with no actuals at all).
 
 `assign_current_work` (after `build_bleps_and_shifts`) then populates **current**
 work: each rotation worker (excludes `system` + minted users) gets up to three
@@ -393,7 +397,7 @@ Task). Deterministic given the seeded RNG.
 ### Purchasing & inventory state (`build_purchasing`)
 
 Runs after reconcile (final job/task status) and before `build_history`. It makes
-the **real** Materials (PlanMaterials untouched) consistent with the inventory
+the Materials consistent with the inventory
 model and synthesizes Purchase Orders + Bills. See
 `docs/designs/materials-inventory-and-purchasing.md` for the model it mirrors.
 
@@ -516,6 +520,11 @@ Deliverables default to `units='ea'` (canon form of `each`).
    versions, every version below the highest is marked `superseded` and
    linked to the previous via `parent`. The highest keeps the builder's
    status.
+1.4. **Invoiced jobs are started** — a draft/submitted Job carrying ANY
+   invoice bumps to `approved` (the minimal billable status): the app's
+   `BILLABLE_JOB_STATUSES` guard means even a draft invoice can't exist
+   pre-approval, so the FreeAgent invoice outranks a stale Kanban Stage.
+   Runs before the accept-estimate and expiry passes.
 2. **Started jobs accept their estimate** — a Job in `approved`,
    `in_progress`, `work_complete`, or `completed` couldn't have got there
    without an accepted estimate, so its latest estimate is forced to
@@ -540,13 +549,21 @@ Deliverables default to `units='ea'` (canon form of `each`).
    `work_complete` and clears `completed_date`. Must run before
    `build_shipments` so the synthesis branch doesn't fake-ship the
    downgraded job.
-7. **Task status from job** — cancel tasks on cancelled/rejected jobs.
+7. **Task status from job** — cancel ALL tasks on cancelled/rejected jobs;
+   cancel still-PENDING tasks on work_complete/completed jobs (the app's
+   work-complete gate forbids a non-terminal task on a closed job; checked
+   items stay complete). Every cancelled task then detaches its materials
+   to the job as loose rows (task=None), mirroring the app's cancel_task —
+   `build_purchasing`'s job-status rule later consumes loose materials on
+   worked jobs, keeping closed jobs free of pending materials.
    Otherwise the per-checklist `[X]`/`[ ]` state is preserved.
-8. **Document counters** — Configuration counters for jobs/invoices/POs
-   are set to the number of emitted records so the next number generated
-   by the running app doesn't collide. `estimate_counter` is intentionally
-   excluded — estimate numbers now derive from `{job_number}-{version}`,
-   not from a counter.
+8. **Document counters** — the **AppState** counters for jobs/invoices/POs
+   (machine state since core migration 0018, not Configuration) are set to
+   the number of emitted records so the next number generated by the
+   running app doesn't collide. `po_counter` honestly counts zero here
+   (build_purchasing runs later and advances it past the POs it
+   synthesizes). `estimate_counter` is intentionally excluded — estimate
+   numbers now derive from `{job_number}-{version}`, not from a counter.
 
 When the source data disagrees (Kanban Stage vs. Estimate Status), the
 "farther along the transition chain" wins — that's what passes 2 and 3
@@ -579,7 +596,7 @@ nealsdata/
     parsing.py            pure helpers: dates, decimals, names, references,
                           checklist parser, classification of line items
     build.py              all builders; the bulk of the code
-    reconcile.py          cross-model fixups (the 8 passes above)
+    reconcile.py          cross-model fixups (the 9 passes above)
     orchestrator.py       NealsDataConverter — phase wiring + state container
 ```
 
@@ -589,9 +606,8 @@ carries everything between phases: `c.fixture_data` (the output list),
 `c.entry_contact` (base_ref → (entity key, person_norm)) from the contact
 resolver, the FreeAgent Contacts indexes it builds (`c.fa_org_by_norm` /
 `c.fa_org_display` / `c.fa_org_norms` / `c.fa_person_by_norm`),
-`c.job_map`, `c.jobs` (with `'status'` for plan/real
-branching in `derive_atoms`), `c.estimates`, `c.line_items`, `c.cut_task`
-and `c.cut_plan_task` (the real/plan-side first-cut-task index for
+`c.job_map`, `c.jobs`, `c.estimates`, `c.line_items`, `c.cut_task`
+(the first-cut-task index for
 material attach), `c.scheme_by_name`, `c.scheme_algorithm_by_pk` (for
 entered_qty actuals), `c.user_by_username` / `c.rotation_user_pks` (blep
 rotation), `c.pli_index` / `c.pli_purchase_by_code` (material→PLI matching),

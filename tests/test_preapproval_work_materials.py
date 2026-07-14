@@ -102,6 +102,13 @@ class PreApprovalWorkMaterialTest(BaseTestCase):
         )
         MaterialService.consume(m_consumed)
 
+        # Approve first — create_earmarks_for_job deliberately no-ops on
+        # pre-approval jobs (earmarks belong to committed jobs only), so the
+        # consumed-skip behavior under test needs a committed fixture.
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            job.status = s
+            job.save()
+
         # Simulate approval's earmark hook.
         InventoryService.create_earmarks_for_job(job)
 

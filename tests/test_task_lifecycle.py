@@ -455,44 +455,94 @@ class CompleteTaskActualQtyTest(BaseTestCase):
         )
         _log_time(self.elapsed_task)
 
-    def test_entered_qty_task_without_value_raises(self):
+    def test_entered_qty_task_without_add_qty_raises(self):
         from apps.jobs.services import TaskActualQtyRequired
         with self.assertRaises(TaskActualQtyRequired):
             TaskLifecycleService.complete_task(self.entered_qty_task.pk)
 
-    def test_entered_qty_task_with_value_completes_and_saves(self):
+    def test_prompt_carries_unit_label_and_current_qty(self):
+        from decimal import Decimal
+        from apps.jobs.services import TaskActualQtyRequired
+        Task.objects.filter(pk=self.entered_qty_task.pk).update(
+            actual_qty=Decimal('9'),
+        )
+        with self.assertRaises(TaskActualQtyRequired) as ctx:
+            TaskLifecycleService.complete_task(self.entered_qty_task.pk)
+        self.assertEqual(ctx.exception.current_qty, Decimal('9'))
+        self.assertTrue(ctx.exception.unit_label)
+
+    def test_entered_qty_task_completes_with_add_qty_from_null(self):
         from decimal import Decimal
         TaskLifecycleService.complete_task(
-            self.entered_qty_task.pk, actual_qty=Decimal('5'),
+            self.entered_qty_task.pk, add_qty=Decimal('5'),
         )
         self.entered_qty_task.refresh_from_db()
         self.assertEqual(self.entered_qty_task.status, Task.STATUS_COMPLETE)
         self.assertEqual(self.entered_qty_task.actual_qty, Decimal('5'))
 
-    def test_entered_qty_task_with_existing_value_completes(self):
+    def test_add_qty_increments_existing_total(self):
         from decimal import Decimal
         Task.objects.filter(pk=self.entered_qty_task.pk).update(
-            actual_qty=Decimal('3'),
+            actual_qty=Decimal('9'),
         )
-        TaskLifecycleService.complete_task(self.entered_qty_task.pk)
+        TaskLifecycleService.complete_task(
+            self.entered_qty_task.pk, add_qty=Decimal('5'),
+        )
         self.entered_qty_task.refresh_from_db()
-        self.assertEqual(self.entered_qty_task.status, Task.STATUS_COMPLETE)
+        self.assertEqual(self.entered_qty_task.actual_qty, Decimal('14'))
 
-    def test_entered_qty_task_with_zero_existing_value_raises(self):
+    def test_entered_qty_task_with_existing_value_still_prompts(self):
+        """Settle-up: completion ALWAYS round-trips through the prompt,
+        even when a total is already on record."""
         from decimal import Decimal
         from apps.jobs.services import TaskActualQtyRequired
         Task.objects.filter(pk=self.entered_qty_task.pk).update(
-            actual_qty=Decimal('0'),
+            actual_qty=Decimal('3'),
         )
         with self.assertRaises(TaskActualQtyRequired):
             TaskLifecycleService.complete_task(self.entered_qty_task.pk)
 
-    def test_provided_zero_qty_rejected(self):
+    def test_zero_add_qty_completes_when_total_positive(self):
+        from decimal import Decimal
+        Task.objects.filter(pk=self.entered_qty_task.pk).update(
+            actual_qty=Decimal('3'),
+        )
+        TaskLifecycleService.complete_task(
+            self.entered_qty_task.pk, add_qty=Decimal('0'),
+        )
+        self.entered_qty_task.refresh_from_db()
+        self.assertEqual(self.entered_qty_task.status, Task.STATUS_COMPLETE)
+        self.assertEqual(self.entered_qty_task.actual_qty, Decimal('3'))
+
+    def test_negative_add_qty_corrects_at_completion(self):
+        from decimal import Decimal
+        Task.objects.filter(pk=self.entered_qty_task.pk).update(
+            actual_qty=Decimal('9'),
+        )
+        TaskLifecycleService.complete_task(
+            self.entered_qty_task.pk, add_qty=Decimal('-2'),
+        )
+        self.entered_qty_task.refresh_from_db()
+        self.assertEqual(self.entered_qty_task.actual_qty, Decimal('7'))
+
+    def test_zero_add_qty_with_no_total_rejected(self):
         from decimal import Decimal
         with self.assertRaises(ValidationError):
             TaskLifecycleService.complete_task(
-                self.entered_qty_task.pk, actual_qty=Decimal('0'),
+                self.entered_qty_task.pk, add_qty=Decimal('0'),
             )
+
+    def test_add_qty_taking_final_to_zero_rejected(self):
+        from decimal import Decimal
+        Task.objects.filter(pk=self.entered_qty_task.pk).update(
+            actual_qty=Decimal('3'),
+        )
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.complete_task(
+                self.entered_qty_task.pk, add_qty=Decimal('-3'),
+            )
+        self.entered_qty_task.refresh_from_db()
+        self.assertNotEqual(self.entered_qty_task.status, Task.STATUS_COMPLETE)
 
     def test_elapsed_time_task_with_logged_time_completes(self):
         # self.elapsed_task has a blep from setUp — no actual_qty param needed.
@@ -507,6 +557,341 @@ class CompleteTaskActualQtyTest(BaseTestCase):
         )
         with self.assertRaises(TaskTimeRequired):
             TaskLifecycleService.complete_task(untracked.pk)
+
+
+class AddActualQtyTest(BaseTestCase):
+    """TaskLifecycleService.add_actual_qty applies a signed increment to
+    Task.actual_qty. Every mid-work write is an add — there is no replace.
+    Fixture rate schemes: 1=elapsed_time, 2=entered_qty."""
+
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+        self.Decimal = Decimal
+        self.job = Job.objects.first()
+        self.task = Task.objects.create(
+            name='Press parts', job=self.job, rate_scheme_id=2,
+        )
+        self.elapsed_task = Task.objects.create(
+            name='Labor', job=self.job, rate_scheme_id=1,
+        )
+
+    def test_add_from_null_starts_total(self):
+        TaskLifecycleService.add_actual_qty(self.task.pk, self.Decimal('5'))
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.actual_qty, self.Decimal('5'))
+
+    def test_add_onto_existing_accumulates(self):
+        Task.objects.filter(pk=self.task.pk).update(
+            actual_qty=self.Decimal('9'))
+        TaskLifecycleService.add_actual_qty(self.task.pk, self.Decimal('5'))
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.actual_qty, self.Decimal('14'))
+
+    def test_negative_delta_subtracts(self):
+        Task.objects.filter(pk=self.task.pk).update(
+            actual_qty=self.Decimal('50'))
+        TaskLifecycleService.add_actual_qty(self.task.pk, self.Decimal('-45'))
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.actual_qty, self.Decimal('5'))
+
+    def test_zero_delta_rejected(self):
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.add_actual_qty(self.task.pk, self.Decimal('0'))
+
+    def test_delta_taking_total_below_zero_rejected(self):
+        Task.objects.filter(pk=self.task.pk).update(
+            actual_qty=self.Decimal('3'))
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.add_actual_qty(self.task.pk, self.Decimal('-4'))
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.actual_qty, self.Decimal('3'))
+
+    def test_non_decimal_rejected(self):
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.add_actual_qty(self.task.pk, 'garbage')
+
+    def test_wrong_scheme_rejected(self):
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.add_actual_qty(
+                self.elapsed_task.pk, self.Decimal('5'))
+
+    def test_complete_task_rejected(self):
+        Task.objects.filter(pk=self.task.pk).update(
+            status=Task.STATUS_COMPLETE, actual_qty=self.Decimal('5'))
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.add_actual_qty(self.task.pk, self.Decimal('1'))
+
+    def test_cancelled_task_rejected(self):
+        Task.objects.filter(pk=self.task.pk).update(
+            status=Task.STATUS_CANCELLED)
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.add_actual_qty(self.task.pk, self.Decimal('1'))
+
+    def test_sequential_adds_sum(self):
+        TaskLifecycleService.add_actual_qty(self.task.pk, self.Decimal('2'))
+        TaskLifecycleService.add_actual_qty(self.task.pk, self.Decimal('3.5'))
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.actual_qty, self.Decimal('5.5'))
+
+    def test_returns_task_with_new_total(self):
+        task = TaskLifecycleService.add_actual_qty(
+            self.task.pk, self.Decimal('7'))
+        self.assertEqual(task.actual_qty, self.Decimal('7'))
+
+
+class PriorSessionQtyStartWorkTest(BaseTestCase):
+    """Starting work while holding an open blep on an ENTERED_QTY task
+    returns a prior_session_qty conflict (own gesture only) so the SPA can
+    settle the old session first. Fixture schemes: 1=elapsed, 2=entered."""
+
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+        self.Decimal = Decimal
+        self.user = User.objects.first()
+        self.job = Job.objects.first()
+        _approve_job(self.job)
+        self.eq_task = Task.objects.create(
+            name='CNC', job=self.job, rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=self.eq_task.pk).update(
+            status=Task.STATUS_IN_PROGRESS, actual_qty=Decimal('9'))
+        self.prior_blep = Blep.objects.create(
+            task=self.eq_task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        self.new_task = Task.objects.create(
+            name='Sanding', job=self.job, rate_scheme_id=1,
+        )
+
+    def test_own_start_prompts_for_prior_session(self):
+        result = TaskLifecycleService.start_work(self.new_task.pk, self.user)
+        self.assertEqual(result.get('conflict'), 'prior_session_qty')
+        self.assertEqual(result['prior_task']['task_id'], self.eq_task.pk)
+        self.assertEqual(result['prior_task']['name'], 'CNC')
+        self.assertEqual(result['unit_label'], 'minute')
+        self.assertEqual(
+            self.Decimal(result['current_qty']), self.Decimal('9'))
+        # Nothing mutated: old blep open, no new blep.
+        self.prior_blep.refresh_from_db()
+        self.assertIsNone(self.prior_blep.end_time)
+        self.assertFalse(
+            Blep.objects.filter(task=self.new_task).exists())
+
+    def test_flag_proceeds_and_closes_prior(self):
+        result = TaskLifecycleService.start_work(
+            self.new_task.pk, self.user, prior_qty_handled=True)
+        self.assertIn('blep', result)
+        self.prior_blep.refresh_from_db()
+        self.assertIsNotNone(self.prior_blep.end_time)
+
+    def test_elapsed_prior_does_not_prompt(self):
+        # Swap the prior session onto an elapsed-time task.
+        self.prior_blep.delete()
+        elapsed_prior = Task.objects.create(
+            name='Labor', job=self.job, rate_scheme_id=1,
+        )
+        Task.objects.filter(pk=elapsed_prior.pk).update(
+            status=Task.STATUS_IN_PROGRESS)
+        Blep.objects.create(
+            task=elapsed_prior, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        result = TaskLifecycleService.start_work(self.new_task.pk, self.user)
+        self.assertIn('blep', result)
+
+    def test_on_behalf_start_does_not_prompt(self):
+        from tests.base import grant_atoms
+        manager = User.objects.create_user(username='psq_mgr', password='x')
+        manager = grant_atoms(manager, 'can_manage_time')
+        result = TaskLifecycleService.start_work(
+            self.new_task.pk, manager, on_behalf_of=self.user)
+        self.assertIn('blep', result)
+        self.prior_blep.refresh_from_db()
+        self.assertIsNotNone(self.prior_blep.end_time)
+
+    def test_same_task_restart_does_not_prompt(self):
+        result = TaskLifecycleService.start_work(self.eq_task.pk, self.user)
+        self.assertIn('blep', result)
+
+    def test_prior_prompt_evaluated_before_active_worker(self):
+        other = User.objects.create_user(username='psq_other', password='x')
+        Task.objects.filter(pk=self.new_task.pk).update(
+            status=Task.STATUS_IN_PROGRESS)
+        Blep.objects.create(
+            task=self.new_task, user=other, start_time=timezone.now())
+        first = TaskLifecycleService.start_work(self.new_task.pk, self.user)
+        self.assertEqual(first.get('conflict'), 'prior_session_qty')
+        second = TaskLifecycleService.start_work(
+            self.new_task.pk, self.user, prior_qty_handled=True)
+        self.assertEqual(second.get('conflict'), 'active_worker')
+
+
+class CancelTaskPriorSessionTest(BaseTestCase):
+    """Cancelling a task retains recorded quantities just as it retains
+    bleps (parity with elapsed-time tasks, whose closed bleps survive
+    cancellation). So the canceller's own open ENTERED_QTY session gets a
+    skippable prior_session_qty offer before the task settles. Internal
+    callers (CO acceptance) pass no user and never prompt."""
+
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+        self.Decimal = Decimal
+        self.user = User.objects.first()
+        self.job = Job.objects.first()
+        _approve_job(self.job)
+        self.eq_task = Task.objects.create(
+            name='CNC', job=self.job, rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=self.eq_task.pk).update(
+            status=Task.STATUS_IN_PROGRESS, actual_qty=Decimal('9'))
+        self.blep = Blep.objects.create(
+            task=self.eq_task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+
+    def test_own_open_session_prompts_and_mutates_nothing(self):
+        result = TaskLifecycleService.cancel_task(
+            self.eq_task.pk, user=self.user)
+        self.assertEqual(result.get('conflict'), 'prior_session_qty')
+        self.assertEqual(result['prior_task']['task_id'], self.eq_task.pk)
+        self.assertEqual(
+            self.Decimal(result['current_qty']), self.Decimal('9'))
+        self.eq_task.refresh_from_db()
+        self.assertEqual(self.eq_task.status, Task.STATUS_IN_PROGRESS)
+        self.blep.refresh_from_db()
+        self.assertIsNone(self.blep.end_time)
+
+    def test_flag_proceeds_with_cancel(self):
+        result = TaskLifecycleService.cancel_task(
+            self.eq_task.pk, user=self.user, prior_qty_handled=True)
+        self.assertEqual(result.status, Task.STATUS_CANCELLED)
+        self.blep.refresh_from_db()
+        self.assertIsNotNone(self.blep.end_time)
+
+    def test_no_user_never_prompts(self):
+        """Internal bulk callers (change-order acceptance) pass no user."""
+        result = TaskLifecycleService.cancel_task(self.eq_task.pk)
+        self.assertEqual(result.status, Task.STATUS_CANCELLED)
+
+    def test_elapsed_task_never_prompts(self):
+        elapsed = Task.objects.create(
+            name='Labor', job=self.job, rate_scheme_id=1,
+        )
+        Task.objects.filter(pk=elapsed.pk).update(
+            status=Task.STATUS_IN_PROGRESS)
+        Blep.objects.create(
+            task=elapsed, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        result = TaskLifecycleService.cancel_task(elapsed.pk, user=self.user)
+        self.assertEqual(result.status, Task.STATUS_CANCELLED)
+
+    def test_other_workers_session_never_prompts(self):
+        """A manager cancelling a task someone else is working doesn't know
+        the count — their session closes silently (same as complete)."""
+        other = User.objects.create_user(username='ctps_other', password='x')
+        self.blep.delete()
+        Blep.objects.create(
+            task=self.eq_task, user=other,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        result = TaskLifecycleService.cancel_task(
+            self.eq_task.pk, user=self.user)
+        self.assertEqual(result.status, Task.STATUS_CANCELLED)
+
+
+class BlockTaskOwnSessionTest(BaseTestCase):
+    """Blocking is how a worker records "I can't proceed" — usually
+    discovered mid-session, so the requester's OWN open blep must not veto
+    the block. It resolves like every other own-gesture (settle-first on
+    ENTERED_QTY, plain close otherwise); only OTHER workers' open sessions
+    keep the active_workers refusal."""
+
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+        self.Decimal = Decimal
+        self.user = User.objects.first()
+        self.job = Job.objects.first()
+        _approve_job(self.job)
+        self.eq_task = Task.objects.create(
+            name='CNC', job=self.job, rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=self.eq_task.pk).update(
+            status=Task.STATUS_IN_PROGRESS, actual_qty=Decimal('9'))
+        self.blep = Blep.objects.create(
+            task=self.eq_task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+
+    def test_own_entered_qty_session_prompts_and_mutates_nothing(self):
+        result = TaskLifecycleService.block_task(
+            self.eq_task.pk, reason='saw blade broke', user=self.user)
+        self.assertEqual(result.get('conflict'), 'prior_session_qty')
+        self.assertEqual(result['prior_task']['task_id'], self.eq_task.pk)
+        self.assertEqual(
+            self.Decimal(result['current_qty']), self.Decimal('9'))
+        self.eq_task.refresh_from_db()
+        self.assertEqual(self.eq_task.status, Task.STATUS_IN_PROGRESS)
+        self.blep.refresh_from_db()
+        self.assertIsNone(self.blep.end_time)
+
+    def test_flag_proceeds_with_block_and_closes_own_session(self):
+        result = TaskLifecycleService.block_task(
+            self.eq_task.pk, reason='saw blade broke',
+            user=self.user, prior_qty_handled=True)
+        self.assertEqual(result.status, Task.STATUS_BLOCKED)
+        self.eq_task.refresh_from_db()
+        self.assertEqual(self.eq_task.status, Task.STATUS_BLOCKED)
+        self.assertEqual(self.eq_task.blocked_reason, 'saw blade broke')
+        self.blep.refresh_from_db()
+        self.assertIsNotNone(self.blep.end_time)
+
+    def test_own_elapsed_session_blocks_without_prompt(self):
+        elapsed = Task.objects.create(
+            name='Labor', job=self.job, rate_scheme_id=1,
+        )
+        Task.objects.filter(pk=elapsed.pk).update(
+            status=Task.STATUS_IN_PROGRESS)
+        blep = Blep.objects.create(
+            task=elapsed, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        result = TaskLifecycleService.block_task(
+            elapsed.pk, reason='waiting on parts', user=self.user)
+        self.assertEqual(result.status, Task.STATUS_BLOCKED)
+        blep.refresh_from_db()
+        self.assertIsNotNone(blep.end_time)
+
+    def test_other_workers_session_still_refuses(self):
+        other = User.objects.create_user(username='btos_other', password='x')
+        other_blep = Blep.objects.create(
+            task=self.eq_task, user=other,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        result = TaskLifecycleService.block_task(
+            self.eq_task.pk, reason='x', user=self.user)
+        self.assertEqual(result.get('conflict'), 'active_workers')
+        # Only the OTHER worker is listed — the requester's own session
+        # is not a conflict.
+        listed = [w['user_id'] for w in result['workers']]
+        self.assertEqual(listed, [other.pk])
+        self.eq_task.refresh_from_db()
+        self.assertEqual(self.eq_task.status, Task.STATUS_IN_PROGRESS)
+        # Nothing closed on either session.
+        self.blep.refresh_from_db()
+        other_blep.refresh_from_db()
+        self.assertIsNone(self.blep.end_time)
+        self.assertIsNone(other_blep.end_time)
+
+    def test_no_user_refuses_on_any_open_blep(self):
+        """Caller without user attribution can't claim any session as its
+        own — the pre-existing refusal stands."""
+        result = TaskLifecycleService.block_task(self.eq_task.pk)
+        self.assertEqual(result.get('conflict'), 'active_workers')
 
 
 class BlockNoRollupRegressionTest(BaseTestCase):

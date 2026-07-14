@@ -33,6 +33,7 @@
   }
 </script>
 
+<div class="page-body">
 <h2>New user</h2>
 
 <form onsubmit={handleSubmit}>
@@ -107,3 +108,4 @@
     <a href="/users" use:link>Cancel</a>
   </p>
 </form>
+</div>

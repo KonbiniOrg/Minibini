@@ -57,7 +57,7 @@ class CompleteTaskMaterialGuardTest(TestCase):
         task = self._task()
         self._pending_material(task)
         with self.assertRaises(ValidationError) as ctx:
-            TaskLifecycleService.complete_task(task.pk)
+            TaskLifecycleService.complete_task(task.pk, add_qty=Decimal('0'))
         self.assertIn('consume it by hand', str(ctx.exception))
         task.refresh_from_db()
         self.assertEqual(task.status, Task.STATUS_PENDING)
@@ -66,13 +66,13 @@ class CompleteTaskMaterialGuardTest(TestCase):
         task = self._task(status=Task.STATUS_IN_PROGRESS)
         self._pending_material(task)
         with self.assertRaises(ValidationError):
-            TaskLifecycleService.complete_task(task.pk)
+            TaskLifecycleService.complete_task(task.pk, add_qty=Decimal('0'))
 
     def test_consumed_material_does_not_block(self):
         task = self._task()
         m = self._pending_material(task)
         MaterialService.consume(m)
-        TaskLifecycleService.complete_task(task.pk)
+        TaskLifecycleService.complete_task(task.pk, add_qty=Decimal('0'))
         task.refresh_from_db()
         self.assertEqual(task.status, Task.STATUS_COMPLETE)
 
@@ -103,12 +103,12 @@ class CompleteTaskMaterialGuardTest(TestCase):
         m.refresh_from_db()
         self.assertEqual(m.consumption_state,
                          Material.CONSUMPTION_STATE_RELEASED)
-        TaskLifecycleService.complete_task(task.pk)
+        TaskLifecycleService.complete_task(task.pk, add_qty=Decimal('0'))
         task.refresh_from_db()
         self.assertEqual(task.status, Task.STATUS_COMPLETE)
 
     def test_no_materials_completes_fine(self):
         task = self._task()
-        TaskLifecycleService.complete_task(task.pk)
+        TaskLifecycleService.complete_task(task.pk, add_qty=Decimal('0'))
         task.refresh_from_db()
         self.assertEqual(task.status, Task.STATUS_COMPLETE)

@@ -47,6 +47,14 @@ def clock_out(request):
     target, err = _resolve_target(request)
     if err:
         return err
+    # Own explicit clock-out with an open entered-qty session: settle it
+    # first (prior_session_qty conflict, mutating nothing). On-behalf
+    # clock-outs never prompt — the manager doesn't know the count.
+    if target == request.user and not request.data.get('prior_qty_handled'):
+        from apps.jobs.services import TaskLifecycleService
+        prompt = TaskLifecycleService.prior_session_prompt(target)
+        if prompt is not None:
+            return Response(prompt)
     shift = ShiftService.clock_out(target)
     return Response(ShiftSerializer(shift).data)
 

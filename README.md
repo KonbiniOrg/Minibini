@@ -1,5 +1,4 @@
 # Minibini
-A software to streamline the start to finish timeline of job shops, demo version
 
-Full version coming later.
+Software to manage small to medium sized job shops, soup to nuts.  Integrates with your existing QuickBooks installation.
 

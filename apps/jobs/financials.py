@@ -66,18 +66,16 @@ def _average_labor_cost():
         return Decimal('0')
 
 
-def _labor_cost(job):
-    """Approximate labor cost = all blep hours on the job × average_labor_cost.
+def _blep_hours(job):
+    """Total worked hours across all bleps on the job.
 
-    Labor cost is about hours worked, not how the task is billed, so every blep
-    counts regardless of the task's RateScheme or status (cancelled-task hours
-    were still worked). A running blep counts its time so far via Blep.elapsed.
+    Every blep counts regardless of the task's RateScheme or status
+    (cancelled-task hours were still worked). A running blep counts its time
+    so far via Blep.elapsed. `spend_breakdown` uses this single hours figure
+    for both its `labor` ($) and `labor_hours` terms, so the two can never
+    disagree.
     """
     from apps.jobs.models import Blep
-
-    rate = _average_labor_cost()
-    if rate == 0:
-        return Decimal('0')
 
     total_hours = Decimal('0')
     bleps = Blep.objects.filter(task__job=job, start_time__isnull=False)
@@ -86,24 +84,30 @@ def _labor_cost(job):
         if elapsed is None:
             continue
         total_hours += Decimal(str(elapsed.total_seconds())) / SECONDS_PER_HOUR
-    return total_hours * rate
+    return total_hours
 
 
-def _spent(job):
-    """Cash outlay + approximate labor.
+def spend_breakdown(job):
+    """The job's spend, split into labor vs. cash-outlay materials.
 
-    = non-rejected, non-stock-receipt expenses attributed to the job
-      (Expense.job), by amount — covers material-bearing and material-less cost
-      expenses (e.g. a shipping fee); overhead (Expense.job null) is excluded, and
-      **stock-receipt expenses are excluded** (an inventoried-PLI purchase is
-      inventory, costed at consumption, not at purchase)
-    + consumed materials with no linked expense, at cost (quantity × unit_cost) —
-      this is where inventoried stock cost lands
-    + labor cost.
+    Returns {'labor', 'labor_hours', 'materials_bought', 'total'}, all Decimal,
+    money terms quantized to cents.
 
-    A material acquired via a cost-expense is represented by that expense;
-    counting its cost too would double-count, so consumed materials that have any
-    expense are excluded from the materials term.
+    - materials_bought = non-rejected, non-stock-receipt expenses attributed to
+      the job (Expense.job), by amount — covers material-bearing and
+      material-less cost expenses (e.g. a shipping fee); overhead (Expense.job
+      null) is excluded, and **stock-receipt expenses are excluded** (an
+      inventoried-PLI purchase is inventory, costed at consumption, not at
+      purchase) + consumed materials with no linked expense, at cost (quantity
+      × unit_cost) — this is where inventoried stock cost lands. A material
+      acquired via a cost-expense is represented by that expense; counting its
+      cost too would double-count, so consumed materials that have any expense
+      are excluded from this term.
+    - labor = all blep hours on the job × average_labor_cost (0 when the
+      Configuration key is missing/blank).
+    - labor_hours = the raw hours figure `labor` rates, unquantized.
+    - total = materials_bought + labor — this IS `_spent(job)`, by
+      construction, so the two can never drift apart.
     """
     from apps.expenses.models import Expense
     from apps.inventory.models import Material
@@ -123,8 +127,29 @@ def _spent(job):
         (m.quantity * m.unit_cost for m in consumed_no_expense),
         Decimal('0'),
     )
+    materials_bought = expenses_total + materials_total
 
-    return expenses_total + materials_total + _labor_cost(job)
+    labor_hours = _blep_hours(job)
+    labor = labor_hours * _average_labor_cost()
+
+    # Quantize parts first, then derive total as their sum.
+    # This ensures the displayed parts always sum to the displayed total,
+    # avoiding round-then-sum vs sum-then-round discrepancies (common with
+    # fractional-hour bleps and material calculations that produce sub-cent values).
+    labor_q = labor.quantize(CENTS)
+    materials_bought_q = materials_bought.quantize(CENTS)
+
+    return {
+        'labor': labor_q,
+        'labor_hours': labor_hours,
+        'materials_bought': materials_bought_q,
+        'total': materials_bought_q + labor_q,
+    }
+
+
+def _spent(job):
+    """Cash outlay + approximate labor — see `spend_breakdown` for the terms."""
+    return spend_breakdown(job)['total']
 
 
 def _invoiced(job):

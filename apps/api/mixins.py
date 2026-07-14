@@ -317,7 +317,8 @@ class JobTaskMixin:
         if request.method == 'GET':
             from apps.jobs.models import Task
             tasks = Task.objects.filter(job=job).order_by('sort_order')
-            serializer = self.task_serializer_class(tasks, many=True)
+            serializer = self.task_serializer_class(
+                tasks, many=True, context=self.get_serializer_context())
             return Response(serializer.data)
 
         from apps.jobs.services import TaskService
@@ -360,12 +361,19 @@ class JobTaskMixin:
             return Response({'message': 'Task deleted.'})
 
         # Validate request data via the serializer, then delegate the actual
-        # write to TaskService.update_task so the on_hold guard fires.
+        # write to TaskService.update_task so the on_hold guard and the C1
+        # editability matrix (manager/PM/assignee on in_progress/blocked)
+        # fire. TaskPermissionError is an authorization refusal → 403.
         serializer = self.task_serializer_class(task, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        from apps.jobs.services import TaskService
-        task = TaskService.update_task(task.pk, **serializer.validated_data)
-        serializer = self.task_serializer_class(task)
+        from apps.jobs.services import TaskService, TaskPermissionError
+        try:
+            task = TaskService.update_task(
+                task.pk, user=request.user, **serializer.validated_data)
+        except TaskPermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        serializer = self.task_serializer_class(
+            task, context=self.get_serializer_context())
         return Response(serializer.data)
 
     def _get_task_or_404(self, job, task_pk):

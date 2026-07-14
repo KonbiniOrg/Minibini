@@ -43,6 +43,7 @@
   });
 </script>
 
+<div class="page-body">
 <h2>Invoices {invoices ? `(${invoices.count})` : ''}</h2>
 
 <p>
@@ -121,3 +122,4 @@
     </p>
   {/if}
 {/if}
+</div>

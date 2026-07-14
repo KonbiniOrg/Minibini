@@ -35,6 +35,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     units = UnitsField()
     qty_on_order = serializers.SerializerMethodField()
     qty_on_hand = serializers.SerializerMethodField()
+    qty_available = serializers.SerializerMethodField()
     propagate_to_pli = serializers.BooleanField(
         write_only=True, required=False,
     )
@@ -53,7 +54,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'consumption_state', 'released_qty', 'cost_source',
             'is_expense_bound',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
-            'units', 'qty_on_order', 'qty_on_hand',
+            'units', 'qty_on_order', 'qty_on_hand', 'qty_available',
             'propagate_to_pli', 'customer_supplied',
             'invoice',
             'claimed',
@@ -63,7 +64,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'consumption_state', 'released_qty', 'cost_source',
             'is_expense_bound',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
-            'qty_on_order', 'qty_on_hand',
+            'qty_on_order', 'qty_on_hand', 'qty_available',
         ]
 
     def get_po_line_item_id(self, obj):
@@ -96,6 +97,17 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
         """True iff a non-superseded estimate on this job has claimed this material."""
         claims = self.context.get('estimate_claims') or frozenset()
         return ('material', obj.pk) in claims
+
+    def get_qty_available(self, obj):
+        if obj.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
+            return None
+        if not obj.inventory_item_id:
+            return None
+        # Use the pre-annotated earmark total when available (avoids N+1).
+        earmarked = getattr(obj, '_inv_earmarked', None)
+        if earmarked is not None:
+            return str(obj.inventory_item.qty_on_hand - earmarked)
+        return str(obj.inventory_item.qty_available)
 
     def update(self, instance, validated_data):
         from apps.inventory.serializer_helpers import (

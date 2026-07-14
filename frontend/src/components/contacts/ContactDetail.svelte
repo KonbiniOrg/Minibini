@@ -2,7 +2,7 @@
   import FullOnly from '../FullOnly.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
   import TagEditor from '../TagEditor.svelte';
-  import { canManageJobs } from '../../stores/permissions.js';
+  import { canManageJobs, canManageFinancials } from '../../stores/permissions.js';
   import { viewMode } from '../../stores/viewMode.js';
   import { pageFromUrl, pageRange } from '../../lib/pagination.js';
   const {
@@ -11,7 +11,6 @@
     purchaseOrders = null,
     bills = null,
     history = null,
-    financials = null,
     onEdit = null,
     onDelete = null,
     onInvoicePageChange = null,
@@ -30,7 +29,6 @@
     return Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
   }
 
-  let profitNum = $derived(financials?.profit == null ? null : Number(financials.profit));
 
   let visibleJobs = $derived(
     contact.jobs
@@ -67,22 +65,7 @@
 
 </script>
 
-<div class="customer-financials">
-  <h2 class="cf-name">{contact.name}</h2>
-  {#if financials}
-    <div class="cf-numbers">
-      <div class="cf-item">
-        <div class="cf-label">Total Invoiced</div>
-        <div class="cf-value cf-invoiced">{formatAmount(financials.invoiced)}</div>
-      </div>
-      <div class="cf-item">
-        <div class="cf-label">Total Profit</div>
-        <div class="cf-value" class:cf-profit-pos={profitNum != null && profitNum >= 0} class:cf-profit-neg={profitNum != null && profitNum < 0}>{formatAmount(financials.profit)}</div>
-      </div>
-    </div>
-  {/if}
-</div>
-
+<div class="page-body">
 <dl>
   <dt>Name</dt>
   <dd>{contact.name}</dd>
@@ -217,7 +200,11 @@
   <p>No {$viewMode === 'lite' ? 'open ' : ''}invoices.</p>
 {/if}
 
-<h3>Purchase Orders</h3>
+<h3>Purchase Orders
+  {#if $canManageFinancials && contact.business}
+    — <a href="#/purchase-orders/new?business={contact.business.business_id}&contact={contact.contact_id}">New Purchase Order</a>
+  {/if}
+</h3>
 {#if visiblePOs.length > 0}
   <table class="data-table">
     <thead>
@@ -287,23 +274,7 @@
     <button onclick={onDelete}>Delete</button>
   {/if}
 </p>
+</div>
 
 <style>
-  .customer-financials {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #1f2937;
-    padding: 14px 24px;
-    border-radius: 8px;
-    margin-bottom: 16px;
-  }
-  .cf-name { font-size: 22px; font-weight: 700; color: #fff; margin: 0; padding-left: 52px; }
-  .cf-numbers { display: flex; gap: 22px; }
-  .cf-item { text-align: right; }
-  .cf-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: rgba(255,255,255,0.65); }
-  .cf-value { font-size: 18px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; color: #fff; }
-  .cf-invoiced { color: #86efac; }
-  .cf-profit-pos { color: #86efac; }
-  .cf-profit-neg { color: #fca5a5; }
 </style>

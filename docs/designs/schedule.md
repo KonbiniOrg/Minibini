@@ -91,7 +91,7 @@ affordance) — mounted three ways:
 | Surface | Who | Route |
 |---|---|---|
 | Settings → Schedule (shop week) | `can_manage_config` | `PATCH /api/settings/` (`schedule_week_envelope`) |
-| Home → Time tab, bottom (`MyEnvelopeEditor`) | any authenticated user, self | `PUT /api/auth/me/schedule-envelope/` (`{"schedule_envelope": {...}\|null}`, null = reset) |
+| Home → Shifts tab, top (`MyEnvelopeEditor`) | any authenticated user, self | `PUT /api/auth/me/schedule-envelope/` (`{"schedule_envelope": {...}\|null}`, null = reset) |
 | Users → user profile page | `can_manage_time` **or** `can_manage_config` | `PUT /api/users/{id}/schedule-envelope/` |
 
 Saves are explicit (Save buttons; the editor only reports changes). The
@@ -282,6 +282,12 @@ Board's `JobChipStrip` is reused at the top.
 - **User-pickable job colors** (currently admin-editable only).
 - **Cross-lane drag (reassignment)** and **pin-to-specific-time drag**.
 - **"+N more" off-horizon indicator** when a queue extends past the horizon.
+- **Per-worker task buffers** — `schedule_task_buffer_minutes`
+  deliberately stays a single shop-wide value for now.
+
+Decided against (2026-07-05 hold-flag design): surfacing change-order
+state on a held job's schedule chip. The hold-reason hover is the
+signal; CO state lives on the job page.
 
 ---
 
@@ -300,4 +306,3 @@ Unlike the schedule's *forward* horizon, the Activity page uses a single
 reads it (read-only, never writes a default back), clamps to ≥ 1, and falls
 back to 5 when missing/unparseable. The settings API rejects non-int and `< 1`.
 Completed bleps reuse `BlepSerializer` so their shape matches `/api/bleps/`.
-Full design lives in `docs/plans/2026-06-16-activity-page-design.md`.

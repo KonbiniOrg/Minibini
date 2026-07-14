@@ -60,6 +60,7 @@ def reconcile(c):
     # pk; key those as (model, None). Reconcile never looks them up by pk.
     index = {(f['model'], f.get('pk')): f for f in c.fixture_data}
     _pass_estimate_version_chains(c, index)
+    _pass_invoiced_jobs_are_started(c, index)
     _pass_started_jobs_accept_estimate(c, index)
     _pass_estimate_expiry(c, index)
     _pass_estimate_dates(c, index)
@@ -95,6 +96,27 @@ def _pass_estimate_version_chains(c, index):
                 closed = entry['created_date'] or highest_created
                 fixture['fields']['closed_date'] = _as_dt_field(closed)
             prev_pk = entry['est_pk']
+
+
+def _pass_invoiced_jobs_are_started(c, index):
+    """Pass 1.4: a job carrying ANY invoice must be at least 'approved'.
+
+    The app's BILLABLE_JOB_STATUSES guard means even a draft invoice cannot
+    exist on a draft/submitted job, so the FreeAgent invoice is authoritative
+    that the job really went ahead, whatever its Kanban Stage says. Bump such
+    jobs to 'approved' — the minimal billable status (a deposit invoice on an
+    approved job is legal). Runs before the accept-estimate pass so the
+    bumped job gets an accepted estimate and (pass 5) a start_date, and
+    before expiry so it can't be estimate-rejected.
+    """
+    invoiced_jobs = {
+        f['fields']['job'] for f in c.fixture_data
+        if f['model'] == 'invoicing.invoice'
+    }
+    for f in c.fixture_data:
+        if (f['model'] == 'jobs.job' and f['pk'] in invoiced_jobs
+                and f['fields']['status'] in ('draft', 'submitted')):
+            f['fields']['status'] = 'approved'
 
 
 def _pass_started_jobs_accept_estimate(c, index):
@@ -269,30 +291,58 @@ def _pass_downgrade_completed_with_unpaid_invoices(c, index):
 
 
 def _pass_task_status_from_job(c):
-    """Pass 5: cancel tasks on cancelled/rejected jobs.
+    """Pass 5: reconcile task statuses with closed jobs.
+
+    - Cancelled/rejected jobs cancel ALL their tasks (nothing on a dead
+      job was or will be worked).
+    - work_complete/completed jobs cancel their still-PENDING tasks
+      (checked checklist items stay complete): the app's work-complete
+      gate (JobService.update_job, plan B4) forbids a non-terminal task
+      on a closed job — the shop finished the job, so unchecked items are
+      work that never happened.
+    - Every cancelled task then DETACHES its materials to the job as
+      loose rows (task=None), mirroring the app's cancel_task semantics —
+      a cancelled task never keeps pending materials attached. Loose
+      materials on worked jobs are consumed later by build_purchasing's
+      job-status rule, which is what keeps closed jobs free of pending
+      materials (the other half of the B4 gate).
 
     Task status is otherwise left as the builder set it — for checklist-
     derived tasks that is the per-item [X]/[ ] state, which must be
-    preserved. Only a cancelled or rejected job overrides its tasks.
+    preserved.
     """
     job_status = {
         f['pk']: f['fields']['status']
         for f in c.fixture_data if f['model'] == 'jobs.job'
     }
+    cancelled_task_pks = set()
     for f in c.fixture_data:
         if f['model'] != 'jobs.task':
             continue
-        if job_status.get(f['fields']['job']) in ('cancelled', 'rejected'):
+        st = job_status.get(f['fields']['job'])
+        if st in ('cancelled', 'rejected'):
             f['fields']['status'] = 'cancelled'
+        elif (st in ('work_complete', 'completed')
+                and f['fields']['status'] == 'pending'):
+            f['fields']['status'] = 'cancelled'
+        if f['fields']['status'] == 'cancelled':
+            cancelled_task_pks.add(f['pk'])
+    for f in c.fixture_data:
+        if (f['model'] == 'inventory.material'
+                and f['fields'].get('task') in cancelled_task_pks):
+            f['fields']['task'] = None
 
 
 def _pass_document_counters(c, index):
-    """Pass 7: set document-numbering counters to emitted record counts.
+    """Pass 8: set document-numbering counters to emitted record counts.
 
-    estimate_counter is intentionally excluded — estimate numbers now derive
-    from job_number ({job_number}-{version}), not from a counter, so
-    back-filling estimate_counter would be misleading. The key stays at
-    its initial value (0).
+    The counters are machine state in core.APPSTATE (core migration 0018
+    moved them out of Configuration; this pass silently no-opped while it
+    still looked them up under core.configuration). po_counter is counted
+    honestly here (zero — build_purchasing runs later and advances it past
+    the POs it synthesizes). estimate_counter is intentionally excluded —
+    estimate numbers derive from job_number ({job_number}-{version}), not
+    from a counter, so back-filling it would be misleading.
     """
     counts = {
         'job_counter':      'jobs.job',
@@ -301,6 +351,6 @@ def _pass_document_counters(c, index):
     }
     for key, model in counts.items():
         n = sum(1 for f in c.fixture_data if f['model'] == model)
-        fixture = _find(index, 'core.configuration', key)
+        fixture = _find(index, 'core.appstate', key)
         if fixture is not None:
             fixture['fields']['value'] = str(n)

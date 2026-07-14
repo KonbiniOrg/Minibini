@@ -18,6 +18,33 @@ class EstimateAPITest(BaseTestCase):
         response = self.client.get('/api/estimates/')
         self.assertEqual(response.status_code, 200)
 
+    def test_estimate_payload_carries_authoritative_total(self):
+        """The job-overview Scope block reads estimate.total; the serializer
+        must supply the summed line total (qty*price, matching the PDF and
+        financials._estimated), not leave the SPA to recompute it."""
+        from decimal import Decimal
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='T', last_name='Otal',
+                                         email='total@est.com')
+        job = Job.objects.create(contact=contact, job_number='JOB-EST-TOTAL-1')
+        est = Estimate.objects.create(
+            job=job, estimate_number='EST-TOTAL-1', version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+        EstimateLineItem.objects.create(
+            estimate=est, description='One', qty=Decimal('2'),
+            units='ea', price=Decimal('100.00'), line_number=1,
+        )
+        EstimateLineItem.objects.create(
+            estimate=est, description='Two', qty=Decimal('1'),
+            units='ea', price=Decimal('50.00'), line_number=2,
+        )
+        response = self.client.get(f'/api/estimates/?job={job.pk}')
+        self.assertEqual(response.status_code, 200)
+        row = next(r for r in response.data['results']
+                   if r['estimate_id'] == est.pk)
+        self.assertEqual(str(row['total']), '250.00')
+
     def test_create_rejected_when_job_already_has_estimate(self):
         """One estimate tree per job: a second create is refused (400), not a
         500 from the unique (job-derived) number collision."""

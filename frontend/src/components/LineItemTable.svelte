@@ -46,7 +46,7 @@
 </script>
 
 {#if lineItems.length > 0}
-  <table class="line-items-table">
+  <table class="data-table">
     <thead>
       <tr>
         <th>#</th>
@@ -127,8 +127,9 @@
 {/if}
 
 <style>
-  .line-items-table { border-collapse: collapse; width: 100%; margin-top: 10px; }
-  .line-items-table th, .line-items-table td { padding: 6px 10px; }
+  /* The table chrome (width, header band, padding, zebra) comes from the
+     house `.data-table` in app.css. Only the line-item-specific row/cell
+     semantics live here. */
   .subtotal-row { background-color: #f5f5f5; }
   .total-row { background-color: #e8e8e8; }
   .source-list { margin: 0; padding-left: 1em; list-style: disc; }

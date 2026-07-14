@@ -55,3 +55,15 @@ describe('BlepLogTable', () => {
     expect(getByRole('button', { name: /Edit/ })).toBeInTheDocument();
   });
 });
+
+describe('BlepLogTable timestamp convention', () => {
+  it('shows the calendar date instead of the day name past a week', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-16T12:00:00'));
+    const { getByText, queryByText } = render(BlepLogTable, {
+      props: { bleps: [{ ...closed, start_time: '2026-03-01T14:00:00', end_time: '2026-03-01T15:00:00' }] },
+    });
+    expect(getByText('Mar 1, 2:00 PM')).toBeInTheDocument();
+    expect(queryByText(/^Sun 2:00 PM$/)).toBeNull();
+  });
+});

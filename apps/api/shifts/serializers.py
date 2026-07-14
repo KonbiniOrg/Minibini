@@ -46,7 +46,7 @@ class ShiftChangeRequestSerializer(_BaseChangeRequestSerializer):
         # The specific bleps the requested shift span would orphan — open each
         # to trim/move it so the shift encloses it, then approve.
         return [{'type': 'blep', 'id': b.blep_id,
-                 'label': (b.task.name if b.task_id else None) or f'blep #{b.blep_id}'}
+                 'label': (b.task.name if b.task_id else None) or f'timeslip #{b.blep_id}'}
                 for b in obj.conflicting_records()]
 
 

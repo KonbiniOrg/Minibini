@@ -853,13 +853,23 @@ class JobDetailInvoiceFieldTest(TestCase):
         )
 
         # Absolute pin: guard against flat per-request regressions that the
-        # comparative assertion above cannot catch.  N=15 (was 13 before Task 3.4):
+        # comparative assertion above cannot catch.  N=16 (was 15 before the
+        # job-overview redesign's spend_breakdown refactor 2026-07-09):
         # +1 for the `fees` prefetch query, +1 for EstimateClaimService.claimed_set_for_job
         # (one query per job-detail to build the estimate-claim set).
+        # (`nav_targets` briefly added 3 more queries here — latest estimate / invoice /
+        # PO for the job nav rail — but that field was retired 2026-07-08 once the rail
+        # switched to job-scoped section routes, dropping the count back to 15.)
+        # +1 for apps.jobs.financials._blep_hours: _spent(job) is now
+        # spend_breakdown(job)['total'] by construction, and spend_breakdown always
+        # walks the job's bleps to report labor_hours — even when average_labor_cost
+        # is unset/zero, so labor_hours still reflects hours worked. This trades one
+        # query per job-detail for the total/labor/materials invariant holding by
+        # construction rather than by two formulas staying in sync.
         # If the jobs viewset gains new prefetches/annotations this number may need
         # updating — update it together with a comment explaining why the count changed.
         self.assertEqual(
-            count_one, 15,
-            f'Absolute query count for job-detail changed: expected 15, got {count_one}. '
+            count_one, 16,
+            f'Absolute query count for job-detail changed: expected 16, got {count_one}. '
             f'Update this pin if the viewset legitimately changed (add a comment explaining why).',
         )

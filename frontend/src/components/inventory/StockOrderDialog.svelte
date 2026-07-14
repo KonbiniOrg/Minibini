@@ -74,7 +74,7 @@
     <ul>
       {#each drafts as po (po.po_id)}
         <li><button type="button" disabled={busy} onclick={() => submit(po.po_id)}>
-          {po.po_number}
+          {po.po_number} — {po.business_name || 'no vendor'}
         </button></li>
       {/each}
     </ul>

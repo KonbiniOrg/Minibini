@@ -16,6 +16,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     po_status = serializers.SerializerMethodField()
     qty_on_hand = serializers.SerializerMethodField()
     qty_on_order = serializers.SerializerMethodField()
+    qty_available = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
 
     class Meta:
@@ -27,7 +28,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'consumption_state', 'released_qty', 'cost_source',
             'is_expense_bound',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
-            'qty_on_hand', 'qty_on_order',
+            'qty_on_hand', 'qty_on_order', 'qty_available',
             'invoice',
         ]
         read_only_fields = fields
@@ -57,6 +58,16 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     def get_qty_on_order(self, obj):
         from apps.inventory.serializer_helpers import material_qty_on_order
         return material_qty_on_order(obj)
+
+    def get_qty_available(self, obj):
+        if obj.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
+            return None
+        if not obj.inventory_item_id:
+            return None
+        earmarked = getattr(obj, '_inv_earmarked', None)
+        if earmarked is not None:
+            return str(obj.inventory_item.qty_on_hand - earmarked)
+        return str(obj.inventory_item.qty_available)
 
 
 class MaterialWriteSerializer(serializers.ModelSerializer):
@@ -105,6 +116,8 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     can_manage_job_path = 'job'
     invoice_source_type = 'task'
     assignee_name = serializers.SerializerMethodField()
+    parent_task_name = serializers.CharField(
+        source='parent_task.name', read_only=True, default=None)
     actual_hours = serializers.SerializerMethodField()
     scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
     scheme_algorithm = serializers.CharField(source='rate_scheme.algorithm', read_only=True, default=None)
@@ -116,20 +129,22 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     has_bleps = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
     claimed = serializers.SerializerMethodField()
+    can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
         fields = [
             'task_id', 'name', 'description', 'sort_order', 'status',
             'blocked_reason',
-            'parent_task', 'assignee', 'assignee_name', 'worker_queue',
+            'parent_task', 'parent_task_name', 'assignee', 'assignee_name',
+            'worker_queue',
             'rate_scheme', 'active_modifiers',
             'est_qty', 'est_worker_time', 'actual_qty',
             'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
             'effective_rate', 'computed_charge',
             'actual_hours',
             'has_active_blep', 'active_worker_count', 'has_bleps',
-            'can_manage',
+            'can_manage', 'can_edit',
             'invoice',
             'claimed',
         ]
@@ -181,6 +196,24 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         """True iff a non-superseded estimate on this job has claimed this task."""
         claims = self.context.get('estimate_claims') or frozenset()
         return ('task', obj.pk) in claims
+
+    def get_can_edit(self, obj):
+        """The C1 editability matrix, precomputed for the SPA: pending is
+        open to any authenticated user; in_progress/blocked to the manager
+        atom, the job's PM, or the task's assignee; terminal is frozen.
+        False without a request in context (nested render) — the tree
+        falls back to hiding edit affordances, never showing dead ones."""
+        request = self.context.get('request')
+        if request is None or not getattr(request, 'user', None) \
+                or not request.user.is_authenticated:
+            return False
+        if obj.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
+            return False
+        if obj.status == Task.STATUS_PENDING:
+            return True
+        from apps.jobs.services import JobService
+        return (obj.assignee_id == request.user.pk
+                or JobService.user_can_manage(request.user, obj.job))
 
 
 class TaskDetailSerializer(TaskSerializer):

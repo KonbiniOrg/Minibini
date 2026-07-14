@@ -177,7 +177,16 @@ class GetSourcePoolTest(TestCase):
         task_names = [t['name'] for t in pool['tasks']]
         self.assertIn('Site demo', task_names)
         self.assertIn('Inspection', task_names)
-        self.assertNotIn('Cancelled work', task_names)
+        # Cancelled tasks are IN the pool since plan C3 (2026-07-12):
+        # terminal — not complete — is the billability line, and the atom
+        # carries the task_cancelled flag so the biller chooses consciously.
+        self.assertIn('Cancelled work', task_names)
+        cancelled_group = next(
+            t for t in pool['tasks'] if t['name'] == 'Cancelled work')
+        task_atom = next(
+            a for a in cancelled_group['atoms'] if a['type'] == 'task')
+        self.assertTrue(task_atom['task_cancelled'])
+        self.assertEqual(task_atom['state'], 'available')
 
     def test_empty_task_has_flag_set(self):
         # Every Task has a rate_scheme, so every task always has at least the

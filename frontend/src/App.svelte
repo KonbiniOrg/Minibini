@@ -2,9 +2,11 @@
   import Router, { location } from 'svelte-spa-router';
   import Sidebar from './components/Sidebar.svelte';
   import CurrentBlepBand from './components/CurrentBlepBand.svelte';
+  import ShiftBand from './components/ShiftBand.svelte';
   import MessageOverlay from './components/MessageOverlay.svelte';
   import { user, authChecked, checkAuth } from './stores/auth.js';
   import { refreshCurrentBlep, currentBlep } from './stores/currentBlep.js';
+  import { refreshCurrentShift, currentShift } from './stores/shift.js';
   import LoginPage from './routes/LoginPage.svelte';
   import Home from './routes/Home.svelte';
   import ContactListPage from './routes/contacts/ContactListPage.svelte';
@@ -15,8 +17,7 @@
   import BusinessFormPage from './routes/contacts/BusinessFormPage.svelte';
   import JobListPage from './routes/jobs/JobListPage.svelte';
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
-  import JobEditPage from './routes/jobs/JobEditPage.svelte';
-  import DuplicateJobPage from './routes/jobs/DuplicateJobPage.svelte';
+  import JobRedirectToOverview from './routes/jobs/JobRedirectToOverview.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import CatalogInventoryPage from './routes/catalog/CatalogInventoryPage.svelte';
@@ -25,20 +26,23 @@
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
   import InvoiceListPage from './routes/invoices/InvoiceListPage.svelte';
   import InvoiceSendPage from './routes/invoices/InvoiceSendPage.svelte';
-  import InvoiceWizardPage from './routes/invoices/InvoiceWizardPage.svelte';
+  import InvoiceWizardRedirect from './routes/invoices/InvoiceWizardRedirect.svelte';
   import BillListPage from './routes/bills/BillListPage.svelte';
   import BillFormPage from './routes/bills/BillFormPage.svelte';
   import BillDetailPage from './routes/bills/BillDetailPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import SchedulePage from './routes/schedule/SchedulePage.svelte';
-  import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
   import EstimateSendPage from './routes/estimates/EstimateSendPage.svelte';
-  import EstimateWizardPage from './routes/estimates/EstimateWizardPage.svelte';
+  import EstimateWizardRedirect from './routes/estimates/EstimateWizardRedirect.svelte';
   import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
   import JobShipmentsPage from './routes/jobs/JobShipmentsPage.svelte';
+  import JobEstimatePage from './routes/jobs/JobEstimatePage.svelte';
+  import JobInvoicePage from './routes/jobs/JobInvoicePage.svelte';
   import JobHistoryPage from './routes/jobs/JobHistoryPage.svelte';
+  import JobPOsPage from './routes/jobs/JobPOsPage.svelte';
+  import JobEmailsPage from './routes/jobs/JobEmailsPage.svelte';
   import PackingListPrint from './routes/shipments/PackingListPrint.svelte';
   import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
   import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
@@ -59,6 +63,7 @@
   import EmailAssociateBillPage from './routes/email/EmailAssociateBillPage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
   import ChangeOrderDetailPage from './routes/change-orders/ChangeOrderDetailPage.svelte';
+  import ChangeOrderRedirect from './routes/change-orders/ChangeOrderRedirect.svelte';
   import ChangeOrderSendPage from './routes/change-orders/ChangeOrderSendPage.svelte';
 
   const routes = {
@@ -77,14 +82,22 @@
     '/jobs/board': JobBoardPage,
     '/schedule': SchedulePage,
     '/jobs/:id': JobDetailPage,
-    '/jobs/:id/edit': JobEditPage,
-    '/jobs/:id/duplicate': DuplicateJobPage,
-    '/jobs/:id/tasklist': JobTaskListPage,
+    '/jobs/:id/edit': JobRedirectToOverview,
+    '/jobs/:id/duplicate': JobRedirectToOverview,
     '/jobs/:id/history': JobHistoryPage,
     '/jobs/:jobId/shipments': JobShipmentsPage,
+    '/jobs/:jobId/estimate': JobEstimatePage,
+    '/jobs/:jobId/estimate/:docId': JobEstimatePage,
+    '/jobs/:jobId/change-order/:coId': ChangeOrderDetailPage,
+    '/jobs/:jobId/invoice': JobInvoicePage,
+    '/jobs/:jobId/invoice/:docId': JobInvoicePage,
+    '/jobs/:jobId/tasks': JobTaskListPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
+    '/jobs/:jobId/pos': JobPOsPage,
+    '/jobs/:jobId/emails': JobEmailsPage,
+    '/jobs/:id/tasklist': JobTaskListPage,
     '/shipments/:sid/print': PackingListPrint,
-    '/estimates/:id/wizard': EstimateWizardPage,
+    '/estimates/:id/wizard': EstimateWizardRedirect,
     '/estimates/:id/send': EstimateSendPage,
     '/estimates/:id': EstimateDetailPage,
     '/purchase-orders': PurchaseOrderListPage,
@@ -93,7 +106,7 @@
     '/purchase-orders/:id/send': PurchaseOrderSendPage,
     '/purchase-orders/:id': PurchaseOrderDetailPage,
     '/invoices': InvoiceListPage,
-    '/invoices/:id/wizard': InvoiceWizardPage,
+    '/invoices/:id/wizard': InvoiceWizardRedirect,
     '/invoices/:id/send': InvoiceSendPage,
     '/invoices/:id': InvoiceDetailPage,
     '/bills': BillListPage,
@@ -117,9 +130,12 @@
     '/email/:id/associate-po': EmailAssociatePOPage,
     '/email/:id/associate-bill': EmailAssociateBillPage,
     '/email/:id': EmailDetailPage,
-    '/profile': ProfilePage,
+    // Home with the Profile / Help tab active (tab derived from location
+    // in Home).
+    '/profile': Home,
+    '/help': Home,
     '/change-orders/:id/send': ChangeOrderSendPage,
-    '/change-orders/:id': ChangeOrderDetailPage,
+    '/change-orders/:id': ChangeOrderRedirect,
   };
 
   checkAuth();
@@ -142,14 +158,17 @@
     if ($user) sessionExpired = false;
   });
 
-  // Refresh the global current-Blep band on auth + every SPA route change.
+  // Refresh the global shift + current-Blep bands on auth + every SPA
+  // route change.
   $effect(() => {
     if ($user) {
       // Touch $location so this effect re-runs on navigation.
       $location;
       refreshCurrentBlep();
+      refreshCurrentShift();
     } else {
       currentBlep.set(null);
+      currentShift.set(null);
     }
   });
 </script>
@@ -159,7 +178,12 @@
 {:else if !$user}
   <LoginPage notice={sessionExpired ? 'Your session expired — please log in again.' : ''} />
 {:else}
-  <CurrentBlepBand />
+  <!-- Permanent shift strip; the timeslip band slides in beneath it while a
+       session runs. One sticky wrapper so the pair pins as a unit. -->
+  <header class="app-bands">
+    <ShiftBand />
+    <CurrentBlepBand />
+  </header>
   <Sidebar />
   <!--
     Overlay behavior: the sidebar is position:fixed at the --z-sidebar tier
@@ -171,3 +195,11 @@
   </div>
   <MessageOverlay />
 {/if}
+
+<style>
+  .app-bands {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+  }
+</style>

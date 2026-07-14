@@ -1,72 +1,79 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, within } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn(), post: vi.fn() } }));
 vi.mock('svelte-spa-router', () => ({ link: () => ({}) }));
 
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import JobDetail from '@/components/jobs/JobDetail.svelte';
 
+const NOW = new Date('2026-07-09T12:00:00');
+
 beforeEach(() => {
   api.get.mockReset();
   api.get.mockResolvedValue([]);
+  api.post.mockReset();
   user.set({ permissions: [] });
 });
 
-function baseJob(overrides = {}) {
+function baseProps(overrides = {}) {
   return {
-    job_id: 1, job_number: 'JOB-1', name: 'J', status: 'in_progress',
-    tasks: [], materials: [], ...overrides,
+    job: {
+      job_id: 1, job_number: 'JOB-1', name: 'J', status: 'in_progress',
+      can_manage: false, estimated_amount: '1000.00', materials: [],
+    },
+    estimates: { results: [] },
+    changeOrders: [],
+    invoices: { results: [] },
+    purchaseOrders: { results: [] },
+    shipments: [],
+    deliverableCount: 0,
+    overview: { due: null, spend: {}, work: {} },
+    now: NOW,
+    ...overrides,
   };
 }
 
-describe('JobDetail invoiced indicator', () => {
-  // The Tasks & Materials pillar's read-only tables render an "Invoiced · NUM"
-  // link (href to the invoice) on billed tasks/materials/expenses.
-  it('renders an Invoiced link on an invoiced task', async () => {
-    const job = baseJob({
-      tasks: [{ task_id: 7, name: 'Cut', status: 'complete',
-                invoice: { id: 3, number: 'INV-3' } }],
-    });
-    // A job with tasks opens the Tasks & Materials pillar by default.
-    const { findByRole } = render(JobDetail, { props: { job, expenses: [] } });
-    const link = await findByRole('link', { name: /Invoiced/ });
-    expect(link.getAttribute('href')).toBe('#/invoices/3');
+function invoicingBlock(container) {
+  const blocks = [...container.querySelectorAll('.summary-blocks .summary-block')];
+  return blocks.find((b) => within(b).queryByText('Invoicing'));
+}
+
+describe('JobDetail — Invoicing block', () => {
+  it('is dormant ("none yet") when the job has no invoices', () => {
+    const { container } = render(JobDetail, { props: baseProps() });
+    const block = invoicingBlock(container);
+    expect(block.classList.contains('dormant')).toBe(true);
+    expect(block.textContent).toContain('none yet');
   });
 
-  it('omits the link when task.invoice is null', async () => {
-    const job = baseJob({
-      tasks: [{ task_id: 7, name: 'Cut', status: 'complete', invoice: null }],
+  it('activates and reads the server-supplied invoice total', () => {
+    const props = baseProps({
+      invoices: { results: [{
+        invoice_id: 3, invoice_number: 'INV-3', status: 'open',
+        sent_date: '2026-07-01', closed_date: null, total: '400.00',
+      }] },
     });
-    const { findByText, queryByRole } = render(JobDetail, { props: { job, expenses: [] } });
-    await findByText('Cut'); // wait for the table to render
+    const { container } = render(JobDetail, { props });
+    const block = invoicingBlock(container);
+    expect(block.classList.contains('active')).toBe(true);
+    expect(block.textContent).toContain('INV-3');
+    expect(block.textContent).toContain('$400');
+  });
+
+  it('no longer renders per-atom "Invoiced ·" links (the pillar tables are gone)', () => {
+    const props = baseProps({
+      job: {
+        job_id: 1, job_number: 'JOB-1', name: 'J', status: 'in_progress',
+        can_manage: false, estimated_amount: '1000.00',
+        materials: [{ material_id: 11, description: 'Steel', quantity: '1',
+                      invoice: { id: 5, number: 'INV-5' } }],
+        tasks: [{ task_id: 7, name: 'Cut', status: 'complete',
+                  invoice: { id: 3, number: 'INV-3' } }],
+      },
+    });
+    const { queryByRole } = render(JobDetail, { props });
     expect(queryByRole('link', { name: /Invoiced/ })).toBeNull();
-  });
-
-  it('renders an Invoiced link on an invoiced material', async () => {
-    const job = baseJob({
-      materials: [{ material_id: 11, description: 'Steel', quantity: '1',
-                    unit_cost: '10.00', units: 'kg',
-                    consumption_state: 'pending',
-                    invoice: { id: 5, number: 'INV-5' } }],
-    });
-    const { getByText, findByRole } = render(JobDetail, { props: { job, expenses: [] } });
-    await fireEvent.click(getByText('Tasks & Materials')); // open the pillar (no tasks → collapsed by default)
-    const link = await findByRole('link', { name: /Invoiced/ });
-    expect(link.getAttribute('href')).toBe('#/invoices/5');
-  });
-
-  it('renders an Invoiced link on a loose expense', async () => {
-    const expenses = [
-      { id: 20, amount: '40.00', material: null, description: 'FedEx',
-        accounting_category_name: 'Freight',
-        invoice: { id: 7, number: 'INV-7' } },
-    ];
-    const job = baseJob({ materials: [] });
-    const { getByText, findByRole } = render(JobDetail, { props: { job, expenses } });
-    await fireEvent.click(getByText('Tasks & Materials')); // open the pillar
-    const link = await findByRole('link', { name: /Invoiced/ });
-    expect(link.getAttribute('href')).toBe('#/invoices/7');
   });
 });

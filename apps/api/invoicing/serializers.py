@@ -96,6 +96,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     due_date = serializers.SerializerMethodField()
     is_late = serializers.SerializerMethodField()
     job_has_other_invoices = serializers.SerializerMethodField()
+    total = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
@@ -106,7 +107,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'line_items', 'default_send_to',
             'job_number', 'job_name', 'job_description',
             'due_date', 'is_late',
-            'job_has_other_invoices',
+            'job_has_other_invoices', 'total',
         ]
         read_only_fields = [
             'invoice_id', 'invoice_number', 'created_date',
@@ -138,6 +139,17 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if obj.job and obj.job.contact:
             return obj.job.contact.email
         return ''
+
+    def get_total(self, obj):
+        # Authoritative document total: summed line qty*price, matching
+        # InvoiceSummarySerializer.total_anno and financials._invoiced. The
+        # job-overview Invoicing block consumes this rather than recomputing on
+        # the client (adjustment/percentage lines make client qty*price fragile).
+        total = sum(
+            (li.qty * li.price for li in obj.invoicelineitem_set.all()),
+            Decimal('0'),
+        )
+        return str(total.quantize(Decimal('0.01')))
 
     def get_job_number(self, obj):
         """Return the job number for display."""

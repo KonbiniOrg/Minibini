@@ -25,12 +25,26 @@ class SpineTest(unittest.TestCase):
         c.loader.load()
         c.csv_cards = c.csv_loader.load()
         spine = c.select_spine()
-        self.assertLessEqual(len(spine), 20)
+        # Active-stage cards are always included, so the spine may exceed a
+        # small limit; the fill portion is still capped.
         self.assertGreater(len(spine), 0)
         for entry in spine:
             self.assertIn('card', entry)
             self.assertIn('estimate_rows', entry)
             self.assertTrue(entry['estimate_rows'])
+
+    @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                         'datasets not present')
+    def test_active_board_cards_survive_the_limit(self):
+        # Regression (2026-07-13): the two Barbara Freeman jobs — in-progress
+        # cards created in 2025 — silently aged out of the newest-100 window
+        # even though their FreeAgent estimates matched.
+        c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=100)
+        c.loader.load()
+        c.csv_cards = c.csv_loader.load()
+        bases = {e['base_ref'] for e in c.select_spine()}
+        self.assertIn('07724', bases)
+        self.assertIn('07725', bases)
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
@@ -536,20 +550,77 @@ class AtomDerivationTest(unittest.TestCase):
             self.assertEqual(li['classification'], 'material')
 
 
+class InvoiceLineCategoryPickTest(unittest.TestCase):
+    """AC assignment for invoice line items is deterministic and plausible:
+    delivery-ish descriptions → DLV, FreeAgent 'Products' → PRD, the
+    material classification → MTL, everything else (labour, discounts,
+    credits) → SVC. No randomness — regen must be reproducible."""
+
+    def test_delivery_keywords_win_over_everything(self):
+        self.assertEqual(
+            P.pick_invoice_line_ac('Products', 'Delivery of finished panels',
+                                   'material'), 'DLV')
+        self.assertEqual(
+            P.pick_invoice_line_ac('Hours', 'shipping & handling', 'task'),
+            'DLV')
+
+    def test_products_item_type_maps_to_prd(self):
+        self.assertEqual(
+            P.pick_invoice_line_ac('Products', 'baltic birch ply',
+                                   'material'), 'PRD')
+
+    def test_material_classification_maps_to_mtl(self):
+        self.assertEqual(
+            P.pick_invoice_line_ac('-No Unit-', '3/4" MDF sheet',
+                                   'material'), 'MTL')
+
+    def test_labour_and_adjustments_map_to_svc(self):
+        self.assertEqual(
+            P.pick_invoice_line_ac('Hours', 'Cut panels', 'task'), 'SVC')
+        self.assertEqual(
+            P.pick_invoice_line_ac('Discount', 'loyalty discount',
+                                   'lineitem'), 'SVC')
+
+
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
 class InvoiceBuilderTest(unittest.TestCase):
     def setUp(self):
-        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=15)
+        # limit=40, not 15: the 15 most recent spine jobs carry no invoices
+        # at all, which made every line-item assertion in this class
+        # vacuously true. 40 yields real invoice lines.
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=40)
         self.c.loader.load()
         self.c.csv_cards = self.c.csv_loader.load()
         self.c.spine = self.c.select_spine()
+        # build_seed populates c.ac_by_code (the seeded ACs) — the
+        # orchestrator runs it before the other builders, so the test
+        # context must too, or emitted lines get a None accounting category.
+        build.build_seed(self.c)
         build.build_contacts_and_businesses(self.c)
         build.build_jobs(self.c)
         build.build_estimates(self.c)
 
     def _models(self, m):
         return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_every_invoice_line_item_has_a_seeded_accounting_category(self):
+        # Invoice lines have no source-linked atom to inherit an AC from at
+        # load time, so the converter must emit one on every line (mirrors
+        # the estimate-line rule above). The value must be one of the four
+        # seeded categories.
+        build.build_invoices(self.c)
+        seeded = {self.c.ac_by_code[code] for code in ('SVC', 'MTL', 'PRD', 'DLV')}
+        lis = self._models('invoicing.invoicelineitem')
+        self.assertTrue(lis, 'expected invoice line items in the fixture')
+        for li in lis:
+            self.assertIn(
+                li['fields']['accounting_category'], seeded,
+                f"invoice line {li['pk']} "
+                f"({li['fields'].get('description')!r}) has AC "
+                f"{li['fields']['accounting_category']!r} — every line "
+                f"needs one of the seeded categories",
+            )
 
     def test_invoices_attach_to_jobs_with_contiguous_line_numbers(self):
         build.build_invoices(self.c)
@@ -727,9 +798,9 @@ class MaterialLineKindTest(unittest.TestCase):
 class AnonymizeTest(unittest.TestCase):
     def test_email_domain_replaced(self):
         self.assertEqual(build._anonymize_email('oomung@abinari.it'),
-                         'oomung@example.com')
+                         'test+oomung@robot-six.com')
         self.assertEqual(build._anonymize_email('noreply+5@example.com'),
-                         'noreply+5@example.com')
+                         'test+noreply+5@robot-six.com')
 
     def test_phone_prefix_replaced(self):
         self.assertEqual(build._anonymize_phone('408-323-3393'), '408-555-3393')
@@ -740,7 +811,7 @@ class AnonymizeTest(unittest.TestCase):
     def test_scrub_text(self):
         self.assertEqual(
             build._scrub_text('email john@neals.com or call 415-867-5309'),
-            'email john@example.com or call 415-555-5309')
+            'email test+john@robot-six.com or call 415-555-5309')
         # part-number-like sequences without the phone shape are untouched
         self.assertEqual(build._scrub_text('cut part A-109180-00 x10'),
                          'cut part A-109180-00 x10')
@@ -1113,14 +1184,22 @@ class InvoiceLineItemSourceWiringTest(unittest.TestCase):
         c.add_fixture('jobs.job', pk, {'job_number': '00001', 'status': 'completed'})
         return pk
 
-    def _add_task(self, c, job_pk, name='cut sheet'):
+    def _add_task(self, c, job_pk, name='cut sheet', status='complete'):
+        # Runs post-reconcile in the pipeline, so tasks carry final statuses;
+        # 'complete' is the billable default the claimer accepts.
         pk = c.next_pk('jobs.task')
-        c.add_fixture('jobs.task', pk, {'job': job_pk, 'name': name})
+        c.add_fixture('jobs.task', pk, {
+            'job': job_pk, 'name': name, 'status': status})
         return pk
 
-    def _add_material(self, c, job_pk, desc='plywood sheet'):
+    def _add_material(self, c, job_pk, desc='plywood sheet',
+                      consumption_state='consumed'):
+        # Runs post-purchasing in the pipeline, so materials carry final
+        # consumption states; only 'consumed' is billable.
         pk = c.next_pk('inventory.material')
-        c.add_fixture('inventory.material', pk, {'job': job_pk, 'description': desc})
+        c.add_fixture('inventory.material', pk, {
+            'job': job_pk, 'description': desc,
+            'consumption_state': consumption_state})
         return pk
 
     def _add_invoice(self, c, job_pk):
@@ -1205,6 +1284,54 @@ class InvoiceLineItemSourceWiringTest(unittest.TestCase):
         build.build_invoice_line_item_sources(c)
         self.assertEqual(self._sources(c), [])
 
+    # --- billability filters (only settled work links to an invoice) ------
+
+    def test_pending_task_is_never_claimed(self):
+        c = self._make_converter()
+        jp = self._add_job(c)
+        self._add_task(c, jp, status='pending')
+        inv_pk = self._add_invoice(c, jp)
+        self._add_line(c, inv_pk, 1, 'task', 'cut and assemble')
+        build.build_invoice_line_item_sources(c)
+        self.assertEqual(self._sources(c), [])
+
+    def test_cancelled_task_is_never_claimed(self):
+        # The app's billability line is terminal (complete OR cancelled), but
+        # converter-cancelled tasks never carry actuals (bleps only attach to
+        # complete tasks), so claiming one would put a zero-work task on a
+        # paid invoice. Only 'complete' claims.
+        c = self._make_converter()
+        jp = self._add_job(c)
+        self._add_task(c, jp, status='cancelled')
+        inv_pk = self._add_invoice(c, jp)
+        self._add_line(c, inv_pk, 1, 'task', 'cut and assemble')
+        build.build_invoice_line_item_sources(c)
+        self.assertEqual(self._sources(c), [])
+
+    def test_pending_material_is_never_claimed(self):
+        c = self._make_converter()
+        jp = self._add_job(c)
+        self._add_material(c, jp, consumption_state='pending')
+        inv_pk = self._add_invoice(c, jp)
+        self._add_line(c, inv_pk, 1, 'material', 'maple plywood sheet')
+        build.build_invoice_line_item_sources(c)
+        self.assertEqual(self._sources(c), [])
+
+    def test_fallthrough_skips_non_final_atoms(self):
+        # A task-classified line whose job has only a pending task falls
+        # through to a consumed material — never to the pending task.
+        c = self._make_converter()
+        jp = self._add_job(c)
+        self._add_task(c, jp, status='pending')
+        mat_pk = self._add_material(c, jp)
+        inv_pk = self._add_invoice(c, jp)
+        self._add_line(c, inv_pk, 1, 'task', 'cut and assemble')
+        build.build_invoice_line_item_sources(c)
+        srcs = self._sources(c)
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(srcs[0]['fields']['source_type'], 'material')
+        self.assertEqual(srcs[0]['fields']['source_pk'], mat_pk)
+
 
 class ConvertEndToEndTest(unittest.TestCase):
     @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
@@ -1213,7 +1340,11 @@ class ConvertEndToEndTest(unittest.TestCase):
         fd, path = tempfile.mkstemp(suffix='.json')
         os.close(fd)
         self.addCleanup(os.unlink, path)
-        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=10)
+        # limit=40, not 10: the newest cards can be all-fresh draft jobs with
+        # unchecked checklists (zero complete tasks → zero bleps/shifts, as in
+        # the 2026-07-12 re-export). 40 reaches far enough back for real
+        # completed work — same reasoning as InvoiceBuilderTest's limit.
+        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=40)
         c.convert()
         with open(path) as f:
             data = json.load(f)
@@ -1226,6 +1357,153 @@ class ConvertEndToEndTest(unittest.TestCase):
         self.assertIn('jobs.blep', models)
         self.assertIn('core.shift', models)
         self.assertNotIn('jobs.workorder', models)
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class ConvertedStateInvariantsTest(unittest.TestCase):
+    """Full-pipeline invariants the running app enforces and the converted
+    fixture must therefore satisfy (2026-07-12 tasks refinements):
+
+    - only settled work links to an invoice (complete tasks / consumed
+      materials — the app's billability line is terminal, and converter
+      cancelled tasks carry no actuals);
+    - work_complete/completed means every task terminal and no pending
+      material (the B4 work-complete gate in JobService.update_job);
+    - a cancelled task keeps no pending materials attached (the app's
+      cancel_task detaches them to the job as loose rows).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        fd, path = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        # limit=100 (the CLI default): a wide-enough slice that the
+        # invariants sweep old finished jobs too, not just the recent
+        # all-draft tail. (Tests exercise the conversion itself, against
+        # datasets/ inputs — never any shipped fixture artifact.)
+        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=100)
+        c.convert()
+        os.unlink(path)
+        cls.data = c.fixture_data
+        cls.tasks = {f['pk']: f['fields'] for f in cls.data
+                     if f['model'] == 'jobs.task'}
+        cls.materials = {f['pk']: f['fields'] for f in cls.data
+                         if f['model'] == 'inventory.material'}
+        cls.jobs = {f['pk']: f['fields'] for f in cls.data
+                    if f['model'] == 'jobs.job'}
+        cls.sources = [f['fields'] for f in cls.data
+                       if f['model'] == 'invoicing.invoicelineitemsource']
+
+    def test_invoice_sources_only_link_complete_tasks(self):
+        offenders = [
+            (s['source_pk'], self.tasks[s['source_pk']].get('status'))
+            for s in self.sources if s['source_type'] == 'task'
+            and self.tasks[s['source_pk']].get('status') != 'complete'
+        ]
+        self.assertEqual(offenders, [],
+                         f'non-complete tasks linked to invoices: {offenders}')
+
+    def test_invoice_sources_only_link_consumed_materials(self):
+        offenders = [
+            (s['source_pk'],
+             self.materials[s['source_pk']].get('consumption_state'))
+            for s in self.sources if s['source_type'] == 'material'
+            and self.materials[s['source_pk']].get('consumption_state')
+            != 'consumed'
+        ]
+        self.assertEqual(offenders, [],
+                         f'unconsumed materials linked to invoices: {offenders}')
+
+    def test_work_complete_jobs_have_only_terminal_tasks(self):
+        closed = {pk for pk, jf in self.jobs.items()
+                  if jf.get('status') in ('work_complete', 'completed')}
+        offenders = [
+            (pk, tf.get('status'), tf.get('job'))
+            for pk, tf in self.tasks.items()
+            if tf.get('job') in closed
+            and tf.get('status') not in ('complete', 'cancelled')
+        ]
+        self.assertEqual(offenders, [],
+                         f'open tasks on closed jobs: {offenders}')
+
+    def test_work_complete_jobs_have_no_pending_materials(self):
+        closed = {pk for pk, jf in self.jobs.items()
+                  if jf.get('status') in ('work_complete', 'completed')}
+        offenders = [
+            (pk, mf.get('job'))
+            for pk, mf in self.materials.items()
+            if mf.get('job') in closed
+            and mf.get('consumption_state') == 'pending'
+            and Decimal(mf.get('quantity') or '0') > 0
+        ]
+        self.assertEqual(offenders, [],
+                         f'pending materials on closed jobs: {offenders}')
+
+    def test_cancelled_tasks_keep_no_pending_materials_attached(self):
+        cancelled = {pk for pk, tf in self.tasks.items()
+                     if tf.get('status') == 'cancelled'}
+        offenders = [
+            (pk, mf.get('task'))
+            for pk, mf in self.materials.items()
+            if mf.get('task') in cancelled
+            and mf.get('consumption_state') == 'pending'
+        ]
+        self.assertEqual(offenders, [],
+                         f'pending materials still on cancelled tasks: {offenders}')
+
+    def test_no_invoice_on_pre_approval_job(self):
+        pre = {pk for pk, jf in self.jobs.items()
+               if jf.get('status') in ('draft', 'submitted', 'rejected')}
+        offenders = [
+            (f['pk'], f['fields']['job'])
+            for f in self.data if f['model'] == 'invoicing.invoice'
+            and f['fields']['job'] in pre
+        ]
+        self.assertEqual(offenders, [],
+                         f'invoices on pre-approval jobs: {offenders}')
+
+    def test_earmarks_covered_by_qty_on_hand(self):
+        items = {f['pk']: f['fields'] for f in self.data
+                 if f['model'] == 'inventory.inventoryitem'}
+        earmarked = {}
+        for f in self.data:
+            if f['model'] == 'inventory.earmark':
+                item = f['fields']['inventory_item']
+                earmarked[item] = (earmarked.get(item, Decimal('0'))
+                                   + Decimal(f['fields']['quantity']))
+        offenders = [
+            (item, str(total), items[item].get('qty_on_hand'))
+            for item, total in earmarked.items()
+            if total > Decimal(items[item].get('qty_on_hand') or '0')
+        ]
+        self.assertEqual(offenders, [],
+                         f'earmarks exceed QOH: {offenders}')
+
+
+class DocumentCounterReconcileTest(unittest.TestCase):
+    """Dataset-independent: _pass_document_counters writes emitted record
+    counts onto the core.APPSTATE counter rows — migration 0018 moved the
+    machine counters out of Configuration, and the pass silently no-opped
+    while it still looked them up under core.configuration."""
+
+    def test_counters_land_on_appstate(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        for key in ('job_counter', 'invoice_counter', 'po_counter'):
+            c.add_fixture('core.appstate', key, {'value': '0'})
+        for _ in range(3):
+            c.add_fixture('jobs.job', c.next_pk('jobs.job'), {'status': 'draft'})
+        c.add_fixture('invoicing.invoice', c.next_pk('invoicing.invoice'), {})
+        index = {(f['model'], f.get('pk')): f for f in c.fixture_data}
+        reconcile._pass_document_counters(c, index)
+        appstate = {f['pk']: f['fields']['value'] for f in c.fixture_data
+                    if f['model'] == 'core.appstate'}
+        self.assertEqual(appstate['job_counter'], '3')
+        self.assertEqual(appstate['invoice_counter'], '1')
+        # No POs emitted at reconcile time (build_purchasing runs later and
+        # advances po_counter itself) — the pass writes the honest zero.
+        self.assertEqual(appstate['po_counter'], '0')
 
 
 class BuildHistoryUnitTest(unittest.TestCase):
@@ -1878,3 +2156,133 @@ class PurchasingBuilderTest(unittest.TestCase):
         self.assertNotEqual(ac_pk, 'None')
         ac_pks = {str(r['pk']) for r in self._m('core.accountingcategory')}
         self.assertIn(ac_pk, ac_pks)
+
+
+class InvoicedJobStatusReconcileTest(unittest.TestCase):
+    """Dataset-independent: a draft/submitted job carrying any invoice is an
+    app-unreachable state (BILLABLE_JOB_STATUSES guards every invoice path),
+    so reconcile bumps it to 'approved' — the minimal billable status (a
+    deposit invoice on an approved job is legal)."""
+
+    def _converter(self):
+        return NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+
+    def _job(self, c, status):
+        pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', pk, {'job_number': f'RJ{pk}', 'status': status})
+        return pk
+
+    def _invoice(self, c, job_pk, status='paid'):
+        pk = c.next_pk('invoicing.invoice')
+        c.add_fixture('invoicing.invoice', pk, {'job': job_pk, 'status': status})
+        return pk
+
+    def _run_pass(self, c):
+        index = {(f['model'], f.get('pk')): f for f in c.fixture_data}
+        reconcile._pass_invoiced_jobs_are_started(c, index)
+
+    def _status(self, c, job_pk):
+        return next(f['fields']['status'] for f in c.fixture_data
+                    if f['model'] == 'jobs.job' and f['pk'] == job_pk)
+
+    def test_draft_job_with_invoice_bumps_to_approved(self):
+        c = self._converter()
+        jp = self._job(c, 'draft')
+        self._invoice(c, jp)
+        self._run_pass(c)
+        self.assertEqual(self._status(c, jp), 'approved')
+
+    def test_submitted_job_with_draft_invoice_bumps_to_approved(self):
+        # Even a draft invoice can't exist on a pre-approval job in the app.
+        c = self._converter()
+        jp = self._job(c, 'submitted')
+        self._invoice(c, jp, status='draft')
+        self._run_pass(c)
+        self.assertEqual(self._status(c, jp), 'approved')
+
+    def test_started_job_with_invoice_untouched(self):
+        c = self._converter()
+        jp = self._job(c, 'in_progress')
+        self._invoice(c, jp)
+        self._run_pass(c)
+        self.assertEqual(self._status(c, jp), 'in_progress')
+
+    def test_draft_job_without_invoice_untouched(self):
+        c = self._converter()
+        jp = self._job(c, 'draft')
+        self._run_pass(c)
+        self.assertEqual(self._status(c, jp), 'draft')
+
+
+class SpineActiveCardPolicyTest(unittest.TestCase):
+    """Dataset-independent: non-archived cards in an ACTIVE stage (in
+    progress / invoice) are always selected, whatever their age — live
+    board work must never silently age out of the dataset. Remaining
+    slots fill newest-first as before."""
+
+    def _converter(self, cards, refs, limit):
+        c = NealsDataConverter('/dev/null', '/dev/null',
+                               output_path='/tmp/x.json', limit=limit)
+        class FakeLoader:
+            sheets_data = {'Estimates': [{'Reference': r} for r in refs]}
+        c.loader = FakeLoader()
+        c.csv_cards = cards
+        return c
+
+    def _card(self, ext, created, stage='estimate', archived=''):
+        return {'External ID': ext, 'Created at': created,
+                'Stage': stage, 'Archived at': archived}
+
+    def test_old_active_card_survives_the_limit(self):
+        cards = [
+            self._card('00001', '2026-07-01'),
+            self._card('00002', '2026-07-02'),
+            self._card('00003', '2026-07-03'),
+            self._card('00009', '2025-01-01', stage='In Progress'),
+        ]
+        c = self._converter(cards, ['00001', '00002', '00003', '00009'], limit=3)
+        bases = {e['base_ref'] for e in c.select_spine()}
+        self.assertIn('00009', bases)
+        self.assertEqual(len(bases), 3)  # active + the 2 newest others
+        self.assertNotIn('00001', bases)  # oldest non-active aged out
+
+    def test_archived_active_stage_card_ages_out_normally(self):
+        cards = [
+            self._card('00001', '2026-07-01'),
+            self._card('00002', '2026-07-02'),
+            self._card('00009', '2025-01-01', stage='In Progress',
+                       archived='2025-06-01'),
+        ]
+        c = self._converter(cards, ['00001', '00002', '00009'], limit=2)
+        bases = {e['base_ref'] for e in c.select_spine()}
+        self.assertNotIn('00009', bases)
+
+    def test_old_done_card_ages_out_normally(self):
+        cards = [
+            self._card('00001', '2026-07-01'),
+            self._card('00002', '2026-07-02'),
+            self._card('00009', '2025-01-01', stage='Done or Rejected'),
+        ]
+        c = self._converter(cards, ['00001', '00002', '00009'], limit=2)
+        bases = {e['base_ref'] for e in c.select_spine()}
+        self.assertNotIn('00009', bases)
+
+    def test_spine_stays_newest_first_overall(self):
+        # Actives consume limit slots (total = max(limit, actives)): with
+        # limit=2, the active card plus ONE newest fill — ordered newest
+        # first overall.
+        cards = [
+            self._card('00001', '2026-07-01'),
+            self._card('00009', '2025-01-01', stage='Invoice'),
+            self._card('00002', '2026-07-02'),
+        ]
+        c = self._converter(cards, ['00001', '00002', '00009'], limit=2)
+        spine = c.select_spine()
+        self.assertEqual([e['base_ref'] for e in spine],
+                         ['00002', '00009'])
+
+    def test_limit_never_cuts_active_cards(self):
+        cards = [self._card('0000%d' % i, '2025-01-0%d' % i,
+                            stage='In Progress') for i in range(1, 5)]
+        c = self._converter(cards, [f['External ID'] for f in cards], limit=2)
+        self.assertEqual(len(c.select_spine()), 4)

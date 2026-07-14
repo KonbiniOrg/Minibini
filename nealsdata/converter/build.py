@@ -180,11 +180,24 @@ def build_configuration(c):
         c.add_fixture('core.appstate', key, {'value': '0'})
 
 
+# Anonymized emails route to a real catch-all test domain via plus-addressing
+# so nothing can leak to a real recipient. Every generated address is of the
+# form `test+<local>@robot-six.com`.
+_ANON_EMAIL_DOMAIN = 'robot-six.com'
+_ANON_EMAIL_PREFIX = 'test+'
+
+
+def _anon_email_from_local(local):
+    """Build an anonymized address from a local part."""
+    return f'{_ANON_EMAIL_PREFIX}{local}@{_ANON_EMAIL_DOMAIN}'
+
+
 def _anonymize_email(value):
-    """Replace an email address's domain with example.com, keeping the
-    local part. A value with no '@' is treated as the local part."""
+    """Replace an email address's domain and prefix the local part, yielding
+    `test+<local>@robot-six.com`. A value with no '@' is treated as the local
+    part."""
     local = (value or '').split('@', 1)[0].strip()
-    return f'{local}@example.com' if local else (value or '')
+    return _anon_email_from_local(local) if local else (value or '')
 
 
 def _anonymize_phone(value):
@@ -318,7 +331,7 @@ def _emit_contact(c, business_pk, fa_row=None, fallback_name=None):
 
     contact_pk = c.next_pk('contacts.contact')
     email = (_anonymize_email(email) if email
-             else f'noreply+{contact_pk}@example.com')
+             else _anon_email_from_local(f'noreply+{contact_pk}'))
     work = _anonymize_phone(work) if work else ''
     mobile = _anonymize_phone(mobile) if mobile else ''
     if not work and not mobile:
@@ -1649,7 +1662,13 @@ def build_invoices(c):
                 'units':               'none',  # intentional: FreeAgent invoice line items carry no unit signal
                 'description':         description,
                 'price':               f'{price:.2f}',
-                'accounting_category': None,
+                # Every line needs an AC (mirrors the estimate-line rule):
+                # deterministic, plausible pick across the four seeded
+                # categories — DLV/PRD/MTL/SVC by description + Item Type +
+                # classification. build_seed runs first, so ac_by_code is set.
+                'accounting_category': c.ac_by_code.get(
+                    P.pick_invoice_line_ac(item_type, description,
+                                           classification)),
                 'taxable_override':    None,
                 'tax_rate_override':   None,
             })
@@ -1738,6 +1757,13 @@ def build_invoice_line_item_sources(c):
         are inherently freeform).
       - Leftover lines stay freeform.
 
+    **Only settled work may link to an invoice** (the app's billability
+    line, plan C3): the task pool is 'complete' tasks only — pending/
+    in_progress/blocked are not billable, and converter-cancelled tasks
+    carry no actuals so claiming them would put zero-work tasks on paid
+    invoices — and the material pool is 'consumed' materials only. Runs
+    AFTER reconcile and build_purchasing so both filters see final states.
+
     The model's global ``unique_together(source_type, source_pk)`` prevents
     double-claim, so once an atom is claimed by one Invoice it stays claimed
     across the whole fixture.
@@ -1754,11 +1780,13 @@ def build_invoice_line_item_sources(c):
                 f['fields']['invoice'], []).append(f)
     tasks_by_job = {}
     for f in c.fixture_data:
-        if f['model'] == 'jobs.task':
+        if (f['model'] == 'jobs.task'
+                and f['fields'].get('status') == 'complete'):
             tasks_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
     materials_by_job = {}
     for f in c.fixture_data:
-        if f['model'] == 'inventory.material':
+        if (f['model'] == 'inventory.material'
+                and f['fields'].get('consumption_state') == 'consumed'):
             materials_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
     fees_by_job = {}
     for f in c.fixture_data:
@@ -2001,7 +2029,7 @@ def _mint_user(c):
         'username':       username,
         'first_name':     username.capitalize(),
         'last_name':      'Worker',
-        'email':          f'{username}@example.com',
+        'email':          _anon_email_from_local(username),
         'is_staff':       False,
         'is_active':      True,
         'date_joined':    f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00',
@@ -2556,6 +2584,18 @@ def build_purchasing(c):
         items[item_pk]['qty_on_hand'] = f"{Decimal(items[item_pk]['qty_on_hand']) + d:.2f}"
     for item_pk, d in sold_delta.items():
         items[item_pk]['qty_sold'] = f"{Decimal(items[item_pk]['qty_sold']) + d:.2f}"
+
+    # Reserved stock is physically on the shelf: an Earmark is a claim
+    # against qty_on_hand, so raise QOH to cover each item's accumulated
+    # earmarks (an earmark exceeding QOH reads as data drift in the app —
+    # negative availability — and validate_data flags it).
+    earmarked_totals = defaultdict(lambda: Decimal('0'))
+    for (item_pk, _job_pk), qty in earmarks.items():
+        if qty > 0:
+            earmarked_totals[item_pk] += qty
+    for item_pk, total in earmarked_totals.items():
+        if total > Decimal(items[item_pk]['qty_on_hand']):
+            items[item_pk]['qty_on_hand'] = f'{total:.2f}'
 
     for (item_pk, job_pk), qty in earmarks.items():
         if qty <= 0:

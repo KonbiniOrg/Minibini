@@ -59,6 +59,7 @@
   });
 </script>
 
+<div class="page-body">
 <h2>Create Bill from Email</h2>
 
 <p><a href="#/email/{params.id}">&larr; Back to Email</a></p>
@@ -84,3 +85,4 @@
     <p><small>You'll fill in the bill details (amount, dates, line items) on the next page.</small></p>
   </form>
 {/if}
+</div>

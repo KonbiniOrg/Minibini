@@ -133,6 +133,20 @@ class HomeEndpointTest(FixtureTestCase):
         data = response.json()
         self.assertIn('assigned_tasks', data)
         self.assertIn('recent_jobs', data)
+        self.assertIn('recent_days', data)
+
+    def test_recent_days_reads_activity_recent_days(self):
+        """The home lists' look-back window comes from activity_recent_days
+        (same key as the Activity page; default 5 when unset)."""
+        Configuration.objects.filter(key='activity_recent_days').delete()
+        response = self.client.get('/api/home/')
+        self.assertEqual(response.json()['recent_days'], 5)
+
+        Configuration.objects.update_or_create(
+            key='activity_recent_days', defaults={'value': '3'},
+        )
+        response = self.client.get('/api/home/')
+        self.assertEqual(response.json()['recent_days'], 3)
 
     def test_assigned_tasks_includes_job_tasks(self):
         self._make_task('WO task', assignee=self.user, worker_queue=1)
@@ -230,6 +244,52 @@ class HomeEndpointTest(FixtureTestCase):
         self.assertEqual(len(jobs), 2)  # distinct
         self.assertEqual(jobs[0]['job_number'], 'JOB-HOME-B')  # most recent first
         self.assertEqual(jobs[1]['job_number'], 'JOB-HOME-A')
+
+    def test_recent_jobs_windowed_by_activity_recent_days(self):
+        """Jobs whose last work by the user is older than the configured
+        look-back drop out; widening the window brings them back."""
+        task = self._make_task('T', assignee=self.user, worker_queue=1)
+        Blep.objects.create(user=self.user, task=task,
+                            start_time=timezone.now() - timedelta(days=10))
+
+        Configuration.objects.filter(key='activity_recent_days').delete()
+        response = self.client.get('/api/home/')
+        self.assertEqual(response.json()['recent_jobs'], [])  # default 5 days
+
+        Configuration.objects.update_or_create(
+            key='activity_recent_days', defaults={'value': '30'},
+        )
+        response = self.client.get('/api/home/')
+        jobs = response.json()['recent_jobs']
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]['id'], self.job.pk)
+
+    def test_recent_logins_scoped_windowed_ordered(self):
+        """recent_logins: own events only, inside activity_recent_days,
+        newest first. (setUp's client.login records one live event.)"""
+        from apps.core.models import LoginEvent
+        now = timezone.now()
+        old = LoginEvent.objects.create(user=self.user)
+        LoginEvent.objects.filter(pk=old.pk).update(
+            timestamp=now - timedelta(days=10))
+        LoginEvent.objects.create(user=self.other)  # not ours
+
+        response = self.client.get('/api/home/')
+        data = response.json()
+        logins = data['recent_logins']
+        # Only the live setUp login survives: the 10-day-old event is outside
+        # the default 5-day window, the other user's event is not ours.
+        self.assertEqual(len(logins), 1)
+        self.assertIn('timestamp', logins[0])
+        self.assertIn('ip_address', logins[0])
+
+        Configuration.objects.update_or_create(
+            key='activity_recent_days', defaults={'value': '30'},
+        )
+        logins = self.client.get('/api/home/').json()['recent_logins']
+        self.assertEqual(len(logins), 2)
+        stamps = [l['timestamp'] for l in logins]
+        self.assertEqual(stamps, sorted(stamps, reverse=True))
 
     def test_recent_jobs_limited_to_10(self):
         now = timezone.now()

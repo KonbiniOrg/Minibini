@@ -23,6 +23,7 @@
   $effect(() => { void params.id; load(); });
 </script>
 
+<div class="page-body">
 {#if loadError}
   <p><em>{loadError}</em></p>
   <p><a href="/expenses" use:link>← Back to expenses</a></p>
@@ -33,3 +34,4 @@
 {:else}
   <p><em>Loading...</em></p>
 {/if}
+</div>

@@ -68,8 +68,8 @@
         if (bad.length) {
           const names = bad.map(b => b.task_name).join(', ');
           conflictMsg = action === 'request'
-            ? `Heads up: this shift wouldn't cover your blep(s) on ${names} — your manager will reconcile that when reviewing the request.`
-            : `This shift would not cover blep(s) on ${names}.`;
+            ? `Heads up: this shift wouldn't cover your timeslip(s) on ${names} — your manager will reconcile that when reviewing the request.`
+            : `This shift would not cover timeslip(s) on ${names}.`;
         }
       } else {
         // `since` = the blep start: the backend returns shifts still active at/

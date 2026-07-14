@@ -27,17 +27,24 @@ from apps.core.services import NumberGenerationService, NotFoundError, SELF_EDIT
 # BlepService (formerly apps.jobs.services.blep_service)
 # ═══════════════════════════════════════════════════════════════════
 
+class TaskPermissionError(Exception):
+    """The acting user may not perform this task operation (→ HTTP 403)."""
+    pass
+
+
 class BlepPermissionError(Exception):
     """Raised when a caller is not permitted to perform a blep operation."""
     pass
 
 
 class TaskActualQtyRequired(Exception):
-    """Raised when completing an ENTERED_QTY task that has no worker-entered
-    quantity. Carries the rate scheme's unit label so the caller can prompt
-    for the value."""
-    def __init__(self, unit_label=''):
+    """Raised when completing an ENTERED_QTY task without an explicit
+    `add_qty` — completion always settles up through the prompt, even when
+    a running total is already on record. Carries the rate scheme's unit
+    label and the accumulated total so the caller can render the prompt."""
+    def __init__(self, unit_label='', current_qty=None):
         self.unit_label = unit_label
+        self.current_qty = current_qty
         super().__init__(
             'A quantity must be entered before this task can be completed.'
         )
@@ -185,10 +192,21 @@ class BlepService:
         )
         blep.delete()
         if first_activity:
+            # Deliberate update(): in_progress -> pending is NOT a legal
+            # forward transition (and stays out of VALID_TRANSITIONS — a
+            # save() would raise). It exists only as the undo of an
+            # accidental start. The explicit action row below keeps the
+            # history trail truthful — the promotion is an audit diff, so
+            # its undo must be visible too.
             reverted = Task.objects.filter(
                 pk=task.pk, status=Task.STATUS_IN_PROGRESS,
             ).update(status=Task.STATUS_PENDING)
             if reverted:
+                from apps.core.history import record_action
+                record_action(
+                    'task', task.pk,
+                    'Accidental start cancelled — reverted to pending',
+                )
                 from apps.inventory.services import MaterialService
                 for material in task.materials.all():
                     if material.consumption_state == \
@@ -298,28 +316,22 @@ class BlepService:
                     "No shift encloses this time — clock in / add a shift covering it first."
                 )
         with transaction.atomic():
+            # Lock the task row (like start_work) so the promotion's
+            # check-then-save can't race a concurrent historical create.
+            task = Task.objects.select_for_update().get(pk=task.pk)
             blep = BlepService._create(
                 task, target_user, start_time=start_time, end_time=end_time,
             )
-            was_pending = task.status == Task.STATUS_PENDING
-            TaskLifecycleService._promote_pending_task(task)
-            promoted = was_pending and task.status == Task.STATUS_IN_PROGRESS
-            if not promoted:
-                # The caller's instance may be stale (promotion is a
-                # conditional DB update) — read the true status before deciding
-                # whether the blep-start sweep applies.
-                task.refresh_from_db(fields=['status'])
+            # Mirror start_work: the first worker whose blep promotes the
+            # task becomes its assignee. A blep on an already-started task
+            # is "helping" and doesn't claim it.
+            promoted = TaskLifecycleService._promote_pending_task(
+                task, assignee_if_unassigned=target_user)
             if not promoted and task.status == Task.STATUS_IN_PROGRESS:
                 # A hand-added blep on a started task is still work happening:
                 # consume arrived stock, refuse while a material is missing.
                 # (The promotion above already swept a pending task's list.)
                 TaskLifecycleService._consume_pending_materials(task)
-            # Mirror start_work: the first worker whose blep promotes the
-            # task becomes its assignee. A blep on an already-started task
-            # is "helping" and doesn't claim it.
-            if promoted and not task.assignee_id:
-                Task.objects.filter(pk=task.pk).update(assignee=target_user)
-                task.assignee = target_user
             JobService.mark_work_started(task.job)
         return blep
 
@@ -500,11 +512,23 @@ class JobService:
                 )
 
         if status_changed and job.status == Job.STATUS_WORK_COMPLETE:
-            offenders = JobService._loose_pending_materials(job)
-            if offenders.exists():
-                names = ', '.join(m.description or str(m.pk) for m in offenders)
+            # work_complete means every task is terminal and every material
+            # resolved — enforced here so EVERY path into the status (the
+            # pill PATCH, the work-complete endpoint, internal walks) hits
+            # the same gate. The endpoint pre-checks work_complete_blockers
+            # to answer with a structured list instead of this error.
+            blockers = JobService.work_complete_blockers(job)
+            if blockers:
+                parts = []
+                if blockers['tasks']:
+                    parts.append('unfinished tasks: ' + ', '.join(
+                        t['name'] for t in blockers['tasks']))
+                if blockers['materials']:
+                    parts.append('pending materials: ' + ', '.join(
+                        m['description'] or str(m['material_id'])
+                        for m in blockers['materials']))
                 raise ValidationError(
-                    f'Cannot advance to work_complete: unresolved task-less materials: {names}'
+                    'Cannot advance to work_complete: ' + '; '.join(parts)
                 )
 
         if status_changed and job.status == Job.STATUS_COMPLETED:
@@ -522,6 +546,36 @@ class JobService:
             InventoryService.release_earmarks_for_job(job)
 
         return job
+
+    @staticmethod
+    def work_complete_blockers(job):
+        """Everything standing between this job and work_complete (B4).
+
+        Returns None when the job is ready, else
+        {'tasks': [{task_id, name, status}...],
+         'materials': [{material_id, description, task_id}...]} —
+        non-terminal tasks plus PENDING materials (task-attached or loose)
+        with quantity still committed. The work-complete endpoint returns
+        this shape so the SPA can render the "resolve these first" list;
+        update_job enforces the same predicate as a hard gate.
+        """
+        from apps.inventory.models import Material
+        tasks = list(
+            Task.objects.filter(job=job)
+            .exclude(status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED])
+            .order_by('sort_order', 'pk')
+            .values('task_id', 'name', 'status')
+        )
+        materials = list(
+            Material.objects.filter(
+                job=job,
+                consumption_state=Material.CONSUMPTION_STATE_PENDING,
+                quantity__gt=0,
+            ).order_by('pk').values('material_id', 'description', 'task_id')
+        )
+        if not tasks and not materials:
+            return None
+        return {'tasks': tasks, 'materials': materials}
 
     @staticmethod
     def _loose_pending_materials(job):
@@ -795,9 +849,13 @@ class JobService:
             JobService._copy_deliverables(source_job, new_job)
             if path == 'approved':
                 JobService._copy_work_to_job(source_job, new_job)
-                from apps.inventory.services import InventoryService
-                InventoryService.create_earmarks_for_job(new_job)
                 JobService._advance_to_approved(new_job, source_job)
+                # Earmark AFTER the status walk: create_earmarks_for_job
+                # no-ops on pre-approval jobs (the committed-jobs-only
+                # invariant), and the new job is draft until just above.
+                from apps.inventory.services import InventoryService
+                new_job.refresh_from_db()
+                InventoryService.create_earmarks_for_job(new_job)
             else:
                 # Estimate path: copy work onto the new (draft) job. Estimates
                 # project from the Job's atoms, so no worksheet is created and the
@@ -916,13 +974,19 @@ class TaskService:
     @staticmethod
     def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
                       est_qty=None, est_worker_time=None, actual_qty=None,
-                      allow_superseded_scheme=False, **task_fields):
+                      allow_superseded_scheme=False, parent_task_id=None,
+                      **task_fields):
         """Create Task directly. Requires rate_scheme_id.
 
         ``allow_superseded_scheme`` bypasses the superseded-scheme rejection.
         The only intended caller is the worksheet→job copy/carry-over core,
         which must clone a worksheet faithfully even when its rate scheme has
         since been superseded.
+
+        This is the single creation gate for direct tasks AND subtasks (the
+        /api/tasks/{id}/subtasks/ endpoint routes here too) — the on-hold,
+        superseded-scheme, depth, and assignee guards can't be skipped by
+        picking a different endpoint.
         """
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not rate_scheme_id:
@@ -936,6 +1000,23 @@ class TaskService:
             raise ValidationError(
                 {'rate_scheme': 'Percentage services are document adjustments and cannot bill a task.'}
             )
+        if parent_task_id:
+            try:
+                parent = Task.objects.get(pk=parent_task_id)
+            except Task.DoesNotExist:
+                raise ValidationError({'parent_task': ['Parent task not found.']})
+            if parent.job_id != job.pk:
+                raise ValidationError(
+                    {'parent_task': ['Parent task belongs to a different job.']})
+            if parent.parent_task_id is not None:
+                raise ValidationError({'parent_task': [
+                    'Subtasks cannot have their own subtasks — '
+                    'one level of subtasks only.']})
+        # Explicit assignment at create must be schedulable (the invariant
+        # lives on the assign gestures, not Task.clean — see the model).
+        if task_fields.get('assignee_id') and not est_worker_time:
+            raise ValidationError({'est_worker_time': [
+                'An assigned task must have an estimated worker time.']})
         with transaction.atomic():
             task = Task.objects.create(
                 job=job, name=name,
@@ -944,6 +1025,7 @@ class TaskService:
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
                 actual_qty=actual_qty,
+                parent_task_id=parent_task_id,
                 **task_fields,
             )
             if task.status not in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
@@ -951,21 +1033,43 @@ class TaskService:
         return task
 
     @staticmethod
-    def update_task(pk, **kwargs):
-        """Update an existing Task by PK."""
+    def update_task(pk, user=None, **kwargs):
+        """Update an existing Task by PK.
+
+        Editability matrix (C1): pending is open to any authenticated user;
+        in_progress/blocked require the manager atom, the job's PM, or the
+        task's ASSIGNEE (checked when `user` is passed — the API always
+        passes it; internal callers may omit it); terminal is frozen.
+        """
         try:
             task = Task.objects.get(pk=pk)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {pk} not found')
         _assert_job_not_on_hold(task.job, 'edit this task')
-        # A complete task is terminal and frozen: its work and billing inputs are
-        # settled. sort_order is cosmetic (list position) and stays editable so a
-        # list containing a complete task can still be reordered.
-        if task.status == Task.STATUS_COMPLETE and set(kwargs) - {'sort_order'}:
+        # A terminal task is frozen: its work and billing inputs are settled.
+        # sort_order is cosmetic (list position) and stays editable so a
+        # list containing a terminal task can still be reordered.
+        if (task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
+                and set(kwargs) - {'sort_order'}):
             raise ValidationError(
-                'Cannot edit a complete task. Its work and billing are settled; '
-                'corrections belong on the invoice.'
+                f'Cannot edit a {task.status} task. Its work and billing are '
+                f'settled; corrections belong on the invoice.'
             )
+        if (user is not None
+                and task.status in (Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED)
+                and not JobService.user_can_manage(user, task.job)
+                and task.assignee_id != user.pk):
+            raise TaskPermissionError(
+                'Only a manager, the project manager, or the assignee may '
+                'edit a task that is in progress or blocked.'
+            )
+        # Explicit assignment must be schedulable (invariant lives here and
+        # on assign/create_direct, not Task.clean — auto-assign is exempt).
+        if kwargs.get('assignee'):
+            est = kwargs.get('est_worker_time', task.est_worker_time)
+            if not est:
+                raise ValidationError({'est_worker_time': [
+                    'An assigned task must have an estimated worker time.']})
         for field, value in kwargs.items():
             setattr(task, field, value)
         task.full_clean()
@@ -976,15 +1080,20 @@ class TaskService:
     def delete_task(task_pk):
         """Delete a task if allowed.
 
-        Rules:
+        Rules (B5 — open to any authenticated user; the guards decide):
+        - The job must not be terminal (completed/cancelled/rejected) or held.
         - In-progress and complete tasks cannot be deleted (cancel instead).
         - Tasks with bleps (time entries) cannot be deleted (cancel instead).
+        - Tasks with a CONSUMED material cannot be deleted — consumption is
+          inventory history that must keep its anchor. Pending materials
+          detach to the job as loose rows (Material.task is SET_NULL).
         - Tasks claimed by a non-draft document or on an invoice cannot be
           deleted (cancel instead) — Rule 1: once the claiming document has
           been sent, the task is part of a promise. Draft claims stay
           deletable (release them by removing the line/atoms first).
         """
         from apps.estimates.claims import atom_claimed_by_non_draft_document
+        from apps.inventory.models import Material
         from apps.invoicing.claims import InvoiceClaimService
         from apps.invoicing.models import InvoiceLineItemSource
         try:
@@ -992,6 +1101,11 @@ class TaskService:
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_pk} not found')
         _assert_job_not_on_hold(task.job, 'delete this task')
+        if task.job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED,
+                               Job.STATUS_REJECTED):
+            raise ValidationError(
+                'Cannot delete a task on a closed job.'
+            )
 
         non_deletable = (Task.STATUS_IN_PROGRESS, Task.STATUS_COMPLETE)
         if task.status in non_deletable:
@@ -1001,6 +1115,11 @@ class TaskService:
         if Blep.objects.filter(task=task).exists():
             raise ValidationError(
                 "Cannot delete a task that has time entries. Cancel it instead."
+            )
+        if task.materials.filter(
+                consumption_state=Material.CONSUMPTION_STATE_CONSUMED).exists():
+            raise ValidationError(
+                "Cannot delete a task with consumed materials. Cancel it instead."
             )
         if (atom_claimed_by_non_draft_document('task', task.pk)
                 or InvoiceClaimService.is_invoiced(
@@ -1014,7 +1133,14 @@ class TaskService:
 
     @staticmethod
     def reorder_tasks(task_id, direction):
-        """Reorder a task within its container — delegates to BundlingService."""
+        """Reorder a task among its PEERS — delegates to BundlingService.
+
+        Peer-scoped (B3): a top-level task swaps only with other top-level
+        tasks, a subtask only with its siblings. The peer group falls out of
+        the task itself (parent_task=None ⇒ top level), so both the job
+        task list (top-level arrows) and the parent task's detail page
+        (sibling arrows) use this same entry point.
+        """
         from apps.core.services import BundlingService
 
         try:
@@ -1023,7 +1149,8 @@ class TaskService:
             raise NotFoundError(f'Task {task_id} not found')
         _assert_job_not_on_hold(task.job, 'reorder tasks on this job')
 
-        items_qs = Task.objects.filter(job=task.job)
+        items_qs = Task.objects.filter(
+            job=task.job, parent_task=task.parent_task)
 
         BundlingService.reorder_container_items(
             items_qs, 'task', task_id, direction,
@@ -1137,25 +1264,32 @@ class TaskLifecycleService:
     """Service for managing Task status transitions and Blep (time tracking) lifecycle."""
 
     @staticmethod
-    def _promote_pending_task(task):
+    def _promote_pending_task(task, assignee_if_unassigned=None):
         """A Blep means work has begun on the task: promote a `pending` task
-        to `in_progress` and consume its materials. No-op for any other
-        status (an `in_progress` task is already there; a backdated Blep
-        must not reopen a terminal or blocked task). The promotion is a
-        conditional UPDATE on the DB row, so a stale in-memory `task` cannot
-        cause a wrong promotion. Mutates `task` in place when it promotes.
+        to `in_progress` (claiming it for the first worker when unassigned)
+        and consume its materials. No-op for any other status (an
+        `in_progress` task is already there; a backdated Blep must not
+        reopen a terminal or blocked task). Returns True when it promoted.
+
+        Callers MUST hold the row lock (`select_for_update()` on the task),
+        which makes the check-then-save race-safe; the `save()` (rather than
+        a bulk update) is what makes the promotion history-visible. Folding
+        the auto-assign into the same save yields one audit row for the
+        whole "first worker started this" event.
 
         Material consumption is a side effect of the pending -> in_progress
         promotion, not of every clock-in — so it fires here, for both the
         live (start_work) and historical (create_historical) paths."""
-        promoted = Task.objects.filter(
-            pk=task.pk, status=Task.STATUS_PENDING,
-        ).update(status=Task.STATUS_IN_PROGRESS)
-        if promoted:
-            task.status = Task.STATUS_IN_PROGRESS
-            from apps.inventory.services import MaterialService
-            for material in task.materials.all():
-                MaterialService.consume(material)
+        if task.status != Task.STATUS_PENDING:
+            return False
+        task.status = Task.STATUS_IN_PROGRESS
+        if assignee_if_unassigned is not None and not task.assignee_id:
+            task.assignee = assignee_if_unassigned
+        task.save()
+        from apps.inventory.services import MaterialService
+        for material in task.materials.all():
+            MaterialService.consume(material)
+        return True
 
     @staticmethod
     def _consume_pending_materials(task):
@@ -1174,26 +1308,48 @@ class TaskLifecycleService:
             MaterialService.consume(material)
 
     @staticmethod
-    def set_actual_qty(task, qty):
-        """Record a worker-entered actual quantity (open to any
-        authenticated worker; complete_task enforces it's present/positive
-        for ENTERED_QTY completion)."""
+    def add_actual_qty(task_pk, qty):
+        """Apply a signed increment to an ENTERED_QTY task's actual_qty.
+
+        Every mid-work write is an add — there is no replace path. A
+        negative increment is the correction gesture (fat-fingered 50
+        instead of 5 → add -45), bounded so the total never drops below
+        zero. Locked so concurrent adds (two workers stopping a joined
+        task together) can't lose an entry."""
         from decimal import Decimal, InvalidOperation
-        try:
-            task.actual_qty = Decimal(str(qty))
-        except (InvalidOperation, TypeError, ValueError):
-            raise ValidationError({'actual_qty': 'Invalid decimal.'})
-        task.save(update_fields=['actual_qty'])
-        return task
+        with transaction.atomic():
+            task = Task.objects.select_for_update().get(pk=task_pk)
+            if task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
+                raise ValidationError('Task is already settled.')
+            if task.rate_scheme.algorithm != RateScheme.ENTERED_QTY:
+                raise ValidationError(
+                    'Task is not billed by entered quantity.')
+            try:
+                qty = Decimal(str(qty))
+            except (InvalidOperation, TypeError, ValueError):
+                raise ValidationError({'actual_qty': ['Invalid decimal.']})
+            if qty == 0:
+                raise ValidationError({'actual_qty': ['Must not be zero.']})
+            new_total = (task.actual_qty or Decimal('0')) + qty
+            if new_total < 0:
+                raise ValidationError({'actual_qty': [
+                    'Cannot reduce the total below zero.']})
+            task.actual_qty = new_total
+            task.save(update_fields=['actual_qty'])
+            return task
 
     @staticmethod
-    def complete_task(task_pk, actual_qty=None):
+    def complete_task(task_pk, add_qty=None):
         """Transition task from pending/in_progress/blocked -> complete.
 
-        `actual_qty` (optional Decimal): the worker-entered quantity. An
-        ENTERED_QTY task cannot be completed without a positive quantity —
-        either passed here or already on the task. If it's missing, raises
-        `TaskActualQtyRequired` so the caller can prompt for it.
+        `add_qty` (optional signed Decimal): the settle-up increment for an
+        ENTERED_QTY task. Completion ALWAYS round-trips through the prompt
+        for these tasks — when `add_qty` is absent, raises
+        `TaskActualQtyRequired` (carrying the running total) so the caller
+        can ask "any more to add?". Zero means "nothing more"; negative is
+        a last-moment correction; the resulting total must be positive.
+        The increment is applied under the row lock, so a teammate's
+        concurrent add is simply included in the final total.
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
@@ -1203,13 +1359,15 @@ class TaskLifecycleService:
                     f"Cannot complete task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
-            if actual_qty is not None:
-                if actual_qty <= 0:
-                    raise ValidationError('Quantity must be greater than 0.')
-                task.actual_qty = actual_qty
-            if (task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
-                    and (task.actual_qty is None or task.actual_qty <= 0)):
-                raise TaskActualQtyRequired(task.rate_scheme.unit_label)
+            if task.rate_scheme.algorithm == RateScheme.ENTERED_QTY:
+                if add_qty is None:
+                    raise TaskActualQtyRequired(
+                        task.rate_scheme.unit_label, task.actual_qty)
+                final = (task.actual_qty or Decimal('0')) + add_qty
+                if final <= 0:
+                    raise ValidationError({'add_qty': [
+                        'Final quantity must be greater than 0.']})
+                task.actual_qty = final
             if (task.rate_scheme.algorithm == RateScheme.ELAPSED_TIME
                     and task.rate_scheme.get_actual_qty(task) <= 0):
                 raise TaskTimeRequired()
@@ -1227,13 +1385,11 @@ class TaskLifecycleService:
                     f'({names}). If a material was used, consume it by hand; '
                     f'otherwise release it (restock its full quantity).'
                 )
-            update_fields = {'status': Task.STATUS_COMPLETE, 'blocked_reason': ''}
-            if actual_qty is not None:
-                update_fields['actual_qty'] = actual_qty
             BlepService._close_open(task=task)
-            Task.objects.filter(pk=task.pk).update(**update_fields)
+            # save() (not a bulk update) so the transition lands in history.
             task.status = Task.STATUS_COMPLETE
             task.blocked_reason = ''
+            task.save()
             JobService.mark_work_started(task.job)
             TaskLifecycleService._check_job_work_complete(task)
             return task
@@ -1262,9 +1418,18 @@ class TaskLifecycleService:
                 pass  # Pending task-less materials block auto-advance; task completion itself succeeds.
 
     @staticmethod
-    def block_task(task_pk, reason=''):
+    def block_task(task_pk, reason='', user=None, prior_qty_handled=False):
         """Transition task from pending/in_progress -> blocked.
-        Returns conflict dict if open Bleps exist."""
+
+        Blocking is usually discovered mid-session, so the requester's OWN
+        open blep never vetoes the block: it resolves settle-first (a
+        `prior_session_qty` conflict on an ENTERED_QTY task, mutating
+        nothing until the flagged re-post) and then closes via the shared
+        `_close_open` (sub-minimum ⇒ cancel with undo). Only OTHER
+        workers' open sessions refuse the block (`active_workers` — no
+        override; coordinate before retrying). Callers passing no `user`
+        can't claim any session as their own, so any open blep refuses.
+        """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             _assert_job_not_on_hold(task.job, 'block this task')
@@ -1274,9 +1439,10 @@ class TaskLifecycleService:
                     f"must be 'pending' or 'in_progress'."
                 )
             open_bleps = Blep.objects.filter(task=task, end_time__isnull=True)
-            if open_bleps.exists():
+            others = open_bleps if user is None else open_bleps.exclude(user=user)
+            if others.exists():
                 workers = []
-                for b in open_bleps:
+                for b in others:
                     workers.append({
                         'user_id': b.user_id,
                         'name': b.user.get_full_name() or b.user.username,
@@ -1284,11 +1450,24 @@ class TaskLifecycleService:
                         'started_at': b.start_time,
                     })
                 return {'conflict': 'active_workers', 'workers': workers}
-            Task.objects.filter(pk=task.pk).update(
-                status=Task.STATUS_BLOCKED, blocked_reason=reason,
-            )
+            if (user is not None and not prior_qty_handled
+                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and open_bleps.filter(user=user).exists()):
+                return {
+                    'conflict': 'prior_session_qty',
+                    'prior_task': {'task_id': task.pk, 'name': task.name},
+                    'unit_label': task.rate_scheme.unit_label,
+                    'current_qty': (
+                        str(task.actual_qty)
+                        if task.actual_qty is not None else None
+                    ),
+                }
+            if user is not None:
+                BlepService._close_open(user=user, task=task)
+            # save() (not a bulk update) so the transition lands in history.
             task.status = Task.STATUS_BLOCKED
             task.blocked_reason = reason
+            task.save()
             return task
 
     @staticmethod
@@ -1301,16 +1480,25 @@ class TaskLifecycleService:
                 raise ValidationError(
                     f"Cannot unblock task: status is '{task.status}', must be 'blocked'."
                 )
-            Task.objects.filter(pk=task.pk).update(
-                status=Task.STATUS_IN_PROGRESS, blocked_reason='',
-            )
+            # save() (not a bulk update) so the transition lands in history.
             task.status = Task.STATUS_IN_PROGRESS
             task.blocked_reason = ''
+            task.save()
             return task
 
     @staticmethod
-    def cancel_task(task_pk):
-        """Transition task from pending/in_progress/blocked -> cancelled."""
+    def cancel_task(task_pk, user=None, prior_qty_handled=False):
+        """Transition task from pending/in_progress/blocked -> cancelled.
+
+        Settle-first (same family as start_work / clock-out): cancelling
+        retains recorded quantities just as it retains closed bleps, so
+        when the *canceller's own* open blep on an ENTERED_QTY task would
+        be closed by this cancel, return a `prior_session_qty` conflict
+        (mutating nothing) so the SPA can offer — skippably — to record
+        the session's count first. Internal callers (change-order
+        acceptance) pass no `user` and never prompt; other workers'
+        sessions close silently, as with complete.
+        """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             _assert_job_not_on_hold(task.job, 'cancel this task')
@@ -1320,6 +1508,20 @@ class TaskLifecycleService:
                     f"Cannot cancel task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
+            if (user is not None and not prior_qty_handled
+                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and Blep.objects.filter(
+                        task=task, user=user, end_time__isnull=True,
+                    ).exists()):
+                return {
+                    'conflict': 'prior_session_qty',
+                    'prior_task': {'task_id': task.pk, 'name': task.name},
+                    'unit_label': task.rate_scheme.unit_label,
+                    'current_qty': (
+                        str(task.actual_qty)
+                        if task.actual_qty is not None else None
+                    ),
+                }
             BlepService._close_open(task=task)
             # Pending materials ride back to the job as loose rows (task=NULL)
             # instead of staying "needed" on a dead task; the user releases
@@ -1330,11 +1532,13 @@ class TaskLifecycleService:
             for material in task.materials.filter(
                     consumption_state=Material.CONSUMPTION_STATE_PENDING):
                 MaterialService.assign_task(material, None)
-            Task.objects.filter(pk=task.pk).update(
-                status=Task.STATUS_CANCELLED, blocked_reason='',
-            )
+            # save() (not a bulk update) so the transition lands in history.
+            # (_close_open above may have reverted a first-blep task to
+            # pending on the DB row; pending -> cancelled is legal, so the
+            # save still passes clean().)
             task.status = Task.STATUS_CANCELLED
             task.blocked_reason = ''
+            task.save()
             TaskLifecycleService._check_job_work_complete(task)
             return task
 
@@ -1360,13 +1564,48 @@ class TaskLifecycleService:
             Task.objects.filter(pk=other_pk).exclude(worker_queue=i).update(worker_queue=i)
 
     @staticmethod
-    def start_work(task_pk, user, action=None, on_behalf_of=None):
+    def prior_session_prompt(user, exclude_task_pk=None):
+        """Return a `prior_session_qty` conflict dict when `user` holds an
+        open blep on an ENTERED_QTY task (optionally excluding one task),
+        else None. Shared by start_work and the clock-out endpoint: an own
+        explicit gesture that would silently close such a session prompts
+        the SPA to settle it first."""
+        qs = Blep.objects.filter(
+            user=user, end_time__isnull=True,
+            task__rate_scheme__algorithm=RateScheme.ENTERED_QTY,
+        ).select_related('task__rate_scheme')
+        if exclude_task_pk is not None:
+            qs = qs.exclude(task_id=exclude_task_pk)
+        prior = qs.first()
+        if prior is None:
+            return None
+        prior_task = prior.task
+        return {
+            'conflict': 'prior_session_qty',
+            'prior_task': {
+                'task_id': prior_task.pk,
+                'name': prior_task.name,
+            },
+            'unit_label': prior_task.rate_scheme.unit_label,
+            'current_qty': (
+                str(prior_task.actual_qty)
+                if prior_task.actual_qty is not None else None
+            ),
+        }
+
+    @staticmethod
+    def start_work(task_pk, user, action=None, on_behalf_of=None,
+                   prior_qty_handled=False):
         """Create a Blep on the given task.
 
         - The blep is attributed to `target` = `on_behalf_of or user`. When
           `on_behalf_of` differs from `user`, the actor (`user`) must hold
           can_manage_time — a manager starting a worker's timer as a
           convenience.
+        - Own starts settle first: without `prior_qty_handled`, an open blep
+          on a different ENTERED_QTY task returns a `prior_session_qty`
+          conflict (mutating nothing) so the SPA can prompt for that
+          session's count. On-behalf starts never prompt.
         - If the task is pending, promotes it to in_progress and consumes
           materials (first worker to start the task), assigning the target.
         - If already in_progress, handles multi-worker conflicts via
@@ -1395,6 +1634,13 @@ class TaskLifecycleService:
                     f"Cannot start work: task status is '{task.status}', "
                     f"must be 'pending' or 'in_progress'."
                 )
+            # Evaluated before the active_worker conflict below: the old
+            # session gets settled before join/takeover on the new task.
+            if not prior_qty_handled and on_behalf_of is None:
+                prompt = TaskLifecycleService.prior_session_prompt(
+                    target, exclude_task_pk=task.pk)
+                if prompt is not None:
+                    return prompt
             now = timezone.now()
 
             # Auto-clock-in: a worker starting a live blep must have an open
@@ -1407,10 +1653,8 @@ class TaskLifecycleService:
                 # task's materials) and assign. No conflict possible — nobody
                 # has touched it yet.
                 BlepService._close_open(user=target, now=now)
-                TaskLifecycleService._promote_pending_task(task)
-                if not task.assignee_id:
-                    Task.objects.filter(pk=task.pk).update(assignee=target)
-                    task.assignee = target
+                TaskLifecycleService._promote_pending_task(
+                    task, assignee_if_unassigned=target)
                 blep = BlepService._create(task, target, start_time=now)
                 JobService.mark_work_started(task.job)
                 # Promote only when the blepper IS the assignee — a
@@ -1444,7 +1688,10 @@ class TaskLifecycleService:
                 # it just adds the blep. No takeover-specific state handling.
                 for b in list(other_bleps):
                     BlepService._resolve_open_blep(b, now)
-                return TaskLifecycleService.start_work(task_pk, target)
+                # The prior-session prompt already ran (or was flagged) on
+                # the way in — don't re-prompt on the internal restart.
+                return TaskLifecycleService.start_work(
+                    task_pk, target, prior_qty_handled=True)
             # A blep on an in-progress task must consume any materials that
             # arrived (or refuse while one is still missing) — see the sweep.
             TaskLifecycleService._consume_pending_materials(task)
@@ -1458,12 +1705,23 @@ class TaskLifecycleService:
             return {'task': task, 'blep': blep}
 
     @staticmethod
-    def stop_work(task_pk, user, on_behalf_of=None):
+    def stop_work(task_pk, user, on_behalf_of=None, prior_qty_handled=False,
+                  add_qty=None):
         """Close the target's open Blep on this task.
 
         `target` = `on_behalf_of or user`. Stopping another user's timer
         (e.g. a worker who left and forgot to clock out) requires the actor
         (`user`) to hold can_manage_time.
+
+        Settle-first for own stops on ENTERED_QTY tasks: without
+        `prior_qty_handled`, returns a `prior_session_qty` conflict dict
+        and mutates NOTHING — the session keeps running until the SPA's
+        prompt resolves (recording the count is part of the work, and the
+        band stays honest because nothing has happened yet). The flagged
+        re-post may carry `add_qty` (the session count, > 0): the increment
+        applies and the blep closes in one transaction, so a failed entry
+        can never half-run. On-behalf stops never conflict — the actor
+        doesn't know the count.
         """
         target = on_behalf_of or user
         if target != user and not _has_manage_time(user):
@@ -1471,7 +1729,30 @@ class TaskLifecycleService:
                 "Stopping another user's timer requires can_manage_time."
             )
         with transaction.atomic():
-            task = Task.objects.get(pk=task_pk)
+            task = Task.objects.select_for_update().get(pk=task_pk)
+            if (on_behalf_of is None and not prior_qty_handled
+                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and Blep.objects.filter(
+                        task=task, user=target, end_time__isnull=True,
+                    ).exists()):
+                return {
+                    'conflict': 'prior_session_qty',
+                    'prior_task': {'task_id': task.pk, 'name': task.name},
+                    'unit_label': task.rate_scheme.unit_label,
+                    'current_qty': (
+                        str(task.actual_qty)
+                        if task.actual_qty is not None else None
+                    ),
+                }
+            if add_qty is not None:
+                if task.rate_scheme.algorithm != RateScheme.ENTERED_QTY:
+                    raise ValidationError(
+                        'Task is not billed by entered quantity.')
+                if add_qty <= 0:
+                    raise ValidationError({'add_qty': [
+                        'Must be greater than 0.']})
+                task.actual_qty = (task.actual_qty or Decimal('0')) + add_qty
+                task.save(update_fields=['actual_qty'])
             closed = BlepService._close_open(user=target, task=task)
             if not closed:
                 raise ValidationError(

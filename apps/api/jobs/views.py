@@ -4,10 +4,11 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.db.models import Q
+from django.db.models import Q, OuterRef, Subquery, Sum, DecimalField, Value
 from django.db.models import Prefetch
+from django.db.models.functions import Coalesce
 from apps.jobs.models import Job, Task, Fee
-from apps.inventory.models import Material
+from apps.inventory.models import Material, Earmark
 from apps.jobs.services import JobService, TaskService, FeeService
 from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
 from apps.estimates.models import WorkTemplate, Estimate, ServiceItem
@@ -32,6 +33,17 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 'materials',
                 queryset=Material.objects.select_related(
                     'inventory_item', 'po_line_item__purchase_order',
+                ).annotate(
+                    _inv_earmarked=Coalesce(
+                        Subquery(
+                            Earmark.objects.filter(inventory_item_id=OuterRef('inventory_item_id'))
+                            .values('inventory_item_id')
+                            .annotate(total=Sum('quantity'))
+                            .values('total')
+                        ),
+                        Value(Decimal('0.00')),
+                        output_field=DecimalField(max_digits=10, decimal_places=2),
+                    )
                 ),
             ),
             Prefetch(
@@ -56,7 +68,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         return super().destroy(request, *args, **kwargs)
 
     def get_permissions(self):
-        read_actions = ('list', 'retrieve', 'history', 'notes', 'agreement')
+        read_actions = ('list', 'retrieve', 'history', 'notes', 'agreement', 'overview')
         # add-from-template and create_material are IsAuthenticated only (workers
         # can add tasks/materials). task_detail (GET/PATCH/DELETE of a task) is
         # also open: any authenticated user may edit/delete a task. Delete stays
@@ -66,9 +78,12 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             return [IsAuthenticated()]
         if self.action == 'tasks':
             # GET (list) and POST (add a task) are open to any authenticated
-            # user — anyone may add a task to a job. Editing/deleting a task
-            # (the task_detail action) and marking all the job's work complete
-            # stay manager-or-PM via the fall-through to CanManageJobOrPM below.
+            # user — anyone may add a task to a job. task_detail (edit /
+            # delete) is likewise open (listed above); the C1 editability
+            # matrix in TaskService.update_task and the delete guards in
+            # TaskService.delete_task decide. Marking all the job's work
+            # complete stays manager-or-PM via the CanManageJobOrPM
+            # fall-through below.
             return [IsAuthenticated()]
         if self.action == 'start_invoice_wizard':
             from apps.api.permissions import CanManageFinancials
@@ -179,6 +194,12 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
     @action(detail=True, methods=['post'], url_path='work-complete', url_name='work-complete')
     def work_complete(self, request, pk=None):
         job = self.get_object()
+        # B4: with anything not final, mutate nothing and answer with the
+        # blocker list (the SPA's "Check Complete" modal). No-mutation +
+        # structured-response follows the settle-first conflict precedent.
+        blockers = JobService.work_complete_blockers(job)
+        if blockers:
+            return Response({'blockers': blockers})
         try:
             # Walk approved → in_progress → work_complete if needed.
             if job.status == Job.STATUS_APPROVED:
@@ -430,6 +451,22 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             'lines': serialized_lines,
             'grand_total': str(result['grand_total']),
         })
+
+    @action(detail=True, methods=['get'], url_path='overview', url_name='overview')
+    def overview(self, request, pk=None):
+        """Aggregate read for the job overview page: due-date countdown,
+        labor/materials spend split, and task-progress aggregates. See
+        apps.jobs.overview.JobOverviewService."""
+        from django.utils import timezone as django_timezone
+        from apps.jobs.overview import JobOverviewService
+        from apps.schedule.services import load_shop_envelope
+        job = self.get_object()
+        result = JobOverviewService.summary(
+            job,
+            today=django_timezone.localdate(),
+            envelope=load_shop_envelope(),
+        )
+        return Response(result)
 
     @action(detail=True, methods=['post'], url_path='add-from-template')
     def add_from_template(self, request, pk=None):

@@ -6,6 +6,8 @@
   import ShiftLogTable from '../time/ShiftLogTable.svelte';
   import TimeEditModal from '../time/TimeEditModal.svelte';
 
+  let { sinceDays = 7 } = $props();
+
   let shifts = $state([]);
   let loading = $state(true);
   let modalOpen = $state(false);
@@ -20,7 +22,7 @@
   async function load() {
     loading = true;
     try {
-      const since = new Date(Date.now() - 7 * 86400000).toISOString();
+      const since = new Date(Date.now() - sinceDays * 86400000).toISOString();
       const resp = await api.get(`/api/shifts/?user=me&since=${encodeURIComponent(since)}`);
       shifts = resp.results || resp;
     } finally { loading = false; }
@@ -36,6 +38,7 @@
 
 <section>
   <h3>My Shifts</h3>
+  <p class="window-note">(past {sinceDays} days)</p>
   {#if loading}<p>Loading…</p>
   {:else if shifts.length === 0}<p>No recent shifts.</p>
   {:else}
@@ -53,3 +56,7 @@
 
 <TimeEditModal open={modalOpen} recordType="shift" action={modalAction} record={editing}
   currentUser={$userStore} onSaved={onSaved} onClose={() => { modalOpen = false; editing = null; }} />
+
+<style>
+  .window-note { color: #6b7280; font-size: 0.85em; margin: -0.5em 0 0.5em; }
+</style>

@@ -21,6 +21,7 @@
     <input type="checkbox" checked={selected} onchange={onToggle}>
     <small>[{atom.type === 'task' ? 'task' : atom.type === 'expense' ? 'expense' : atom.type === 'fee' ? 'fee' : 'material'}]</small>
     {atom.description}
+    {#if atom.task_cancelled}<span class="atom-cancelled" title="This task was cancelled; its recorded work is still billable.">cancelled — work done</span>{/if}
     {#if atom.sub_info} <small>&middot; {atom.sub_info}</small>{/if}
     &mdash; {formatDetail(atom)}
   </label>
@@ -48,5 +49,12 @@
     font-style: italic;
     cursor: default;
     user-select: none;
+  }
+  /* Cancelled-but-billable marker (C3) — amber, so the biller notices. */
+  .atom-cancelled {
+    display: inline-block; margin-left: 4px; padding: 0 6px;
+    font-size: 11px; font-weight: 600; border-radius: 3px;
+    background: #fef3c7; border: 1px solid #d97706; color: #92400e;
+    white-space: nowrap;
   }
 </style>

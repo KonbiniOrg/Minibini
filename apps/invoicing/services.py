@@ -499,7 +499,7 @@ class WizardAtomLabels:
         scheme = task.rate_scheme
         if scheme.algorithm == RateScheme.ELAPSED_TIME:
             qty = scheme.get_actual_qty(task)
-            return f'{qty:.2f} {scheme.unit_label} from bleps'
+            return f'{qty:.2f} {scheme.unit_label} from timeslips'
         if scheme.algorithm == RateScheme.ENTERED_QTY:
             qty = scheme.get_actual_qty(task)
             return f'{qty} {scheme.unit_label} entered'
@@ -601,7 +601,10 @@ class InvoiceWizardService(BaseWizardService):
         }
 
         def billability(atom_type, instance):
-            if atom_type == 'task' and instance.status != Task.STATUS_COMPLETE:
+            # Terminal — not complete — is the line (plan C3): cancelled
+            # tasks bill their recorded actuals (flagged in the pool row).
+            if atom_type == 'task' and instance.status not in (
+                    Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
                 return {'state': 'not_billable', 'not_billable_reason': 'task_incomplete',
                         'claiming_line_item_id': None, 'claiming_line_number': None,
                         'claiming_invoice_id': None, 'claiming_invoice_number': None}
@@ -615,7 +618,6 @@ class InvoiceWizardService(BaseWizardService):
 
         tasks = (
             Task.objects.filter(job=job)
-            .exclude(status=Task.STATUS_CANCELLED)
             .select_related('rate_scheme')
             .order_by('sort_order', 'pk')
         )
@@ -635,6 +637,9 @@ class InvoiceWizardService(BaseWizardService):
                 'rate': detail['rate'],
                 'units': detail['units'],
                 'amount': detail['amount'],
+                # Cancelled tasks stay billable (work done before the stop)
+                # but the biller must choose consciously — flag the row.
+                'task_cancelled': task.status == Task.STATUS_CANCELLED,
                 **state_info,
             })
 
@@ -840,14 +845,18 @@ class InvoiceWizardService(BaseWizardService):
     @classmethod
     def _validate_draft(cls, container):
         if container.status != Invoice.STATUS_DRAFT:
-            raise ValidationError('Wizard can only modify draft invoices.')
+            raise ValidationError('Can only modify draft invoices.')
 
     @classmethod
     def _assert_atom_billable(cls, instance):
         from apps.jobs.models import Task
         from apps.inventory.models import Material
-        if isinstance(instance, Task) and instance.status != Task.STATUS_COMPLETE:
-            raise ValidationError('Cannot bill a task that is not complete.')
+        # Terminal — not complete — is the billability line (plan C3):
+        # a cancelled task's recorded actuals are still work done, the same
+        # doctrine that keeps cancelled JOBS in BILLABLE_JOB_STATUSES.
+        if isinstance(instance, Task) and instance.status not in (
+                Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
+            raise ValidationError('Cannot bill a task that is not settled.')
         if isinstance(instance, Material) and (
             instance.consumption_state != Material.CONSUMPTION_STATE_CONSUMED
         ):

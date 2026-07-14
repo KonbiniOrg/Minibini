@@ -122,7 +122,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/payment-terms/` | `IsAuthenticated` | (read-only) | |
 | `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (incl. line items) | also `send-defaults` (GET, IsAuth), `send` (POST, can_manage_jobs) |
 | `/api/est-worksheets/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM | |
-| `/api/tasks/` (flat lifecycle) | `IsAuthenticated` | `IsAuthenticated`; `cancel` requires `can_manage_jobs` **OR** the job's PM | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
+| `/api/tasks/` (flat lifecycle) | `IsAuthenticated` | `IsAuthenticated` (incl. `cancel`, opened 2026-07-12) | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
 | `/api/plan-tasks/` (worksheet-side) | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (incl. material actions) | retrieve open to all |
 | `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 30h rolling rule + `can_manage_time` for editing others |
 | `/api/shifts/` | `IsAuthenticated` | `IsAuthenticated` for `PATCH` (service enforces 30h self-edit window) | `DELETE` requires `can_manage_time` (200 + JSON body); `?user=me\|<id>`, `?since=` |
@@ -156,8 +156,8 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 
 #### Special cases
 
-- **Task add / edit / delete** — `POST /api/jobs/{id}/tasks/` (add a task) and `GET`/`PATCH`/`DELETE /api/jobs/{id}/tasks/{task_pk}/` (the `task_detail` action: read, edit, delete a task) are all `IsAuthenticated` — any authenticated user may add, edit, and delete a task. Delete is still blocked by `TaskService.delete_task` when the task is `in_progress`/`complete` or has Bleps (400) — that guard applies to everyone. (This revises the earlier policy where adding a task required `can_manage_jobs`.)
-- **Cancelling a task** — `POST /api/tasks/{id}/cancel/` requires `can_manage_jobs` **OR** the task's job's PM (`CanManageJobOrPM`). The other flat task lifecycle actions (`complete`, `block`, `unblock`, `start-work`, `stop-work`, `cancel-work`, `actual-qty`) stay `IsAuthenticated` — they are worker operations.
+- **Task add / edit / delete** — `POST /api/jobs/{id}/tasks/` (add a task) and `GET`/`PATCH`/`DELETE /api/jobs/{id}/tasks/{task_pk}/` (the `task_detail` action) are all `IsAuthenticated` at the endpoint; the **service enforces the per-status matrix** (C1, 2026-07-12): `pending` tasks are editable by anyone; `in_progress`/`blocked` tasks only by the `can_manage_jobs` atom, the job's PM, **or the task's assignee** (`TaskService.update_task` raises `TaskPermissionError` → 403; the serializer's computed `can_edit` flag mirrors it for the SPA); terminal tasks are frozen. Delete is blocked by `TaskService.delete_task` when the job is held/terminal, the task is `in_progress`/`complete`, has Bleps, has a consumed material, or is claimed by a non-draft document / live invoice — those guards apply to everyone. **Assignee-as-principal is unique to task editing** — it grants nothing else.
+- **Cancelling a task** — `POST /api/tasks/{id}/cancel/` is `IsAuthenticated` (opened to all workers 2026-07-12; cancel shares delete's principal set — it is the exit from a task that can no longer be deleted). All flat task lifecycle actions (`complete`, `block`, `unblock`, `start-work`, `stop-work`, `cancel-work`, `actual-qty/add`, `cancel`) are worker operations.
 - **Marking all the job's work complete** — `POST /api/jobs/{id}/work-complete/` and **`POST /api/jobs/{id}/reorder-tasks/`** require `can_manage_jobs` **OR** the job's PM (`CanManageJobOrPM`).
 - **`POST /api/jobs/{id}/add-from-template/`** and **`POST /api/jobs/{id}/create_material/`** are `IsAuthenticated` only — workers can self-serve adding template-driven tasks and materials.
 - **`POST /api/jobs/{id}/duplicate/`** requires `can_manage_jobs` **OR** the job's PM (`CanManageJobOrPM`). Duplicates the Job into a new one; body `{contact_id, path}`, returns `{job_id}` at 201.
@@ -213,7 +213,7 @@ All live under `/api/auth/` (`apps/api/auth/`):
 
 | Method | Path | Permission | Purpose |
 |---|---|---|---|
-| `POST` | `/api/auth/login/` | `AllowAny` | Authenticate; sets session cookie; returns `UserSerializer` body. 400 on invalid credentials with `{"detail": "Invalid credentials."}`. |
+| `POST` | `/api/auth/login/` | `AllowAny` | Authenticate; sets session cookie; returns `UserSerializer` body plus `first_login` (true iff `User.last_login` was NULL at authentication — i.e. this is the user's first login ever; the SPA lands them on the Help tab). 400 on invalid credentials with `{"detail": "Invalid credentials."}`. |
 | `POST` | `/api/auth/logout/` | `IsAuthenticated` | Clears session; returns `{"detail": "Logged out."}`. |
 | `GET` | `/api/auth/me/` | `IsAuthenticated` | Returns the current user as `UserSerializer`. |
 | `PATCH` | `/api/auth/me/` | `IsAuthenticated` | Updates own profile (`email`, `first_name`, `last_name`). Returns `UserSerializer` shape. |
@@ -229,7 +229,7 @@ All live under `/api/auth/` (`apps/api/auth/`):
 1. `frontend/src/components/LoginPage.svelte` is shown when `$user` is `null` after the initial `checkAuth()` mount probe.
 2. The form posts to `/api/auth/login/` via `frontend/src/stores/auth.js`'s `login(username, password)`. Success sets the `user` store; the SPA re-renders into the authenticated tree.
 3. `checkAuth()` on subsequent loads calls `GET /api/auth/me/` to populate the store from the existing session.
-4. After login the SPA lands on **Home** (`#/`), where the Clock In / Out band and the Time tab live — the worker's first action on arrival is typically to clock in.
+4. After login the SPA lands on **Home** (`#/`), where the Shifts tab lives (the Clock In / Out strip is now the global header) — the worker's first action on arrival is typically to clock in. A user's **first login ever** (`first_login` in the login response) lands on the Help tab (`#/help`, the tutorial) instead.
 
 ## User admin
 
@@ -316,13 +316,15 @@ If `actor == target` (an admin resetting their own password through this endpoin
 
 | Route | Component | Purpose |
 |---|---|---|
-| `/users` | `frontend/src/routes/users/UserListPage.svelte` | List all users with a compact permissions column (short labels). Active first, deactivated grouped below. "New user" link. |
+| `/users` | `frontend/src/routes/users/UserListPage.svelte` | Tabbed. **Users** (default): all users with a compact permissions column (short labels), active first, deactivated grouped below, "New user" link. **Shifts** and **Work Sessions** tabs (both gated `can_manage_time` OR `can_manage_financials`): Shifts = `ShiftRequestQueue` + `PayrollReport`; Work Sessions = every user's bleps recent-first via the shared `WorkSessionsList` (worker column shown, paged 25/page against `/api/bleps/`). "Work Sessions" is the UI term for bleps — matches the task detail page's session table. |
 | `/users/new` | `frontend/src/routes/users/UserCreatePage.svelte` | Create form. On success pushes to the new user's detail page. |
-| `/users/:id` | `frontend/src/routes/users/UserDetailPage.svelte` | Independent sub-forms (Profile, Permissions, Reset password, Account status, Schedule — an `EnvelopeEditor` writing `PUT /api/users/:id/schedule-envelope/`) plus a `UserReimbursementPanel` for expenses. Self-lockout hints rendered client-side; D3 (last-admin) is server-only. |
+| `/users/:id` | `frontend/src/routes/users/UserDetailPage.svelte` | Independent sub-forms (Profile, Permissions, Reset password, Account status, Schedule — an `EnvelopeEditor` writing `PUT /api/users/:id/schedule-envelope/`) plus a `UserReimbursementPanel` for expenses and a per-user **Work Sessions** list (`WorkSessionsList userId={id}` — worker column suppressed, paged). Self-lockout hints rendered client-side; D3 (last-admin) is server-only. |
 
 The sidebar Users link gates on `hasPerm('can_manage_config')`. The atom labels and codename list are hardcoded in `UserDetailPage.svelte` (`ATOMS` array, four entries). The component uses `currentUser` from the auth store to compute `isSelf` and disable the deactivate button and the `can_manage_config` checkbox when applicable.
 
 The list page renders permissions with a short-label dictionary: `can_manage_jobs → "jobs"`, `can_manage_financials → "financials"`, `can_manage_time → "time"`, `can_manage_config → "config"`.
+
+`WorkSessionsList` (`frontend/src/components/time/WorkSessionsList.svelte`) is the shared sessions surface: props `userId` ('me' | id | null=all), `showWorker`, `title`, `sinceDays`, `paginate`, `emptyText`. It owns the fetch (`/api/bleps/` — already ordered `-start_time`, filtered by `?user=`/`?since=`, paged 25 by `StandardPagination`), the Previous/Next pager, blep-activity refresh, and the Edit / Request Edit actions (Edit for `can_manage_time` or own-within-30h rows; Request Edit for own aged rows; others' rows get no action). The home "Recent Time" list (`RecentTimeList.svelte`) is now a thin wrapper over it (`userId="me"`, 7-day window, no pager — home keeps its old naming until the home-page naming pass).
 
 ## Self-service profile
 
@@ -345,23 +347,36 @@ After `serializer.save()`, the view calls `update_session_auth_hash(request, use
 
 ### `PUT /api/auth/me/schedule-envelope/`
 
-`me_schedule_envelope_view` (`IsAuthenticated`, self only). Body `{"schedule_envelope": {...}}` or `{"schedule_envelope": null}` (null resets to the shop default). `ScheduleEnvelopeSerializer` validates the payload via `apps.schedule.calendar_arithmetic.validate_week_envelope` and the view writes `request.user.schedule_envelope`. The editing surface is the bottom of the Home → Time tab (`MyEnvelopeEditor`, wrapping the shared `EnvelopeEditor` component that Settings → Schedule and the user-admin profile page also use). See `schedule.md` §2.
+`me_schedule_envelope_view` (`IsAuthenticated`, self only). Body `{"schedule_envelope": {...}}` or `{"schedule_envelope": null}` (null resets to the shop default). `ScheduleEnvelopeSerializer` validates the payload via `apps.schedule.calendar_arithmetic.validate_week_envelope` and the view writes `request.user.schedule_envelope`. The editing surface is the top of the Home → Shifts tab (`MyEnvelopeEditor`, wrapping the shared `EnvelopeEditor` component that Settings → Schedule and the user-admin profile page also use). See `schedule.md` §2.
 
 ### Frontend
 
-`frontend/src/routes/ProfilePage.svelte` — two independent forms (account info, change password) plus the view-mode toggle. Initializes from the `$user` store on first render; updates the store after a successful profile PATCH so the sidebar username stays in sync.
+`frontend/src/components/home/ProfilePanel.svelte` — the Profile tab of the Home page (route `#/profile` renders Home with this tab active; the sidebar username link targets it). Two independent forms (account info, change password) plus the view-mode toggle. Initializes from the `$user` store on first render; updates the store after a successful profile PATCH so the sidebar username stays in sync.
 
 - Account form fields: `email`, `first_name`, `last_name`. Username is shown read-only.
 - Password form fields: `current_password` (autocomplete `current-password`), `new_password` and `new_password_confirm` (both `new-password`).
 - Field-level errors rendered via `fieldErrors(errorsObject, fieldName)` from `frontend/src/lib/formErrors.js`.
 
-## Login tracking — DESIGNED, NOT YET IMPLEMENTED
+## Login tracking
 
-Preserved here so a future implementer can act on it. Nothing in this section is built. `frontend/src/components/home/RecentLoginsList.svelte` is a static placeholder ("Not yet implemented"). There is no `LoginEvent` model, no signal handler, no `recent_logins` field on the home payload, no prune command.
+Implemented 2026-07-11 (first pass of the 2026-04-04 design). Records a
+history of successful logins per user so the home page (and a future
+security/account-review screen) can display "your recent logins over the
+last N days". Django's `User.last_login` is a single overwritable
+timestamp — insufficient for a history (though it still powers the
+`first_login` flag on the login response, see Authentication above).
 
-### Purpose
-
-Record a history of successful logins per user so the home page (and a future security/account-review screen) can display "your recent logins over the last N days". Django's `User.last_login` is a single overwritable timestamp — insufficient.
+**What's built:** the `LoginEvent` model, the `user_logged_in` signal
+handler (`apps/core/signals.py`, connected in `CoreConfig.ready()`), the
+`recent_logins` key on the `/api/home/` payload (windowed by
+`activity_recent_days` like the other home lists — the design's fixed
+14-day window was superseded by the shared config key), and the
+`RecentLoginsList` table on Home → Shifts (Time / IP address columns,
+"(past X days)" note). **Not built:** the prune command (query-time
+filtering only — rows accumulate; negligible for a small shop), a
+standalone `/api/login-events/` endpoint, failed-attempt tracking,
+logout tracking, and a `TRUSTED_PROXIES` story for `X-Forwarded-For`
+(trusted as-is behind nginx; see Open questions).
 
 ### Non-goals
 
@@ -437,69 +452,41 @@ Edge cases:
 
 ### Retention
 
-First pass: query-time filter only. Consumers query with `timestamp__gte = now - timedelta(days=14)`. Rows accumulate indefinitely.
-
-For a small-shop deployment this is negligible storage (tens of rows per user per week). If pruning becomes necessary, add a cron-driven management command:
-
-```python
-# apps/core/management/commands/prune_login_events.py
-class Command(BaseCommand):
-    def handle(self, *args, **options):
-        cutoff = timezone.now() - timedelta(days=90)
-        LoginEvent.objects.filter(timestamp__lt=cutoff).delete()
-```
-
-Scheduling would live alongside the existing crontab config. Out of initial scope.
+Query-time filter only — rows accumulate indefinitely (negligible storage
+for a small shop: tens of rows per user per week). If pruning becomes
+necessary, add a cron-driven `prune_login_events` management command
+alongside the other scheduled processes. Out of scope for now.
 
 ### API
 
-Extend `HomeService.get_home_data(user)` to include a `recent_logins` key:
+`HomeService._recent_logins(user, recent_days)` supplies the
+`recent_logins` key on the `/api/home/` payload: the requester's own
+events with `timestamp >= now − activity_recent_days`, newest first,
+serialized as `{"timestamp": "...", "ip_address": "192.0.2.10"}`.
 
-```json
-{
-  "assigned_tasks": [...],
-  "recent_jobs": [...],
-  "recent_logins": [
-    {"timestamp": "2026-04-04T08:13:22Z", "ip_address": "192.0.2.10"}
-  ]
-}
-```
+No separate endpoint — the home widget is the only consumer. Add
+`GET /api/login-events/` later if a profile/security screen wants
+paginated access.
 
-Query:
-
-```python
-cutoff = timezone.now() - timedelta(days=14)
-LoginEvent.objects.filter(
-    user=user, timestamp__gte=cutoff,
-).order_by('-timestamp')
-```
-
-No separate endpoint initially — the home widget is the only consumer. Add `GET /api/login-events/` later if a profile/security screen wants paginated access.
-
-User agent is kept in the DB for future support investigation but omitted from the API payload by default — long, mostly uninformative to end users, privacy-adjacent.
+`user_agent` is kept in the DB for future support investigation but
+omitted from the API payload — long, mostly uninformative to end users,
+privacy-adjacent.
 
 ### Frontend
 
-Replace the placeholder `RecentLoginsList.svelte`:
-
-- Takes a `logins` prop (the `recent_logins` array from the home payload).
-- Plain list, one row per login: localised timestamp + IP address.
-- Empty state: "No logins in the last 14 days" — though the current session itself should produce at least one row.
-
-`Home.svelte` passes the prop through the same way it does for `recent_jobs`.
-
-The component already exists at `frontend/src/components/home/RecentLoginsList.svelte` as a static stub; its contents need to be replaced with the design above.
+`RecentLoginsList.svelte` (Home → Shifts tab): takes `logins` +
+`sinceDays` props from `Home.svelte` (same plumbing as `recent_jobs`),
+renders a standard `data-table` (Time via `formatSessionDateTime` / IP
+address, `—` when unknown) under a "(past X days)" window note. Empty
+state: "No recent logins." — though the current session itself produces
+at least one row.
 
 ### Testing
 
-- `LoginEvent` model: field defaults; query uses the compound index.
-- Signal handler: `self.client.login(...)` creates a row; logout does not; programmatic `login(request=None, ...)` does not crash.
-- Home payload: includes `recent_logins` scoped to the requester; excludes events older than 14 days; ordered most-recent first.
-- Failed login attempts do not create rows (sanity check).
-
-### Migration
-
-`python manage.py makemigrations core` — creates `login_events` and indexes. Per CLAUDE.md, only the human operator applies migrations.
+`tests/test_login_events.py` (signal recording: success writes a row,
+failure doesn't, IP/XFF capture, user-agent truncation, programmatic
+login) and `tests/test_api_home.py` (`recent_logins` scoped to the
+requester, windowed by `activity_recent_days`, newest first).
 
 ### Open questions
 
@@ -510,7 +497,7 @@ The component already exists at `frontend/src/components/home/RecentLoginsList.s
 
 | Item | Source | Notes |
 |---|---|---|
-| Implement login tracking end-to-end | `2026-04-04-login-tracking.md`, this doc | Model, signal, home-payload extension, retention command, frontend list. `RecentLoginsList.svelte` is the placeholder. |
+| Login-tracking leftovers | `2026-04-04-login-tracking.md`, this doc | Core feature shipped 2026-07-11 (model, signal, home payload, list). Remaining: prune command, `TRUSTED_PROXIES` for X-Forwarded-For, optional `/api/login-events/` endpoint. |
 | Deactivated-assignee visual indicator | `2026-04-10-user-admin-design.md` | Wherever a username/assignee renders (task cards, detail pages, task lists, history feed, search results) show "(deactivated)" or a greyed style when `is_active=False`. Requires an audit of all assignee-rendering components. |
 | User-to-Contact association in user admin UI | `2026-04-10-user-admin-design.md` | `User.contact` is already nullable; the admin form does not yet let the owner link or create a Contact. |
 | Admin-action history logging | `2026-04-10-user-admin-design.md` | `HistoryEntry` already supports it; create/deactivate/reset/re-permission events should be logged. |

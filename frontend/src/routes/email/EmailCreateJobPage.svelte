@@ -54,6 +54,7 @@
   });
 </script>
 
+<div class="page-body">
 <h2>Create Job from Email</h2>
 
 <p><a href="#/email/{params.id}">&larr; Back to Email</a></p>
@@ -88,3 +89,4 @@
     </p>
   </form>
 {/if}
+</div>

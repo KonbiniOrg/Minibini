@@ -82,7 +82,7 @@ Minibini/
 ├── tests/          # Test suite
 ├── scripts/        # Utility scripts (seed_data.sh)
 ├── docs/designs/   # Topic reference docs (nine consolidated areas — see below)
-├── docs/plans/     # Working directory for short-lived implementation plans (currently empty)
+├── docs/plans/     # Working directory for short-lived implementation plans (disposable; deleted once shipped)
 ├── minibini/       # Project configuration (settings, urls)
 └── manage.py
 ```
@@ -352,6 +352,7 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 - Fixtures in `/fixtures/` (JSON format)
 - Base test classes: `BaseTestCase`, `FixtureTestCase` in `tests/base.py`
 - **NEVER run `python manage.py test` from multiple subagents in parallel.** They all share one MySQL database and will deadlock fighting over test database creation/destruction. Only one agent at a time may run tests.
+- **Always pass `--noinput` to `manage.py test`.** A stale test database (left behind by any killed run) otherwise triggers an interactive delete prompt that hangs non-interactive shells forever. Both this rule and the no-parallel rule are **hook-enforced** (`.claude/hooks/check-django-test.sh`, wired in `.claude/settings.json`): a `manage.py test` command missing `--noinput`, or issued while another Django test run is alive, is denied before it executes — fix the command per the denial message and re-run.
 - **NEVER judge test pass/fail by a piped command's exit code.** `python manage.py test ... | tail` (or any pipe) reports the *last* command's exit code (`tail`'s, always 0), NOT Django's — so a green-looking exit can hide real failures. To gate on results, read the actual `OK` / `FAILED (failures=…, errors=…)` summary line and the `Ran N tests` count from the output (e.g. write to a file and grep it, or run without a pipe so the exit code is Django's). This applies to background runs especially.
 - **Front-end (Svelte SPA):** component/unit tests use Vitest, in `frontend/tests/`; run `npm run test:run` from `frontend/`. Extend TDD to the SPA — add/update a component's test in the same change. Patterns, conventions, and the behavior-vs-display triage live in `docs/designs/frontend-testing.md`.
 
@@ -394,4 +395,4 @@ See `docs/designs/quickbooks-integration.md` for the full reference, including O
 - QBO OAuth (browser redirects, not the deleted HTML layer): `apps/qbo/views.py`
 - Frontend: `frontend/src/` — `App.svelte`, `routes/`, `components/`, `stores/`, `lib/api.js`
 - Topic reference docs: `docs/designs/` (nine files; see "Topic reference docs" above)
-- Implementation plans (temporary working files): `docs/plans/` (currently empty)
+- Implementation plans (temporary working files): `docs/plans/` (disposable; deleted once shipped)

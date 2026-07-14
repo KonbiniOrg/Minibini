@@ -62,12 +62,13 @@
   }
 </script>
 
+<div class="page-body">
 {#if loading}
   <p>Loading…</p>
 {:else if error}
   <p class="error">{error}</p>
 {:else if data}
-  <h2>Recent activity (last {data.recent_days} days)</h2>
+  <h2>Recent activity</h2>
 
   <section class="on-shift">
     <h3>On shift</h3>
@@ -147,6 +148,7 @@
 
   <section class="completed">
     <h3>Recently completed work</h3>
+    <p class="window-note">(past {data.recent_days} days)</p>
     {#if data.completed_bleps.length === 0}
       <p class="empty">No completed work in the last {data.recent_days} days.</p>
     {:else}
@@ -154,10 +156,12 @@
     {/if}
   </section>
 {/if}
+</div>
 
 <style>
   .error { color: #a8071a; }
   .empty { color: #666; font-size: 13px; }
+  .window-note { color: #6b7280; font-size: 0.85em; margin: -0.5em 0 0.5em; }
 
   section { margin-bottom: 1.5rem; }
 

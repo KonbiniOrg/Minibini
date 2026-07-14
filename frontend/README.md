@@ -124,6 +124,43 @@ buttons `type="button"` — the HTML default inside a form is submit, so an
 untyped Cancel would save); the shell's `onSave`/`busy` path remains for
 future button-driven modals with an unambiguous primary action.
 
+### Loaders called from `$effect` are write-only
+
+Runes track *reads* transitively: an `$effect` subscribes to every piece of
+`$state` read synchronously anywhere down its call stack, including inside
+helper functions. So a loader that both reads and writes the same state
+(`if (!task || …) { … } task = await api.get(…)`) turns the mount effect
+into an infinite refetch loop — the effect re-runs every time the loader
+lands (2026-07-06: TaskDetailPage refetched its whole fan-out 4-5×/second).
+
+The rule, which the whole codebase already followed implicitly:
+
+- A function invoked from an `$effect` may **write** `$state` freely but
+  must **not synchronously read** `$state` that it (or anything the effect
+  triggers) writes.
+- Loader bookkeeping — "have I already loaded this?", last-loaded ids,
+  in-flight guards — lives in **plain variables, not `$state`** (see
+  `loadedTaskId` in `TaskDetailPage.svelte`), with a comment marking the
+  non-reactivity as deliberate. Version-counter subscriptions (the
+  `lastBlepVersion` pattern) keep their guard in `$state` only because the
+  effect must re-check it; they never feed it back into a loader's reads.
+- If a loader genuinely must branch on reactive state, wrap the read in
+  `untrack()` — and treat needing that as a design smell first.
+
+### Timestamps: day names expire after a week
+
+App-wide display convention (RM, 2026-07-06): a bare day name ("Sat
+2:05 PM") is only meaningful within the last 7 days — beyond that it's
+ambiguous and must give way to the calendar date ("Mar 1, 2:05 PM"),
+with the year appended when it isn't the current year ("Dec 30 2025,
+9:30 AM"). A day name *alongside* a date ("Sun 3/1", ActivityPage event
+rows) is fine at any age — the rule targets day-name-only timestamps.
+
+Use `formatSessionDateTime` from `src/lib/format.js` (BlepLogTable and
+ShiftLogTable already do) instead of hand-rolling per-component
+formatters. **Most older surfaces predate this rule — fix violations as
+you find them** and route the fix through the shared helper.
+
 ### API Responses
 
 - All API responses return JSON with a 200 status, even for operations like DELETE that normally have no meaningful data to return. No 204 responses. An empty response is `{}`.
@@ -214,8 +251,32 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 
 ### CSS
 
-- Global styles live in `frontend/src/css/app.css`, imported via `main.js`.
+- Global styles live in `frontend/src/css/app.css`, imported via `main.js`
+  **and** `portal-main.js` — global changes reach the customer portal too.
 - No CSS frameworks. Semantic HTML with minimal global styles.
+- **app.css is organized in three sections** — (1) BASE: tokens, element
+  defaults, utilities, the page frame; (2) SHARED: families any page may use;
+  (3) PAGE KINDS: vocabulary tied to the three page categories of the
+  `.page-body` rollout below (fully-individualized / banner pages / plain
+  pages). Page `<style>` blocks arrange and tune; if you're re-typing a look
+  that exists globally — or copying a rule out of another component — promote
+  it to app.css instead. Components may locally override a global family's
+  *sizing* for dense contexts (e.g. the job header's smaller `.status-badge`)
+  but never its colors.
+- **Shared vocabulary (where the classes live):** `.status-badge` +
+  `.status-{status}` (one pill palette for document statuses *and* task
+  activity keys), `.data-table`, `.badge-invoiced`, `.row-actions` (put it on
+  a cell/container; the small white edit/del buttons inside pick up the
+  look), the feedback overlays; banner-page kit: `.toolbar` (+ its buttons),
+  `.back-link`, `.page-title`, `.action-link`, `.edit-link` (quiet links in a
+  dark banner), `.action-band` (+ `primary`/`quiet` buttons), `.stat-chips` /
+  `.stat-chip` (+ `money`), `.panel` / `.panel-head` / `.panel-scroll`;
+  plain-page kit: `.page-tabs` (works with `<button>` or `<a>` items). The
+  task detail page is the reference implementation of the banner-page kit.
+- **The categories are stations, not a taxonomy** — pages move III→II as area
+  headers land, and out of the generic-sweep pool once they get a bespoke
+  detail pass. The pipeline model and the skip-list of detailed pages live in
+  `docs/designs/architecture-and-conventions.md` §5.5a.
 - Error overlays (`.error-overlay`) have a red border; success overlays (`.success-overlay`) have a green border. Both share the same layout pattern.
 - **z-index scale:** cross-component stacking uses named tokens defined on
   `:root` in `app.css` — `--z-sticky` (100) < `--z-dropdown` (200) <
@@ -235,6 +296,77 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   one-offs) and intentionally bespoke tables keep their own styling — `.data-table`
   is opt-in, not a global default. Scope is the Svelte SPA only; Django HTML
   templates follow their own table conventions (see root `CLAUDE.md`).
+- **Page frame (`.page-body`):** the router wrapper (`.page-content` in
+  `App.svelte`) has no padding, so raw page content sits flush at the left edge
+  and gets covered by the slide-in sidebar. Give a page's main content a 10px
+  left/right gutter by wrapping it in `<div class="page-body">`. The class is
+  just `padding: 0 10px` — fluid width, zero-specificity, so scoped component
+  styles always win. It is **opt-in** (like `.data-table`): a page gets the
+  gutter only by adopting the wrapper.
+  - **Structure:** a full-bleed header (a dark edge-to-edge band such as
+    `JobHeader` or `CustomerHeader`) stays a sibling **outside** `.page-body` so
+    it can still run edge to edge; only the body beneath it is wrapped. Pages with
+    no banner — just a plain flush-left `<h2>` — wrap all their content, heading
+    included. Fixed-position modals/overlays are unaffected by the padding and may
+    sit inside or outside.
+  - **Full-bleed header components (peers):** `JobHeader`
+    (`components/jobs/JobHeader.svelte`) and `CustomerHeader`
+    (`components/contacts/CustomerHeader.svelte`, used by both the contact and
+    business detail pages) are peer banner components. Each is rendered by the
+    route **above** `.page-body` and gets its own background color to signal the
+    area — job = gray-800 `#1f2937`, contacts/business = red-950 `#450a0a`. More
+    area headers with their own colors are planned. On job pages, `JobHeader` is
+    always paired with `JobNavRail` (an eight-link section strip) and an
+    optional collapsible `JobContextBand`; the trio is packaged as
+    `components/jobs/JobShell.svelte` — **every** job route, including the
+    overview (since the 2026-07-09 six-block redesign), renders
+    `<JobShell>` and passes its content as the slotted children — one
+    section panel for the other seven routes, the six summary blocks for
+    the overview. See "Job workspace state" below and
+    `docs/designs/jobs-tasks-and-worksheets.md` §9.6, §9.1a.
+  - **Subheaders:** anything a page wants to render *inside* the body that reads
+    as a sub-bar (toolbars, filter rows) lives inside `.page-body` and aligns to
+    the 10px gutter (drop any of its own horizontal padding so it lines up). A
+    formal subheader class vocabulary is anticipated but not yet built.
+  - **Tab headers:** the page-level tab bars (`catalog-tabs`, `settings-tabs`,
+    `home-tabs` on Home + Users) share a `flex` + `border-bottom: 2px #ccc`
+    idiom. To make the grey underline run edge-to-edge while the tabs stay
+    indented, they break out of the gutter with `margin: 0 -10px` and push the
+    tabs in with `padding-left: 120px`. This works because each tab `<nav>` is a
+    direct child of `.page-body`. (In-content sub-tabs — `DocSubnav.svelte`'s
+    per-document pills on the Estimates/Invoices section pages, the history
+    tablist — are not page tab headers and keep their own styling. The job
+    overview's old est/inv/po tab bars were retired with the accordion pillars,
+    2026-07-09.)
+  - **Rollout — three page categories:**
+    1. **Fully individualized (no buffer):** Job board (`#/jobs/board`) and
+       `#/schedule` own their whole layout; the login screen and the shipment
+       packing-list *print* page aren't sidebar-framed pages. These deliberately
+       do **not** get `.page-body`. **The job overview left this category
+       2026-07-09** — see category 2.
+    2. **Pages with a full-bleed banner header (buffer under the header):** every
+       page that renders the shared `JobHeader` band — every job page, the
+       overview included since 2026-07-09 (estimate, tasks/task-detail, invoice,
+       shipments, POs, emails, history, overview, all sharing the `JobShell`
+       header+rail+band layout) and the standalone change-order detail page —
+       plus the contact/business detail pages (which render the peer
+       `CustomerHeader`). The banner stays a full-bleed sibling; the body
+       beneath it is wrapped in `.page-body`. Where such a page had a sub-bar
+       with its own `24px` side padding (a `.toolbar` or `.page-header`), that
+       padding was zeroed so it aligns to the 10px gutter. (The estimate/
+       invoice "wizard" is no longer a separate page — it's a mode of the
+       estimate/invoice panel at the same route; see "Job workspace state"
+       below.) The overview's `.page-body` holds its six summary blocks
+       (`docs/designs/jobs-tasks-and-worksheets.md` §9.1a) — a bespoke,
+       individualized body inside the shared `JobShell` chrome, not a kit
+       consumer; see `docs/designs/architecture-and-conventions.md` §5.5a for
+       the "hybrid" categorization this creates.
+    3. **Everything else (whole content buffered):** all remaining list/form/
+       detail/send pages, including search and the contacts/business list+form
+       pages — wrapped in full.
+
+    The only route-level `.svelte` files without `.page-body` are the four
+    Category-1 pages above (job board, schedule, login, shipment print).
 
 ### Routing
 
@@ -249,16 +381,51 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 - Lite mode still fetches full data; hidden sections can be expanded inline without extra API calls.
 - Responsive layout (mobile, kiosk) is handled separately via CSS media queries, independent of view mode.
 
+### Job workspace state
+
+- `stores/jobWorkspace.js` is the per-job equivalent of the `viewMode`
+  pattern above: one `localStorage` key (`minibini_job_ws`), an
+  LRU-capped map (50 jobs) instead of a key-per-job, so retention stays
+  trivial. Per job it remembers which document each section (estimate,
+  invoice) last showed, each document's `lines`/`reconcile` mode (keyed
+  by document id, not section), and the job context band's
+  collapsed/expanded state.
+- The URL is always the source of truth for *what's currently
+  displayed* (`#/jobs/:jobId/estimate/:docId`, etc.) — the store only
+  answers "where did I leave off" when a bare section route or the
+  context band mounts. `getJobWs(jobId)` reads the whole per-job
+  record; `rememberSection` / `rememberMode` / `rememberBand` write one
+  slice each.
+- Restoring a remembered `reconcile` mode is validated against the
+  document's live status (only offered on a draft) before being
+  applied — see `docs/designs/jobs-tasks-and-worksheets.md` §9.6.
+- Routes: every job section is a real route under `#/jobs/:jobId/…`
+  (`estimate[/:docId]`, `invoice[/:docId]`, `tasks[/:taskId]`,
+  `shipments`, `pos`, `emails`, `history`). Old top-level document
+  routes (`#/estimates/:id`, `#/invoices/:id`, and their `/wizard`
+  variants) still resolve — via small redirect-shim route components
+  that translate to the job-scoped URL (and, for the wizard variants,
+  remember reconcile mode first) — so existing bookmarks and emitted
+  links keep working.
+
 ### Material status vocabulary
 
 - `lib/materialStatus.js` derives **one display status per material row** from
   serializer fields (no backend state): **Needs pricing / Needed / Ordered —
   PO-NNNN / Awaiting customer / On Hand / Consumed / Released** (precedence in
   that file), plus a `costUnconfirmed` ⚠ when `cost_source === 'estimated'`.
-- **Venue rule:** the job-overview pillar (`TaskTree`) shows these chips
-  passively — **no actions**. All per-material actions (Set pricing / Order /
-  Attach expense / Mark on-hand / Mark received / PO link) live on the task view
-  page (`JobTaskListPage`), each gated on its callback being wired.
+- **One row fragment, full actions everywhere** (the old task-view-page-only
+  venue rule was retired 2026-07-13): material rows render through the shared
+  `components/materials/MaterialRow.svelte` on every surface (job task list,
+  task detail page, parent-task subtask tree), task rows through
+  `components/tasks/TaskRow.svelte`, with row math in `lib/taskTotals.js`.
+  The full per-material action set is available wherever rows render —
+  gating is by material status, permissions, and job state only (each button
+  still renders only when its callback is wired). Handler halves are shared
+  too: `lib/materialOps.js` and the Order / Mark-received dialogs in
+  `components/materials/MaterialFulfillmentModals.svelte`. The job overview
+  doesn't render material rows at all — its Materials block is an aggregate
+  Coverage stat only (`docs/designs/jobs-tasks-and-worksheets.md` §9.1a).
 - Full vocabulary + backend contract: `docs/designs/materials-inventory-and-purchasing.md` §16.
 
 ### Delete Flow

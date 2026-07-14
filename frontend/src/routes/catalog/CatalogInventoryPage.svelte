@@ -128,6 +128,7 @@
   load();
 </script>
 
+<div class="page-body">
 <CatalogTabs />
 
 {#if canManage}
@@ -256,6 +257,7 @@
     </tbody>
   </table>
 {/if}
+</div>
 
 <style>
   /* Available < 0: earmarked exceeds on-hand — oversubscribed / shortfall. */

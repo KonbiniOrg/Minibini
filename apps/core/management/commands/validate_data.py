@@ -133,6 +133,7 @@ class Command(BaseCommand):
         self.check_bill_po_business_match()
         self.check_earmark_job_status()
         self.check_invoice_job_status()
+        self.check_job_work_complete_gate()
         self.check_estimate_source_job_consistency()
         self.check_invoice_source_job_consistency()
 
@@ -323,6 +324,16 @@ class Command(BaseCommand):
                 self.errors.append(
                     f'Task {t.pk} ({t.name}): active_modifiers is a dict; must be a list of keys'
                 )
+        # One level of subtasks only (TaskService.create_direct enforces it;
+        # a grandchild is invisible in the SPA's two-level tree).
+        for t in Task.objects.filter(
+            parent_task__parent_task__isnull=False
+        ).select_related('parent_task'):
+            self.errors.append(
+                f'Task {t.pk} ({t.name}): subtask of a subtask '
+                f'(parent {t.parent_task_id} already has a parent) — '
+                f'one level of subtasks only'
+            )
         # ServiceItems: default_active_modifiers must be a list
         for tt in ServiceItem.objects.all():
             if isinstance(tt.default_active_modifiers, dict):
@@ -725,18 +736,46 @@ class Command(BaseCommand):
                 )
 
     def check_invoice_job_status(self):
-        """Invoices should only exist for jobs that have been approved or later.
-        A draft/submitted/rejected job shouldn't have invoices.
-        A cancelled job may have open/paid invoices (work done before cancellation
-        is billable), so non-cancelled invoices on a cancelled job are permitted."""
+        """Invoices may only exist for jobs that have been approved or later —
+        the app enforces this (`BILLABLE_JOB_STATUSES` guards every invoice
+        creation path), so a draft/submitted/rejected job with an invoice is an
+        unreachable state: an ERROR (upgraded from a warning 2026-07-12).
+        A cancelled job may have invoices (work done before cancellation is
+        billable)."""
         from apps.invoicing.models import Invoice
 
         for inv in Invoice.objects.select_related('job').all():
             if inv.job.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_REJECTED):
-                self.warnings.append(
+                self.errors.append(
                     f'Invoice {inv.invoice_number}: job {inv.job.job_number} '
                     f'status is "{inv.job.status}" (expected approved or later)'
                 )
+
+    def check_job_work_complete_gate(self):
+        """work_complete (and completed) means every task terminal and every
+        material resolved — JobService.update_job enforces this on every path
+        into the status (the B4 work-complete gate, 2026-07-12), so a closed
+        job with open work is an unreachable state."""
+        from apps.jobs.models import Task
+        from apps.inventory.models import Material
+
+        closed = (Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED)
+        for t in Task.objects.select_related('job').filter(
+            job__status__in=closed,
+        ).exclude(status__in=(Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)):
+            self.errors.append(
+                f'Task {t.pk} ({t.name}): non-terminal task ("{t.status}") on '
+                f'{t.job.status} job {t.job.job_number}'
+            )
+        for m in Material.objects.select_related('job').filter(
+            job__status__in=closed,
+            consumption_state=Material.CONSUMPTION_STATE_PENDING,
+            quantity__gt=0,
+        ):
+            self.errors.append(
+                f'Material {m.pk} ({m.description}): pending material with '
+                f'quantity {m.quantity} on {m.job.status} job {m.job.job_number}'
+            )
 
     def check_fees(self):
         """For each Fee, validate unit_rate > 0, quantity >= 0,
@@ -815,4 +854,17 @@ class Command(BaseCommand):
                     f'InvoiceLineItemSource {source.pk} '
                     f'({source.source_type}:{source.source_pk}): '
                     f'atom job_id={atom_job_id} does not match invoice job_id={invoice_job_id}'
+                )
+            # Terminal — not complete — is the task billability line (C3,
+            # 2026-07-12): only complete/cancelled tasks may back an invoice
+            # line.
+            from apps.jobs.models import Task
+            if (source.source_type == InvoiceLineItemSource.SOURCE_TASK
+                    and isinstance(atom, Task)
+                    and atom.status not in (Task.STATUS_COMPLETE,
+                                            Task.STATUS_CANCELLED)):
+                self.errors.append(
+                    f'InvoiceLineItemSource {source.pk} (task:{source.source_pk}): '
+                    f'task status "{atom.status}" is not billable '
+                    f'(terminal statuses only)'
                 )

@@ -4,6 +4,7 @@
   import { canManageTime, canManageFinancials } from '../../stores/permissions.js';
   import ShiftRequestQueue from '../../components/users/ShiftRequestQueue.svelte';
   import PayrollReport from '../../components/users/PayrollReport.svelte';
+  import WorkSessionsList from '../../components/time/WorkSessionsList.svelte';
 
   let tab = $state('users');
   const canSeeShifts = $derived($canManageTime || $canManageFinancials);
@@ -42,18 +43,23 @@
   load();
 </script>
 
+<div class="page-body">
 <h2>Users</h2>
 
-<nav class="home-tabs">
+<nav class="page-tabs">
   <button class:active={tab === 'users'} onclick={() => tab = 'users'}>Users</button>
   {#if canSeeShifts}
     <button class:active={tab === 'shifts'} onclick={() => tab = 'shifts'}>Shifts</button>
+    <button class:active={tab === 'sessions'} onclick={() => tab = 'sessions'}>Work Sessions</button>
   {/if}
 </nav>
 
 {#if tab === 'shifts'}
   <ShiftRequestQueue />
   <PayrollReport />
+{:else if tab === 'sessions'}
+  <!-- All users' work sessions (bleps), recent-first, paged. -->
+  <WorkSessionsList showWorker={true} title="" />
 {:else}
 
 <p><a href="/users/new" use:link>New user</a></p>
@@ -99,25 +105,8 @@
   </table>
 {/if}
 {/if}
+</div>
 
 <style>
-  .home-tabs {
-    display: flex;
-    gap: 0;
-    border-bottom: 2px solid #ccc;
-    margin-bottom: 1em;
-  }
-  .home-tabs button {
-    padding: 0.4em 1.2em;
-    border: 2px solid #ccc;
-    border-bottom: none;
-    background: #f5f5f5;
-    cursor: pointer;
-    margin-bottom: -2px;
-  }
-  .home-tabs button.active {
-    background: white;
-    border-bottom: 2px solid white;
-    font-weight: bold;
-  }
+  /* Tab strip is the shared .page-tabs (app.css). */
 </style>

@@ -65,6 +65,7 @@
   });
 </script>
 
+<div class="page-body">
 <h2>Inbox{mailboxAddress ? ` — ${mailboxAddress}` : ''}</h2>
 
 <p>
@@ -110,3 +111,4 @@
     </p>
   {/if}
 {/if}
+</div>

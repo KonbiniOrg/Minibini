@@ -1478,7 +1478,7 @@ class ShiftService:
         if bad:
             ids = ", ".join(str(b.pk) for b in bad)
             raise ValidationError(
-                f"This shift would not enclose blep(s) {ids}; adjust the blep(s) first."
+                f"This shift would not enclose timeslip(s) {ids}; adjust the timeslip(s) first."
             )
 
     @staticmethod
@@ -1529,7 +1529,7 @@ class ShiftService:
         if orphaned:
             ids = ", ".join(str(b.pk) for b in orphaned)
             raise ValidationError(
-                f"Deleting this shift would leave blep(s) {ids} outside any "
+                f"Deleting this shift would leave timeslip(s) {ids} outside any "
                 f"shift; move or delete them first."
             )
         shift.delete()

@@ -175,6 +175,14 @@ instant and lossless:
 - **Task, material, and fee mutations** are blocked by
   `_assert_job_not_on_hold` in `JobService` (create/edit/delete tasks,
   change assignment, complete/block/unblock/cancel, edit materials).
+  The SPA **suppresses the affordances** rather than letting them 400
+  (B2, 2026-07-12): `TaskTree` hides edit/del/cancel/+mat/+sub/assign,
+  `TasksPanel` hides Add Work and the work-complete button
+  (`canMarkWorkComplete(job)` reads the flag), and `TaskDetailPage`
+  hides its action band, Edit Task, Add Subtask, and Add Material while
+  held. The hold rule stated precisely: **plan edits freeze;
+  procurement reality stays** — Order, Attach expense, Mark
+  on-hand/received (and Add Expense) remain available on a held job.
 - **Status changes are blocked** (`JobService.update_job` raises) —
   **except cancellation**, which runs the same live-CO guard as release
   and drops the flag as part of the transition.
@@ -214,8 +222,9 @@ display name is added to the board and schedule job payloads
 (`BoardService._serialize_job`, `ScheduleService` jobs_payload) so the chip
 can render it. Where the PM surfaces:
 
-- **Job detail header** (`JobHeader.svelte`) — a "Project manager:" line
-  linking to that manager's filtered job list.
+- **Job detail header** (`JobHeader.svelte`) — a "PM: <Name>" segment on
+  the facts line (right column, above the money grid) linking to that
+  manager's filtered job list.
 - **Board in-progress + schedule top-line chip** (`JobChipStrip.svelte`,
   shared by both) — the PM's **initials** (first + last word of the name,
   uppercased) top-right on the chip, in black opposite the grey job number.
@@ -258,11 +267,22 @@ the state machine forbids a direct DRAFT/SUBMITTED jump).
   respect the state machine.
 - Then advances to `work_complete`.
 
-If `JobService._loose_pending_materials(job)` finds task-less materials
-in pending consumption state, the auto-advance silently fails (the task
-status update itself succeeds; the Job stays one rung lower). The same
-guard runs inside `JobService.update_job` whenever a Job is moved to
-`work_complete` — it raises `ValidationError`.
+**The work-complete gate (B4, 2026-07-12):** entering `work_complete` by
+ANY path requires everything final — no non-terminal task and no PENDING
+material (task-attached or loose) with quantity still committed.
+`JobService.work_complete_blockers(job)` computes the offending list;
+`update_job` enforces it as a hard `ValidationError` gate (covering the
+status pill too), and the auto-advance above silently no-ops when it
+trips (the task status update itself succeeds; the Job stays one rung
+lower). The dedicated endpoint (`POST /api/jobs/{id}/work-complete/`,
+manager-or-PM) pre-checks the blockers and — mutating nothing — returns
+`{'blockers': {tasks: [...], materials: [...]}}` so the SPA can render
+the list. The Tasks-page button reads **"Mark Work Complete"** when the
+loaded tree shows no blockers (confirm + advance) and **"Check
+Complete"** when it does (no confirm; the POST returns the list, shown
+as a "resolve these first" modal — deliberate affordance: on a large
+job the button is how you *find* what's still open). Nothing is
+bulk-resolved; each task/material settles through its normal flow.
 
 Entry to `work_complete`, `cancelled`, or `rejected` triggers
 `InventoryService.release_earmarks_for_job(job)` (see
@@ -329,13 +349,14 @@ for the pattern/counter mechanism.
 
 ### 3.6 Job duplication
 
-A Job can be duplicated into a brand-new Job via the "Duplicate…" link
+A Job can be duplicated into a brand-new Job via the "Duplicate…" button
 in the SPA Job detail header (gated on the job's `can_manage` — atom or
-its PM). The link
-navigates to an intermediate page (`#/jobs/:id/duplicate`,
-`DuplicateJobPage.svelte`) where the user chooses a **Customer**
-(pre-filled from the source job's contact, editable) and a **path**
-(`approved` or `estimate`), then submits.
+its PM). The button opens `DuplicateJobModal.svelte` — a modal, not a
+route — where the user chooses a **Customer** (pre-filled from the
+source job's contact, editable) and a **path** (`approved` or
+`estimate`), then submits. (The old standalone `#/jobs/:id/duplicate`
+page is gone; the route now redirects to the job overview for any
+stale deep links.)
 
 The Customer field is a searchable picker (`ContactPicker.svelte`, built on
 `SearchPicker`), not a dropdown — the contacts table is large, so it queries
@@ -410,37 +431,74 @@ history entries, and bleps are never carried over to the new Job.
 
 `Task` is defined at `apps/jobs/models.py`. Tasks belong to a Job
 via `Task.job = FK('jobs.Job', related_name='tasks')`. Hierarchy is via
-`parent_task` (self-FK; subtasks emerge during work, not planning).
+`parent_task` (self-FK; subtasks emerge during work, not planning) and is
+capped at **one level**: a subtask can never itself have subtasks —
+`TaskService.create_direct` rejects a parent that has a parent (and a
+parent from a different job), and the subtask detail page hides its Add
+Subtask affordance. Both creation surfaces (`POST /api/tasks/{id}/subtasks/`
+and the job-nested create with `parent_task`) route through
+`create_direct`, so the on-hold, superseded-scheme, depth, and assignee
+guards — and `mark_work_reopened` — apply identically; pinned by
+`tests/test_subtask_service_guards.py`.
 
-`Task` is **not** decorated with `@history` — see Unfinished Work.
+`Task` IS decorated with `@history(exclude=['task_id', 'worker_queue'])`,
+and every lifecycle transition is history-visible: block / unblock /
+complete / cancel and the pending→in_progress promotion go through
+`task.save()` under the row lock, producing audit diffs (status,
+blocked_reason, actual_qty, auto-assign). `worker_queue` is excluded —
+board-queue position is cosmetic and the bump-to-front on every clock-in
+would spam the trail. The one deliberate `update()` remaining is
+`cancel_work`'s in_progress→pending revert (inside
+`BlepService._cancel_blep`, service layer only): the reverse transition
+stays out of `VALID_TRANSITIONS`, so the revert bypasses `clean()` — and
+writes an explicit **action** history row ("Accidental start cancelled —
+reverted to pending") so the trail stays truthful.
 
 ### 4.0 Write permissions
 
 Task work is worker-driven, so most task writes are open to **any
-authenticated user**:
+authenticated user** — with a per-status editability matrix (the C1
+redesign, 2026-07-12):
 
-- **Add, edit, delete** a task (`POST /api/jobs/{id}/tasks/`,
-  `PATCH`/`DELETE /api/jobs/{id}/tasks/{task_pk}/`) — `IsAuthenticated`.
-  Delete is still refused by `TaskService.delete_task` when the task is
-  `in_progress`/`complete`, has any Bleps, is claimed by a **non-draft**
+- **Add** a task (`POST /api/jobs/{id}/tasks/`, the subtasks endpoint) —
+  `IsAuthenticated`.
+- **Edit** (`PATCH /api/jobs/{id}/tasks/{task_pk}/`) — enforced in
+  `TaskService.update_task`, surfaced as the serializer's computed
+  `can_edit` flag:
+  - `pending` — anyone (qty, rate scheme, description — everything).
+  - `in_progress` / `blocked` — the `can_manage_jobs` atom, the job's
+    PM, **or the task's assignee** (assignee is an object-scoped
+    permission principal, unique to tasks). Others get 403
+    (`TaskPermissionError`).
+  - `complete` / `cancelled` — frozen (no reopen; see the freeze below).
+- **Delete** — `IsAuthenticated`; the guards decide (B5): refused when
+  the job is held or terminal, the task is `in_progress`/`complete`, has
+  any Bleps, has a **consumed material** (consumption history must keep
+  its anchor; pending materials detach to the job as loose rows —
+  `Material.task` is SET_NULL), is claimed by a **non-draft**
   estimate/change order, or is on a live invoice (→ 400, "cancel it
-  instead") — those guards apply to everyone. Draft-estimate claims stay
-  deletable (remove the line/atoms first). See the deletion doctrine
-  (`data-constraints.md` §1.11).
+  instead"). Draft-estimate claims stay deletable. See the deletion
+  doctrine (`data-constraints.md` §1.11).
+- **Cancel** (`POST /api/tasks/{id}/cancel/`) — `IsAuthenticated`
+  (opened to all workers 2026-07-12, plan C2: cancel shares delete's
+  principal set — it is the exit from a task that can no longer be
+  deleted). A task with bleps is cancellable; recorded time survives.
 - **Lifecycle** — complete / block / unblock / start-work / stop-work /
-  cancel-work / actual-qty are `IsAuthenticated` (worker operations).
+  cancel-work / actual-qty/add are `IsAuthenticated` (worker operations).
 
 Manager-or-PM only (`CanManageJobOrPM` — `can_manage_jobs` atom **or** the
 job's `project_manager`):
 
-- **Cancel** a task (`POST /api/tasks/{id}/cancel/`), **reorder** tasks, and
-  **mark all the job's work complete** (`POST /api/jobs/{id}/work-complete/`).
+- **Reorder** tasks and **mark all the job's work complete**
+  (`POST /api/jobs/{id}/work-complete/` — see §3.3's blockers gate).
 - **Assign** a task to a worker (the SPA "assign" affordance).
 
 The SPA mirrors this: `TaskTree`/`TaskActions`/`TaskDetailPage` show
-add/edit/delete/complete to everyone, and gate cancel/assign/reorder/
-work-complete on the per-object `can_manage` flag. See
-`docs/designs/users-and-permissions.md` for the full mapping.
+add/delete/complete/cancel to everyone, gate edit on the per-task
+`can_edit` flag, and gate assign/reorder/work-complete on the per-object
+`can_manage` flag. While the job is **held**, every plan-edit affordance
+is suppressed (see §3.1). See `docs/designs/users-and-permissions.md`
+for the full mapping.
 
 ### 4.1 Status machine
 
@@ -469,7 +527,9 @@ without round-tripping through `in_progress`.
 `in_progress → pending` is **not** a forward transition (and `clean()`
 rejects it). `TaskLifecycleService.cancel_work` (§4.5) performs it as a
 deliberate *undo* via a bulk `update()` that bypasses `clean()`,
-restoring an oops-started task to its pre-Start state.
+restoring an oops-started task to its pre-Start state — and records an
+explicit action-type HistoryEntry so the trail explains the return to
+pending (the promotion itself is an audit diff).
 
 `Task.clean()` enforces transitions on save. `Task.save()` auto-assigns
 `sort_order` to the next available slot for the Job if unset.
@@ -503,8 +563,8 @@ clears.
 | `rate_scheme` | FK to `RateScheme` (PROTECT). Required at the DB level on Task. Algorithms: `elapsed_time` / `entered_qty` / `percentage` (no `flat_fee` — fixed charges are the `Fee` atom, §4.7). |
 | `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`); always a list, never a dict |
 | `est_qty` | Estimated billable quantity in the rate scheme's units. Nullable on Task. Drives `compute_estimate_amount` (the estimate lens). |
-| `est_worker_time` | DurationField — estimated worker time for scheduling. Required (and non-zero) once the Task has an `assignee`: assigned work must be schedulable. Enforced by `Task.clean()` and re-checked by `TaskService.assign`. |
-| `actual_qty` | Worker-entered quantity for `ENTERED_QTY` schemes; null for `ELAPSED_TIME` (derived from bleps). Drives `compute_amount` (the invoice lens). |
+| `est_worker_time` | DurationField — estimated worker time for scheduling. Required once the Task is **explicitly assigned**: assigned work must be schedulable. Enforced on the assign gestures (`TaskService.assign` / `create_direct`-with-assignee / `update_task`-setting-assignee), **not** `Task.clean()` — auto-assign on start (`start_work` / `create_historical` claiming an unassigned task for its first worker) deliberately skips it, so assignee-without-est-time is a legal model state the schedule must tolerate. |
+| `actual_qty` | Running total of worker-entered increments for `ENTERED_QTY` schemes (every write is an add via `add_actual_qty` — signed, locked, floored at zero; settled at completion via `complete_task(add_qty=...)`); null for `ELAPSED_TIME` (derived from bleps). Drives `compute_amount` (the invoice lens). Entry surfaces + prompt flows: estimates-and-prices.md §4.2. |
 
 `Task.compute_amount()` resolves the actual quantity per scheme algorithm
 and applies modifiers (the **invoice** view); `Task.compute_estimate_amount()`
@@ -521,12 +581,12 @@ sanctioned path to transition a Task. All methods wrap in
 
 | Method | Inputs | Behavior |
 |---|---|---|
-| `complete_task(task_pk)` | — | pending/in_progress/blocked → complete; closes any open Bleps on the task; clears `blocked_reason`; fires job-completion check |
+| `complete_task(task_pk, add_qty=None)` | optional signed Decimal | pending/in_progress/blocked → complete; closes any open Bleps on the task; clears `blocked_reason`; fires job-completion check. **ENTERED_QTY settle-up:** without `add_qty`, raises `TaskActualQtyRequired` (carrying `unit_label` + `current_qty`) so the caller prompts "any more to add?" — the guard fires BEFORE bleps close, so the prompting round-trip leaves the session running. With `add_qty`, applies the increment under the row lock (zero = nothing more; negative = correction; resulting total must be > 0). |
 | `block_task(task_pk, reason='')` | reason | pending/in_progress → blocked; rejects with `{conflict, workers}` dict if open Bleps exist (caller coordinates offline) |
 | `unblock_task(task_pk)` | — | blocked → in_progress; clears `blocked_reason` |
-| `cancel_task(task_pk)` | — | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); detaches the task's *pending* materials to the job as loose rows (task=NULL, earmark kept — user releases by hand if unwanted; consumed/released rows stay attached as history); fires job-completion check |
-| `start_work(task_pk, user, action=None, on_behalf_of=None)` | user, optional action, optional on_behalf_of | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. With `on_behalf_of`, a `can_manage_time` manager opens the Blep for another worker (403 otherwise). |
-| `stop_work(task_pk, user, on_behalf_of=None)` | user, optional on_behalf_of | Closes the user's open Blep on this task; raises if none. A sub-minimum Blep (`< blep_minimum_minutes` whole minutes) is cancelled with full undo instead of being persisted closed — see the close-primitive note below §5.5. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). |
+| `cancel_task(task_pk, user=None, prior_qty_handled=False)` | optional user + flag | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); detaches the task's *pending* materials to the job as loose rows (task=NULL, earmark kept — user releases by hand if unwanted; consumed/released rows stay attached as history); fires job-completion check. **Settle-first:** when the *canceller's own* open ENTERED_QTY session would be closed, returns a `prior_session_qty` conflict (mutating nothing) — cancelled tasks keep their recorded count just as they keep their closed bleps. Internal callers (CO acceptance) pass no user and never prompt. |
+| `start_work(task_pk, user, action=None, on_behalf_of=None, prior_qty_handled=False)` | user, optional action / on_behalf_of / prior_qty_handled | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. With `on_behalf_of`, a `can_manage_time` manager opens the Blep for another worker (403 otherwise). **Settle-first:** an own start (no `on_behalf_of`) holding an open Blep on a *different* ENTERED_QTY task returns a `prior_session_qty` conflict dict (mutating nothing; evaluated before `active_worker`) so the SPA settles that session; the re-post carries `prior_qty_handled=True`. |
+| `stop_work(task_pk, user, on_behalf_of=None, prior_qty_handled=False, add_qty=None)` | user, optional on_behalf_of / flag / add_qty | Closes the user's open Blep on this task; raises if none. A sub-minimum Blep (`< blep_minimum_minutes` whole minutes) is cancelled with full undo instead of being persisted closed — see the close-primitive note below §5.5. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). **Settle-first:** an own stop on an ENTERED_QTY task with an open session returns a `prior_session_qty` conflict and mutates nothing — the session keeps running until the SPA's prompt resolves. The flagged re-post may carry `add_qty` (> 0): increment + close happen in one transaction, so a failed entry never half-runs. |
 | `cancel_work(task_pk, user)` | user | The under-the-minimum "oops" undo. Deletes the user's open Blep on the task; if it was the first/only activity (the sole reason the task is `in_progress`), reverts the task to `pending` and un-consumes its materials (`MaterialService.unconsume`). Job status and assignee are left alone. Rejects if the session is already ≥ `blep_minimum_minutes` (stop instead) or there is no open Blep. Own-blep only — no `on_behalf_of`. (Internally delegates to `BlepService._cancel_blep`, which the close primitive also uses.) |
 
 Material consumption happens exactly once: when the first worker calls
@@ -539,17 +599,19 @@ pending→in_progress promotion, not of every clock-in.
 `reorder_tasks`. Deletion is rejected for `in_progress` / `complete`
 tasks and for any task with at least one Blep — cancel instead.
 
-#### Task freeze on `complete`
+#### Task freeze on `complete` (and `cancelled`)
 
-`complete` is a **terminal** state: once a task is complete, its work and
-billing inputs are settled.
+`complete` and `cancelled` are **terminal** states: once a task is
+terminal, its work and billing inputs are settled. (Reopening was
+considered and rejected 2026-07-12 — a task needing more work after
+completion gets a new sibling task.)
 
 - **All fields are frozen** except `sort_order`. `TaskService.update_task`
   raises `ValidationError` if any field other than `sort_order` is included
-  in an update for a complete task:
+  in an update for a terminal task:
 
   ```
-  "Cannot edit a complete task. Its work and billing are settled;
+  "Cannot edit a {status} task. Its work and billing are settled;
   corrections belong on the invoice."
   ```
 
@@ -599,8 +661,17 @@ Blep. The restart is `action=None` with no remaining other workers, so it
 terminates after one level. There is no takeover-specific state handling.
 
 `block_task` returns a similar conflict shape (`active_workers`, plural,
-no options) when open Bleps exist — there's no override; the requester
-must coordinate offline before retrying.
+no options) when **other workers'** open Bleps exist — there's no
+override; the requester must coordinate offline before retrying. The SPA
+renders this as an overlay message naming the workers (it is a
+coordination refusal, never the join/takeover chooser). The requester's
+**own** open session does not veto a block — blockers are usually
+discovered mid-session — it settles like every other own gesture: a
+skippable `prior_session_qty` prompt on an ENTERED_QTY task (nothing
+mutates until the flagged re-post, which re-carries the reason), then the
+session closes via the shared resolve (sub-minimum ⇒ cancel with undo).
+Callers passing no `user` can't claim a session as their own, so any
+open Blep refuses (internal-caller semantics unchanged).
 
 ### 4.7 Fee — the fixed-charge atom
 
@@ -641,6 +712,12 @@ RateScheme algorithm.
 user, start_time, end_time)`. `end_time` is null while the session is
 active. The FK to Task is `PROTECT` to preserve the audit trail.
 
+> **User-facing name: "timeslip."** "Blep" is the internal model/code
+> name only — it must never appear in UI text, API error messages, or
+> other user-visible strings. Displayed text says **timeslip** (or, where
+> established, "time entry" / "work session"). Code identifiers, API
+> routes (`/api/bleps/`), and this doc keep using Blep.
+
 ### 5.1 Active vs historical
 
 Two Bleps are conceptually distinct:
@@ -675,7 +752,14 @@ bleps:
 - **Auto-clock-in.** Starting a live blep (`TaskLifecycleService.start_work`)
   calls `ShiftService.ensure_open_shift(target)` — if the worker has no open
   shift, one is opened at `now` so the new blep is enclosed. Workers normally
-  clock in from the Home band, but starting work clocks them in implicitly.
+  clock in from the global header strip (`ShiftBand.svelte`, mounted in
+  `App.svelte` above the `CurrentBlepBand` in the sticky `.app-bands`
+  wrapper), but starting work clocks them in implicitly.
+- **Clock-out settles first.** An own explicit `POST /api/shifts/clock-out`
+  with an open Blep on an ENTERED_QTY task returns a `prior_session_qty`
+  conflict (mutating nothing) so the SPA can prompt for that session's
+  count; the re-post carries `prior_qty_handled`. On-behalf clock-outs
+  never prompt.
 - **Clock-out closes open bleps.** `ShiftService.clock_out` closes the
   worker's open bleps (`end_time = now`) *before* stamping the shift's
   `end_time`, so clocking out never leaves a blep unenclosed. The logout
@@ -812,8 +896,10 @@ and `can_manage_time` rules.
   into one label vocabulary via `lib/taskActivity.js` — **Working** (an
   open Blep right now) / **Ongoing** (`in_progress`, none open) /
   **Unstarted** (`pending`) / **Blocked** — surfaced identically on the
-  board card, the job overview Tasks pillar, task detail, task tree, home,
-  and schedule quick card.
+  board card, task detail, task tree, home, and schedule quick card. (The
+  job overview's Work block, §9, shows its own "working now" clock line —
+  worker + task name — rather than this shared label vocabulary; it
+  aggregates, it doesn't list task rows.)
   `pending` vs `in_progress` stays distinct in the model (it gates
   material consumption) but reads as plain "Unstarted" vs "Ongoing"; the
   only real-time signal that stands out is "Working."
@@ -986,6 +1072,14 @@ added via the "+" button. Tasks within a column are sorted by
   duration field. Unassigning never requires a duration.
 - `POST /api/tasks/reorder/` — bulk update worker_queue from a list
 
+(Job-task-list reordering — `POST /api/jobs/{id}/reorder-tasks/` — is a
+different axis: it swaps `sort_order` within the task's **peer group**
+(top-level tasks among top-level tasks; subtasks among their siblings —
+the group falls out of `task.parent_task`). The job task list page
+offers arrows on top-level rows only; sibling reordering lives on the
+parent task's detail page, both hitting this same endpoint. B3,
+2026-07-12; pinned by `tests/test_task_reorder_peer_scope.py`.)
+
 ### 8.5 Card composition
 
 | Card | Component | Shows |
@@ -996,48 +1090,155 @@ added via the "+" button. Tasks within a column are sorted by
 
 ## 9. UI: Job Detail page
 
-Route: `#/jobs/:id` → `JobDetailPage.svelte`.
+Route: `#/jobs/:id` → `JobDetailPage.svelte`. This is the job's
+**overview** — the first of eight equal section pages (Overview,
+Estimates, Tasks, Invoices, Shipments, POs, Emails, History) that share
+the **job workspace shell**, `JobShell` (§9.6) — `JobHeader` + collapsible
+`JobContextBand` + `JobNavRail`, exactly like every other job page. It is
+the job's **summary, not a work surface**: it answers "where does this
+job stand?" through **six lifecycle blocks in fixed order** (§9.1a), each
+carrying aggregates/clocks/one-line facts and never a list of rows —
+authoring and detail-browsing happen on the section pages the rail links
+to. (Designed in two passes: the shell 2026-07-08, this page's content
+2026-07-09, shipped on `feature/job-overview`.)
 
 ### 9.1 Layout
 
-Top-down:
+Top-down, via `JobShell`:
 
-1. **JobHeader** (`components/jobs/JobHeader.svelte`) — title `JOB
-   #N: Name`, subtitle (contact / business), a "Project manager:" line
-   (when set; links to `#/jobs?pm=<id>`), status pill (interactive
-   `<select>` for users with `can_manage_jobs`), key dates,
-   customer_po_number.
-2. **Description + History** in a flex row. `HistoryPanel`
-   (`components/HistoryPanel.svelte`) shows status changes, notes, and
-   inline email previews.
-3. **Horizontal accordion pillars** — Estimate, Tasks & Materials,
-   Invoices, Shipments, Purchase Orders (`activeSection ∈ {estimate,
-   tasks_materials, invoices, shipments, pos}`). One pillar is expanded;
-   the others render as vertical labels with counts. Clicking a pillar
-   swaps the active one. The pillars are **read-only summaries**: the
-   Estimate pillar shows the estimate document (or **Start Estimate** when
-   the job has none), Tasks & Materials a read-only work table (§9.5),
-   Shipments/PO/Invoice summary panels with links out. Authoring the Job's
-   work atoms happens on the **task-list page**, not the overview. (There is
-   no Plan/Client-View toggle and no Worksheet pillar — the planning layer
-   and the separate "client view" concept were both removed.)
+1. **JobHeader** (`components/jobs/JobHeader.svelte`) — a **fixed
+   110px** banner (redesigned 2026-07-08 so content can never overflow
+   onto the page below). Left column, always exactly three lines: title
+   `JOB #N: Name` (single line, CSS-ellipsis truncated, full name in
+   the `title` hover), subtitle (contact / business, also truncating),
+   and the status row. Right column: a small facts line (started / due
+   / completed dates, customer PO, and the PM name linking to
+   `#/jobs?pm=<id>`) right-aligned above the financial rollups (§9.3).
+   The status row holds quiet **Edit** / **Duplicate…** buttons (shown
+   only when `can_manage` — the old Actions ▾ menu and its History
+   entry are gone; each button opens a modal — `JobEditModal.svelte` /
+   `DuplicateJobModal.svelte` — instead of navigating, and History is
+   now a rail section on every job page)
+   and the **status pill**, an interactive `<select>` for users whose
+   `can_manage` flag is set. The pill is a **trigger pill**: besides
+   real transitions it carries non-status trigger options (values
+   prefixed `__`) — "Release to floor" is the label on the
+   approved→in_progress transition, "Hold…" opens the hold-reason
+   modal (a `Modal.svelte` dialog; picking the option changes nothing
+   by itself and the pill snaps back until the modal confirms), and on
+   a held job "Release hold" posts the release. **A held job's pill
+   shows only `HOLD`** (striped amber; the true status is deliberately
+   hidden) with the hold reason inline beside it, truncated with the
+   full text on hover.
+2. **`JobContextBand`** (§9.6) — the same collapsible description /
+   deliverables / email strip every job page gets, defaulting expanded.
+   The overview does **not** get a bespoke midband; this is its only
+   context row.
+3. **`JobNavRail`** (below).
+4. **The six summary blocks** (`.page-body > .summary-blocks`, §9.1a) —
+   stacked full-width, generous vertical spacing. The page is tall by
+   design.
+
+There is no Plan/Client-View toggle and no Worksheet block — the
+planning layer and the separate "client view" concept were both
+removed before this page existed in its current form.
+
+**The job nav rail** (`components/jobs/JobNavRail.svelte`) — a skinny
+full-width strip mounted directly under the context band on **every** job
+page, including this overview (2026-07-08 restructure — the rail no
+longer treats Overview as a "‹ back" escape; it's the first of eight
+equal section links, set apart only by extra right margin). Eight
+static, always-valid links spread evenly across the width (light
+`#f9fafb` strip, 2px gray-400 borders, 11px caps; current section
+underlined): **Overview · Estimates · Tasks · Invoices · Shipments ·
+POs · Emails · History** (a hairline divider sets Emails apart from POs
+— paper-trail vs. work sections). Every link is a real, always-clickable
+route (`/jobs/:id[/section]`) — there is no dimming and no
+server-computed target: `Job.nav_targets` was retired along with the
+old chevron/dimmed rail (§9.6 has the replacement per-document model).
+Empty sections are real destinations that render a create affordance
+rather than being inert.
+
+### 9.1a The six lifecycle blocks
+
+**Concept.** Each block carries a **temperature** driven by job/document
+state — where the heat sits on the page tells you the job's stage before
+you read a number:
+
+- **Active** (`.summary-block.active`) — the block's lifecycle moment is
+  live: full-width white card, blue left heat-edge, a `.stat-spread` of
+  stat groups, an optional trailing `.clock-line`.
+- **Frozen** (`.summary-block.frozen`) — the moment has settled: one flat
+  grey line of facts.
+- **Dormant** (`.summary-block.dormant`) — not yet: one dashed ghost line.
+
+CSS vocabulary: `docs/designs/architecture-and-conventions.md` §5.5a
+(`.summary-block` / `.stat-spread` family). **No block-level links or
+actions this pass** (RM decision 2026-07-09): the rail sits directly
+above and corner links would duplicate it; Spend has no honest
+destination at all; clocks/signals are display-only pending a later
+pass. Blocks never list rows (tasks, line items, POs) — the section
+pages do that.
+
+**Fixed order: Scope → Work → Materials → Spend → Invoicing → Delivery**
+(the two money blocks sit adjacent deliberately — spent vs. billed vs.
+scope reads as one story). Block names describe *aspects of the job's
+health*, not documents (the rail names the surfaces).
+
+| Block | Dormant | Active | Frozen |
+|---|---|---|---|
+| **Scope** | no estimate exists yet | current estimate is draft/open, **or** a draft/open change order re-activates a settled estimate (customer-response clock, 7 days) | estimate terminal and no live CO — total, version, accepted/CO dates, deliverable count |
+| **Work** | job not yet approved | approved/in_progress with non-terminal tasks — progress (by estimated worker time, falling back to task count), task counts + blocked pill, Due stat (working-day countdown, omitted with no due date), "working now" clock | all tasks terminal / job `work_complete`+ (or stopped for good: cancelled/rejected) — task count + hours logged |
+| **Materials** | no POs touch the job, no shortfall | any open PO (number/vendor/due, amber pressure within 5 working days) or coverage short — Coverage stat (`OK`/`SHORT`, counting only `materialStatus` **Needed**, not Needs-pricing/Awaiting-customer — see `materials-inventory-and-purchasing.md` §16, and LATER.md) | POs exist, all received |
+| **Spend** | nothing spent | anything spent, job not terminal — Labor ($ + hours), Materials ($ bought), Total spent (% of scope) | job terminal — same three figures as settled facts |
+| **Invoicing** | no invoices | anything unbilled/unpaid — one stat group per invoice (payment-latency clock: green "paid in N days" / red "sent N days ago, unpaid"), Remaining to bill, Billed % (collapses oldest paid invoices past 4 rows) | fully billed and paid |
+| **Delivery** | nothing prepared yet | a prepared shipment awaits pickup (red past 3 working days), or work is done with nothing shipped | everything picked up |
+
+**Backend.** `GET /api/jobs/{id}/overview/` (`JobViewSet.overview` action
+→ `apps.jobs.overview.JobOverviewService.summary`) is the one aggregate
+read the SPA can't cheaply compute: `{due, spend, work}` —
+- `due`: working-day countdown to `Job.due_date` via
+  `apps.schedule.calendar_arithmetic.is_working_day` against the shop's
+  `load_shop_envelope()`; `null` with no due date; negative = overdue.
+- `spend`: the labor/materials split, delegated entirely to
+  `apps.jobs.financials.spend_breakdown(job)` (§9.3) — `{labor,
+  labor_hours, materials_bought, total}`, string-formatted. This is the
+  same source of truth as the header's Spent figure; the two can never
+  drift apart.
+- `work`: task counts (`tasks_total`/`tasks_complete`/`tasks_blocked`/
+  `tasks_terminal`), estimated-vs-completed worker-hours, and
+  `working_now` (task name + worker name per open Blep). **Cancelled
+  tasks are excluded from `tasks_total` and the hour totals** (matching
+  the board's progress stat) but still count toward `tasks_terminal`.
+
+Everything else the blocks need (estimates, change orders, invoices,
+POs, shipments, deliverable count) comes from the page's existing
+per-list fetches — `JobDetailPage.svelte` fires them all in parallel
+alongside the overview call, `now` captured once per load so every
+block reads the same instant.
+
+**Frontend.** `frontend/src/lib/jobOverview.js` is the pure view-model —
+every block rule, clock, temperature, and copy string lives there
+(`scopeBlock`, `workBlock`, `materialsBlock`, `spendBlock`,
+`invoicingBlock`, `deliveryBlock`; no fetching, no `Date.now()` — `now`
+is always passed in). Threshold constants ship as named exports
+(`RESPONSE_CLOCK_DAYS = 7`, `DUE_PRESSURE_WORKING_DAYS = 5`,
+`PICKUP_CLOCK_WORKING_DAYS = 3`, `INVOICE_ROW_MAX = 4`) with a comment
+pointing at `Configuration` as the eventual home — no config UI yet.
+`components/jobs/overview/*.svelte` (one thin wrapper per block, e.g.
+`ScopeBlock.svelte`) call the lib and hand the result to the shared
+`SummaryBlock.svelte` renderer, which draws the three temperatures and
+is the only place the `.summary-block`/`.stat-spread` markup lives.
 
 ### 9.2 Components
 
 | Component | Role |
 |---|---|
-| `JobDetail.svelte` | Composes the page; owns the accordion `activeSection` state, fetches related data |
+| `JobDetail.svelte` | Composes the page (~120 lines): mounts `JobShell`, derives the two inputs the lib can't take raw (materials Coverage signal, estimate/CO arrays), renders the change-request banner + six blocks |
 | `JobHeader.svelte` | Header + status dropdown |
-| `HistoryPanel.svelte` | Notes + history timeline + email entries |
-| `Accordion.svelte` | Reusable expand/collapse used elsewhere |
-| `ShipmentsPillar.svelte` | Read-only shipments summary inside the Shipments pillar |
-
-The Estimate pillar shows the estimate document (line items + grand total,
-or **Start Estimate** when the job has none). Tasks & Materials shows a
-**read-only** work table (`wo-table`: Task / assignee / status / time, with
-materials nested); Invoice / PO / Shipments pillars are summary panels with
-links out. The overview does not author atoms — `WorkItemForm` /
-`MaterialModal` / `FeeModal` live on the **task-list page** (§9.5), not here.
+| `lib/jobOverview.js` | Pure view-model — block rules, temperatures, clocks, copy (§9.1a) |
+| `components/jobs/overview/SummaryBlock.svelte` | The one dumb renderer for all six blocks (active/frozen/dormant markup) |
+| `components/jobs/overview/{Scope,Work,Materials,Spend,Invoicing,Delivery}Block.svelte` | Thin wrappers: call their `lib/jobOverview.js` function, pass the result to `SummaryBlock` |
 
 ### 9.3 Header financial rollups
 
@@ -1071,6 +1272,19 @@ The job-board Unpaid and Closed cards consume the same module via
 invoiced, `spent`, `profit`), so the board and header can never drift. The cards
 label the figure "Invoiced".
 
+**`spend_breakdown(job)`** (same module, added 2026-07-09) splits the
+Spent figure into its labor/materials parts —
+`{labor, labor_hours, materials_bought, total}`, all Decimal, money
+terms quantized to cents. `total` is the same value `_spent(job)`
+returns (by construction — `_spent` just calls `spend_breakdown(job)['total']`
+— so the header figure and the split can never drift apart). `labor`
+= all blep hours on the job × `average_labor_cost`; `materials_bought`
+= non-rejected, non-stock-receipt job expenses + consumed materials
+with no linked expense at cost (the same two terms the Spent bullet
+above describes, just not summed with labor). This is the job
+overview's Spend block's only data source (§9.1a) — the overview never
+re-derives the split.
+
 **Deferred — Billable.** A fifth figure (value of work earned, at selling price,
 optionally plus estimate for not-yet-actualed lines) is intentionally not built;
 its definition is unsettled. When chosen it slots into `compute_job_financials`
@@ -1079,17 +1293,14 @@ rework to the other four.
 
 ### 9.4 Expenses on the Job UI
 
-Expenses attached to a job (`Expense.job`) surface in two places, fed by
-`/api/expenses/?job=<id>`:
-
-- **Job overview** (`JobDetail`): the **Materials** pillar becomes "Materials &
-  Expenses". Material-less expenses render as their own rows (description,
-  category, amount); a material-linked expense annotates its material's row
-  ("paid $X") rather than getting a duplicate row — keeping the visual count
-  honest. The pillar count includes material-less expenses.
-- **Full task list** (`JobTaskListPage`): material-less expenses render in an
-  "Expenses (no material)" section below the task tree, mirroring how taskless
-  materials surface.
+Expenses attached to a job (`Expense.job`) surface on the **full task
+list** (`TasksPanel.svelte`, hosted by `JobShell` at `#/jobs/{id}/tasks`,
+fed by `/api/expenses/?job=<id>`): material-less expenses render in an
+"Expenses (no material)" section below the task tree, mirroring how
+taskless materials surface. The job overview does not list expense rows
+(no block lists rows, §9.1a) — its Spend block shows the aggregate
+labor/materials dollar split instead (`spend_breakdown`, §9.3), which
+already folds in every expense.
 
 An expense can be **created in place** from the full task list toolbar: an "Add
 Expense" button (next to "Add Material", shown when the job isn't locked) opens
@@ -1100,10 +1311,13 @@ surfaces. Expense create is open to any authenticated user.
 ### 9.5 The work surface (task-list page)
 
 Authoring the Job's own work atoms happens on the **task-list page**
-(`JobTaskListPage.svelte`, `#/jobs/{id}/tasks`), reached from the Tasks &
-Materials pillar. It is available regardless of estimate state, so
-pre-approval / released effort is authored and shown there too. For managers
-it carries two affordances:
+(`#/jobs/{id}/tasks`, reached from the rail's Tasks link). The route
+(`JobTaskListPage.svelte`) is thin glue —
+it resolves the job and hosts `TasksPanel.svelte` (`components/tasks/`)
+inside `JobShell` (§9.6); `TasksPanel` owns everything described below.
+It is available regardless of estimate state, so pre-approval / released
+effort is authored and shown there too. For managers it carries two
+affordances:
 
 - **"Add Work"** — single button that opens `PriceListPicker` (the unified
   picker, see `estimates-and-prices.md` §6.4). The picker's `onChoose` result
@@ -1124,28 +1338,150 @@ it carries two affordances:
 mount and passed to `MaterialModal` so freeform material lines default to the
 shop's configured material category.
 
-**Per-material status & actions (freeform-materials venue rule).** Each material
-row carries a derived status chip — **Needs pricing / Needed / Ordered — PO-NNNN
-/ Awaiting customer / On Hand / Consumed / Released** (`materialStatus`,
-`frontend/src/lib/materialStatus.js`), with a cost-unconfirmed ⚠ when
-`cost_source === 'estimated'`. **All per-material actions live here on the task
-view page only** — Set pricing (establishes a provisional material), the Order
-dialog (append-to-draft-or-create, `CanManageFinancials`), Attach expense, the
-quiet Mark on-hand link, Mark received (customer-supplied), and the PO link. The
-overview **Tasks & Materials pillar is passive** — it shows the same chips and
-consumed/released styling but no buttons or links. Full vocabulary and action
-table: `materials-inventory-and-purchasing.md` §16.
+**Row fragments.** `TaskTree` renders no task or material row markup of
+its own: task rows (top-level AND subtask — `isSubtask` carries the
+nested styling and the deliberate no-+sub/no-arrows omissions) come from
+the shared `components/tasks/TaskRow.svelte`, material rows from
+`components/materials/MaterialRow.svelte`, and the row math/formatting
+both share with the grand-total footer lives in `lib/taskTotals.js` —
+so a row's total and the table's sum cannot diverge, and a subtask row
+is pixel-identical wherever it renders (the old duplicated subtask block
+had already dropped the waiting-on-materials badge). TaskTree itself
+keeps only the fee/expense rows, section headers, and the footer.
 
-The Job overview's **Tasks & Materials** pillar shows a **read-only** mirror
-of these atoms (`wo-table`) — it does not author. **Start Estimate** (creates
-a draft estimate directly — `POST /api/estimates/` with `{job}`) and, while
-the job is held (`on_hold` flag), **+ New change order** live on the
-overview's Estimate pillar. (These replaced the deleted Worksheet detail page; the old
+**Per-material status & actions.** Each material row carries a derived
+status chip — **Needs pricing / Needed / Ordered — PO-NNNN / Awaiting
+customer / On Hand / Consumed / Released** (`materialStatus`,
+`frontend/src/lib/materialStatus.js`), with a cost-unconfirmed ⚠ when
+`cost_source === 'estimated'`. Rows render through the shared
+`MaterialRow.svelte` fragment, and the **full per-material action set is
+available on every surface that lists materials** (this page, the task
+detail page, the parent-task subtask tree) — the old
+actions-on-this-page-only venue rule was retired 2026-07-13; gating is by
+material status / permissions / job state only. The job overview still
+shows no material rows at all — its Materials block is an aggregate
+Coverage stat only (§9.1a). Full vocabulary, action table, and the shared
+fragment/flow components: `materials-inventory-and-purchasing.md` §16.
+
+**Start Estimate** (creates a draft estimate directly — `POST /api/estimates/`
+with `{job}`) and, while the job is held (`on_hold` flag), **Create Change
+Order** live on `EstimatePanel.svelte` (the Estimates section page,
+`#/jobs/:jobId/estimate` — §9.6, `estimates-and-prices.md` §11.4), not on
+the overview. (These replaced the deleted Worksheet detail page; the old
 Plan/Client-View toggle is gone.)
+
+### 9.6 The job workspace shell (section pages)
+
+Every job page — the overview above included, since 2026-07-09 —
+renders through one shared layout component, **`JobShell.svelte`**
+(`components/jobs/`): `JobHeader` + an optional collapsible
+`JobContextBand` + `JobNavRail`, with the page's own content rendered
+into its `children` slot. For the seven other sections that content is
+one **section panel**; for the overview it's the six summary blocks
+(§9.1a) — the overview is the one `JobShell` consumer whose body isn't
+a panel. Route pages are thin glue — resolve `GET /api/jobs/{id}/` (and
+its contact), pass the job to `JobShell`, host the content:
+
+| Section | Route | Glue page | Content |
+|---|---|---|---|
+| Overview | `#/jobs/:id` | `JobDetailPage.svelte` | `JobDetail.svelte` — six summary blocks (§9.1a), not a panel |
+| Estimates | `#/jobs/:jobId/estimate[/:docId]` | `JobEstimatePage.svelte` | `EstimatePanel.svelte` (`components/estimates/`) |
+| Tasks | `#/jobs/:jobId/tasks` (task detail: `#/jobs/:jobId/tasks/:taskId`, §10) | `JobTaskListPage.svelte` | `TasksPanel.svelte` (`components/tasks/`) |
+| Invoices | `#/jobs/:jobId/invoice[/:docId]` | `JobInvoicePage.svelte` | `InvoicePanel.svelte` (`components/invoices/`) |
+| Shipments | `#/jobs/:jobId/shipments` | `JobShipmentsPage.svelte` | `ShipmentsPanel.svelte` (`components/shipments/`) |
+| Purchase Orders | `#/jobs/:jobId/pos` | `JobPOsPage.svelte` | `POPanel.svelte` (`components/purchaseorders/`) — a job-filtered, read-only PO list; POs aren't job-owned (a PO's lines can span jobs), so this panel never offers create — creation stays on the global Purchase Orders page |
+| Emails | `#/jobs/:jobId/emails` | `JobEmailsPage.svelte` | the existing `EmailPanel.svelte`, promoted full-width (v1 scope: no thread/master-detail redesign yet — LATER.md tracks that separately) |
+| History | `#/jobs/:jobId/history` (also `#/jobs/:id/history`) | `JobHistoryPage.svelte` | `JobHistorySection.svelte` (named to avoid colliding with the existing contact/business/PO `HistoryPanel.svelte`) — the job history timeline + note-adding, previously its own standalone page |
+
+`#/jobs/:id/tasklist` still resolves to the task-list glue page (alias
+kept for old links). `/jobs/:id/edit` and `/jobs/:id/duplicate` are no
+longer standalone pages — both actions are now `JobHeader` modals
+(§9.1) — and redirect (`JobRedirectToOverview.svelte`) straight to the
+overview.
+
+**URL-per-document, with persisted position.** The Estimates and
+Invoices sections each carry more than one document (estimate versions
+plus change orders; a job's invoices over time), so their routes take
+an optional `:docId`. The glue page resolves which document to show
+with precedence **URL param → last-remembered document for this
+job/section → latest**, then normalizes the URL to the resolved
+`/:docId` form via `history.replaceState` (no reload, no remount —
+`EstimatePanel` / `InvoicePanel` re-fetch only the document, not the
+job, when `:docId` changes; the jobId is value-keyed so a doc-only
+navigation doesn't reload the job either). The panel's own subnav
+(`DocSubnav.svelte` — a strip of version/invoice-number pills, each
+with a status badge) updates the URL the same way as the user flips
+documents, so any document is a shareable, bookmarkable, back-button-safe
+link — including superseded estimates and change orders (change orders
+appear in the estimate panel's subnav but still link out to the
+standalone `#/change-orders/:id` route — see below). This closes the
+LATER.md question of whether a superseded estimate's subnav entry
+should redirect to the current estimate instead of showing the old one:
+it doesn't — every version is directly viewable at its own URL.
+`ChangeOrderDetailPage.svelte` is **not** extracted into a panel this
+pass (it's the largest page in the app; the LATER.md componentization
+list still carries it) — it stays a standalone route reached from the
+estimate subnav.
+
+**Per-job persisted position** (`stores/jobWorkspace.js`) is what the
+"last-remembered document" / "restore where I left off" behavior above
+reads and writes. One `localStorage` key (`minibini_job_ws`) holds an
+LRU-capped map (50 jobs) of, per job: which document each section last
+showed (`sections`), each document's lines/reconcile mode (`modes`,
+keyed by *document* id, not section — so leaving invoice #22 in
+reconcile mode can't leak into invoice #23), and the context band's
+collapse state (`band`). The URL is always the source of truth for
+*what's currently displayed*; the store only answers "where did I
+leave off" when a bare section route or the band mounts.
+
+**The context band** (`JobContextBand.svelte`, mounted by `JobShell` on
+every job page, the overview included, since 2026-07-09) is a
+collapsible strip defaulting to **expanded**, holding the job's
+description, deliverables (`DeliverablesSection`), and a live email
+preview (`EmailPanel`). It fetches nothing while collapsed; expanding
+it triggers the one-time `/api/emails/?job=` fetch. Collapse state
+persists per job via `rememberBand`, read back by `getJobWs` on mount.
+
+**Reconcile mode is a mode of the document panel, not a route.**
+`EstimatePanel` / `InvoicePanel` each hold a `mode` state (`'lines'` |
+`'reconcile'`) and render the shared `ReconcileMode.svelte`
+(`components/wizards/`) — the former `EstimateWizardPage` /
+`InvoiceWizardPage` two-column source-pool ⇄ line-items surface,
+unchanged in behavior, now parameterized per `docType` — in place of
+the line-items view. Toggling calls `rememberMode(jobId, docId, mode)`;
+restoring a remembered `'reconcile'` mode is **validated against the
+document's live status** — reconcile is only offered on a draft, so a
+document that was sent/accepted/superseded since the mode was last
+remembered falls back to `'lines'` rather than resurrecting an editing
+surface on a closed document. This delivers two standing LATER.md
+wizard entries by construction (one component, one in-place toggle,
+same panel, same job load): merging the atom-pull view into the detail
+page as a toggle, and making the Estimate/Invoice atom-pull UIs
+consistent with each other.
+
+**Redirect shims** keep every old bookmark and emitter working:
+
+| Old route | Shim | Lands on |
+|---|---|---|
+| `#/estimates/:id` | `EstimateDetailPage.svelte` (now a ~12-line redirect) | `#/jobs/:jobId/estimate/:id` |
+| `#/estimates/:id/wizard` | `EstimateWizardRedirect.svelte` | same, after `rememberMode(job, id, 'reconcile')` — lands in reconcile mode |
+| `#/invoices/:id` | `InvoiceDetailPage.svelte` (now a ~12-line redirect) | `#/jobs/:jobId/invoice/:id` |
+| `#/invoices/:id/wizard` | `InvoiceWizardRedirect.svelte` | same, remembering reconcile mode first |
+| `#/jobs/:id/edit`, `#/jobs/:id/duplicate` | `JobRedirectToOverview.svelte` | `#/jobs/:id` |
+
+`Job.nav_targets` (the `SerializerMethodField` the old rail used to
+find each section's most recent document) is retired —
+`apps/api/jobs/serializers.py` no longer computes it, since every rail
+link is now a static, always-valid route rather than a server-picked
+document target.
 
 ## 10. UI: Task Detail page
 
-Route: `#/jobs/:jobId/tasks/:taskId` → `TaskDetailPage.svelte`.
+Route: `#/jobs/:jobId/tasks/:taskId` → `TaskDetailPage.svelte`, mounted
+through the job workspace shell (`JobShell`, §9.6 — the rail's Tasks
+link lights up). The page's own composition (component table below)
+and its loading discipline are unchanged from its 2026-07-07 detail
+pass; only the surrounding chrome changed.
 
 Fetches `GET /api/tasks/{id}/` and `GET /api/bleps/?task={id}` on
 mount.
@@ -1154,33 +1490,124 @@ mount.
 
 | Component | Role |
 |---|---|
-| `TaskActions.svelte` | Renders the status-appropriate button row (Start Work, Stop Work, Complete, Block, Unblock, Cancel) gated by status + permissions. While the user's own session is under `blep_minimum_minutes` (whole minutes), **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5) |
+| `TaskActions.svelte` | Renders the status-appropriate button row gated by status + permissions, and owns the three ENTERED_QTY prompt flows: session prompt after own Stop, settle-up on Complete, prior-session settle before Start (estimates-and-prices.md §4.2). With `hideStop` (used by TaskDetailPage) Start Work renders normally but Stop/blep-Cancel never do — the yellow band is the page's only stop surface. Full-row consumers (TaskQuickCard) keep Start/Stop inline; there, while the user's own session is under `blep_minimum_minutes` (whole minutes), **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5) |
 | `BlepList.svelte` | Table of bleps with edit / delete buttons gated by `isBlepEditable(blep, user, perms)` |
 | `BlepEditModal.svelte` | Create or edit a Blep — `start_time` / `end_time` always; `user` dropdown only when actor has `can_manage_time` |
-| `StartWorkConflictModal.svelte` | Shown when `start-work` returns a `conflict` payload; offers Join / Take over / Cancel |
+| `StartWorkConflictModal.svelte` | Shown when `start-work` returns an `active_worker` conflict; offers Join / Take over / Cancel. Its re-posts carry `prior_qty_handled: true` (the prior-session prompt already ran on the first post) |
+| `ActualQtyModal.svelte` | Quantity entry for ENTERED_QTY tasks — `complete` mode (settle-up: running total + "any more to add?", signed, final must be > 0) and `session` mode (per-session count; `priorTaskName` names the old task in switch/clock-out context; "This completes the task" checkbox = one atomic complete with `add_qty`). Shared by `TaskActions`, `CurrentBlepBand`, `AssignedTaskList`, `ShiftBand` |
+
+### 10.1a Settle-first prompts and the blep-change broadcast
+
+Every own explicit gesture that would end or displace an ENTERED_QTY
+session — Stop, Complete, Start-another-task, clock-out, task-cancel,
+task-block —
+is **settle-first**: the endpoint returns a `prior_session_qty` conflict
+(or `needs_actual_qty` for Complete) and mutates NOTHING until the SPA's
+prompt resolves and the flagged re-post lands. Consequences:
+
+- The band stays honest: while a prompt is up, the session genuinely is
+  still running.
+- `notifyBlepChanged` only fires after the gesture truly lands, so a
+  prompt modal never has to survive a same-client background refetch of
+  the page under it. (An earlier design stopped the blep first and
+  prompted after; the modal had to live through the broadcast-triggered
+  refetch, which bred a page-blank bug and an infinite-refetch loop.
+  Settle-first dissolved that class. If a future gesture ever mutates
+  first and prompts second, it re-inherits the survive-the-refresh
+  requirement — don't do that.)
+- The stop settle is atomic: the flagged `stop-work` carries `add_qty`
+  and applies increment + close in one transaction. The other gestures
+  settle in two calls (add, then flagged re-post) because nothing has
+  mutated if the first call fails.
+
+Two page-level invariants remain as hygiene (multi-tab clients and any
+modal open while an unrelated broadcast lands), each with a regression
+test in `frontend/tests/components/jobs/TaskDetailPage.test.js`:
+
+- **Background refetches never blank the page.** `loadTask` flips
+  `loading` only on first load or when the route's `taskId` changed — a
+  "Loading…" flip unmounts `TaskActions` and destroys any open prompt
+  modal. (Test: an open settle-up modal survives a blep-change
+  broadcast from the *real* blepActivity store.)
+- **`loadTask` reads no `$state` it writes.** Its first-load/`taskId`
+  bookkeeping lives in the deliberately non-reactive `loadedTaskId`
+  variable — reading `task` there once turned the mount `$effect` into
+  an infinite refetch loop (full task-page API fan-out at 4-5 req/s).
+  General rule: `frontend/README.md` §"Loaders called from `$effect`
+  are write-only". (Test: fetch count stays bounded after load.)
 
 ### 10.2 Action visibility
 
 Worker = any authenticated user. Manager = user with `can_manage_jobs`.
 
+Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
+
+1. **JobHeader** (shared, unchanged).
+2. **Task header strip** (`.task-head`) — a crumbs line shown only on a
+   subtask (*subtask of &lt;parent&gt;*, linked via the serializer's
+   `parent_task_name`); no job-overview or task-list crumbs — the nav
+   rail's Overview and Tasks links cover those. Then the title row: the **activity pill**
+   (`TaskActivityIndicator` with `pill` — INVOICED badge replaces it
+   when `task.invoice` is set) to the **left** of the `<h1>` task name,
+   with the **stat-chip strip** right-aligned. Chips (shared
+   `.stat-chips` family, app.css): Assignee (name or muted
+   "Unassigned"; the name itself opens `AssignModal` when
+   `can_manage`), Est Time (`est_worker_time`), Est Qty, Actual, and
+   the money pair Rate + Charge (green-tinted headers; only when the
+   task has a rate scheme). On ENTERED_QTY tasks the Actual chip
+   embeds the signed **+/− Add** input (add-only; Enter or Add commits,
+   never blur; hidden when terminal **or blocked**; success briefly
+   swaps the chip's header label to "added ✓", errors render on a line
+   under the strip). Scheme name + active modifiers live in the Rate
+   chip's tooltip. A blocked task renders its full `blocked_reason` as
+   a red line under the title row.
+3. **Action band** (shared `.action-band` class) — `TaskActions` with
+   `hideStop` (Start Work inside the row, primary-styled; no stop
+   controls here, the yellow band owns stop/cancel while a session
+   runs) plus **Edit Task** as a `quiet` peer button (hidden when
+   terminal).
+4. Sections: **Description → Subtasks → Materials → Work Sessions**
+   (BlepList, whose **Add Entry** button stays — it is the only way to
+   log forgotten historical time from this page). The **Materials
+   section renders the shared `MaterialRow` fragment with the full
+   action set** (chips, tombstones, Order/receipt dialogs, Move — the
+   subtask rows' radios are the move targets; removal is the release
+   action, not a raw delete). The subtask tree is deliberately
+   **passive for task ops** (A3: `TaskTree` renders a button only when
+   its callback is wired — never a dead no-op button): no
+   edit/del/cancel on subtask rows here — a subtask's own detail page
+   is its editing surface. Wired: the full material action set, and the
+   sibling **reorder arrows** (B3 — subtasks reorder here, not on the
+   job task list; same `reorder-tasks` endpoint, peer-scoped
+   server-side). A subtask's detail page renders **no Subtasks section
+   at all** (one-level rule, §4 — no header, no empty-state, no Add
+   Subtask).
+
+The old toolbar row, details table, and Charge table are gone. The
+table below still governs which controls *exist*.
+
 | Status | Worker sees | Manager additionally sees |
 |---|---|---|
-| pending | Start Work, Complete, Block | Cancel |
-| in_progress, user is active worker | Stop Work, Complete, Block | Cancel |
-| in_progress, user is not active worker | Start Work, Complete, Block | Cancel |
-| blocked | Unblock | Cancel |
+| pending | Start Work, Complete, Block, Cancel | — |
+| in_progress, user is active worker | Stop Work, Complete, Block, Cancel | — |
+| in_progress, user is not active worker | Start Work, Complete, Block, Cancel | — |
+| blocked | Unblock, Cancel | — |
 | complete | (read-only) | (read-only) |
 | cancelled | (read-only) | (read-only) |
 
-Worker access to Complete/Block/Unblock is intentional — workers are
-the ones who discover these conditions. Cancel stays manager-only.
+Worker access to Complete/Block/Unblock/Cancel is intentional — workers
+are the ones who discover these conditions, and cancel is the exit from
+a task that can no longer be deleted (C2, 2026-07-12). **Edit Task** is
+gated on the per-task `can_edit` flag (the C1 matrix, §4.0), and the
+whole action band is hidden while the job is held (§3.1).
 
 While the active session is under `blep_minimum_minutes` (compared in whole
 minutes), the "Stop Work" button instead reads "Cancel" and deletes the
 just-started Blep (undoing the Start) rather than closing it — see §5.5. The
 backend enforces the same rule on every close path, so even a Stop on a
-sub-minimum session is converted to a cancel server-side. This is distinct
-from the manager-only task **Cancel** above.
+sub-minimum session is converted to a cancel server-side. This blep-cancel
+is distinct from the task-level **Cancel** above (which kills the task,
+keeping its recorded time).
 
 ### 10.3 Recent Time list (home page)
 
@@ -1266,7 +1693,7 @@ atom). This is intentional, not an oversight: fulfillment is shop-floor work —
 any authenticated user must be able to create a shipment, add items, and mark
 it picked up — so shipment management is purposely *not* parallel to deliverable
 management. (The frontend's Shipments page is correspondingly ungated; flagged
-and confirmed-intentional in `docs/plans/2026-06-06-gating-parity-audit.md`.)
+and confirmed-intentional in the 2026-06-06 gating-parity audit.)
 
 ### 12.2 Editability of the Deliverables list
 
@@ -1409,31 +1836,39 @@ pick, pack, and mark goods picked up without elevated permissions).
 
 ### 12.8 UI
 
-**Job detail page**: a third column appears in the existing Description
-| ... | History flex row. Renders as a `<DeliverablesSection>` panel
-matching the chrome of its neighbors. The list shows simple
-`qty units description` lines (no headers, no computed columns). An
-"Edit" link in the panel head opens `<DeliverablesEditModal>` when the
-list is editable.
+**One mount point** (2026-07-09, superseding the earlier two-mount-point
+design below): `<DeliverablesSection>` now lives inside
+`JobContextBand.svelte` (§9.6), the collapsible strip `JobShell` mounts
+on **every** job page — overview, Estimates section, Tasks, Invoices,
+etc. Since `EstimatePanel` (the Estimates section) is itself hosted
+inside `JobShell`, the old "mounted separately on the Job detail page
+and the Estimate detail page" split collapsed into one shared component
+instance reached from any job page — the scope is still editable
+wherever the user happens to be pre-acceptance, just via the shared
+band rather than two direct mounts. It renders as a `<DeliverablesSection>`
+panel matching the chrome of its neighbors (Description, Email) inside
+the band's grid. The list shows simple `qty units description` lines
+(no headers, no computed columns). An "Edit" link in the panel head
+opens `<DeliverablesEditModal>` when the list is editable.
 
-**Two mount points, one component.** The same `<DeliverablesSection>`
-is mounted on the **Job detail** page and the **Estimate detail** page
-(bottom of each), so the scope can be edited wherever the user happens to
-be pre-acceptance. It takes `jobId` plus a `canManage` prop, which each
-parent feeds from its own already-fetched per-object `can_manage` flag
-(`job.can_manage`, `estimate.can_manage` — both from
-`JobScopedCanManageMixin` / `JobService.user_can_manage`). The "Edit"
-affordance shows only when `canManage && editability.editable`, so the
-button appears exactly when the server would accept the write (atom
-holder **or** the job's PM, and the list not yet locked by a sent/
-accepted estimate or open change order — see §12.2). The component is
-only ever mounted on Job-related pages, so `jobId` is always resolvable.
+`<DeliverablesSection>` takes `jobId` plus a `canManage` prop, fed from
+`job.can_manage` (`JobScopedCanManageMixin` / `JobService.user_can_manage`
+— `JobContextBand` always has the job object, so this is always
+resolvable). The "Edit" affordance shows only when
+`canManage && editability.editable`, so the button appears exactly when
+the server would accept the write (atom holder **or** the job's PM, and
+the list not yet locked by a sent/accepted estimate or open change
+order — see §12.2).
 
-A read-only **Shipments pillar** sits between the Invoices and Purchase
-Orders pillars in the accordion. It renders the same matrix table as
-the editor page (one row per Deliverable, one column per Shipment with
-status + date in the header) and a "Manage shipments →" link to the
-editor.
+`ShipmentsPillar.svelte` — the read-only shipments matrix that used to
+sit between the Invoices and Purchase Orders accordion pillars — is
+**orphaned** since the pillars were retired (2026-07-09): nothing
+imports it. Its job (a shipments summary reachable from the job's
+landing page) is not currently replaced anywhere — the overview's
+Delivery block (§9.1a) shows aggregate stats only, and the full matrix
+lives on the Shipments section page (`ShipmentsPanel.svelte`, reached
+via the rail). See `docs/designs/LATER.md` — delete the orphan once RM
+confirms nothing planned wants it.
 
 **Job Shipments page** at `#/jobs/:jobId/shipments`: the editable
 matrix. Adds + Discard (local for drafts, server for persisted),
@@ -1556,11 +1991,6 @@ the job stays held.
   through `in_progress → work_complete` in one step. Hook into the
   relevant `TaskLifecycleService` transitions.
 
-- **`@history` decorator on `Task`.** Block, unblock, complete, cancel,
-  and assignment changes don't surface in the Job HistoryPanel. Adding
-  it requires converting the `Task.objects.filter(pk=...).update(...)`
-  calls in `TaskLifecycleService` to `task.save()` so the change-tracker
-  can capture old/new values.
 - **Workflow routing soft warnings.** `populate-from-template` doesn't
   warn when the Job already has atoms. Hard prerequisite gates exist;
   soft steering does not.
