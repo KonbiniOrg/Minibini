@@ -273,8 +273,13 @@
                     <td>{timeLabel(row.when)}</td>
                     <td>{row.actor ?? '—'}</td>
                     <td>
-                      {#if row.link}<a href={row.link}>{row.label}</a>{:else}<span>{row.label}</span>{/if}
-                      {#if row.note}<em class="preserve-breaks">{row.text}</em>{:else}{row.text}{/if}
+                      {#if row.note}
+                        <!-- notes are job-level; the job label would be redundant here -->
+                        <em class="preserve-breaks">{row.text}</em>
+                      {:else}
+                        {#if row.link}<a href={row.link}>{row.label}</a>{:else}<span>{row.label}</span>{/if}
+                        {row.text}
+                      {/if}
                     </td>
                   </tr>
                 {/each}

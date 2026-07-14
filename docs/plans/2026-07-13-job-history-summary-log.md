@@ -49,8 +49,9 @@ For each history entry, in priority order:
      the new status, falling back to the humanized raw status
      (underscores → spaces).
 3. `entry_type == 'note'` → a row whose action text is the note's own text,
-   rendered in italics (multiline preserved). Hand-written notes are
-   milestones too.
+   rendered in italics (multiline preserved), with no object label — notes
+   are job-level and the log is already scoped to the job. Hand-written
+   notes are milestones too.
 4. Anything else (plain field edits, standalone `_action` entries with no
    status diff) → **no row**. Excluded for now; widening this filter later
    is the designed extension point.

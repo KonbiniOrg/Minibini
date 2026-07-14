@@ -245,13 +245,15 @@ describe('JobHistorySection', () => {
         username: 'rae', timestamp: '2026-01-05T09:00:00', text: 'Customer called',
         changes: null, source_label: 'Job JOB-2025-0005', source_link: null },
     ] });
-    const { container, findByRole, getByText } =
+    const { container, findByRole, getByText, queryByText } =
       render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     expect(container.querySelectorAll('tr.log-row').length).toBe(1);
     const note = getByText('Customer called');
     expect(note).toBeInTheDocument();
     expect(note.closest('em')).not.toBeNull();
+    // no object label on note rows — notes are job-level and we're on the job
+    expect(queryByText('Job JOB-2025-0005')).toBeNull();
   });
 
   it('shows an empty state on the Summary tab when no milestones exist', async () => {
