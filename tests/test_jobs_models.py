@@ -210,6 +210,49 @@ class JobStatusTransitionTest(TestCase):
         self.assertEqual(job.status, Job.STATUS_WORK_COMPLETE)
 
 
+class JobContactReassignmentTest(TestCase):
+    """Contact is only reassignable while the Job is still a draft."""
+
+    def setUp(self):
+        self.contact_a = Contact.objects.create(first_name='A', last_name='One', email='a1@example.com')
+        self.contact_b = Contact.objects.create(first_name='B', last_name='Two', email='b2@example.com')
+
+    def test_contact_reassignable_while_draft(self):
+        job = Job.objects.create(
+            job_number=f"J_draft_{timezone.now().timestamp()}",
+            contact=self.contact_a, status=Job.STATUS_DRAFT,
+        )
+        job.contact = self.contact_b
+        job.save()
+        job.refresh_from_db()
+        self.assertEqual(job.contact_id, self.contact_b.pk)
+
+    def test_contact_change_rejected_once_submitted(self):
+        job = Job.objects.create(
+            job_number=f"J_submitted_{timezone.now().timestamp()}",
+            contact=self.contact_a, status=Job.STATUS_DRAFT,
+        )
+        job.status = Job.STATUS_SUBMITTED
+        job.save()
+
+        job.contact = self.contact_b
+        with self.assertRaises(ValidationError):
+            job.save()
+
+    def test_unchanged_contact_does_not_raise_after_leaving_draft(self):
+        job = Job.objects.create(
+            job_number=f"J_samecontact_{timezone.now().timestamp()}",
+            contact=self.contact_a, status=Job.STATUS_DRAFT,
+        )
+        job.status = Job.STATUS_SUBMITTED
+        job.save()
+
+        job.name = 'renamed'
+        job.save()  # no contact change — must not raise
+        job.refresh_from_db()
+        self.assertEqual(job.name, 'renamed')
+
+
 class RejectedJobCompletedDateTest(TestCase):
     """Bug 3: a Job transitioning to REJECTED should get completed_date set,
     so it shows in the board's Closed section (which filters on

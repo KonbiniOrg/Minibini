@@ -432,7 +432,12 @@ Non-CO holds resume manually.
 
 - **job_number**: unique, max 50 chars. Generated via NumberGenerationService
   (pattern from Configuration). Only generated for new instances.
-- **contact** (required FK → Contact, PROTECT)
+- **contact** (required FK → Contact, PROTECT). Reassignable only while
+  `status == draft` — `Job.clean()` rejects a contact change once the job has
+  left draft (enforced regardless of what else changes in the same save; a
+  no-op write of the same contact is always allowed). The SPA's Edit Job modal
+  only renders the contact picker for draft jobs, showing the contact name
+  read-only otherwise.
 - **project_manager** (optional FK → `core.User`, SET_NULL, `related_name='managed_jobs'`): informational owner of the job; no business-logic side effects, no status interaction, no dedicated permission. Set/cleared via the job edit page by `can_manage_jobs`.
 - **status**: must be one of the choices above, default `draft`
 - **on_hold**: BooleanField, default False. Orthogonal pause flag — see above. Set/cleared only via `JobService.hold_job` / `release_job` (also cleared by CO acceptance and by cancellation); the API exposes it read-only (`POST /api/jobs/{id}/hold/` / `.../release/` are the write paths) and a status PATCH of `'on_hold'` is a 400.
