@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn() },
@@ -33,6 +33,8 @@ describe('JobHistoryPage', () => {
     expect(await findByText(/JOB #2025-0005/)).toBeInTheDocument();
     expect(container.querySelector('.job-nav-rail')).toBeInTheDocument();
     await findByRole('heading', { name: 'History' });
+    // notes live on the Timeline tab; Summary is the default
+    await fireEvent.click(await findByRole('button', { name: 'Timeline' }));
     expect(await findByText('Customer called')).toBeInTheDocument();
   });
 
