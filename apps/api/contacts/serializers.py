@@ -53,6 +53,14 @@ class ContactSerializer(serializers.ModelSerializer):
 
 
 class BusinessSerializer(serializers.ModelSerializer):
+    # Declared explicitly (not auto-generated) so DRF does NOT attach its own
+    # UniqueValidator here — same reasoning as ContactSerializer.email above:
+    # a duplicate name needs to surface a rich 409 (which existing business
+    # conflicted), which only ContactService's proactive check + the
+    # BusinessViewSet.create() override can produce. Uniqueness is still
+    # enforced — by the service check and, as a backstop, the DB constraint
+    # via full_clean().
+    business_name = serializers.CharField(max_length=255)
     default_contact = ContactSerializer(read_only=True)
     default_contact_id = serializers.PrimaryKeyRelatedField(
         queryset=Contact.objects.all(), source='default_contact', write_only=True, required=False,

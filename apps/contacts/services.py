@@ -127,6 +127,31 @@ class ContactService:
     # --- Business CRUD ---
 
     @staticmethod
+    def find_business_by_name(business_name):
+        """Case-insensitive lookup for an existing business with this name,
+        or None. Shared by the pre-create duplicate check below and by the
+        API's check-name endpoint (used to warn before a contact is created
+        for a business that's about to fail as a duplicate)."""
+        name = (business_name or '').strip()
+        if not name:
+            return None
+        return Business.objects.filter(business_name__iexact=name).first()
+
+    @staticmethod
+    def _check_duplicate_business_name(business_name):
+        """Raise a rich ValidationError if a business with this name (case-
+        insensitively) already exists, so the caller can identify *which*
+        business conflicted and surface a "did you mean this one?" prompt
+        instead of a bare validation error."""
+        existing = ContactService.find_business_by_name(business_name)
+        if existing:
+            raise ValidationError(
+                'A business with this name already exists.',
+                code='duplicate_business_name',
+                params={'business_id': existing.pk},
+            )
+
+    @staticmethod
     def create_business(contacts_data, **kwargs):
         """Create a business with one or more contacts.
 
@@ -135,6 +160,8 @@ class ContactService:
         """
         if not contacts_data:
             raise ValidationError('At least one contact is required.')
+
+        ContactService._check_duplicate_business_name(kwargs.get('business_name'))
 
         with transaction.atomic():
             # Create first contact without business (needed for default_contact FK)
@@ -167,6 +194,8 @@ class ContactService:
             contact = Contact.objects.get(pk=contact_pk)
         except Contact.DoesNotExist:
             raise NotFoundError(f'Contact {contact_pk} not found')
+
+        ContactService._check_duplicate_business_name(kwargs.get('business_name'))
 
         with transaction.atomic():
             business = Business(default_contact=contact, **kwargs)

@@ -4,6 +4,7 @@
   import { showError } from '../../stores/messages.js';
   import BusinessForm from '../../components/contacts/BusinessForm.svelte';
   import DuplicateContactModal from '../../components/contacts/DuplicateContactModal.svelte';
+  import DuplicateBusinessModal from '../../components/contacts/DuplicateBusinessModal.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
   import { push } from 'svelte-spa-router';
 
@@ -16,6 +17,7 @@
   let formError = $state('');
   let fieldErrs = $state({});
   let duplicateContact = $state(null);
+  let duplicateBusiness = $state(null);
 
   async function load() {
     loading = true;
@@ -37,11 +39,21 @@
     formError = '';
     fieldErrs = {};
     duplicateContact = null;
+    duplicateBusiness = null;
     try {
       if (isEdit) {
         await api.patch(`/api/businesses/${params.id}/`, data);
         push(`/businesses/${params.id}`);
       } else {
+        // Check the business name for a conflict before creating anything —
+        // otherwise a duplicate name fails only after the contact below has
+        // already been committed, leaving it orphaned.
+        const nameCheck = await api.get(`/api/businesses/check-name/?name=${encodeURIComponent(data.business_name)}`);
+        if (nameCheck.exists) {
+          duplicateBusiness = nameCheck.business;
+          return;
+        }
+
         const contactData = data._contact;
         delete data._contact;
         // Create the contact first. A field error from this call carries the
@@ -56,6 +68,10 @@
     } catch (e) {
       if (!isEdit && e.status === 409 && e.data?.code === 'duplicate_email') {
         duplicateContact = e.data.existing_contact;
+        return;
+      }
+      if (!isEdit && e.status === 409 && e.data?.code === 'duplicate_business_name') {
+        duplicateBusiness = e.data.existing_business;
         return;
       }
       const t = triageError(e);
@@ -103,6 +119,12 @@
     contact={duplicateContact}
     onViewExisting={() => push(`/contacts/${duplicateContact.contact_id}`)}
     onClose={() => { duplicateContact = null; }}
+  />
+  <DuplicateBusinessModal
+    open={!!duplicateBusiness}
+    business={duplicateBusiness}
+    onViewExisting={() => push(`/businesses/${duplicateBusiness.business_id}`)}
+    onClose={() => { duplicateBusiness = null; }}
   />
 {/if}
 </div>
