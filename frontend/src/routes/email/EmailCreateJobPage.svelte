@@ -2,6 +2,7 @@
   import { emailApi, resolveSenderToContact } from '../../lib/email.js';
   import SenderResolutionForm from '../../components/email/SenderResolutionForm.svelte';
   import DuplicateContactModal from '../../components/contacts/DuplicateContactModal.svelte';
+  import DuplicateBusinessModal from '../../components/contacts/DuplicateBusinessModal.svelte';
   import { push } from 'svelte-spa-router';
 
   const { params = {} } = $props();
@@ -17,6 +18,7 @@
   let submitting = $state(false);
   let submitError = $state(null);
   let duplicateContact = $state(null);
+  let duplicateBusiness = $state(null);
 
   async function load() {
     loading = true;
@@ -36,6 +38,7 @@
     e.preventDefault();
     submitError = null;
     duplicateContact = null;
+    duplicateBusiness = null;
     submitting = true;
     try {
       const { contactId } = await resolveSenderToContact(resolutionState);
@@ -48,6 +51,8 @@
     } catch (err) {
       if (err.status === 409 && err.data?.code === 'duplicate_email') {
         duplicateContact = err.data.existing_contact;
+      } else if (err.status === 409 && err.data?.code === 'duplicate_business_name') {
+        duplicateBusiness = err.data.existing_business;
       } else {
         submitError = err.message;
       }
@@ -100,6 +105,12 @@
     contact={duplicateContact}
     onViewExisting={() => push(`/contacts/${duplicateContact.contact_id}`)}
     onClose={() => { duplicateContact = null; }}
+  />
+  <DuplicateBusinessModal
+    open={!!duplicateBusiness}
+    business={duplicateBusiness}
+    onViewExisting={() => push(`/businesses/${duplicateBusiness.business_id}`)}
+    onClose={() => { duplicateBusiness = null; }}
   />
 {/if}
 </div>

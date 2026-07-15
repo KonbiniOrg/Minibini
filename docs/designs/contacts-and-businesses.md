@@ -336,15 +336,17 @@ pages (`EmailCreateJobPage.svelte`, `EmailCreateBillPage.svelte`,
 `EmailCreatePOPage.svelte`), which create a Contact via
 `resolveSenderToContact` (`frontend/src/lib/email.js`) and need the same
 409 handling since that helper POSTs to `/api/contacts/` directly. All five
-pages check `e.status === 409 && e.data?.code === 'duplicate_email'` before
-falling through to normal error triage.
+pages check both `e.data?.code === 'duplicate_email'` and
+`'duplicate_business_name'` before falling through to normal error triage.
 
 `resolveSenderToContact` can also create a **Business** (its
-`businessMode === 'new'` branch POSTs `/api/businesses/` after the
-contact). This path does not call `check-name` first and does not handle
-`duplicate_business_name` — a genuine collision there falls through to the
-generic `err.message` fallback (`"Server error (409)"`) rather than a
-friendly modal. Known gap, not yet addressed.
+`businessMode === 'new'` branch). It follows the same "check before you
+create anything" order as `BusinessFormPage`: it calls `check-name` first,
+and if a match exists, throws a synthetic `{status: 409, data: {code:
+'duplicate_business_name', existing_business}}` error *before* the contact
+POST — so, like the form page, a collision here never orphans a contact.
+The three email pages render `DuplicateBusinessModal` for this error the
+same way they do `DuplicateContactModal`.
 
 ---
 
