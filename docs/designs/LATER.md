@@ -919,3 +919,6 @@ Cross-cutting UI/API conventions and shared components.
   Hands-off by request: the Tags feature belongs to its original author.
   _Done when:_ the author routes TagViewSet writes through `TagService`
   (or records an exemption).
+
+- **Job History Summary hides an "accidental start cancelled" task revert.** — _added 2026-07-13_
+  A task's accidental-start-cancelled revert is recorded only as a standalone action entry (no status diff), so `frontend/src/lib/historyLog.js`'s standalone-action rule excludes it and the Summary shows "started" with no visible revert row. Revisit if this confuses users in practice.
