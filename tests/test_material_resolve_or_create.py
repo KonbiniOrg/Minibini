@@ -13,7 +13,7 @@ class MaterialResolveOrCreateTest(TestCase):
     def setUp(self):
         Configuration.objects.get_or_create(key='po_number_sequence', defaults={'value': 'PO-{counter:04d}'})
         AppState.objects.get_or_create(key='po_counter', defaults={'value': '0'})
-        c = Contact.objects.create(first_name='V', last_name='V', work_number='5')
+        c = Contact.objects.create(first_name='V', last_name='V', work_number='5', email='v@example.com')
         self.business = Business.objects.create(business_name='B', default_contact=c)
         c.business = self.business; c.save()
         self.job = Job.objects.create(job_number='J-1', contact=c, description='j')
@@ -214,7 +214,7 @@ class MaterialResolveOrCreateTest(TestCase):
 
     def test_explicit_link_with_mismatched_job_raises(self):
         """If job is given AND material_id is given, they must match."""
-        other_contact = Contact.objects.create(first_name='X', last_name='Y', work_number='9')
+        other_contact = Contact.objects.create(first_name='X', last_name='Y', work_number='9', email='xy@example.com')
         other_job = Job.objects.create(job_number='J-2', contact=other_contact, description='other')
         existing = MaterialService.create_on_job(
             job=self.job, inventory_item=self.pli, quantity=Decimal('3.00'),

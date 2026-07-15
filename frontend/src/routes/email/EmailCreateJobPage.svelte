@@ -1,6 +1,7 @@
 <script>
   import { emailApi, resolveSenderToContact } from '../../lib/email.js';
   import SenderResolutionForm from '../../components/email/SenderResolutionForm.svelte';
+  import DuplicateContactModal from '../../components/contacts/DuplicateContactModal.svelte';
   import { push } from 'svelte-spa-router';
 
   const { params = {} } = $props();
@@ -15,6 +16,7 @@
 
   let submitting = $state(false);
   let submitError = $state(null);
+  let duplicateContact = $state(null);
 
   async function load() {
     loading = true;
@@ -33,6 +35,7 @@
   async function handleSubmit(e) {
     e.preventDefault();
     submitError = null;
+    duplicateContact = null;
     submitting = true;
     try {
       const { contactId } = await resolveSenderToContact(resolutionState);
@@ -43,7 +46,11 @@
       });
       push(`/jobs/${job.job_id}`);
     } catch (err) {
-      submitError = err.message;
+      if (err.status === 409 && err.data?.code === 'duplicate_email') {
+        duplicateContact = err.data.existing_contact;
+      } else {
+        submitError = err.message;
+      }
       submitting = false;
     }
   }
@@ -88,5 +95,11 @@
       <a href="#/email/{params.id}">Cancel</a>
     </p>
   </form>
+  <DuplicateContactModal
+    open={!!duplicateContact}
+    contact={duplicateContact}
+    onViewExisting={() => push(`/contacts/${duplicateContact.contact_id}`)}
+    onClose={() => { duplicateContact = null; }}
+  />
 {/if}
 </div>

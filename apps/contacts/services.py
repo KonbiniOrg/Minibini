@@ -17,7 +17,23 @@ class ContactService:
 
     @staticmethod
     def create_contact(*, business_pk=None, **kwargs):
-        """Create a new contact, optionally associated with a business."""
+        """Create a new contact, optionally associated with a business.
+
+        Checks for an existing contact with the same email up front (rather
+        than letting the DB unique constraint / full_clean() reject it) so
+        the caller can identify *which* contact conflicted and surface a
+        "did you mean this one?" prompt instead of a bare validation error.
+        """
+        email = (kwargs.get('email') or '').strip()
+        if email:
+            existing = Contact.objects.filter(email__iexact=email).first()
+            if existing:
+                raise ValidationError(
+                    'A contact with this email address already exists.',
+                    code='duplicate_email',
+                    params={'contact_id': existing.pk},
+                )
+
         business = None
         if business_pk is not None:
             try:
@@ -50,6 +66,7 @@ class ContactService:
                 except Business.DoesNotExist:
                     raise NotFoundError(f'Business {business_pk} not found')
 
+        contact.full_clean()
         contact.save()
         return contact
 
@@ -128,6 +145,7 @@ class ContactService:
 
             # Create business with first contact as default
             business = Business(default_contact=first_contact, **kwargs)
+            business.full_clean()
             business.save()
 
             # Link first contact to business
@@ -152,6 +170,7 @@ class ContactService:
 
         with transaction.atomic():
             business = Business(default_contact=contact, **kwargs)
+            business.full_clean()
             business.save()
             contact.business = business
             contact.save()
@@ -168,6 +187,7 @@ class ContactService:
 
         for field, value in kwargs.items():
             setattr(business, field, value)
+        business.full_clean()
         business.save()
         return business
 

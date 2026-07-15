@@ -75,3 +75,29 @@ describe('EmailCreateBillPage PO pre-fill', () => {
     expect(url).not.toMatch(/[?&]po=/);
   });
 });
+
+describe('EmailCreateBillPage duplicate contact', () => {
+  it('shows the duplicate-contact modal instead of navigating on a 409', async () => {
+    emailApi.senderInfo.mockResolvedValue(SENDER_INFO);
+    const err = new Error('conflict');
+    err.status = 409;
+    err.data = {
+      code: 'duplicate_email',
+      existing_contact: { contact_id: 42, name: 'Bob Vendor', email: 'bob@vendor.com' },
+    };
+    resolveSenderToContact.mockRejectedValue(err);
+
+    const { getByRole, findByText } = render(EmailCreateBillPage, { props: { params: { id: '7' } } });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const button = getByRole('button', { name: /Continue to Bill/i });
+    await fireEvent.click(button);
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(await findByText(/may already exist/i)).toBeTruthy();
+    expect(await findByText('Bob Vendor')).toBeTruthy();
+    expect(push).not.toHaveBeenCalled();
+  });
+});

@@ -80,6 +80,29 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
             qs = qs.filter(q)
         return qs
 
+    def create(self, request, *args, **kwargs):
+        """Overridden (not just perform_create) so a duplicate-email conflict
+        can carry the conflicting contact's data — the SPA renders a "did you
+        mean this one?" prompt from it rather than a bare field error."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            self.perform_create(serializer)
+        except ValidationError as e:
+            if getattr(e, 'code', None) == 'duplicate_email':
+                existing = Contact.objects.get(pk=e.params['contact_id'])
+                return Response(
+                    {
+                        'detail': e.messages[0],
+                        'code': 'duplicate_email',
+                        'existing_contact': ContactSerializer(existing).data,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            raise  # plain validation errors render via the contract handler
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     def perform_create(self, serializer):
         data = serializer.validated_data
         business = data.pop('business', None)

@@ -2,6 +2,7 @@
   import { api } from '../../lib/api.js';
   import { emailApi, resolveSenderToContact } from '../../lib/email.js';
   import SenderResolutionForm from '../../components/email/SenderResolutionForm.svelte';
+  import DuplicateContactModal from '../../components/contacts/DuplicateContactModal.svelte';
   import { push } from 'svelte-spa-router';
 
   const { params = {} } = $props();
@@ -13,6 +14,7 @@
 
   let submitting = $state(false);
   let submitError = $state(null);
+  let duplicateContact = $state(null);
 
   async function load() {
     loading = true;
@@ -29,6 +31,7 @@
   async function handleSubmit(e) {
     e.preventDefault();
     submitError = null;
+    duplicateContact = null;
     submitting = true;
     try {
       const { contactId, businessId } = await resolveSenderToContact(resolutionState);
@@ -47,7 +50,11 @@
       const result = await emailApi.createPo(params.id, { vendor_business_id: vendorBusinessId });
       push(`/purchase-orders/${result.po_id}`);
     } catch (err) {
-      submitError = err.message;
+      if (err.status === 409 && err.data?.code === 'duplicate_email') {
+        duplicateContact = err.data.existing_contact;
+      } else {
+        submitError = err.message;
+      }
       submitting = false;
     }
   }
@@ -83,5 +90,11 @@
     </p>
     <p><small>Line items can be added on the PO detail page after creation.</small></p>
   </form>
+  <DuplicateContactModal
+    open={!!duplicateContact}
+    contact={duplicateContact}
+    onViewExisting={() => push(`/contacts/${duplicateContact.contact_id}`)}
+    onClose={() => { duplicateContact = null; }}
+  />
 {/if}
 </div>

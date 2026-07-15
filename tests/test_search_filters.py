@@ -20,7 +20,7 @@ class JobStatusFilterServiceTest(BaseTestCase):
 
     def setUp(self):
         super().setUp()
-        contact = Contact.objects.create(first_name='Alice', last_name='Smith')
+        contact = Contact.objects.create(first_name='Alice', last_name='Smith', email='alice.smith@example.com')
         self.job_draft = Job.objects.create(
             job_number='FILT-001',
             contact=contact,
@@ -67,7 +67,7 @@ class JobStatusFilterServiceTest(BaseTestCase):
     def test_status_filter_non_jobs_categories_unchanged(self):
         business = Business.objects.create(
             business_name='Test Corp',
-            default_contact=Contact.objects.create(first_name='Bob', last_name='Jones'),
+            default_contact=Contact.objects.create(first_name='Bob', last_name='Jones', email='bob.jones@example.com'),
         )
         categories_with_businesses = dict(self.categories)
         categories_with_businesses['businesses'] = {'items': [business], 'subcategories': {}}
@@ -85,7 +85,7 @@ class StartDateFilterServiceTest(BaseTestCase):
 
     def setUp(self):
         super().setUp()
-        contact = Contact.objects.create(first_name='Carol', last_name='White')
+        contact = Contact.objects.create(first_name='Carol', last_name='White', email='carol.white@example.com')
         now = timezone.now()
         self.job_started_early = Job.objects.create(
             job_number='SD-001',
@@ -138,7 +138,7 @@ class StartDateFilterServiceTest(BaseTestCase):
     def test_non_jobs_categories_unchanged(self):
         business = Business.objects.create(
             business_name='SD Corp',
-            default_contact=Contact.objects.create(first_name='Dave', last_name='Green'),
+            default_contact=Contact.objects.create(first_name='Dave', last_name='Green', email='dave.green@example.com'),
         )
         cats = dict(self.categories)
         cats['businesses'] = {'items': [business], 'subcategories': {}}
@@ -217,7 +217,7 @@ class SearchWithinAPITest(BaseTestCase):
         self.client = APIClient()
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
-        contact = Contact.objects.create(first_name='Frank', last_name='Castle')
+        contact = Contact.objects.create(first_name='Frank', last_name='Castle', email='frank.castle@example.com')
         self.job_alpha = Job.objects.create(
             job_number='WI-001',
             contact=contact,
@@ -252,7 +252,7 @@ class SearchWithinAPITest(BaseTestCase):
 
     def test_within_combines_with_other_filters(self):
         """within should operate on already-filtered results."""
-        contact = Contact.objects.create(first_name='Gina', last_name='Miles')
+        contact = Contact.objects.create(first_name='Gina', last_name='Miles', email='gina.miles@example.com')
         Job.objects.create(
             job_number='WI-003',
             contact=contact,

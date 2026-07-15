@@ -26,6 +26,15 @@ class ContactSummarySerializer(serializers.ModelSerializer):
 
 class ContactSerializer(serializers.ModelSerializer):
     name = serializers.CharField(read_only=True)
+    # Declared explicitly (not auto-generated) so DRF does NOT attach its own
+    # UniqueValidator here — a duplicate email needs to surface a rich 409
+    # (which existing contact conflicted), which only ContactService's
+    # proactive check + ContactViewSet.create() can produce. Letting DRF's
+    # validator fire first would short-circuit is_valid() with a bare
+    # "already exists" message before that check ever runs. Uniqueness is
+    # still enforced — by the service check and, as a backstop, the DB
+    # constraint via full_clean().
+    email = serializers.EmailField()
     business = BusinessSummarySerializer(read_only=True)
     business_id = serializers.PrimaryKeyRelatedField(
         queryset=Business.objects.all(), source='business', write_only=True, required=False, allow_null=True,

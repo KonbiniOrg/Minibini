@@ -19,12 +19,12 @@ class ContactAPITest(BaseTestCase):
         self.assertIn('results', response.data)
 
     def test_search_matches_business_name(self):
-        match = Contact.objects.create(first_name='Pat', last_name='Quinn')
+        match = Contact.objects.create(first_name='Pat', last_name='Quinn', email='pat.quinn@example.com')
         biz = Business.objects.create(
             business_name='Zylotech Industries', default_contact=match)
         match.business = biz
         match.save()
-        other = Contact.objects.create(first_name='Sam', last_name='Reed')
+        other = Contact.objects.create(first_name='Sam', last_name='Reed', email='sam.reed@example.com')
         response = self.client.get('/api/contacts/?search=Zylotech')
         self.assertEqual(response.status_code, 200)
         ids = [c['contact_id'] for c in response.data['results']]
@@ -53,6 +53,36 @@ class ContactAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 201)
         created = Contact.objects.get(contact_id=response.data['contact_id'])
         self.assertEqual(created.business_id, biz.business_id)
+
+    def test_create_contact_with_duplicate_email_returns_409_with_existing_contact(self):
+        existing = Contact.objects.create(
+            first_name='Existing', last_name='Person',
+            email='dupe@example.com', mobile_number='555-999-0000',
+        )
+        response = self.client.post('/api/contacts/', {
+            'first_name': 'New',
+            'last_name': 'Person',
+            'email': 'dupe@example.com',
+            'mobile_number': '555-000-0000',
+        }, format='json')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['code'], 'duplicate_email')
+        self.assertEqual(response.data['existing_contact']['contact_id'], existing.contact_id)
+        self.assertFalse(Contact.objects.filter(email='new@example.com').exists())
+
+    def test_create_contact_with_duplicate_email_case_insensitive(self):
+        Contact.objects.create(
+            first_name='Existing', last_name='Person',
+            email='Dupe@Example.com', mobile_number='555-999-0000',
+        )
+        response = self.client.post('/api/contacts/', {
+            'first_name': 'New',
+            'last_name': 'Person',
+            'email': 'dupe@example.com',
+            'mobile_number': '555-000-0000',
+        }, format='json')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['code'], 'duplicate_email')
 
     def test_retrieve_contact(self):
         contact = Contact.objects.first()

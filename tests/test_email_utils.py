@@ -573,24 +573,6 @@ class ResolveContactLinksTest(TestCase):
         links = resolve_contact_links(['', '   ', None])
         self.assertEqual(links, {})
 
-    def test_ambiguous_email_omitted(self):
-        # Two Contacts share the same email — don't silently pick one. Omit
-        # the entry so the SPA renders plain text.
-        Contact.objects.create(
-            first_name='Jane', last_name='Twin',
-            email='shared@example.com', mobile_number='555-3',
-        )
-        Contact.objects.create(
-            first_name='John', last_name='Twin',
-            email='shared@example.com', mobile_number='555-4',
-        )
-        links = resolve_contact_links([
-            'shared@example.com',
-            'jane@example.com',  # unambiguous
-        ])
-        self.assertNotIn('shared@example.com', links)
-        self.assertIn('jane@example.com', links)
-
     def test_no_duplicate_queries_for_repeated_addresses(self):
         # Multiple references to the same address should collapse to a single
         # contact row in the result (and one DB query under the hood).

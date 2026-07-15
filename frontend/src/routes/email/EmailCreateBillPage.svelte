@@ -2,6 +2,7 @@
   import { api } from '../../lib/api.js';
   import { emailApi, resolveSenderToContact } from '../../lib/email.js';
   import SenderResolutionForm from '../../components/email/SenderResolutionForm.svelte';
+  import DuplicateContactModal from '../../components/contacts/DuplicateContactModal.svelte';
   import { push } from 'svelte-spa-router';
 
   const { params = {} } = $props();
@@ -13,6 +14,7 @@
 
   let submitting = $state(false);
   let submitError = $state(null);
+  let duplicateContact = $state(null);
 
   async function load() {
     loading = true;
@@ -29,6 +31,7 @@
   async function handleSubmit(e) {
     e.preventDefault();
     submitError = null;
+    duplicateContact = null;
     submitting = true;
     try {
       const { contactId, businessId } = await resolveSenderToContact(resolutionState);
@@ -48,7 +51,11 @@
       const poParam = poId ? `&po=${poId}` : '';
       push(`/bills/new?email=${params.id}&vendor=${vendorBusinessId}${poParam}`);
     } catch (err) {
-      submitError = err.message;
+      if (err.status === 409 && err.data?.code === 'duplicate_email') {
+        duplicateContact = err.data.existing_contact;
+      } else {
+        submitError = err.message;
+      }
       submitting = false;
     }
   }
@@ -84,5 +91,11 @@
     </p>
     <p><small>You'll fill in the bill details (amount, dates, line items) on the next page.</small></p>
   </form>
+  <DuplicateContactModal
+    open={!!duplicateContact}
+    contact={duplicateContact}
+    onViewExisting={() => push(`/contacts/${duplicateContact.contact_id}`)}
+    onClose={() => { duplicateContact = null; }}
+  />
 {/if}
 </div>
