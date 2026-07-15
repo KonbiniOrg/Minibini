@@ -2,20 +2,16 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { triageError } from '../../lib/errorTriage.js';
   import { showError } from '../../stores/messages.js';
-  import ContactForm from '../../components/contacts/ContactForm.svelte';
+  import JobForm from '../../components/jobs/JobForm.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
   import { push, querystring } from 'svelte-spa-router';
 
-  const { params = {} } = $props();
-  const isEdit = $derived(!!params.id);
-
-  // Context from query param (?business=…) — the "New Contact" link on a
-  // business detail page.
+  // Context from query param (?contact=…) — e.g. the "New Job" link on a
+  // contact or business detail page.
   const initialParams = new URLSearchParams($querystring);
-  const contextBusinessId = initialParams.get('business') ? Number(initialParams.get('business')) : null;
+  const contextContactId = initialParams.get('contact') ? Number(initialParams.get('contact')) : null;
 
-  let contact = $state(null);
-  let businesses = $state([]);
+  let users = $state([]);
   let loading = $state(true);
   let formError = $state('');
   let fieldErrs = $state({});
@@ -23,12 +19,7 @@
   async function load() {
     loading = true;
     try {
-      const bizData = await api.get('/api/businesses/?page_size=100');
-      businesses = bizData.results;
-
-      if (isEdit) {
-        contact = await api.get(`/api/contacts/${params.id}/`);
-      }
+      users = await api.get('/api/auth/users/');
     } catch (e) {
       // Load failure has no form to land on — the global overlay is the venue.
       showError(errorMessage(e, 'Could not load.'));
@@ -41,13 +32,8 @@
     formError = '';
     fieldErrs = {};
     try {
-      if (isEdit) {
-        await api.patch(`/api/contacts/${params.id}/`, data);
-        push(`/contacts/${params.id}`);
-      } else {
-        const created = await api.post('/api/contacts/', data);
-        push(`/contacts/${created.contact_id}`);
-      }
+      const created = await api.post('/api/jobs/', data);
+      push(`/jobs/${created.job_id}`);
     } catch (e) {
       const t = triageError(e);
       if (t.overlay) {
@@ -60,31 +46,23 @@
   }
 
   function handleCancel() {
-    if (isEdit) {
-      push(`/contacts/${params.id}`);
-    } else {
-      push('/contacts');
-    }
+    push('/jobs');
   }
 
-  $effect(() => {
-    void params.id;
-    load();
-  });
+  load();
 </script>
 
 <div class="page-body">
-<h2>{isEdit ? 'Edit Contact' : 'New Contact'}</h2>
+<h2>New Job</h2>
 
 {#if loading}
   <p>Loading...</p>
 {:else if !$canManageJobs}
-  <p>You do not have permission to manage contacts.</p>
+  <p>You do not have permission to create jobs.</p>
 {:else}
-  <ContactForm
-    {contact}
-    {businesses}
-    defaultBusinessId={contextBusinessId}
+  <JobForm
+    {users}
+    defaultContactId={contextContactId}
     errors={fieldErrs}
     {formError}
     onSubmit={handleSubmit}

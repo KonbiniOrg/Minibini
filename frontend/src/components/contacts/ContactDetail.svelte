@@ -146,7 +146,11 @@
 <TagEditor endpoint="/api/contacts/{contact.contact_id}" initialTags={contact.tags || []}
   readonly={!$canManageJobs} />
 
-<h3>Jobs</h3>
+<h3>Jobs
+  {#if $canManageJobs}
+    — <a href="#/jobs/new?contact={contact.contact_id}">New Job</a>
+  {/if}
+</h3>
 {#if visibleJobs.length > 0}
   <table class="data-table">
     <thead>
