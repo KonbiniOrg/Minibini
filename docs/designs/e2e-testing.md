@@ -68,7 +68,8 @@ e2e/
 ├── setup/
 │   └── auth.setup.js       # logs in each persona, saves storageState
 ├── fixtures/
-│   └── personas.js         # persona → storageState path + user facts
+│   ├── personas.js         # persona → storageState path + user facts
+│   └── api.js              # persona-authenticated APIRequestContexts (CSRF wired)
 ├── specs/
 │   ├── smoke.spec.js       # platform smoke test
 │   └── <flow-doc>/…        # a directory per docs/ui-flows/ doc (see below)
@@ -123,13 +124,15 @@ first full flow spec should follow `docs/ui-flows/Expenses.md`):
 - **Guard steps** (the "should be blocked" boxes) are first-class:
   assert the control is absent/disabled or the API answer is the
   documented 4xx.
-- **Layering rule:** the rebased seed is the *backdrop* (lists,
-  catalogs, history, the populated board — read-mostly assertions). The
-  *subject* of a mutating test is created *by the test* through the API
-  (Playwright's `APIRequestContext`; shared helpers accrete in
-  `e2e/fixtures/factories.js` as specs need them). Foreground state is
-  genuinely "now", tests don't fight over shared rows, and reruns
-  without a reset stay mostly coherent.
+- **Layering rule:** lean on the seed. Use existing backdrop data
+  (jobs, catalog items, contacts, history) for everything a flow merely
+  *references*, and create a new object only when the flow under test is
+  the **making of that object** — an expenses-creation spec creates
+  expenses through the UI but anchors them to a seed job. Stamp created
+  objects with a per-run marker (e.g. `` `e2e-${Date.now().toString(36)}` ``)
+  so list assertions can't collide with seed rows or `PW_KEEP_DB`
+  reruns. When a spec does need API-side setup, `fixtures/api.js`
+  provides persona-authenticated request contexts.
 - Selectors: prefer `getByRole`/`getByLabel`/`getByText` against the
   semantic HTML the SPA already uses — no test-id attributes unless a
   surface is genuinely unaddressable (adding test-ids touches app code →

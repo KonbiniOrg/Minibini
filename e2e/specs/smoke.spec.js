@@ -1,6 +1,5 @@
 // Platform smoke test: proves the seeded DB, both webServers, and the saved
-// persona sessions work together. Not a ui-flows spec — those get one file
-// per docs/ui-flows/ doc (docs/designs/e2e-testing.md §2).
+// persona sessions work together.
 import { expect, test } from '@playwright/test';
 import { personas } from '../fixtures/personas.js';
 
