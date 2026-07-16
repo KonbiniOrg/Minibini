@@ -27,3 +27,10 @@ nealsdata/datasets/
 
 # Local temp DB dumps (may contain tokens/sessions)
 tempfixture.json
+
+# E2E: derived rebased seed (regenerated from seed.json every run)
+fixtures/playwright/rebased.json
+e2e/node_modules/
+e2e/.auth/
+e2e/test-results/
+e2e/playwright-report/
