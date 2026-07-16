@@ -279,12 +279,12 @@
           <h3>Bills</h3>
           <table class="data-table">
             <thead>
-              <tr><th>Vendor Invoice #</th><th>Contact</th><th>PO #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
+              <tr><th>Bill</th><th>Vendor Invoice #</th><th>Contact</th><th>PO #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
             </thead>
             <tbody>
               {#each results.results.bills as bill}
                 <tr>
-                  <td>{bill.bill_number}</td>
+                  <td><a href="#/bills/{bill.bill_id}">Bill #{bill.bill_id}</a></td>
                   <td>{@html hl(bill.vendor_invoice_number)}</td>
                   <td>{@html hl(bill.contact_name)}</td>
                   <td>{@html hl(bill.po_number)}</td>
