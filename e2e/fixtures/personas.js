@@ -1,5 +1,5 @@
-// Persona → storageState path + user facts (design doc §4.2, from the
-// seed's real users). auth.setup.js logs each persona in once; specs pick
+// Persona → storageState path + user facts (docs/designs/e2e-testing.md §2,
+// from the seed's real users). auth.setup.js logs each persona in once; specs pick
 // a persona with:
 //   test.use({ storageState: personas.worker.storageState });
 import path from 'node:path';

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Drop and rebuild the dedicated E2E database from current migrations, then
-# load the rebased seed (docs/plans/2026-07-07-e2e-test-platform.md §4.3).
+# load the rebased seed (docs/designs/e2e-testing.md §3).
 # Invoked by global-setup.js on every `npx playwright test` run unless
 # PW_KEEP_DB is set; safe to run by hand from any working directory:
 #   DATABASE_NAME=minibini_e2e bash e2e/seed/reset_db.sh

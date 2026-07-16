@@ -1,6 +1,6 @@
 // Playwright globalSetup: rebuild the E2E database before every run.
 // PW_KEEP_DB=1 skips the reset for fast local iteration, accepting that the
-// kept DB may be stale/dirty (docs/plans/2026-07-07-e2e-test-platform.md §4.3).
+// kept DB may be stale/dirty (docs/designs/e2e-testing.md §3).
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

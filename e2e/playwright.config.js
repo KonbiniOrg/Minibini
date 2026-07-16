@@ -1,4 +1,4 @@
-// E2E test platform config (design doc §5, docs/plans/2026-07-07-e2e-test-platform.md).
+// E2E test platform config (docs/designs/e2e-testing.md).
 //
 // Port-collision safety: phase 1 reuses the standard 8000/9000 ports with
 // reuseExistingServer: false, so Playwright FAILS FAST if anything is already

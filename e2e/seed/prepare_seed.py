@@ -4,7 +4,7 @@
 Reads the committed fixtures/playwright/seed.json (never modified) and
 writes the rebased copy to fixtures/playwright/rebased.json (gitignored,
 regenerated every run — reset_db.sh loads it). Design:
-docs/plans/2026-07-07-e2e-test-platform.md §4.1.
+docs/designs/e2e-testing.md §3.
 
 - Anchors on the newest `core.jobhistory` timestamp: job history is
   written at action time, so it can never postdate the dump and is always

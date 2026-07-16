@@ -1,0 +1,253 @@
+# E2E testing (Playwright)
+
+The third test suite, driving the real stack in a real browser. Companion
+to `frontend-testing.md` (Vitest component tests) — this doc covers the
+full-stack suite.
+
+| Suite | Command | Scope | Data |
+|---|---|---|---|
+| Backend | `python manage.py test` | services/API | Django-managed throwaway test DB |
+| Frontend | `cd frontend && npm run test:run` | components (Vitest, API mocked) | mocks |
+| **E2E** | `cd e2e && npx playwright test` | full stack, real browser | dedicated `minibini_e2e` DB, rebuilt per run |
+
+Framework: **`@playwright/test`** (pinned in `e2e/package.json`; the
+committed `package-lock.json` is the pin). The `docs/ui-flows/`
+checklists are the test scripts it executes — one `test.step()` per
+`[ ]` checkbox.
+
+## 1. One-time developer setup
+
+### 1.1 MySQL: the dedicated E2E database
+
+E2E drives a live Django server, so it cannot use Django's transient
+test DB — it gets its own schema, created once per machine. As `root`
+(or any account with GRANT):
+
+```sql
+CREATE DATABASE minibini_e2e
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+-- The app's existing MySQL account drives it. Db-level ALL includes
+-- CREATE and DROP *of this schema*, which reset_db.sh needs each run.
+GRANT ALL PRIVILEGES ON `minibini_e2e`.* TO 'minibini_user'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+(Docker/remote-MySQL developers: repeat the GRANT for
+`'minibini_user'@'%'` to match however their dev grant is written.)
+
+No Django settings change is needed: `minibini/settings.py` reads
+`DATABASE_NAME` from the environment, so every E2E invocation of Django
+runs with `DATABASE_NAME=minibini_e2e` — the dev database is untouchable
+by construction, and `reset_db.sh` hard-fails without that value (the
+guard is unit-tested in `tests/test_e2e_reset_db.py`).
+
+### 1.2 Node side
+
+```bash
+cd e2e
+npm install                      # installs @playwright/test per package.json
+npx playwright install chromium  # one-time ~95 MB browser download
+                                 # (lands in ~/Library/Caches/ms-playwright)
+```
+
+That's it — the seed fixture is committed, so a fresh checkout needs
+nothing else.
+
+## 2. Layout and test structure
+
+```
+e2e/
+├── package.json            # sole dep: @playwright/test (exact-version pin)
+├── playwright.config.js    # webServer, projects, baseURL, trace settings
+├── seed/
+│   ├── prepare_seed.py     # fixtures/playwright/seed.json → rebased.json
+│   ├── reset_db.sh         # drop/create minibini_e2e, migrate, load rebased seed
+│   └── global-setup.js     # Playwright globalSetup — runs reset_db.sh unless PW_KEEP_DB
+├── setup/
+│   └── auth.setup.js       # logs in each persona, saves storageState
+├── fixtures/
+│   └── personas.js         # persona → storageState path + user facts
+├── specs/
+│   ├── smoke.spec.js       # platform smoke test
+│   └── …                   # one spec file per docs/ui-flows/ doc
+├── .auth/                  # storageState files   (gitignored)
+├── test-results/           #                      (gitignored)
+└── playwright-report/      #                      (gitignored)
+
+fixtures/playwright/
+├── seed.json               # committed seed (a dumpdata export; see §3)
+└── rebased.json            # derived per run                    (gitignored)
+```
+
+Two Playwright projects run in order: **setup** (`setup/auth.setup.js`
+logs each persona in once through the real login form and saves the
+session to `e2e/.auth/<persona>.json`), then **chromium** (the specs).
+Specs never see the login form — they pick a persona:
+
+```js
+import { personas } from '../fixtures/personas.js';
+test.use({ storageState: personas.worker.storageState });
+```
+
+### Personas (from the seed's real users, all password `e2e_password`)
+
+| Persona | Username | Atoms |
+|---|---|---|
+| `worker` | `schen` | none |
+| `timeManager` | `arivera` | `can_manage_time` |
+| `financials` | `jkim` | `can_manage_financials`, `can_manage_jobs` |
+| `configAdmin` | `tbrooks` | `can_manage_config`, `can_manage_time` |
+| `superuser` | `dev_user` | is_superuser |
+
+### Writing specs from ui-flows docs
+
+House pattern (exemplar: `specs/smoke.spec.js` for the mechanics; the
+first full flow spec should follow `docs/ui-flows/Expenses.md`):
+
+- One spec file per flow doc, named after it. One `test()` per numbered
+  flow section; one `test.step('Label: action → expected result')` per
+  `[ ]` checkbox, same wording — the doc stays the source of truth and
+  diffs against the spec are eyeball-able.
+- Personas come from the doc's Personas section via `storageState`.
+- **Guard steps** (the "should be blocked" boxes) are first-class:
+  assert the control is absent/disabled or the API answer is the
+  documented 4xx.
+- **Layering rule:** the rebased seed is the *backdrop* (lists,
+  catalogs, history, the populated board — read-mostly assertions). The
+  *subject* of a mutating test is created *by the test* through the API
+  (Playwright's `APIRequestContext`; shared helpers accrete in
+  `e2e/fixtures/factories.js` as specs need them). Foreground state is
+  genuinely "now", tests don't fight over shared rows, and reruns
+  without a reset stay mostly coherent.
+- Selectors: prefer `getByRole`/`getByLabel`/`getByText` against the
+  semantic HTML the SPA already uses — no test-id attributes unless a
+  surface is genuinely unaddressable (adding test-ids touches app code →
+  flag it first).
+- `workers: 1` — the DB is shared, so specs run serially for now.
+
+## 3. Seed data pipeline
+
+**Source:** `fixtures/playwright/seed.json`, a committed `dumpdata`
+export of a populated dev database. It is never modified by a test run.
+
+**Rebase:** the seed is frozen history — left alone, the 7-day Recent
+Time window, the 30-hour blep-edit window, board retention, schedule
+forecasting, and estimate expiry would all drift out of test reach as it
+ages. (Faking the clock is ruled out: Playwright can only fake the
+*browser's* clock; Django keeps real time, and frontend/backend clock
+skew is exactly the bug class we don't want to manufacture.) So the data
+comes to the clock: before every run, `prepare_seed.py` writes
+`fixtures/playwright/rebased.json` (gitignored):
+
+- Anchors on the newest **`core.jobhistory` timestamp** — job history is
+  written at action time, so it can never postdate the dump and is
+  always very recent in a fresh export. (The raw dataset maximum would
+  be wrong: estimate expirations, job due dates, and session expiry
+  legitimately sit in the dataset's future.)
+- Shifts every date/datetime string by the exact **whole-day** delta
+  that lands that anchor on yesterday (not today, so a rebased afternoon
+  timestamp can't sit in the test run's future). A whole-day delta
+  preserves causal ordering, shift↔blep minute alignment, time-of-day
+  patterns, and relative gaps. Matching is by *shape*, not a per-field
+  list — whole-string ISO datetimes and whole-string bare dates — so new
+  datetime fields are picked up automatically and strings like
+  `"JOB-2025-0001"` or dates embedded in prose are never touched.
+- Overwrites every `core.user` password with the pre-computed hash of
+  `e2e_password`.
+
+Unit tests: `tests/test_e2e_prepare_seed.py`.
+
+**Reset per run:** Playwright's `globalSetup` runs `reset_db.sh`, which
+drops and rebuilds `minibini_e2e` **from current migrations**, then runs
+`prepare_seed.py` and loads `rebased.json`. Because the schema is
+rebuilt from migrations every run, there is no second database to
+remember to migrate. `PW_KEEP_DB=1` skips the reset for fast local
+iteration, accepting that the kept DB may be stale/dirty.
+
+**Refreshing the seed** (only for model-shape changes — a failing
+`loaddata` in `reset_db.sh` is the tripwire): re-export from a migrated,
+populated dev database (`dumpdata` is read-only, so it's safe against
+the dev DB), in the shape the current seed uses:
+
+```bash
+venv/bin/python manage.py dumpdata --natural-foreign --indent 2 \
+  -e contenttypes -e auth.permission > fixtures/playwright/seed.json
+```
+
+then apply the hygiene strip before committing:
+
+- **Remove `qbo.qboconnection` rows.** Not for secrecy (dev QBO creds
+  are sandbox-only) but for behavior: Playwright can't exercise a real
+  QBO exchange, so the seed deliberately represents the *not-connected*
+  state and specs assert the app's documented failure/disabled behavior.
+  (`qbo.qbosynclog` rows may stay — they FK only to a user, and
+  "previously synced, now disconnected" is a reachable state.)
+- **Drop rows for models that no longer exist** — a stale dump fails
+  `loaddata` outright.
+- `sessions.session` rows are harmless either way (sandbox data; E2E
+  logs in through the real form regardless).
+
+For a *removed* model, deleting the dead rows from the existing file is
+fine too — that's schema repair, not data invention.
+
+## 4. Running
+
+Dev servers must be **stopped** first, and MySQL must be up. The config
+reuses the standard 8000/9000 ports with `reuseExistingServer: false`,
+which makes Playwright **fail fast if anything is already listening** —
+a running dev stack can never be silently reused (that would point the
+tests at the dev DB). Playwright starts its own Django (with
+`DATABASE_NAME=minibini_e2e`) and Vite, and tears them down after.
+
+```bash
+cd e2e
+npx playwright test                       # full run (resets DB first)
+PW_KEEP_DB=1 npx playwright test          # skip the reset (fast iteration)
+npx playwright test specs/smoke.spec.js   # one spec file
+npx playwright test --ui                  # interactive UI mode (watch, pick, time-travel)
+npx playwright test --headed              # visible browser
+npx playwright show-report                # HTML report of the last run
+npx playwright show-trace test-results/…/trace.zip   # replay a failure
+```
+
+`reset_db.sh` can also be run by hand from any cwd:
+`DATABASE_NAME=minibini_e2e bash e2e/seed/reset_db.sh`.
+
+Failures keep a trace and screenshot (`trace: 'retain-on-failure'`,
+`screenshot: 'only-on-failure'`) under `e2e/test-results/`.
+
+## 5. Keeping it current
+
+- **Migrations:** nothing to remember — the schema is rebuilt from
+  current migrations every run.
+- **Fixture drift:** a failing `loaddata` means the seed lags the
+  schema; refresh it per §3.
+- **Specs vs ui-flows docs:** same rule as `docs/designs/` — when a
+  session changes UI behavior, update the flow doc and its spec
+  together. The checkbox↔step mirroring makes the diff obvious.
+- **Playwright version:** exact-pinned in `e2e/package.json`; bump
+  deliberately (a bump can require re-running
+  `npx playwright install chromium`).
+
+## 6. Later / optional
+
+- **CI:** the suite is CI-shaped already (own DB, own servers,
+  `reuseExistingServer: false`); needs a MySQL service container and
+  `npx playwright install --with-deps chromium`. Retries `1` in CI only.
+- **Parallel workers:** once mutating specs are strictly
+  factory-subject-based, `workers` can rise; specs asserting on shared
+  backdrop rows (counts, totals) should then move to
+  `test.describe.configure({ mode: 'serial' })` or assert on
+  test-created entities.
+- **Dedicated E2E ports** (run E2E alongside a live dev stack): a
+  2-line env-var override in `frontend/vite.config.js`
+  (`port: Number(process.env.VITE_PORT || 9000)`, proxy target from
+  `VITE_API_TARGET`) would let the webServer block use 8100/9100 —
+  needs sign-off, touches app code.
+- **Test-ids** — only if some surface proves unaddressable by
+  role/label/text selectors (none known); each one is an app-template
+  touch and gets flagged when proposed.
+- **`/run` project skill:** the same servers+login recipe doubles as
+  the agent's app-driving skill.

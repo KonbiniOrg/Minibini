@@ -1,6 +1,6 @@
 // Playwright "setup" project (runs before the specs): logs each persona in
 // once through the real login form and saves the session to
-// e2e/.auth/<persona>.json (design doc §4.2). Specs never see the login
+// e2e/.auth/<persona>.json (docs/designs/e2e-testing.md §2). Specs never see the login
 // form — they start already authenticated via storageState.
 import fs from 'node:fs';
 import path from 'node:path';
