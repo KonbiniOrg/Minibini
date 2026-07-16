@@ -71,7 +71,7 @@ e2e/
 │   └── personas.js         # persona → storageState path + user facts
 ├── specs/
 │   ├── smoke.spec.js       # platform smoke test
-│   └── …                   # one spec file per docs/ui-flows/ doc
+│   └── <flow-doc>/…        # a directory per docs/ui-flows/ doc (see below)
 ├── .auth/                  # storageState files   (gitignored)
 ├── test-results/           #                      (gitignored)
 └── playwright-report/      #                      (gitignored)
@@ -106,10 +106,19 @@ test.use({ storageState: personas.worker.storageState });
 House pattern (exemplar: `specs/smoke.spec.js` for the mechanics; the
 first full flow spec should follow `docs/ui-flows/Expenses.md`):
 
-- One spec file per flow doc, named after it. One `test()` per numbered
-  flow section; one `test.step('Label: action → expected result')` per
-  `[ ]` checkbox, same wording — the doc stays the source of truth and
-  diffs against the spec are eyeball-able.
+- A **directory per flow doc** (`specs/expenses/` for
+  `docs/ui-flows/Expenses.md`), containing **multiple spec files** — the
+  flow docs each hold many numbered flows (Expenses has 11), so group a
+  few related flows per file where they share setup (e.g.
+  `reimbursement.spec.js` for the reimbursement + reject flows). Don't
+  force a doc's every flow into one file, and don't mandate one file per
+  flow either; file granularity is free (Playwright parallelizes across
+  files when `workers` rises, and small files run selectively).
+- Traceability to the doc lives in the titles, not the file layout: one
+  `test()` per numbered flow section (title it `'§5 Stock receipts &
+  cost-at-consumption'`), one `test.step('Label: action → expected
+  result')` per `[ ]` checkbox, same wording — the doc stays the source
+  of truth and diffs against the spec are eyeball-able.
 - Personas come from the doc's Personas section via `storageState`.
 - **Guard steps** (the "should be blocked" boxes) are first-class:
   assert the control is absent/disabled or the API answer is the
@@ -194,12 +203,14 @@ fine too — that's schema repair, not data invention.
 
 ## 4. Running
 
-Dev servers must be **stopped** first, and MySQL must be up. The config
-reuses the standard 8000/9000 ports with `reuseExistingServer: false`,
-which makes Playwright **fail fast if anything is already listening** —
-a running dev stack can never be silently reused (that would point the
-tests at the dev DB). Playwright starts its own Django (with
-`DATABASE_NAME=minibini_e2e`) and Vite, and tears them down after.
+MySQL must be up; the dev stack can stay running. E2E owns dedicated
+ports — Django on **8100** (with `DATABASE_NAME=minibini_e2e`) and Vite
+on **9100** (via the `VITE_PORT`/`VITE_API_TARGET` env overrides in
+`frontend/vite.config.js`, which are inert in normal dev use) — so it
+runs alongside the dev servers on 8000/9000. Playwright starts both,
+tears them down after, and `reuseExistingServer: false` makes it **fail
+fast if anything is already listening on the E2E ports**, so a stray
+server can never be silently reused.
 
 ```bash
 cd e2e
@@ -241,11 +252,6 @@ Failures keep a trace and screenshot (`trace: 'retain-on-failure'`,
   backdrop rows (counts, totals) should then move to
   `test.describe.configure({ mode: 'serial' })` or assert on
   test-created entities.
-- **Dedicated E2E ports** (run E2E alongside a live dev stack): a
-  2-line env-var override in `frontend/vite.config.js`
-  (`port: Number(process.env.VITE_PORT || 9000)`, proxy target from
-  `VITE_API_TARGET`) would let the webServer block use 8100/9100 —
-  needs sign-off, touches app code.
 - **Test-ids** — only if some surface proves unaddressable by
   role/label/text selectors (none known); each one is an app-template
   touch and gets flagged when proposed.
