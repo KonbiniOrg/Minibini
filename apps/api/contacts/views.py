@@ -80,6 +80,29 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
             qs = qs.filter(q)
         return qs
 
+    def create(self, request, *args, **kwargs):
+        """Overridden (not just perform_create) so a duplicate-email conflict
+        can carry the conflicting contact's data — the SPA renders a "did you
+        mean this one?" prompt from it rather than a bare field error."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            self.perform_create(serializer)
+        except ValidationError as e:
+            if getattr(e, 'code', None) == 'duplicate_email':
+                existing = Contact.objects.get(pk=e.params['contact_id'])
+                return Response(
+                    {
+                        'detail': e.messages[0],
+                        'code': 'duplicate_email',
+                        'existing_contact': ContactSerializer(existing).data,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            raise  # plain validation errors render via the contract handler
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     def perform_create(self, serializer):
         data = serializer.validated_data
         business = data.pop('business', None)
@@ -219,6 +242,29 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
             return BusinessDetailSerializer
         return BusinessSerializer
 
+    def create(self, request, *args, **kwargs):
+        """Overridden (not just perform_create) so a duplicate-name conflict
+        can carry the conflicting business's data — the SPA renders a "did
+        you mean this one?" prompt from it rather than a bare field error."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            self.perform_create(serializer)
+        except ValidationError as e:
+            if getattr(e, 'code', None) == 'duplicate_business_name':
+                existing = Business.objects.get(pk=e.params['business_id'])
+                return Response(
+                    {
+                        'detail': e.messages[0],
+                        'code': 'duplicate_business_name',
+                        'existing_business': BusinessSerializer(existing).data,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            raise  # plain validation errors render via the contract handler
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     def perform_create(self, serializer):
         data = serializer.validated_data
         default_contact = data.pop('default_contact', None)
@@ -261,6 +307,18 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         if contact_count:
             msg += f' {contact_count} contact(s) were disassociated.'
         return Response({'message': msg})
+
+    @action(detail=False, methods=['get'], url_path='check-name')
+    def check_name(self, request):
+        """Pre-flight duplicate check the SPA calls before creating a new
+        business's default contact, so a name collision can be caught
+        without first creating (and orphaning) that contact."""
+        name = request.query_params.get('name', '')
+        existing = ContactService.find_business_by_name(name)
+        return Response({
+            'exists': existing is not None,
+            'business': BusinessSerializer(existing).data if existing else None,
+        })
 
     @action(detail=True, methods=['post'], url_path='set-default-contact')
     def set_default_contact(self, request, pk=None):

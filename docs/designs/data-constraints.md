@@ -267,6 +267,9 @@ Standalone. No FK dependencies.
 
 ### 1.5 Business and Contact
 
+Full model/service/API narrative: `docs/designs/contacts-and-businesses.md`.
+This section stays a terse invariant reference.
+
 These two models have a circular dependency: Business requires a `default_contact`
 (non-nullable FK → Contact), and Contact optionally references a Business. Create
 them together: create the Contact first with `business=None`, then the Business
@@ -279,21 +282,26 @@ with `default_contact` pointing to that Contact, then update the Contact's
   if not provided. Fixture data should always provide an explicit value.
 - **default_contact** (required FK → Contact): must point to a Contact whose
   `business` FK points back to this Business
-- **business_name**: required, max 255 chars
+- **business_name**: required, max 255 chars, **unique** (case-insensitive
+  pre-check + DB constraint — see the duplicate-detection section of
+  `contacts-and-businesses.md`)
 - **qbo_customer_id** / **qbo_vendor_id**: nullable, for QBO sync
 - **tax_multiplier**: nullable decimal; null/1.0 = full rate, 0 = exempt,
   0.5 = half rate
 
 #### Contact
 
-- **email**: required, must be non-empty and valid
+- **email**: required, must be non-empty and valid, **unique** (case-insensitive
+  pre-check + DB constraint — see the duplicate-detection section of
+  `contacts-and-businesses.md`)
 - **At least one phone number**: one of `work_number`, `mobile_number`,
   `home_number` must be non-empty
 - **first_name** / **last_name**: required (max 100 chars each)
 - **business** (optional FK → Business): if set, `qbo_customer_id` must be null
   (mutual exclusivity — contacts with a business use the business's QBO ID)
 - **Deletion blocked** if contact is the sole contact for a business (the
-  business would lose its required `default_contact`)
+  business would lose its required `default_contact`), or if it has any
+  associated Job or Bill
 
 ---
 
@@ -432,7 +440,12 @@ Non-CO holds resume manually.
 
 - **job_number**: unique, max 50 chars. Generated via NumberGenerationService
   (pattern from Configuration). Only generated for new instances.
-- **contact** (required FK → Contact, PROTECT)
+- **contact** (required FK → Contact, PROTECT). Reassignable only while
+  `status == draft` — `Job.clean()` rejects a contact change once the job has
+  left draft (enforced regardless of what else changes in the same save; a
+  no-op write of the same contact is always allowed). The SPA's Edit Job modal
+  only renders the contact picker for draft jobs, showing the contact name
+  read-only otherwise.
 - **project_manager** (optional FK → `core.User`, SET_NULL, `related_name='managed_jobs'`): informational owner of the job; no business-logic side effects, no status interaction, no dedicated permission. Set/cleared via the job edit page by `can_manage_jobs`.
 - **status**: must be one of the choices above, default `draft`
 - **on_hold**: BooleanField, default False. Orthogonal pause flag — see above. Set/cleared only via `JobService.hold_job` / `release_job` (also cleared by CO acceptance and by cancellation); the API exposes it read-only (`POST /api/jobs/{id}/hold/` / `.../release/` are the write paths) and a status PATCH of `'on_hold'` is a 400.

@@ -13,10 +13,10 @@ class BillSearchTest(BaseTestCase):
         super().setUp()
         self.client = APIClient()
         self.client.force_authenticate(user=User.objects.get(username='admin'))
-        dc = Contact.objects.create(first_name='DC', last_name='')
+        dc = Contact.objects.create(first_name='DC', last_name='', email='dc@example.com')
         self.acme = Business.objects.create(business_name='Acme Steel', default_contact=dc)
         self.match = Bill.objects.create(business=self.acme, vendor_invoice_number='INV-7788')
-        dc2 = Contact.objects.create(first_name='OC', last_name='')
+        dc2 = Contact.objects.create(first_name='OC', last_name='', email='oc@example.com')
         other = Business.objects.create(business_name='Zenith Glass', default_contact=dc2)
         self.other = Bill.objects.create(business=other, vendor_invoice_number='INV-0001')
 

@@ -20,9 +20,11 @@
   let saving = $state(false);
   let billStatus = $state('draft');
 
-  // Query param: ?po=ID pre-links a PO on create
+  // Query params: ?po=ID pre-links a PO on create; ?business=ID pre-fills the
+  // vendor from a business detail page's "New Bill" link.
   const initialParams = new URLSearchParams($querystring);
   const contextPoId = initialParams.get('po');
+  const contextBusinessId = initialParams.get('business') ? Number(initialParams.get('business')) : null;
 
   // PO picker selection (create mode)
   let selectedPoId = $state(null);
@@ -156,6 +158,12 @@
           form.contact = po.contact || '';
         }
         await fetchPoBilling(contextPoId);
+      } else if (contextBusinessId) {
+        // Arrived via "New Bill" from a business detail page.
+        form.business = contextBusinessId;
+        lastFetchedBusiness = contextBusinessId;
+        await fetchContactsAndAutoSelect(contextBusinessId, true);
+        await fetchVendorPos(contextBusinessId);
       }
     } catch (e) {
       // Load failure has no form to land on — the global overlay is the venue.

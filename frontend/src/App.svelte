@@ -16,6 +16,7 @@
   import BusinessDetailPage from './routes/contacts/BusinessDetailPage.svelte';
   import BusinessFormPage from './routes/contacts/BusinessFormPage.svelte';
   import JobListPage from './routes/jobs/JobListPage.svelte';
+  import JobFormPage from './routes/jobs/JobFormPage.svelte';
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
   import JobRedirectToOverview from './routes/jobs/JobRedirectToOverview.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
@@ -79,6 +80,7 @@
     '/businesses/:id/edit': BusinessFormPage,
     '/businesses/:id': BusinessDetailPage,
     '/jobs': JobListPage,
+    '/jobs/new': JobFormPage,
     '/jobs/board': JobBoardPage,
     '/schedule': SchedulePage,
     '/jobs/:id': JobDetailPage,

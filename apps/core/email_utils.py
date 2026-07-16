@@ -337,16 +337,10 @@ def resolve_contact_links(addresses):
     # Late import: this module is also used by code paths that load before
     # the contacts app is ready (e.g. management commands at import time).
     from apps.contacts.models import Contact
-    # Group matches by email so we can detect ambiguity. Contact.email isn't
-    # unique — when two contacts share an address, the SPA should render
-    # plain text rather than silently link to one of them.
-    grouped = {}
-    for c in Contact.objects.filter(email__in=emails):
-        grouped.setdefault(c.email.lower(), []).append(c)
+    # Contact.email is unique, so at most one Contact matches each address.
     return {
-        email: {'contact_id': matches[0].contact_id, 'name': matches[0].name}
-        for email, matches in grouped.items()
-        if len(matches) == 1
+        c.email.lower(): {'contact_id': c.contact_id, 'name': c.name}
+        for c in Contact.objects.filter(email__in=emails)
     }
 
 

@@ -361,10 +361,10 @@ class PurchaseOrderSearchTest(BaseTestCase):
         super().setUp()
         self.client = APIClient()
         self.client.force_authenticate(user=User.objects.get(username='admin'))
-        dc = Contact.objects.create(first_name='DC', last_name='')
+        dc = Contact.objects.create(first_name='DC', last_name='', email='dc@example.com')
         self.acme = Business.objects.create(business_name='Acme Steel', default_contact=dc)
         self.po_match = PurchaseOrder.objects.create(business=self.acme, po_number='PO-SEARCH-1')
-        other_dc = Contact.objects.create(first_name='OC', last_name='')
+        other_dc = Contact.objects.create(first_name='OC', last_name='', email='oc@example.com')
         other = Business.objects.create(business_name='Zenith Glass', default_contact=other_dc)
         self.po_other = PurchaseOrder.objects.create(business=other, po_number='PO-OTHER-9')
 

@@ -87,6 +87,38 @@ describe('JobEditModal', () => {
     });
   });
 
+  it('shows an editable contact picker (with a Clear control) for a draft job', async () => {
+    const draftJob = { ...JOB, status: 'draft', contact: 5, contact_name: 'Casey Contact' };
+    const { getByLabelText, findByRole } = render(JobEditModal, {
+      props: { job: draftJob, open: true },
+    });
+    await waitFor(() => getByLabelText(/Name/i));
+    expect(await findByRole('button', { name: 'Clear' })).toBeInTheDocument();
+  });
+
+  it('includes the unchanged contact in the patch payload for a draft job', async () => {
+    const draftJob = { ...JOB, status: 'draft', contact: 5, contact_name: 'Casey Contact' };
+    const { getByLabelText } = render(JobEditModal, { props: { job: draftJob, open: true } });
+    const nameInput = await waitFor(() => getByLabelText(/Name/i));
+    await fireEvent.submit(nameInput.closest('form'));
+    await waitFor(() => {
+      expect(api.patch).toHaveBeenCalledWith(
+        '/api/jobs/7/',
+        expect.objectContaining({ contact: 5 }),
+      );
+    });
+  });
+
+  it('shows the contact read-only (no picker) once the job has left draft', async () => {
+    const submittedJob = { ...JOB, status: 'submitted', contact: 5, contact_name: 'Casey Contact' };
+    const { getByLabelText, queryByRole, findByText } = render(JobEditModal, {
+      props: { job: submittedJob, open: true },
+    });
+    await waitFor(() => getByLabelText(/Name/i));
+    expect(await findByText('Casey Contact')).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+  });
+
   it('re-prefills from a new job when reopened', async () => {
     const { getByLabelText, rerender } = render(JobEditModal, { props: { job: JOB, open: true } });
     await waitFor(() => getByLabelText(/Name/i));
