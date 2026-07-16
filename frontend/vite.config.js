@@ -21,10 +21,13 @@ export default defineConfig({
     },
   },
   server: {
-    port: 9000,
+    // Env overrides exist for the E2E suite, which runs its own vite on 9100
+    // proxying to its own Django on 8100 so the dev stack can stay up
+    // (docs/designs/e2e-testing.md §4). Inert in normal dev use.
+    port: Number(process.env.VITE_PORT || 9000),
     allowedHosts: ['moose', 'moose.local', 'minibini.me'],
     proxy: {
-      '/api': 'http://localhost:8000',
+      '/api': process.env.VITE_API_TARGET || 'http://localhost:8000',
     },
   },
 });

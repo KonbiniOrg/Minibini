@@ -1,9 +1,11 @@
 // E2E test platform config (docs/designs/e2e-testing.md).
 //
-// Port-collision safety: phase 1 reuses the standard 8000/9000 ports with
-// reuseExistingServer: false, so Playwright FAILS FAST if anything is already
-// listening — a running dev stack can never be silently reused (that would
-// point the tests at the dev DB). Stop your dev servers before an E2E run.
+// E2E owns dedicated ports 8100 (Django, minibini_e2e DB) and 9100 (vite,
+// via the VITE_PORT/VITE_API_TARGET overrides in frontend/vite.config.js),
+// so the dev stack on 8000/9000 can stay up during a run.
+// reuseExistingServer: false makes Playwright FAIL FAST if anything is
+// already listening on the E2E ports — a stray server can never be silently
+// reused (that could point the tests at the wrong DB).
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
@@ -13,22 +15,23 @@ export default defineConfig({
   retries: 0, // flakes get fixed, not retried (revisit for CI)
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:9000',
+    baseURL: 'http://localhost:9100',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   webServer: [
     {
-      command: '../venv/bin/python ../manage.py runserver 8000 --noreload',
+      command: '../venv/bin/python ../manage.py runserver 8100 --noreload',
       env: { DATABASE_NAME: 'minibini_e2e' },
-      url: 'http://localhost:8000/api/auth/me/', // 401 counts as "up"
+      url: 'http://localhost:8100/api/auth/me/', // 401 counts as "up"
       reuseExistingServer: false,
       stdout: 'ignore',
     },
     {
       command: 'npx vite',
       cwd: '../frontend',
-      url: 'http://localhost:9000',
+      env: { VITE_PORT: '9100', VITE_API_TARGET: 'http://localhost:8100' },
+      url: 'http://localhost:9100',
       reuseExistingServer: false,
     },
   ],
