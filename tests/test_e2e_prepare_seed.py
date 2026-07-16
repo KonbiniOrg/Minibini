@@ -149,9 +149,82 @@ class RebaseTests(unittest.TestCase):
         self.assertEqual(once, twice)
 
 
+class PersonaRenameTests(unittest.TestCase):
+    def test_renames_user_rows_to_permission_names(self):
+        records = [
+            record('core.jobhistory', {'timestamp': '2026-06-12T13:36:00Z'}),
+            record('core.user', {'username': 'jkim', 'first_name': 'Jkim',
+                                 'last_name': 'Accountant', 'password': 'x'}),
+        ]
+        rebased, _ = prepare_seed.rebase(records, today=date(2026, 7, 15))
+        self.assertEqual(rebased[1]['fields']['username'], 'finjobs')
+        self.assertEqual(rebased[1]['fields']['first_name'], 'Financials')
+        self.assertEqual(rebased[1]['fields']['last_name'], 'AndJobs')
+
+    def test_rewrites_user_natural_key_fk_references(self):
+        records = [
+            record('core.jobhistory', {'timestamp': '2026-06-12T13:36:00Z'}),
+            record('jobs.blep', {'user': ['schen'], 'task': 8}),
+            record('core.shift', {'user': ['dev_user']}),
+        ]
+        rebased, _ = prepare_seed.rebase(records, today=date(2026, 7, 15))
+        self.assertEqual(rebased[1]['fields']['user'], ['worker'])
+        self.assertEqual(rebased[1]['fields']['task'], 8)
+        self.assertEqual(rebased[2]['fields']['user'], ['superuser'])
+
+    def test_leaves_permission_natural_keys_alone(self):
+        # user_permissions m2m values are 3-element natural keys — not user FKs.
+        records = [
+            record('core.jobhistory', {'timestamp': '2026-06-12T13:36:00Z'}),
+            record('core.user', {'username': 'arivera', 'password': 'x',
+                                 'user_permissions': [['can_manage_time', 'core', 'user']]}),
+        ]
+        rebased, _ = prepare_seed.rebase(records, today=date(2026, 7, 15))
+        self.assertEqual(rebased[1]['fields']['user_permissions'],
+                         [['can_manage_time', 'core', 'user']])
+
+    def test_rename_is_idempotent(self):
+        records = [
+            record('core.jobhistory', {'timestamp': '2026-06-12T13:36:00Z'}),
+            record('core.user', {'username': 'schen', 'first_name': 'S',
+                                 'last_name': 'C', 'password': 'x'}),
+            record('jobs.blep', {'user': ['schen']}),
+        ]
+        once, _ = prepare_seed.rebase(records, today=date(2026, 7, 15))
+        twice, _ = prepare_seed.rebase(once, today=date(2026, 7, 15))
+        self.assertEqual(once, twice)
+
+
+class CheckPersonasTests(unittest.TestCase):
+    def users(self, *names):
+        records = [record('core.jobhistory', {'timestamp': '2026-06-12T13:36:00Z'})]
+        records += [record('core.user', {'username': n}, pk=i)
+                    for i, n in enumerate(names)]
+        return records
+
+    def test_accepts_all_dev_db_names(self):
+        prepare_seed.check_personas(
+            self.users('schen', 'arivera', 'jkim', 'tbrooks', 'dev_user'))
+
+    def test_accepts_already_renamed_names(self):
+        prepare_seed.check_personas(
+            self.users('worker', 'timemgr', 'finjobs', 'configtime', 'superuser'))
+
+    def test_raises_naming_the_missing_persona(self):
+        # A seed refresh after a dev-DB rename must fail loudly, not ship a
+        # seed whose personas can't log in.
+        with self.assertRaises(ValueError) as ctx:
+            prepare_seed.check_personas(
+                self.users('schen', 'arivera', 'jkim', 'tbrooks'))
+        self.assertIn('dev_user', str(ctx.exception))
+
+
 class MainTests(unittest.TestCase):
     def test_writes_rebased_copy_and_leaves_source_untouched(self):
         records = [record('core.jobhistory', {'timestamp': '2026-06-12T13:36:00Z'})]
+        records += [record('core.user', {'username': u, 'password': 'x'}, pk=i + 10)
+                    for i, u in enumerate(
+                        ['schen', 'arivera', 'jkim', 'tbrooks', 'dev_user'])]
         with tempfile.TemporaryDirectory() as tmp:
             src = Path(tmp) / 'seed.json'
             out = Path(tmp) / 'rebased.json'

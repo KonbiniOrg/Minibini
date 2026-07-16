@@ -1,6 +1,8 @@
-// Persona → storageState path + user facts (docs/designs/e2e-testing.md §2,
-// from the seed's real users). auth.setup.js logs each persona in once; specs pick
-// a persona with:
+// Persona → storageState path + user facts (docs/designs/e2e-testing.md §2).
+// Usernames are the permission-names that prepare_seed.py's PERSONA_RENAMES
+// map stamps onto the seed's dev-DB users (schen, arivera, jkim, tbrooks,
+// dev_user) — keep the two in sync. auth.setup.js logs each persona in once;
+// specs pick a persona with:
 //   test.use({ storageState: personas.worker.storageState });
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,32 +13,32 @@ const authDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 
 export const personas = {
   worker: {
-    username: 'schen',
-    displayName: 'Schen Workerbee',
+    username: 'worker',
+    displayName: 'Worker NoAtoms',
     atoms: [],
     storageState: path.join(authDir, 'worker.json'),
   },
-  timeManager: {
-    username: 'arivera',
-    displayName: 'Arivera Timer',
+  timemgr: {
+    username: 'timemgr',
+    displayName: 'Time Manager',
     atoms: ['can_manage_time'],
-    storageState: path.join(authDir, 'timeManager.json'),
+    storageState: path.join(authDir, 'timemgr.json'),
   },
-  financials: {
-    username: 'jkim',
-    displayName: 'Jkim Accountant',
+  finjobs: {
+    username: 'finjobs',
+    displayName: 'Financials AndJobs',
     atoms: ['can_manage_financials', 'can_manage_jobs'],
-    storageState: path.join(authDir, 'financials.json'),
+    storageState: path.join(authDir, 'finjobs.json'),
   },
-  configAdmin: {
-    username: 'tbrooks',
-    displayName: 'Tbrooks UsersNotJobs',
+  configtime: {
+    username: 'configtime',
+    displayName: 'Config AndTime',
     atoms: ['can_manage_config', 'can_manage_time'],
-    storageState: path.join(authDir, 'configAdmin.json'),
+    storageState: path.join(authDir, 'configtime.json'),
   },
   superuser: {
-    username: 'dev_user',
-    displayName: 'Fake Owner',
+    username: 'superuser',
+    displayName: 'Super User',
     atoms: [],
     isSuperuser: true,
     storageState: path.join(authDir, 'superuser.json'),

@@ -18,6 +18,13 @@ docs/designs/e2e-testing.md §3.
   time-of-day patterns, and relative gaps are all preserved.
 - Overwrites every core.user password with the hash of "e2e_password" so
   every persona has a known login.
+- Renames the persona users to their permissions (PERSONA_RENAMES) so a
+  test failure reads as "worker couldn't…" rather than "schen couldn't…".
+  The dev DB keeps its own names — the divergence is deliberate; this map
+  is the single source of the e2e names. User FKs are dumped as natural
+  keys (e.g. `["schen"]`), so those references are rewritten in the same
+  pass. check_personas() fails the run loudly if a seed refresh no longer
+  contains a mapped persona (old or new name).
 
 Shifting matches by string shape, not by a per-field list: whole-string
 ISO datetimes and whole-string bare dates. Document numbers
@@ -44,6 +51,17 @@ E2E_PASSWORD_HASH = (
 )
 
 ANCHOR_MODEL = 'core.jobhistory'
+
+# dev-DB username → e2e identity. Keys are the dump's names; values are what
+# the suite sees (personas.js must match the values).
+PERSONA_RENAMES = {
+    'schen':    {'username': 'worker',     'first_name': 'Worker',     'last_name': 'NoAtoms'},
+    'arivera':  {'username': 'timemgr',    'first_name': 'Time',       'last_name': 'Manager'},
+    'jkim':     {'username': 'finjobs',    'first_name': 'Financials', 'last_name': 'AndJobs'},
+    'tbrooks':  {'username': 'configtime', 'first_name': 'Config',     'last_name': 'AndTime'},
+    'dev_user': {'username': 'superuser',  'first_name': 'Super',      'last_name': 'User'},
+}
+_NEW_USERNAMES = {v['username'] for v in PERSONA_RENAMES.values()}
 
 DATETIME_RE = re.compile(
     r'^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$')
@@ -98,13 +116,43 @@ def compute_delta_days(records, today):
     return (today - timedelta(days=1) - anchor).days
 
 
+def _rename_user_refs(obj):
+    """Rewrite user natural-key FK values — a one-element list holding a mapped
+    username. (Other natural keys in the dump, e.g. permissions, have three
+    elements and are left alone.)"""
+    if isinstance(obj, list):
+        if len(obj) == 1 and isinstance(obj[0], str) and obj[0] in PERSONA_RENAMES:
+            return [PERSONA_RENAMES[obj[0]]['username']]
+        return [_rename_user_refs(v) for v in obj]
+    if isinstance(obj, dict):
+        return {k: _rename_user_refs(v) for k, v in obj.items()}
+    return obj
+
+
+def check_personas(records):
+    """Fail loudly if a seed refresh dropped or renamed a persona user."""
+    usernames = {r['fields']['username'] for r in records
+                 if r['model'] == 'core.user'}
+    missing = [old for old, new in PERSONA_RENAMES.items()
+               if old not in usernames and new['username'] not in usernames]
+    if missing:
+        raise ValueError(
+            f'personas missing from the seed: {", ".join(sorted(missing))} — '
+            f'update PERSONA_RENAMES to match the refreshed dump')
+
+
 def rebase(records, today):
-    """Return (rebased records, delta_days): dates shifted, persona passwords set."""
+    """Return (rebased records, delta_days): dates shifted, persona passwords
+    set, persona users renamed to their permission names."""
     delta = compute_delta_days(records, today)
     rebased = _shift_values(records, delta)
     for record in rebased:
+        record['fields'] = _rename_user_refs(record['fields'])
         if record['model'] == 'core.user':
             record['fields']['password'] = E2E_PASSWORD_HASH
+            rename = PERSONA_RENAMES.get(record['fields']['username'])
+            if rename:
+                record['fields'].update(rename)
     return rebased, delta
 
 
@@ -117,6 +165,7 @@ def main(path=SEED_PATH, out_path=OUT_PATH, today=None):
     if today is None:
         today = date.today()
     records = json.loads(path.read_text())
+    check_personas(records)
     rebased, delta = rebase(records, today)
     out_path.write_text(dumps_fixture(rebased))
     users = sum(1 for r in rebased if r['model'] == 'core.user')

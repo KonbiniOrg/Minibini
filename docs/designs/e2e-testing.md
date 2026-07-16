@@ -92,15 +92,22 @@ import { personas } from '../fixtures/personas.js';
 test.use({ storageState: personas.worker.storageState });
 ```
 
-### Personas (from the seed's real users, all password `e2e_password`)
+### Personas (all password `e2e_password`)
 
-| Persona | Username | Atoms |
-|---|---|---|
-| `worker` | `schen` | none |
-| `timeManager` | `arivera` | `can_manage_time` |
-| `financials` | `jkim` | `can_manage_financials`, `can_manage_jobs` |
-| `configAdmin` | `tbrooks` | `can_manage_config`, `can_manage_time` |
-| `superuser` | `dev_user` | is_superuser |
+Usernames state the permissions, so a failure reads as "worker
+couldn't…". They are stamped onto the seed's dev-DB users by
+`prepare_seed.py`'s `PERSONA_RENAMES` map (the dev DB keeps its own
+names — that divergence is deliberate, and the map is the single source
+of the e2e names; `check_personas` fails the run if a seed refresh no
+longer matches it).
+
+| Persona key | Username | Display name | Atoms | Seed/dev user |
+|---|---|---|---|---|
+| `worker` | `worker` | Worker NoAtoms | none | `schen` |
+| `timemgr` | `timemgr` | Time Manager | `can_manage_time` | `arivera` |
+| `finjobs` | `finjobs` | Financials AndJobs | `can_manage_financials`, `can_manage_jobs` | `jkim` |
+| `configtime` | `configtime` | Config AndTime | `can_manage_config`, `can_manage_time` | `tbrooks` |
+| `superuser` | `superuser` | Super User | is_superuser | `dev_user` |
 
 ### Writing specs from ui-flows docs
 
@@ -168,6 +175,9 @@ comes to the clock: before every run, `prepare_seed.py` writes
   `"JOB-2025-0001"` or dates embedded in prose are never touched.
 - Overwrites every `core.user` password with the pre-computed hash of
   `e2e_password`.
+- Renames the persona users to their permission names (`PERSONA_RENAMES`;
+  see the personas table in §2), rewriting the natural-key user FKs
+  (`["schen"]` → `["worker"]`) in the same pass.
 
 Unit tests: `tests/test_e2e_prepare_seed.py`.
 

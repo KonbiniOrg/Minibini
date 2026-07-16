@@ -10,7 +10,7 @@ import { personas } from '../../fixtures/personas.js';
 // the picker is §2's first checkbox — a worker-persona spec. Note: a worker
 // navigating straight to #/expenses currently gets the whole page blanked by
 // the financials-only outstanding-summary 403 — flagged as app drift.)
-test.use({ storageState: personas.financials.storageState });
+test.use({ storageState: personas.finjobs.storageState });
 
 // Unique run marker so list assertions can't collide with seed rows or with
 // earlier PW_KEEP_DB reruns.
@@ -22,7 +22,7 @@ const stamp = `e2e-${Date.now().toString(36)}`;
 let job;
 
 test.beforeAll(async () => {
-  const api = await apiAs(personas.financials);
+  const api = await apiAs(personas.finjobs);
   job = (await api.get('/api/jobs/?open=true&page_size=1')).results[0];
   await api.dispose();
 });
@@ -58,7 +58,7 @@ async function submitAndFindRow(page, description) {
 const COL = { job: 3, paid: 7 };
 
 async function jobMaterials() {
-  const api = await apiAs(personas.financials);
+  const api = await apiAs(personas.finjobs);
   const detail = await api.get(`/api/jobs/${job.job_id}/`);
   await api.dispose();
   return detail.materials;
@@ -127,7 +127,7 @@ test('§1 Creating expenses — the shapes', async ({ page }) => {
     await page.getByRole('button', { name: 'Cancel' }).click();
     // The rows created above all default to the current user as purchaser.
     const row = page.getByRole('row', { name: new RegExp(`${stamp} parking`) });
-    await expect(row.getByRole('link', { name: personas.financials.displayName }))
+    await expect(row.getByRole('link', { name: personas.finjobs.displayName }))
       .toBeVisible();
   });
 
