@@ -161,6 +161,38 @@ test.describe('manager side', () => {
     await expect.poll(async () => (await jobDetail(job.job_id)).status).toBe('in_progress');
   });
 
+  test('§6 The gate: a loose pending material blocks work_complete (Check Complete lists it)', async ({ page }) => {
+    const job = findJob(jobs, { status: 'in_progress', withLoosePending: true, used });
+    test.skip(!job, 'seed gap: no in_progress/approved job with a loose pending material');
+    const loose = looseMaterials(job)[0];
+
+    await test.step('The Tasks-page button reads "Check Complete" and lists the blockers', async () => {
+      await page.goto(`/#/jobs/${job.job_id}/tasklist`);
+      await page.getByRole('button', { name: 'Check Complete' }).click();
+      await expect(page.getByRole('heading', { name: 'Not ready to complete' })).toBeVisible();
+      // The loose material is named in the list (alongside any open tasks).
+      await expect(page.getByRole('dialog')
+        .getByText(loose.description.slice(0, 30))).toBeVisible();
+      // Nothing was mutated by the check.
+      expect((await jobDetail(job.job_id)).status).toBe(job.status);
+      await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
+    });
+
+    await test.step('The status pill enforces the same gate (§10)', async () => {
+      const api = await apiAs(personas.finjobs);
+      const resp = await api.patchRaw(`/api/jobs/${job.job_id}/`, { status: 'work_complete' });
+      const body = await resp.text();
+      await api.dispose();
+      expect(resp.status()).toBe(400);
+    });
+
+    // TODO (full arc): resolve each blocker (complete/cancel the open tasks,
+    // Consume-or-Restock the material), then "Mark Work Complete" → job
+    // reaches work_complete and /api/earmarks/ rows for it are swept. Needs
+    // the materials-table action markup; deferred with the Restock/Consume
+    // flows (Inventory.md's spec is the natural owner of those controls).
+  });
+
   test('§7 Auto-reopen: a new open task on a work_complete job pulls it back', async () => {
     const job = findJob(jobs, { status: 'work_complete', used });
     test.skip(!job, 'seed gap: a second work_complete job');
@@ -174,21 +206,4 @@ test.describe('manager side', () => {
     await api.dispose();
     expect(after.status).toBe('in_progress');
   });
-});
-
-// SEED GAP (§6): the work-complete gate needs an in_progress (or approved)
-// job with a LOOSE pending material and otherwise-completable tasks; the
-// current seed's loose materials sit on submitted/draft/rejected jobs only.
-test('§6 The gate: a loose pending material blocks work_complete (Check Complete lists it)', async () => {
-  const gateJob = findJob(loadedJobsForGate(), {});
-  function loadedJobsForGate() {
-    return (jobs || []).filter((j) =>
-      ['in_progress', 'approved'].includes(j.status) && looseMaterials(j).length > 0);
-  }
-  test.skip(!gateJob, 'seed gap: no in_progress/approved job with a loose pending material');
-  // Written when the seed has the shape: complete the last task → job stays
-  // put; Tasks page button reads "Check Complete" and lists the material;
-  // resolve via Consume/Restock → "Mark Work Complete" → work_complete;
-  // /api/earmarks/ rows for the job are swept.
-  test.fixme(true, 'unwritten until the seed shape exists');
 });

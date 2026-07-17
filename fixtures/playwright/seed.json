@@ -17,6 +17,14 @@
 },
 {
   "model": "sessions.session",
+  "pk": "q6nr83l4a66a70rpvjwms0uxxcdeuqsb",
+  "fields": {
+    "session_data": ".eJxVjDsOwjAQBe_iGlnr4C8lfc5grddeHECOFCcV4u4QKQW0b2beS0Tc1hq3XpY4ZXERSpx-t4T0KG0H-Y7tNkua27pMSe6KPGiX45zL83q4fwcVe_3WxpmMZFAPgLYYY9l7lTOnoGw6ByanB2QHlAgKMijHSutQtErggbx4fwDyUDgq:1wkc8E:IKgUHXaiIE85F6qaxPZnkwIiHrY8L1fAy9hr6QW4Yxc",
+    "expire_date": "2026-07-18T06:33:10.514Z"
+  }
+},
+{
+  "model": "sessions.session",
   "pk": "shgeoan0ho85hg33i2qhjfjf80p0lnxi",
   "fields": {
     "session_data": ".eJxVjMsOwiAQRf-FtSHlOeDSvd9ABgakaiAp7cr479qkC93ec859sYDbWsM28hJmYmcm2el3i5geue2A7thunafe1mWOfFf4QQe_dsrPy-H-HVQc9VuDp0JIYJR1InpQk9GUtVHaEmQbrTaTduATRLDOyIJKGpGoSEQtUmTvD9A2N4Q:1wj96H:dRYV6sglmLALka4CoJDC0pomlLHIhvKHRuf02_3V4u4",
@@ -27,7 +35,7 @@
   "model": "core.user",
   "fields": {
     "password": "pbkdf2_sha256$1000000$XCygBxLdqKriveVwf6oOFi$kFfwgkMzohWCBVJdzfhFmnMW9HRWXsshWwcvn9k6zdY=",
-    "last_login": "2026-07-13T05:19:11.154Z",
+    "last_login": "2026-07-17T06:33:10.507Z",
     "is_superuser": true,
     "username": "dev_user",
     "first_name": "Fake",
@@ -1674,7 +1682,7 @@
       "dev_user"
     ],
     "start_time": "2026-07-14T05:05:00Z",
-    "end_time": null
+    "end_time": "2026-07-14T06:55:00Z"
   }
 },
 {
@@ -33778,6 +33786,137 @@
   }
 },
 {
+  "model": "core.jobhistory",
+  "pk": 1908,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 104,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:34:34.152Z",
+    "changes": {
+      "_created": true
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1909,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 104,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:34:34.153Z",
+    "changes": {
+      "cost_source": {
+        "new": "entered",
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1910,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 105,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:36:07.171Z",
+    "changes": {
+      "_created": true
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1911,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 105,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:36:07.172Z",
+    "changes": {
+      "cost_source": {
+        "new": "entered",
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1912,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 106,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:37:04.196Z",
+    "changes": {
+      "_created": true
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1913,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 106,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:37:04.197Z",
+    "changes": {
+      "cost_source": {
+        "new": "entered",
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1914,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 106,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:37:08.890Z",
+    "changes": {
+      "task_id": {
+        "new": 24,
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
   "model": "core.crmhistory",
   "pk": 1,
   "fields": {
@@ -39106,6 +39245,18 @@
     "timestamp": "2026-07-13T05:21:05.077Z",
     "ip_address": "127.0.0.1",
     "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15"
+  }
+},
+{
+  "model": "core.loginevent",
+  "pk": 4,
+  "fields": {
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:33:10.511Z",
+    "ip_address": "127.0.0.1",
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
   }
 },
 {
@@ -56985,7 +57136,7 @@
     ],
     "task": 115,
     "start_time": "2026-07-14T05:05:00Z",
-    "end_time": null
+    "end_time": "2026-07-14T06:33:00Z"
   }
 },
 {
@@ -90953,6 +91104,39 @@
   }
 },
 {
+  "model": "inventory.earmark",
+  "pk": 8,
+  "fields": {
+    "inventory_item": 129,
+    "job": 98,
+    "quantity": "1.00",
+    "created_date": "2026-07-17T06:34:34.138Z",
+    "notes": ""
+  }
+},
+{
+  "model": "inventory.earmark",
+  "pk": 9,
+  "fields": {
+    "inventory_item": 30,
+    "job": 29,
+    "quantity": "2.00",
+    "created_date": "2026-07-17T06:36:07.160Z",
+    "notes": ""
+  }
+},
+{
+  "model": "inventory.earmark",
+  "pk": 10,
+  "fields": {
+    "inventory_item": 9,
+    "job": 17,
+    "quantity": "1.00",
+    "created_date": "2026-07-17T06:37:04.188Z",
+    "notes": ""
+  }
+},
+{
   "model": "inventory.inventoryitem",
   "pk": 1,
   "fields": {
@@ -95319,6 +95503,63 @@
     "accounting_category": 2,
     "task": 2,
     "job": 3,
+    "consumption_state": "pending",
+    "released_qty": "0.00",
+    "po_line_item": null,
+    "cost_source": "entered"
+  }
+},
+{
+  "model": "inventory.material",
+  "pk": 104,
+  "fields": {
+    "description": "4'x8' x 1/2\" sheet(s) of walnut veneer plywood  *price as of 4/8/25*",
+    "quantity": "1.00",
+    "units": "sheets",
+    "unit_cost": "182.49",
+    "sell_price": "219.00",
+    "inventory_item": 129,
+    "accounting_category": 2,
+    "task": 489,
+    "job": 98,
+    "consumption_state": "pending",
+    "released_qty": "0.00",
+    "po_line_item": null,
+    "cost_source": "entered"
+  }
+},
+{
+  "model": "inventory.material",
+  "pk": 105,
+  "fields": {
+    "description": "4'x8' x 1/2\" sheet(s) of Baltic Birch plywood  *price as of 7/31/25*",
+    "quantity": "2.00",
+    "units": "sheets",
+    "unit_cost": "73.33",
+    "sell_price": "88.00",
+    "inventory_item": 30,
+    "accounting_category": 2,
+    "task": null,
+    "job": 29,
+    "consumption_state": "pending",
+    "released_qty": "0.00",
+    "po_line_item": null,
+    "cost_source": "entered"
+  }
+},
+{
+  "model": "inventory.material",
+  "pk": 106,
+  "fields": {
+    "description": "4'x8' x 1/4\" sheet(s) of clear acrylic **price as of 05/20/24*",
+    "quantity": "1.00",
+    "units": "sheets",
+    "unit_cost": "137.49",
+    "sell_price": "165.00",
+    "inventory_item": 9,
+    "accounting_category": 2,
+    "task": 24,
+    "job": 17,
     "consumption_state": "pending",
     "released_qty": "0.00",
     "po_line_item": null,
