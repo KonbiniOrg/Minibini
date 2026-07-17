@@ -33917,6 +33917,165 @@
   }
 },
 {
+  "model": "core.jobhistory",
+  "pk": 1915,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "job",
+    "object_id": 10,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:52:49.336Z",
+    "changes": {
+      "status": {
+        "new": "approved",
+        "old": "submitted"
+      },
+      "start_date": {
+        "new": "2026-07-17 06:52:49.301612+00:00",
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1916,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "job",
+    "object_id": 15,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:53:16.779Z",
+    "changes": {
+      "status": {
+        "new": "approved",
+        "old": "submitted"
+      },
+      "start_date": {
+        "new": "2026-07-17 06:53:16.758454+00:00",
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1917,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 107,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:54:04.768Z",
+    "changes": {
+      "_created": true
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1918,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 107,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:54:04.770Z",
+    "changes": {
+      "cost_source": {
+        "new": "entered",
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1919,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 108,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:55:42.586Z",
+    "changes": {
+      "_created": true
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1920,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 108,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:55:42.587Z",
+    "changes": {
+      "cost_source": {
+        "new": "entered",
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1921,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "task",
+    "object_id": 524,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:56:11.201Z",
+    "changes": {
+      "_created": true
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 1922,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 108,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-07-17T06:56:16.529Z",
+    "changes": {
+      "task_id": {
+        "new": 524,
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
   "model": "core.crmhistory",
   "pk": 1,
   "fields": {
@@ -39450,10 +39609,10 @@
     "job_number": "08020",
     "name": "PT-MIS216 Backstock Filler (200 Pieces) from 0.060",
     "created_date": "2026-07-06T00:00:00Z",
-    "start_date": null,
+    "start_date": "2026-07-17T06:52:49.301Z",
     "due_date": null,
     "completed_date": null,
-    "status": "submitted",
+    "status": "approved",
     "on_hold": false,
     "hold_reason": "",
     "contact": 72,
@@ -39558,10 +39717,10 @@
     "job_number": "08013",
     "name": "lacrosse stick wall mount prototyoe",
     "created_date": "2026-06-29T00:00:00Z",
-    "start_date": null,
+    "start_date": "2026-07-17T06:53:16.758Z",
     "due_date": null,
     "completed_date": null,
-    "status": "submitted",
+    "status": "approved",
     "on_hold": false,
     "hold_reason": "",
     "contact": 51,
@@ -52671,6 +52830,26 @@
     "blocked_reason": "",
     "worker_queue": null,
     "rate_scheme": 7,
+    "active_modifiers": [],
+    "actual_qty": null
+  }
+},
+{
+  "model": "jobs.task",
+  "pk": 524,
+  "fields": {
+    "name": "laser cutting",
+    "description": "",
+    "sort_order": 1,
+    "est_worker_time": "01:00:00",
+    "est_qty": "45.00",
+    "parent_task": null,
+    "assignee": null,
+    "job": 6,
+    "status": "pending",
+    "blocked_reason": "",
+    "worker_queue": null,
+    "rate_scheme": 3,
     "active_modifiers": [],
     "actual_qty": null
   }
@@ -91137,6 +91316,17 @@
   }
 },
 {
+  "model": "inventory.earmark",
+  "pk": 11,
+  "fields": {
+    "inventory_item": 21,
+    "job": 15,
+    "quantity": "2.00",
+    "created_date": "2026-07-17T06:54:04.757Z",
+    "notes": ""
+  }
+},
+{
   "model": "inventory.inventoryitem",
   "pk": 1,
   "fields": {
@@ -95560,6 +95750,44 @@
     "accounting_category": 2,
     "task": 24,
     "job": 17,
+    "consumption_state": "pending",
+    "released_qty": "0.00",
+    "po_line_item": null,
+    "cost_source": "entered"
+  }
+},
+{
+  "model": "inventory.material",
+  "pk": 107,
+  "fields": {
+    "description": "4'x8' x 3/4\" sheet(s) of prefinished Apple plywood  *price as of 10/13/23*",
+    "quantity": "2.00",
+    "units": "sheets",
+    "unit_cost": "246.66",
+    "sell_price": "296.00",
+    "inventory_item": 21,
+    "accounting_category": 2,
+    "task": 18,
+    "job": 15,
+    "consumption_state": "pending",
+    "released_qty": "0.00",
+    "po_line_item": null,
+    "cost_source": "entered"
+  }
+},
+{
+  "model": "inventory.material",
+  "pk": 108,
+  "fields": {
+    "description": "4'x8' x 3/4\" sheet(s) of prefinished Apple plywood  *price as of 10/13/23*",
+    "quantity": "1.00",
+    "units": "sheets",
+    "unit_cost": "246.66",
+    "sell_price": "296.00",
+    "inventory_item": 21,
+    "accounting_category": 2,
+    "task": 524,
+    "job": 6,
     "consumption_state": "pending",
     "released_qty": "0.00",
     "po_line_item": null,

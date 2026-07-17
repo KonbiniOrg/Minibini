@@ -92,6 +92,11 @@ test('§1 Start Work — first clock-in promotes, consumes, advances', async ({ 
     // band offers only Cancel (the §5 undo, which would un-consume).
     await expect(bandButton(page, 'Stop')).toBeVisible({ timeout: 130_000 });
     await bandButton(page, 'Stop').click();
+    if (task.scheme_algorithm === 'entered_qty') {
+      // Counted task: the stop settles first (§3); empty = skip the count.
+      await expect(page.getByRole('heading', { name: 'Quantity this session' })).toBeVisible();
+      await page.getByRole('dialog').getByRole('button', { name: 'Add', exact: true }).click();
+    }
     await expect(page.getByText('Working on:')).toHaveCount(0);
     expect(await itemQoh(mats[0].inventory_item)).toBe(qohBefore - Number(mats[0].quantity));
   });
@@ -180,12 +185,37 @@ test('§8 Pre-approval work (draft/submitted jobs)', async ({ page }) => {
   });
 });
 
-// SEED GAP (also §8): consume-without-earmark needs a draft job whose pending
-// task carries an in-stock item-backed material; the current seed has none.
-test('§8 Pre-approval consumption draws QOH without an earmark', async () => {
+test('§8 Pre-approval consumption draws QOH without an earmark', async ({ page }) => {
   const hit = findStartableTask(jobs, { jobStatus: 'draft', materials: 'in-stock', used });
   test.skip(!hit, 'seed gap: no draft job with a pending task carrying an in-stock item-backed material');
-  // Written when the seed has the shape: start → QOH drops, /api/earmarks/
-  // shows NO row for (item, job); cancel → QOH restored.
-  test.fixme(true, 'unwritten until the seed shape exists');
+  const { job, task, mats } = hit;
+  const itemId = mats[0].inventory_item;
+  const qohBefore = await itemQoh(itemId);
+
+  async function earmarkFor() {
+    const api = await apiAs(personas.finjobs);
+    const rows = (await api.get('/api/earmarks/?page_size=100')).results ?? [];
+    await api.dispose();
+    return rows.find((e) => e.job === job.job_id && e.inventory_item === itemId) ?? null;
+  }
+
+  await test.step('No earmark exists pre-approval (earmarks are for committed jobs)', async () => {
+    expect(await earmarkFor()).toBeNull();
+  });
+
+  await test.step('Start consumes: QOH draws down, still no earmark', async () => {
+    await page.goto(taskUrl(job, task));
+    await waitForEarlyMinute(page);
+    await page.getByRole('button', { name: 'Start Work' }).click();
+    await expect(page.getByText('Working on:')).toBeVisible();
+    await expect.poll(() => itemQoh(itemId)).toBe(qohBefore - Number(mats[0].quantity));
+    expect(await earmarkFor()).toBeNull();
+  });
+
+  await test.step('The oops-undo restores QOH and stays earmark-free', async () => {
+    await bandButton(page, 'Cancel').click();
+    await expect(page.getByText('Working on:')).toHaveCount(0);
+    await expect.poll(() => itemQoh(itemId)).toBe(qohBefore);
+    expect(await earmarkFor()).toBeNull();
+  });
 });

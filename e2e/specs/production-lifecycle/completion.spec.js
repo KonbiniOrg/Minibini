@@ -75,7 +75,11 @@ test.describe('worker side', () => {
     let hit = null;
     const scratch = new Set(used);
     for (;;) {
-      const candidate = findStartableTask(jobs, { algorithm: 'entered_qty', used: scratch });
+      // Approved/draft jobs are off-limits: approved is §1's backdrop and
+      // the draft one carries §8's consumption material.
+      const candidate = findStartableTask(jobs, {
+        jobStatus: ['submitted', 'in_progress'], algorithm: 'entered_qty', used: scratch,
+      });
       if (!candidate) break;
       const enteredPending = pendingTasks(candidate.job)
         .filter((t) => t.scheme_algorithm === 'entered_qty');

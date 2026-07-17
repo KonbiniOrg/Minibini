@@ -195,6 +195,21 @@ class PersonaRenameTests(unittest.TestCase):
         self.assertEqual(once, twice)
 
 
+class DroppedModelsTests(unittest.TestCase):
+    def test_qbo_connection_rows_are_dropped(self):
+        # Re-exports keep reintroducing the dev QBO connection; the rebase
+        # drops it so the suite always sees the not-connected state, whatever
+        # the committed file carries.
+        records = [
+            record('core.jobhistory', {'timestamp': '2026-06-12T13:36:00Z'}),
+            record('qbo.qboconnection', {'realm_id': 'x', 'access_token': 'y'}),
+            record('jobs.blep', {'user': ['schen']}),
+        ]
+        rebased, _ = prepare_seed.rebase(records, today=date(2026, 7, 15))
+        self.assertEqual([r['model'] for r in rebased],
+                         ['core.jobhistory', 'jobs.blep'])
+
+
 class CheckPersonasTests(unittest.TestCase):
     def users(self, *names):
         records = [record('core.jobhistory', {'timestamp': '2026-06-12T13:36:00Z'})]

@@ -39,18 +39,25 @@ async function waitPastMinimum(page) {
 }
 
 test('§3 Stop Work — settle-first for counted work', async ({ page }) => {
-  test.setTimeout(420_000); // two real stops, each past the one-minute floor
-  // Two entered_qty pending tasks on one job: settle-on-stop + settle-on-switch.
+  test.setTimeout(420_000); // a real stop, past the one-minute floor
+  // Approved jobs are excluded on purpose: starting one would auto-advance
+  // it to in_progress and steal §1's backdrop (the start file runs later).
   const hit = findStartableTask(jobs, {
-    jobStatus: ['submitted', 'draft', 'in_progress', 'approved'],
-    algorithm: 'entered_qty', minPendingTasks: 2, used,
+    jobStatus: ['submitted', 'draft', 'in_progress'],
+    algorithm: 'entered_qty', materials: 'none', used,
   });
-  test.skip(!hit, 'seed gap: no startable job with two pending entered_qty tasks');
+  test.skip(!hit, 'seed gap: no startable pending entered_qty task on a non-approved job');
   const { job, task } = hit;
-  const second = (job.tasks || []).find(
-    (t) => t.status === 'pending' && t.task_id !== task.task_id
-      && t.scheme_algorithm === 'entered_qty');
-  test.skip(!second, 'seed gap: second pending entered_qty task on the same job');
+  // The switch target only receives the settle-first poke — the conflict
+  // mutates nothing — so any other pending counted task works, other jobs
+  // included.
+  const otherHit = findStartableTask(jobs, {
+    jobStatus: ['submitted', 'draft', 'in_progress'],
+    algorithm: 'entered_qty', used,
+  });
+  test.skip(!otherHit, 'seed gap: a second pending entered_qty task (any non-approved job)');
+  const second = otherHit.task;
+  const secondJob = otherHit.job;
 
   await test.step('Start a counted task', async () => {
     await page.goto(taskUrl(job, task));
@@ -59,7 +66,7 @@ test('§3 Stop Work — settle-first for counted work', async ({ page }) => {
   });
 
   await test.step('Settle-first on switch: starting another task prompts; cancelling aborts the switch', async () => {
-    await page.goto(taskUrl(job, second));
+    await page.goto(taskUrl(secondJob, second));
     await page.getByRole('button', { name: 'Start Work' }).click();
     await expect(page.getByRole('heading', { name: 'Quantity this session' })).toBeVisible();
     await dialog(page).getByRole('button', { name: 'Cancel' }).click();

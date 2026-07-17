@@ -52,6 +52,12 @@ E2E_PASSWORD_HASH = (
 
 ANCHOR_MODEL = 'core.jobhistory'
 
+# Rows dropped from the rebased output entirely. The dev QBO connection
+# keeps riding along in re-exports; the suite's contract is the
+# NOT-connected state (docs/designs/e2e-testing.md §3), so the rebase
+# drops it regardless of commit-time hygiene.
+DROPPED_MODELS = {'qbo.qboconnection'}
+
 # dev-DB username → e2e identity. Keys are the dump's names; values are what
 # the suite sees (personas.js must match the values).
 PERSONA_RENAMES = {
@@ -144,6 +150,7 @@ def check_personas(records):
 def rebase(records, today):
     """Return (rebased records, delta_days): dates shifted, persona passwords
     set, persona users renamed to their permission names."""
+    records = [r for r in records if r['model'] not in DROPPED_MODELS]
     delta = compute_delta_days(records, today)
     rebased = _shift_values(records, delta)
     for record in rebased:
