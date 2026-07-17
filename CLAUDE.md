@@ -302,7 +302,7 @@ with transaction.atomic():
 **Permissions:** Always check permissions in views:
 - API viewsets: override `get_permissions()` returning `[IsAuthenticated(), CanXxx()]`
 - API function views: `@permission_classes([IsAuthenticated, CanXxx])`
-- Notes (HistoryEntry) and adding/editing/deleting/completing tasks on a Job are `IsAuthenticated` only; cancelling a task, reordering, and marking all work complete use `CanManageJobOrPM` (atom or the job's PM)
+- Notes (HistoryEntry) and adding/editing/deleting/completing/**cancelling** tasks on a Job are `IsAuthenticated` only (cancel opened to all workers 2026-07-12 — it shares delete's principal set); reordering and marking all work complete use `CanManageJobOrPM` (atom or the job's PM)
 - `CanManageJobOrPM` (`apps/api/permissions.py`) gates job-owned writes so a Job's `project_manager` gets atom-equivalent access to that one job; viewsets mix in `JobScopedPermissionMixin` and serializers expose a `can_manage` flag via `JobScopedCanManageMixin`
 - Email *reads* (`/api/emails/`, detail) are `IsAuthenticated`; email-to-job actions (link, unlink, create-job-from-email) require `CanManageJobs`
 

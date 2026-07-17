@@ -18,8 +18,9 @@ Authoritative behavior: `docs/designs/jobs-tasks-and-worksheets.md` §3–5,
 - **Worker** — no atoms. Starts/stops work, completes tasks, enters
   quantities. Cannot cancel tasks, change job status, or hold/release.
 - **Jobs manager** — `can_manage_jobs` (or the job's `project_manager`,
-  scoped to that job). Status pill, hold/release, cancel task, reorder,
-  Mark Work Complete.
+  scoped to that job). Status pill, hold/release, reorder, Mark Work
+  Complete. (Task *cancel* is a worker operation — opened 2026-07-12,
+  sharing delete's principal set.)
 - **Time manager** — `can_manage_time`. Can start/stop a timeslip *for
   another worker* (`on behalf of`), and edit/delete others' timeslips.
 
@@ -166,7 +167,7 @@ list.
   every edit except list reordering — "its work and billing are settled;
   corrections belong on the invoice." No new time, no reopen; more work
   means a new sibling task.
-- [ ] **Cancel task** (Jobs manager / PM only): closes open timeslips;
+- [ ] **Cancel task** (any authenticated user): closes open timeslips;
   its *pending* materials **detach to the job as loose rows** (earmark
   kept — release by hand if unwanted); consumed rows stay attached as
   history; fires the same completion check.
@@ -209,9 +210,9 @@ list.
 
 ## 10. Guards & permissions (most-missed)
 
-- [ ] **Worker cannot:** change the status pill, hold/release, cancel a
-  task, Mark Work Complete, stop someone else's session (403s / hidden
-  affordances).
+- [ ] **Worker cannot:** change the status pill, hold/release, Mark Work
+  Complete, stop someone else's session (403s / hidden affordances).
+  (Cancelling a task is *not* on this list — worker op since 2026-07-12.)
 - [ ] **Open-timeslip guards:** hold and cancel-a-job are rejected while
   any timeslip on the job is open; block-a-task returns a conflict naming
   the active workers.

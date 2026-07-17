@@ -98,10 +98,15 @@ test.describe('worker side', () => {
   });
 
   test('§7 Terminal freeze: a complete task rejects edits and offers no actions', async ({ page }) => {
-    const job = findJob(jobs, { status: 'work_complete', used: new Set() });
-    test.skip(!job, 'seed gap: no work_complete job');
-    const done = (job.tasks || []).find((t) => t.status === 'complete');
-    test.skip(!done, 'seed gap: work_complete job with a complete task');
+    // Some work_complete jobs finished by cancellation — walk until one has
+    // a genuinely complete task.
+    let job = null, done = null;
+    const scratch = new Set();
+    while ((job = findJob(jobs, { status: 'work_complete', used: scratch }))) {
+      done = (job.tasks || []).find((t) => t.status === 'complete');
+      if (done) break;
+    }
+    test.skip(!done, 'seed gap: no work_complete job with a complete task');
 
     await page.goto(taskUrl(job, done));
     await expect(page.getByRole('heading', { name: done.name })).toBeVisible();
@@ -110,7 +115,9 @@ test.describe('worker side', () => {
         .toHaveCount(0);
     }
     const api = await apiAs(personas.finjobs);
-    const resp = await api.patchRaw(`/api/tasks/${done.task_id}/`, { name: 'renamed' });
+    // Task edits live on the job-nested route (flat /api/tasks/ is lifecycle-only).
+    const resp = await api.patchRaw(
+      `/api/jobs/${job.job_id}/tasks/${done.task_id}/`, { name: 'renamed' });
     const body = await resp.text();
     await api.dispose();
     expect(resp.status()).toBe(400);

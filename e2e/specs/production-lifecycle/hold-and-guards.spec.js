@@ -99,10 +99,14 @@ test.describe('worker guards', () => {
 
   test('§10 Guards & permissions (most-missed)', async ({ page }) => {
     // Fresh backdrop: earlier tests changed job states this run. Exclude
-    // PM-owned jobs — a job's PM legitimately holds manage powers on it.
-    const fresh = (await loadBackdrop()).filter((j) => !j.project_manager);
+    // jobs the WORKER persona manages — a job's PM legitimately holds
+    // manage powers on that job, which would turn the 403s into 200s.
+    const workerApi = await apiAs(personas.worker);
+    const me = await workerApi.get('/api/auth/me/');
+    await workerApi.dispose();
+    const fresh = (await loadBackdrop()).filter((j) => j.project_manager !== me.id);
     const hit = findStartableTask(fresh, { jobStatus: 'in_progress', used });
-    test.skip(!hit, 'seed gap: no in_progress job with a pending task');
+    test.skip(!hit, 'seed gap: no in_progress job (not PMed by the worker) with a pending task');
     const { job, task } = hit;
 
     await test.step('The status pill is not interactive for a worker', async () => {
@@ -111,12 +115,12 @@ test.describe('worker guards', () => {
       await expect(page.getByRole('combobox')).toHaveCount(0);
     });
 
-    await test.step('Hold, cancel-task, and work-complete are refused by the API', async () => {
+    await test.step('Hold and work-complete are refused by the API', async () => {
+      // Task cancel is deliberately NOT here: it was opened to all workers
+      // 2026-07-12 (shares delete's principal set) — §7 covers it.
       const api = await apiAs(personas.worker);
       const hold = await api.postRaw(`/api/jobs/${job.job_id}/hold/`, { reason: 'nope' });
       expect(hold.status()).toBe(403);
-      const cancel = await api.postRaw(`/api/tasks/${task.task_id}/cancel/`, {});
-      expect(cancel.status()).toBe(403);
       const wc = await api.postRaw(`/api/jobs/${job.job_id}/work-complete/`, {});
       expect(wc.status()).toBe(403);
       await api.dispose();
