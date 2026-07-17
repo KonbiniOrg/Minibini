@@ -584,7 +584,18 @@ The atom-pull surfaces on estimates and invoices.
   _Done when:_ a Shift/Blep start_time displays the exact time entered across DST,
   with a regression test pinning the timezone behavior.
 
-## Cross-client refresh & notifications
+- **Blep cancel window measured from the floored minute, not the click — first-minute cancels can fail.** — _added 2026-07-16_
+  `Blep.save()` floors `start_time` to the whole minute, so the DB start can be up
+  to ~59s *earlier* than the user's click, while the `cancel_work` guard measures
+  the session against `blep_minimum_minutes` from that floored start. A user who
+  clicks Start at :59 and cancels 30s later has 31s of *experienced* session but
+  ~90s on the books — the "oops" cancel is refused inside their first minute.
+  Two fix directions: (a) allow cancellation for one extra minute past the config
+  time (grace covering the flooring gap), or (b) stick the start to the *next*
+  minute instead and handle cancels that arrive before the blep officially began.
+  _Done when:_ a cancel within the user-experienced window always succeeds — one
+  direction chosen and implemented, with a test pinning the
+  click-just-before-the-minute-boundary case.
 
 All three want the same shared live-refresh/notification mechanism (see the general-repolling project note).
 
