@@ -114,8 +114,9 @@ list.
 - [ ] **elapsed_time:** the task's actual quantity is derived from its
   timeslips — there is no manual quantity entry anywhere on the task.
 - [ ] **entered_qty:** the count accrues by increments (settle prompts,
-  completion settle-up). A **negative** increment corrects; the running
-  total never goes below zero.
+  completion settle-up). Session prompts take positive counts (or empty =
+  skip); a **negative** increment is the completion settle-up's
+  last-moment correction. The settled total must end positive.
 - [ ] **Estimate vs. actual:** `est_qty` drives the estimate lens;
   accrued actuals drive the invoice lens — visible as the task's amounts
   on estimate vs. invoice surfaces (`Add-Line-and-Work-Authoring.md`,
@@ -140,6 +141,9 @@ list.
 - [ ] **Completion settle-up (entered_qty):** Complete prompts "any more
   to add?" before closing anything; zero = nothing more; the settled total
   must be > 0.
+- [ ] **Completion needs real time (elapsed_time):** completing an
+  elapsed task with no logged time prompts to log a historical entry
+  first — a billed task can't stand on zero time.
 - [ ] **Cascade:** when the last non-terminal task completes (or
   cancels), the job advances to `work_complete` — from `approved` it walks
   through `in_progress` to respect the machine.
