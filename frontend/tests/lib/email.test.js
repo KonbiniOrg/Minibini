@@ -10,6 +10,8 @@ import { resolveSenderToContact } from '@/lib/email.js';
 beforeEach(() => {
   api.post.mockReset();
   api.patch.mockReset();
+  api.get.mockReset();
+  api.get.mockResolvedValue({ exists: false, business: null });
 });
 
 describe('resolveSenderToContact', () => {
@@ -91,5 +93,42 @@ describe('resolveSenderToContact', () => {
         newBusinessName: '   ',
       }),
     ).rejects.toThrow(/business name is required/i);
+  });
+
+  it('new mode + new business: checks for a duplicate name before creating the contact', async () => {
+    api.post.mockImplementation((url) => {
+      if (url === '/api/contacts/') return Promise.resolve({ contact_id: 100 });
+      if (url === '/api/businesses/') return Promise.resolve({ business_id: 200 });
+      return Promise.resolve({});
+    });
+    await resolveSenderToContact({
+      mode: 'new',
+      contactForm: { mobile_number: '555' },
+      businessMode: 'new',
+      newBusinessName: 'Acme',
+    });
+    expect(api.get).toHaveBeenCalledWith('/api/businesses/check-name/?name=Acme');
+  });
+
+  it('new mode + new business: throws a 409-shaped error on a duplicate name, without creating a contact', async () => {
+    const existingBusiness = { business_id: 9, business_name: 'Acme' };
+    api.get.mockResolvedValue({ exists: true, business: existingBusiness });
+
+    let caught;
+    try {
+      await resolveSenderToContact({
+        mode: 'new',
+        contactForm: { mobile_number: '555' },
+        businessMode: 'new',
+        newBusinessName: 'Acme',
+      });
+    } catch (e) {
+      caught = e;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught.status).toBe(409);
+    expect(caught.data).toEqual({ code: 'duplicate_business_name', existing_business: existingBusiness });
+    expect(api.post).not.toHaveBeenCalled();
   });
 });

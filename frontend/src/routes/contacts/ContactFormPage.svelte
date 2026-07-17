@@ -3,17 +3,24 @@
   import { triageError } from '../../lib/errorTriage.js';
   import { showError } from '../../stores/messages.js';
   import ContactForm from '../../components/contacts/ContactForm.svelte';
+  import DuplicateContactModal from '../../components/contacts/DuplicateContactModal.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
-  import { push } from 'svelte-spa-router';
+  import { push, querystring } from 'svelte-spa-router';
 
   const { params = {} } = $props();
   const isEdit = $derived(!!params.id);
+
+  // Context from query param (?business=…) — the "New Contact" link on a
+  // business detail page.
+  const initialParams = new URLSearchParams($querystring);
+  const contextBusinessId = initialParams.get('business') ? Number(initialParams.get('business')) : null;
 
   let contact = $state(null);
   let businesses = $state([]);
   let loading = $state(true);
   let formError = $state('');
   let fieldErrs = $state({});
+  let duplicateContact = $state(null);
 
   async function load() {
     loading = true;
@@ -35,6 +42,7 @@
   async function handleSubmit(data) {
     formError = '';
     fieldErrs = {};
+    duplicateContact = null;
     try {
       if (isEdit) {
         await api.patch(`/api/contacts/${params.id}/`, data);
@@ -44,6 +52,10 @@
         push(`/contacts/${created.contact_id}`);
       }
     } catch (e) {
+      if (!isEdit && e.status === 409 && e.data?.code === 'duplicate_email') {
+        duplicateContact = e.data.existing_contact;
+        return;
+      }
       const t = triageError(e);
       if (t.overlay) {
         showError(t.overlay);
@@ -79,10 +91,17 @@
   <ContactForm
     {contact}
     {businesses}
+    defaultBusinessId={contextBusinessId}
     errors={fieldErrs}
     {formError}
     onSubmit={handleSubmit}
     onCancel={handleCancel}
+  />
+  <DuplicateContactModal
+    open={!!duplicateContact}
+    contact={duplicateContact}
+    onViewExisting={() => push(`/contacts/${duplicateContact.contact_id}`)}
+    onClose={() => { duplicateContact = null; }}
   />
 {/if}
 </div>

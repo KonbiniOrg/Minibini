@@ -139,6 +139,13 @@ class Job(AbstractWorkContainer):
                 elif old_job.completed_date and self.completed_date != old_job.completed_date:
                     self.completed_date = old_job.completed_date
 
+                # Contact is only reassignable while the job is still a draft
+                # (before it's been submitted for approval).
+                if old_job.contact_id != self.contact_id and old_status != Job.STATUS_DRAFT:
+                    raise ValidationError(
+                        'Cannot change the contact once a Job has left draft status.'
+                    )
+
                 # If status hasn't changed, no validation needed
                 if old_status == self.status:
                     return

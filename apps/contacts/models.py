@@ -22,7 +22,7 @@ class Contact(models.Model):
     first_name = models.CharField(max_length=100)
     middle_initial = models.CharField(max_length=10, blank=True)
     last_name = models.CharField(max_length=100)
-    email = models.EmailField(validators=[EmailValidator()], db_index=True)
+    email = models.EmailField(validators=[EmailValidator()], unique=True)
     addr1 = models.CharField(max_length=255, blank=True)
     addr2 = models.CharField(max_length=255, blank=True)
     addr3 = models.CharField(max_length=255, blank=True)
@@ -60,8 +60,10 @@ class Contact(models.Model):
 
     def clean(self):
         """Validate that email and at least one phone number is provided"""
-        # Validate email is not empty
-        if not self.email or not self.email.strip():
+        # Normalize (so whitespace variants of the same address collide under
+        # the unique constraint below) and validate email is not empty
+        self.email = (self.email or '').strip()
+        if not self.email:
             raise ValidationError('Email address is required.')
 
         # Validate at least one phone number is provided
@@ -147,7 +149,7 @@ class Contact(models.Model):
 class Business(models.Model):
     business_id = models.AutoField(primary_key=True)
     our_reference_code = models.CharField(max_length=50, blank=True, unique=True)
-    business_name = models.CharField(max_length=255)
+    business_name = models.CharField(max_length=255, unique=True)
     business_address = models.TextField(blank=True)
     business_phone = models.CharField(max_length=50, blank=True)
     tax_exemption_number = models.CharField(max_length=50, blank=True)
@@ -164,8 +166,8 @@ class Business(models.Model):
     )
 
     # QuickBooks Online sync IDs
-    qbo_customer_id = models.CharField(max_length=50, null=True)
-    qbo_vendor_id = models.CharField(max_length=50, null=True)
+    qbo_customer_id = models.CharField(max_length=50, null=True, blank=True)
+    qbo_vendor_id = models.CharField(max_length=50, null=True, blank=True)
 
     tags = models.ManyToManyField('Tag', blank=True, related_name='businesses', db_table='business_tags')
 
@@ -174,6 +176,13 @@ class Business(models.Model):
 
     def __str__(self):
         return self.business_name
+
+    def clean(self):
+        """Normalize business_name so whitespace variants of the same name
+        collide under the unique constraint below."""
+        self.business_name = (self.business_name or '').strip()
+        if not self.business_name:
+            raise ValidationError('Business name is required.')
 
     def save(self, *args, **kwargs):
         from django.db import IntegrityError, transaction

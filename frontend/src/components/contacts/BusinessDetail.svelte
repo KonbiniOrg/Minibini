@@ -100,7 +100,11 @@
   readonly={!$canManageJobs} />
 
 <FullOnly>
-  <h3>Contacts</h3>
+  <h3>Contacts
+    {#if $canManageJobs}
+      — <a href="#/contacts/new?business={business.business_id}">New Contact</a>
+    {/if}
+  </h3>
   {#if business.contacts && business.contacts.length > 0}
     <table class="data-table">
       <thead>
@@ -126,7 +130,11 @@
   {/if}
 </FullOnly>
 
-<h3>Jobs</h3>
+<h3>Jobs
+  {#if $canManageJobs && business.default_contact}
+    — <a href="#/jobs/new?contact={business.default_contact.contact_id}">New Job</a>
+  {/if}
+</h3>
 {#if visibleJobs.length > 0}
   <table class="data-table">
     <thead>
@@ -214,7 +222,11 @@
   <p>No {$viewMode === 'lite' ? 'open ' : ''}purchase orders.</p>
 {/if}
 
-<h3>Bills</h3>
+<h3>Bills
+  {#if $canManageFinancials}
+    — <a href="#/bills/new?business={business.business_id}">New Bill</a>
+  {/if}
+</h3>
 {#if visibleBills.length > 0}
   <table class="data-table">
     <thead>

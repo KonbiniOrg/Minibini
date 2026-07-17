@@ -100,7 +100,7 @@ Minibini/
 
 ## Topic reference docs
 
-`docs/designs/` holds nine consolidated docs. When working in a domain, start at its doc; cross-references link out where needed.
+`docs/designs/` holds ten consolidated docs. When working in a domain, start at its doc; cross-references link out where needed.
 
 **Keep these current.** These are the durable record of how the system behaves. After every work session that changes behavior, models, endpoints, config keys, or UI conventions in a domain, update the corresponding `docs/designs/` doc(s) in the same session so they don't drift from the code. (Disposable specs/plans live in `docs/plans/`; the durable reference is `docs/designs/`.)
 
@@ -110,6 +110,7 @@ Minibini/
 | `jobs-tasks-and-worksheets.md` | Job, Task, Blep, EstWorksheet, PlanTask, Templates, Job Board, lifecycle service, Deliverables, Shipments |
 | `estimates-and-prices.md` | RateScheme + supersession, billable atoms, Estimate + wizard, atom carry-over, AC pass-through |
 | `materials-inventory-and-purchasing.md` | InventoryItem (catalog/lots), Material, PlanMaterial, Earmarks, units, PurchaseOrder, Bill |
+| `contacts-and-businesses.md` | Contact, Business, Tag, PaymentTerms, duplicate-email/name detection, financials rollup, the combined Contacts & Businesses frontend surface |
 | `invoicing-and-expenses.md` | Invoice + wizard, send-to-customer flow, Expense + Reimbursement |
 | `quickbooks-integration.md` | QBO models, OAuth, sync services, polling, developer setup appendix |
 | `users-and-permissions.md` | User model, permission atoms, auth, user admin, self-service, login tracking (designed not built) |
@@ -123,7 +124,7 @@ Minibini/
 | `apps.core` | User, Configuration, AccountingCategory, BaseLineItem (abstract), AbstractWorkContainer (abstract), HistoryEntry, EmailRecord, TempEmail | architecture, users-and-permissions, data-constraints |
 | `apps.jobs` | Job, Task, PlanTask, Blep, RateScheme | jobs-tasks-and-worksheets (Job/Task/Blep/PlanTask) + estimates-and-prices (RateScheme) |
 | `apps.estimates` | Estimate, EstimateLineItem, EstimateLineItemSource, EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation | estimates-and-prices + jobs-tasks-and-worksheets (worksheets, templates) |
-| `apps.contacts` | Contact, Business, PaymentTerms | data-constraints §1.5, §1.4 |
+| `apps.contacts` | Contact, Business, PaymentTerms, Tag | contacts-and-businesses + data-constraints §1.5, §1.4 |
 | `apps.inventory` | InventoryItem (was PriceListItem; `is_catalog` flag), Material, PlanMaterial, Earmark, TemplateMaterialAssociation | materials-inventory-and-purchasing |
 | `apps.purchasing` | PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem, BillPayment | materials-inventory-and-purchasing |
 | `apps.invoicing` | Invoice, InvoiceLineItem, InvoiceLineItemSource | invoicing-and-expenses |

@@ -44,22 +44,35 @@ export async function resolveSenderToContact(state) {
   }
 
   let businessId = null;
+  let newBusinessName = null;
   if (state.businessMode === 'existing') {
     if (!state.selectedBusinessId) {
       throw new Error('Please select a business or choose "no business".');
     }
     businessId = parseInt(state.selectedBusinessId, 10);
     contactPayload.business_id = businessId;
+  } else if (state.businessMode === 'new') {
+    newBusinessName = (state.newBusinessName || '').trim();
+    if (!newBusinessName) {
+      throw new Error('Business name is required.');
+    }
+    // Check for a name conflict before creating the contact below —
+    // otherwise a duplicate name fails only after the contact is already
+    // committed, leaving it orphaned (mirrors BusinessFormPage's create flow).
+    const nameCheck = await api.get(`/api/businesses/check-name/?name=${encodeURIComponent(newBusinessName)}`);
+    if (nameCheck.exists) {
+      const err = new Error('A business with this name already exists.');
+      err.status = 409;
+      err.data = { code: 'duplicate_business_name', existing_business: nameCheck.business };
+      throw err;
+    }
   }
 
   const contact = await api.post('/api/contacts/', contactPayload);
 
   if (state.businessMode === 'new') {
-    if (!state.newBusinessName.trim()) {
-      throw new Error('Business name is required.');
-    }
     const biz = await api.post('/api/businesses/', {
-      business_name: state.newBusinessName.trim(),
+      business_name: newBusinessName,
       default_contact_id: contact.contact_id,
     });
     await api.patch(`/api/contacts/${contact.contact_id}/`, { business_id: biz.business_id });

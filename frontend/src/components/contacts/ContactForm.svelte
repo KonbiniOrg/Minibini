@@ -6,6 +6,7 @@
   const {
     contact = null,
     businesses = [],
+    defaultBusinessId = null,
     onSubmit,
     onCancel,
     errors = {},      // field→messages bag (triageError(e).fields), keys match the API payload
@@ -43,7 +44,7 @@
     // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     country_code: contact?.country_code || '',
     // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
-    business: contact?.business?.business_id ?? null,
+    business: contact?.business?.business_id ?? defaultBusinessId ?? null,
   });
 
   function handleSubmit(e) {

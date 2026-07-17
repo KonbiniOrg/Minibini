@@ -10,6 +10,7 @@
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
   import Modal from '../Modal.svelte';
+  import ContactPicker from '../ContactPicker.svelte';
 
   const {
     job,
@@ -23,6 +24,7 @@
   let dueDate = $state('');
   let customerPoNumber = $state('');
   let projectManager = $state('');
+  let contact = $state(null);
   let users = $state([]);
   let saving = $state(false);
   let formError = $state('');
@@ -43,6 +45,7 @@
       customerPoNumber = job.customer_po_number || '';
       dueDate = job.due_date ? toDatetimeLocal(job.due_date) : '';
       projectManager = job.project_manager != null ? String(job.project_manager) : '';
+      contact = job.contact ?? null;
       formError = '';
       fieldErrs = {};
       // Only the PM picker (shown to whoever may manage this job) needs this list.
@@ -67,6 +70,7 @@
       customer_po_number: customerPoNumber,
       due_date: dueDate ? new Date(dueDate).toISOString() : null,
       project_manager: projectManager ? Number(projectManager) : null,
+      contact,
     };
     try {
       await api.patch(`/api/jobs/${job.job_id}/`, payload);
@@ -93,6 +97,17 @@
       <label for="edit-job-name"><strong>Name</strong></label><br>
       <input id="edit-job-name" type="text" maxlength="50" bind:value={name}>
       <FieldError errors={fieldErrs} field="name" />
+    </p>
+
+    <p>
+      <strong>Contact</strong><br>
+      {#if job?.status === 'draft'}
+        <ContactPicker bind:value={contact} />
+      {:else}
+        {job?.contact_name}
+        <br><small>Contact can only be changed while the job is a draft.</small>
+      {/if}
+      <FieldError errors={fieldErrs} field="contact" />
     </p>
 
     <p>

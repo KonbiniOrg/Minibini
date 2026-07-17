@@ -137,6 +137,37 @@ class JobAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['name'], 'Updated Name')
 
+    def test_update_draft_job_contact(self):
+        from apps.contacts.models import Contact
+        new_contact = Contact.objects.create(
+            first_name='New', last_name='Contact',
+            email='new-job-contact@example.com', mobile_number='555-000-1111',
+        )
+        job = Job.objects.create(
+            contact=Contact.objects.exclude(pk=new_contact.pk).first(),
+            name='Draft job', job_number='JOB-CONTACT-DRAFT',
+        )
+        response = self.client.patch(f'/api/jobs/{job.pk}/', {
+            'contact': new_contact.pk,
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
+        job.refresh_from_db()
+        self.assertEqual(job.contact_id, new_contact.pk)
+
+    def test_update_non_draft_job_contact_returns_400(self):
+        from apps.contacts.models import Contact
+        new_contact = Contact.objects.create(
+            first_name='New2', last_name='Contact',
+            email='new-job-contact2@example.com', mobile_number='555-000-2222',
+        )
+        job = self._get_approved_job()
+        response = self.client.patch(f'/api/jobs/{job.pk}/', {
+            'contact': new_contact.pk,
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        job.refresh_from_db()
+        self.assertNotEqual(job.contact_id, new_contact.pk)
+
     def test_delete_job(self):
         # Create a standalone job with no related objects
         from apps.contacts.models import Contact

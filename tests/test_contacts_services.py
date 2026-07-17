@@ -225,6 +225,18 @@ class BusinessServiceCreateTest(TestCase):
         )
         self.assertTrue(biz.our_reference_code.startswith('BUS-'))
 
+    def test_create_business_with_duplicate_name_raises(self):
+        ContactService.create_business(
+            [{'first_name': 'A', 'last_name': 'B', 'email': 'a@b.com', 'work_number': '555'}],
+            business_name='Argon.AI',
+        )
+        with self.assertRaises(ValidationError) as cm:
+            ContactService.create_business(
+                [{'first_name': 'C', 'last_name': 'D', 'email': 'c@d.com', 'work_number': '555'}],
+                business_name='argon.ai',
+            )
+        self.assertEqual(cm.exception.code, 'duplicate_business_name')
+
 
 class BusinessServiceCreateForContactTest(TestCase):
     """Tests for ContactService.create_business_for_contact."""
@@ -246,6 +258,21 @@ class BusinessServiceCreateForContactTest(TestCase):
             ContactService.create_business_for_contact(
                 99999, business_name='Nope',
             )
+
+    def test_create_business_for_contact_with_duplicate_name_raises(self):
+        first = Contact.objects.create(
+            first_name='John', last_name='Doe',
+            email='john2@example.com', work_number='555-1234',
+        )
+        ContactService.create_business_for_contact(first.pk, business_name='Argon.AI')
+
+        second = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane2@example.com', work_number='555-5678',
+        )
+        with self.assertRaises(ValidationError) as cm:
+            ContactService.create_business_for_contact(second.pk, business_name='argon.ai')
+        self.assertEqual(cm.exception.code, 'duplicate_business_name')
 
 
 class BusinessServiceUpdateTest(TestCase):
