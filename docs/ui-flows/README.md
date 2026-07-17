@@ -47,8 +47,9 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 
 | Surface | Routes | Notes |
 |---|---|---|
-| Time tracking (shifts & timeslips) | shift/timeslip bands (every page), timeslips on task detail | The core daily loop: clock in/out, start/stop/settle a timeslip, 24h own-edit window, `can_manage_time` edits. Biggest gap. |
-| Tasks — list & detail lifecycle | `/jobs/:id/tasklist`, `/jobs/:jobId/tasks/:taskId` | Statuses, queue/reorder, blocked reason, complete, mark-all-done. (Add/delete live in Add-Line & Deletion docs.) |
+| **Production lifecycle** (job status × inventory × time) | spans job detail, task list/detail, catalog | The core state machine: job status transitions and their gates; task start → earmark check → shortfall block → consumption; bleps → actuals (est vs. actual); completion cascade to `work_complete`; material states pending→earmarked→consumed→released. Cross-links: Expenses §5–6, Inventory §7, Deletion §4 own their angles. Highest complexity — first priority. |
+| Time tracking (shifts & timeslips) | shift/timeslip bands (every page), timeslips on task detail | The core daily loop: clock in/out, start/stop/settle a timeslip, 24h own-edit window, `can_manage_time` edits. (Blep→actuals math belongs to Production lifecycle.) |
+| Tasks — list & detail lifecycle | `/jobs/:id/tasklist`, `/jobs/:jobId/tasks/:taskId` | Statuses, queue/reorder, blocked reason, complete, mark-all-done. (Add/delete live in Add-Line & Deletion docs; start-guards and the completion cascade belong to Production lifecycle.) |
 | Jobs — list, board, creation | `/jobs`, `/jobs/board` | Board columns/retention, accent colors, job create, hold/resume. |
 | Schedule | `/schedule` | Per-worker bars, forecast cascade, envelope config. |
 | Home & cards | `/`, `/profile`, `/help` | My-Expenses card (locked-to-self form), lists, first-login → Help. |
