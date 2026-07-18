@@ -584,6 +584,13 @@ The atom-pull surfaces on estimates and invoices.
   _Done when:_ a Shift/Blep start_time displays the exact time entered across DST,
   with a regression test pinning the timezone behavior.
 
+- **Timeslip band: link the current task, not just its job.** — _added 2026-07-18_
+  The band (`CurrentBlepBand.svelte`) shows "Working on: <task name> — <job link>";
+  the job is a link but the task name is plain text. Both should navigate: the task
+  name to its task detail page (`#/jobs/{jobId}/tasks/{taskId}`) alongside the
+  existing job link.
+  _Done when:_ the band's current task name links to the task detail page.
+
 - **Blep cancel window measured from the floored minute, not the click — first-minute cancels can fail.** — _added 2026-07-16_
   `Blep.save()` floors `start_time` to the whole minute, so the DB start can be up
   to ~59s *earlier* than the user's click, while the `cancel_work` guard measures
