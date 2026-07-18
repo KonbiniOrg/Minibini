@@ -416,20 +416,15 @@ Billing mechanics and money-record lifecycle.
 
 The atom-pull surfaces on estimates and invoices.
 
-- **Stale SPA state after re-login on an old tab — the "works when I retry" bug family.** — _added 2026-07-18; reframed same day after the repro evaporated_
-  Originally filed as "Add-Task-From-Template modal loses its preset template +
-  name when opened from Add Line" — but the flow works when driven fresh
-  (prereq: a ServiceItem exists; Tasks view of an approved job → Add Work →
-  type into "Search services or materials…"), and archaeology showed no revert
-  (fix `25107590` present; merges `58f0a040..89740596` touched none of the
-  plumbing). RM then recognized the *pattern* behind this and several earlier
-  odd bugs: they appear after **returning to an old browser tab that now shows
-  Login and logging back in** — often (not confirmed always) after a **new
-  dataset** was loaded. Hypothesis: the login transition doesn't fully reset
-  the client. Components remount ({#if $user} swap), but **module-level caches
+- **Stale SPA state after re-login on an old tab — the "works when I retry" bug family.** — _added 2026-07-18_
+  RM's observed pattern: odd bugs after returning to an old browser tab that
+  now shows Login and logging back in, often after a new dataset. The login
+  transition remounts components ({#if $user} swap) but **module-level caches
   and long-lived stores survive** and can carry rows/ids from the previous
   session/dataset — e.g. `lib/paymentAccounts.js`'s `_cache` is only cleared by
-  the settings-save path, never by login/logout. Fuzzy by nature; fix
+  the settings-save path, never by login/logout. (The template-preset bug
+  originally filed here turned out to be cross-window list staleness — see the
+  "search found it, the form didn't" entry under Cross-client refresh.) Fix
   directions: hard-reload on login from an expired-session state, or a
   registered "reset on login" hook for every module cache/store.
   _Done when:_ logging in from a stale tab provably starts from clean client
@@ -651,6 +646,21 @@ All three want the same shared live-refresh/notification mechanism (see the gene
   live-refresh idea ([[project_general_repolling]]).
   _Done when:_ a requester is notified (by whatever agreed channel) of approve/deny
   outcomes for both time-change requests and expense reimbursements.
+
+- **"If the search found it, the rest of the context must be able to use it" — Add-Work picker vs the cached template list.** — _added 2026-07-18 (root cause of the template-preset bug)_
+  Repro: create a ServiceItem in another window; on a job's Tasks view, Add
+  Work → search finds it (PriceListPicker queries the API live) → pick it →
+  the Add-Task-From-Template form opens with **no template and no name**: its
+  pulldown renders from the `templates` list TasksPanel loaded at mount, which
+  predates the new item, so the preset id has no matching option. RM's
+  invariant, to make true: **anything the live search returns must be usable
+  by the rest of the Svelte context** — either the pick carries the full
+  object (the form shouldn't re-resolve it from a cached list), or picking an
+  id absent from the cached list triggers a refetch before the form opens.
+  Same staleness family as the entry below; this one has a crisp repro.
+  _Done when:_ an item created in another window can be picked from Add-Work
+  search and arrives in the form with template + name intact (component test
+  pinning it).
 
 - **Stale-view error handling + live refresh after a concurrent change.** — _added 2026-06-03_
   Two users with the same job open: one creates the estimate, the other's Create-Estimate
