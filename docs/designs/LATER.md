@@ -863,6 +863,15 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ Escape on a stacked modal closes only the modal, and the layers
   read clearly.
 
+- **RateScheme add/edit form should be a modal.** — _added 2026-07-18_
+  `RateSchemeManager.svelte` (Settings page) expands an inline `editingId` form
+  in the page flow instead of using the `Modal.svelte` shell that record
+  create/edit surfaces elsewhere use. Convert the add/edit form to a modal.
+  Related: `ServiceItemManager.svelte` uses the same inline pattern — decide
+  whether it converts in the same pass.
+  _Done when:_ adding/editing a rate scheme happens in a modal (and the
+  ServiceItemManager question is decided).
+
 - **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
   Inconsistencies noticed in passing: some pages surface API errors via the global
   `lib/api.js` overlay, some via inline `<p><strong>Error:</strong> {message}</p>` rows
