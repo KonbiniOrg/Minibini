@@ -416,6 +416,19 @@ Billing mechanics and money-record lifecycle.
 
 The atom-pull surfaces on estimates and invoices.
 
+- **Add-Task-From-Template modal loses its preset template + name when opened from the Add Line modal.** — _added 2026-07-18 (RM observation; regression of a prior fix?)_
+  RM recalls this being fixed (`25107590` "preset template now selects in the
+  WorkItemForm pulldown") and it is NOT a textual revert: that fix is still in
+  `WorkItemForm.svelte` (numeric `presetTemplateId` → `templateId` on open), and
+  the recent main merges (`58f0a040..89740596`) touched none of `WorkItemForm`,
+  `TasksPanel`, or `PriceListPicker`. The task-list Add Work path
+  (`TasksPanel.taskPresetTemplateId` ← `choice.serviceItem.template_id`) traces
+  clean. Needs a browser repro of the *Add Line* → custom/template task chain
+  specifically — note the estimate add-line form itself hosts no WorkItemForm,
+  so pin down which modal chain RM hit before fixing.
+  _Done when:_ reproduced and fixed (preset template + name survive the
+  Add-Line-modal entry path), or shown unreproducible on current main.
+
 - **Wizard's by-hand line item uses an inline editor, not the LineItemModal.** — _added 2026-06-03_
   Adding a manual line item from the detail page uses the new `LineItemModal` (manual/catalog
   toggle), but adding one inside the wizard uses a separate inline editor (likely the same one
