@@ -657,7 +657,12 @@ All three want the same shared live-refresh/notification mechanism (see the gene
   by the rest of the Svelte context** — either the pick carries the full
   object (the form shouldn't re-resolve it from a cached list), or picking an
   id absent from the cached list triggers a refetch before the form opens.
-  Same staleness family as the entry below; this one has a crisp repro.
+  **Plan (agreed 2026-07-18): the first shape.** `PriceListPicker` already
+  hands the full `serviceItem` object to `onChoose`; `TasksPanel` should pass
+  the object through to `WorkItemForm` instead of just the id-for-re-lookup,
+  making the invariant true by construction — no refetch timing to get right.
+  Contained to those two components + a Vitest case pinning the cross-window
+  pick. Same staleness family as the entry below; this one has a crisp repro.
   _Done when:_ an item created in another window can be picked from Add-Work
   search and arrives in the form with template + name intact (component test
   pinning it).
