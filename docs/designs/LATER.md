@@ -503,12 +503,12 @@ The atom-pull surfaces on estimates and invoices.
   the user is looking at. On a long catalog you re-hunt both items by name in unsearchable
   selects, the merge is **irreversible** (line ~55) yet there's **no preview** of what will
   move (QOH, earmarks, line-item/template references) or which item wins, and it shares the
-  top-of-page scroll problem. Directions to make it less awkward: drive selection **from the
+  top-of-page scroll problem (the create/edit form itself is a modal now). Directions to make it less awkward: drive selection **from the
   rows** (e.g. pick a discard row's "merge into…" action, or select two rows in the table)
   so you act on what you see; use `InventoryItemPicker` (server-side `?search=`) instead of
   raw `<select>`s; show a **confirmation preview** of the resulting merged item (combined QOH,
   moved references, which id survives) before committing; and put it in a modal/in-place
-  surface rather than a top-of-page panel. Related: the inventory-edit-modal note above.
+  surface rather than a top-of-page panel.
   _Done when:_ merging is driven from the list rows with a searchable picker and an explicit
   before-commit preview of the outcome, no top-of-page dropdown hunting.
 
