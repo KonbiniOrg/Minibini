@@ -214,6 +214,17 @@ questions specific to that redesign:
   decides which in-block document mentions (if any) become links, and
   they're implemented — or the idea is dropped.
 
+- **Overview still shows "No customer response in N days" after the estimate is approved.** — _added 2026-07-18 (RM observation)_
+  Once an estimate is accepted, the Scope block's response clock should stop.
+  The clock code (`responseClock` in `frontend/src/lib/jobOverview.js`) already
+  returns null for non-`open` documents, so the likely culprit is which document
+  feeds it: accept doesn't supersede sibling estimates (the known
+  single-live-estimate gap), so an approved job can still carry an *older*
+  open+sent estimate whose clock renders. Decide whether the fix is block-side
+  (suppress the clock once the job is `approved`+) or the root-cause invariant.
+  _Done when:_ an approved job's overview shows no customer-response clock,
+  whichever estimate versions exist.
+
 - **`ShipmentsPillar.svelte` and `Accordion.svelte` are orphaned.** — _added 2026-07-09_
   `components/jobs/ShipmentsPillar.svelte` (the read-only shipments
   matrix that used to sit in the accordion between Invoices and
