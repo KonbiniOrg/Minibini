@@ -109,6 +109,11 @@ Status coupling, transitions, and what a job may do at each stage.
   Job status transitions so `approved` can only be reached via estimate acceptance (not a bare
   status edit), or make a direct Job approval with a live Open estimate a validation error, or reconcile
   the two on transition. Also audit which UI affordance let the Job status be edited directly here.
+  _2026-07-18 (RM):_ observed again from the user side — **Job status is NOT the same as Estimate
+  status, and users get confused about which one they are updating**: setting the Job pill to
+  Approved looks like approving the estimate, but the estimate stays open (its customer-response
+  clock keeps ticking on the overview). Decide whether to disallow changing Job status directly to
+  Approved, have the transition bring the Estimate's status with it, or something else.
   _Done when:_ Job↔Estimate status coherence is enforced (a Job can't be `approved` with an un-accepted
   live estimate, or the transition drives acceptance) and the stray edit path is closed.
 
@@ -213,17 +218,6 @@ questions specific to that redesign:
   refinement RM wants to feel out with the page live. _Done when:_ RM
   decides which in-block document mentions (if any) become links, and
   they're implemented — or the idea is dropped.
-
-- **Overview still shows "No customer response in N days" after the estimate is approved.** — _added 2026-07-18 (RM observation)_
-  Once an estimate is accepted, the Scope block's response clock should stop.
-  The clock code (`responseClock` in `frontend/src/lib/jobOverview.js`) already
-  returns null for non-`open` documents, so the likely culprit is which document
-  feeds it: accept doesn't supersede sibling estimates (the known
-  single-live-estimate gap), so an approved job can still carry an *older*
-  open+sent estimate whose clock renders. Decide whether the fix is block-side
-  (suppress the clock once the job is `approved`+) or the root-cause invariant.
-  _Done when:_ an approved job's overview shows no customer-response clock,
-  whichever estimate versions exist.
 
 - **`ShipmentsPillar.svelte` and `Accordion.svelte` are orphaned.** — _added 2026-07-09_
   `components/jobs/ShipmentsPillar.svelte` (the read-only shipments
