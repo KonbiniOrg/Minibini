@@ -589,6 +589,16 @@ The atom-pull surfaces on estimates and invoices.
   _Done when:_ a Shift/Blep start_time displays the exact time entered across DST,
   with a regression test pinning the timezone behavior.
 
+- **Qty-on-stop modal: "This completes the task" shifts the submit button.** — _added 2026-07-18_
+  In `ActualQtyModal.svelte` (session mode, the blep-end quantity prompt), ticking
+  the "This completes the task" checkbox flips `settling` on, which renders the
+  "Final quantity: …" line between the checkbox and the button row — so the
+  buttons jump down (and the submit label widens, Add → "Add & complete") right
+  as the user reaches for them. Keep the buttons stationary: reserve space for
+  the final-total line (or place it above the checkbox) so toggling doesn't
+  move the click target.
+  _Done when:_ toggling the checkbox doesn't move the modal's buttons.
+
 - **Timeslip band: link the current task, not just its job.** — _added 2026-07-18_
   The band (`CurrentBlepBand.svelte`) shows "Working on: <task name> — <job link>";
   the job is a link but the task name is plain text. Both should navigate: the task
