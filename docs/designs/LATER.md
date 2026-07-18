@@ -416,18 +416,25 @@ Billing mechanics and money-record lifecycle.
 
 The atom-pull surfaces on estimates and invoices.
 
-- **Add-Task-From-Template modal loses its preset template + name when opened from the Add Line modal.** — _added 2026-07-18 (RM observation; regression of a prior fix?)_
-  RM recalls this being fixed (`25107590` "preset template now selects in the
-  WorkItemForm pulldown") and it is NOT a textual revert: that fix is still in
-  `WorkItemForm.svelte` (numeric `presetTemplateId` → `templateId` on open), and
-  the recent main merges (`58f0a040..89740596`) touched none of `WorkItemForm`,
-  `TasksPanel`, or `PriceListPicker`. The task-list Add Work path
-  (`TasksPanel.taskPresetTemplateId` ← `choice.serviceItem.template_id`) traces
-  clean. Needs a browser repro of the *Add Line* → custom/template task chain
-  specifically — note the estimate add-line form itself hosts no WorkItemForm,
-  so pin down which modal chain RM hit before fixing.
-  _Done when:_ reproduced and fixed (preset template + name survive the
-  Add-Line-modal entry path), or shown unreproducible on current main.
+- **Stale SPA state after re-login on an old tab — the "works when I retry" bug family.** — _added 2026-07-18; reframed same day after the repro evaporated_
+  Originally filed as "Add-Task-From-Template modal loses its preset template +
+  name when opened from Add Line" — but the flow works when driven fresh
+  (prereq: a ServiceItem exists; Tasks view of an approved job → Add Work →
+  type into "Search services or materials…"), and archaeology showed no revert
+  (fix `25107590` present; merges `58f0a040..89740596` touched none of the
+  plumbing). RM then recognized the *pattern* behind this and several earlier
+  odd bugs: they appear after **returning to an old browser tab that now shows
+  Login and logging back in** — often (not confirmed always) after a **new
+  dataset** was loaded. Hypothesis: the login transition doesn't fully reset
+  the client. Components remount ({#if $user} swap), but **module-level caches
+  and long-lived stores survive** and can carry rows/ids from the previous
+  session/dataset — e.g. `lib/paymentAccounts.js`'s `_cache` is only cleared by
+  the settings-save path, never by login/logout. Fuzzy by nature; fix
+  directions: hard-reload on login from an expired-session state, or a
+  registered "reset on login" hook for every module cache/store.
+  _Done when:_ logging in from a stale tab provably starts from clean client
+  state (or the odd-bug-after-relogin pattern stops recurring and RM closes
+  this).
 
 - **Wizard's by-hand line item uses an inline editor, not the LineItemModal.** — _added 2026-06-03_
   Adding a manual line item from the detail page uses the new `LineItemModal` (manual/catalog
