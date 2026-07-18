@@ -200,6 +200,32 @@ def _anonymize_email(value):
     return _anon_email_from_local(local) if local else (value or '')
 
 
+def _unique_email(email, seen):
+    """Return `email` if unused, else number the local part until free
+    (test+info@… → test+info1@…, test+info2@…). Contact.email is DB-unique;
+    distinct source contacts legitimately share a local part (info@a.com and
+    info@b.com both anonymize to test+info@robot-six.com)."""
+    if email not in seen:
+        seen.add(email)
+        return email
+    local, _, domain = email.partition('@')
+    n = 1
+    while f'{local}{n}@{domain}' in seen:
+        n += 1
+    numbered = f'{local}{n}@{domain}'
+    seen.add(numbered)
+    return numbered
+
+
+def _contact_email_seen(c):
+    """Per-run registry of emitted contact emails, kept on the converter."""
+    seen = getattr(c, 'seen_contact_emails', None)
+    if seen is None:
+        seen = set()
+        c.seen_contact_emails = seen
+    return seen
+
+
 def _anonymize_phone(value):
     """Anonymize a phone number: keep the area code and the last four
     digits, replace the 3-digit prefix (exchange) with 555."""
@@ -332,6 +358,7 @@ def _emit_contact(c, business_pk, fa_row=None, fallback_name=None):
     contact_pk = c.next_pk('contacts.contact')
     email = (_anonymize_email(email) if email
              else _anon_email_from_local(f'noreply+{contact_pk}'))
+    email = _unique_email(email, _contact_email_seen(c))
     work = _anonymize_phone(work) if work else ''
     mobile = _anonymize_phone(mobile) if mobile else ''
     if not work and not mobile:

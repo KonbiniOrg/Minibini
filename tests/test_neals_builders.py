@@ -128,6 +128,26 @@ class BaseBuildersTest(unittest.TestCase):
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
+class UniqueEmailTest(unittest.TestCase):
+    def test_first_occurrence_keeps_the_original(self):
+        seen = set()
+        self.assertEqual(build._unique_email('test+info@robot-six.com', seen),
+                         'test+info@robot-six.com')
+
+    def test_collisions_number_the_local_part(self):
+        seen = set()
+        build._unique_email('test+info@robot-six.com', seen)
+        self.assertEqual(build._unique_email('test+info@robot-six.com', seen),
+                         'test+info1@robot-six.com')
+        self.assertEqual(build._unique_email('test+info@robot-six.com', seen),
+                         'test+info2@robot-six.com')
+
+    def test_numbering_skips_addresses_already_taken(self):
+        seen = {'test+info@robot-six.com', 'test+info1@robot-six.com'}
+        self.assertEqual(build._unique_email('test+info@robot-six.com', seen),
+                         'test+info2@robot-six.com')
+
+
 class ContactBuildersTest(unittest.TestCase):
     def setUp(self):
         self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=10)
@@ -137,6 +157,18 @@ class ContactBuildersTest(unittest.TestCase):
 
     def _models(self, m):
         return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_contact_emails_are_unique(self):
+        # Contact.email is DB-unique (contacts migration 0008). Distinct source
+        # contacts can share a local part (info@a.com, info@b.com — both
+        # anonymize to test+info@robot-six.com); the builder must number the
+        # collisions: test+info@, test+info1@, test+info2@ ...
+        build.build_contacts_and_businesses(self.c)
+        build.build_vendors(self.c)
+        emails = [f['fields']['email'] for f in self._models('contacts.contact')
+                  if f['fields']['email']]
+        self.assertEqual(len(emails), len(set(emails)),
+                         [e for e in emails if emails.count(e) > 1])
 
     def test_builds_referenced_contacts_and_businesses(self):
         build.build_contacts_and_businesses(self.c)

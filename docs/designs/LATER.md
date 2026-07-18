@@ -109,6 +109,11 @@ Status coupling, transitions, and what a job may do at each stage.
   Job status transitions so `approved` can only be reached via estimate acceptance (not a bare
   status edit), or make a direct Job approval with a live Open estimate a validation error, or reconcile
   the two on transition. Also audit which UI affordance let the Job status be edited directly here.
+  _2026-07-18 (RM):_ observed again from the user side — **Job status is NOT the same as Estimate
+  status, and users get confused about which one they are updating**: setting the Job pill to
+  Approved looks like approving the estimate, but the estimate stays open (its customer-response
+  clock keeps ticking on the overview). Decide whether to disallow changing Job status directly to
+  Approved, have the transition bring the Estimate's status with it, or something else.
   _Done when:_ Job↔Estimate status coherence is enforced (a Job can't be `approved` with an un-accepted
   live estimate, or the transition drives acceptance) and the stray edit path is closed.
 
@@ -411,6 +416,21 @@ Billing mechanics and money-record lifecycle.
 
 The atom-pull surfaces on estimates and invoices.
 
+- **Stale SPA state after re-login on an old tab — the "works when I retry" bug family.** — _added 2026-07-18_
+  RM's observed pattern: odd bugs after returning to an old browser tab that
+  now shows Login and logging back in, often after a new dataset. The login
+  transition remounts components ({#if $user} swap) but **module-level caches
+  and long-lived stores survive** and can carry rows/ids from the previous
+  session/dataset — e.g. `lib/paymentAccounts.js`'s `_cache` is only cleared by
+  the settings-save path, never by login/logout. (The template-preset bug
+  originally filed here turned out to be cross-window list staleness — see the
+  "search found it, the form didn't" entry under Cross-client refresh.) Fix
+  directions: hard-reload on login from an expired-session state, or a
+  registered "reset on login" hook for every module cache/store.
+  _Done when:_ logging in from a stale tab provably starts from clean client
+  state (or the odd-bug-after-relogin pattern stops recurring and RM closes
+  this).
+
 - **Wizard's by-hand line item uses an inline editor, not the LineItemModal.** — _added 2026-06-03_
   Adding a manual line item from the detail page uses the new `LineItemModal` (manual/catalog
   toggle), but adding one inside the wizard uses a separate inline editor (likely the same one
@@ -498,12 +518,12 @@ The atom-pull surfaces on estimates and invoices.
   the user is looking at. On a long catalog you re-hunt both items by name in unsearchable
   selects, the merge is **irreversible** (line ~55) yet there's **no preview** of what will
   move (QOH, earmarks, line-item/template references) or which item wins, and it shares the
-  top-of-page scroll problem. Directions to make it less awkward: drive selection **from the
+  top-of-page scroll problem (the create/edit form itself is a modal now). Directions to make it less awkward: drive selection **from the
   rows** (e.g. pick a discard row's "merge into…" action, or select two rows in the table)
   so you act on what you see; use `InventoryItemPicker` (server-side `?search=`) instead of
   raw `<select>`s; show a **confirmation preview** of the resulting merged item (combined QOH,
   moved references, which id survives) before committing; and put it in a modal/in-place
-  surface rather than a top-of-page panel. Related: the inventory-edit-modal note above.
+  surface rather than a top-of-page panel.
   _Done when:_ merging is driven from the list rows with a searchable picker and an explicit
   before-commit preview of the outcome, no top-of-page dropdown hunting.
 
@@ -584,7 +604,35 @@ The atom-pull surfaces on estimates and invoices.
   _Done when:_ a Shift/Blep start_time displays the exact time entered across DST,
   with a regression test pinning the timezone behavior.
 
-## Cross-client refresh & notifications
+- **Qty-on-stop modal: "This completes the task" shifts the submit button.** — _added 2026-07-18_
+  In `ActualQtyModal.svelte` (session mode, the blep-end quantity prompt), ticking
+  the "This completes the task" checkbox flips `settling` on, which renders the
+  "Final quantity: …" line between the checkbox and the button row — so the
+  buttons jump down (and the submit label widens, Add → "Add & complete") right
+  as the user reaches for them. Keep the buttons stationary: reserve space for
+  the final-total line (or place it above the checkbox) so toggling doesn't
+  move the click target.
+  _Done when:_ toggling the checkbox doesn't move the modal's buttons.
+
+- **Timeslip band: link the current task, not just its job.** — _added 2026-07-18_
+  The band (`CurrentBlepBand.svelte`) shows "Working on: <task name> — <job link>";
+  the job is a link but the task name is plain text. Both should navigate: the task
+  name to its task detail page (`#/jobs/{jobId}/tasks/{taskId}`) alongside the
+  existing job link.
+  _Done when:_ the band's current task name links to the task detail page.
+
+- **Blep cancel window measured from the floored minute, not the click — first-minute cancels can fail.** — _added 2026-07-16_
+  `Blep.save()` floors `start_time` to the whole minute, so the DB start can be up
+  to ~59s *earlier* than the user's click, while the `cancel_work` guard measures
+  the session against `blep_minimum_minutes` from that floored start. A user who
+  clicks Start at :59 and cancels 30s later has 31s of *experienced* session but
+  ~90s on the books — the "oops" cancel is refused inside their first minute.
+  Two fix directions: (a) allow cancellation for one extra minute past the config
+  time (grace covering the flooring gap), or (b) stick the start to the *next*
+  minute instead and handle cancels that arrive before the blep officially began.
+  _Done when:_ a cancel within the user-experienced window always succeeds — one
+  direction chosen and implemented, with a test pinning the
+  click-just-before-the-minute-boundary case.
 
 All three want the same shared live-refresh/notification mechanism (see the general-repolling project note).
 
@@ -598,6 +646,26 @@ All three want the same shared live-refresh/notification mechanism (see the gene
   live-refresh idea ([[project_general_repolling]]).
   _Done when:_ a requester is notified (by whatever agreed channel) of approve/deny
   outcomes for both time-change requests and expense reimbursements.
+
+- **"If the search found it, the rest of the context must be able to use it" — Add-Work picker vs the cached template list.** — _added 2026-07-18 (root cause of the template-preset bug)_
+  Repro: create a ServiceItem in another window; on a job's Tasks view, Add
+  Work → search finds it (PriceListPicker queries the API live) → pick it →
+  the Add-Task-From-Template form opens with **no template and no name**: its
+  pulldown renders from the `templates` list TasksPanel loaded at mount, which
+  predates the new item, so the preset id has no matching option. RM's
+  invariant, to make true: **anything the live search returns must be usable
+  by the rest of the Svelte context** — either the pick carries the full
+  object (the form shouldn't re-resolve it from a cached list), or picking an
+  id absent from the cached list triggers a refetch before the form opens.
+  **Plan (agreed 2026-07-18): the first shape.** `PriceListPicker` already
+  hands the full `serviceItem` object to `onChoose`; `TasksPanel` should pass
+  the object through to `WorkItemForm` instead of just the id-for-re-lookup,
+  making the invariant true by construction — no refetch timing to get right.
+  Contained to those two components + a Vitest case pinning the cross-window
+  pick. Same staleness family as the entry below; this one has a crisp repro.
+  _Done when:_ an item created in another window can be picked from Add-Work
+  search and arrives in the form with template + name intact (component test
+  pinning it).
 
 - **Stale-view error handling + live refresh after a concurrent change.** — _added 2026-06-03_
   Two users with the same job open: one creates the estimate, the other's Create-Estimate
@@ -839,6 +907,15 @@ Cross-cutting UI/API conventions and shared components.
   open" signal), and stacked modals take the nested tier.
   _Done when:_ Escape on a stacked modal closes only the modal, and the layers
   read clearly.
+
+- **RateScheme add/edit form should be a modal.** — _added 2026-07-18_
+  `RateSchemeManager.svelte` (Settings page) expands an inline `editingId` form
+  in the page flow instead of using the `Modal.svelte` shell that record
+  create/edit surfaces elsewhere use. Convert the add/edit form to a modal.
+  Related: `ServiceItemManager.svelte` uses the same inline pattern — decide
+  whether it converts in the same pass.
+  _Done when:_ adding/editing a rate scheme happens in a modal (and the
+  ServiceItemManager question is decided).
 
 - **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
   Inconsistencies noticed in passing: some pages surface API errors via the global

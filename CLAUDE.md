@@ -33,6 +33,7 @@ python manage.py loaddata unit_test_data.json  # Load test fixtures
 # Testing
 python manage.py test                   # Run all tests
 python manage.py test tests.test_foo    # Run specific test module
+cd e2e && npx playwright test           # E2E suite (own ports 8100/9100; dev servers can stay up)
 
 # Docker
 docker compose up                       # Full stack (app, mysql, nginx)
@@ -302,7 +303,7 @@ with transaction.atomic():
 **Permissions:** Always check permissions in views:
 - API viewsets: override `get_permissions()` returning `[IsAuthenticated(), CanXxx()]`
 - API function views: `@permission_classes([IsAuthenticated, CanXxx])`
-- Notes (HistoryEntry) and adding/editing/deleting/completing tasks on a Job are `IsAuthenticated` only; cancelling a task, reordering, and marking all work complete use `CanManageJobOrPM` (atom or the job's PM)
+- Notes (HistoryEntry) and adding/editing/deleting/completing/**cancelling** tasks on a Job are `IsAuthenticated` only (cancel opened to all workers 2026-07-12 — it shares delete's principal set); reordering and marking all work complete use `CanManageJobOrPM` (atom or the job's PM)
 - `CanManageJobOrPM` (`apps/api/permissions.py`) gates job-owned writes so a Job's `project_manager` gets atom-equivalent access to that one job; viewsets mix in `JobScopedPermissionMixin` and serializers expose a `can_manage` flag via `JobScopedCanManageMixin`
 - Email *reads* (`/api/emails/`, detail) are `IsAuthenticated`; email-to-job actions (link, unlink, create-job-from-email) require `CanManageJobs`
 
@@ -356,6 +357,7 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 - **Always pass `--noinput` to `manage.py test`.** A stale test database (left behind by any killed run) otherwise triggers an interactive delete prompt that hangs non-interactive shells forever. Both this rule and the no-parallel rule are **hook-enforced** (`.claude/hooks/check-django-test.sh`, wired in `.claude/settings.json`): a `manage.py test` command missing `--noinput`, or issued while another Django test run is alive, is denied before it executes — fix the command per the denial message and re-run.
 - **NEVER judge test pass/fail by a piped command's exit code.** `python manage.py test ... | tail` (or any pipe) reports the *last* command's exit code (`tail`'s, always 0), NOT Django's — so a green-looking exit can hide real failures. To gate on results, read the actual `OK` / `FAILED (failures=…, errors=…)` summary line and the `Ran N tests` count from the output (e.g. write to a file and grep it, or run without a pipe so the exit code is Django's). This applies to background runs especially.
 - **Front-end (Svelte SPA):** component/unit tests use Vitest, in `frontend/tests/`; run `npm run test:run` from `frontend/`. Extend TDD to the SPA — add/update a component's test in the same change. Patterns, conventions, and the behavior-vs-display triage live in `docs/designs/frontend-testing.md`.
+- **E2E (Playwright):** full-stack browser tests in `e2e/`, driven from the `docs/ui-flows/` checklists, against a dedicated `minibini_e2e` DB rebuilt from migrations + the committed seed every run (never the dev DB). Run `npx playwright test` from `e2e/`; it starts its own servers on ports 8100/9100, so the dev stack can stay up. Setup, seed pipeline, personas, and spec conventions live in `docs/designs/e2e-testing.md`.
 
 ## Development Features
 
