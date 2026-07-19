@@ -62,9 +62,12 @@ class BlepChangeRequestSerializer(_BaseChangeRequestSerializer):
     def get_conflicts(self, obj):
         # No shift covers the requested time; surface the worker's overlapping
         # shifts as candidates to widen (empty if none overlaps at all).
+        # localtime(): stored datetimes are UTC — a raw strftime would label
+        # the shift 7-8 hours off for Pacific users.
+        from django.utils import timezone
         return [{'type': 'shift', 'id': s.shift_id,
-                 'label': s.start_time.strftime('%b %d, %H:%M')
-                          + s.end_time.strftime('–%H:%M')}
+                 'label': timezone.localtime(s.start_time).strftime('%b %d, %H:%M')
+                          + timezone.localtime(s.end_time).strftime('–%H:%M')}
                 for s in obj.conflicting_records()]
 
     def validate(self, attrs):

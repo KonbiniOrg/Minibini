@@ -875,6 +875,13 @@ and `can_manage_time` rules.
   `/api/bleps/current/` (field `blep_minimum_minutes`) and task-detail payloads
   so the client can choose the label live (compared in whole minutes,
   `floor((now − start)/60s)`, to stay aligned with the backend).
+  **Cancel grace minute (2026-07-19):** `cancel_work` itself accepts up to
+  `blep_minimum_minutes + 1` whole minutes. `Blep.save()` floors `start_time`
+  to the whole minute, so the books can show ~59s more session than the user
+  experienced — without the grace, a Start clicked just before a minute
+  boundary couldn't be cancelled inside the user's real first minute. The
+  close-primitive's cancel-vs-close split (next bullet) deliberately keeps the
+  plain minimum — it's bookkeeping, not a human's cancel request.
 - **Sub-minimum close = cancel, enforced for ALL close paths.** The rule is
   not just a frontend affordance: it lives in the backend close primitive
   `BlepService._close_open`. When any close path resolves an open Blep, a

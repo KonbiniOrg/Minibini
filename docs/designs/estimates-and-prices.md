@@ -1569,7 +1569,12 @@ are resolved).
 ### 14.8 API endpoints
 
 - `GET /api/jobs/{id}/change-orders/` — list of the job's COs
-- `POST /api/change-orders/` — create (body: `{job_id}`)
+- `POST /api/change-orders/` — create (body: `{job_id}`). UI-wise, the
+  estimate panel's **Create Change Order** button (accepted estimate)
+  shows only while the job has **no** change orders (2026-07-19): the
+  first CO branches from the accepted estimate, and every further CO is
+  seeded from the previous one via the CO page's "Start new change
+  order" (`seed-new`) flow, so COs chain rather than branching fresh.
 - `GET / PATCH / DELETE /api/change-orders/{id}/`
 - `POST /api/change-orders/{id}/mark-open/` — `draft → open`
 - `POST /api/change-orders/{id}/update-status/` — accept / reject /
