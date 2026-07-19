@@ -444,16 +444,16 @@ Every QBO ID stored in Minibini is scoped to one specific QBO company. After con
 
 ### Repointing a dataset at a different company — `purge_qbo_data`
 
-For the non-production version of the same problem — prepping a sample dataset for a staging instance that connects to a *different sandbox company* — `python manage.py purge_qbo_data` strips every QBO-company-scoped value from the database in one transaction:
+For the non-production version of the same problem — prepping a sample dataset for a staging instance that connects to a *different sandbox company* — `python manage.py purge_qbo_data <input.json> <output.json>` reads a `dumpdata` JSON dump and writes a copy with every QBO-company-scoped value stripped. It operates on the file only — **it never touches a database** (output path may equal input for in-place):
 
-- `AccountingCategory.qbo_item_id` / `qbo_expense_account_id` → `''`
-- `Configuration['qbo_payment_accounts']` → deleted (other keys untouched)
-- `Invoice.qbo_id` → null, plus its poll caches `qbo_payment_status` → `''` and `qbo_amount_paid` → null; `Bill.qbo_id` → null and `qbo_payment_status` → `''`
-- `Business.qbo_customer_id` / `qbo_vendor_id` and `Contact.qbo_customer_id` → null
-- The `QBOSyncable` trio (`Expense`, `Reimbursement`, `BillPayment`): `qbo_id` → `''`, `qbo_sync_status` → `pending`, `qbo_sync_error` / `qbo_pending_op` cleared
-- All `QBOConnection` and `QBOSyncLog` rows → deleted
+- `core.accountingcategory`: `qbo_item_id` / `qbo_expense_account_id` → `''`
+- `core.configuration` rows with key `qbo_payment_accounts` → dropped (other keys untouched)
+- `invoicing.invoice`: `qbo_id` → null, plus its poll caches `qbo_payment_status` → `''` and `qbo_amount_paid` → null; `purchasing.bill`: `qbo_id` → null and `qbo_payment_status` → `''`
+- `contacts.business` `qbo_customer_id` / `qbo_vendor_id` and `contacts.contact` `qbo_customer_id` → null
+- The `QBOSyncable` trio (`expenses.expense`, `expenses.reimbursement`, `purchasing.billpayment`): `qbo_id` → `''`, `qbo_sync_status` → `pending`, `qbo_sync_error` / `qbo_pending_op` cleared
+- All `qbo.qboconnection` and `qbo.qbosynclog` records → dropped
 
-It prompts for confirmation (`--yes` to skip), prints per-table counts, and deliberately bypasses model `save()` — it's data surgery, not a domain operation. **What it does not touch:** domain state derived from the old company stays as-is — invoices remain `paid`/`partly-paid` with no QBO record behind them (accepted follow-on effect), and `payment_account_id` values on expenses/reimbursements/payments are kept even though they now dangle (the which-account information stays readable). After purging, the new instance must connect to its new sandbox account and regenerate the category mappings and payment-account list per §3 above.  The existing domain state will remain inconsistent with the new sandbox, acceptable in a staging environment.
+It prints per-model scrubbed/dropped counts. Only fields actually present in a record are overwritten, so a dump from an older schema stays loadable. The flip side: models with no data in the dump (e.g. QBO features unfinished at dump time) exercise nothing — **when new QBO-coupled models or fields land, extend the command's tables and recheck against a fresh dump.** **What it does not touch:** domain state derived from the old company stays as-is — invoices remain `paid`/`partly-paid` with no QBO record behind them (accepted follow-on effect), and `payment_account_id` values on expenses/reimbursements/payments are kept even though they now dangle (the which-account information stays readable). After loading the purged dump, the new instance must connect to its new sandbox account and regenerate the category mappings and payment-account list per §3 above.  The existing domain state will remain inconsistent with the new sandbox, acceptable in a staging environment.
 
 ## Appendix: Developer setup
 
