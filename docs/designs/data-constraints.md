@@ -170,6 +170,16 @@ Bleps. `db_table = 'shifts'`. `@history(exclude=['shift_id'])`.
   two open shifts for one user.
 - **Multiple shifts per day** are allowed (split shifts, clock-out for lunch
   and back in).
+- **No overlapping shifts per user** (added 2026-07-19): one user cannot be
+  clocked in twice at once, so two shifts of the same user may never overlap
+  — overlap would double-count attendance in the shift report. Spans are
+  **half-open**: a shift ending exactly when the next starts (split shifts)
+  is legal. A null `end_time` (open shift) is unbounded on the right.
+  Enforced by `ShiftService._assert_no_overlap` on every shift write path —
+  `create`, `update`, and `clock_in` — which also covers change-request
+  approval (`ShiftChangeRequest.apply_requested` routes through
+  `create`/`update`). Inputs are minute-floored before comparison, matching
+  what `save()` stores. Service-layer only, not a DB constraint.
 
 #### The shift↔blep enclosure invariant
 
