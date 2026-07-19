@@ -111,6 +111,18 @@ accepting one fires `approved`. An **open** estimate going to `rejected`
 (customer decline) or `expired` (the `mark_estimates_expired` sweep) drives
 the Job to `rejected` — see `estimates-and-prices.md` §9.3 and §13 below.
 
+**Direct approval is gated behind estimate acceptance** (2026-07-19): if a
+job has ANY estimate (any status — dead ones count), `approved` can only be
+entered by a system transition (estimate acceptance, duplicate-as-approved:
+`JobService.update_job(..., system_transition=True)`); a direct status edit
+raises a `ValidationError`. A bare edit used to bypass acceptance
+crystallization and leave the estimate's customer-response clock ticking.
+Only a job with **no estimates at all** can be hand-approved via the pill —
+the header offers the Approved option only when the detail serializer's
+`has_estimates` is false. Approving on the customer's behalf (phone
+acceptance) is done by marking the **estimate** accepted, which drives the
+job as usual.
+
 `submitted → draft` is the **re-quote** transition: when a customer requests
 changes via the portal (`estimates-and-prices.md` §15.1), the estimate
 auto-revises and the Job drops back to `draft` so a draft job + draft

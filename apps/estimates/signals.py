@@ -73,7 +73,8 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
         # If trying to go to 'approved' from 'draft', first go through 'submitted'
         if new_job_status == Job.STATUS_APPROVED and job.status == Job.STATUS_DRAFT:
             old_status = job.status
-            JobService.update_job(job.pk, status=Job.STATUS_SUBMITTED)
+            JobService.update_job(job.pk, status=Job.STATUS_SUBMITTED,
+                                  system_transition=True)
             record_history(
                 entry_type='action',
                 object_type='job',
@@ -82,7 +83,8 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
                 changes={'status': {'old': old_status, 'new': Job.STATUS_SUBMITTED}, '_action': action_desc},
             )
             # Now transition to approved
-            JobService.update_job(job.pk, status=Job.STATUS_APPROVED)
+            JobService.update_job(job.pk, status=Job.STATUS_APPROVED,
+                                  system_transition=True)
             record_history(
                 entry_type='action',
                 object_type='job',
@@ -93,7 +95,8 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             return 2  # Two transitions made
         else:
             old_status = job.status
-            JobService.update_job(job.pk, status=new_job_status)
+            JobService.update_job(job.pk, status=new_job_status,
+                                  system_transition=True)
             record_history(
                 entry_type='action',
                 object_type='job',

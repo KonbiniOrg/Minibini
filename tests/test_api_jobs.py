@@ -897,10 +897,13 @@ class JobDetailInvoiceFieldTest(TestCase):
         # is unset/zero, so labor_hours still reflects hours worked. This trades one
         # query per job-detail for the total/labor/materials invariant holding by
         # construction rather than by two formulas staying in sync.
+        # +1 for `has_estimates` (2026-07-19): the job-detail serializer runs one
+        # estimate_set.exists() so the header pill can offer direct Approved only
+        # on estimate-less jobs (approval otherwise flows from estimate acceptance).
         # If the jobs viewset gains new prefetches/annotations this number may need
         # updating — update it together with a comment explaining why the count changed.
         self.assertEqual(
-            count_one, 16,
-            f'Absolute query count for job-detail changed: expected 16, got {count_one}. '
+            count_one, 17,
+            f'Absolute query count for job-detail changed: expected 17, got {count_one}. '
             f'Update this pin if the viewset legitimately changed (add a comment explaining why).',
         )

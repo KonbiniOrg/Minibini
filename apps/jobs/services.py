@@ -479,11 +479,16 @@ class JobService:
     )
 
     @staticmethod
-    def update_job(pk, **kwargs):
+    def update_job(pk, system_transition=False, **kwargs):
         """Base Job update. Applies field changes and dispatches
         status-transition side effects (loose-materials gate, earmark
         release). update_status() is a thin wrapper over this — every Job
-        status change should flow through here."""
+        status change should flow through here.
+
+        `system_transition=True` marks a status walk driven by the system
+        (estimate acceptance, duplicate-as-approved) rather than a user's
+        direct status edit; only those may enter `approved` on a job that
+        has estimates."""
         try:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
@@ -492,6 +497,19 @@ class JobService:
         for field, value in kwargs.items():
             setattr(job, field, value)
         status_changed = job.status != old_status
+
+        # Approval flows from estimate acceptance: a direct edit to approved
+        # would bypass acceptance crystallization and leave the estimate's
+        # customer-response clock ticking. Only a job with NO estimates at all
+        # (any status counts — dead ones too) can be hand-approved.
+        if (status_changed and job.status == Job.STATUS_APPROVED
+                and not system_transition
+                and job.estimate_set.exists()):
+            raise ValidationError(
+                'This job has an estimate — approve it by accepting the '
+                'estimate (there or via the customer link), not by setting '
+                'the job status directly.'
+            )
 
         # A held job is parked: no status changes except cancellation, which
         # (like release) requires any live change order to be resolved first
@@ -606,9 +624,10 @@ class JobService:
         return released
 
     @staticmethod
-    def update_status(pk, new_status):
+    def update_status(pk, new_status, system_transition=False):
         """Thin wrapper over update_job for a status-only change."""
-        return JobService.update_job(pk, status=new_status)
+        return JobService.update_job(pk, status=new_status,
+                                     system_transition=system_transition)
 
     @staticmethod
     def _assert_no_live_change_order(job):
@@ -922,14 +941,16 @@ class JobService:
             defaults={'first_name': 'System', 'is_active': False},
         )
         action_desc = f"Duplicated from {source_job.job_number}"
-        JobService.update_status(new_job.pk, Job.STATUS_SUBMITTED)
+        JobService.update_status(new_job.pk, Job.STATUS_SUBMITTED,
+                                 system_transition=True)
         record_history(
             entry_type='action', object_type='job', object_id=new_job.pk,
             user=system_user,
             changes={'status': {'old': Job.STATUS_DRAFT, 'new': Job.STATUS_SUBMITTED},
                      '_action': action_desc},
         )
-        JobService.update_status(new_job.pk, Job.STATUS_APPROVED)
+        JobService.update_status(new_job.pk, Job.STATUS_APPROVED,
+                                 system_transition=True)
         record_history(
             entry_type='action', object_type='job', object_id=new_job.pk,
             user=system_user,

@@ -56,6 +56,7 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     materials = serializers.SerializerMethodField()
     fees = serializers.SerializerMethodField()
     latest_change_request = serializers.SerializerMethodField()
+    has_estimates = serializers.SerializerMethodField()
     estimated_amount = serializers.SerializerMethodField()
     spent_amount = serializers.SerializerMethodField()
     invoiced_amount = serializers.SerializerMethodField()
@@ -71,6 +72,7 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'customer_po_number', 'description',
             'created_date', 'start_date', 'due_date', 'completed_date',
             'tasks', 'materials', 'fees', 'latest_change_request',
+            'has_estimates',
             'estimated_amount', 'spent_amount', 'invoiced_amount', 'profit_amount',
         ]
         # on_hold/hold_reason are read-only — writes go through the hold/
@@ -80,6 +82,17 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
 
     def get_contact_name(self, obj):
         return f"{obj.contact.first_name} {obj.contact.last_name}"
+
+    def get_has_estimates(self, obj):
+        """Whether ANY estimate exists on this job (dead ones count). The
+        header's status pill offers direct Approved only when False — a job
+        with estimates is approved via estimate acceptance. Skipped in list
+        context (per-row exists() would be an N+1); detail-only, like
+        ``latest_change_request``."""
+        view = self.context.get('view')
+        if view is not None and getattr(view, 'action', None) == 'list':
+            return None
+        return obj.estimate_set.exists()
 
     def _financials(self, obj):
         """Detail-only job financial rollups, computed once and memoized.

@@ -30,8 +30,10 @@ CLOSED_MESSAGE = (
 def _is_actionable(estimate):
     """Customer may act only on an OPEN estimate whose job is still awaiting the
     customer (SUBMITTED). The shop can move the job independently (cancel,
-    reject, manual approve, reopen) without touching the estimate; the portal
-    respects job status but never mutates the estimate from the job side."""
+    reject, reopen) without touching the estimate; the portal respects job
+    status but never mutates the estimate from the job side. (Direct manual
+    approval is blocked once a job has estimates — approval flows from
+    estimate acceptance; see JobService.update_job.)"""
     if estimate.status != Estimate.STATUS_OPEN:
         return False
     return estimate.job_id is not None and estimate.job.status == Job.STATUS_SUBMITTED
