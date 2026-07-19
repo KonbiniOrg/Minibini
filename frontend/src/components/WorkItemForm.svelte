@@ -17,6 +17,11 @@
     templates = [],
     rateScheme = null, // optional pre-selected RateScheme (manual mode only)
     presetTemplateId = null, // optional pre-selected ServiceItem id (template mode only)
+    presetServiceItem = null, // full pre-picked ServiceItem object (template mode only):
+                              // the Add-Work search is live, so it can return items the
+                              // caller's cached `templates` list doesn't have yet (created
+                              // in another window) — the pick carries the object so this
+                              // form never re-resolves it from a stale list
     presetName = '', // optional pre-fill for the name (manual / custom-task create only)
     onSaved = () => {},
     onClose = () => {},
@@ -88,8 +93,18 @@
   });
 
   // In template mode, when the user picks a template, defaults flow downward.
+  // presetServiceItem is the fallback for ids the cached list doesn't know.
   const selectedTemplate = $derived(
-    templates.find(t => String(t.template_id) === String(templateId)) || null
+    templates.find(t => String(t.template_id) === String(templateId))
+    || (presetServiceItem
+        && String(presetServiceItem.template_id) === String(templateId)
+        ? presetServiceItem : null)
+  );
+  // The pulldown needs an <option> for the preset even when the cached list
+  // lacks it, or the select renders unselected with no matching entry.
+  const presetMissingFromList = $derived(
+    presetServiceItem
+    && !templates.some(t => String(t.template_id) === String(presetServiceItem.template_id))
   );
   $effect(() => {
     if (mode !== 'template') return;
@@ -257,6 +272,9 @@
             <label><strong>Template *</strong><br>
               <select bind:value={templateId}>
                 <option value="">-- Select template --</option>
+                {#if presetMissingFromList}
+                  <option value={presetServiceItem.template_id}>{presetServiceItem.template_name}</option>
+                {/if}
                 {#each templates as tmpl (tmpl.template_id)}
                   <option value={tmpl.template_id}>{tmpl.template_name}</option>
                 {/each}
