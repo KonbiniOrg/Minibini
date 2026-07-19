@@ -535,8 +535,9 @@ class InvoiceWizardService(BaseWizardService):
         """
         if job.status not in InvoiceWizardService.BILLABLE_JOB_STATUSES:
             raise ValidationError(
-                f'Cannot start invoice wizard for job in status "{job.status}". '
-                f'Job must be approved or completed.'
+                f'Cannot start an invoice for a job in status "{job.status}". '
+                f'The job must be approved, in progress, work complete, '
+                f'completed, or cancelled.'
             )
 
         existing = Invoice.objects.filter(

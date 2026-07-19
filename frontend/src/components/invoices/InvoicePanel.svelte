@@ -206,6 +206,11 @@
   let canCreateInvoice = $derived(
     $canManageFinancials && BILLABLE_JOB_STATUSES.includes(job?.status) && !hasOpenDraft
   );
+  // The empty-state Start Invoice button shares the billable gate: on a
+  // pre-approval job the click could only ever return the backend's refusal,
+  // so it is hidden with a hint instead (like the estimate panel's Create
+  // Change Order gate).
+  let jobBillable = $derived(BILLABLE_JOB_STATUSES.includes(job?.status));
 
   let startingInvoice = $state(false);
   async function startInvoice() {
@@ -363,10 +368,12 @@
   <p>Loading...</p>
 {:else}
   <div class="page-body">
-    {#if job?.can_manage}
+    {#if job?.can_manage && jobBillable}
       <button type="button" onclick={startInvoice} disabled={startingInvoice}>
         {startingInvoice ? 'Starting…' : 'Start Invoice'}
       </button>
+    {:else if job?.can_manage}
+      <p>No invoices yet. Invoicing becomes available once the job is approved.</p>
     {:else}
       <p>No invoices yet.</p>
     {/if}
