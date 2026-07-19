@@ -1771,8 +1771,15 @@ class TaskLifecycleService:
         (see the spec). A 'join' on an already-active task, or a task with
         prior sessions, only loses the blep.
 
-        Only allowed while the session is under `blep_minimum_minutes`; over
-        that the caller should Stop instead (enforced defensively here).
+        Only allowed while the session is under `blep_minimum_minutes` plus one
+        grace minute; over that the caller should Stop instead (enforced
+        defensively here). The grace minute exists because Blep.save() floors
+        start_time to the whole minute, so the books can show up to ~59s more
+        session than the user experienced — without it, a Start clicked just
+        before a minute boundary can't be "oops"-cancelled inside the user's
+        real first minute. The clock-out/stop auto-cancel path deliberately
+        keeps the plain minimum (it decides cancel-vs-close bookkeeping, not a
+        human's cancel request).
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
@@ -1786,7 +1793,9 @@ class TaskLifecycleService:
                 raise ValidationError(
                     "No open time entry to cancel for this user on this task."
                 )
-            if not BlepService._under_minimum(blep, timezone.now()):
+            whole_minutes = int(
+                (timezone.now() - blep.start_time).total_seconds() // 60)
+            if whole_minutes >= blep_minimum_minutes() + 1:
                 raise ValidationError(
                     "Session is too long to cancel; stop it instead."
                 )
