@@ -8,7 +8,7 @@ This doc owns the QBO push mechanics, OAuth lifecycle, sync log, and polling. Do
 - `Bill`, `PurchaseOrder` — [materials-inventory-and-purchasing.md](materials-inventory-and-purchasing.md)
 - `Estimate` (not pushed) — [estimates-and-prices.md](estimates-and-prices.md)
 
-Developer setup (env file, redirect URI registration, dependencies, first-connect walkthrough) is in the Appendix at the end of this doc.
+Developer setup (env file, redirect URI registration, dependencies, first-connect walkthrough) and the production cutover checklist (real QBO company instead of a sandbox) are in the Appendices at the end of this doc.
 
 ## Models
 
@@ -406,6 +406,41 @@ There is no `GET /api/qbo/sync-log/` endpoint yet; `QBOSyncLog` is currently ins
 - **CDC reverse-sync for QBO-first Purchases.** Research notes preserved as an appendix in `invoicing-and-expenses.md`.
 
 ---
+
+## Appendix: Production cutover
+
+What changes when a deployment points at a real QBO company instead of a sandbox. **No code changes are required** — `QBO_ENVIRONMENT` flows all the way through: `intuitlib`'s `AuthClient` picks its OAuth endpoints from it, and python-quickbooks infers its API base URL from the auth client's environment (sandbox vs production). Everything below is portal work, deployment config, and in-app reconfiguration.
+
+### 1. Intuit developer portal (one-time)
+
+- An Intuit app has two separate credential sets: **Development keys** (sandbox-only, what dev uses today) and **Production keys**, which don't exist until the app completes Intuit's "go to production" checklist — app details, EULA and privacy-policy URLs, and a short questionnaire for the Accounting scope. Straightforward for a private internal app, but it is a gate; do it ahead of the deployment date.
+- Register the production redirect URI (`https://<prod-host>/api/qbo/callback/`) under the **production** keys tab. Intuit **requires HTTPS** for production redirect URIs; plain http is only tolerated for localhost dev.
+
+### 2. Deployment environment values
+
+The production instance's env:
+
+| Variable | Production value |
+|---|---|
+| `QBO_CLIENT_ID` / `QBO_CLIENT_SECRET` | The **production** keyset — different values from the dev keys |
+| `QBO_REDIRECT_URI` | `https://<prod-host>/api/qbo/callback/` (must exactly match the portal registration) |
+| `QBO_ENVIRONMENT` | `production` |
+| `SPA_BASE_URL` | empty (same-origin) |
+
+The keyset and environment must pair correctly: production keys only work with `QBO_ENVIRONMENT=production`, dev keys only with `sandbox`.
+
+Per the operational note in [Management command](#management-command): these vars must reach the **cron container** too, not just the web container — otherwise `poll_qbo_payments` silently records `skipped` runs.
+
+Staging/test instances need none of this — they keep the dev keyset with `QBO_ENVIRONMENT=sandbox`. One Intuit app serves every environment: the sandbox *company* is chosen during the OAuth connect (stored as `realm_id` on `QBOConnection`), not by the credentials, and one app can register multiple redirect URIs. Separate sandbox companies per instance therefore need no per-instance credential changes.
+
+### 3. In-app reconfiguration after connecting
+
+Every QBO ID stored in Minibini is scoped to one specific QBO company. After connecting the production instance to the real company (settings page → Connect to QuickBooks), redo in the production instance's settings UI:
+
+- **Category mappings** — `AccountingCategory.qbo_item_id` and `qbo_expense_account_id`. The real company's items and chart of accounts have completely different IDs than any sandbox.
+- **Payment accounts** — the `Configuration['qbo_payment_accounts']` list.
+
+**Start production from a fresh database.** A database that has already pushed to a sandbox must never be pointed at production: every stored `qbo_id`, `qbo_customer_id`, and `qbo_vendor_id` would be a stale sandbox ID, and the push short-circuits ("already has `qbo_id` → skip") would silently skip pushes that never happened in the real company. There is no re-key/reset tool for those fields.
 
 ## Appendix: Developer setup
 
