@@ -440,7 +440,20 @@ Every QBO ID stored in Minibini is scoped to one specific QBO company. After con
 - **Category mappings** — `AccountingCategory.qbo_item_id` and `qbo_expense_account_id`. The real company's items and chart of accounts have completely different IDs than any sandbox.
 - **Payment accounts** — the `Configuration['qbo_payment_accounts']` list.
 
-**Start production from a fresh database.** A database that has already pushed to a sandbox must never be pointed at production: every stored `qbo_id`, `qbo_customer_id`, and `qbo_vendor_id` would be a stale sandbox ID, and the push short-circuits ("already has `qbo_id` → skip") would silently skip pushes that never happened in the real company. There is no re-key/reset tool for those fields.
+**Start production from a fresh database.** A database that has already pushed to a sandbox must never be pointed at production: every stored `qbo_id`, `qbo_customer_id`, and `qbo_vendor_id` would be a stale sandbox ID, and the push short-circuits ("already has `qbo_id` → skip") would silently skip pushes that never happened in the real company.
+
+### Repointing a dataset at a different company — `purge_qbo_data`
+
+For the non-production version of the same problem — prepping a sample dataset for a staging instance that connects to a *different sandbox company* — `python manage.py purge_qbo_data` strips every QBO-company-scoped value from the database in one transaction:
+
+- `AccountingCategory.qbo_item_id` / `qbo_expense_account_id` → `''`
+- `Configuration['qbo_payment_accounts']` → deleted (other keys untouched)
+- `Invoice.qbo_id` → null, plus its poll caches `qbo_payment_status` → `''` and `qbo_amount_paid` → null; `Bill.qbo_id` → null and `qbo_payment_status` → `''`
+- `Business.qbo_customer_id` / `qbo_vendor_id` and `Contact.qbo_customer_id` → null
+- The `QBOSyncable` trio (`Expense`, `Reimbursement`, `BillPayment`): `qbo_id` → `''`, `qbo_sync_status` → `pending`, `qbo_sync_error` / `qbo_pending_op` cleared
+- All `QBOConnection` and `QBOSyncLog` rows → deleted
+
+It prompts for confirmation (`--yes` to skip), prints per-table counts, and deliberately bypasses model `save()` — it's data surgery, not a domain operation. **What it does not touch:** domain state derived from the old company stays as-is — invoices remain `paid`/`partly-paid` with no QBO record behind them (accepted follow-on effect), and `payment_account_id` values on expenses/reimbursements/payments are kept even though they now dangle (the which-account information stays readable). After purging, the new instance reconnects and redoes the category mappings and payment-account list per §3 above.
 
 ## Appendix: Developer setup
 
