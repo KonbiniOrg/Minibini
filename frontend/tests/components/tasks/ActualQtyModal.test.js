@@ -126,6 +126,21 @@ describe('ActualQtyModal — session mode', () => {
     expect(getByText(/Final quantity: 14 pcs/)).toBeInTheDocument();
   });
 
+  it('renders the final-total line below the buttons so ticking the checkbox never moves them', async () => {
+    const { getByRole, getByText, container } = render(ActualQtyModal, {
+      props: { mode: 'session', unitLabel: 'pcs', currentQty: '9',
+               allowComplete: true, onSubmit: vi.fn(), onClose: vi.fn() },
+    });
+    await fireEvent.click(getByRole('checkbox'));
+    const totalLine = getByText(/Final quantity/);
+    const buttons = container.querySelector('.buttons');
+    // The total line must FOLLOW the button row in the DOM — anything
+    // inserted above the buttons shifts the click target mid-reach.
+    expect(
+      buttons.compareDocumentPosition(totalLine) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
   it('checkbox blocks completion when the final total would not be positive', async () => {
     const onSubmit = vi.fn();
     const { getByRole, getByText } = render(ActualQtyModal, {

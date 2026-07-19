@@ -136,7 +136,14 @@
 {#if $currentBlep}
   <div class="blep-band">
     <div class="blep-info">
-      <strong>Working on:</strong> {$currentBlep.task.name}
+      <strong>Working on:</strong>
+      {#if $currentBlep.job}
+        <a href={`/jobs/${$currentBlep.job.id}/tasks/${$currentBlep.task.id}`} use:link>
+          {$currentBlep.task.name}
+        </a>
+      {:else}
+        {$currentBlep.task.name}
+      {/if}
       {#if $currentBlep.job}
         — <a href={`/jobs/${$currentBlep.job.id}`} use:link>
           {$currentBlep.job.job_number} {$currentBlep.job.name}

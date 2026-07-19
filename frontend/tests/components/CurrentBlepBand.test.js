@@ -32,6 +32,17 @@ describe('CurrentBlepBand', () => {
     expect(queryByText(/Working on/)).toBeNull();
   });
 
+  it('links the current task name to its task detail page', async () => {
+    currentBlep.set({
+      task: { id: 5, name: 'Cut' },
+      job: { id: 3, job_number: 'JOB-3', name: 'Widget' },
+      start_time: new Date().toISOString(), blep_minimum_minutes: 1,
+    });
+    const { getByRole } = render(CurrentBlepBand);
+    const taskLink = getByRole('link', { name: /cut/i });
+    expect(taskLink.getAttribute('href')).toBe('/jobs/3/tasks/5');
+  });
+
   it('offers Stop once past the minimum', async () => {
     currentBlep.set({ task: { id: 5, name: 'Cut' }, start_time: new Date(Date.now() - 120000).toISOString(), blep_minimum_minutes: 1 });
     const { getByText, getByRole } = render(CurrentBlepBand);

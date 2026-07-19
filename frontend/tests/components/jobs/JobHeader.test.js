@@ -181,6 +181,14 @@ describe('JobHeader in-flight transition guard', () => {
 });
 
 describe('JobHeader Edit/Duplicate', () => {
+  it.each(['completed', 'rejected', 'cancelled'])(
+    'hides Edit on a terminal %s job (Duplicate stays)', (status) => {
+      const closedJob = { ...job, status };
+      const { queryByRole, getByRole } = render(JobHeader, { props: { job: closedJob } });
+      expect(queryByRole('button', { name: 'Edit' })).toBeNull();
+      expect(getByRole('button', { name: 'Duplicate…' })).toBeInTheDocument();
+    });
+
   it('offers Edit and Duplicate buttons when manageable, and no History link or Actions menu', () => {
     const { getByRole, queryByRole } = render(JobHeader, { props: { job } });
     expect(getByRole('button', { name: 'Edit' })).toBeInTheDocument();

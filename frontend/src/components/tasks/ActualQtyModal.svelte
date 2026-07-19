@@ -117,14 +117,16 @@
       </label>
     </p>
   {/if}
-  {#if settling}
-    <p class="final-total">Final quantity: {fmt(finalTotal)} {unit}</p>
-  {/if}
   {#if error || serverError}<p class="error">{error || serverError}</p>{/if}
   <div class="buttons">
     <button type="submit">{submitLabel}</button>
     <button type="button" onclick={onClose}>Cancel</button>
   </div>
+  <!-- Below the buttons on purpose: ticking "This completes the task" must
+       not shift the button row right as the user reaches for it. -->
+  {#if settling}
+    <p class="final-total">Final quantity: {fmt(finalTotal)} {unit}</p>
+  {/if}
 </form>
 </Modal>
 

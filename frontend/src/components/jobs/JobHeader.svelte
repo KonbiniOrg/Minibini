@@ -80,6 +80,12 @@
   // Held jobs hide their true status: the pill just says HOLD.
   let pillLabel = $derived(job.on_hold ? 'HOLD' : statusLabel(job.status));
 
+  // A closed job doesn't offer Edit (Duplicate stays — cloning a finished
+  // job is a normal way to start the next one).
+  let isTerminal = $derived(
+    ['completed', 'rejected', 'cancelled'].includes(job.status)
+  );
+
   let showStatusSelect = $derived(
     canManageJobs && (validNextStatuses.length > 0 || canHold || job.on_hold)
   );
@@ -192,7 +198,9 @@
     </p>
     <div class="status-row">
       {#if canManageJobs}
-        <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
+        {#if !isTerminal}
+          <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
+        {/if}
         <button type="button" class="edit-link header-action" onclick={() => { dupOpen = true; }}>Duplicate…</button>
       {/if}
       {#if showStatusSelect}
