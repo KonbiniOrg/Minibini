@@ -332,7 +332,10 @@
         {revising ? 'Revising...' : 'Revise Estimate'}
       </button>
     {/if}
-    {#if canManageJobs && estimate.status === 'accepted'}
+    <!-- Only the FIRST change order is created from the accepted estimate —
+         further COs chain off the previous one via the CO page's "Start new
+         change order" (seed-new) flow, so the button hides once any CO exists. -->
+    {#if canManageJobs && estimate.status === 'accepted' && changeOrders.length === 0}
       <button type="button" onclick={handleCreateChangeOrder} disabled={creatingChangeOrder}>
         {creatingChangeOrder ? 'Creating…' : 'Create Change Order'}
       </button>

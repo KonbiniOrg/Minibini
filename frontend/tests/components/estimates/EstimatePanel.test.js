@@ -131,6 +131,20 @@ describe('EstimatePanel toolbar actions', () => {
     await findByText('Estimate: EST-7');
     expect(queryByRole('button', { name: /create change order/i })).toBeNull();
   });
+
+  it('hides Create Change Order once the job already has a change order', async () => {
+    // The FIRST CO is created from the accepted estimate; every further CO
+    // chains off the previous one via the CO page's seed-new flow.
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'accepted' });
+    mockApi(est, {
+      versions: [est],
+      changeOrders: [{ change_order_id: 3, change_order_number: 'CO-3', status: 'draft' }],
+    });
+    const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Estimate: EST-7');
+    expect(queryByRole('button', { name: /create change order/i })).toBeNull();
+  });
 });
 
 describe('EstimatePanel status pill in-flight guard', () => {
