@@ -151,6 +151,25 @@ describe('JobHeader direct-approval gate (has_estimates)', () => {
   });
 });
 
+describe('JobHeader pill display after a transition', () => {
+  it('shows the NEW current status once the job prop updates — not the next transition', async () => {
+    // Native selects keep their selected INDEX when options re-render. The
+    // user picks index 1 ("Release to floor"); after the reload index 1 holds
+    // "Work Complete" — an uncontrolled select then displays a status one
+    // step ahead of reality (RM saw approved→"Work Complete" in one click).
+    api.patch.mockResolvedValue({});
+    const approvedJob = { ...job, status: 'approved' };
+    const { getByRole, rerender } = render(JobHeader, { props: { job: approvedJob } });
+    const select = getByRole('combobox');
+    await fireEvent.change(select, { target: { value: 'in_progress' } });
+    expect(api.patch).toHaveBeenCalledTimes(1);
+    // Parent reloads and hands back the updated job.
+    await rerender({ job: { ...job, status: 'in_progress' } });
+    expect(select.value).toBe('in_progress');
+    expect(select.selectedIndex).toBe(0);
+  });
+});
+
 describe('JobHeader in-flight transition guard', () => {
   it('ignores a second change while the first PATCH is in flight', async () => {
     let resolvePatch;

@@ -307,9 +307,12 @@
     <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</span>
     {#if canManageJobs && validNextStatuses.length > 0}
       <span class="status-select-wrapper">
-        <select class="status-select status-{estimate.status}" onchange={handleStatusChange}
-                disabled={statusBusy}>
-          <option value={estimate.status} selected>{estimate.status}</option>
+        <!-- value-controlled like JobHeader's pill: selects keep their
+             selected INDEX across option re-renders, so an uncontrolled pill
+             can display the wrong option after a transition + reload. -->
+        <select class="status-select status-{estimate.status}" value={estimate.status}
+                onchange={handleStatusChange} disabled={statusBusy}>
+          <option value={estimate.status}>{estimate.status}</option>
           {#each validNextStatuses as nextStatus}
             <option value={nextStatus}>{nextStatus}</option>
           {/each}

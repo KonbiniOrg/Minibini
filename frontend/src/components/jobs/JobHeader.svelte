@@ -205,12 +205,19 @@
       {/if}
       {#if showStatusSelect}
         <span class="status-select-wrapper">
+          <!-- value-controlled: a native select keeps its selected INDEX when
+               the options re-render, so after a transition + reload an
+               uncontrolled pill displays the option at the clicked index —
+               which is now the NEXT transition (approved-click showed
+               "Work Complete"). Pinning value to job.status makes every
+               render show the real current status. -->
           <select
             class="status-select {job.on_hold ? 'on-hold-pill' : `status-${job.status}`}"
+            value={job.status}
             onchange={handleStatusChange}
             disabled={statusBusy}
           >
-            <option value={job.status} selected>{pillLabel}</option>
+            <option value={job.status}>{pillLabel}</option>
             {#if job.on_hold}
               <option value="__release_hold">Release hold</option>
             {/if}
