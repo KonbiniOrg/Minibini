@@ -62,8 +62,14 @@
   }
 
   // While held the backend parks the status (cancel excepted).
+  // Approved is offered only on estimate-less jobs: once a job has any
+  // estimate, approval flows from accepting the estimate (the backend
+  // rejects a direct edit — see JobService.update_job).
   let validNextStatuses = $derived(
-    job.on_hold ? ['cancelled'] : (VALID_TRANSITIONS[job.status] || [])
+    job.on_hold
+      ? ['cancelled']
+      : (VALID_TRANSITIONS[job.status] || []).filter(
+          (s) => s !== 'approved' || !job.has_estimates)
   );
 
   // A hold can be placed from approved or in_progress only.
@@ -94,9 +100,15 @@
   let editOpen = $state(false);
   let dupOpen = $state(false);
 
+  // One selection = one transition: while a PATCH is in flight the pill is
+  // disabled and any stray second change event is ignored, so a double-click
+  // (or an event firing against the re-rendered option list) can't chain two
+  // transitions in a single gesture.
+  let statusBusy = $state(false);
+
   async function handleStatusChange(e) {
     const picked = e.target.value;
-    if (picked === job.status) return;
+    if (statusBusy || picked === job.status) return;
     // Trigger options aren't statuses: snap the pill back to the current
     // value immediately — the trigger's own flow (modal / API + reload)
     // decides what actually happens.
@@ -110,12 +122,15 @@
       releaseHold();
       return;
     }
+    statusBusy = true;
     try {
       await api.patch(`/api/jobs/${job.job_id}/`, { status: picked });
       if (onStatusChange) onStatusChange();
     } catch (err) {
       e.target.value = job.status;
       showError(errorMessage(err, 'Status change failed.'));
+    } finally {
+      statusBusy = false;
     }
   }
 
@@ -185,6 +200,7 @@
           <select
             class="status-select {job.on_hold ? 'on-hold-pill' : `status-${job.status}`}"
             onchange={handleStatusChange}
+            disabled={statusBusy}
           >
             <option value={job.status} selected>{pillLabel}</option>
             {#if job.on_hold}

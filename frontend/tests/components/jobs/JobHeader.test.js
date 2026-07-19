@@ -135,6 +135,51 @@ describe('JobHeader status pill', () => {
   });
 });
 
+describe('JobHeader direct-approval gate (has_estimates)', () => {
+  it('hides Approved on a submitted job that has estimates', () => {
+    const submitted = { ...job, status: 'submitted', has_estimates: true };
+    const { getByRole } = render(JobHeader, { props: { job: submitted } });
+    const values = optionValues(getByRole('combobox'));
+    expect(values).not.toContain('approved');
+    expect(values).toContain('rejected');
+  });
+
+  it('offers Approved on a submitted estimate-less job', () => {
+    const submitted = { ...job, status: 'submitted', has_estimates: false };
+    const { getByRole } = render(JobHeader, { props: { job: submitted } });
+    expect(optionValues(getByRole('combobox'))).toContain('approved');
+  });
+});
+
+describe('JobHeader in-flight transition guard', () => {
+  it('ignores a second change while the first PATCH is in flight', async () => {
+    let resolvePatch;
+    api.patch.mockImplementation(
+      () => new Promise((resolve) => { resolvePatch = resolve; }));
+    const submitted = { ...job, status: 'submitted', has_estimates: false };
+    const { getByRole } = render(JobHeader, { props: { job: submitted } });
+    const select = getByRole('combobox');
+    await fireEvent.change(select, { target: { value: 'approved' } });
+    // A stray second change (double-click / re-fired event) before the first
+    // PATCH settles must not fire a second transition.
+    await fireEvent.change(select, { target: { value: 'rejected' } });
+    expect(api.patch).toHaveBeenCalledTimes(1);
+    resolvePatch({});
+  });
+
+  it('disables the select while a transition is in flight', async () => {
+    let resolvePatch;
+    api.patch.mockImplementation(
+      () => new Promise((resolve) => { resolvePatch = resolve; }));
+    const { getByRole } = render(JobHeader, { props: { job } });
+    const select = getByRole('combobox');
+    await fireEvent.change(select, { target: { value: 'work_complete' } });
+    expect(select.disabled).toBe(true);
+    resolvePatch({});
+    await vi.waitFor(() => expect(select.disabled).toBe(false));
+  });
+});
+
 describe('JobHeader Edit/Duplicate', () => {
   it('offers Edit and Duplicate buttons when manageable, and no History link or Actions menu', () => {
     const { getByRole, queryByRole } = render(JobHeader, { props: { job } });

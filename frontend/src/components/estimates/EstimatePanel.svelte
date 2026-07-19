@@ -96,15 +96,23 @@
     }
   }
 
+  // One selection = one transition: ignore stray change events (and disable
+  // the select) while a status PATCH is in flight — same guard as JobHeader's
+  // status pill.
+  let statusBusy = $state(false);
+
   async function handleStatusChange(e) {
     const newStatus = e.target.value;
-    if (newStatus === estimate.status) return;
+    if (statusBusy || newStatus === estimate.status) return;
+    statusBusy = true;
     try {
       await api.patch(`/api/estimates/${estimate.estimate_id}/`, { status: newStatus });
       await loadEstimate();
     } catch (err) {
       e.target.value = estimate.status;
       showError(errorMessage(err, 'Status change failed.'));
+    } finally {
+      statusBusy = false;
     }
   }
 
@@ -299,7 +307,8 @@
     <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</span>
     {#if canManageJobs && validNextStatuses.length > 0}
       <span class="status-select-wrapper">
-        <select class="status-select status-{estimate.status}" onchange={handleStatusChange}>
+        <select class="status-select status-{estimate.status}" onchange={handleStatusChange}
+                disabled={statusBusy}>
           <option value={estimate.status} selected>{estimate.status}</option>
           {#each validNextStatuses as nextStatus}
             <option value={nextStatus}>{nextStatus}</option>

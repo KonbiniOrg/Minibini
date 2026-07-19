@@ -133,6 +133,25 @@ describe('EstimatePanel toolbar actions', () => {
   });
 });
 
+describe('EstimatePanel status pill in-flight guard', () => {
+  it('ignores a second change while the first PATCH is in flight', async () => {
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'open' });
+    mockApi(est, { versions: [est] });
+    let resolvePatch;
+    api.patch.mockImplementation(
+      () => new Promise((resolve) => { resolvePatch = resolve; }));
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const select = await findByRole('combobox');
+    await fireEvent.change(select, { target: { value: 'accepted' } });
+    expect(select.disabled).toBe(true);
+    // A stray second change before the first PATCH settles must not fire.
+    await fireEvent.change(select, { target: { value: 'rejected' } });
+    expect(api.patch).toHaveBeenCalledTimes(1);
+    resolvePatch({});
+  });
+});
+
 describe('EstimatePanel empty state', () => {
   it('shows a can_manage-gated Start Estimate button when the job has no estimates', async () => {
     user.set({ permissions: [] });
