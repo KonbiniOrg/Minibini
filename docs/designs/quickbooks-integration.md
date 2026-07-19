@@ -453,7 +453,7 @@ For the non-production version of the same problem — prepping a sample dataset
 - The `QBOSyncable` trio (`Expense`, `Reimbursement`, `BillPayment`): `qbo_id` → `''`, `qbo_sync_status` → `pending`, `qbo_sync_error` / `qbo_pending_op` cleared
 - All `QBOConnection` and `QBOSyncLog` rows → deleted
 
-It prompts for confirmation (`--yes` to skip), prints per-table counts, and deliberately bypasses model `save()` — it's data surgery, not a domain operation. **What it does not touch:** domain state derived from the old company stays as-is — invoices remain `paid`/`partly-paid` with no QBO record behind them (accepted follow-on effect), and `payment_account_id` values on expenses/reimbursements/payments are kept even though they now dangle (the which-account information stays readable). After purging, the new instance reconnects and redoes the category mappings and payment-account list per §3 above.
+It prompts for confirmation (`--yes` to skip), prints per-table counts, and deliberately bypasses model `save()` — it's data surgery, not a domain operation. **What it does not touch:** domain state derived from the old company stays as-is — invoices remain `paid`/`partly-paid` with no QBO record behind them (accepted follow-on effect), and `payment_account_id` values on expenses/reimbursements/payments are kept even though they now dangle (the which-account information stays readable). After purging, the new instance must connect to its new sandbox account and regenerate the category mappings and payment-account list per §3 above.  The existing domain state will remain inconsistent with the new sandbox, acceptable in a staging environment.
 
 ## Appendix: Developer setup
 
