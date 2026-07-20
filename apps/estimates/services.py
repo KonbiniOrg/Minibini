@@ -855,14 +855,17 @@ class ChangeOrderEmailService(DocumentEmailService):
 
     @classmethod
     def _validate_send(cls, co):
-        # Pre-email copy of the draft-exit gate (ChangeOrder.clean is the
-        # invariant home) so an unsendable CO fails BEFORE the email goes out.
+        # Pre-email copies of the draft-exit gates (ChangeOrder.clean is the
+        # invariant home) so an unsendable CO fails BEFORE the email goes out
+        # — otherwise the customer is mailed a portal link to a still-draft
+        # CO the portal refuses to show.
         from apps.estimates.change_order_service import ChangeOrderService
         if not ChangeOrderService.has_sendable_changes(co):
             raise ValidationError(
                 'Cannot send an empty change order — it has no line-item '
                 'changes and no deliverable changes.'
             )
+        ChangeOrderService.assert_all_bare_add_lines_have_ac(co)
 
     @classmethod
     def send_change_order(cls, co, *, to, subject, body, cc=None, bcc=None,

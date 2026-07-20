@@ -143,6 +143,24 @@ class ChangeOrderSendEmptyGateTest(FixtureTestCase):
         self.assertEqual(self.co.status, ChangeOrder.STATUS_OPEN)
         self.assertEqual(len(mail.outbox), 1)
 
+    def test_bare_add_line_without_ac_refused_before_email(self):
+        # A bare add line (no service/inventory descriptor) missing its
+        # accounting category must refuse at the PRE-SEND check — the model's
+        # draft-exit guard alone fires after the email is already out,
+        # leaving the customer a dead draft link (consolidation drift, closed
+        # 2026-07-20 to match the estimate side).
+        ChangeOrderLineItem.objects.create(
+            change_order=self.co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Bare fee', qty=Decimal('1'), price=Decimal('50'),
+            line_number=1)
+        mail.outbox = []
+        r = self._send()
+        self.assertEqual(r.status_code, 400, getattr(r, 'data', None))
+        self.assertIn('accounting category', str(getattr(r, 'data', '')))
+        self.assertEqual(len(mail.outbox), 0)  # nothing went out
+        self.co.refresh_from_db()
+        self.assertEqual(self.co.status, ChangeOrder.STATUS_DRAFT)
+
     def test_fully_empty_co_refused(self):
         # No line items AND no deliverables diff — a genuinely empty CO
         # still must not reach the customer.

@@ -88,6 +88,34 @@ class ChangeOrderService:
         return est
 
     @staticmethod
+    def assert_all_bare_add_lines_have_ac(co):
+        """A bare add line (no service/inventory descriptor) crystallizes into
+        a Fee or a provisional Material at acceptance, and both need an
+        accounting category — catch it at send so acceptance, after the
+        customer has said yes, can never fail on it. The CO parallel of
+        EstimateService.assert_all_hand_lines_have_ac; shared by
+        ChangeOrder.clean()'s draft-exit guard (the invariant home) and
+        ChangeOrderEmailService._validate_send (the pre-email copy, so the
+        refusal lands before the customer is mailed a dead draft link)."""
+        from apps.estimates.models import ChangeOrderLineItem
+        missing = [
+            li.description or f'line {li.line_number}'
+            for li in ChangeOrderLineItem.objects.filter(
+                change_order=co,
+                action=ChangeOrderLineItem.ACTION_ADD,
+                service_item__isnull=True,
+                inventory_item__isnull=True,
+                accounting_category__isnull=True,
+            )
+        ]
+        if missing:
+            raise ValidationError(
+                'Cannot send: every added line item needs an '
+                'accounting category first. Missing on: '
+                + ', '.join(missing) + '.'
+            )
+
+    @staticmethod
     def has_sendable_changes(co):
         """The send / mark-open content gate: a CO is sendable when it carries
         line-item changes OR a deliverables diff against its baseline. A
