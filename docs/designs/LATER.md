@@ -99,6 +99,20 @@ Status coupling, transitions, and what a job may do at each stage.
   Task present, so it's unaffected either way. _Done when:_ the gating question is answered and
   the guard is (re)placed accordingly, with the cascade fixed if the answer is "no".
 
+- **Estimate-less draft jobs: allow direct →Approved, gate →Submitted on an estimate.** — _added 2026-07-19 (RM notes review)_
+  Follow-up to the direct-approval gate (2026-07-19): `submitted` means
+  "awaiting customer response", which presupposes an estimate — so a draft job
+  with **no** estimate should be blocked from `submitted`, and instead allowed
+  a direct `draft → approved` edge (today that edge doesn't exist; an
+  estimate-less job must fake-traverse submitted to be hand-approved).
+  Touches `Job.clean()`'s `VALID_TRANSITIONS`, the `update_job` guard, and
+  `JobHeader`'s pill options (both keyed on `has_estimates`). Wrinkle to
+  decide during implementation: `_advance_to_approved` (duplicate-as-approved)
+  currently walks draft→submitted→approved — with the new edge it should
+  probably go direct.
+  _Done when:_ an estimate-less draft job can be hand-approved in one step,
+  cannot be submitted, and the duplicate walk is coherent with the new graph.
+
 - **Task creation on a terminal `completed` job — block it or define a reopen path.** — _added 2026-06-17; narrowed 2026-07-04_
   (The `work_complete` half is delivered: `JobService.mark_work_reopened` pulls
   the job back to `in_progress` when an incomplete task lands.) Remaining:
@@ -479,6 +493,10 @@ The atom-pull surfaces on estimates and invoices.
   it — exactly the people meant to approve requests / run payroll. Likely fix: a dedicated
   "Shifts"/"Time" sidebar link gated on `can_manage_time OR can_manage_financials` routing
   to a small page that hosts the queue + report, decoupled from user-admin.
+  _Refined 2026-07-19 (RM notes review):_ the Time page should show lists of
+  **shifts and bleps**; `can_manage_financials` holders get **view-only**,
+  `can_manage_time` holders get **editing plus the visible change-request
+  queue**.
   _Done when:_ a `can_manage_time`/`can_manage_financials` manager can navigate to the
   request queue and payroll report without `can_manage_config`.
 
@@ -767,6 +785,41 @@ Cross-cutting UI/API conventions and shared components.
   whether it converts in the same pass.
   _Done when:_ adding/editing a rate scheme happens in a modal (and the
   ServiceItemManager question is decided).
+
+- **Ctrl/Cmd-click should always open navigation in a new tab.** — _added 2026-07-19 (RM notes review)_
+  Sometimes it works, sometimes it doesn't. Root causes found: (a)
+  `svelte-spa-router`'s `use:link` click handler calls `event.preventDefault()`
+  **unconditionally** — no ctrl/meta/shift check — so every `use:link` anchor
+  swallows modified clicks and navigates in-tab, while plain `href="#/…"`
+  anchors open a new tab fine; (b) any navigation implemented as a `<button>`
+  + `push()` can never be modifier-clicked (see the "links navigate; buttons
+  act" convention). Fix shape: a modifier-aware link wrapper (or drop
+  `use:link` in favor of plain hash hrefs where no params are needed), plus an
+  audit of button-shaped navigations.
+  _Done when:_ ctrl/cmd-clicking any navigation affordance opens a new tab.
+
+- **Service/model validation raises one error at a time — accumulate instead.** — _added 2026-07-19 (RM notes review)_
+  Observed on the rate-scheme form: submitting with several invalid fields
+  surfaces only one message per attempt. DRF serializer errors arrive
+  all-fields-at-once, but `ConfigurationService`'s rate-scheme checks and
+  `RateScheme.clean()` raise sequentially — first failure wins, so the user
+  fixes one field, resubmits, and meets the next error. Sweep the service/model
+  checks (rate schemes first; note any other multi-check services while there)
+  to collect failures into a single `ValidationError({field: [...]})`.
+  Distinct from the error-*surfacing* audit below — this is about the backend
+  reporting completely, not where errors render.
+  _Done when:_ a rate-scheme submit with N invalid fields reports all N in one
+  response (and the pattern is noted for other services).
+
+- **Accounting category: delete-if-unused UI (retire-if-used already exists via Active).** — _added 2026-07-19 (RM notes review)_
+  `AccountingCategories.svelte` has an **Active** checkbox, which covers the
+  retire-when-used case in substance. There is no delete affordance for a
+  category nothing references — an unused/mistyped category lives forever.
+  Add delete (two-phase confirm per the app convention), refused server-side
+  when referenced; possibly label/present Active as the retire story while
+  in there.
+  _Done when:_ an unreferenced category can be deleted from Settings, a
+  referenced one can only be retired, and the distinction is visible.
 
 - **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
   Inconsistencies noticed in passing: some pages surface API errors via the global
