@@ -4,17 +4,17 @@ The CO sibling of ``views.py`` (the estimate portal). Every endpoint authorizes
 by the change order's opaque ``public_token``; a CO is presented as a
 before/after diff (it amends an accepted agreement) rather than a flat document.
 """
-from decimal import Decimal
 from apps.core.history import record_history
 
-from django.db import transaction
-from rest_framework import status
 from rest_framework.decorators import (
     api_view, authentication_classes, permission_classes,
 )
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.api.portal.common import (
+    actor_for, decide, money, not_available, visible_document,
+)
 from apps.estimates.agreement import compose_change_order_diff
 from apps.estimates.change_order_service import ChangeOrderService
 from apps.estimates.models import ChangeOrder
@@ -38,10 +38,6 @@ def _is_actionable(co):
     if co.status != ChangeOrder.STATUS_OPEN:
         return False
     return co.job_id is not None and co.job.on_hold
-
-
-def _money(value):
-    return str((value or Decimal('0')).quantize(Decimal('0.01')))
 
 
 def _current_token(co):
@@ -74,8 +70,8 @@ def build_change_order_payload(co):
             'description': r['description'],
             'qty': str(r['qty']) if r['qty'] is not None else None,
             'units': r['units'],
-            'price': _money(r['price']),
-            'amount': _money(r['amount']),
+            'price': money(r['price']),
+            'amount': money(r['amount']),
         }
         for r in diff['line_rows']
     ]
@@ -89,9 +85,9 @@ def build_change_order_payload(co):
         'closed_date': co.closed_date,
         'deliverables': ChangeOrderService.compose_deliverable_diff(co),
         'line_rows': line_rows,
-        'prior_total': _money(diff['prior_total']),
-        'proposed_total': _money(diff['proposed_total']),
-        'diff_total': _money(diff['diff_total']),
+        'prior_total': money(diff['prior_total']),
+        'proposed_total': money(diff['proposed_total']),
+        'diff_total': money(diff['diff_total']),
         'actions': actions,
         'actionable': actionable,
         'closed_message': closed_message,
@@ -99,20 +95,6 @@ def build_change_order_payload(co):
     if co.status == ChangeOrder.STATUS_SUPERSEDED:
         payload['current_token'] = _current_token(co)
     return payload
-
-
-def _not_available():
-    return Response({'detail': 'Not available.'},
-                    status=status.HTTP_404_NOT_FOUND)
-
-
-def _actor_for(co, reason=None):
-    contact = co.job.contact if co.job_id else None
-    return {
-        'contact_id': contact.pk if contact else None,
-        'email': (contact.email if contact else '') or '',
-        'reason': reason,
-    }
 
 
 def _record_customer_action(co, action_label, actor):
@@ -138,32 +120,26 @@ def _record_customer_action(co, action_label, actor):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def portal_change_order(request, token):
-    co = ChangeOrder.objects.filter(public_token=token).first()
-    if co is None or co.status == ChangeOrder.STATUS_DRAFT:
-        return _not_available()
+    co = visible_document(ChangeOrder, token)
+    if co is None:
+        return not_available()
     return Response(build_change_order_payload(co))
 
 
 def _decide(token, target_status, decision_word, action_label, reason=None):
-    with transaction.atomic():
-        co = (ChangeOrder.objects
-              .select_for_update()
-              .filter(public_token=token)
-              .first())
-        if co is None or co.status == ChangeOrder.STATUS_DRAFT:
-            return _not_available()
-        if _is_actionable(co):
-            actor = _actor_for(co, reason)
-            _record_customer_action(co, action_label, actor)
-            ChangeOrderService.update_status(co.pk, target_status)
-            acted = True
-        else:
-            acted = False
-        co.refresh_from_db()
-    if acted:
-        ChangeOrderEmailService.notify_shop_of_decision(
-            co, decision_word, reason=reason or '')
-    return Response(build_change_order_payload(co))
+    def act(co):
+        actor = actor_for(co, reason)
+        _record_customer_action(co, action_label, actor)
+        ChangeOrderService.update_status(co.pk, target_status)
+
+    return decide(
+        ChangeOrder, token,
+        is_actionable=_is_actionable,
+        act=act,
+        notify=lambda co: ChangeOrderEmailService.notify_shop_of_decision(
+            co, decision_word, reason=reason or ''),
+        build_payload=build_change_order_payload,
+    )
 
 
 @api_view(['POST'])
@@ -191,20 +167,15 @@ def portal_change_order_request_changes(request, token):
     for the shop to revise. Only acts from 'open' — a click racing the shop is a
     no-op."""
     reason = (request.data.get('reason') or '').strip()
-    with transaction.atomic():
-        co = (ChangeOrder.objects
-              .select_for_update()
-              .filter(public_token=token)
-              .first())
-        if co is None or co.status == ChangeOrder.STATUS_DRAFT:
-            return _not_available()
-        if _is_actionable(co):
-            ChangeOrderService.request_changes(co.pk, _actor_for(co, reason))
-            acted = True
-        else:
-            acted = False
-        co.refresh_from_db()
-    if acted:
-        ChangeOrderEmailService.notify_shop_of_decision(
-            co, 'requested changes', reason=reason or '')
-    return Response(build_change_order_payload(co))
+
+    def act(co):
+        ChangeOrderService.request_changes(co.pk, actor_for(co, reason))
+
+    return decide(
+        ChangeOrder, token,
+        is_actionable=_is_actionable,
+        act=act,
+        notify=lambda co: ChangeOrderEmailService.notify_shop_of_decision(
+            co, 'requested changes', reason=reason or ''),
+        build_payload=build_change_order_payload,
+    )
