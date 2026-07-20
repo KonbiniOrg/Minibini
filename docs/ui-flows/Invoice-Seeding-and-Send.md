@@ -97,6 +97,12 @@ Entry: any draft invoice with lines.
   dropdown (with "-- None --") is editable; saving persists it and re-runs adjustment math.
 - [ ] **Show Billables** — the wizard for grouping atoms into lines (joining) is still
   available when there are billable atoms.
+- [ ] **"Struck from agreement" badge (2026-07-20).** In Show Billables, a task/material
+  atom whose claiming estimate line an **accepted change order** removed/replaced — while
+  the atom itself stayed live (complete task, consumed material; crystallization deliberately
+  leaves those alone) — carries an amber **"struck from agreement"** badge; untouched atoms
+  don't. Suppressed on a cancelled task ("cancelled — work done" wins; one amber badge is a
+  prompt, two is noise).
 
 ## 5. Adjustments (unchanged behavior + dedup)
 
@@ -149,7 +155,7 @@ tax and break the QBO item mapping).
 | Seed source | Apply everything (atoms, one per line) · Copy from estimate (agreement) |
 | Seed availability | both only on empty draft · gone once a line exists · Copy disabled when a prior invoice exists · Apply-everything bills remaining atoms on a repeat invoice |
 | Not-billable | incomplete task / unconsumed material skipped by Apply everything |
-| Editing | add · edit · delete · reorder · edit category · Show Billables (join) |
+| Editing | add · edit · delete · reorder · edit category · Show Billables (join) · struck-from-agreement badge (present on CO-struck live atom · absent on untouched · suppressed on cancelled) |
 | Adjustments | panel lists accepted estimate's adjustments · Added/dedup (copy-from-estimate auto-brings; panel marks Added) · Apply-everything leaves to panel · Add Adjustment by hand |
 | Category flag | null category flagged "needs category" when editable · not flagged when read-only |
 | Send-gate | Send disabled + note while any line uncategorized · assigning category enables Send · server rejects (400) a category-less send |

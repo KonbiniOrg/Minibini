@@ -46,10 +46,10 @@ Entry: **Job overview** (`#/jobs/{id}`), job `approved` or `in_progress`.
 - [ ] **Open bleps block the pause.** With someone clocked into a task, the
   transition to on-hold is refused — stop work first.
 - [ ] **Create Change Order** (estimate panel toolbar, 2026-07-19) is offered
-  on an **accepted** estimate only while the job has **no** change orders at
-  all — the first CO comes from the estimate; later ones chain via **Start
-  new change order** on the previous CO (§7). The API still requires the job
-  to be `on_hold` — clicking on an un-held job is refused. Click (held job) →
+  on an **accepted** estimate only while the job is **on hold** and has **no**
+  change orders at all — the first CO comes from the estimate; later ones
+  chain via **Start new change order** on the previous CO (§7). On an un-held
+  job the button is hidden (and the API refuses creation). Click (held job) →
   creates a draft CO and lands on `#/jobs/{jobId}/change-order/{coId}`.
 - [ ] **While on hold, the work surface is frozen.** Task/material mutations and
   new bleps on the job are refused until the hold ends.
@@ -156,6 +156,10 @@ Entry: open CO → **Record Accepted** (or the customer's portal Accept).
   qty/description on the same rate scheme (same assignee).
 - [ ] **Removed adjustment line → document-only.** The agreement drops it;
   no job work changes.
+- [ ] **Left-alone atoms are badged at billing (2026-07-20).** A complete
+  task / consumed material whose line an accepted CO struck shows a
+  **"struck from agreement"** badge in the invoice wizard pool
+  (`Invoice-Seeding-and-Send.md` §4).
 - [ ] **Agreement view** (`Job → agreement` / invoice **Copy from estimate**)
   reflects the composed result: struck lines gone, replacements in place, added
   lines appended — and a later first-invoice copy bills each crystallized fee
@@ -188,12 +192,12 @@ Entry: open CO → **Record Accepted** (or the customer's portal Accept).
 
 | Dimension | Cases |
 |---|---|
-| Entry | pause (hold reason required) · open-blep block · Create Change Order gating (accepted estimate, no COs yet; API requires on_hold) · exit guard |
+| Entry | pause (hold reason required) · open-blep block · Create Change Order gating (on_hold + accepted estimate + no COs yet; hidden and API-refused un-held) · exit guard |
 | Deliverables diff | change (amber + struck) · remove (+Undo) · add · shipped frozen |
 | Line diff | unchanged (Change/Delete) · changed (Edit/Undo) · added (Edit/Delete) · footer totals |
 | Add-line source | service (deferred, no Task yet) · inventory · freeform material (AC default) · freeform fee (AC required) |
 | Send | send page + PDF + portal link · resend · AC send guard (pre-email) · empty-CO guard (deliverables-only IS sendable) |
 | Acceptance crystallization | add → Task / Material+earmark / provisional Material / Fee · remove → task cancelled (bleps kept) / material released (qty 0, earmark gone) / fee gone · complete task + consumed material left alone · replace → cancel + new mirrored task · adjustment document-only |
-| After accept | job approved · estimate "amended" · agreement composed · first-invoice copy bills fees once |
+| After accept | job approved · estimate "amended" · agreement composed · first-invoice copy bills fees once · struck-atom badge in the wizard pool |
 | Reject/revise | rejected stays on hold · seed-new copies deltas · discard draft · portal request-changes supersedes |
 | Personas | worker read-only · jobs full · PM scoped |

@@ -31,12 +31,12 @@ test('§1 Enter the CO room — Create Change Order gating', async ({ page }) =>
   test.skip(!hit, 'seed gap: no in_progress job with an accepted estimate');
   const { job, estimate } = hit;
 
-  await test.step('Create Change Order is offered on the accepted estimate (no COs yet)', async () => {
+  await test.step('Un-held job: Create Change Order is hidden (and the API refuses)', async () => {
+    // CO drafting happens inside a hold episode — an un-held job's estimate
+    // panel offers no button (fix 2026-07-19), and the API backs it up.
     await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
-    await expect(page.getByRole('button', { name: 'Create Change Order' })).toBeVisible();
-  });
-
-  await test.step('Guard: creation is refused while the job is not on hold', async () => {
+    await expect(page.getByText(`Estimate: ${estimate.estimate_number}`)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create Change Order' })).toHaveCount(0);
     const api = await apiAs(personas.finjobs);
     const resp = await api.postRaw('/api/change-orders/', { job: job.job_id });
     expect(resp.status()).toBe(400);
@@ -44,7 +44,7 @@ test('§1 Enter the CO room — Create Change Order gating', async ({ page }) =>
     await api.dispose();
   });
 
-  await test.step('Hold the job; Create Change Order lands in the CO room', async () => {
+  await test.step('Hold the job; Create Change Order appears and lands in the CO room', async () => {
     await page.goto(`/#/jobs/${job.job_id}`);
     await page.getByRole('combobox').first().selectOption('__hold');
     await page.getByLabel('Reason for hold').fill('e2e: opening the CO room');
