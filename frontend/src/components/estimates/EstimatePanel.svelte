@@ -108,6 +108,10 @@
     try {
       await api.patch(`/api/estimates/${estimate.estimate_id}/`, { status: newStatus });
       await loadEstimate();
+      // Estimate transitions drive job status (accepted → approved,
+      // rejected/expired → rejected) — refresh the host's job header, same
+      // as ChangeOrderPanel does on CO acceptance.
+      onJobChange();
     } catch (err) {
       e.target.value = estimate.status;
       showError(errorMessage(err, 'Status change failed.'));

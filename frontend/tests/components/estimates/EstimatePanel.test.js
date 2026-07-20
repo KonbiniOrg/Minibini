@@ -147,6 +147,24 @@ describe('EstimatePanel toolbar actions', () => {
   });
 });
 
+describe('EstimatePanel status pill job refresh', () => {
+  it('pings onJobChange after a successful transition (acceptance drives job status)', async () => {
+    // Accepting an estimate approves the job (rejecting can reject it) — the
+    // host's job header must refresh without a manual page reload, same as
+    // ChangeOrderPanel does on CO acceptance.
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'open' });
+    mockApi(est, { versions: [est] });
+    api.patch.mockResolvedValue({});
+    const onJobChange = vi.fn();
+    const { findByRole } = render(EstimatePanel, {
+      props: { job: JOB, estimateId: 7, onJobChange },
+    });
+    await fireEvent.change(await findByRole('combobox'), { target: { value: 'accepted' } });
+    await vi.waitFor(() => expect(onJobChange).toHaveBeenCalled());
+  });
+});
+
 describe('EstimatePanel status pill in-flight guard', () => {
   it('ignores a second change while the first PATCH is in flight', async () => {
     user.set({ permissions: [] });
