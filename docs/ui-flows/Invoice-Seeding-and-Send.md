@@ -50,6 +50,10 @@ Entry: **Job overview** → the invoice area.
   clicking again opens the existing draft.
 - [ ] **Draft, empty.** A freshly created invoice is `draft` with no line items — this is the
   only state in which the seed buttons appear.
+- [ ] **Billable-jobs gate (2026-07-19).** The job's Invoice section (`#/jobs/{id}/invoice`)
+  offers **Start Invoice** only on a billable job (`approved` and beyond); on a
+  `draft`/`submitted` job the empty state reads "No invoices yet. Invoicing becomes available
+  once the job is approved."
 
 ## 2. Seed the invoice — the two buttons
 
@@ -141,7 +145,7 @@ tax and break the QBO item mapping).
 
 | Dimension | Cases |
 |---|---|
-| Create | Create Invoice from job overview → draft detail page · one draft per job |
+| Create | Create Invoice from job overview → draft detail page · one draft per job · billable-jobs gate (draft/submitted hint) |
 | Seed source | Apply everything (atoms, one per line) · Copy from estimate (agreement) |
 | Seed availability | both only on empty draft · gone once a line exists · Copy disabled when a prior invoice exists · Apply-everything bills remaining atoms on a repeat invoice |
 | Not-billable | incomplete task / unconsumed material skipped by Apply everything |

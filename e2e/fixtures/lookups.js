@@ -56,6 +56,34 @@ export function findStartableTask(jobs, {
   return null;
 }
 
+// Find a job in `jobStatus` carrying an estimate in `estimateStatus`
+// (async — the backdrop list can't answer this: has_estimates is detail-only
+// and estimate statuses live on /api/estimates/). Candidates are tried
+// poorest-first (fewest pending tasks) so shape-rich jobs stay available for
+// specs that need multi-task setups. Returns { job, estimate } or null.
+export async function findJobWithEstimate(jobs, {
+  jobStatus, estimateStatus, used = new Set(),
+} = {}) {
+  const api = await apiAs(personas.finjobs);
+  try {
+    const candidates = jobs
+      .filter((j) => !used.has(j.job_id) && !j.on_hold && j.status === jobStatus)
+      .sort((a, b) => pendingTasks(a).length - pendingTasks(b).length);
+    for (const job of candidates) {
+      const resp = await api.get(`/api/estimates/?job=${job.job_id}`);
+      const list = resp?.results || resp || [];
+      const estimate = list.find((e) => e.status === estimateStatus);
+      if (estimate) {
+        used.add(job.job_id);
+        return { job, estimate };
+      }
+    }
+    return null;
+  } finally {
+    await api.dispose();
+  }
+}
+
 export function findJob(jobs, { status, withLoosePending, singleOpenTask, used = new Set() } = {}) {
   for (const job of jobs) {
     if (used.has(job.job_id) || job.on_hold) continue;

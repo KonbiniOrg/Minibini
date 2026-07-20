@@ -53,6 +53,11 @@ Entry: **Job overview** → Estimate pillar.
   creates a draft estimate directly and navigates to
   `#/estimates/{id}` — there is no intermediate worksheet.
 - [ ] Button hidden for workers / wrong status / when a live estimate exists.
+- [ ] **Past the quoting phase, no estimate ever (2026-07-19):** on a job
+  beyond `draft`/`submitted` with no estimates at all (hand-approved), Start
+  Estimate is hidden and the panel reads "No estimates. This job is past the
+  estimating phase." The backend refuses the create too — new estimates only
+  on quoting-phase jobs.
 
 ## 2. Estimate detail — "Add line" (document authoring, deferred)
 
@@ -91,6 +96,11 @@ three explicit buttons — **Add Task**, **Add Material**, **Add Fee**.
 - [ ] **Add Fee → Fee now** (`FeeModal`: description, qty, unit rate, AC).
 - [ ] **Any authenticated user** can do all of §3 — worker self-service is
   deliberate.
+- [ ] **Live search across windows (2026-07-19).** The picker searches the
+  server per keystroke: a Service Item created in another window *after* this
+  page loaded is findable WITHOUT reloading, and picking it opens **Add Task
+  From Template** with the template selected and the name prefilled — the
+  pick carries the full item, not an index into the stale mount-time list.
 
 ## 4. Acceptance — hand-lines crystallize
 
@@ -142,8 +152,8 @@ Entry: estimate detail → **Show Tasks & Materials** (`#/estimates/{id}/wizard`
 
 | Dimension | Cases |
 |---|---|
-| Start | Start Estimate (direct, no worksheet) · gating (persona/status/live estimate) |
-| Picker | dual-source search · no initial list · labeled rows · typed-text carry-over · estimate footer (material checkbox) vs task-surface footer (Task/Material/Fee buttons) |
+| Start | Start Estimate (direct, no worksheet) · gating (persona/status/live estimate) · past-quoting hint (approved estimate-less) |
+| Picker | dual-source search · no initial list · labeled rows · typed-text carry-over · estimate footer (material checkbox) vs task-surface footer (Task/Material/Fee buttons) · live cross-window search (full-item pick) |
 | Estimate lines (deferred) | service (no Task yet) · inventory · freeform material (AC default) · freeform fee (AC required) · edit/reorder/delete draft-only |
 | Task-list atoms (immediate) | service → Task · manual task (scheme pick) · material (catalog/freeform, earmark) · fee · open to all users |
 | Crystallization | service → Task · inventory → Material+earmark · bare material → provisional Material · bare fee → Fee · atom-backed skip · adjustments document-only · AC send guard |

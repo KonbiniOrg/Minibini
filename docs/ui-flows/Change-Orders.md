@@ -45,10 +45,12 @@ Entry: **Job overview** (`#/jobs/{id}`), job `approved` or `in_progress`.
   hold-reason prompt appears; it is required. Job shows `on_hold`.
 - [ ] **Open bleps block the pause.** With someone clocked into a task, the
   transition to on-hold is refused — stop work first.
-- [ ] **+ New change order** appears in the Estimate pillar only while
-  `on_hold`, only for jobs/PM, and only when no draft/open CO already exists.
-  Click → creates a draft CO and the pillar links **Open →** to
-  `#/change-orders/{id}`.
+- [ ] **Create Change Order** (estimate panel toolbar, 2026-07-19) is offered
+  on an **accepted** estimate only while the job has **no** change orders at
+  all — the first CO comes from the estimate; later ones chain via **Start
+  new change order** on the previous CO (§7). The API still requires the job
+  to be `on_hold` — clicking on an un-held job is refused. Click (held job) →
+  creates a draft CO and lands on `#/jobs/{jobId}/change-order/{coId}`.
 - [ ] **While on hold, the work surface is frozen.** Task/material mutations and
   new bleps on the job are refused until the hold ends.
 - [ ] **Exit guard.** Attempting to move the job off `on_hold` while the CO is
@@ -56,8 +58,15 @@ Entry: **Job overview** (`#/jobs/{id}`), job `approved` or `in_progress`.
 
 ## 2. The CO page — deliverables diff
 
-Entry: `#/change-orders/{id}`, draft CO.
+Entry: `#/jobs/{jobId}/change-order/{coId}`, draft CO. (The old
+`#/change-orders/{id}` route redirects here; the send page stays at
+`#/change-orders/{id}/send`.)
 
+- [ ] **The CO page is a job-workspace panel (2026-07-19).** The JobShell
+  chrome renders around the diff — job header, context band, nav rail — and
+  the estimate/CO subnav shows full document codes
+  (`{estimate_number}-{version}` pills plus the CO number) with this CO
+  marked current. Both diff grids (Deliverables, Line items) render.
 - [ ] **Baseline vs live.** The Deliverables section shows the snapshot taken at
   CO creation as the baseline; editing a live deliverable renders a **changed**
   row (new value) above its struck original, deleting renders a struck
@@ -111,10 +120,16 @@ Entry: **+ New line** on a draft CO.
   `open` and the toolbar gains **Resend** + **Record Accepted / Record
   Rejected**.
 - [ ] **Guard: bare add line without an AC blocks the send** (via send page *or*
-  mark-open) with "every added line item needs an accounting category" — fix the
-  line, resend. *(This exists so acceptance can never fail after the customer
-  says yes.)*
-- [ ] **Guard: no lines at all blocks the send.**
+  mark-open) with "every added line item needs an accounting category" — the
+  check runs **before the email goes out**, so the customer is never mailed a
+  portal link to a still-draft CO. Fix the line, resend. *(This exists so
+  acceptance can never fail after the customer says yes.)*
+- [ ] **Guard: a truly empty CO blocks the send** — no line-item changes AND
+  no deliverable changes → refused (send page *or* mark-open) with "Cannot
+  send an empty change order…".
+- [ ] **Deliverables-only is sendable (2026-07-20).** A CO with no line items
+  but a deliverables diff CAN be sent/marked open — the customer signs off on
+  the scope change even when the price doesn't move.
 
 ## 6. Acceptance — the deltas become real work (2026-07-03)
 
@@ -173,11 +188,11 @@ Entry: open CO → **Record Accepted** (or the customer's portal Accept).
 
 | Dimension | Cases |
 |---|---|
-| Entry | pause (hold reason required) · open-blep block · + New change order gating (on_hold, jobs/PM, no live CO) · exit guard |
+| Entry | pause (hold reason required) · open-blep block · Create Change Order gating (accepted estimate, no COs yet; API requires on_hold) · exit guard |
 | Deliverables diff | change (amber + struck) · remove (+Undo) · add · shipped frozen |
 | Line diff | unchanged (Change/Delete) · changed (Edit/Undo) · added (Edit/Delete) · footer totals |
 | Add-line source | service (deferred, no Task yet) · inventory · freeform material (AC default) · freeform fee (AC required) |
-| Send | send page + PDF + portal link · resend · AC send guard · no-lines guard |
+| Send | send page + PDF + portal link · resend · AC send guard (pre-email) · empty-CO guard (deliverables-only IS sendable) |
 | Acceptance crystallization | add → Task / Material+earmark / provisional Material / Fee · remove → task cancelled (bleps kept) / material released (qty 0, earmark gone) / fee gone · complete task + consumed material left alone · replace → cancel + new mirrored task · adjustment document-only |
 | After accept | job approved · estimate "amended" · agreement composed · first-invoice copy bills fees once |
 | Reject/revise | rejected stays on hold · seed-new copies deltas · discard draft · portal request-changes supersedes |
