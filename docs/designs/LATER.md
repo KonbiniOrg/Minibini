@@ -259,23 +259,26 @@ The CO surface and its estimate-parallel code.
   reconciliation is prompted rather than remembered.
   _Done when:_ decided and either implemented or recorded as acceptable-silent.
 
-- **Consolidate the estimate↔change-order parallel code.** — _added 2026-06-08_
-  Building COs "as parallel to estimates as reasonably can be" deliberately
-  produced sibling duplicates that now drift independently: `ChangeOrderEmailService`
-  vs `EstimateEmailService` (get_email_defaults / notify_shop_of_decision / send_*
-  are near-identical); `apps/api/portal/change_order_views.py` vs `views.py`
-  (`_money`, `_not_available`, `_actor_for`, `_is_actionable`, the `_decide`
-  skeleton); `ChangeOrderPortal.svelte` vs `EstimatePortal.svelte` (~120 shared
-  lines of the confirm/submit state machine + fieldsets); and `change_order_pdf.html`
-  vs `estimate_pdf.html` (shared CSS + header-info block + party-context resolution
-  in pdf.py). Candidates: a `DocumentEmailService` base with class-level subject/body
-  + config keys + a pdf-generator hook; a `portal/common.py`; a `<PortalDocument>`
-  wrapper with a slot for the body table; a shared PDF header `{% include %}` +
-  `_pdf_party_context(job)` helper. (A diff-logic note: `compose_change_order_diff`
-  is also a Python re-implementation of the frontend `mergedRows`; keep them in
-  lockstep until/unless the shop view reads the server composer too.)
-  _Done when:_ the shared paths live in one place (or we record why the duplication
-  is acceptable).
+- **Consolidate the estimate↔change-order parallel code.** — _added 2026-06-08,
+  consolidated 2026-07-19_
+  The sibling duplicates were consolidated as a pure refactor:
+  `EstimateEmailService` / `ChangeOrderEmailService` now subclass a shared
+  `DocumentEmailService` base (`apps/estimates/services.py`); the portal view
+  twins share `apps/api/portal/common.py` (`money`, `not_available`,
+  `actor_for`, `visible_document`, the `decide` skeleton — each side keeps its
+  own `_is_actionable` rule and payload builder); the two portal pages render
+  through the shared `components/PortalDocument.svelte` shell; and both PDF
+  generators use `_pdf_party_context(job)` (`apps/estimates/pdf.py`).
+  Deliberately still duplicated: `estimate_pdf.html` vs `change_order_pdf.html`
+  (shared CSS + header-info block) — PDF templates are self-contained by
+  convention (no extends/include, per CLAUDE.md), so the Python-side helper is
+  the consolidation; touch the two templates in tandem. (A diff-logic note:
+  `compose_change_order_diff` is also a Python re-implementation of the
+  frontend merged-rows logic, which now lives in
+  `frontend/src/lib/changeOrderDiff.js`; keep them in lockstep until/unless
+  the shop view reads the server composer too.)
+  _Remaining done when:_ either the PDF-template convention changes (allowing a
+  shared header include) or the template pair drifts enough to force a rethink.
 
 - **Change order with only deliverable changes (no line items) is refused at Send.** — _added 2026-07-09_
   A change order that changes only deliverables — no line-item edits — can't be

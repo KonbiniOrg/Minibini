@@ -1675,14 +1675,22 @@ login.
 - **Link.** `build_object_url('change_order', id)` →
   `<base>/portal/?token=<token>&doc=change_order`. The single `/portal/`
   static entry dispatches on the `doc` query param
-  (`PortalApp.svelte` → `EstimatePortal` or `ChangeOrderPortal`). `doc` is
+  (`PortalApp.svelte` → `EstimatePortal` or `ChangeOrderPortal`; both
+  pages are thin content snippets around the shared
+  `components/PortalDocument.svelte` shell, which owns the token load,
+  the confirm/submit state machine, and the confirmation fieldsets —
+  each page supplies its API path, copy, and body tables). `doc` is
   **required and explicit** for both document types — estimate links are
   `&doc=estimate` (see `build_object_url('estimate', …)` and the in-app
   superseded forward links); a portal URL with a missing or unknown `doc`
   renders a "could not be found" message and makes no API call, rather than
   silently assuming a document type.
 - **API** (`apps/api/portal/change_order_views.py`, all `AllowAny`,
-  `authentication_classes([])`):
+  `authentication_classes([])`; the helpers both portal modules share —
+  `money`, `not_available`, `actor_for`, the draft-visibility gate, and
+  the lock-by-token `decide` skeleton — live in
+  `apps/api/portal/common.py`, with each side keeping its own
+  `_is_actionable` rule and payload builder):
   - `GET /api/portal/change-orders/<token>/` →
     `build_change_order_payload` (a before/after diff: `line_rows` with
     `kind ∈ {unchanged, changed, changed-orig, removed, added}` from
@@ -1721,7 +1729,10 @@ login.
   online view show the same line-item and deliverable changes.
 - **PDF.** `generate_change_order_pdf(co)` (`apps/estimates/pdf.py` +
   `templates/estimates/change_order_pdf.html`, WeasyPrint, styled like the
-  estimate PDF) renders both diffs — a "What you'll receive" deliverables
+  estimate PDF; both generators resolve the header's contact/business
+  names through the shared `_pdf_party_context(job)` helper, while the
+  two templates stay deliberately separate — PDF templates are
+  self-contained by convention, no extends/include) renders both diffs — a "What you'll receive" deliverables
   section and the line-item table with prior/new/change totals — using
   print-safe change labels (Added/Removed/Changed/was). It is attached to
   the CO send email.
@@ -1816,7 +1827,12 @@ Returns `{'tasks_created', 'materials_created', 'fees_created',
 ## 15. Sending an Estimate
 
 `EstimateEmailService.send_estimate` (`apps/estimates/services.py`)
-is the entry point. The SPA route `/estimates/:id/send` mounts
+is the entry point. `EstimateEmailService` and its CO sibling
+`ChangeOrderEmailService` subclass a shared `DocumentEmailService`
+base (same module) that owns `get_email_defaults`,
+`notify_shop_of_decision`, and the send skeleton; each subclass
+declares its default subject/body, Configuration keys, labels, PDF
+generator, and send validation. The SPA route `/estimates/:id/send` mounts
 `DocumentSendForm.svelte`, populated by
 `GET /api/estimates/{id}/send-defaults/`; submit POSTs
 multipart to `/api/estimates/{id}/send/`.
@@ -1884,7 +1900,8 @@ previous stub internal URL. This is the value that lands in
 `{object_url}` when composing the send email.
 
 **Portal API (`apps/api/portal/`, all `AllowAny`,
-`authentication_classes=[]`):**
+`authentication_classes=[]`; shared helpers + the `decide` skeleton live
+in `apps/api/portal/common.py` — see §14.10):**
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -1958,7 +1975,9 @@ completes.
 
 **Customer page.** `frontend/portal/` is a second Vite entry (built
 by the same `npm run build`, served at `/portal/`). It is login-not-required,
-has no operator nav, and reads the token from the query string. It
+has no operator nav, and reads the token from the query string.
+`EstimatePortal.svelte` supplies the estimate copy and body tables to
+the shared `components/PortalDocument.svelte` shell (§14.10). It
 shows deliverables (top), line items + total, and a status banner.
 **Actionable** estimates (open + submitted job) show Accept, Request changes,
 and Decline buttons, each opening a confirmation panel with plain-language
