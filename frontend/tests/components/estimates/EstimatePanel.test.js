@@ -78,9 +78,9 @@ describe('EstimatePanel version subnav', () => {
     const links = Array.from(container.querySelectorAll('.doc-subnav a'));
     expect(links).toHaveLength(2);
     expect(links[0]).toHaveAttribute('href', '#/jobs/9/estimate/7');
-    expect(links[0]).toHaveTextContent('v1');
+    expect(links[0]).toHaveTextContent('EST-7-1');
     expect(links[1]).toHaveAttribute('href', '#/jobs/9/estimate/8');
-    expect(links[1]).toHaveTextContent('v2');
+    expect(links[1]).toHaveTextContent('EST-7-2');
     expect(links[1]).toHaveClass('active');
     expect(links[0]).not.toHaveClass('active');
   });
@@ -112,12 +112,23 @@ describe('EstimatePanel toolbar actions', () => {
     expect(await findByRole('button', { name: /revise estimate/i })).toBeInTheDocument();
   });
 
-  it('offers Create Change Order on an accepted estimate and posts it for the job', async () => {
+  it('hides Create Change Order while the job is not held (API would refuse)', async () => {
+    // CO drafting happens inside a hold episode; the button only shows when
+    // the click can actually succeed.
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'accepted' });
+    mockApi(est, { versions: [est] });
+    const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Estimate: EST-7');
+    expect(queryByRole('button', { name: /create change order/i })).toBeNull();
+  });
+
+  it('offers Create Change Order on an accepted estimate (held job) and posts it', async () => {
     user.set({ permissions: [] });
     const est = makeEstimate({ estimate_id: 7, status: 'accepted' });
     mockApi(est, { versions: [est] });
     api.post.mockResolvedValue({ change_order_id: 42 });
-    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const { findByRole } = render(EstimatePanel, { props: { job: { ...JOB, on_hold: true }, estimateId: 7 } });
     const btn = await findByRole('button', { name: /create change order/i });
     await fireEvent.click(btn);
     expect(api.post).toHaveBeenCalledWith('/api/change-orders/', { job: 9 });
@@ -131,14 +142,65 @@ describe('EstimatePanel toolbar actions', () => {
     await findByText('Estimate: EST-7');
     expect(queryByRole('button', { name: /create change order/i })).toBeNull();
   });
+
+  it('hides Create Change Order once the job already has a change order', async () => {
+    // The FIRST CO is created from the accepted estimate; every further CO
+    // chains off the previous one via the CO page's seed-new flow.
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'accepted' });
+    mockApi(est, {
+      versions: [est],
+      changeOrders: [{ change_order_id: 3, change_order_number: 'CO-3', status: 'draft' }],
+    });
+    const { findByText, queryByRole } = render(EstimatePanel, { props: { job: { ...JOB, on_hold: true }, estimateId: 7 } });
+    await findByText('Estimate: EST-7');
+    expect(queryByRole('button', { name: /create change order/i })).toBeNull();
+  });
+});
+
+describe('EstimatePanel status pill job refresh', () => {
+  it('pings onJobChange after a successful transition (acceptance drives job status)', async () => {
+    // Accepting an estimate approves the job (rejecting can reject it) — the
+    // host's job header must refresh without a manual page reload, same as
+    // ChangeOrderPanel does on CO acceptance.
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'open' });
+    mockApi(est, { versions: [est] });
+    api.patch.mockResolvedValue({});
+    const onJobChange = vi.fn();
+    const { findByRole } = render(EstimatePanel, {
+      props: { job: JOB, estimateId: 7, onJobChange },
+    });
+    await fireEvent.change(await findByRole('combobox'), { target: { value: 'accepted' } });
+    await vi.waitFor(() => expect(onJobChange).toHaveBeenCalled());
+  });
+});
+
+describe('EstimatePanel status pill in-flight guard', () => {
+  it('ignores a second change while the first PATCH is in flight', async () => {
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'open' });
+    mockApi(est, { versions: [est] });
+    let resolvePatch;
+    api.patch.mockImplementation(
+      () => new Promise((resolve) => { resolvePatch = resolve; }));
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const select = await findByRole('combobox');
+    await fireEvent.change(select, { target: { value: 'accepted' } });
+    expect(select.disabled).toBe(true);
+    // A stray second change before the first PATCH settles must not fire.
+    await fireEvent.change(select, { target: { value: 'rejected' } });
+    expect(api.patch).toHaveBeenCalledTimes(1);
+    resolvePatch({});
+  });
 });
 
 describe('EstimatePanel empty state', () => {
-  it('shows a can_manage-gated Start Estimate button when the job has no estimates', async () => {
+  it('shows a can_manage-gated Start Estimate button when a quoting-phase job has no estimates', async () => {
     user.set({ permissions: [] });
     mockApi(null, { versions: [] });
     const { findByRole } = render(EstimatePanel, {
-      props: { job: { ...JOB, can_manage: true }, estimateId: null },
+      props: { job: { ...JOB, status: 'draft', can_manage: true }, estimateId: null },
     });
     expect(await findByRole('button', { name: /start estimate/i })).toBeInTheDocument();
   });
@@ -147,9 +209,21 @@ describe('EstimatePanel empty state', () => {
     user.set({ permissions: [] });
     mockApi(null, { versions: [] });
     const { findByText, queryByRole } = render(EstimatePanel, {
-      props: { job: { ...JOB, can_manage: false }, estimateId: null },
+      props: { job: { ...JOB, status: 'draft', can_manage: false }, estimateId: null },
     });
     expect(await findByText('No estimates yet.')).toBeInTheDocument();
+    expect(queryByRole('button', { name: /start estimate/i })).not.toBeInTheDocument();
+  });
+
+  it('hides Start Estimate on a job past the quoting phase and explains why', async () => {
+    // A hand-approved estimate-less job is past estimating — the backend
+    // refuses the create, so the button would be a guaranteed error.
+    user.set({ permissions: [] });
+    mockApi(null, { versions: [] });
+    const { findByText, queryByRole } = render(EstimatePanel, {
+      props: { job: { ...JOB, status: 'approved', can_manage: true }, estimateId: null },
+    });
+    expect(await findByText(/past the estimating phase/i)).toBeInTheDocument();
     expect(queryByRole('button', { name: /start estimate/i })).not.toBeInTheDocument();
   });
 
@@ -158,7 +232,7 @@ describe('EstimatePanel empty state', () => {
     mockApi(null, { versions: [] });
     api.post.mockResolvedValue({ estimate_id: 42 });
     const { findByRole } = render(EstimatePanel, {
-      props: { job: { ...JOB, can_manage: true }, estimateId: null },
+      props: { job: { ...JOB, status: 'draft', can_manage: true }, estimateId: null },
     });
     const btn = await findByRole('button', { name: /start estimate/i });
     await fireEvent.click(btn);

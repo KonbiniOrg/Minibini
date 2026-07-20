@@ -85,6 +85,26 @@ class EstimateCreateOnJobTest(TestCase):
         second = self.client.post('/api/estimates/', {'job': self.job.pk}, format='json')
         self.assertEqual(second.status_code, 400)
 
+    def test_create_allowed_on_submitted_job(self):
+        # Still quoting: a submitted job may start its (first) estimate.
+        Job.objects.filter(pk=self.job.pk).update(status=Job.STATUS_SUBMITTED)
+        resp = self.client.post('/api/estimates/', {'job': self.job.pk}, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+    def test_create_rejected_on_job_past_quoting(self):
+        # An approved (hand-approved, estimate-less) job is past the
+        # estimating phase — a fresh estimate makes no sense there. Same for
+        # every later/terminal status.
+        for status in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
+                       Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED,
+                       Job.STATUS_CANCELLED, Job.STATUS_REJECTED):
+            Job.objects.filter(pk=self.job.pk).update(status=status)
+            resp = self.client.post('/api/estimates/', {'job': self.job.pk},
+                                    format='json')
+            self.assertEqual(resp.status_code, 400,
+                             f'{status}: {getattr(resp, "data", None)}')
+            self.assertEqual(self.job.estimate_set.count(), 0)
+
 
 # ---------------------------------------------------------------------------
 # 2. Per-atom claim state in the job detail

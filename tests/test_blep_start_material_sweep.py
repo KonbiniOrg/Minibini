@@ -49,10 +49,13 @@ class BlepStartSweepBase(TestCase):
         )
         self.worker = User.objects.create_user(username='bss_worker', password='x')
         now = timezone.now()
+        # OPEN shift (worker on the clock): a closed future-ending shift would
+        # trip the per-user no-overlap rule when start_work auto-clocks in; an
+        # open shift is reused by ensure_open_shift and encloses closed bleps
+        # (its end is unbounded).
         Shift.objects.create(
             user=self.worker,
             start_time=now - timedelta(days=1),
-            end_time=now + timedelta(days=1),
         )
         self.pli = InventoryItem.objects.create(
             code='BSS-I', accounting_category=self.cat,

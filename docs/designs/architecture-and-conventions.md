@@ -1305,9 +1305,13 @@ owned by `OutboundEmailService.send_tracked` in `apps/core/services.py`:
    uploads come from the multipart POST. No drafts.
 
 The per-document send services that wrap this:
-- `EstimateEmailService` (`apps/estimates/services.py`) — generates
-  the PDF, calls `send_tracked` with `associate_with={'job': …}`,
-  transitions `draft → open` on send success.
+- `EstimateEmailService` and `ChangeOrderEmailService`
+  (`apps/estimates/services.py`) — both subclass the shared
+  `DocumentEmailService` base (same module: class-level subject/body
+  defaults, Configuration keys, labels, and hooks for the PDF
+  generator and send validation). Each generates its PDF, calls
+  `send_tracked` with `associate_with={'job': …}`, and transitions
+  `draft → open` on send success.
 - `PurchaseOrderEmailService.send_po` (`apps/purchasing/services.py`)
   — same shape but `associate_with={'purchase_order': …}` and
   `draft → issued`.

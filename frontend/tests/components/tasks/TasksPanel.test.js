@@ -108,6 +108,41 @@ describe('TasksPanel — Add Work picker → FeeModal path', () => {
     await waitFor(() => expect(getByDisplayValue('Custom milling')).toBeInTheDocument());
   });
 
+  it('a service item the live search found but the cached template list lacks opens the form intact', async () => {
+    // Cross-window repro: the item was created in another window AFTER this
+    // panel loaded its templates list, so the mount-time list is stale but the
+    // picker's live search finds it. The pick must carry the full object —
+    // the form may not re-resolve it from the stale cached list.
+    const fresh = {
+      template_id: 77, template_name: 'Laser Etch', description: 'etch it',
+      rate_scheme: 4,
+      rate_scheme_detail: { rate_scheme_id: 4, name: 'Shop', rate: '90.00', unit_label: 'hour' },
+      default_active_modifiers: [],
+    };
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/service-items/') && url.includes('search=')) {
+        return Promise.resolve([fresh]);          // live search: finds it
+      }
+      if (url.startsWith('/api/service-items/')) return Promise.resolve([]); // stale mount-time list
+      return Promise.resolve([]);
+    });
+    const { findByRole, getByRole, getByPlaceholderText, getAllByDisplayValue } =
+      render(TasksPanel, { props: { job: makeJob({ can_manage: false }) } });
+    await findByRole('button', { name: /add work/i });
+    await fireEvent.click(getByRole('button', { name: /add work/i }));
+    await waitFor(() => getByRole('dialog'));
+    await fireEvent.input(getByPlaceholderText(/search services or materials/i),
+      { target: { value: 'Laser' } });
+    // SearchPicker rows select on mousedown (beats the input's blur).
+    await fireEvent.mouseDown(await findByRole('button', { name: /laser etch/i }));
+    // Template form opens with the picked item selected AND its defaults
+    // applied: both the template <select> and the name <input> show it.
+    await waitFor(() => getByRole('heading', { name: /add task from template/i }));
+    await waitFor(() =>
+      expect(getAllByDisplayValue('Laser Etch').length).toBeGreaterThanOrEqual(2));
+  });
+
   it('freeform fee path through picker opens FeeModal', async () => {
     mockApi();
     const { findByRole, getByRole, getByPlaceholderText } = render(TasksPanel, { props: { job: makeJob({ can_manage: false }) } });

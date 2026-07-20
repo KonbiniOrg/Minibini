@@ -6,14 +6,15 @@ estimate's opaque public_token.
 """
 from decimal import Decimal
 
-from django.db import transaction
-from rest_framework import status
 from rest_framework.decorators import (
     api_view, authentication_classes, permission_classes,
 )
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.api.portal.common import (
+    actor_for, decide, money, not_available, visible_document,
+)
 from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateEmailService, EstimateService
 from apps.jobs.models import Job
@@ -30,15 +31,13 @@ CLOSED_MESSAGE = (
 def _is_actionable(estimate):
     """Customer may act only on an OPEN estimate whose job is still awaiting the
     customer (SUBMITTED). The shop can move the job independently (cancel,
-    reject, manual approve, reopen) without touching the estimate; the portal
-    respects job status but never mutates the estimate from the job side."""
+    reject, reopen) without touching the estimate; the portal respects job
+    status but never mutates the estimate from the job side. (Direct manual
+    approval is blocked once a job has estimates — approval flows from
+    estimate acceptance; see JobService.update_job.)"""
     if estimate.status != Estimate.STATUS_OPEN:
         return False
     return estimate.job_id is not None and estimate.job.status == Job.STATUS_SUBMITTED
-
-
-def _money(value):
-    return str((value or Decimal('0')).quantize(Decimal('0.01')))
 
 
 def _line_amount(li):
@@ -79,8 +78,8 @@ def build_estimate_payload(estimate):
             'description': li.description,
             'qty': str(li.qty) if li.qty is not None else None,
             'units': li.units,
-            'price': _money(li.price),
-            'amount': _money(amount),
+            'price': money(li.price),
+            'amount': money(amount),
         })
 
     # An out-of-date estimate (superseded, or accepted-then-amended by a change
@@ -115,7 +114,7 @@ def build_estimate_payload(estimate):
         'closed_date': estimate.closed_date,
         'deliverables': deliverables,
         'line_items': line_items,
-        'grand_total': _money(total),
+        'grand_total': money(total),
         'actions': actions,
         'actionable': actionable,
         'closed_message': closed_message,
@@ -125,53 +124,32 @@ def build_estimate_payload(estimate):
     return payload
 
 
-def _not_available():
-    return Response({'detail': 'Not available.'},
-                    status=status.HTTP_404_NOT_FOUND)
-
-
-def _actor_for(estimate, reason=None):
-    contact = estimate.job.contact if estimate.job_id else None
-    return {
-        'contact_id': contact.pk if contact else None,
-        'email': (contact.email if contact else '') or '',
-        'reason': reason,
-    }
-
-
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])
 def portal_estimate(request, token):
-    estimate = Estimate.objects.filter(public_token=token).first()
-    if estimate is None or estimate.status == Estimate.STATUS_DRAFT:
-        return _not_available()
+    estimate = visible_document(Estimate, token)
+    if estimate is None:
+        return not_available()
     return Response(build_estimate_payload(estimate))
 
 
 def _decide(token, target_status, decision_word, reason=None):
-    with transaction.atomic():
-        estimate = (Estimate.objects
-                    .select_for_update()
-                    .filter(public_token=token)
-                    .first())
-        if estimate is None or estimate.status == Estimate.STATUS_DRAFT:
-            return _not_available()
-        # Act only when actionable (open estimate + submitted job). A click
-        # racing the shop — whether the shop closed the estimate or moved the
-        # job — is a no-op.
-        if _is_actionable(estimate):
-            EstimateService.update_status(
-                estimate.pk, target_status,
-                actor=_actor_for(estimate, reason))
-            acted = True
-        else:
-            acted = False
-        estimate.refresh_from_db()
-    if acted:
-        EstimateEmailService.notify_shop_of_decision(
-            estimate, decision_word, reason=reason or '')
-    return Response(build_estimate_payload(estimate))
+    # Act only when actionable (open estimate + submitted job) — the shared
+    # skeleton no-ops a click racing the shop.
+    def act(estimate):
+        EstimateService.update_status(
+            estimate.pk, target_status,
+            actor=actor_for(estimate, reason))
+
+    return decide(
+        Estimate, token,
+        is_actionable=_is_actionable,
+        act=act,
+        notify=lambda estimate: EstimateEmailService.notify_shop_of_decision(
+            estimate, decision_word, reason=reason or ''),
+        build_payload=build_estimate_payload,
+    )
 
 
 @api_view(['POST'])
@@ -196,21 +174,16 @@ def portal_estimate_request_changes(request, token):
     """Customer asks for changes: auto-revise the estimate and send the job back
     to draft. Only acts from 'open' — a click racing the shop is a no-op."""
     reason = (request.data.get('reason') or '').strip()
-    with transaction.atomic():
-        estimate = (Estimate.objects
-                    .select_for_update()
-                    .filter(public_token=token)
-                    .first())
-        if estimate is None or estimate.status == Estimate.STATUS_DRAFT:
-            return _not_available()
-        if _is_actionable(estimate):
-            EstimateService.request_changes(
-                estimate.pk, _actor_for(estimate, reason))
-            acted = True
-        else:
-            acted = False
-        estimate.refresh_from_db()
-    if acted:
-        EstimateEmailService.notify_shop_of_decision(
-            estimate, 'requested changes', reason=reason or '')
-    return Response(build_estimate_payload(estimate))
+
+    def act(estimate):
+        EstimateService.request_changes(
+            estimate.pk, actor_for(estimate, reason))
+
+    return decide(
+        Estimate, token,
+        is_actionable=_is_actionable,
+        act=act,
+        notify=lambda estimate: EstimateEmailService.notify_shop_of_decision(
+            estimate, 'requested changes', reason=reason or ''),
+        build_payload=build_estimate_payload,
+    )

@@ -143,3 +143,10 @@ class ChangeRequestAPITest(BaseTestCase):
         row = next(x for x in rows if x['request_id'] == req.pk)
         self.assertTrue(any(c['type'] == 'shift' and c['id'] == shift.shift_id
                             for c in row['conflicts']), row['conflicts'])
+        # The label shows LOCAL time, not raw UTC (stored datetimes are UTC;
+        # an unlocalized strftime read 7-8h off for Pacific users).
+        from django.utils import timezone as dj_tz
+        conflict = next(c for c in row['conflicts'] if c['id'] == shift.shift_id)
+        expected_start = dj_tz.localtime(shift.start_time).strftime('%b %d, %H:%M')
+        self.assertTrue(conflict['label'].startswith(expected_start),
+                        conflict['label'])

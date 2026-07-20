@@ -290,29 +290,16 @@ class ChangeOrder(models.Model):
                         f'Cannot transition ChangeOrder from {old.status} to {self.status}.'
                     )
                 if old.status == self.STATUS_DRAFT:
-                    if not ChangeOrderLineItem.objects.filter(change_order=self).exists():
-                        raise ValidationError('Cannot send a change order with no line items.')
-                    # Mirror the estimate send guard: a bare add line (no
-                    # service/inventory descriptor) crystallizes into a Fee or a
-                    # provisional Material at acceptance, and both need an
-                    # accounting category. Catch it at send so acceptance —
-                    # after the customer has said yes — can never fail on it.
-                    missing = [
-                        li.description or f'line {li.line_number}'
-                        for li in ChangeOrderLineItem.objects.filter(
-                            change_order=self,
-                            action=ChangeOrderLineItem.ACTION_ADD,
-                            service_item__isnull=True,
-                            inventory_item__isnull=True,
-                            accounting_category__isnull=True,
-                        )
-                    ]
-                    if missing:
+                    from apps.estimates.change_order_service import ChangeOrderService
+                    if not ChangeOrderService.has_sendable_changes(self):
                         raise ValidationError(
-                            'Cannot send: every added line item needs an '
-                            'accounting category first. Missing on: '
-                            + ', '.join(missing) + '.'
+                            'Cannot send an empty change order — it has no '
+                            'line-item changes and no deliverable changes.'
                         )
+                    # Bare add lines need their accounting category pinned
+                    # before the customer can say yes — shared helper, also
+                    # run pre-email by ChangeOrderEmailService._validate_send.
+                    ChangeOrderService.assert_all_bare_add_lines_have_ac(self)
 
     def save(self, *args, **kwargs):
         from apps.core.models import Configuration

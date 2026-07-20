@@ -222,6 +222,31 @@ list.
   to `work_complete` with a loose pending material fails with the
   blocker list, same as the button path.
 
+## 11. Approval & the status pill (2026-07-19 batch)
+
+The header pill is value-controlled and act-labeled: one selection = one
+transition, and after a transition the pill displays the job's *real*
+current status — never the option that happened to sit at the clicked
+index. Direct approval is gated on estimate-lessness.
+
+- [ ] **Submitted job WITH an estimate: no direct Approved.** The pill's
+  option list omits Approved — approval flows from accepting the
+  estimate (the backend rejects a direct PATCH to `approved` too).
+- [ ] **Submitted job with NO estimate (dead ones count): Approved is
+  offered** and selecting it lands the job `approved`.
+- [ ] **Release to floor.** On an `approved` job the pill names the act
+  ("Release to floor"), not the status; choosing it advances the job to
+  `in_progress` and the pill then DISPLAYS "In Progress" — regression:
+  an uncontrolled select kept the clicked index and showed "Work
+  Complete".
+- [ ] **In-flight guard:** while the transition PATCH is running the
+  pill is disabled — a double-click can't chain two transitions.
+  *(Millisecond window; primarily a unit-test check —
+  `frontend/tests/components/jobs/JobHeader.test.js`.)*
+- [ ] **Estimate acceptance refreshes the header in place.** Accepting
+  an open estimate via its status pill on the estimate page updates the
+  job header above to Approved without a page reload.
+
 ---
 
 ## Coverage matrix
@@ -236,3 +261,4 @@ list.
 | Sessions | open/close · join vs takeover · on-behalf-of (time manager) · sub-minimum undo |
 | Personas | worker (start/stop/complete only) · jobs manager / PM (pill, hold, cancel, mark-complete) · time manager (others' sessions) |
 | Guards | held job (timeslips + mutations + status) · terminal task · pre-approval consume w/o earmark · open-timeslip conflicts · invalid transitions |
+| Status pill | value-controlled truthful display · act labels (Release to floor) · direct-Approved gating on has_estimates · in-flight disable · in-place header refresh on estimate accept (§11) |

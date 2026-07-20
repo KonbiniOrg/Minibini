@@ -96,15 +96,27 @@
     }
   }
 
+  // One selection = one transition: ignore stray change events (and disable
+  // the select) while a status PATCH is in flight — same guard as JobHeader's
+  // status pill.
+  let statusBusy = $state(false);
+
   async function handleStatusChange(e) {
     const newStatus = e.target.value;
-    if (newStatus === estimate.status) return;
+    if (statusBusy || newStatus === estimate.status) return;
+    statusBusy = true;
     try {
       await api.patch(`/api/estimates/${estimate.estimate_id}/`, { status: newStatus });
       await loadEstimate();
+      // Estimate transitions drive job status (accepted → approved,
+      // rejected/expired → rejected) — refresh the host's job header, same
+      // as ChangeOrderPanel does on CO acceptance.
+      onJobChange();
     } catch (err) {
       e.target.value = estimate.status;
       showError(errorMessage(err, 'Status change failed.'));
+    } finally {
+      statusBusy = false;
     }
   }
 
@@ -299,8 +311,12 @@
     <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</span>
     {#if canManageJobs && validNextStatuses.length > 0}
       <span class="status-select-wrapper">
-        <select class="status-select status-{estimate.status}" onchange={handleStatusChange}>
-          <option value={estimate.status} selected>{estimate.status}</option>
+        <!-- value-controlled like JobHeader's pill: selects keep their
+             selected INDEX across option re-renders, so an uncontrolled pill
+             can display the wrong option after a transition + reload. -->
+        <select class="status-select status-{estimate.status}" value={estimate.status}
+                onchange={handleStatusChange} disabled={statusBusy}>
+          <option value={estimate.status}>{estimate.status}</option>
           {#each validNextStatuses as nextStatus}
             <option value={nextStatus}>{nextStatus}</option>
           {/each}
@@ -323,7 +339,13 @@
         {revising ? 'Revising...' : 'Revise Estimate'}
       </button>
     {/if}
-    {#if canManageJobs && estimate.status === 'accepted'}
+    <!-- Only the FIRST change order is created from the accepted estimate —
+         further COs chain off the previous one via the CO page's "Start new
+         change order" (seed-new) flow, so the button hides once any CO exists. -->
+    <!-- …and only while the job is HELD: CO drafting happens inside a hold
+         episode and the API refuses creation otherwise, so an un-held job's
+         button could only ever produce an error. -->
+    {#if canManageJobs && estimate.status === 'accepted' && changeOrders.length === 0 && job?.on_hold}
       <button type="button" onclick={handleCreateChangeOrder} disabled={creatingChangeOrder}>
         {creatingChangeOrder ? 'Creating…' : 'Create Change Order'}
       </button>
@@ -440,10 +462,15 @@
   <p>Loading...</p>
 {:else}
   <div class="page-body">
-    {#if job?.can_manage}
+    <!-- Estimates belong to the quoting phase (draft/submitted): on a job
+         past that (hand-approved estimate-less, or later) the backend
+         refuses the create, so the button hides with a hint instead. -->
+    {#if job?.can_manage && (job?.status === 'draft' || job?.status === 'submitted')}
       <button type="button" onclick={startEstimate} disabled={startingEstimate}>
         {startingEstimate ? 'Starting…' : 'Start Estimate'}
       </button>
+    {:else if job?.can_manage}
+      <p>No estimates. This job is past the estimating phase.</p>
     {:else}
       <p>No estimates yet.</p>
     {/if}

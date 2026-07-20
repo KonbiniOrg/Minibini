@@ -111,6 +111,18 @@ accepting one fires `approved`. An **open** estimate going to `rejected`
 (customer decline) or `expired` (the `mark_estimates_expired` sweep) drives
 the Job to `rejected` — see `estimates-and-prices.md` §9.3 and §13 below.
 
+**Direct approval is gated behind estimate acceptance** (2026-07-19): if a
+job has ANY estimate (any status — dead ones count), `approved` can only be
+entered by a system transition (estimate acceptance, duplicate-as-approved:
+`JobService.update_job(..., system_transition=True)`); a direct status edit
+raises a `ValidationError`. A bare edit used to bypass acceptance
+crystallization and leave the estimate's customer-response clock ticking.
+Only a job with **no estimates at all** can be hand-approved via the pill —
+the header offers the Approved option only when the detail serializer's
+`has_estimates` is false. Approving on the customer's behalf (phone
+acceptance) is done by marking the **estimate** accepted, which drives the
+job as usual.
+
 `submitted → draft` is the **re-quote** transition: when a customer requests
 changes via the portal (`estimates-and-prices.md` §15.1), the estimate
 auto-revises and the Job drops back to `draft` so a draft job + draft
@@ -863,6 +875,13 @@ and `can_manage_time` rules.
   `/api/bleps/current/` (field `blep_minimum_minutes`) and task-detail payloads
   so the client can choose the label live (compared in whole minutes,
   `floor((now − start)/60s)`, to stay aligned with the backend).
+  **Cancel grace minute (2026-07-19):** `cancel_work` itself accepts up to
+  `blep_minimum_minutes + 1` whole minutes. `Blep.save()` floors `start_time`
+  to the whole minute, so the books can show ~59s more session than the user
+  experienced — without the grace, a Start clicked just before a minute
+  boundary couldn't be cancelled inside the user's real first minute. The
+  close-primitive's cancel-vs-close split (next bullet) deliberately keeps the
+  plain minimum — it's bookkeeping, not a human's cancel request.
 - **Sub-minimum close = cancel, enforced for ALL close paths.** The rule is
   not just a frontend affordance: it lives in the backend close primitive
   `BlepService._close_open`. When any close path resolves an open Blep, a
@@ -1412,16 +1431,21 @@ navigation doesn't reload the job either). The panel's own subnav
 (`DocSubnav.svelte` — a strip of version/invoice-number pills, each
 with a status badge) updates the URL the same way as the user flips
 documents, so any document is a shareable, bookmarkable, back-button-safe
-link — including superseded estimates and change orders (change orders
-appear in the estimate panel's subnav but still link out to the
-standalone `#/change-orders/:id` route — see below). This closes the
+link — including superseded estimates and change orders. This closes the
 LATER.md question of whether a superseded estimate's subnav entry
 should redirect to the current estimate instead of showing the old one:
 it doesn't — every version is directly viewable at its own URL.
-`ChangeOrderDetailPage.svelte` is **not** extracted into a panel this
-pass (it's the largest page in the app; the LATER.md componentization
-list still carries it) — it stays a standalone route reached from the
-estimate subnav.
+**Change orders joined the panel pattern 2026-07-19**: the old 1100-line
+`ChangeOrderDetailPage.svelte` route was extracted into
+`ChangeOrderPanel.svelte` hosted by `routes/jobs/JobChangeOrderPage.svelte`
+(thin glue: job load + `JobShell`), with the two diff grids as components
+(`CODeliverablesSection.svelte` — owns the inline drafting forms;
+`COLineItemsSection.svelte` — a dumb renderer, actions as callbacks) over
+pure unit-tested derivations in `lib/changeOrderDiff.js`
+(`buildMergedRows` / `lineDiffTotals` / `buildDeliverableRows` — the
+backend's `compose_change_order_diff` mirrors `buildMergedRows`; keep in
+lockstep). The retired `/change-orders/:id` URL still redirects via
+`ChangeOrderRedirect.svelte`.
 
 **Per-job persisted position** (`stores/jobWorkspace.js`) is what the
 "last-remembered document" / "restore where I left off" behavior above

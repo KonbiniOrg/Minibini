@@ -35,7 +35,11 @@ export function buildEstimateDocItems({ estimates = [], changeOrders = [], jobId
       const key = `est-${e.estimate_id}`;
       return {
         id: key,
-        label: `v${e.version}`,
+        // Full document identity, like the CO/invoice pills: an estimate's
+        // full form is `{estimate_number}-{version}` (the facts-table /
+        // estimates-and-prices.md display convention) — not a bare `v2`.
+        label: e.estimate_number
+          ? `${e.estimate_number}-${e.version}` : `v${e.version}`,
         status: estimateDisplayStatus(e),
         href: `#/jobs/${jobId}/estimate/${e.estimate_id}`,
         current: key === currentKey,

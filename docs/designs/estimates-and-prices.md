@@ -646,7 +646,11 @@ One estimate tree per job — enforced at the service layer:
 `EstimateService.create_for_job` refuses a second non-superseded estimate
 (2026-07-04; previously only the API viewset checked). New *versions* come
 only from `revise_estimate`, which creates the revision directly and then
-supersedes the parent. The estimate's identity *is* the job's: the
+supersedes the parent. It also refuses a job past the quoting phase
+(2026-07-19): estimates start only on `draft`/`submitted` jobs — a
+hand-approved or duplicated-as-approved estimate-less job skipped the
+negotiation and doesn't get one retroactively. The estimate panel hides
+Start Estimate with a hint on such jobs. The estimate's identity *is* the job's: the
 `estimate_number` **is just the job number** (e.g. `JOB-2026-0001`), the same
 across every revision. The revision lives in the separate `version` field — it
 is **not** baked into the number. It is set by `EstimateService.create_for_job`
@@ -1143,11 +1147,12 @@ Top-down:
 1. **JobHeader + JobNavRail + JobContextBand** — the job workspace
    shell (`JobShell`), shared by every job section page.
 2. **DocSubnav** — one pill per estimate version (oldest→newest,
-   labeled `v1`, `v2`, …, each with a status badge) plus this job's
-   change orders, appended in `change_order_number` order. Change-order
-   pills still link out to the standalone `#/change-orders/:id` route
-   (`ChangeOrderDetailPage.svelte` is not extracted into a panel this
-   pass — see `jobs-tasks-and-worksheets.md` §9.6).
+   labeled with the full code `{estimate_number}-{version}`, each with a
+   status badge) plus this job's change orders, appended in
+   `change_order_number` order. Change-order pills link to the
+   job-scoped `#/jobs/:jobId/change-order/:coId` route, hosted by
+   `JobChangeOrderPage` → `ChangeOrderPanel` since the 2026-07-19
+   extraction (see `jobs-tasks-and-worksheets.md` §9.6).
 3. **Toolbar** — back link, page title (with `superseded` styling
    when applicable), status pill (interactive `<select>` for users
    with `can_manage_jobs` when transitions are allowed), action
@@ -1445,8 +1450,25 @@ any bare `add` line (no `service_item`, no `inventory_item`) lacks an
 `assert_all_hand_lines_have_ac` (§5.1/§15). Such a line crystallizes
 into a Fee or Material at acceptance, and the category must
 be pinned *before* the customer can say yes, so acceptance can never
-fail on it. Living in the model's `clean()`, the guard holds on every
-send path (mark-open action, status PATCH, `send_change_order`).
+fail on it. The check is `ChangeOrderService.assert_all_bare_add_lines_have_ac`
+(2026-07-20), shared by the model's `clean()` — so the guard holds on every
+send path (mark-open action, status PATCH, `send_change_order`) — and by
+`ChangeOrderEmailService._validate_send` as a pre-email copy, so a refusal
+lands *before* the customer is mailed a link (previously the clean()-only
+placement meant the email went out and then the draft→open transition
+failed, leaving the customer a dead draft link — the estimate side never
+had that gap).
+
+**Content gate (2026-07-20):** leaving `draft` requires the CO to carry
+line-item changes **or** a deliverables diff against its baseline —
+`ChangeOrderService.has_sendable_changes(co)`, shared by
+`ChangeOrder.clean()`'s draft-exit guard (the invariant home) and
+`ChangeOrderEmailService._validate_send` (the pre-email copy, so an
+unsendable CO fails before the email goes out). A **deliverables-only
+CO** (spec/quantity correction with no price impact — typically a
+fix-the-mistake amendment) is sendable; only a CO empty on both halves
+is refused ("Cannot send an empty change order…"). Previously a CO with
+no line items was refused outright.
 
 **`ChangeOrderLineItemSource`** (`db_table = 'co_li_sources'`) is the CO
 analog of `EstimateLineItemSource` (§6.2): a polymorphic join
@@ -1569,7 +1591,12 @@ are resolved).
 ### 14.8 API endpoints
 
 - `GET /api/jobs/{id}/change-orders/` — list of the job's COs
-- `POST /api/change-orders/` — create (body: `{job_id}`)
+- `POST /api/change-orders/` — create (body: `{job_id}`). UI-wise, the
+  estimate panel's **Create Change Order** button (accepted estimate)
+  shows only while the job has **no** change orders (2026-07-19): the
+  first CO branches from the accepted estimate, and every further CO is
+  seeded from the previous one via the CO page's "Start new change
+  order" (`seed-new`) flow, so COs chain rather than branching fresh.
 - `GET / PATCH / DELETE /api/change-orders/{id}/`
 - `POST /api/change-orders/{id}/mark-open/` — `draft → open`
 - `POST /api/change-orders/{id}/update-status/` — accept / reject /
@@ -1602,9 +1629,15 @@ is authoritative.
 
 ### 14.9 SPA
 
-`frontend/src/routes/change-orders/ChangeOrderDetailPage.svelte` is the
-CO edit view. It renders a merged baseline-vs-proposal diff using the
-CO's line items and the `deliverables-baseline` endpoint.
+`ChangeOrderPanel.svelte` (`components/changeorders/`, hosted at
+`#/jobs/:jobId/change-order/:coId` by `routes/jobs/JobChangeOrderPage.svelte`
+inside `JobShell` — extracted 2026-07-19 from the old
+`ChangeOrderDetailPage` route) is the CO edit view. It renders a merged
+baseline-vs-proposal diff using the CO's line items and the
+`deliverables-baseline` endpoint: `lib/changeOrderDiff.js` derives the
+rows (unit-tested), `CODeliverablesSection.svelte` owns the deliverables
+grid + inline drafting forms, and `COLineItemsSection.svelte` renders the
+line diff with actions as callbacks to the panel.
 **"+ New line"** opens the unified `PriceListPicker` (§6.4) — the same
 service / inventory / freeform (+ is-material checkbox) entry point as
 the estimate detail page — followed by `COAddLineForm.svelte`
@@ -1659,14 +1692,22 @@ login.
 - **Link.** `build_object_url('change_order', id)` →
   `<base>/portal/?token=<token>&doc=change_order`. The single `/portal/`
   static entry dispatches on the `doc` query param
-  (`PortalApp.svelte` → `EstimatePortal` or `ChangeOrderPortal`). `doc` is
+  (`PortalApp.svelte` → `EstimatePortal` or `ChangeOrderPortal`; both
+  pages are thin content snippets around the shared
+  `components/PortalDocument.svelte` shell, which owns the token load,
+  the confirm/submit state machine, and the confirmation fieldsets —
+  each page supplies its API path, copy, and body tables). `doc` is
   **required and explicit** for both document types — estimate links are
   `&doc=estimate` (see `build_object_url('estimate', …)` and the in-app
   superseded forward links); a portal URL with a missing or unknown `doc`
   renders a "could not be found" message and makes no API call, rather than
   silently assuming a document type.
 - **API** (`apps/api/portal/change_order_views.py`, all `AllowAny`,
-  `authentication_classes([])`):
+  `authentication_classes([])`; the helpers both portal modules share —
+  `money`, `not_available`, `actor_for`, the draft-visibility gate, and
+  the lock-by-token `decide` skeleton — live in
+  `apps/api/portal/common.py`, with each side keeping its own
+  `_is_actionable` rule and payload builder):
   - `GET /api/portal/change-orders/<token>/` →
     `build_change_order_payload` (a before/after diff: `line_rows` with
     `kind ∈ {unchanged, changed, changed-orig, removed, added}` from
@@ -1705,7 +1746,10 @@ login.
   online view show the same line-item and deliverable changes.
 - **PDF.** `generate_change_order_pdf(co)` (`apps/estimates/pdf.py` +
   `templates/estimates/change_order_pdf.html`, WeasyPrint, styled like the
-  estimate PDF) renders both diffs — a "What you'll receive" deliverables
+  estimate PDF; both generators resolve the header's contact/business
+  names through the shared `_pdf_party_context(job)` helper, while the
+  two templates stay deliberately separate — PDF templates are
+  self-contained by convention, no extends/include) renders both diffs — a "What you'll receive" deliverables
   section and the line-item table with prior/new/change totals — using
   print-safe change labels (Added/Removed/Changed/was). It is attached to
   the CO send email.
@@ -1752,6 +1796,26 @@ transiently empties the live work set and trips the auto-advance to
   - A document-only target (adjustment line, or an atom already
     retired) is a no-op — the delta stays document-only, matching
     `compose_agreement`.
+
+  **Surfacing the skips (decided 2026-07-20):** the skip itself stays
+  silent at acceptance, but the invoice wizard pool badges every
+  struck-but-still-live atom **"struck from agreement"** (amber, like
+  the cancelled-task badge; suppressed when the task is also cancelled)
+  so the biller decides consciously at the money moment. The set is
+  derived, never stored — `ChangeOrderService.struck_atom_keys(job)`
+  walks the persisted chain (accepted CO remove/replace line → target
+  estimate line → claim rows → atom); "still live in the pool" is the
+  whole skip test, so the skip-reason logic is not replicated.
+  **Considered and declined for now:** keeping the job held after CO
+  acceptance (making release-hold the worker's reconciliation act,
+  parallel to release-to-floor) plus a SCOPE reconciliation banner. RM
+  2026-07-20: don't change a working system — acceptance keeps
+  auto-clearing the hold, no second hold layer, no job-status changes.
+  Revisit if the badge alone proves insufficient in practice; the
+  banner would reuse `struck_atom_keys` (built shared-ready). Note the
+  inherent limit either way: work added outside the estimate has no
+  claim chain, so no mechanism can identify it — that reconciliation is
+  always the human's.
   When an atom is hard-deleted, source rows pointing at it are purged so
   no lens dangles; release never purges.
 - **replace** — crystallize the replacement **first**, then retire the
@@ -1800,7 +1864,12 @@ Returns `{'tasks_created', 'materials_created', 'fees_created',
 ## 15. Sending an Estimate
 
 `EstimateEmailService.send_estimate` (`apps/estimates/services.py`)
-is the entry point. The SPA route `/estimates/:id/send` mounts
+is the entry point. `EstimateEmailService` and its CO sibling
+`ChangeOrderEmailService` subclass a shared `DocumentEmailService`
+base (same module) that owns `get_email_defaults`,
+`notify_shop_of_decision`, and the send skeleton; each subclass
+declares its default subject/body, Configuration keys, labels, PDF
+generator, and send validation. The SPA route `/estimates/:id/send` mounts
 `DocumentSendForm.svelte`, populated by
 `GET /api/estimates/{id}/send-defaults/`; submit POSTs
 multipart to `/api/estimates/{id}/send/`.
@@ -1868,7 +1937,8 @@ previous stub internal URL. This is the value that lands in
 `{object_url}` when composing the send email.
 
 **Portal API (`apps/api/portal/`, all `AllowAny`,
-`authentication_classes=[]`):**
+`authentication_classes=[]`; shared helpers + the `decide` skeleton live
+in `apps/api/portal/common.py` — see §14.10):**
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -1942,7 +2012,9 @@ completes.
 
 **Customer page.** `frontend/portal/` is a second Vite entry (built
 by the same `npm run build`, served at `/portal/`). It is login-not-required,
-has no operator nav, and reads the token from the query string. It
+has no operator nav, and reads the token from the query string.
+`EstimatePortal.svelte` supplies the estimate copy and body tables to
+the shared `components/PortalDocument.svelte` shell (§14.10). It
 shows deliverables (top), line items + total, and a status banner.
 **Actionable** estimates (open + submitted job) show Accept, Request changes,
 and Decline buttons, each opening a confirmation panel with plain-language

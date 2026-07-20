@@ -63,7 +63,7 @@
   import EmailAssociatePOPage from './routes/email/EmailAssociatePOPage.svelte';
   import EmailAssociateBillPage from './routes/email/EmailAssociateBillPage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
-  import ChangeOrderDetailPage from './routes/change-orders/ChangeOrderDetailPage.svelte';
+  import JobChangeOrderPage from './routes/jobs/JobChangeOrderPage.svelte';
   import ChangeOrderRedirect from './routes/change-orders/ChangeOrderRedirect.svelte';
   import ChangeOrderSendPage from './routes/change-orders/ChangeOrderSendPage.svelte';
 
@@ -90,7 +90,7 @@
     '/jobs/:jobId/shipments': JobShipmentsPage,
     '/jobs/:jobId/estimate': JobEstimatePage,
     '/jobs/:jobId/estimate/:docId': JobEstimatePage,
-    '/jobs/:jobId/change-order/:coId': ChangeOrderDetailPage,
+    '/jobs/:jobId/change-order/:coId': JobChangeOrderPage,
     '/jobs/:jobId/invoice': JobInvoicePage,
     '/jobs/:jobId/invoice/:docId': JobInvoicePage,
     '/jobs/:jobId/tasks': JobTaskListPage,

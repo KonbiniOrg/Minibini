@@ -35,13 +35,6 @@ wrap a 1000-line page in heavy mocks; extract first.
 
 **Primary (≥ 400 lines, as of 2026-06-04):**
 
-- `change-orders/ChangeOrderDetailPage.svelte` — **1038**, now **1117** (by far the largest; top
-  priority). As of 2026-07-09 it's pulled **into** the job workspace: it lives at the job-scoped
-  route `/jobs/:jobId/change-order/:coId` (old `/change-orders/:id` redirects via
-  `ChangeOrderRedirect.svelte`) and renders JobHeader + JobContextBand + JobNavRail (current
-  "estimate") + the shared estimate/CO version subnav inline — but it is **not yet extracted**
-  into a panel component hosted by `JobShell` the way estimates/invoices are. That extraction is
-  the remaining work; sequenced last once the shell pattern is boring on simpler documents.
 - `jobs/TaskDetailPage.svelte` — 527
 - `Search.svelte` — 499
 - `purchaseorders/PurchaseOrderDetailPage.svelte` — 461
@@ -54,6 +47,11 @@ glue now hosts a tested panel component through `JobShell`):
 `estimates/EstimateDetailPage.svelte` (was 344 → `EstimatePanel.svelte`, and the route file
 itself is now a 12-line redirect shim), `invoices/InvoiceDetailPage.svelte` (→
 `InvoicePanel.svelte`, also now a 12-line redirect shim).
+`change-orders/ChangeOrderDetailPage.svelte` (was **1132**, the largest page in the app)
+followed 2026-07-19: deleted in favor of `ChangeOrderPanel.svelte` hosted by
+`routes/jobs/JobChangeOrderPage.svelte`, with the diff derivations in unit-tested
+`lib/changeOrderDiff.js` and the two grids as `CODeliverablesSection.svelte` /
+`COLineItemsSection.svelte`.
 
 **Watch list (300–365 lines):** `schedule/SchedulePage.svelte` (365),
 `users/UserDetailPage.svelte` (306), `contacts/ContactListPage.svelte` (301).
@@ -99,23 +97,19 @@ Status coupling, transitions, and what a job may do at each stage.
   Task present, so it's unaffected either way. _Done when:_ the gating question is answered and
   the guard is (re)placed accordingly, with the cascade fixed if the answer is "no".
 
-- **Job status can be changed independently of estimate status → incoherent states.** — _added 2026-07-03_
-  Observed in browser: while testing acceptance crystallization, a Job was set directly to **Approved**
-  while its Estimate was still **Open**, and the transition was allowed. This is incoherent: Job
-  approval is meant to flow from **estimate acceptance** (the `estimate_accepted` signal both approves
-  the Job *and* runs `EstimateAcceptanceService.on_accept` crystallization). Setting `Job → Approved`
-  directly bypasses acceptance entirely — no crystallization runs, the estimate never leaves Open, and
-  the Job looks committed with nothing crystallized behind it. Decide the coupling: either gate direct
-  Job status transitions so `approved` can only be reached via estimate acceptance (not a bare
-  status edit), or make a direct Job approval with a live Open estimate a validation error, or reconcile
-  the two on transition. Also audit which UI affordance let the Job status be edited directly here.
-  _2026-07-18 (RM):_ observed again from the user side — **Job status is NOT the same as Estimate
-  status, and users get confused about which one they are updating**: setting the Job pill to
-  Approved looks like approving the estimate, but the estimate stays open (its customer-response
-  clock keeps ticking on the overview). Decide whether to disallow changing Job status directly to
-  Approved, have the transition bring the Estimate's status with it, or something else.
-  _Done when:_ Job↔Estimate status coherence is enforced (a Job can't be `approved` with an un-accepted
-  live estimate, or the transition drives acceptance) and the stray edit path is closed.
+- **Estimate-less draft jobs: allow direct →Approved, gate →Submitted on an estimate.** — _added 2026-07-19 (RM notes review)_
+  Follow-up to the direct-approval gate (2026-07-19): `submitted` means
+  "awaiting customer response", which presupposes an estimate — so a draft job
+  with **no** estimate should be blocked from `submitted`, and instead allowed
+  a direct `draft → approved` edge (today that edge doesn't exist; an
+  estimate-less job must fake-traverse submitted to be hand-approved).
+  Touches `Job.clean()`'s `VALID_TRANSITIONS`, the `update_job` guard, and
+  `JobHeader`'s pill options (both keyed on `has_estimates`). Wrinkle to
+  decide during implementation: `_advance_to_approved` (duplicate-as-approved)
+  currently walks draft→submitted→approved — with the new edge it should
+  probably go direct.
+  _Done when:_ an estimate-less draft job can be hand-approved in one step,
+  cannot be submitted, and the duplicate walk is coherent with the new graph.
 
 - **Task creation on a terminal `completed` job — block it or define a reopen path.** — _added 2026-06-17; narrowed 2026-07-04_
   (The `work_complete` half is delivered: `JobService.mark_work_reopened` pulls
@@ -190,19 +184,6 @@ Status coupling, transitions, and what a job may do at each stage.
   pool-suppression rule, perhaps with the deferred `FeeItem` catalog) — or the field is dropped in
   that design's place.
 
-- **Job status pill jumped draft→Approved when "Submitted" was chosen (possible double-select).** — _added 2026-07-09_
-  Observed once on a job freshly created from an email: using the header status pill
-  (`JobHeader.svelte`'s `<select>` trigger pill) to set **Submitted** landed the job on
-  **Approved** instead. The transition graph is `draft → submitted → approved`, and the pill
-  re-renders its valid-next options after each change — so a stray second `change` (an
-  accidental double-click, or an event firing against the just-re-rendered option list) would
-  walk `draft → submitted → approved` in a single gesture. Not reproduced deliberately; may be a
-  pure double-click artifact or a real re-render/handler race in the trigger pill. Worth checking
-  `handleStatusChange` for whether a rapid second selection can chain past the intended status
-  (e.g. debounce, or ignore a change while a transition is in flight).
-  _Done when:_ reproduced and fixed (one selection = one transition), or confirmed a stray
-  double-click that can't reasonably recur.
-
 ## Job overview (2026-07-09 six-block redesign)
 
 The overview replaced its accordion pillars with six lifecycle summary
@@ -267,75 +248,31 @@ The CO surface and its estimate-parallel code.
   the accepted-CO replace chain correctly; see `estimates-and-prices.md`
   §14.11.)
 
-- **Surface CO-remove atoms that crystallization deliberately skipped.** — _added 2026-07-03_
-  `ChangeOrderAcceptanceService` (estimates doc §14.11) leaves an atom alone when a
-  CO remove/replace targets it but it is already consumed / complete /
-  expense-bound / PO-linked / on a live invoice — physical or billed reality is
-  not unwound by a document. Right now that skip is silent (the atom just stays
-  on the job while the agreement line is struck); the human has to notice the
-  mismatch themselves. Consider surfacing it — a history entry per skipped atom,
-  or a "struck from agreement" badge on the task/material row — so the
-  reconciliation is prompted rather than remembered.
-  _Done when:_ decided and either implemented or recorded as acceptable-silent.
+- **Consolidate the estimate↔change-order parallel code.** — _added 2026-06-08,
+  consolidated 2026-07-19_
+  The sibling duplicates were consolidated as a pure refactor:
+  `EstimateEmailService` / `ChangeOrderEmailService` now subclass a shared
+  `DocumentEmailService` base (`apps/estimates/services.py`); the portal view
+  twins share `apps/api/portal/common.py` (`money`, `not_available`,
+  `actor_for`, `visible_document`, the `decide` skeleton — each side keeps its
+  own `_is_actionable` rule and payload builder); the two portal pages render
+  through the shared `components/PortalDocument.svelte` shell; and both PDF
+  generators use `_pdf_party_context(job)` (`apps/estimates/pdf.py`).
+  Deliberately still duplicated: `estimate_pdf.html` vs `change_order_pdf.html`
+  (shared CSS + header-info block) — PDF templates are self-contained by
+  convention (no extends/include, per CLAUDE.md), so the Python-side helper is
+  the consolidation; touch the two templates in tandem. (A diff-logic note:
+  `compose_change_order_diff` is also a Python re-implementation of the
+  frontend merged-rows logic, which now lives in
+  `frontend/src/lib/changeOrderDiff.js`; keep them in lockstep until/unless
+  the shop view reads the server composer too.)
+  _Remaining done when:_ either the PDF-template convention changes (allowing a
+  shared header include) or the template pair drifts enough to force a rethink.
 
-- **Consolidate the estimate↔change-order parallel code.** — _added 2026-06-08_
-  Building COs "as parallel to estimates as reasonably can be" deliberately
-  produced sibling duplicates that now drift independently: `ChangeOrderEmailService`
-  vs `EstimateEmailService` (get_email_defaults / notify_shop_of_decision / send_*
-  are near-identical); `apps/api/portal/change_order_views.py` vs `views.py`
-  (`_money`, `_not_available`, `_actor_for`, `_is_actionable`, the `_decide`
-  skeleton); `ChangeOrderPortal.svelte` vs `EstimatePortal.svelte` (~120 shared
-  lines of the confirm/submit state machine + fieldsets); and `change_order_pdf.html`
-  vs `estimate_pdf.html` (shared CSS + header-info block + party-context resolution
-  in pdf.py). Candidates: a `DocumentEmailService` base with class-level subject/body
-  + config keys + a pdf-generator hook; a `portal/common.py`; a `<PortalDocument>`
-  wrapper with a slot for the body table; a shared PDF header `{% include %}` +
-  `_pdf_party_context(job)` helper. (A diff-logic note: `compose_change_order_diff`
-  is also a Python re-implementation of the frontend `mergedRows`; keep them in
-  lockstep until/unless the shop view reads the server composer too.)
-  _Done when:_ the shared paths live in one place (or we record why the duplication
-  is acceptable).
-
-- **Hide "Create Change Order" on the estimate once a CO exists — further COs chain off the prior CO.** — _added 2026-07-09_
-  The estimate panel's Create Change Order button (offered on an accepted estimate,
-  restored temporarily this session) should disappear once the job already has a
-  change order. The *first* CO is created from the accepted estimate; every
-  subsequent CO is seeded from the previous one via the CO page's "Start new change
-  order" (`seed-new`) flow, so COs chain off one another rather than each branching
-  fresh from the estimate. Gate the estimate-panel button on "no CO exists yet" and
-  rely on `seed-new` for the rest.
-  _Done when:_ the estimate's Create Change Order button is hidden once any CO exists
-  on the job, and additional COs are created only via the seed-new chain.
-
-- **Change order with only deliverable changes (no line items) is refused at Send.** — _added 2026-07-09_
-  A change order that changes only deliverables — no line-item edits — can't be
-  sent to the customer; the send path treats a CO with no line items as empty
-  and refuses it. But a deliverables-only amendment (e.g. quantity/spec change
-  with no price impact) is a legitimate thing to send for sign-off. Decide
-  whether this is correct (a CO must carry a line-item change to be sendable) or
-  whether deliverable-only COs should be sendable, and adjust the send gate
-  accordingly.
-  _Done when:_ the deliverables-only-CO send behaviour is decided and either the
-  refusal is kept with a recorded reason or the send gate accepts them.
 
 ## Invoicing, expenses & payments
 
 Billing mechanics and money-record lifecycle.
-
-- **"Start Invoice" on a draft job errors with misleading wording — reword and reconsider the gate.** — _added 2026-07-09_
-  Clicking the lone **Start Invoice** button on a fresh (draft) job's invoice panel raises
-  `InvoiceWizardService.open_for_job`'s error (`apps/invoicing/services.py`): *"Cannot start
-  invoice wizard for job in status 'draft'. Job must be approved or completed."* Two problems:
-  - **Wording:** the UI button says "Start Invoice", not "invoice wizard"; and "approved or
-    completed" mislists the actual `BILLABLE_JOB_STATUSES` (approved, in_progress, work_complete,
-    completed, cancelled). At minimum reword to match the UI term and the real allowed set.
-  - **Gate placement:** the Start-Invoice button shows on a non-billable job at all, so the only
-    outcome of clicking it is an error. Reconsider — likely hide/disable it (with a hint) until
-    the job is billable, the way the estimate panel gates Create Change Order, so the error is
-    unreachable through the UI.
-  _Done when:_ the message is reworded (UI term + accurate status list) and the Start-Invoice
-  affordance is gated to billable jobs (or a decision is recorded that the raw error is the
-  intended UX).
 
 - **Re-billing Task actuals across multiple invoices.** — _added 2026-06-02_
   Invoices can be raised before a job is finished (e.g. progress billing). If invoice #1 is
@@ -423,10 +360,19 @@ The atom-pull surfaces on estimates and invoices.
   and long-lived stores survive** and can carry rows/ids from the previous
   session/dataset — e.g. `lib/paymentAccounts.js`'s `_cache` is only cleared by
   the settings-save path, never by login/logout. (The template-preset bug
-  originally filed here turned out to be cross-window list staleness — see the
-  "search found it, the form didn't" entry under Cross-client refresh.) Fix
+  originally filed here turned out to be cross-window list staleness — fixed
+  2026-07-19: the Add-Work pick now carries the full serviceItem object.) Fix
   directions: hard-reload on login from an expired-session state, or a
   registered "reset on login" hook for every module cache/store.
+  _Presumed members of this family (verified unreproducible in code,
+  2026-07-19 review):_ (a) the 2026-06-25 "Shift & Blep start times display
+  ~1 hour early" observation — the whole pipeline (server-side
+  `timezone.now()` storage, DRF ISO output, `new Date()` + local getters in
+  format.js) is timezone/DST-correct and the SPA has no fixed-offset or
+  string-sliced datetime math; (b) the 2026-07-13 "time manager can't edit
+  their own OPEN shift" observation — service, API PATCH (null and omitted
+  `end_time`), and the edit modal all handle open shifts correctly under
+  test. Reopen either as its own entry if it recurs with a repro.
   _Done when:_ logging in from a stale tab provably starts from clean client
   state (or the odd-bug-after-relogin pattern stops recurring and RM closes
   this).
@@ -488,16 +434,6 @@ The atom-pull surfaces on estimates and invoices.
   jobs shows those earmarks on the PO surface, and the buyer can size the line
   accordingly.
 
-- **Delete-after-reject of a `stock_pli` expense double-reverses QOH.** — _added 2026-07-05 (found during the freeform-materials Task 9 review; pre-existing)_
-  `ExpenseService.reject` already reverses a stock-receipt expense's QOH bump. But
-  the **delete** branch has no status guard: deleting an already-rejected
-  `stock_pli` expense reverses the QOH a **second time**, driving stock negative.
-  This is the same shape the freeform-materials attach fix guarded (the shared
-  `_unwind_attach` is skipped on delete when the expense was already unwound at
-  reject) — the stock-receipt delete path needs the same "already reversed?"
-  guard. _Done when:_ deleting a rejected stock-receipt expense doesn't
-  double-reverse QOH, with a regression test.
-
 - **PO/Bill vendor field: let users search by contact name but resolve to the business.** — _added 2026-06-21_
   The PO and Bill forms pick a vendor with `BusinessPicker` (searches businesses, returns a
   `business_id`). But a user often knows the *contact* name, not the business name. Idea:
@@ -537,6 +473,10 @@ The atom-pull surfaces on estimates and invoices.
   it — exactly the people meant to approve requests / run payroll. Likely fix: a dedicated
   "Shifts"/"Time" sidebar link gated on `can_manage_time OR can_manage_financials` routing
   to a small page that hosts the queue + report, decoupled from user-admin.
+  _Refined 2026-07-19 (RM notes review):_ the Time page should show lists of
+  **shifts and bleps**; `can_manage_financials` holders get **view-only**,
+  `can_manage_time` holders get **editing plus the visible change-request
+  queue**.
   _Done when:_ a `can_manage_time`/`can_manage_financials` manager can navigate to the
   request queue and payroll report without `can_manage_config`.
 
@@ -563,77 +503,6 @@ The atom-pull surfaces on estimates and invoices.
   fixed on `feature/tasks`.
   _Done when:_ the rule is decided and UI, service, docs, and tests agree.
 
-- **BUG: a `can_manage_time` holder can't edit their own OPEN (in-progress) shift.** — _added 2026-07-13_
-  Observed in browser review: editing an in-progress shift within the 30h
-  window fails even for a time manager. NOT doc-sanctioned — §1.2a says
-  managers "edit any shift at any time" and documents no open-shift
-  restriction; the only edit constraints are end ≥ start and the enclosure
-  check. Suspects: `_assert_encloses` / the edit path mishandling a null
-  `end_time`, or the edit modal demanding one. Root-cause before fixing.
-  Deliberately not fixed on `feature/tasks`.
-  _Done when:_ an open shift is editable per the documented rules (self
-  within 30h, manager any time), with a regression test covering the
-  null-`end_time` edit.
-
-- **Shifts can overlap: an edit made one shift fully enclose another of the same user.** — _added 2026-07-13_
-  Observed in browser review: editing a shift (the enclosing one was
-  in-progress/open — possibly the same null-`end_time` blind spot as the
-  open-shift-edit bug above) produced two shifts for one user where one
-  fully contains the other. Unlike bleps — which have a DOCUMENTED per-user
-  no-overlap rule (`jobs-tasks-and-worksheets.md` §5.3 rule 2) — the shift
-  docs (`data-constraints.md` §1.2a) state no overlap constraint at all:
-  only one-OPEN-shift-per-user, blep enclosure, and multiple-shifts-per-day
-  (split shifts). So this is a **validation/doc gap**, not a contradicted
-  rule: decide whether per-user shift overlap is illegal (it double-counts
-  attendance — check the payroll report's hours math), then enforce it in
-  `ShiftService` create/edit/clock-in and the change-request approve path,
-  and document it in §1.2a. Deliberately not fixed on `feature/tasks`.
-  _Done when:_ the overlap rule is decided, enforced on every shift write
-  path, documented, and regression-tested (including the open-shift edit
-  case).
-
-- **BUG (investigate): Shift & Blep start times display ~1 hour early, unmodified.** — _added 2026-06-25_
-  Observed in browser review: a Shift's and a Blep's `start_time` came through about
-  **one hour earlier** than the actual time, with no edit made to the record. A
-  one-hour (not whole-timezone) offset smells like a **timezone / DST** handling
-  issue (naive-vs-aware datetime, or a standard-vs-daylight conversion) in
-  serialization or display — note it's currently DST. Suspects: `Shift.save()` /
-  `Blep.save()` `floor_to_minute` (`apps/core/timeutils.py`), the blep/shift
-  serializers, or the SPA's time rendering. This is a genuine bug — promote to a
-  proper issue/spec once reproduced; logged here per request so it isn't lost.
-  _Done when:_ a Shift/Blep start_time displays the exact time entered across DST,
-  with a regression test pinning the timezone behavior.
-
-- **Qty-on-stop modal: "This completes the task" shifts the submit button.** — _added 2026-07-18_
-  In `ActualQtyModal.svelte` (session mode, the blep-end quantity prompt), ticking
-  the "This completes the task" checkbox flips `settling` on, which renders the
-  "Final quantity: …" line between the checkbox and the button row — so the
-  buttons jump down (and the submit label widens, Add → "Add & complete") right
-  as the user reaches for them. Keep the buttons stationary: reserve space for
-  the final-total line (or place it above the checkbox) so toggling doesn't
-  move the click target.
-  _Done when:_ toggling the checkbox doesn't move the modal's buttons.
-
-- **Timeslip band: link the current task, not just its job.** — _added 2026-07-18_
-  The band (`CurrentBlepBand.svelte`) shows "Working on: <task name> — <job link>";
-  the job is a link but the task name is plain text. Both should navigate: the task
-  name to its task detail page (`#/jobs/{jobId}/tasks/{taskId}`) alongside the
-  existing job link.
-  _Done when:_ the band's current task name links to the task detail page.
-
-- **Blep cancel window measured from the floored minute, not the click — first-minute cancels can fail.** — _added 2026-07-16_
-  `Blep.save()` floors `start_time` to the whole minute, so the DB start can be up
-  to ~59s *earlier* than the user's click, while the `cancel_work` guard measures
-  the session against `blep_minimum_minutes` from that floored start. A user who
-  clicks Start at :59 and cancels 30s later has 31s of *experienced* session but
-  ~90s on the books — the "oops" cancel is refused inside their first minute.
-  Two fix directions: (a) allow cancellation for one extra minute past the config
-  time (grace covering the flooring gap), or (b) stick the start to the *next*
-  minute instead and handle cancels that arrive before the blep officially began.
-  _Done when:_ a cancel within the user-experienced window always succeeds — one
-  direction chosen and implemented, with a test pinning the
-  click-just-before-the-minute-boundary case.
-
 All three want the same shared live-refresh/notification mechanism (see the general-repolling project note).
 
 - **Notify the requester when an approval request is approved/denied.** — _added 2026-05-31_
@@ -646,26 +515,6 @@ All three want the same shared live-refresh/notification mechanism (see the gene
   live-refresh idea ([[project_general_repolling]]).
   _Done when:_ a requester is notified (by whatever agreed channel) of approve/deny
   outcomes for both time-change requests and expense reimbursements.
-
-- **"If the search found it, the rest of the context must be able to use it" — Add-Work picker vs the cached template list.** — _added 2026-07-18 (root cause of the template-preset bug)_
-  Repro: create a ServiceItem in another window; on a job's Tasks view, Add
-  Work → search finds it (PriceListPicker queries the API live) → pick it →
-  the Add-Task-From-Template form opens with **no template and no name**: its
-  pulldown renders from the `templates` list TasksPanel loaded at mount, which
-  predates the new item, so the preset id has no matching option. RM's
-  invariant, to make true: **anything the live search returns must be usable
-  by the rest of the Svelte context** — either the pick carries the full
-  object (the form shouldn't re-resolve it from a cached list), or picking an
-  id absent from the cached list triggers a refetch before the form opens.
-  **Plan (agreed 2026-07-18): the first shape.** `PriceListPicker` already
-  hands the full `serviceItem` object to `onChoose`; `TasksPanel` should pass
-  the object through to `WorkItemForm` instead of just the id-for-re-lookup,
-  making the invariant true by construction — no refetch timing to get right.
-  Contained to those two components + a Vitest case pinning the cross-window
-  pick. Same staleness family as the entry below; this one has a crisp repro.
-  _Done when:_ an item created in another window can be picked from Add-Work
-  search and arrives in the form with template + name intact (component test
-  pinning it).
 
 - **Stale-view error handling + live refresh after a concurrent change.** — _added 2026-06-03_
   Two users with the same job open: one creates the estimate, the other's Create-Estimate
@@ -843,7 +692,7 @@ Cross-cutting UI/API conventions and shared components.
   `.data-table`/`.page-body`), never default styling on bare
   `<form>`/`<label>`. The app's inline-edit surfaces must NOT adopt it:
   wizard line-item cards (`WizardLineItemCard`), the CO deliverables
-  drafting grid (`ChangeOrderDetailPage`), the shipment qty matrix
+  drafting grid (`CODeliverablesSection`), the shipment qty matrix
   (`JobShipmentsPage`), and the small single-purpose widgets (hold-reason,
   add-qty chip, note textareas, TagEditor, status selects, login). Those
   three grid/card surfaces are a *separate* inline-edit vocabulary to
@@ -917,6 +766,41 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ adding/editing a rate scheme happens in a modal (and the
   ServiceItemManager question is decided).
 
+- **Ctrl/Cmd-click should always open navigation in a new tab.** — _added 2026-07-19 (RM notes review)_
+  Sometimes it works, sometimes it doesn't. Root causes found: (a)
+  `svelte-spa-router`'s `use:link` click handler calls `event.preventDefault()`
+  **unconditionally** — no ctrl/meta/shift check — so every `use:link` anchor
+  swallows modified clicks and navigates in-tab, while plain `href="#/…"`
+  anchors open a new tab fine; (b) any navigation implemented as a `<button>`
+  + `push()` can never be modifier-clicked (see the "links navigate; buttons
+  act" convention). Fix shape: a modifier-aware link wrapper (or drop
+  `use:link` in favor of plain hash hrefs where no params are needed), plus an
+  audit of button-shaped navigations.
+  _Done when:_ ctrl/cmd-clicking any navigation affordance opens a new tab.
+
+- **Service/model validation raises one error at a time — accumulate instead.** — _added 2026-07-19 (RM notes review)_
+  Observed on the rate-scheme form: submitting with several invalid fields
+  surfaces only one message per attempt. DRF serializer errors arrive
+  all-fields-at-once, but `ConfigurationService`'s rate-scheme checks and
+  `RateScheme.clean()` raise sequentially — first failure wins, so the user
+  fixes one field, resubmits, and meets the next error. Sweep the service/model
+  checks (rate schemes first; note any other multi-check services while there)
+  to collect failures into a single `ValidationError({field: [...]})`.
+  Distinct from the error-*surfacing* audit below — this is about the backend
+  reporting completely, not where errors render.
+  _Done when:_ a rate-scheme submit with N invalid fields reports all N in one
+  response (and the pattern is noted for other services).
+
+- **Accounting category: delete-if-unused UI (retire-if-used already exists via Active).** — _added 2026-07-19 (RM notes review)_
+  `AccountingCategories.svelte` has an **Active** checkbox, which covers the
+  retire-when-used case in substance. There is no delete affordance for a
+  category nothing references — an unused/mistyped category lives forever.
+  Add delete (two-phase confirm per the app convention), refused server-side
+  when referenced; possibly label/present Active as the retire story while
+  in there.
+  _Done when:_ an unreferenced category can be deleted from Settings, a
+  referenced one can only be retired, and the distinction is visible.
+
 - **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
   Inconsistencies noticed in passing: some pages surface API errors via the global
   `lib/api.js` overlay, some via inline `<p><strong>Error:</strong> {message}</p>` rows
@@ -944,12 +828,6 @@ Cross-cutting UI/API conventions and shared components.
   migration, lets shared frontend code rely on `.id`; (c) full rename to `id` — large,
   risky, and leaves parent docs inconsistent unless they're renamed too.
   _Done when:_ we've picked one and either applied it or recorded the decision.
-
-- **Remove "Edit" from the job header for closed jobs.** — _added 2026-07-08_
-  The JobHeader's Edit button (opens `JobEditModal.svelte`) shows regardless of
-  status; a closed job (completed/rejected/cancelled) shouldn't offer it.
-  _Done when:_ the Edit button is hidden (or disabled with a reason) for terminal-status
-  jobs in `JobHeader.svelte`, with a component test.
 
 - **`TaskTree`'s `showStatus={false}` branch is dead code — drop it.** — _added 2026-07-09_
   `TaskTree.svelte`'s `showStatus` prop defaults to `true`, and both render

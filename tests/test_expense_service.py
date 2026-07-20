@@ -393,6 +393,22 @@ class ExpenseJobLinkTest(TestCase):
         pli.refresh_from_db()
         self.assertEqual(pli.qty_on_hand, Decimal('7.00'))  # back to 7
 
+    def test_stock_receipt_delete_after_reject_does_not_double_reverse_qoh(self):
+        # reject already reversed the receipt; deleting the rejected row must
+        # not reverse it a second time (would drive QOH negative).
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
+            code='PLY3', description='p', accounting_category=self.cat,
+            qty_on_hand=Decimal('7.00'))
+        exp = self._expense(amount=Decimal('30.00'), new_material={
+            'job_id': self.job.pk, 'inventory_item_id': pli.pk, 'quantity': 3})
+        ExpenseService.reject(expense=exp, actor=self.user)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('7.00'))
+        ExpenseService.delete(expense=exp, actor=self.user)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('7.00'))
+
     def test_frozen_when_material_on_invoice(self):
         from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
         exp = self._expense(amount=Decimal('15.00'), new_material={

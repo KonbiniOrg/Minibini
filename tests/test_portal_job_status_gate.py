@@ -46,7 +46,11 @@ class PortalJobStatusGateTest(TestCase):
         assert self.job.status == Job.STATUS_SUBMITTED
 
     def _advance_job(self, status):
-        JobService.update_status(self.job.pk, status)
+        # system_transition: a direct user edit to `approved` is now blocked on
+        # jobs with estimates (see test_job_direct_approval_guard) — this
+        # stands in for the system paths that still produce the state (e.g. a
+        # sibling estimate's acceptance approving the job).
+        JobService.update_status(self.job.pk, status, system_transition=True)
         self.job.refresh_from_db()
 
     # --- actionable: open + submitted ---

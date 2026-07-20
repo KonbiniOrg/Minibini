@@ -62,8 +62,14 @@
   }
 
   // While held the backend parks the status (cancel excepted).
+  // Approved is offered only on estimate-less jobs: once a job has any
+  // estimate, approval flows from accepting the estimate (the backend
+  // rejects a direct edit — see JobService.update_job).
   let validNextStatuses = $derived(
-    job.on_hold ? ['cancelled'] : (VALID_TRANSITIONS[job.status] || [])
+    job.on_hold
+      ? ['cancelled']
+      : (VALID_TRANSITIONS[job.status] || []).filter(
+          (s) => s !== 'approved' || !job.has_estimates)
   );
 
   // A hold can be placed from approved or in_progress only.
@@ -73,6 +79,12 @@
 
   // Held jobs hide their true status: the pill just says HOLD.
   let pillLabel = $derived(job.on_hold ? 'HOLD' : statusLabel(job.status));
+
+  // A closed job doesn't offer Edit (Duplicate stays — cloning a finished
+  // job is a normal way to start the next one).
+  let isTerminal = $derived(
+    ['completed', 'rejected', 'cancelled'].includes(job.status)
+  );
 
   let showStatusSelect = $derived(
     canManageJobs && (validNextStatuses.length > 0 || canHold || job.on_hold)
@@ -94,9 +106,15 @@
   let editOpen = $state(false);
   let dupOpen = $state(false);
 
+  // One selection = one transition: while a PATCH is in flight the pill is
+  // disabled and any stray second change event is ignored, so a double-click
+  // (or an event firing against the re-rendered option list) can't chain two
+  // transitions in a single gesture.
+  let statusBusy = $state(false);
+
   async function handleStatusChange(e) {
     const picked = e.target.value;
-    if (picked === job.status) return;
+    if (statusBusy || picked === job.status) return;
     // Trigger options aren't statuses: snap the pill back to the current
     // value immediately — the trigger's own flow (modal / API + reload)
     // decides what actually happens.
@@ -110,12 +128,15 @@
       releaseHold();
       return;
     }
+    statusBusy = true;
     try {
       await api.patch(`/api/jobs/${job.job_id}/`, { status: picked });
       if (onStatusChange) onStatusChange();
     } catch (err) {
       e.target.value = job.status;
       showError(errorMessage(err, 'Status change failed.'));
+    } finally {
+      statusBusy = false;
     }
   }
 
@@ -177,16 +198,26 @@
     </p>
     <div class="status-row">
       {#if canManageJobs}
-        <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
+        {#if !isTerminal}
+          <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
+        {/if}
         <button type="button" class="edit-link header-action" onclick={() => { dupOpen = true; }}>Duplicate…</button>
       {/if}
       {#if showStatusSelect}
         <span class="status-select-wrapper">
+          <!-- value-controlled: a native select keeps its selected INDEX when
+               the options re-render, so after a transition + reload an
+               uncontrolled pill displays the option at the clicked index —
+               which is now the NEXT transition (approved-click showed
+               "Work Complete"). Pinning value to job.status makes every
+               render show the real current status. -->
           <select
             class="status-select {job.on_hold ? 'on-hold-pill' : `status-${job.status}`}"
+            value={job.status}
             onchange={handleStatusChange}
+            disabled={statusBusy}
           >
-            <option value={job.status} selected>{pillLabel}</option>
+            <option value={job.status}>{pillLabel}</option>
             {#if job.on_hold}
               <option value="__release_hold">Release hold</option>
             {/if}

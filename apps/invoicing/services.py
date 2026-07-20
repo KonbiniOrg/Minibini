@@ -535,8 +535,9 @@ class InvoiceWizardService(BaseWizardService):
         """
         if job.status not in InvoiceWizardService.BILLABLE_JOB_STATUSES:
             raise ValidationError(
-                f'Cannot start invoice wizard for job in status "{job.status}". '
-                f'Job must be approved or completed.'
+                f'Cannot start an invoice for a job in status "{job.status}". '
+                f'The job must be approved, in progress, work complete, '
+                f'completed, or cancelled.'
             )
 
         existing = Invoice.objects.filter(
@@ -567,6 +568,13 @@ class InvoiceWizardService(BaseWizardService):
             .exclude(invoice_line_item__invoice__status=Invoice.STATUS_CANCELLED)
             .select_related('invoice_line_item', 'invoice_line_item__invoice')
         )
+        # Atoms an accepted change order struck from the agreement but
+        # crystallization left live (consumed/complete/expense-bound/…).
+        # They bill normally, but the biller must choose consciously — same
+        # doctrine as the cancelled-task badge.
+        from apps.estimates.change_order_service import ChangeOrderService
+        struck = ChangeOrderService.struck_atom_keys(job)
+
         claims = {}
         for src in claimed_sources:
             li = src.invoice_line_item
@@ -640,6 +648,10 @@ class InvoiceWizardService(BaseWizardService):
                 # Cancelled tasks stay billable (work done before the stop)
                 # but the biller must choose consciously — flag the row.
                 'task_cancelled': task.status == Task.STATUS_CANCELLED,
+                # Suppressed on cancelled tasks: one amber badge is a prompt,
+                # two is noise, and cancelled already forces the choice.
+                'struck_from_agreement': (
+                    key in struck and task.status != Task.STATUS_CANCELLED),
                 **state_info,
             })
 
@@ -661,6 +673,7 @@ class InvoiceWizardService(BaseWizardService):
                     'rate': detail['rate'],
                     'units': detail['units'],
                     'amount': detail['amount'],
+                    'struck_from_agreement': key in struck,
                     **state_info,
                 })
 
@@ -690,6 +703,7 @@ class InvoiceWizardService(BaseWizardService):
                 'rate': detail['rate'],
                 'units': detail['units'],
                 'amount': detail['amount'],
+                'struck_from_agreement': key in struck,
                 **state_info,
             })
         task_list.append({

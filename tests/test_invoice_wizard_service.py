@@ -52,8 +52,16 @@ class OpenForJobTest(TestCase):
         self.assertEqual(Invoice.objects.filter(job=self.approved_job).count(), 2)
 
     def test_refuses_draft_job(self):
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(ValidationError) as ctx:
             InvoiceWizardService.open_for_job(self.draft_job)
+        # The message uses the UI term ("start an invoice", not "wizard") and
+        # names the REAL billable set — not the old "approved or completed".
+        msg = str(ctx.exception)
+        self.assertIn('Cannot start an invoice', msg)
+        self.assertNotIn('wizard', msg)
+        for status_word in ('approved', 'in progress', 'work complete',
+                            'completed', 'cancelled'):
+            self.assertIn(status_word, msg)
 
     def test_allows_completed_job(self):
         invoice = InvoiceWizardService.open_for_job(self.completed_job)

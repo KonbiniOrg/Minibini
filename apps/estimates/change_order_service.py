@@ -88,6 +88,77 @@ class ChangeOrderService:
         return est
 
     @staticmethod
+    def struck_atom_keys(job):
+        """Keys ('task'|'material'|'fee', pk) of atoms an ACCEPTED change
+        order's remove/replace struck from the agreement. Derived, never
+        stored — the chain crystallization walked persists: accepted CO line
+        → target estimate line → its EstimateLineItemSource claim rows →
+        atom. An atom in this set that is still live in the pool is exactly
+        the "struck from agreement, work remains" case (crystallization
+        deliberately skips consumed/complete/expense-bound/PO-linked/invoiced
+        atoms — physical or billed reality is not unwound by a document).
+        Consumers: the invoice wizard pool's 'struck from agreement' badge;
+        any future SCOPE reconciliation surface (see estimates-and-prices
+        §14.11 decision record). Later accepted COs replacing the same
+        estimate line add nothing new — targets always point at estimate
+        lines, so the union over accepted COs is already chain-complete."""
+        from apps.estimates.models import EstimateLineItemSource
+        target_line_ids = ChangeOrderLineItem.objects.filter(
+            change_order__job=job,
+            change_order__status=ChangeOrder.STATUS_ACCEPTED,
+            action__in=(ChangeOrderLineItem.ACTION_REMOVE,
+                        ChangeOrderLineItem.ACTION_REPLACE),
+            target_line_item__isnull=False,
+        ).values_list('target_line_item', flat=True)
+        return set(
+            EstimateLineItemSource.objects.filter(
+                estimate_line_item__in=list(target_line_ids),
+            ).values_list('source_type', 'source_pk')
+        )
+
+    @staticmethod
+    def assert_all_bare_add_lines_have_ac(co):
+        """A bare add line (no service/inventory descriptor) crystallizes into
+        a Fee or a provisional Material at acceptance, and both need an
+        accounting category — catch it at send so acceptance, after the
+        customer has said yes, can never fail on it. The CO parallel of
+        EstimateService.assert_all_hand_lines_have_ac; shared by
+        ChangeOrder.clean()'s draft-exit guard (the invariant home) and
+        ChangeOrderEmailService._validate_send (the pre-email copy, so the
+        refusal lands before the customer is mailed a dead draft link)."""
+        from apps.estimates.models import ChangeOrderLineItem
+        missing = [
+            li.description or f'line {li.line_number}'
+            for li in ChangeOrderLineItem.objects.filter(
+                change_order=co,
+                action=ChangeOrderLineItem.ACTION_ADD,
+                service_item__isnull=True,
+                inventory_item__isnull=True,
+                accounting_category__isnull=True,
+            )
+        ]
+        if missing:
+            raise ValidationError(
+                'Cannot send: every added line item needs an '
+                'accounting category first. Missing on: '
+                + ', '.join(missing) + '.'
+            )
+
+    @staticmethod
+    def has_sendable_changes(co):
+        """The send / mark-open content gate: a CO is sendable when it carries
+        line-item changes OR a deliverables diff against its baseline. A
+        deliverables-only CO (spec/quantity correction, no price impact) is a
+        legitimate send — the customer signs off on the scope change (RM
+        decision 2026-07-20). Only a CO empty on BOTH halves is refused —
+        shared by ChangeOrderEmailService._validate_send (pre-email check)
+        and ChangeOrder.clean()'s draft-exit guard (the invariant home)."""
+        if co.changeorderlineitem_set.exists():
+            return True
+        return any(r['kind'] != 'unchanged'
+                   for r in ChangeOrderService.compose_deliverable_diff(co))
+
+    @staticmethod
     def compose_deliverable_diff(co):
         """Baseline-vs-live deliverable diff for a change order, shared by the
         customer portal payload and the CO PDF.

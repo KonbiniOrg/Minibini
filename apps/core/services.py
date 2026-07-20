@@ -1428,8 +1428,10 @@ class ShiftService:
     def clock_in(user, start_time=None):
         if ShiftService.open_shift_for(user):
             raise ValidationError("You are already clocked in.")
+        start = start_time or timezone.now()
+        ShiftService._assert_no_overlap(user, start, None)
         from apps.core.models import Shift
-        return Shift.objects.create(user=user, start_time=start_time or timezone.now())
+        return Shift.objects.create(user=user, start_time=start)
 
     @staticmethod
     def ensure_open_shift(user, start_time=None):
@@ -1482,12 +1484,41 @@ class ShiftService:
             )
 
     @staticmethod
+    def _assert_no_overlap(user, start_time, end_time, exclude_pk=None):
+        """One user can't be clocked in twice at once: shifts of the same user
+        may never overlap. Spans are half-open — a shift ending exactly when
+        the next starts (split shifts) is legal. A null end (open shift) is
+        unbounded. Inputs are minute-floored before comparing, matching what
+        Shift.save() will store."""
+        from django.db.models import Q
+        from apps.core.timeutils import floor_to_minute
+        start_time = floor_to_minute(start_time)
+        end_time = floor_to_minute(end_time)
+        qs = user.shifts.filter(
+            Q(end_time__isnull=True) | Q(end_time__gt=start_time))
+        if end_time is not None:
+            qs = qs.filter(start_time__lt=end_time)
+        if exclude_pk is not None:
+            qs = qs.exclude(pk=exclude_pk)
+        clash = qs.order_by('start_time').first()
+        if clash:
+            when = timezone.localtime(clash.start_time).strftime('%b %d, %H:%M')
+            until = (timezone.localtime(clash.end_time).strftime('%H:%M')
+                     if clash.end_time else 'now (still open)')
+            raise ValidationError(
+                f"This shift would overlap the user's shift from {when} to "
+                f"{until}; shifts may not overlap."
+            )
+
+    @staticmethod
     def update(shift, actor, start_time, end_time):
         ShiftService._assert_can_edit(shift, actor)
         if end_time is not None and start_time is not None and end_time < start_time:
             raise ValidationError("End must be after start.")
         old_span = (shift.start_time, shift.end_time or timezone.now())
         ShiftService._assert_encloses(shift.user, start_time, end_time, also_span=old_span)
+        ShiftService._assert_no_overlap(shift.user, start_time, end_time,
+                                        exclude_pk=shift.pk)
         shift.start_time = start_time
         shift.end_time = end_time
         shift.save()
@@ -1502,6 +1533,7 @@ class ShiftService:
         if end_time is not None and start_time is not None and end_time < start_time:
             raise ValidationError("End must be after start.")
         ShiftService._assert_encloses(user, start_time, end_time)
+        ShiftService._assert_no_overlap(user, start_time, end_time)
         from apps.core.models import Shift
         return Shift.objects.create(user=user, start_time=start_time, end_time=end_time)
 

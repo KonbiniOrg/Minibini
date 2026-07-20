@@ -102,11 +102,11 @@ describe('InvoicePanel invoice subnav', () => {
 });
 
 describe('InvoicePanel empty state', () => {
-  it('shows a can_manage-gated Start Invoice button when the job has no invoices', async () => {
+  it('shows a can_manage-gated Start Invoice button when a billable job has no invoices', async () => {
     user.set({ permissions: [] });
     mockApi(null, { invoices: [] });
     const { findByRole } = render(InvoicePanel, {
-      props: { job: { ...JOB, can_manage: true }, invoiceId: null },
+      props: { job: { ...JOB, status: 'approved', can_manage: true }, invoiceId: null },
     });
     expect(await findByRole('button', { name: /start invoice/i })).toBeInTheDocument();
   });
@@ -115,9 +115,21 @@ describe('InvoicePanel empty state', () => {
     user.set({ permissions: [] });
     mockApi(null, { invoices: [] });
     const { findByText, queryByRole } = render(InvoicePanel, {
-      props: { job: { ...JOB, can_manage: false }, invoiceId: null },
+      props: { job: { ...JOB, status: 'approved', can_manage: false }, invoiceId: null },
     });
     expect(await findByText('No invoices yet.')).toBeInTheDocument();
+    expect(queryByRole('button', { name: /start invoice/i })).not.toBeInTheDocument();
+  });
+
+  it('hides Start Invoice on a non-billable (draft) job and explains why', async () => {
+    // Clicking it could only ever produce a backend error — gate it instead,
+    // the way the estimate panel gates Create Change Order.
+    user.set({ permissions: [] });
+    mockApi(null, { invoices: [] });
+    const { findByText, queryByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'draft', can_manage: true }, invoiceId: null },
+    });
+    expect(await findByText(/invoicing becomes available/i)).toBeInTheDocument();
     expect(queryByRole('button', { name: /start invoice/i })).not.toBeInTheDocument();
   });
 
@@ -126,7 +138,7 @@ describe('InvoicePanel empty state', () => {
     mockApi(null, { invoices: [] });
     api.post.mockResolvedValue({ invoice_id: 42 });
     const { findByRole } = render(InvoicePanel, {
-      props: { job: { ...JOB, can_manage: true }, invoiceId: null },
+      props: { job: { ...JOB, status: 'approved', can_manage: true }, invoiceId: null },
     });
     const btn = await findByRole('button', { name: /start invoice/i });
     await fireEvent.click(btn);

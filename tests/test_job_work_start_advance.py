@@ -59,10 +59,13 @@ class WorkStartAdvancesJobTest(BaseTestCase):
         self.contact = Job.objects.first().contact
         self.user = User.objects.get(username='admin')
         now = timezone.now()
+        # OPEN shift (worker on the clock): encloses the historical bleps below
+        # (an open shift's end is unbounded) and lets start_work reuse it — a
+        # closed future-ending shift would now trip the no-overlap rule when
+        # start_work auto-clocks in.
         Shift.objects.create(
             user=self.user,
             start_time=now - timedelta(days=1),
-            end_time=now + timedelta(days=1),
         )
 
     def test_start_work_advances_approved_job(self):

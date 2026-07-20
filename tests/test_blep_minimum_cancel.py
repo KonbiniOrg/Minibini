@@ -91,6 +91,25 @@ class BlepMinimumCancelTest(BaseTestCase):
         with self.assertRaises(ValidationError):
             TaskLifecycleService.cancel_work(self.task.pk, self.user)
 
+    def test_cancel_work_allows_grace_minute_past_minimum(self):
+        # Blep.save() floors start_time to the whole minute, so the books can
+        # show up to ~59s more session than the user experienced (click Start
+        # at :59, cancel 30s later = 1 whole minute on the books with fixture
+        # minimum 1). The cancel guard grants one grace minute to cover that
+        # flooring gap: whole_minutes == minimum still cancels.
+        blep = self._open_blep(minutes_ago=1)
+        TaskLifecycleService.cancel_work(self.task.pk, self.user)
+        self.assertFalse(Blep.objects.filter(pk=blep.pk).exists())
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_PENDING)
+
+    def test_cancel_work_rejects_past_grace_minute(self):
+        # One minute past the grace (minimum 1 + grace 1 = 2 whole minutes) is
+        # a real session — Stop, not Cancel.
+        self._open_blep(minutes_ago=2)
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.cancel_work(self.task.pk, self.user)
+
 
 class CloseOpenAutocommitTest(TransactionTestCase):
     """The logout and deactivate paths call BlepService.close_user_open_bleps

@@ -68,6 +68,33 @@ class CompleteTaskMaterialGuardTest(TestCase):
         with self.assertRaises(ValidationError):
             TaskLifecycleService.complete_task(task.pk, add_qty=Decimal('0'))
 
+    def test_out_of_stock_pending_material_raises_stock_message_first(self):
+        # "Consume it by hand" is a dead end when the lot lacks stock —
+        # MaterialService.consume would refuse. The guard reports the stock
+        # shortage first so the human isn't sent down an impossible path.
+        task = self._task()
+        m = self._pending_material(task)
+        self.pli.qty_on_hand = Decimal('1.00')  # needs 2, only 1 on hand
+        self.pli.save()
+        with self.assertRaises(ValidationError) as ctx:
+            TaskLifecycleService.complete_task(task.pk, add_qty=Decimal('0'))
+        msg = str(ctx.exception)
+        self.assertIn('not in stock', msg)
+        self.assertNotIn('consume it by hand', msg)
+
+    def test_provisional_pending_material_raises_stock_message_first(self):
+        # Provisional (no lot) can't be consumed either — same stock-first rule.
+        task = self._task()
+        Material.objects.create(
+            job=self.job, task=task, description='prov',
+            quantity=Decimal('1.00'), accounting_category=self.cat,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            TaskLifecycleService.complete_task(task.pk, add_qty=Decimal('0'))
+        msg = str(ctx.exception)
+        self.assertIn('not in stock', msg)
+        self.assertNotIn('consume it by hand', msg)
+
     def test_consumed_material_does_not_block(self):
         task = self._task()
         m = self._pending_material(task)

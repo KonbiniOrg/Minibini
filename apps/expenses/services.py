@@ -335,7 +335,10 @@ class ExpenseService:
                     'was kept (marked sync-failed). Retry once QuickBooks is reachable.'
                 )
         with transaction.atomic():
-            if expense.stock_pli_id and expense.stock_qty:
+            # A rejected stock-receipt expense was already reversed at reject —
+            # deleting the row must not back the QOH off a second time.
+            if (expense.stock_pli_id and expense.stock_qty
+                    and expense.status != Expense.STATUS_REJECTED):
                 from apps.inventory.services import InventoryService
                 InventoryService.receive_stock(
                     expense.stock_pli, -expense.stock_qty,

@@ -99,3 +99,74 @@ class ChangeOrderSendAPITest(FixtureTestCase):
             f'/api/change-orders/{self.co.change_order_id}/send/',
             {'to': '', 'subject': 'CO', 'body': 'b'})
         self.assertEqual(r.status_code, 400)
+
+
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+class ChangeOrderSendEmptyGateTest(FixtureTestCase):
+    """RM decision 2026-07-20: a deliverables-only CO (no line items) IS
+    sendable — a spec/quantity correction is a legitimate thing to get signed
+    off. Send refuses only when BOTH halves are empty: no line-item changes
+    AND no deliverables diff against the baseline."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.manager = _add_can_manage_jobs(
+            User.objects.create_user(username='co_gate_mgr', password='x'))
+        Configuration.objects.update_or_create(
+            key='our_public_url', defaults={'value': 'https://shop.test'})
+        self.contact = Contact.objects.create(
+            first_name='Gate', last_name='Customer', email='gate@acme.com')
+        self.job = JobService.create_job(name='Gate Job', contact=self.contact)
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-SEND-GATE-1', version=1,
+            status=Estimate.STATUS_ACCEPTED)
+        _advance_job_to_on_hold(self.job)
+        self.co = ChangeOrderService.create(job_id=self.job.pk)
+        self.client.force_authenticate(user=self.manager)
+
+    def _send(self):
+        return self.client.post(
+            f'/api/change-orders/{self.co.change_order_id}/send/',
+            {'to': 'gate@acme.com', 'subject': 'CO', 'body': 'link'})
+
+    def test_deliverables_only_co_is_sendable(self):
+        # No line items, but a deliverable added since the baseline — a real
+        # scope change the customer should sign off on.
+        Deliverable.objects.create(
+            job=self.job, description='Corrected thing',
+            qty_ordered=Decimal('2'), units='ea', sort_order=10)
+        mail.outbox = []
+        r = self._send()
+        self.assertEqual(r.status_code, 200, getattr(r, 'data', None))
+        self.co.refresh_from_db()
+        self.assertEqual(self.co.status, ChangeOrder.STATUS_OPEN)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_bare_add_line_without_ac_refused_before_email(self):
+        # A bare add line (no service/inventory descriptor) missing its
+        # accounting category must refuse at the PRE-SEND check — the model's
+        # draft-exit guard alone fires after the email is already out,
+        # leaving the customer a dead draft link (consolidation drift, closed
+        # 2026-07-20 to match the estimate side).
+        ChangeOrderLineItem.objects.create(
+            change_order=self.co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Bare fee', qty=Decimal('1'), price=Decimal('50'),
+            line_number=1)
+        mail.outbox = []
+        r = self._send()
+        self.assertEqual(r.status_code, 400, getattr(r, 'data', None))
+        self.assertIn('accounting category', str(getattr(r, 'data', '')))
+        self.assertEqual(len(mail.outbox), 0)  # nothing went out
+        self.co.refresh_from_db()
+        self.assertEqual(self.co.status, ChangeOrder.STATUS_DRAFT)
+
+    def test_fully_empty_co_refused(self):
+        # No line items AND no deliverables diff — a genuinely empty CO
+        # still must not reach the customer.
+        r = self._send()
+        self.assertEqual(r.status_code, 400)
+        detail = str(getattr(r, 'data', ''))
+        self.assertIn('empty change order', detail)
+        self.co.refresh_from_db()
+        self.assertEqual(self.co.status, ChangeOrder.STATUS_DRAFT)

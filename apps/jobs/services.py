@@ -479,11 +479,16 @@ class JobService:
     )
 
     @staticmethod
-    def update_job(pk, **kwargs):
+    def update_job(pk, system_transition=False, **kwargs):
         """Base Job update. Applies field changes and dispatches
         status-transition side effects (loose-materials gate, earmark
         release). update_status() is a thin wrapper over this — every Job
-        status change should flow through here."""
+        status change should flow through here.
+
+        `system_transition=True` marks a status walk driven by the system
+        (estimate acceptance, duplicate-as-approved) rather than a user's
+        direct status edit; only those may enter `approved` on a job that
+        has estimates."""
         try:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
@@ -492,6 +497,19 @@ class JobService:
         for field, value in kwargs.items():
             setattr(job, field, value)
         status_changed = job.status != old_status
+
+        # Approval flows from estimate acceptance: a direct edit to approved
+        # would bypass acceptance crystallization and leave the estimate's
+        # customer-response clock ticking. Only a job with NO estimates at all
+        # (any status counts — dead ones too) can be hand-approved.
+        if (status_changed and job.status == Job.STATUS_APPROVED
+                and not system_transition
+                and job.estimate_set.exists()):
+            raise ValidationError(
+                'This job has an estimate — approve it by accepting the '
+                'estimate (there or via the customer link), not by setting '
+                'the job status directly.'
+            )
 
         # A held job is parked: no status changes except cancellation, which
         # (like release) requires any live change order to be resolved first
@@ -606,9 +624,10 @@ class JobService:
         return released
 
     @staticmethod
-    def update_status(pk, new_status):
+    def update_status(pk, new_status, system_transition=False):
         """Thin wrapper over update_job for a status-only change."""
-        return JobService.update_job(pk, status=new_status)
+        return JobService.update_job(pk, status=new_status,
+                                     system_transition=system_transition)
 
     @staticmethod
     def _assert_no_live_change_order(job):
@@ -922,14 +941,16 @@ class JobService:
             defaults={'first_name': 'System', 'is_active': False},
         )
         action_desc = f"Duplicated from {source_job.job_number}"
-        JobService.update_status(new_job.pk, Job.STATUS_SUBMITTED)
+        JobService.update_status(new_job.pk, Job.STATUS_SUBMITTED,
+                                 system_transition=True)
         record_history(
             entry_type='action', object_type='job', object_id=new_job.pk,
             user=system_user,
             changes={'status': {'old': Job.STATUS_DRAFT, 'new': Job.STATUS_SUBMITTED},
                      '_action': action_desc},
         )
-        JobService.update_status(new_job.pk, Job.STATUS_APPROVED)
+        JobService.update_status(new_job.pk, Job.STATUS_APPROVED,
+                                 system_transition=True)
         record_history(
             entry_type='action', object_type='job', object_id=new_job.pk,
             user=system_user,
@@ -1375,9 +1396,28 @@ class TaskLifecycleService:
             # consume a leftover pending material — it would sit unbillable
             # forever. Completion stops until the human decides.
             from apps.inventory.models import Material
-            pending = task.materials.filter(
-                consumption_state=Material.CONSUMPTION_STATE_PENDING)
-            if pending.exists():
+            pending = list(task.materials.filter(
+                consumption_state=Material.CONSUMPTION_STATE_PENDING))
+            if pending:
+                # Stock check FIRST: "consume it by hand" is a dead end for a
+                # material that CAN'T be consumed — provisional (no lot yet)
+                # or lot short of stock — so those report their real blocker.
+                short = []
+                for m in pending:
+                    name = m.description or f'material {m.pk}'
+                    if m.inventory_item_id is None:
+                        short.append(f'{name} (not yet priced/received)')
+                    elif (m.quantity > 0
+                          and m.inventory_item.qty_on_hand < m.quantity):
+                        short.append(
+                            f'{name} (needs {m.quantity}, '
+                            f'{m.inventory_item.qty_on_hand} on hand)')
+                if short:
+                    raise ValidationError(
+                        f'Cannot complete: material(s) not in stock — '
+                        f'{", ".join(short[:3])}. Receive the stock first, or '
+                        f'release the material if it will not be used.'
+                    )
                 names = ', '.join(
                     m.description or f'material {m.pk}' for m in pending[:3])
                 raise ValidationError(
@@ -1771,8 +1811,15 @@ class TaskLifecycleService:
         (see the spec). A 'join' on an already-active task, or a task with
         prior sessions, only loses the blep.
 
-        Only allowed while the session is under `blep_minimum_minutes`; over
-        that the caller should Stop instead (enforced defensively here).
+        Only allowed while the session is under `blep_minimum_minutes` plus one
+        grace minute; over that the caller should Stop instead (enforced
+        defensively here). The grace minute exists because Blep.save() floors
+        start_time to the whole minute, so the books can show up to ~59s more
+        session than the user experienced — without it, a Start clicked just
+        before a minute boundary can't be "oops"-cancelled inside the user's
+        real first minute. The clock-out/stop auto-cancel path deliberately
+        keeps the plain minimum (it decides cancel-vs-close bookkeeping, not a
+        human's cancel request).
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
@@ -1786,7 +1833,9 @@ class TaskLifecycleService:
                 raise ValidationError(
                     "No open time entry to cancel for this user on this task."
                 )
-            if not BlepService._under_minimum(blep, timezone.now()):
+            whole_minutes = int(
+                (timezone.now() - blep.start_time).total_seconds() // 60)
+            if whole_minutes >= blep_minimum_minutes() + 1:
                 raise ValidationError(
                     "Session is too long to cancel; stop it instead."
                 )

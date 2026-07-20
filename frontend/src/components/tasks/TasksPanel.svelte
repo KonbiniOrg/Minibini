@@ -55,6 +55,7 @@
   // Picker state
   let pickerOpen = $state(false);
   let taskPresetTemplateId = $state(null);
+  let taskPresetServiceItem = $state(null); // full picked object — see handleChoose
   let taskPresetName = $state('');
   let materialPresetPli = $state(null);
   let materialPresetDescription = $state('');
@@ -212,6 +213,10 @@
       taskModalTask = null;
       taskModalMode = 'template';
       taskPresetTemplateId = choice.serviceItem.template_id;
+      // Pass the full picked object through: the live search may know items
+      // the mount-time `templates` list doesn't (created in another window),
+      // and anything the search returns must be usable by the form.
+      taskPresetServiceItem = choice.serviceItem;
       taskPresetName = '';
       taskModalOpen = true;
     } else if (choice.type === 'freeform-task') {
@@ -220,6 +225,7 @@
       taskModalTask = null;
       taskModalMode = 'manual';
       taskPresetTemplateId = null;
+      taskPresetServiceItem = null;
       taskPresetName = choice.typed;
       taskModalOpen = true;
     } else if (choice.type === 'inventory') {
@@ -443,6 +449,7 @@
     isEdit={!!taskModalTask}
     {templates}
     presetTemplateId={taskPresetTemplateId}
+    presetServiceItem={taskPresetServiceItem}
     presetName={taskPresetName}
     onSaved={handleTaskSaved}
     onClose={() => { taskModalOpen = false; }}
