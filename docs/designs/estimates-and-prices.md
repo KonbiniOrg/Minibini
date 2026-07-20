@@ -646,7 +646,11 @@ One estimate tree per job — enforced at the service layer:
 `EstimateService.create_for_job` refuses a second non-superseded estimate
 (2026-07-04; previously only the API viewset checked). New *versions* come
 only from `revise_estimate`, which creates the revision directly and then
-supersedes the parent. The estimate's identity *is* the job's: the
+supersedes the parent. It also refuses a job past the quoting phase
+(2026-07-19): estimates start only on `draft`/`submitted` jobs — a
+hand-approved or duplicated-as-approved estimate-less job skipped the
+negotiation and doesn't get one retroactively. The estimate panel hides
+Start Estimate with a hint on such jobs. The estimate's identity *is* the job's: the
 `estimate_number` **is just the job number** (e.g. `JOB-2026-0001`), the same
 across every revision. The revision lives in the separate `version` field — it
 is **not** baked into the number. It is set by `EstimateService.create_for_job`

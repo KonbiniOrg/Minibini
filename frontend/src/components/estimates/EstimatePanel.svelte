@@ -455,10 +455,15 @@
   <p>Loading...</p>
 {:else}
   <div class="page-body">
-    {#if job?.can_manage}
+    <!-- Estimates belong to the quoting phase (draft/submitted): on a job
+         past that (hand-approved estimate-less, or later) the backend
+         refuses the create, so the button hides with a hint instead. -->
+    {#if job?.can_manage && (job?.status === 'draft' || job?.status === 'submitted')}
       <button type="button" onclick={startEstimate} disabled={startingEstimate}>
         {startingEstimate ? 'Starting…' : 'Start Estimate'}
       </button>
+    {:else if job?.can_manage}
+      <p>No estimates. This job is past the estimating phase.</p>
     {:else}
       <p>No estimates yet.</p>
     {/if}

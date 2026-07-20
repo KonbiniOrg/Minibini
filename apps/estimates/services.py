@@ -69,6 +69,17 @@ class EstimateService:
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_pk} not found')
 
+        # Estimates belong to the quoting phase. A job that advanced without
+        # one (hand-approved or duplicated-as-approved) is past that phase —
+        # a fresh estimate there would restart a negotiation the job already
+        # skipped. Revisions of an existing tree go through revise_estimate,
+        # not here.
+        if job.status not in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED):
+            raise ValidationError(
+                f'Cannot start an estimate for a job in status '
+                f'"{job.status}" — the job is past the estimating phase.'
+            )
+
         if Estimate.objects.filter(job=job).exclude(
             status=Estimate.STATUS_SUPERSEDED
         ).exists():

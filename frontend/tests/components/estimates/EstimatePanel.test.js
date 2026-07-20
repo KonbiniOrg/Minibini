@@ -167,11 +167,11 @@ describe('EstimatePanel status pill in-flight guard', () => {
 });
 
 describe('EstimatePanel empty state', () => {
-  it('shows a can_manage-gated Start Estimate button when the job has no estimates', async () => {
+  it('shows a can_manage-gated Start Estimate button when a quoting-phase job has no estimates', async () => {
     user.set({ permissions: [] });
     mockApi(null, { versions: [] });
     const { findByRole } = render(EstimatePanel, {
-      props: { job: { ...JOB, can_manage: true }, estimateId: null },
+      props: { job: { ...JOB, status: 'draft', can_manage: true }, estimateId: null },
     });
     expect(await findByRole('button', { name: /start estimate/i })).toBeInTheDocument();
   });
@@ -180,9 +180,21 @@ describe('EstimatePanel empty state', () => {
     user.set({ permissions: [] });
     mockApi(null, { versions: [] });
     const { findByText, queryByRole } = render(EstimatePanel, {
-      props: { job: { ...JOB, can_manage: false }, estimateId: null },
+      props: { job: { ...JOB, status: 'draft', can_manage: false }, estimateId: null },
     });
     expect(await findByText('No estimates yet.')).toBeInTheDocument();
+    expect(queryByRole('button', { name: /start estimate/i })).not.toBeInTheDocument();
+  });
+
+  it('hides Start Estimate on a job past the quoting phase and explains why', async () => {
+    // A hand-approved estimate-less job is past estimating — the backend
+    // refuses the create, so the button would be a guaranteed error.
+    user.set({ permissions: [] });
+    mockApi(null, { versions: [] });
+    const { findByText, queryByRole } = render(EstimatePanel, {
+      props: { job: { ...JOB, status: 'approved', can_manage: true }, estimateId: null },
+    });
+    expect(await findByText(/past the estimating phase/i)).toBeInTheDocument();
     expect(queryByRole('button', { name: /start estimate/i })).not.toBeInTheDocument();
   });
 
@@ -191,7 +203,7 @@ describe('EstimatePanel empty state', () => {
     mockApi(null, { versions: [] });
     api.post.mockResolvedValue({ estimate_id: 42 });
     const { findByRole } = render(EstimatePanel, {
-      props: { job: { ...JOB, can_manage: true }, estimateId: null },
+      props: { job: { ...JOB, status: 'draft', can_manage: true }, estimateId: null },
     });
     const btn = await findByRole('button', { name: /start estimate/i });
     await fireEvent.click(btn);
