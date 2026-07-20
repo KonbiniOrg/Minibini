@@ -290,8 +290,12 @@ class ChangeOrder(models.Model):
                         f'Cannot transition ChangeOrder from {old.status} to {self.status}.'
                     )
                 if old.status == self.STATUS_DRAFT:
-                    if not ChangeOrderLineItem.objects.filter(change_order=self).exists():
-                        raise ValidationError('Cannot send a change order with no line items.')
+                    from apps.estimates.change_order_service import ChangeOrderService
+                    if not ChangeOrderService.has_sendable_changes(self):
+                        raise ValidationError(
+                            'Cannot send an empty change order — it has no '
+                            'line-item changes and no deliverable changes.'
+                        )
                     # Mirror the estimate send guard: a bare add line (no
                     # service/inventory descriptor) crystallizes into a Fee or a
                     # provisional Material at acceptance, and both need an

@@ -280,16 +280,6 @@ The CO surface and its estimate-parallel code.
   _Remaining done when:_ either the PDF-template convention changes (allowing a
   shared header include) or the template pair drifts enough to force a rethink.
 
-- **Change order with only deliverable changes (no line items) is refused at Send.** — _added 2026-07-09_
-  A change order that changes only deliverables — no line-item edits — can't be
-  sent to the customer; the send path treats a CO with no line items as empty
-  and refuses it. But a deliverables-only amendment (e.g. quantity/spec change
-  with no price impact) is a legitimate thing to send for sign-off. Decide
-  whether this is correct (a CO must carry a line-item change to be sendable) or
-  whether deliverable-only COs should be sendable, and adjust the send gate
-  accordingly.
-  _Done when:_ the deliverables-only-CO send behaviour is decided and either the
-  refusal is kept with a recorded reason or the send gate accepts them.
 
 ## Invoicing, expenses & payments
 

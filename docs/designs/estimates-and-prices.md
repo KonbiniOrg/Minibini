@@ -1453,6 +1453,17 @@ be pinned *before* the customer can say yes, so acceptance can never
 fail on it. Living in the model's `clean()`, the guard holds on every
 send path (mark-open action, status PATCH, `send_change_order`).
 
+**Content gate (2026-07-20):** leaving `draft` requires the CO to carry
+line-item changes **or** a deliverables diff against its baseline —
+`ChangeOrderService.has_sendable_changes(co)`, shared by
+`ChangeOrder.clean()`'s draft-exit guard (the invariant home) and
+`ChangeOrderEmailService._validate_send` (the pre-email copy, so an
+unsendable CO fails before the email goes out). A **deliverables-only
+CO** (spec/quantity correction with no price impact — typically a
+fix-the-mistake amendment) is sendable; only a CO empty on both halves
+is refused ("Cannot send an empty change order…"). Previously a CO with
+no line items was refused outright.
+
 **`ChangeOrderLineItemSource`** (`db_table = 'co_li_sources'`) is the CO
 analog of `EstimateLineItemSource` (§6.2): a polymorphic join
 (`source_type ∈ {task, material, fee}` + `source_pk`, unique together)

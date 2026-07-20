@@ -88,6 +88,20 @@ class ChangeOrderService:
         return est
 
     @staticmethod
+    def has_sendable_changes(co):
+        """The send / mark-open content gate: a CO is sendable when it carries
+        line-item changes OR a deliverables diff against its baseline. A
+        deliverables-only CO (spec/quantity correction, no price impact) is a
+        legitimate send — the customer signs off on the scope change (RM
+        decision 2026-07-20). Only a CO empty on BOTH halves is refused —
+        shared by ChangeOrderEmailService._validate_send (pre-email check)
+        and ChangeOrder.clean()'s draft-exit guard (the invariant home)."""
+        if co.changeorderlineitem_set.exists():
+            return True
+        return any(r['kind'] != 'unchanged'
+                   for r in ChangeOrderService.compose_deliverable_diff(co))
+
+    @staticmethod
     def compose_deliverable_diff(co):
         """Baseline-vs-live deliverable diff for a change order, shared by the
         customer portal payload and the CO PDF.
