@@ -1450,8 +1450,14 @@ any bare `add` line (no `service_item`, no `inventory_item`) lacks an
 `assert_all_hand_lines_have_ac` (§5.1/§15). Such a line crystallizes
 into a Fee or Material at acceptance, and the category must
 be pinned *before* the customer can say yes, so acceptance can never
-fail on it. Living in the model's `clean()`, the guard holds on every
-send path (mark-open action, status PATCH, `send_change_order`).
+fail on it. The check is `ChangeOrderService.assert_all_bare_add_lines_have_ac`
+(2026-07-20), shared by the model's `clean()` — so the guard holds on every
+send path (mark-open action, status PATCH, `send_change_order`) — and by
+`ChangeOrderEmailService._validate_send` as a pre-email copy, so a refusal
+lands *before* the customer is mailed a link (previously the clean()-only
+placement meant the email went out and then the draft→open transition
+failed, leaving the customer a dead draft link — the estimate side never
+had that gap).
 
 **Content gate (2026-07-20):** leaving `draft` requires the CO to carry
 line-item changes **or** a deliverables diff against its baseline —
