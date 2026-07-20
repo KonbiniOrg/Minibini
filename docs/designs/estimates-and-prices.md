@@ -1796,6 +1796,26 @@ transiently empties the live work set and trips the auto-advance to
   - A document-only target (adjustment line, or an atom already
     retired) is a no-op — the delta stays document-only, matching
     `compose_agreement`.
+
+  **Surfacing the skips (decided 2026-07-20):** the skip itself stays
+  silent at acceptance, but the invoice wizard pool badges every
+  struck-but-still-live atom **"struck from agreement"** (amber, like
+  the cancelled-task badge; suppressed when the task is also cancelled)
+  so the biller decides consciously at the money moment. The set is
+  derived, never stored — `ChangeOrderService.struck_atom_keys(job)`
+  walks the persisted chain (accepted CO remove/replace line → target
+  estimate line → claim rows → atom); "still live in the pool" is the
+  whole skip test, so the skip-reason logic is not replicated.
+  **Considered and declined for now:** keeping the job held after CO
+  acceptance (making release-hold the worker's reconciliation act,
+  parallel to release-to-floor) plus a SCOPE reconciliation banner. RM
+  2026-07-20: don't change a working system — acceptance keeps
+  auto-clearing the hold, no second hold layer, no job-status changes.
+  Revisit if the badge alone proves insufficient in practice; the
+  banner would reuse `struck_atom_keys` (built shared-ready). Note the
+  inherent limit either way: work added outside the estimate has no
+  claim chain, so no mechanism can identify it — that reconciliation is
+  always the human's.
   When an atom is hard-deleted, source rows pointing at it are purged so
   no lens dangles; release never purges.
 - **replace** — crystallize the replacement **first**, then retire the
