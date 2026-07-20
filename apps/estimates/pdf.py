@@ -2,6 +2,20 @@ from django.template.loader import render_to_string
 from weasyprint import HTML
 
 
+def _pdf_party_context(job):
+    """business_name / contact_name for a document PDF's header block,
+    resolved from the job's contact. Shared by the estimate and change-order
+    generators."""
+    contact = job.contact if job else None
+    business_name = ''
+    contact_name = ''
+    if contact:
+        contact_name = f'{contact.first_name} {contact.last_name}'.strip()
+        if contact.business:
+            business_name = contact.business.business_name
+    return {'business_name': business_name, 'contact_name': contact_name}
+
+
 def generate_estimate_pdf(estimate):
     """Generate a PDF for an estimate. Returns bytes."""
     line_items = estimate.estimatelineitem_set.select_related(
@@ -11,19 +25,11 @@ def generate_estimate_pdf(estimate):
     total = sum(item.total_amount for item in line_items)
 
     job = estimate.job
-    contact = job.contact if job else None
-    business_name = ''
-    contact_name = ''
-    if contact:
-        contact_name = f'{contact.first_name} {contact.last_name}'.strip()
-        if contact.business:
-            business_name = contact.business.business_name
 
     html_string = render_to_string('estimates/estimate_pdf.html', {
         'estimate': estimate,
         'job': job,
-        'business_name': business_name,
-        'contact_name': contact_name,
+        **_pdf_party_context(job),
         'line_items': line_items,
         'total': total,
     })
@@ -44,19 +50,11 @@ def generate_change_order_pdf(co):
     deliverable_rows = ChangeOrderService.compose_deliverable_diff(co)
 
     job = co.job
-    contact = job.contact if job else None
-    business_name = ''
-    contact_name = ''
-    if contact:
-        contact_name = f'{contact.first_name} {contact.last_name}'.strip()
-        if contact.business:
-            business_name = contact.business.business_name
 
     html_string = render_to_string('estimates/change_order_pdf.html', {
         'co': co,
         'job': job,
-        'business_name': business_name,
-        'contact_name': contact_name,
+        **_pdf_party_context(job),
         'estimate_number': co.estimate.estimate_number if co.estimate_id else '',
         'deliverable_rows': deliverable_rows,
         'line_rows': diff['line_rows'],
