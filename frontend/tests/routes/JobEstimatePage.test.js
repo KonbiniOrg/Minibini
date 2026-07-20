@@ -100,9 +100,14 @@ describe('JobEstimatePage document resolution', () => {
   });
 
   it('shows the gated empty state when the job has no estimates', async () => {
+    // The fixture job is in_progress — past the quoting phase — so the
+    // empty state explains instead of offering Start Estimate (which the
+    // backend would refuse; the draft-job button case is covered in the
+    // EstimatePanel tests).
     mockApi({ estimates: [] });
-    const { findByRole } = render(JobEstimatePage, { props: { params: { jobId: '3' } } });
-    expect(await findByRole('button', { name: /start estimate/i })).toBeInTheDocument();
+    const { findByText, queryByRole } = render(JobEstimatePage, { props: { params: { jobId: '3' } } });
+    expect(await findByText(/past the estimating phase/i)).toBeInTheDocument();
+    expect(queryByRole('button', { name: /start estimate/i })).toBeNull();
   });
 });
 

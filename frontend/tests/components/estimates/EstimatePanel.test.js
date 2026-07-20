@@ -78,9 +78,9 @@ describe('EstimatePanel version subnav', () => {
     const links = Array.from(container.querySelectorAll('.doc-subnav a'));
     expect(links).toHaveLength(2);
     expect(links[0]).toHaveAttribute('href', '#/jobs/9/estimate/7');
-    expect(links[0]).toHaveTextContent('v1');
+    expect(links[0]).toHaveTextContent('EST-7-1');
     expect(links[1]).toHaveAttribute('href', '#/jobs/9/estimate/8');
-    expect(links[1]).toHaveTextContent('v2');
+    expect(links[1]).toHaveTextContent('EST-7-2');
     expect(links[1]).toHaveClass('active');
     expect(links[0]).not.toHaveClass('active');
   });
