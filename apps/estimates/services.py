@@ -566,48 +566,77 @@ class EstimateService:
         return line
 
 
-class EstimateEmailService:
-    """Sends an Estimate as a PDF attachment via email. Transitions the
-    Estimate to STATUS_OPEN on send success."""
+class DocumentEmailService:
+    """Shared customer-send + shop-notification machinery for the two
+    portal documents (Estimate, ChangeOrder).
 
-    DEFAULT_SUBJECT = 'Estimate {document_number}'
-    DEFAULT_BODY = (
-        'Hi {contact_fname},\n\n'
-        'Please find attached our estimate {document_number} for {job_name}. '
-        'You can review it and accept or decline it online here:\n'
-        '{object_url}\n\n'
-        'Let us know if you have any questions.\n\n'
-        'Thanks,\n{my_user_name}'
-    )
+    Subclasses declare the document-specific surface as class attributes
+    (default subject/body templates, Configuration keys, labels, the PDF
+    filename prefix, the model) plus four hooks (`_document_number`,
+    `_extra_template_values`, `_generate_pdf`, `_validate_send`). All
+    outbound text is produced here from those attributes and is
+    byte-identical to what the pre-consolidation sibling services sent.
+    """
 
-    @staticmethod
-    def get_email_defaults(estimate):
-        """Pre-populated send-form fields for an Estimate: to, subject,
-        body, attachments_preview."""
+    # --- subclass surface ---
+    MODEL = None                 # model class with STATUS_DRAFT/STATUS_OPEN
+    DEFAULT_SUBJECT = ''
+    DEFAULT_BODY = ''
+    SUBJECT_CONFIG_KEY = ''      # Configuration key overriding DEFAULT_SUBJECT
+    BODY_CONFIG_KEY = ''         # Configuration key overriding DEFAULT_BODY
+    DOC_LABEL = ''               # sentence-position label, e.g. 'Change order'
+    LOG_LABEL = ''               # logger label, e.g. 'change order'
+    PDF_FILENAME_PREFIX = ''     # e.g. 'ChangeOrder' -> ChangeOrder-<number>.pdf
+
+    @classmethod
+    def _document_number(cls, doc):
+        """The document's human-facing number (estimate_number / …)."""
+        raise NotImplementedError
+
+    @classmethod
+    def _extra_template_values(cls, doc):
+        """Type-specific template values (document-number aliases, object_url)."""
+        raise NotImplementedError
+
+    @classmethod
+    def _generate_pdf(cls, doc):
+        """Render and return the attached PDF bytes."""
+        raise NotImplementedError
+
+    @classmethod
+    def _validate_send(cls, doc):
+        """Raise ValidationError when the document isn't sendable (beyond the
+        shared recipient check)."""
+        raise NotImplementedError
+
+    # --- shared machinery ---
+
+    @classmethod
+    def get_email_defaults(cls, doc):
+        """Pre-populated send-form fields: to, subject, body,
+        attachments_preview (the auto-attached document PDF)."""
         from apps.core.models import Configuration
         from apps.core.email_templates import render_email_template
 
-        subject_template = EstimateEmailService.DEFAULT_SUBJECT
-        body_template = EstimateEmailService.DEFAULT_BODY
+        subject_template = cls.DEFAULT_SUBJECT
+        body_template = cls.DEFAULT_BODY
         try:
             subject_template = Configuration.objects.get(
-                key='estimate_email_subject_template'
-            ).value
+                key=cls.SUBJECT_CONFIG_KEY).value
         except Configuration.DoesNotExist:
             pass
         try:
             body_template = Configuration.objects.get(
-                key='estimate_email_body_template'
-            ).value
+                key=cls.BODY_CONFIG_KEY).value
         except Configuration.DoesNotExist:
             pass
-        job = estimate.job
+
+        job = doc.job
         contact = job.contact if job else None
         contact_business = ''
         if contact and contact.business:
             contact_business = contact.business.business_name
 
-        from apps.core.email_templates import build_object_url
         values = {
             'contact_fname': contact.first_name if contact else '',
             'contact_lname': contact.last_name if contact else '',
@@ -615,19 +644,16 @@ class EstimateEmailService:
             'my_user_name': '',
             'job_number': job.job_number if job else '',
             'job_name': job.name if job else '',
-            'document_number': estimate.estimate_number,
-            'estimate_number': estimate.estimate_number,
-            'object_url': build_object_url('estimate', estimate.estimate_id),
+            'document_number': cls._document_number(doc),
         }
+        values.update(cls._extra_template_values(doc))
 
         subject = render_email_template(subject_template, **values)
         body = render_email_template(body_template, **values)
 
-        to = ''
-        if contact and contact.email:
-            to = contact.email
+        to = contact.email if (contact and contact.email) else ''
 
-        pdf_filename = f'Estimate-{estimate.estimate_number}.pdf'
+        pdf_filename = f'{cls.PDF_FILENAME_PREFIX}-{cls._document_number(doc)}.pdf'
         # We don't run the PDF render here — just preview metadata. The send
         # path renders the actual bytes.
         attachments_preview = [
@@ -639,11 +665,12 @@ class EstimateEmailService:
             'attachments_preview': attachments_preview,
         }
 
-    @staticmethod
-    def notify_shop_of_decision(estimate, decision, reason=''):
+    @classmethod
+    def notify_shop_of_decision(cls, doc, decision, reason=''):
         """Best-effort email to the shop's business_email when a customer
-        accepts/rejects via the portal. Never raises — the customer's action
-        has already committed and must not be rolled back by a send failure.
+        accepts/rejects/requests changes via the portal. Never raises — the
+        customer's action has already committed and must not be rolled back by
+        a send failure.
         """
         from django.conf import settings
         from django.core.mail import send_mail
@@ -656,9 +683,10 @@ class EstimateEmailService:
         if not addr:
             return
 
-        job_name = estimate.job.name if estimate.job_id else ''
-        subject = f'Estimate {estimate.estimate_number} {decision} by customer'
-        body = (f'Estimate {estimate.estimate_number} for job "{job_name}" '
+        number = cls._document_number(doc)
+        job_name = doc.job.name if doc.job_id else ''
+        subject = f'{cls.DOC_LABEL} {number} {decision} by customer'
+        body = (f'{cls.DOC_LABEL} {number} for job "{job_name}" '
                 f'was {decision} by the customer.')
         if reason:
             body += f'\n\nReason given:\n{reason}'
@@ -666,10 +694,97 @@ class EstimateEmailService:
             send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [addr])
         except Exception:
             logger.exception(
-                'Shop notification failed for estimate %s', estimate.pk)
+                'Shop notification failed for %s %s', cls.LOG_LABEL, doc.pk)
 
-    @staticmethod
-    def send_estimate(estimate, *, to, subject, body, cc=None, bcc=None,
+    @classmethod
+    def _send_document(cls, doc, *, to, subject, body, cc=None, bcc=None,
+                       extra_attachments=None):
+        """Shared send skeleton: validate, render the PDF, persist an outbound
+        EmailRecord via send_tracked, transition draft → open on success.
+
+        Raises ValidationError when ``to`` is empty or `_validate_send`
+        refuses. Re-raises SMTP errors after the EmailRecord is persisted
+        (with last_send_error set) so the caller can return a useful error.
+        """
+        from apps.core.services import OutboundEmailService
+
+        if not to:
+            raise ValidationError('Recipient email address is required.')
+
+        cls._validate_send(doc)
+
+        pdf_bytes = cls._generate_pdf(doc)
+        pdf_filename = f'{cls.PDF_FILENAME_PREFIX}-{cls._document_number(doc)}.pdf'
+
+        attachments = [(pdf_filename, pdf_bytes, 'application/pdf')]
+        if extra_attachments:
+            attachments.extend(extra_attachments)
+
+        # send_tracked persists the outbound EmailRecord before SMTP; on
+        # SMTP failure the error is recorded and the exception re-raised
+        # so the caller can return a useful error to the user.
+        record = OutboundEmailService.send_tracked(
+            to=to, subject=subject, body=body,
+            cc=cc, bcc=bcc, attachments=attachments,
+            associate_with={'job': doc.job},
+        )
+
+        # Send succeeded — transition draft → open.
+        if doc.status == cls.MODEL.STATUS_DRAFT:
+            doc.status = cls.MODEL.STATUS_OPEN
+            doc.save()
+
+        return record
+
+
+class EstimateEmailService(DocumentEmailService):
+    """Sends an Estimate as a PDF attachment via email. Transitions the
+    Estimate to STATUS_OPEN on send success."""
+
+    MODEL = Estimate
+    DEFAULT_SUBJECT = 'Estimate {document_number}'
+    DEFAULT_BODY = (
+        'Hi {contact_fname},\n\n'
+        'Please find attached our estimate {document_number} for {job_name}. '
+        'You can review it and accept or decline it online here:\n'
+        '{object_url}\n\n'
+        'Let us know if you have any questions.\n\n'
+        'Thanks,\n{my_user_name}'
+    )
+    SUBJECT_CONFIG_KEY = 'estimate_email_subject_template'
+    BODY_CONFIG_KEY = 'estimate_email_body_template'
+    DOC_LABEL = 'Estimate'
+    LOG_LABEL = 'estimate'
+    PDF_FILENAME_PREFIX = 'Estimate'
+
+    @classmethod
+    def _document_number(cls, estimate):
+        return estimate.estimate_number
+
+    @classmethod
+    def _extra_template_values(cls, estimate):
+        from apps.core.email_templates import build_object_url
+        return {
+            'estimate_number': estimate.estimate_number,
+            'object_url': build_object_url('estimate', estimate.estimate_id),
+        }
+
+    @classmethod
+    def _generate_pdf(cls, estimate):
+        from apps.estimates.pdf import generate_estimate_pdf
+        return generate_estimate_pdf(estimate)
+
+    @classmethod
+    def _validate_send(cls, estimate):
+        if not estimate.estimatelineitem_set.exists():
+            raise ValidationError(
+                'Cannot send an estimate with no line items.'
+            )
+        # Every hand-line must have an accounting category before it goes out.
+        EstimateService.assert_all_hand_lines_have_ac(estimate)
+
+    @classmethod
+    def send_estimate(cls, estimate, *, to, subject, body, cc=None, bcc=None,
                       extra_attachments=None):
         """Send an Estimate. Generates the PDF, persists an outbound
         EmailRecord via send_tracked, transitions draft → open on success.
@@ -690,53 +805,21 @@ class EstimateEmailService:
             Whatever SMTP raises (after persistence — the outbound row will
             still exist with last_send_error populated).
         """
-        from apps.core.services import OutboundEmailService
-        from apps.estimates.pdf import generate_estimate_pdf
-
-        if not to:
-            raise ValidationError('Recipient email address is required.')
-
-        if not estimate.estimatelineitem_set.exists():
-            raise ValidationError(
-                'Cannot send an estimate with no line items.'
-            )
-
-        # Every hand-line must have an accounting category before it goes out.
-        EstimateService.assert_all_hand_lines_have_ac(estimate)
-
-        pdf_bytes = generate_estimate_pdf(estimate)
-        pdf_filename = f'Estimate-{estimate.estimate_number}.pdf'
-
-        attachments = [(pdf_filename, pdf_bytes, 'application/pdf')]
-        if extra_attachments:
-            attachments.extend(extra_attachments)
-
-        # send_tracked persists the outbound EmailRecord before SMTP; on
-        # SMTP failure the error is recorded and the exception re-raised
-        # so the caller can return a useful error to the user.
-        record = OutboundEmailService.send_tracked(
-            to=to, subject=subject, body=body,
-            cc=cc, bcc=bcc, attachments=attachments,
-            associate_with={'job': estimate.job},
-        )
-
-        # Send succeeded — transition draft → open.
-        if estimate.status == Estimate.STATUS_DRAFT:
-            estimate.status = Estimate.STATUS_OPEN
-            estimate.save()
-
-        return record
+        return cls._send_document(
+            estimate, to=to, subject=subject, body=body, cc=cc, bcc=bcc,
+            extra_attachments=extra_attachments)
 
 
-class ChangeOrderEmailService:
+class ChangeOrderEmailService(DocumentEmailService):
     """Customer send + shop-notification email for ChangeOrders.
 
-    Mirrors EstimateEmailService: the customer email carries the portal link
-    plus a generated change-order PDF (the diff). Transitions the CO
-    draft -> open on send success (no job-status side effect, unlike an
+    The CO sibling of EstimateEmailService: the customer email carries the
+    portal link plus a generated change-order PDF (the diff). Transitions the
+    CO draft -> open on send success (no job-status side effect, unlike an
     estimate send).
     """
 
+    MODEL = ChangeOrder
     DEFAULT_SUBJECT = 'Change order {document_number}'
     DEFAULT_BODY = (
         'Hi {contact_fname},\n\n'
@@ -746,92 +829,39 @@ class ChangeOrderEmailService:
         'Let us know if you have any questions.\n\n'
         'Thanks,\n{my_user_name}'
     )
+    SUBJECT_CONFIG_KEY = 'change_order_email_subject_template'
+    BODY_CONFIG_KEY = 'change_order_email_body_template'
+    DOC_LABEL = 'Change order'
+    LOG_LABEL = 'change order'
+    PDF_FILENAME_PREFIX = 'ChangeOrder'
 
-    @staticmethod
-    def get_email_defaults(co):
-        """Pre-populated send-form fields for a ChangeOrder: to, subject,
-        body, attachments_preview (the auto-attached change-order PDF)."""
-        from apps.core.models import Configuration
-        from apps.core.email_templates import (
-            build_object_url, render_email_template,
-        )
+    @classmethod
+    def _document_number(cls, co):
+        return co.change_order_number
 
-        subject_template = ChangeOrderEmailService.DEFAULT_SUBJECT
-        body_template = ChangeOrderEmailService.DEFAULT_BODY
-        try:
-            subject_template = Configuration.objects.get(
-                key='change_order_email_subject_template').value
-        except Configuration.DoesNotExist:
-            pass
-        try:
-            body_template = Configuration.objects.get(
-                key='change_order_email_body_template').value
-        except Configuration.DoesNotExist:
-            pass
-
-        job = co.job
-        contact = job.contact if job else None
-        contact_business = ''
-        if contact and contact.business:
-            contact_business = contact.business.business_name
-
-        values = {
-            'contact_fname': contact.first_name if contact else '',
-            'contact_lname': contact.last_name if contact else '',
-            'contact_business': contact_business,
-            'my_user_name': '',
-            'job_number': job.job_number if job else '',
-            'job_name': job.name if job else '',
-            'document_number': co.change_order_number,
+    @classmethod
+    def _extra_template_values(cls, co):
+        from apps.core.email_templates import build_object_url
+        return {
             'change_order_number': co.change_order_number,
             'estimate_number': co.estimate.estimate_number if co.estimate_id else '',
             'object_url': build_object_url('change_order', co.change_order_id),
         }
-        subject = render_email_template(subject_template, **values)
-        body = render_email_template(body_template, **values)
 
-        to = contact.email if (contact and contact.email) else ''
-        pdf_filename = f'ChangeOrder-{co.change_order_number}.pdf'
-        attachments_preview = [
-            {'filename': pdf_filename, 'content_type': 'application/pdf', 'size': 0},
-        ]
-        return {
-            'to': to, 'subject': subject, 'body': body,
-            'attachments_preview': attachments_preview,
-        }
+    @classmethod
+    def _generate_pdf(cls, co):
+        from apps.estimates.pdf import generate_change_order_pdf
+        return generate_change_order_pdf(co)
 
-    @staticmethod
-    def notify_shop_of_decision(co, decision, reason=''):
-        """Best-effort email to the shop's business_email when a customer
-        accepts/rejects/requests changes via the portal. Never raises — the
-        customer's action has already committed and must not be rolled back by
-        a send failure.
-        """
-        from django.conf import settings
-        from django.core.mail import send_mail
-        from apps.core.models import Configuration
+    @classmethod
+    def _validate_send(cls, co):
+        if not co.changeorderlineitem_set.exists():
+            raise ValidationError(
+                'Cannot send a change order with no line items.'
+            )
 
-        try:
-            addr = Configuration.objects.get(key='business_email').value.strip()
-        except Configuration.DoesNotExist:
-            addr = ''
-        if not addr:
-            return
-
-        job_name = co.job.name if co.job_id else ''
-        subject = f'Change order {co.change_order_number} {decision} by customer'
-        body = (f'Change order {co.change_order_number} for job "{job_name}" '
-                f'was {decision} by the customer.')
-        if reason:
-            body += f'\n\nReason given:\n{reason}'
-        try:
-            send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [addr])
-        except Exception:
-            logger.exception(
-                'Shop notification failed for change order %s', co.pk)
-
-    @staticmethod
-    def send_change_order(co, *, to, subject, body, cc=None, bcc=None,
+    @classmethod
+    def send_change_order(cls, co, *, to, subject, body, cc=None, bcc=None,
                           extra_attachments=None):
         """Send a ChangeOrder to the customer (portal link + generated CO PDF).
         Persists an outbound EmailRecord via send_tracked and transitions
@@ -840,35 +870,9 @@ class ChangeOrderEmailService:
         Raises ValidationError when ``to`` is empty. Re-raises SMTP errors
         after the EmailRecord is persisted (with last_send_error set).
         """
-        from apps.core.services import OutboundEmailService
-        from apps.estimates.pdf import generate_change_order_pdf
-
-        if not to:
-            raise ValidationError('Recipient email address is required.')
-
-        if not co.changeorderlineitem_set.exists():
-            raise ValidationError(
-                'Cannot send a change order with no line items.'
-            )
-
-        pdf_bytes = generate_change_order_pdf(co)
-        pdf_filename = f'ChangeOrder-{co.change_order_number}.pdf'
-        attachments = [(pdf_filename, pdf_bytes, 'application/pdf')]
-        if extra_attachments:
-            attachments.extend(extra_attachments)
-
-        record = OutboundEmailService.send_tracked(
-            to=to, subject=subject, body=body,
-            cc=cc, bcc=bcc, attachments=attachments,
-            associate_with={'job': co.job},
-        )
-
-        # Send succeeded — transition draft -> open (no job-status side effect).
-        if co.status == ChangeOrder.STATUS_DRAFT:
-            co.status = ChangeOrder.STATUS_OPEN
-            co.save()
-
-        return record
+        return cls._send_document(
+            co, to=to, subject=subject, body=body, cc=cc, bcc=bcc,
+            extra_attachments=extra_attachments)
 
 
 class WorkTemplateService:
