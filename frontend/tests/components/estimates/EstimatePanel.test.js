@@ -112,12 +112,23 @@ describe('EstimatePanel toolbar actions', () => {
     expect(await findByRole('button', { name: /revise estimate/i })).toBeInTheDocument();
   });
 
-  it('offers Create Change Order on an accepted estimate and posts it for the job', async () => {
+  it('hides Create Change Order while the job is not held (API would refuse)', async () => {
+    // CO drafting happens inside a hold episode; the button only shows when
+    // the click can actually succeed.
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'accepted' });
+    mockApi(est, { versions: [est] });
+    const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Estimate: EST-7');
+    expect(queryByRole('button', { name: /create change order/i })).toBeNull();
+  });
+
+  it('offers Create Change Order on an accepted estimate (held job) and posts it', async () => {
     user.set({ permissions: [] });
     const est = makeEstimate({ estimate_id: 7, status: 'accepted' });
     mockApi(est, { versions: [est] });
     api.post.mockResolvedValue({ change_order_id: 42 });
-    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const { findByRole } = render(EstimatePanel, { props: { job: { ...JOB, on_hold: true }, estimateId: 7 } });
     const btn = await findByRole('button', { name: /create change order/i });
     await fireEvent.click(btn);
     expect(api.post).toHaveBeenCalledWith('/api/change-orders/', { job: 9 });
@@ -141,7 +152,7 @@ describe('EstimatePanel toolbar actions', () => {
       versions: [est],
       changeOrders: [{ change_order_id: 3, change_order_number: 'CO-3', status: 'draft' }],
     });
-    const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const { findByText, queryByRole } = render(EstimatePanel, { props: { job: { ...JOB, on_hold: true }, estimateId: 7 } });
     await findByText('Estimate: EST-7');
     expect(queryByRole('button', { name: /create change order/i })).toBeNull();
   });
