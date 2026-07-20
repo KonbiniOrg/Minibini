@@ -15,7 +15,9 @@ import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import { overlayMessage, clearMessage } from '@/stores/messages.js';
-import ChangeOrderDetailPage from '@/routes/change-orders/ChangeOrderDetailPage.svelte';
+import ChangeOrderPanel from '@/components/changeorders/ChangeOrderPanel.svelte';
+
+const JOB = { job_id: 9, job_number: 'JOB-9', name: 'Job', contact: null };
 
 function makeCO(overrides = {}) {
   return {
@@ -62,13 +64,13 @@ beforeEach(() => {
   clearMessage();
 });
 
-describe('ChangeOrderDetailPage per-object can_manage gating', () => {
+describe('ChangeOrderPanel per-object can_manage gating', () => {
   it('shows edit affordances for a PM (can_manage true) without the global atom', async () => {
     user.set({ permissions: [] }); // no can_manage_jobs atom
     mockApi(makeCO({ can_manage: true, status: 'draft' }));
 
-    const { findByText } = render(ChangeOrderDetailPage, {
-      props: { params: { id: '3' } },
+    const { findByText } = render(ChangeOrderPanel, {
+      props: { job: JOB, coId: '3' },
     });
 
     expect(await findByText('+ New line')).toBeInTheDocument();
@@ -79,8 +81,8 @@ describe('ChangeOrderDetailPage per-object can_manage gating', () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeCO({ can_manage: false, status: 'draft' }));
 
-    const { findByText, queryByText } = render(ChangeOrderDetailPage, {
-      props: { params: { id: '3' } },
+    const { findByText, queryByText } = render(ChangeOrderPanel, {
+      props: { job: JOB, coId: '3' },
     });
 
     // page renders (Line items heading) once load completes
@@ -90,13 +92,13 @@ describe('ChangeOrderDetailPage per-object can_manage gating', () => {
   });
 });
 
-describe('ChangeOrderDetailPage add-line flow', () => {
+describe('ChangeOrderPanel add-line flow', () => {
   it('"+ New line" opens the unified picker (service/inventory/freeform), not the CO modal', async () => {
     user.set({ permissions: [] });
     mockApi(makeCO({ can_manage: true, status: 'draft' }));
 
-    const { findByText, queryByText } = render(ChangeOrderDetailPage, {
-      props: { params: { id: '3' } },
+    const { findByText, queryByText } = render(ChangeOrderPanel, {
+      props: { job: JOB, coId: '3' },
     });
 
     await fireEvent.click(await findByText('+ New line'));
@@ -107,13 +109,13 @@ describe('ChangeOrderDetailPage add-line flow', () => {
   });
 });
 
-describe('ChangeOrderDetailPage error display', () => {
+describe('ChangeOrderPanel error display', () => {
   it('shows a field error (not an alert) when adding a deliverable without a description', async () => {
     user.set({ permissions: [] });
     mockApi(makeCO({ can_manage: true, status: 'draft' }));
 
-    const { findByText, getByRole } = render(ChangeOrderDetailPage, {
-      props: { params: { id: '3' } },
+    const { findByText, getByRole } = render(ChangeOrderPanel, {
+      props: { job: JOB, coId: '3' },
     });
 
     await fireEvent.click(await findByText('+ New deliverable'));
@@ -130,8 +132,8 @@ describe('ChangeOrderDetailPage error display', () => {
       status: 400, data: { qty_ordered: ['A valid number is required.'] },
     }));
 
-    const { findByText, getByRole, getByPlaceholderText } = render(ChangeOrderDetailPage, {
-      props: { params: { id: '3' } },
+    const { findByText, getByRole, getByPlaceholderText } = render(ChangeOrderPanel, {
+      props: { job: JOB, coId: '3' },
     });
 
     await fireEvent.click(await findByText('+ New deliverable'));
@@ -148,8 +150,8 @@ describe('ChangeOrderDetailPage error display', () => {
       status: 400, data: { detail: 'A draft change order already exists.' },
     }));
 
-    const { findByRole } = render(ChangeOrderDetailPage, {
-      props: { params: { id: '3' } },
+    const { findByRole } = render(ChangeOrderPanel, {
+      props: { job: JOB, coId: '3' },
     });
 
     await fireEvent.click(await findByRole('button', { name: 'Start new change order' }));
@@ -159,7 +161,7 @@ describe('ChangeOrderDetailPage error display', () => {
   });
 });
 
-describe('ChangeOrderDetailPage in the job workspace', () => {
+describe('ChangeOrderPanel in the job workspace', () => {
   it('shows the version subnav with this CO active and job-scoped links', async () => {
     user.set({ permissions: [] });
     const co = makeCO({ change_order_id: 3, change_order_number: 'CO-3', status: 'open', job: 9 });
@@ -176,8 +178,8 @@ describe('ChangeOrderDetailPage in the job workspace', () => {
     });
 
     // Rendered under the job-scoped route params.
-    const { container } = render(ChangeOrderDetailPage, {
-      props: { params: { jobId: '9', coId: '3' } },
+    const { container } = render(ChangeOrderPanel, {
+      props: { job: JOB, coId: '3' },
     });
 
     let coLink;
@@ -191,7 +193,7 @@ describe('ChangeOrderDetailPage in the job workspace', () => {
     expect(estLink.getAttribute('href')).toBe('#/jobs/9/estimate/7');
     expect(coLink.getAttribute('href')).toBe('#/jobs/9/change-order/3');
     expect(coLink).toHaveClass('active');
-    // The hidable job context band is present too.
-    expect(container.querySelector('.context-band')).not.toBeNull();
+    // (The job context band belongs to the host page's JobShell now — see
+    // tests/routes/JobChangeOrderPage.test.js.)
   });
 });

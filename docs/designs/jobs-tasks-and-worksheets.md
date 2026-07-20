@@ -1431,16 +1431,21 @@ navigation doesn't reload the job either). The panel's own subnav
 (`DocSubnav.svelte` — a strip of version/invoice-number pills, each
 with a status badge) updates the URL the same way as the user flips
 documents, so any document is a shareable, bookmarkable, back-button-safe
-link — including superseded estimates and change orders (change orders
-appear in the estimate panel's subnav but still link out to the
-standalone `#/change-orders/:id` route — see below). This closes the
+link — including superseded estimates and change orders. This closes the
 LATER.md question of whether a superseded estimate's subnav entry
 should redirect to the current estimate instead of showing the old one:
 it doesn't — every version is directly viewable at its own URL.
-`ChangeOrderDetailPage.svelte` is **not** extracted into a panel this
-pass (it's the largest page in the app; the LATER.md componentization
-list still carries it) — it stays a standalone route reached from the
-estimate subnav.
+**Change orders joined the panel pattern 2026-07-19**: the old 1100-line
+`ChangeOrderDetailPage.svelte` route was extracted into
+`ChangeOrderPanel.svelte` hosted by `routes/jobs/JobChangeOrderPage.svelte`
+(thin glue: job load + `JobShell`), with the two diff grids as components
+(`CODeliverablesSection.svelte` — owns the inline drafting forms;
+`COLineItemsSection.svelte` — a dumb renderer, actions as callbacks) over
+pure unit-tested derivations in `lib/changeOrderDiff.js`
+(`buildMergedRows` / `lineDiffTotals` / `buildDeliverableRows` — the
+backend's `compose_change_order_diff` mirrors `buildMergedRows`; keep in
+lockstep). The retired `/change-orders/:id` URL still redirects via
+`ChangeOrderRedirect.svelte`.
 
 **Per-job persisted position** (`stores/jobWorkspace.js`) is what the
 "last-remembered document" / "restore where I left off" behavior above

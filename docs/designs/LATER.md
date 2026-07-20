@@ -35,13 +35,6 @@ wrap a 1000-line page in heavy mocks; extract first.
 
 **Primary (≥ 400 lines, as of 2026-06-04):**
 
-- `change-orders/ChangeOrderDetailPage.svelte` — **1038**, now **1117** (by far the largest; top
-  priority). As of 2026-07-09 it's pulled **into** the job workspace: it lives at the job-scoped
-  route `/jobs/:jobId/change-order/:coId` (old `/change-orders/:id` redirects via
-  `ChangeOrderRedirect.svelte`) and renders JobHeader + JobContextBand + JobNavRail (current
-  "estimate") + the shared estimate/CO version subnav inline — but it is **not yet extracted**
-  into a panel component hosted by `JobShell` the way estimates/invoices are. That extraction is
-  the remaining work; sequenced last once the shell pattern is boring on simpler documents.
 - `jobs/TaskDetailPage.svelte` — 527
 - `Search.svelte` — 499
 - `purchaseorders/PurchaseOrderDetailPage.svelte` — 461
@@ -54,6 +47,11 @@ glue now hosts a tested panel component through `JobShell`):
 `estimates/EstimateDetailPage.svelte` (was 344 → `EstimatePanel.svelte`, and the route file
 itself is now a 12-line redirect shim), `invoices/InvoiceDetailPage.svelte` (→
 `InvoicePanel.svelte`, also now a 12-line redirect shim).
+`change-orders/ChangeOrderDetailPage.svelte` (was **1132**, the largest page in the app)
+followed 2026-07-19: deleted in favor of `ChangeOrderPanel.svelte` hosted by
+`routes/jobs/JobChangeOrderPage.svelte`, with the diff derivations in unit-tested
+`lib/changeOrderDiff.js` and the two grids as `CODeliverablesSection.svelte` /
+`COLineItemsSection.svelte`.
 
 **Watch list (300–365 lines):** `schedule/SchedulePage.svelte` (365),
 `users/UserDetailPage.svelte` (306), `contacts/ContactListPage.svelte` (301).
@@ -712,7 +710,7 @@ Cross-cutting UI/API conventions and shared components.
   `.data-table`/`.page-body`), never default styling on bare
   `<form>`/`<label>`. The app's inline-edit surfaces must NOT adopt it:
   wizard line-item cards (`WizardLineItemCard`), the CO deliverables
-  drafting grid (`ChangeOrderDetailPage`), the shipment qty matrix
+  drafting grid (`CODeliverablesSection`), the shipment qty matrix
   (`JobShipmentsPage`), and the small single-purpose widgets (hold-reason,
   add-qty chip, note textareas, TagEditor, status selects, login). Those
   three grid/card surfaces are a *separate* inline-edit vocabulary to

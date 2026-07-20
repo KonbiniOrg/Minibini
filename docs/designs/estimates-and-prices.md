@@ -1147,11 +1147,12 @@ Top-down:
 1. **JobHeader + JobNavRail + JobContextBand** — the job workspace
    shell (`JobShell`), shared by every job section page.
 2. **DocSubnav** — one pill per estimate version (oldest→newest,
-   labeled `v1`, `v2`, …, each with a status badge) plus this job's
-   change orders, appended in `change_order_number` order. Change-order
-   pills still link out to the standalone `#/change-orders/:id` route
-   (`ChangeOrderDetailPage.svelte` is not extracted into a panel this
-   pass — see `jobs-tasks-and-worksheets.md` §9.6).
+   labeled with the full code `{estimate_number}-{version}`, each with a
+   status badge) plus this job's change orders, appended in
+   `change_order_number` order. Change-order pills link to the
+   job-scoped `#/jobs/:jobId/change-order/:coId` route, hosted by
+   `JobChangeOrderPage` → `ChangeOrderPanel` since the 2026-07-19
+   extraction (see `jobs-tasks-and-worksheets.md` §9.6).
 3. **Toolbar** — back link, page title (with `superseded` styling
    when applicable), status pill (interactive `<select>` for users
    with `can_manage_jobs` when transitions are allowed), action
@@ -1611,9 +1612,15 @@ is authoritative.
 
 ### 14.9 SPA
 
-`frontend/src/routes/change-orders/ChangeOrderDetailPage.svelte` is the
-CO edit view. It renders a merged baseline-vs-proposal diff using the
-CO's line items and the `deliverables-baseline` endpoint.
+`ChangeOrderPanel.svelte` (`components/changeorders/`, hosted at
+`#/jobs/:jobId/change-order/:coId` by `routes/jobs/JobChangeOrderPage.svelte`
+inside `JobShell` — extracted 2026-07-19 from the old
+`ChangeOrderDetailPage` route) is the CO edit view. It renders a merged
+baseline-vs-proposal diff using the CO's line items and the
+`deliverables-baseline` endpoint: `lib/changeOrderDiff.js` derives the
+rows (unit-tested), `CODeliverablesSection.svelte` owns the deliverables
+grid + inline drafting forms, and `COLineItemsSection.svelte` renders the
+line diff with actions as callbacks to the panel.
 **"+ New line"** opens the unified `PriceListPicker` (§6.4) — the same
 service / inventory / freeform (+ is-material checkbox) entry point as
 the estimate detail page — followed by `COAddLineForm.svelte`
