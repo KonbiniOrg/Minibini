@@ -1396,9 +1396,28 @@ class TaskLifecycleService:
             # consume a leftover pending material — it would sit unbillable
             # forever. Completion stops until the human decides.
             from apps.inventory.models import Material
-            pending = task.materials.filter(
-                consumption_state=Material.CONSUMPTION_STATE_PENDING)
-            if pending.exists():
+            pending = list(task.materials.filter(
+                consumption_state=Material.CONSUMPTION_STATE_PENDING))
+            if pending:
+                # Stock check FIRST: "consume it by hand" is a dead end for a
+                # material that CAN'T be consumed — provisional (no lot yet)
+                # or lot short of stock — so those report their real blocker.
+                short = []
+                for m in pending:
+                    name = m.description or f'material {m.pk}'
+                    if m.inventory_item_id is None:
+                        short.append(f'{name} (not yet priced/received)')
+                    elif (m.quantity > 0
+                          and m.inventory_item.qty_on_hand < m.quantity):
+                        short.append(
+                            f'{name} (needs {m.quantity}, '
+                            f'{m.inventory_item.qty_on_hand} on hand)')
+                if short:
+                    raise ValidationError(
+                        f'Cannot complete: material(s) not in stock — '
+                        f'{", ".join(short[:3])}. Receive the stock first, or '
+                        f'release the material if it will not be used.'
+                    )
                 names = ', '.join(
                     m.description or f'material {m.pk}' for m in pending[:3])
                 raise ValidationError(
