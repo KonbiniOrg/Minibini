@@ -244,6 +244,14 @@ Failures keep a trace and screenshot (`trace: 'retain-on-failure'`,
 
 ## 5. Keeping it current
 
+- **E2E is part of Definition of Done (RM, 2026-07-20):** every piece of
+  NEW work and every FIX ships with an e2e spec covering its user-visible
+  flow, in the same session — alongside the backend/Vitest tests, not
+  instead of them. Backfilling e2e for *unchanged* areas is NOT implied:
+  RM commissions those explicitly, area by area. (Work with no runtime
+  surface a browser can reach — pure services, management commands — is
+  exempt; say so in the session notes instead of stretching for a fake
+  flow.)
 - **Migrations:** nothing to remember — the schema is rebuilt from
   current migrations every run.
 - **Fixture drift:** a failing `loaddata` means the seed lags the
