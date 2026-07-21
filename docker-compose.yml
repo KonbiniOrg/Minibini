@@ -28,6 +28,13 @@ services:
       - DATABASE_USER=minidb_user
       - DATABASE_PASSWORD=Ru5UPhae
       - DATABASE_HOST=mysql
+      - QBO_CLIENT_ID=ABZGwDsviVlpwQmS5qemO2Edt3rSHpRzJyE9ooKkQhM6dq0wGV
+      - QBO_CLIENT_SECRET=HoBe9JobfydrPJVAQbJy6F25NUY3mZXHHXFxZ48u
+      - QBO_REDIRECT_URI=https://minibini.me/api/qbo/callback/
+      - QBO_ENVIRONMENT=sandbox
+      - SPA_BASE_URL=http://minibini.me/
+      - EMAIL_HOST_USER=minibini.test@gmail.com
+      - EMAIL_HOST_PASSWORD=ttsg buza hxik ibit
     build:
       context: .
       dockerfile: Dockerfile.django
@@ -95,19 +102,3 @@ services:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
 
-# QuickBooks Online OAuth credentials
-# Get these from https://developer.intuit.com/ → Dashboard → your app → Keys & credentials
-# Intuit dev account uses minibini.test@gmail.com, password intuitTESTpassword9948!
-# client ID: ABZGwDsviVlpwQmS5qemO2Edt3rSHpRzJyE9ooKkQhM6dq0wGV
-# client secret: HoBe9JobfydrPJVAQbJy6F25NUY3mZXHHXFxZ48u
-# staging sandbox company id 9341457551535369
-# staging sandbox base URL https://sandbox.qbo.intuit.com/app/homepage
-QBO_CLIENT_ID=ABZGwDsviVlpwQmS5qemO2Edt3rSHpRzJyE9ooKkQhM6dq0wGV
-QBO_CLIENT_SECRET=HoBe9JobfydrPJVAQbJy6F25NUY3mZXHHXFxZ48u
-QBO_REDIRECT_URI=https://minibini.me/api/qbo/callback/
-QBO_ENVIRONMENT=sandbox
-SPA_BASE_URL=http://minibini.me/
-
-# Email (Gmail app password)
-EMAIL_HOST_USER=minibini.test@gmail.com
-EMAIL_HOST_PASSWORD=ttsg buza hxik ibit
