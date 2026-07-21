@@ -111,6 +111,26 @@ Status coupling, transitions, and what a job may do at each stage.
   _Done when:_ an estimate-less draft job can be hand-approved in one step,
   cannot be submitted, and the duplicate walk is coherent with the new graph.
 
+- **Gate manual Job →Submitted behind the estimate transition; expose direct mark-Open on the Estimate.** — _added 2026-07-19 (RM)_
+  Same shape as the direct-approval gate (fixed 2026-07-19): just as the Job
+  used to be hand-movable to `approved` without an estimate acceptance driving
+  it, a draft Job can today be hand-moved to `submitted` via the status pill /
+  `update_job` without any estimate going `open`. `submitted` should only be
+  reachable through the estimate's `draft → open` transition (the signal in
+  `apps/estimates/signals.py` already drives job → submitted with
+  `system_transition=True`); block the manual edge.
+  **Prerequisite escape hatch:** the SPA's only `draft → open` path today is
+  Send Email (`POST /api/estimates/{id}/send` flips status on success) — if
+  in-app emailing is broken, blocking manual job→submitted would strand the
+  job in draft. `EstimateService.mark_open` already exists and is registered
+  as the `mark-open` API action, but no frontend calls it; expose a direct
+  "mark as Open" affordance in the UI (same guards apply: deliverables
+  present, hand-lines have ACs), which then moves the job to `submitted` via
+  the existing signal.
+  _Done when:_ a job cannot be hand-moved to `submitted` (only the estimate's
+  draft→open transition gets it there), and an estimate can be marked Open
+  from the UI without sending email.
+
 - **Task creation on a terminal `completed` job — block it or define a reopen path.** — _added 2026-06-17; narrowed 2026-07-04_
   (The `work_complete` half is delivered: `JobService.mark_work_reopened` pulls
   the job back to `in_progress` when an incomplete task lands.) Remaining:
@@ -232,6 +252,40 @@ questions specific to that redesign:
 ## Change orders
 
 The CO surface and its estimate-parallel code.
+
+- **Converter fabricates estimate claims → false "struck from agreement" badges.** — _added 2026-07-20_
+  Root-caused on dev job 61: `build_synthetic_estimate_sources`
+  (`nealsdata/converter/build.py` ~L1715) round-robins EVERY unclaimed task
+  across a job's estimate lines so converted jobs project atoms in the Client
+  View — fabricating many-to-one `EstimateLineItemSource` rows. The struck-badge
+  derivation (`ChangeOrderService.struck_atom_keys`) read those rows faithfully
+  and badged tasks the removed line never really sold. The badge logic is
+  correct; fix the converter (claim at most one plausible task per line, or drop
+  the pass and accept sourceless converted lines). MUST run
+  `tests.test_neals_builders`; `nealsmall.json` is RM-managed — never regenerate.
+  Separately, RM hand-repairs the existing dev rows (job 61: source_ids 327,
+  331, 335, 339 at minimum — Claude drafts the SQL, RM runs it).
+  _Done when:_ the converter emits no fabricated multi-task claims, builders
+  suite green, and job 61's synthetic rows are repaired.
+
+- **`ChangeOrderLineItem.clean()` doesn't validate the target belongs to the CO's estimate.** — _added 2026-07-20_
+  Found while clearing suspects on the badge investigation: nothing enforces
+  `target_line_item.estimate_id == change_order.estimate_id`, so a CO line
+  could target another estimate's line. Latent (no observed corruption); add
+  the validation. Also record as intended: REPLACE targets stay in the
+  struck-atom set (the old atom WAS struck; the successor is the new agreement).
+  _Done when:_ the clean() check exists with a test, and the replace semantics
+  note lives in estimates-and-prices §14.11.
+
+- **Expose *estimate* claims somewhere after acceptance.** — _added 2026-07-20 (RM)_
+  `EstimateLineItemSource` (what the agreement SOLD per line) is invisible in
+  the daily UI once the estimate is accepted and the estimate wizard is gone —
+  which is why fabricated claims sat unnoticed until the struck badge read them.
+  The invoice wizard shows only the BILLING ledger (`InvoiceLineItemSource`).
+  Consider a surface for agreement claims post-acceptance — e.g. on the estimate
+  panel's line items (expand a line to see its atoms), the task detail page
+  ("sold on line N"), or the job overview. _Done when:_ RM picks a surface and
+  agreement claims are inspectable after acceptance (or the idea is dropped).
 
 - **Validate the multi-change-order display (2+ COs).** — _added 2026-05-27_
   We spec'd `ch-1`/`ch-2` per-line tags but haven't built/validated how the CO view reads
