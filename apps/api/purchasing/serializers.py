@@ -59,7 +59,7 @@ class POLineItemSerializer(serializers.ModelSerializer):
             'line_item_id', 'line_number', 'task', 'inventory_item',
             'qty', 'units', 'description', 'price',
             'effective_job_id', 'effective_job_number', 'material',
-            'accounting_category', 'taxable_override', 'tax_rate_override',
+            'accounting_category',
             'qty_received', 'received_by', 'received_by_name',
             'received_date', 'receipt_note', 'qty_cancelled',
         ]
@@ -150,7 +150,7 @@ class BillLineItemSerializer(serializers.ModelSerializer):
         fields = [
             'line_item_id', 'line_number', 'task', 'inventory_item',
             'qty', 'units', 'description', 'price',
-            'accounting_category', 'taxable_override', 'tax_rate_override',
+            'accounting_category',
         ]
         read_only_fields = ['line_item_id']
 

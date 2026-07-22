@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.jobs.models import Job
-from apps.core.services import NotFoundError, TaxCalculationService
+from apps.core.services import NotFoundError
 from apps.core.wizard import BaseWizardService
 
 

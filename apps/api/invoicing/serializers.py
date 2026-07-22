@@ -62,8 +62,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
             'line_item_id', 'line_number', 'inventory_item',
             'qty', 'units', 'description', 'price',
             'accounting_category', 'accounting_category_name',
-            'taxable_override', 'tax_rate_override',
-            'adjustment_service', 'adjustment_target_categories',
+                        'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail',
             'sources',
         ]

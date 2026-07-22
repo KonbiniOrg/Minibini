@@ -355,14 +355,6 @@ class BaseLineItem(models.Model):
         null=True,  # Nullable initially for migration; will be made required after data migration
         blank=True
     )
-    taxable_override = models.BooleanField(null=True, blank=True)  # null = use type default
-    tax_rate_override = models.DecimalField(
-        max_digits=5,
-        decimal_places=4,  # Supports rates like 0.0825 (8.25%)
-        null=True,
-        blank=True
-    )  # null = use app default
-
     class Meta:
         abstract = True
 

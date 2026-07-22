@@ -359,8 +359,6 @@ class ChangeOrderService:
                 service_item=li.service_item,
                 is_material=li.is_material,
                 accounting_category=li.accounting_category,
-                taxable_override=li.taxable_override,
-                tax_rate_override=li.tax_rate_override,
             )
 
         return new_co

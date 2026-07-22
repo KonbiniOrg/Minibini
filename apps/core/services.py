@@ -1125,41 +1125,9 @@ class LineItemService:
         return sum(item.total_amount for item in line_items)
 
 
-class TaxCalculationService:
-    """
-    Calculates tax for line items and documents.
-
-    Supports:
-    - AccountingCategory default taxability
-    - Line item taxable_override
-    - Line item tax_rate_override
-    - Customer tax multiplier (for sales exemptions)
-    - Organization tax multiplier (for purchase exemptions)
-    """
-
-    @staticmethod
-    def get_effective_taxability(line_item):
-        """
-        Determine if a line item is taxable.
-
-        Uses taxable_override if set, otherwise falls back to
-        the accounting_category's default taxability.
-
-        Args:
-            line_item: A BaseLineItem subclass instance
-
-        Returns:
-            bool: True if the line item is taxable
-        """
-        if line_item.taxable_override is not None:
-            return line_item.taxable_override
-        if line_item.accounting_category:
-            return line_item.accounting_category.taxable
-        return False  # Default to non-taxable if no type
-
-    # NOTE: tax *amounts* are computed by QuickBooks, not the app. We only
-    # surface per-line taxability (above) so the invoice→QBO export can group
-    # taxable vs non-taxable lines; QBO applies the rate.
+# NOTE: tax *amounts* are computed by QuickBooks, not the app. Per-line
+# taxability is the line's accounting_category.taxable flag, read directly
+# by the QBO invoice push (TaxCodeRef); QBO applies the rate.
 
 
 class ConfigurationService:
