@@ -968,3 +968,12 @@ Cross-cutting UI/API conventions and shared components.
   `EmailRecord.bill`), the schema-stub models are deleted, and the passive
   references (contacts deletion checks, inventory merge/has_document_line_refs
   clauses) go with them.
+
+- **E2E seed has no email fixtures — email flows are untested end-to-end.** — _added 2026-07-23_
+  The email→PO breadcrumb (the Bill removal's one retained capability) and the
+  wider email workspace (link/unlink, create-job/PO-from-email) have no e2e
+  coverage because the playwright seed contains no EmailRecord/TempEmail rows.
+  `e2e/specs/bills-retired.spec.js` covers the removal surfaces; the linking
+  flow itself is exempt until an email seed exists.
+  _Done when:_ the e2e seed carries a few email fixtures and a spec exercises
+  link-email-to-PO (and ideally create-PO-from-email).
