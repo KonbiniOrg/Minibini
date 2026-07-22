@@ -367,6 +367,53 @@ class QBOInvoiceSyncService:
         return qbo_inv
 
     @staticmethod
+    def _catalog_entity_for_line(line_item):
+        """The single catalog entity (InventoryItem or ServiceItem) this line
+        sells, or None when there isn't exactly one."""
+        if line_item.inventory_item_id:
+            return line_item.inventory_item
+        if line_item.adjustment_service_id:
+            return None
+        entities = set()
+        sources = list(line_item.sources.all())
+        if not sources:
+            return None
+        for source in sources:
+            if source.source_type == source.SOURCE_TASK:
+                task = source.resolve()
+                if not task.service_item_id:
+                    return None
+                entities.add(('service', task.service_item_id))
+            elif source.source_type == source.SOURCE_MATERIAL:
+                material = source.resolve()
+                if not material.inventory_item_id:
+                    return None
+                entities.add(('inventory', material.inventory_item_id))
+            else:  # expense / fee — no catalog identity
+                return None
+        if len(entities) != 1:
+            return None
+        kind, pk = entities.pop()
+        if kind == 'service':
+            from apps.estimates.models import ServiceItem
+            return ServiceItem.objects.get(pk=pk)
+        from apps.inventory.models import InventoryItem
+        return InventoryItem.objects.get(pk=pk)
+
+    @staticmethod
+    def _resolve_item_ref(line_item, client):
+        """QBO Item id for this line, or None to omit ItemRef."""
+        entity = QBOInvoiceSyncService._catalog_entity_for_line(line_item)
+        if entity is not None:
+            qbo_id = QBOItemMintService.ensure_item(entity, client)
+            if qbo_id:
+                return qbo_id
+        category = line_item.accounting_category
+        if category and category.qbo_item_id:
+            return category.qbo_item_id
+        return None
+
+    @staticmethod
     def _mark_as_sent(client, qbo_id):
         """Mark a QBO invoice as sent without triggering QBO's email."""
         from quickbooks.objects.invoice import Invoice as QBOInvoice
