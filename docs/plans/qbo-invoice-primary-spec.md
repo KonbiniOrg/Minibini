@@ -182,10 +182,9 @@ statuses), `docs/designs/estimates-and-prices.md` /
 - **Customer push: adopt-by-name on 6240 — DONE 2026-07-23.** Both customer
   push entry points adopt the existing QBO Customer by DisplayName on a
   duplicate-name error, via shared helpers (`_is_duplicate_name_error` /
-  `_adopt_id_by_name`) also used by the Item mint. NOTE: `push_vendor` has
-  the identical collision exposure and does NOT adopt yet — decide whether
-  to extend (small change, same pattern) or leave until the Bill-removal
-  work reshapes the vendor path.
+  `_adopt_id_by_name`) also used by the Item mint. RM decision 2026-07-23:
+  `push_vendor` will NOT get adopt — the vendor-push path is going away
+  entirely with the Bill removal.
 - **Job-statement PDF: dropped from the send (done 2026-07-22).**
   `apps/invoicing/pdf.py` + `templates/invoicing/job_statement.html` (and
   `tests/test_invoice_pdf.py`) are now orphaned — delete outright, or keep
