@@ -338,28 +338,51 @@ class QBOInvoiceSyncService:
     earlier push_invoice path had."""
 
     @staticmethod
-    def _build_qbo_invoice(invoice, qbo_customer_id, grouped_lines):
+    def _build_qbo_invoice(invoice, qbo_customer_id, client):
+        """Build the QBO Invoice with one SalesItemLine per konbini line.
+
+        Description is the konbini line's text verbatim; ItemRef comes from
+        _resolve_item_ref (minting catalog Items lazily via the client);
+        TaxCodeRef is the line's category `taxable` flag. The job reference
+        rides in CustomerMemo; online-payment flags are enabled so the
+        hosted invoice carries the Pay button when QBO Payments is active.
+        """
         from quickbooks.objects.invoice import Invoice as QBOInvoice
         from quickbooks.objects.detailline import SalesItemLine, SalesItemLineDetail
-        from quickbooks.objects.base import Ref
+        from quickbooks.objects.base import Ref, EmailAddress, CustomerMemo
 
         qbo_inv = QBOInvoice()
         qbo_inv.CustomerRef = Ref()
         qbo_inv.CustomerRef.value = qbo_customer_id
+        qbo_inv.AllowOnlineCreditCardPayment = True
+        qbo_inv.AllowOnlineACHPayment = True
+
+        job = invoice.job
+        memo = CustomerMemo()
+        memo.value = f"Job {job.job_number} — {job.name}"
+        qbo_inv.CustomerMemo = memo
+
+        contact = job.contact
+        if contact and contact.email:
+            qbo_inv.BillEmail = EmailAddress()
+            qbo_inv.BillEmail.Address = contact.email
 
         qbo_inv.Line = []
-        for group in grouped_lines:
+        line_items = (invoice.invoicelineitem_set
+                      .select_related('accounting_category', 'inventory_item')
+                      .order_by('line_number'))
+        for li in line_items:
             line = SalesItemLine()
-            line.Amount = float(group['amount'])
-            line.Description = group['description']
+            line.Amount = float(li.total_amount)
+            line.Description = li.description
 
             detail = SalesItemLineDetail()
-            if group['qbo_item_id']:
+            item_id = QBOInvoiceSyncService._resolve_item_ref(li, client)
+            if item_id:
                 detail.ItemRef = Ref()
-                detail.ItemRef.value = group['qbo_item_id']
-
+                detail.ItemRef.value = item_id
             detail.TaxCodeRef = Ref()
-            detail.TaxCodeRef.value = 'TAX' if group['taxable'] else 'NON'
+            detail.TaxCodeRef.value = 'TAX' if li.accounting_category.taxable else 'NON'
 
             line.SalesItemLineDetail = detail
             qbo_inv.Line.append(line)
