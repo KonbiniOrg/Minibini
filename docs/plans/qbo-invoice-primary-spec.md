@@ -185,7 +185,7 @@ statuses), `docs/designs/estimates-and-prices.md` /
   `_adopt_id_by_name`) also used by the Item mint. RM decision 2026-07-23:
   `push_vendor` will NOT get adopt — the vendor-push path is going away
   entirely with the Bill removal.
-- **Job-statement PDF: dropped from the send (done 2026-07-22).**
-  `apps/invoicing/pdf.py` + `templates/invoicing/job_statement.html` (and
-  `tests/test_invoice_pdf.py`) are now orphaned — delete outright, or keep
-  for a future statement surface? RM to decide.
+- **Job-statement PDF — DONE.** Dropped from the send 2026-07-22; RM opted
+  to delete the orphaned generator/template/tests outright 2026-07-23
+  (`apps/invoicing/pdf.py`, `templates/invoicing/job_statement.html`,
+  `tests/test_invoice_pdf.py`). Git history preserves them.

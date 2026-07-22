@@ -220,7 +220,7 @@ Service flow (`InvoiceEmailService.send_invoice`, `apps/invoicing/services.py`):
 5. **Save** — `qbo_invoice.save(qb=client)`. **Immediately persist `qbo_id` AND `invoice_number` (from QBO's `DocNumber`)** on the Minibini invoice — QBO owns invoice numbering (see invoicing-and-expenses.md). A retry send whose invoice predates the writeback backfills `DocNumber` via `Invoice.get`.
 6. **Fetch the payment link** — `_fetch_invoice_link(client, qbo_id)` reads the invoice back with `include=invoiceLink` (built directly on the client — the installed python-quickbooks `get()` can't pass query params) and substitutes the URL into the email subject/body wherever the `{payment_link}` placeholder appears.
 7. **Mark as sent** — `_mark_as_sent` re-fetches the invoice, sets `EmailStatus = 'EmailSent'`, and re-saves. This prevents QBO from showing the invoice as "needs to be sent" in its own UI, and suppresses QBO's own email.
-8. **Download QBO PDF** — `_download_qbo_pdf` retrieves QBO's rendered invoice PDF: the **only** auto-attachment (the konbini job-statement PDF was dropped from the send 2026-07-22; `apps/invoicing/pdf.py` is currently orphaned).
+8. **Download QBO PDF** — `_download_qbo_pdf` retrieves QBO's rendered invoice PDF: the **only** auto-attachment (the konbini job-statement PDF was dropped 2026-07-22 and its generator/template deleted 2026-07-23).
 9. **Send email via Minibini** — `OutboundEmailService.send_tracked` with the QBO PDF attached, Configuration-driven subject/body templates, To/CC/BCC from the send dialog, and a job-linked `EmailRecord`.
 10. **Log success** to `QBOSyncLog`.
 

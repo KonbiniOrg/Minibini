@@ -475,7 +475,7 @@ when `qbo_id` is already set).
    - Downloads the QBO-rendered invoice PDF — the only
      auto-attachment (the job-statement PDF was dropped from the send
      2026-07-22; `apps/invoicing/pdf.py` and
-     `templates/invoicing/job_statement.html` are currently orphaned).
+     `templates/invoicing/job_statement.html` were deleted 2026-07-23).
    - Calls `OutboundEmailService.send_tracked` with
      `associate_with={'job': invoice.job}` and the QBO PDF attached;
      user-uploaded extras append. The send-tracked path persists the

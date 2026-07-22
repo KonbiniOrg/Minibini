@@ -71,7 +71,6 @@ class DocNumberWritebackTest(TestCase):
 
     def _send(self, subject='S', body='B', **extra_patches):
         with patch('apps.core.services.OutboundEmailService.send_tracked') as mock_send, \
-             patch('apps.invoicing.pdf.generate_job_statement_pdf', return_value=b'%PDF-s'), \
              patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-q'), \
              patch('apps.qbo.services.QBOInvoiceSyncService._fetch_invoice_link', return_value='https://pay/1'), \
              patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \

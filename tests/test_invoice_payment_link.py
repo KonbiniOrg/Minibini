@@ -70,13 +70,12 @@ class SendSubstitutesPaymentLinkTest(TestCase):
         )
 
     @patch('apps.core.services.OutboundEmailService.send_tracked')
-    @patch('apps.invoicing.pdf.generate_job_statement_pdf', return_value=b'%PDF-s')
     @patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-q')
     @patch('apps.qbo.services.QBOInvoiceSyncService._fetch_invoice_link',
            return_value='https://pay.example/i/42')
     @patch('apps.qbo.services.QBOService.get_client')
     def test_placeholder_substituted_in_body_and_subject(
-        self, mock_client, mock_link, mock_pdf, mock_stmt, mock_send,
+        self, mock_client, mock_link, mock_pdf, mock_send,
     ):
         mock_client.return_value = MagicMock()
         mock_send.return_value = MagicMock()
@@ -91,13 +90,12 @@ class SendSubstitutesPaymentLinkTest(TestCase):
                          'Invoice (https://pay.example/i/42)')
 
     @patch('apps.core.services.OutboundEmailService.send_tracked')
-    @patch('apps.invoicing.pdf.generate_job_statement_pdf', return_value=b'%PDF-s')
     @patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-q')
     @patch('apps.qbo.services.QBOInvoiceSyncService._fetch_invoice_link',
            return_value='https://pay.example/i/42')
     @patch('apps.qbo.services.QBOService.get_client')
     def test_body_without_placeholder_unchanged(
-        self, mock_client, mock_link, mock_pdf, mock_stmt, mock_send,
+        self, mock_client, mock_link, mock_pdf, mock_send,
     ):
         mock_client.return_value = MagicMock()
         mock_send.return_value = MagicMock()

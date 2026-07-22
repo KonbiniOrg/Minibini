@@ -89,7 +89,7 @@ Minibini/
 ```
 
 **Key Patterns:**
-- The Svelte SPA + REST API is the only UI. The deprecated Django HTML view layer (`apps/*/views.py` + `templates/*.html`) has been fully removed; the only server-rendered templates left are the four PDF templates (see Template/PDF section below)
+- The Svelte SPA + REST API is the only UI. The deprecated Django HTML view layer (`apps/*/views.py` + `templates/*.html`) has been fully removed; the only server-rendered templates left are the three PDF templates (see Template/PDF section below)
 - API views: DRF ModelViewSets with reusable mixins (`StatusTransitionMixin`, `LineItemMixin`, `JobTaskMixin`, `PlanTaskMixin`) — see `docs/designs/architecture-and-conventions.md`
 - Service classes in `apps/*/services.py` contain business logic — viewsets are thin wrappers
 - Job status side effects live in `apps/jobs/services.py` (`apps/jobs/signals.py` is empty). Estimate-driven cross-model side effects live in `apps/estimates/signals.py`
@@ -254,9 +254,8 @@ The only server-rendered Django templates left live in `templates/` and are rend
 | `templates/estimates/estimate_pdf.html` | `apps/estimates/pdf.py` | `POST /api/estimates/{id}/send` |
 | `templates/estimates/change_order_pdf.html` | `apps/estimates/pdf.py` | `POST /api/change-orders/{id}/send` |
 | `templates/purchasing/purchase_order_pdf.html` | `apps/purchasing/pdf.py` | `POST /api/purchase-orders/{id}/send` |
-| `templates/invoicing/job_statement.html` | `apps/invoicing/pdf.py` | _orphaned 2026-07-22 — dropped from the invoice send (QBO's PDF is the sole attachment); removal pending decision_ |
 
-These are self-contained (no `{% extends %}`/`{% include %}`). Email subject/body templates are NOT files — they live in `Configuration` rows and render via `apps/core/email_templates.py`.
+These are self-contained (no `{% extends %}`/`{% include %}`). The invoice send attaches QBO's rendered PDF instead of a local one (the old `job_statement.html` was deleted 2026-07-23). Email subject/body templates are NOT files — they live in `Configuration` rows and render via `apps/core/email_templates.py`.
 
 ## Code Conventions
 
@@ -395,7 +394,7 @@ See `docs/designs/quickbooks-integration.md` for the full reference, including O
 
 - Models: `apps/*/models.py` | Services: `apps/*/services.py` | Settings: `minibini/settings.py`
 - API: `apps/api/*/views.py` (viewsets), `apps/api/*/serializers.py`, `apps/api/mixins.py`, `apps/api/permissions.py` | URLs: `apps/api/urls.py`, `apps/qbo/urls.py`
-- PDF generation: `apps/{estimates,purchasing,invoicing}/pdf.py` + the four `templates/**/*_pdf.html` / `job_statement.html`
+- PDF generation: `apps/{estimates,purchasing}/pdf.py` + the three `templates/**/*_pdf.html` (invoices attach QBO's rendered PDF)
 - QBO OAuth (browser redirects, not the deleted HTML layer): `apps/qbo/views.py`
 - Frontend: `frontend/src/` — `App.svelte`, `routes/`, `components/`, `stores/`, `lib/api.js`
 - Topic reference docs: `docs/designs/` (nine files; see "Topic reference docs" above)
