@@ -377,6 +377,10 @@ class QBOInvoiceSyncService:
             line.Description = li.description
 
             detail = SalesItemLineDetail()
+            # Qty/UnitPrice make QBO render the qty and rate columns
+            # instead of a bare total.
+            detail.Qty = float(li.qty)
+            detail.UnitPrice = float(li.price)
             item_id = QBOInvoiceSyncService._resolve_item_ref(li, client)
             if item_id:
                 detail.ItemRef = Ref()
@@ -446,7 +450,11 @@ class QBOInvoiceSyncService:
         """
         url = "{0}/company/{1}/invoice/{2}/".format(
             client.api_url, client.company_id, qbo_id)
-        result = client.get(url, {}, params={'include': 'invoiceLink'})
+        # minorversion >= 36 is required or QBO silently omits invoiceLink
+        # from the response (no error — the field just isn't there).
+        result = client.get(url, {}, params={
+            'include': 'invoiceLink', 'minorversion': '75',
+        })
         return (result.get('Invoice') or {}).get('invoiceLink', '') or ''
 
     @staticmethod

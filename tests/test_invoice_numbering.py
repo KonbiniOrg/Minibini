@@ -69,7 +69,7 @@ class DocNumberWritebackTest(TestCase):
         self.contact.qbo_customer_id = '77'
         self.contact.save()
 
-    def _send(self, **extra_patches):
+    def _send(self, subject='S', body='B', **extra_patches):
         with patch('apps.core.services.OutboundEmailService.send_tracked') as mock_send, \
              patch('apps.invoicing.pdf.generate_job_statement_pdf', return_value=b'%PDF-s'), \
              patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-q'), \
@@ -90,12 +90,12 @@ class DocNumberWritebackTest(TestCase):
                            return_value=fetched):
                     InvoiceEmailService.send_invoice(
                         self.invoice, to='jane@example.com',
-                        subject='S', body='B',
+                        subject=subject, body=body,
                     )
             else:
                 InvoiceEmailService.send_invoice(
                     self.invoice, to='jane@example.com',
-                    subject='S', body='B',
+                    subject=subject, body=body,
                 )
             return mock_send
 
@@ -119,6 +119,18 @@ class DocNumberWritebackTest(TestCase):
         self.invoice.refresh_from_db()
         self.assertEqual(self.invoice.invoice_number, '1042')
 
+    def test_send_substitutes_number_tokens_at_send_time(self):
+        """{document_number}/{invoice_number} survive the compose dialog as
+        literal tokens (the draft has no number yet) and are substituted
+        with QBO's DocNumber during the send."""
+        mock_send = self._send(
+            subject='Invoice {document_number} for JOB-2026-0001',
+            body='Invoice {invoice_number} attached.',
+        )
+        kwargs = mock_send.call_args.kwargs
+        self.assertEqual(kwargs['subject'], 'Invoice 1042 for JOB-2026-0001')
+        self.assertEqual(kwargs['body'], 'Invoice 1042 attached.')
+
 
 class EmailDefaultsDraftTest(TestCase):
     def setUp(self):
@@ -131,6 +143,9 @@ class EmailDefaultsDraftTest(TestCase):
         )
         self.invoice = Invoice.objects.create(job=self.job)
 
-    def test_defaults_render_draft_placeholder(self):
+    def test_defaults_keep_number_tokens_literal(self):
+        """The number doesn't exist at compose time — the tokens survive
+        into the dialog and are substituted at send (like {payment_link})."""
         defaults = InvoiceEmailService.get_email_defaults(self.invoice)
-        self.assertIn('Draft — JOB-2026-0001', defaults['subject'])
+        self.assertIn('{document_number}', defaults['subject'])
+        self.assertNotIn('Draft —', defaults['subject'])

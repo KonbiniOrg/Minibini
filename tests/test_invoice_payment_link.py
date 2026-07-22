@@ -28,10 +28,11 @@ class FetchInvoiceLinkTest(TestCase):
         self.assertEqual(link, 'https://pay.example/i/42')
         url = client.get.call_args.args[0]
         self.assertIn('/invoice/42', url)
-        self.assertEqual(
-            client.get.call_args.kwargs.get('params'),
-            {'include': 'invoiceLink'},
-        )
+        params = client.get.call_args.kwargs.get('params')
+        self.assertEqual(params.get('include'), 'invoiceLink')
+        # invoiceLink is silently omitted without a minorversion >= 36 —
+        # QBO returns the invoice fine, just without the link.
+        self.assertGreaterEqual(int(params.get('minorversion')), 36)
 
     def test_returns_empty_when_absent(self):
         client = self._client({'Invoice': {'Id': '42'}})

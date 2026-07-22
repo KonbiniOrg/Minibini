@@ -513,10 +513,13 @@ Configuration keys for the body/subject templates:
 `invoice_email_subject_template`, `invoice_email_body_template`
 (defaults documented in
 `architecture-and-conventions.md` §7.10). The common template
-variable set is available; `{invoice_number}` aliases
-`{document_number}` (both render `display_number`), and
-`{payment_link}` renders QBO's hosted-invoice pay-online URL,
-substituted at send time (it shows literally in the compose dialog).
+variable set is available, with three **send-time-only** tokens:
+`{invoice_number}` / `{document_number}` (aliases; both render
+`display_number`) and `{payment_link}` (QBO's hosted-invoice
+pay-online URL). All three show literally in the compose dialog and
+are substituted during the send itself — the QBO-assigned number and
+link don't exist until the push happens, so compose-time substitution
+would bake in the draft placeholder (a bug fixed 2026-07-22).
 
 For OAuth, the `QBOSyncLog` model, payment polling internals, the
 customer-sync flow, and connection lifecycle, see

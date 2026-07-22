@@ -234,8 +234,10 @@
         Estimate template, <code>{'{po_number}'}</code> /
         <code>{'{vendor_name}'}</code> on the Purchase Order template,
         <code>{'{invoice_number}'}</code> /
-        <code>{'{payment_link}'}</code> (the QBO pay-online link, substituted
-        at send time) on the Invoice template, and
+        <code>{'{payment_link}'}</code> on the Invoice template (these two,
+        plus <code>{'{document_number}'}</code>, fill in during the send
+        itself — QBO assigns the invoice number and payment link at that
+        moment, so they show as literal tokens on the compose page), and
         <code>{'{change_order_number}'}</code> / <code>{'{estimate_number}'}</code> /
         <code>{'{object_url}'}</code> (the customer portal link) on the Change
         Order template. Unknown

@@ -114,6 +114,14 @@ class PerLineInvoiceBuilderTest(TestCase):
         self.assertEqual(qbo_inv.Line[0].Amount, 11.0)
         self.assertEqual(qbo_inv.Line[1].Amount, 10.0)
 
+    def test_lines_carry_qty_and_unit_price(self):
+        self._line(1, 'Priced', '3', '5.50', self.taxable_cat)
+        qbo_inv = self._build()
+        detail = qbo_inv.Line[0].SalesItemLineDetail
+        self.assertEqual(detail.Qty, 3.0)
+        self.assertEqual(detail.UnitPrice, 5.5)
+        self.assertEqual(qbo_inv.Line[0].Amount, 16.5)
+
     def test_tax_code_from_category_flag(self):
         self._line(1, 'Taxed', '1', '10.00', self.taxable_cat)
         self._line(2, 'Untaxed', '1', '10.00', self.nontax_cat)

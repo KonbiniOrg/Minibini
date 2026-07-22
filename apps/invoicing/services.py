@@ -312,6 +312,10 @@ class InvoiceEmailService:
             contact_business = contact.business.business_name
 
         from apps.core.email_templates import build_object_url
+        # {document_number}/{invoice_number} are deliberately absent: the
+        # QBO-assigned number doesn't exist at compose time, so the tokens
+        # survive into the dialog literally and send_invoice substitutes
+        # them after the push (same mechanism as {payment_link}).
         values = {
             'contact_fname': contact.first_name if contact else '',
             'contact_lname': contact.last_name if contact else '',
@@ -319,8 +323,6 @@ class InvoiceEmailService:
             'my_user_name': '',
             'job_number': job.job_number if job else '',
             'job_name': job.name if job else '',
-            'document_number': invoice.display_number,
-            'invoice_number': invoice.display_number,
             'object_url': build_object_url('invoice', invoice.invoice_id),
         }
         subject = render_email_template(subject_template, **values)
@@ -426,14 +428,21 @@ class InvoiceEmailService:
                 invoice.invoice_number = doc_number
                 invoice.save(update_fields=['invoice_number'])
 
-        # Step 2: substitute the hosted-invoice payment link (survives the
-        # send dialog as a literal {payment_link} token — unknown
-        # placeholders pass through render_email_template untouched).
+        # Step 2: substitute the send-time-only values — the hosted-invoice
+        # payment link and the QBO-assigned number. Both survive the send
+        # dialog as literal tokens (unknown placeholders pass through
+        # render_email_template untouched); the number only exists now,
+        # after the push wrote DocNumber back.
         from apps.core.email_templates import render_email_template
         payment_link = QBOInvoiceSyncService._fetch_invoice_link(
             client, invoice.qbo_id)
-        subject = render_email_template(subject, payment_link=payment_link)
-        body = render_email_template(body, payment_link=payment_link)
+        send_time_values = {
+            'payment_link': payment_link,
+            'document_number': invoice.display_number,
+            'invoice_number': invoice.display_number,
+        }
+        subject = render_email_template(subject, **send_time_values)
+        body = render_email_template(body, **send_time_values)
 
         # Step 3: fetch QBO's rendered invoice PDF — the only auto-attachment
         # (the konbini Job Statement was dropped from the send 2026-07-22).
