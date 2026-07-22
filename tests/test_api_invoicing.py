@@ -252,6 +252,7 @@ class InvoiceSendTest(BaseTestCase):
         mock_dl_pdf.return_value = b'%PDF-qbo'
         qbo_invoice = MagicMock()
         qbo_invoice.Id = '42'
+        qbo_invoice.DocNumber = '1042'
         qbo_invoice.save = MagicMock(return_value=qbo_invoice)
         mock_build.return_value = qbo_invoice
         mock_get_client.return_value = MagicMock()

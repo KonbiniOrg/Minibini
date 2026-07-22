@@ -319,8 +319,8 @@ class InvoiceEmailService:
             'my_user_name': '',
             'job_number': job.job_number if job else '',
             'job_name': job.name if job else '',
-            'document_number': invoice.invoice_number,
-            'invoice_number': invoice.invoice_number,
+            'document_number': invoice.display_number,
+            'invoice_number': invoice.display_number,
             'object_url': build_object_url('invoice', invoice.invoice_id),
         }
         subject = render_email_template(subject_template, **values)
@@ -331,9 +331,9 @@ class InvoiceEmailService:
             to = contact.email
 
         attachments_preview = [
-            {'filename': f'Invoice-{invoice.invoice_number}.pdf',
+            {'filename': f'Invoice-{invoice.display_number}.pdf',
              'content_type': 'application/pdf', 'size': 0},
-            {'filename': f'JobStatement-{invoice.invoice_number}.pdf',
+            {'filename': f'JobStatement-{invoice.display_number}.pdf',
              'content_type': 'application/pdf', 'size': 0},
         ]
         return {
@@ -405,7 +405,11 @@ class InvoiceEmailService:
             qbo_invoice.save(qb=client)
             qbo_id = str(qbo_invoice.Id)
             invoice.qbo_id = qbo_id
-            invoice.save(update_fields=['qbo_id'])
+            # QBO owns invoice numbering: adopt its DocNumber.
+            doc_number = str(getattr(qbo_invoice, 'DocNumber', '') or '')
+            if doc_number:
+                invoice.invoice_number = doc_number
+            invoice.save(update_fields=['qbo_id', 'invoice_number'])
 
             QBOInvoiceSyncService._mark_as_sent(client, qbo_id)
             QBOService.log_sync(
@@ -413,6 +417,17 @@ class InvoiceEmailService:
                 qbo_entity_type='Invoice', qbo_entity_id=qbo_id,
                 action='create', status='success',
             )
+
+        # Retry sends of an already-pushed invoice may predate the DocNumber
+        # writeback — backfill it from QBO so attachments and display carry
+        # the real number.
+        if not invoice.invoice_number:
+            from quickbooks.objects.invoice import Invoice as SDKInvoice
+            fetched = SDKInvoice.get(invoice.qbo_id, qb=client)
+            doc_number = str(getattr(fetched, 'DocNumber', '') or '')
+            if doc_number:
+                invoice.invoice_number = doc_number
+                invoice.save(update_fields=['invoice_number'])
 
         # Step 2: substitute the hosted-invoice payment link (survives the
         # send dialog as a literal {payment_link} token — unknown
@@ -429,8 +444,8 @@ class InvoiceEmailService:
 
         # Step 4: send via tracked outbound.
         attachments = [
-            (f'Invoice-{invoice.invoice_number}.pdf', qbo_invoice_pdf, 'application/pdf'),
-            (f'JobStatement-{invoice.invoice_number}.pdf', statement_pdf, 'application/pdf'),
+            (f'Invoice-{invoice.display_number}.pdf', qbo_invoice_pdf, 'application/pdf'),
+            (f'JobStatement-{invoice.display_number}.pdf', statement_pdf, 'application/pdf'),
         ]
         if extra_attachments:
             attachments.extend(extra_attachments)

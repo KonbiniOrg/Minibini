@@ -32,7 +32,10 @@ class InvoiceDirectCreateAPITest(TestCase):
         resp = self.client.post('/api/invoices/', {'job': self.billable_job.pk}, format='json')
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.data['status'], Invoice.STATUS_DRAFT)
-        self.assertTrue(resp.data['invoice_number'])
+        # QBO assigns numbers at push; a fresh draft has none, only the
+        # display placeholder.
+        self.assertIsNone(resp.data['invoice_number'])
+        self.assertEqual(resp.data['display_number'], 'Draft — JOB-2026-0001')
 
     def test_direct_create_is_idempotent_for_existing_draft(self):
         first = self.client.post('/api/invoices/', {'job': self.billable_job.pk}, format='json')
