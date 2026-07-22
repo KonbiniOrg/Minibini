@@ -23,8 +23,11 @@ Line items push individually instead of being bundled per accounting category.
     (InventoryItem or ServiceItem, minting the QBO Item lazily if absent — see
     below) → else the line's AccountingCategory's `qbo_item_id` (the generic
     fallback Item) → else omitted (QBO applies its default).
-  - `TaxCodeRef` per line from `TaxCalculationService.get_effective_taxability`,
-    same as today.
+  - `TaxCodeRef` per line, read directly from the line's
+    `accounting_category.taxable` flag (`'TAX'`/`'NON'`). Every line has a
+    category by push time — `_assert_all_lines_categorized` already gates
+    `send_invoice`. Konbini decides taxable-or-not (it's what the SPA displays
+    per line while composing); QBO owns rates and math.
 - `CustomerMemo` on the QBO invoice carries the job reference:
   `Job {job_number} — {job name}`. (Per-invoice custom messaging lives in
   konbini's email body, not on the QBO document.)
@@ -99,6 +102,25 @@ Both existing QBO fields stay, roles clarified:
 - `qbo_expense_account_id` — untouched; still used by expenses (and bills until
   the Bill removal lands).
 
+### Dead tax-override removal
+
+`BaseLineItem.taxable_override` and `BaseLineItem.tax_rate_override` are phantom
+features: API-writable, no UI ever sets them, and nothing reads
+`tax_rate_override` at all. With `InvoiceGroupingService` (the only
+`get_effective_taxability` consumer) deleted, they go too:
+
+- Drop both fields from `BaseLineItem` — one migration touching the four
+  line-item tables (estimate, invoice, PO, bill).
+- Strip them from the line-item serializers (estimates, invoicing, purchasing,
+  change_orders) and from the change-order line-copy
+  (`apps/estimates/change_order_service.py`).
+- Delete `TaxCalculationService` (`apps/core/services.py`) outright.
+
+NOT touched: `Business.tax_exemption_number` and `Business.tax_multiplier`
+(`apps/contacts/models.py`) — the real business-level tax fields, currently
+display-only. They anchor the future business-level exemption changeset (see
+out of scope).
+
 ## Out of scope (queued separately)
 
 - Cancel-from-konbini (must check QBO payment status first).
@@ -106,6 +128,10 @@ Both existing QBO fields stay, roles clarified:
 - `Bill` removal.
 - Catalog rename propagation to QBO Items (LATER).
 - Per-send or config choice of email sender.
+- Business-level tax exemption: map `Business.tax_exemption_number` /
+  `tax_multiplier` onto the QBO Customer's taxable/exempt settings. Note for
+  that design: QBO is binary taxable/exempt per customer — the multiplier's
+  fractional-rate idea won't map cleanly.
 
 ## Sandbox spike (before or during implementation)
 
@@ -117,6 +143,11 @@ Verify in the QBO sandbox, manually:
 - `CustomerMemo` renders on the hosted invoice/PDF as expected.
 - Duplicate-name mint → adopt flow behaves (create Item, then re-create same
   name).
+- Minting Items with a default taxability copied from the category's `taxable`
+  flag: confirm how Item-level tax fields interact with Automated Sales Tax
+  before committing to setting them (nice-to-have — konbini always sends
+  explicit per-line TaxCodeRef regardless; this only helps bookkeepers using
+  the Item directly inside QBO).
 - DocNumber assignment: confirm QBO auto-numbers when `DocNumber` is omitted.
 
 Sandbox email delivery is known-flaky; verify send mechanics via API fields
@@ -128,7 +159,8 @@ pay by test card, refund).
 
 - Backend: mock at the `QBOService` boundary as always. New/updated tests:
   per-line builder output (Description verbatim, ItemRef resolution order,
-  per-line TaxCodeRef, CustomerMemo, Allow\* flags, BillEmail), lazy mint logic
+  per-line TaxCodeRef from the category flag, CustomerMemo, Allow\* flags,
+  BillEmail), tax-override field removal fallout, lazy mint logic
   (type mapping, income-account copy, duplicate-name adopt, missing-`qbo_item_id`
   fallback), DocNumber writeback, retired number generation (draft has no
   number), send flow ordering incl. `invoiceLink` fetch.
