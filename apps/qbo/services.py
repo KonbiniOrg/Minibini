@@ -187,12 +187,24 @@ class QBOCustomerSyncService:
 
         customer = QBOCustomerSyncService._build_customer(business)
 
-        qbo_id = QBOService.save_and_log(
-            customer, client,
-            entity_type='customer',
-            qbo_entity_type='Customer',
-            entity_id=business.pk,
-        )
+        try:
+            qbo_id = QBOService.save_and_log(
+                customer, client,
+                entity_type='customer',
+                qbo_entity_type='Customer',
+                entity_id=business.pk,
+            )
+        except Exception as e:
+            # Duplicate DisplayName → the Customer already exists in QBO;
+            # adopt it (same pattern as QBOItemMintService). save_and_log
+            # already recorded the failed create attempt.
+            if not _is_duplicate_name_error(e):
+                raise
+            from quickbooks.objects.customer import Customer
+            qbo_id = _adopt_id_by_name(
+                Customer, client, DisplayName=customer.DisplayName)
+            if not qbo_id:
+                raise
         with transaction.atomic():
             business.qbo_customer_id = qbo_id
             business.save(update_fields=['qbo_customer_id'])
@@ -240,12 +252,21 @@ class QBOCustomerSyncService:
 
         customer = QBOCustomerSyncService._build_contact_customer(contact)
 
-        qbo_id = QBOService.save_and_log(
-            customer, client,
-            entity_type='contact_customer',
-            qbo_entity_type='Customer',
-            entity_id=contact.pk,
-        )
+        try:
+            qbo_id = QBOService.save_and_log(
+                customer, client,
+                entity_type='contact_customer',
+                qbo_entity_type='Customer',
+                entity_id=contact.pk,
+            )
+        except Exception as e:
+            if not _is_duplicate_name_error(e):
+                raise
+            from quickbooks.objects.customer import Customer
+            qbo_id = _adopt_id_by_name(
+                Customer, client, DisplayName=customer.DisplayName)
+            if not qbo_id:
+                raise
         with transaction.atomic():
             contact.qbo_customer_id = qbo_id
             contact.save(update_fields=['qbo_customer_id'])
@@ -645,6 +666,29 @@ class QBOBillSyncService:
         return qbo_bill
 
 
+def _is_duplicate_name_error(exc):
+    """QBO's 6240 Duplicate Name Exists Error, in any of its phrasings."""
+    text = str(exc)
+    return 'Duplicate Name Exists' in text or '6240' in text
+
+
+def _adopt_id_by_name(sdk_class, client, **name_filter):
+    """Adopt an existing QBO record after a duplicate-name refusal.
+
+    QBO companies routinely predate konbini (future tenants; reseeded dev
+    DBs against a lived-in sandbox), so a name collision usually means
+    "this record already exists over there" — query it by its name field
+    and return str(Id). Returns None when no match (e.g. the collision is
+    with an inactive record the default query can't see) — caller
+    re-raises. Accepted trade-off: a same-named-but-genuinely-different
+    record binds silently.
+    """
+    existing = sdk_class.filter(qb=client, **name_filter)
+    if not existing:
+        return None
+    return str(existing[0].Id)
+
+
 class QBOItemMintService:
     """Lazily mirrors konbini catalog entities (InventoryItem, ServiceItem)
     into QBO Items at invoice-push time.
@@ -691,12 +735,11 @@ class QBOItemMintService:
             item.save(qb=client)
             qbo_id = str(item.Id)
         except Exception as e:
-            if 'Duplicate Name Exists' not in str(e) and '6240' not in str(e):
+            if not _is_duplicate_name_error(e):
                 raise
-            existing = Item.filter(Name=name, qb=client)
-            if not existing:
+            qbo_id = _adopt_id_by_name(Item, client, Name=name)
+            if not qbo_id:
                 raise
-            qbo_id = str(existing[0].Id)
 
         entity.qbo_id = qbo_id
         entity.save(update_fields=['qbo_id'])

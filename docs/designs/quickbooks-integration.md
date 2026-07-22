@@ -164,6 +164,17 @@ Two push entry points:
 
 Both are no-ops if the target already has a `qbo_customer_id`.
 
+Both **adopt on duplicate name** (2026-07-23): when the create fails with
+QBO's 6240 Duplicate Name error, the push queries the existing Customer by
+`DisplayName` and adopts its Id — same pattern and helpers as the Item mint
+(`_is_duplicate_name_error` / `_adopt_id_by_name`, shared module-level in
+`apps/qbo/services.py`). The failed create attempt keeps its `QBOSyncLog`
+row (accurate history); the adopt then proceeds. If the name query finds
+nothing (e.g. the collision is with an inactive record), the original error
+re-raises. Accepted trade-off: a same-named-but-genuinely-different customer
+binds silently. Vendors do NOT adopt yet — `push_vendor` still fails on
+collision.
+
 ### DisplayName collision logic — `QBODisplayNameService`
 
 QBO requires unique `DisplayName` per entity type. The same Minibini `Business` may be both a customer (the company issues them invoices) and a vendor (the company also buys from them). Rules:
@@ -172,7 +183,7 @@ QBO requires unique `DisplayName` per entity type. The same Minibini `Business` 
 - If the business already has the *other* role's QBO ID (e.g. pushing as customer and `qbo_vendor_id` is set), the display name gets a ` (Customer)` or ` (Vendor)` suffix.
 - `QBO_DISPLAY_NAME_MAX = 500`; long names are truncated before the suffix is appended.
 
-The current logic only inspects Minibini's own QBO IDs. It does not handle the case where the user's QBO file already contains a customer named "Acme Inc." that was created outside Minibini. That collision surfaces as an SDK error and the sync log records a failure.
+The current logic only inspects Minibini's own QBO IDs. A pre-existing QBO customer named "Acme Inc." created outside Minibini is handled by the adopt-on-duplicate path above (customers); for vendors it still surfaces as an SDK error and a failed sync-log row.
 
 ### What gets pushed
 

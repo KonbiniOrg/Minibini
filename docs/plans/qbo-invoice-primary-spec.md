@@ -179,13 +179,13 @@ statuses), `docs/designs/estimates-and-prices.md` /
 
 ## Follow-ups queued on this branch (post-review notes, 2026-07-22)
 
-- **Customer push: adopt-by-name on 6240.** `QBOCustomerSyncService` currently
-  creates blind and re-raises QBO's Duplicate Name error. Mirror the Item
-  mint's adopt: on 6240, query the QBO Customer by DisplayName and adopt its
-  Id into `qbo_customer_id`. Product-correct (future tenants arrive with
-  populated QBO customer lists), and dissolves the reseeded-dev-DB vs.
-  stale-sandbox drift RM hit in testing. Same accepted caveat as Items:
-  same-named-but-different customer binds silently.
+- **Customer push: adopt-by-name on 6240 — DONE 2026-07-23.** Both customer
+  push entry points adopt the existing QBO Customer by DisplayName on a
+  duplicate-name error, via shared helpers (`_is_duplicate_name_error` /
+  `_adopt_id_by_name`) also used by the Item mint. NOTE: `push_vendor` has
+  the identical collision exposure and does NOT adopt yet — decide whether
+  to extend (small change, same pattern) or leave until the Bill-removal
+  work reshapes the vendor path.
 - **Job-statement PDF: dropped from the send (done 2026-07-22).**
   `apps/invoicing/pdf.py` + `templates/invoicing/job_statement.html` (and
   `tests/test_invoice_pdf.py`) are now orphaned — delete outright, or keep
