@@ -98,6 +98,20 @@ JSON list of payment accounts (Bank, Credit Card, Other Current Asset) used by t
 
 Read via `QBOExpenseSyncService._load_payment_accounts()`; individual lookup via `_lookup_account(payment_account_id)` (raises `ValueError` if not configured).
 
+## Gotcha: QBO's raw JSON field capitalization is inconsistent
+
+When reading QBO's raw JSON directly (bypassing the SDK's object mapping —
+e.g. `client.get(...)` as `_fetch_invoice_link` does), do not trust the
+documented field casing. Observed live (sandbox, 2026-07-22): the payment
+link returns as **`InvoiceLink`** (capital I) while Intuit's docs, community
+answers, and the python-quickbooks SDK all say `invoiceLink`; most other
+fields are PascalCase (`DocNumber`, `AllowOnlineACHPayment`), but not
+reliably so. **If a field you're reading from a raw response comes back
+`None`/missing while clearly present in the payload, check capitalization
+first** — dump the full response (`manage.py probe_invoice_link` does this
+for invoices) and read the actual key. Where casing has burned us, accept
+both spellings (see `_fetch_invoice_link`).
+
 ## The `QBOService` mock boundary
 
 `QBOService` — `apps/qbo/services.py` — is a thin wrapper around the python-quickbooks SDK and is the only sanctioned mock point for tests. Production code obtains its QBO client via `QBOService.get_client()` and logs sync attempts via `QBOService.log_sync(...)`.
