@@ -431,6 +431,8 @@ class ServiceItem(models.Model):
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    # QBO Item mirror (lazily created at first invoice push; '' = not mirrored)
+    qbo_id = models.CharField(max_length=50, blank=True, default='')
     rate_scheme = models.ForeignKey(
         'jobs.RateScheme',
         on_delete=models.PROTECT,

@@ -43,6 +43,10 @@ INPUT_RECORDS = [
     record('purchasing.billpayment', 50, bill=20, amount='10.00',
            payment_account_id='42', qbo_id='801', qbo_sync_status='synced',
            qbo_sync_error='', qbo_pending_op=''),
+    record('inventory.inventoryitem', 80, code='PLY', description='Plywood',
+           qbo_id='77'),
+    record('estimates.serviceitem', 90, template_name='CNC Cutting',
+           qbo_id='78'),
     record('qbo.qboconnection', 60, realm_id='9130350000000000',
            access_token='tok', refresh_token='ref', is_active=True),
     record('qbo.qbosynclog', 70, entity_type='invoice', entity_id=10,
@@ -72,6 +76,13 @@ class PurgeQBODataTest(SimpleTestCase):
         for rec in result:
             by_model.setdefault(rec['model'], []).append(rec)
         return result, by_model, out.getvalue()
+
+    def test_clears_catalog_item_mirror_ids(self):
+        _, by_model, _ = self.purge()
+        inv_fields = by_model['inventory.inventoryitem'][0]['fields']
+        self.assertEqual(inv_fields['qbo_id'], '')
+        svc_fields = by_model['estimates.serviceitem'][0]['fields']
+        self.assertEqual(svc_fields['qbo_id'], '')
 
     def test_clears_accounting_category_mappings(self):
         _, by_model, _ = self.purge()
