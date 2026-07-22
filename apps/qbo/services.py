@@ -455,7 +455,10 @@ class QBOInvoiceSyncService:
         result = client.get(url, {}, params={
             'include': 'invoiceLink', 'minorversion': '75',
         })
-        return (result.get('Invoice') or {}).get('invoiceLink', '') or ''
+        inv = result.get('Invoice') or {}
+        # QBO's raw JSON returns 'InvoiceLink' (capital I) even though the
+        # docs and SDK say 'invoiceLink' — accept both.
+        return inv.get('InvoiceLink') or inv.get('invoiceLink') or ''
 
     @staticmethod
     def _mark_as_sent(client, qbo_id):

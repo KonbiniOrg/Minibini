@@ -40,7 +40,7 @@ class Command(BaseCommand):
 
         invoice = result.get('Invoice') or {}
         self.stdout.write('\n--- payment-relevant fields ---')
-        for key in ('Id', 'DocNumber', 'invoiceLink',
+        for key in ('Id', 'DocNumber', 'InvoiceLink', 'invoiceLink',
                     'AllowOnlineCreditCardPayment', 'AllowOnlineACHPayment',
                     'AllowOnlinePayment', 'EmailStatus', 'BillEmail'):
             self.stdout.write(f'{key}: {invoice.get(key)!r}')

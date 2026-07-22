@@ -16,7 +16,7 @@ class ProbeInvoiceLinkTest(SimpleTestCase):
         client.get.return_value = {
             'Invoice': {
                 'Id': '179', 'DocNumber': '1060',
-                'invoiceLink': 'https://pay.example/i/179',
+                'InvoiceLink': 'https://pay.example/i/179',
                 'AllowOnlineCreditCardPayment': True,
             },
         }
@@ -29,7 +29,7 @@ class ProbeInvoiceLinkTest(SimpleTestCase):
         self.assertIn('/invoice/179', text)
         self.assertIn('minorversion=75', text)
         self.assertIn('include=invoiceLink', text)
-        self.assertIn("invoiceLink: 'https://pay.example/i/179'", text)
+        self.assertIn("InvoiceLink: 'https://pay.example/i/179'", text)
         self.assertIn('AllowOnlineCreditCardPayment: True', text)
         self.assertIn('"DocNumber": "1060"', text)
 

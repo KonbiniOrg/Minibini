@@ -22,8 +22,10 @@ class FetchInvoiceLinkTest(TestCase):
         return client
 
     def test_returns_link(self):
+        # QBO's raw JSON uses 'InvoiceLink' (capital I) despite docs/SDK
+        # widely showing 'invoiceLink' — observed live in sandbox 2026-07-22.
         client = self._client(
-            {'Invoice': {'Id': '42', 'invoiceLink': 'https://pay.example/i/42'}})
+            {'Invoice': {'Id': '42', 'InvoiceLink': 'https://pay.example/i/42'}})
         link = QBOInvoiceSyncService._fetch_invoice_link(client, '42')
         self.assertEqual(link, 'https://pay.example/i/42')
         url = client.get.call_args.args[0]
@@ -38,6 +40,13 @@ class FetchInvoiceLinkTest(TestCase):
         client = self._client({'Invoice': {'Id': '42'}})
         self.assertEqual(
             QBOInvoiceSyncService._fetch_invoice_link(client, '42'), '')
+
+    def test_tolerates_lowercase_key(self):
+        client = self._client(
+            {'Invoice': {'Id': '42', 'invoiceLink': 'https://pay.example/i/42'}})
+        self.assertEqual(
+            QBOInvoiceSyncService._fetch_invoice_link(client, '42'),
+            'https://pay.example/i/42')
 
 
 class SendSubstitutesPaymentLinkTest(TestCase):
