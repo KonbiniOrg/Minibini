@@ -40659,8 +40659,8 @@
     "created_date": "2026-05-20T00:00:00Z",
     "start_date": "2026-05-21T00:00:00Z",
     "due_date": null,
-    "completed_date": null,
-    "status": "work_complete",
+    "completed_date": "2026-07-10T17:00:00Z",
+    "status": "completed",
     "on_hold": false,
     "hold_reason": "",
     "contact": 82,
@@ -93925,6 +93925,416 @@
     "released_qty": "0.00",
     "po_line_item": null,
     "cost_source": "entered"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 1,
+  "fields": {
+    "message_id": "<e2e-inq-08028@robot-six.com>",
+    "direction": "inbound",
+    "sent_at": null,
+    "last_send_error": "",
+    "job": 1,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-07-14T16:12:00Z"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 2,
+  "fields": {
+    "message_id": "<e2e-est-08008-1@minibini.local>",
+    "direction": "outbound",
+    "sent_at": "2026-07-08T18:30:00Z",
+    "last_send_error": "",
+    "job": 19,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-07-08T18:30:00Z"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 3,
+  "fields": {
+    "message_id": "<e2e-est-08008-1-re@robot-six.com>",
+    "direction": "inbound",
+    "sent_at": null,
+    "last_send_error": "",
+    "job": 19,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-07-09T15:05:00Z"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 4,
+  "fields": {
+    "message_id": "<e2e-est-08026-1@minibini.local>",
+    "direction": "outbound",
+    "sent_at": "2026-06-30T20:10:00Z",
+    "last_send_error": "",
+    "job": 3,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-06-30T20:10:00Z"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 5,
+  "fields": {
+    "message_id": "<e2e-est-08026-1-re@robot-six.com>",
+    "direction": "inbound",
+    "sent_at": null,
+    "last_send_error": "",
+    "job": 3,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-07-01T14:22:00Z"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 6,
+  "fields": {
+    "message_id": "<e2e-inv-10337@minibini.local>",
+    "direction": "outbound",
+    "sent_at": "2026-07-15T21:40:00Z",
+    "last_send_error": "",
+    "job": 8,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-07-15T21:40:00Z"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 7,
+  "fields": {
+    "message_id": "<e2e-inv-10337-re@robot-six.com>",
+    "direction": "inbound",
+    "sent_at": null,
+    "last_send_error": "",
+    "job": 8,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-07-16T15:55:00Z"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 8,
+  "fields": {
+    "message_id": "<e2e-inv-10289@minibini.local>",
+    "direction": "outbound",
+    "sent_at": "2026-07-03T19:00:00Z",
+    "last_send_error": "",
+    "job": 67,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-07-03T19:00:00Z"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 9,
+  "fields": {
+    "message_id": "<e2e-inv-10289-re@robot-six.com>",
+    "direction": "inbound",
+    "sent_at": null,
+    "last_send_error": "",
+    "job": 67,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-07-04T16:45:00Z"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 10,
+  "fields": {
+    "message_id": "<e2e-vendor-mnh-20441@robot-six.com>",
+    "direction": "inbound",
+    "sent_at": null,
+    "last_send_error": "",
+    "job": null,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-07-17T17:20:00Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 1,
+  "fields": {
+    "email_record": 1,
+    "uid": "e2e-1001",
+    "subject": "Quote request \u2014 18 separate letters, \"Common Ground\"",
+    "from_email": "test+aishahamilton@robot-six.com",
+    "to_email": "test+shop@robot-six.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-07-14T16:12:00Z",
+    "in_reply_to": "",
+    "references": "",
+    "text_body": "Hi,\n\nWe'd like a quote for 18 separate letters that spell \"Common Ground\" for our lobby wall \u2014 roughly 10\" tall, painted MDF. Could you let us know pricing and lead time?\n\nThanks,\nAisha Hamilton",
+    "html_body": "",
+    "attachments_metadata": [],
+    "is_read": true,
+    "is_starred": false,
+    "has_attachments": false,
+    "created_at": "2026-07-14T16:12:00Z",
+    "updated_at": "2026-07-14T16:12:00Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 2,
+  "fields": {
+    "email_record": 2,
+    "uid": "e2e-1002",
+    "subject": "Estimate 08008-1",
+    "from_email": "test+shop@robot-six.com",
+    "to_email": "test+jay@robot-six.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-07-08T18:30:00Z",
+    "in_reply_to": "",
+    "references": "",
+    "text_body": "Hi Jay,\n\nPlease find attached our estimate 08008-1 for Plywood/Acrylic project. You can review it and accept or decline it online here:\nhttps://example.com/portal/?token=e2e-fixture&doc=estimate\n\nLet us know if you have any questions.\n\nThanks,\nFake Owner",
+    "html_body": "",
+    "attachments_metadata": [
+      {
+        "filename": "Estimate-08008-1.pdf",
+        "content_type": "application/pdf",
+        "size": 48213
+      }
+    ],
+    "is_read": true,
+    "is_starred": false,
+    "has_attachments": true,
+    "created_at": "2026-07-08T18:30:00Z",
+    "updated_at": "2026-07-08T18:30:00Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 3,
+  "fields": {
+    "email_record": 3,
+    "uid": "e2e-1003",
+    "subject": "Re: Estimate 08008-1",
+    "from_email": "test+jay@robot-six.com",
+    "to_email": "test+shop@robot-six.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-07-09T15:05:00Z",
+    "in_reply_to": "<e2e-est-08008-1@minibini.local>",
+    "references": "<e2e-est-08008-1@minibini.local>",
+    "text_body": "Looks good \u2014 we accept. I've clicked Accept on the portal page as well. When could you start?\n\nJay",
+    "html_body": "",
+    "attachments_metadata": [],
+    "is_read": true,
+    "is_starred": false,
+    "has_attachments": false,
+    "created_at": "2026-07-09T15:05:00Z",
+    "updated_at": "2026-07-09T15:05:00Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 4,
+  "fields": {
+    "email_record": 4,
+    "uid": "e2e-1004",
+    "subject": "Estimate 08026-1",
+    "from_email": "test+shop@robot-six.com",
+    "to_email": "test+rainbowprincetv@robot-six.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-06-30T20:10:00Z",
+    "in_reply_to": "",
+    "references": "",
+    "text_body": "Hi Kalleb,\n\nPlease find attached our estimate 08026-1 for cut ovals in centers of existing smaller pieces. You can review it and accept or decline it online here:\nhttps://example.com/portal/?token=e2e-fixture-2&doc=estimate\n\nLet us know if you have any questions.\n\nThanks,\nFake Owner",
+    "html_body": "",
+    "attachments_metadata": [
+      {
+        "filename": "Estimate-08026-1.pdf",
+        "content_type": "application/pdf",
+        "size": 48213
+      }
+    ],
+    "is_read": true,
+    "is_starred": false,
+    "has_attachments": true,
+    "created_at": "2026-06-30T20:10:00Z",
+    "updated_at": "2026-06-30T20:10:00Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 5,
+  "fields": {
+    "email_record": 5,
+    "uid": "e2e-1005",
+    "subject": "Re: Estimate 08026-1",
+    "from_email": "test+rainbowprincetv@robot-six.com",
+    "to_email": "test+shop@robot-six.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-07-01T14:22:00Z",
+    "in_reply_to": "<e2e-est-08026-1@minibini.local>",
+    "references": "<e2e-est-08026-1@minibini.local>",
+    "text_body": "Accepted, thanks! One thing \u2014 for the two smallest ovals, can the edge radius match the sample you cut last time?\n\nKalleb",
+    "html_body": "",
+    "attachments_metadata": [],
+    "is_read": true,
+    "is_starred": false,
+    "has_attachments": false,
+    "created_at": "2026-07-01T14:22:00Z",
+    "updated_at": "2026-07-01T14:22:00Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 6,
+  "fields": {
+    "email_record": 6,
+    "uid": "e2e-1006",
+    "subject": "Invoice 10337 for 08023",
+    "from_email": "test+shop@robot-six.com",
+    "to_email": "test+rainbowprincetv@robot-six.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-07-15T21:40:00Z",
+    "in_reply_to": "",
+    "references": "",
+    "text_body": "Hi Kalleb,\n\nPlease find attached your invoice 10337 for ellipse - cut from 1/2\" or 3/4\" scrap MDF. You can view and pay it online here: https://connect.intuit.com/t/e2e-fixture-10337\n\nThanks,\nFake Owner",
+    "html_body": "",
+    "attachments_metadata": [
+      {
+        "filename": "Invoice-10337.pdf",
+        "content_type": "application/pdf",
+        "size": 48213
+      }
+    ],
+    "is_read": true,
+    "is_starred": false,
+    "has_attachments": true,
+    "created_at": "2026-07-15T21:40:00Z",
+    "updated_at": "2026-07-15T21:40:00Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 7,
+  "fields": {
+    "email_record": 7,
+    "uid": "e2e-1007",
+    "subject": "Re: Invoice 10337 for 08023",
+    "from_email": "test+rainbowprincetv@robot-six.com",
+    "to_email": "test+shop@robot-six.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-07-16T15:55:00Z",
+    "in_reply_to": "<e2e-inv-10337@minibini.local>",
+    "references": "<e2e-inv-10337@minibini.local>",
+    "text_body": "Got it \u2014 accounts payable runs Friday, payment will go out then via the link.\n\nKalleb",
+    "html_body": "",
+    "attachments_metadata": [],
+    "is_read": true,
+    "is_starred": false,
+    "has_attachments": false,
+    "created_at": "2026-07-16T15:55:00Z",
+    "updated_at": "2026-07-16T15:55:00Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 8,
+  "fields": {
+    "email_record": 8,
+    "uid": "e2e-1008",
+    "subject": "Invoice 10289 for 07935",
+    "from_email": "test+shop@robot-six.com",
+    "to_email": "test+hugo@robot-six.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-07-03T19:00:00Z",
+    "in_reply_to": "",
+    "references": "",
+    "text_body": "Hi Hugo,\n\nPlease find attached your invoice 10289 for your job 07935. You can view and pay it online here: https://connect.intuit.com/t/e2e-fixture-10289\n\nThanks,\nFake Owner",
+    "html_body": "",
+    "attachments_metadata": [
+      {
+        "filename": "Invoice-10289.pdf",
+        "content_type": "application/pdf",
+        "size": 48213
+      }
+    ],
+    "is_read": true,
+    "is_starred": false,
+    "has_attachments": true,
+    "created_at": "2026-07-03T19:00:00Z",
+    "updated_at": "2026-07-03T19:00:00Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 9,
+  "fields": {
+    "email_record": 9,
+    "uid": "e2e-1009",
+    "subject": "Re: Invoice 10289 for 07935",
+    "from_email": "test+hugo@robot-six.com",
+    "to_email": "test+shop@robot-six.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-07-04T16:45:00Z",
+    "in_reply_to": "<e2e-inv-10289@minibini.local>",
+    "references": "<e2e-inv-10289@minibini.local>",
+    "text_body": "Paid just now through the link \u2014 thanks for the quick turnaround, the pieces look great.\n\nHugo",
+    "html_body": "",
+    "attachments_metadata": [],
+    "is_read": true,
+    "is_starred": false,
+    "has_attachments": false,
+    "created_at": "2026-07-04T16:45:00Z",
+    "updated_at": "2026-07-04T16:45:00Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 10,
+  "fields": {
+    "email_record": 10,
+    "uid": "e2e-1010",
+    "subject": "Invoice MNH-20441 \u2014 plywood order",
+    "from_email": "test+ap@robot-six.com",
+    "to_email": "test+shop@robot-six.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-07-17T17:20:00Z",
+    "in_reply_to": "",
+    "references": "",
+    "text_body": "Hello,\n\nPlease find attached invoice MNH-20441 covering your recent plywood order. Net 30. Remit via the usual portal.\n\nMoore Newton Hardwoods \u2014 Accounts Receivable",
+    "html_body": "",
+    "attachments_metadata": [
+      {
+        "filename": "MNH-20441.pdf",
+        "content_type": "application/pdf",
+        "size": 48213
+      }
+    ],
+    "is_read": false,
+    "is_starred": false,
+    "has_attachments": true,
+    "created_at": "2026-07-17T17:20:00Z",
+    "updated_at": "2026-07-17T17:20:00Z"
   }
 }
 ]
