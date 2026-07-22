@@ -281,7 +281,7 @@ class InvoiceEmailService:
     DEFAULT_BODY = (
         'Hi {contact_fname},\n\n'
         'Please find attached your invoice {document_number} for {job_name}. '
-        'The invoice includes a Pay Now link.\n\n'
+        'You can view and pay it online here: {payment_link}\n\n'
         'Thanks,\n{my_user_name}'
     )
 
@@ -414,11 +414,20 @@ class InvoiceEmailService:
                 action='create', status='success',
             )
 
-        # Step 2: generate / fetch the two PDFs.
+        # Step 2: substitute the hosted-invoice payment link (survives the
+        # send dialog as a literal {payment_link} token — unknown
+        # placeholders pass through render_email_template untouched).
+        from apps.core.email_templates import render_email_template
+        payment_link = QBOInvoiceSyncService._fetch_invoice_link(
+            client, invoice.qbo_id)
+        subject = render_email_template(subject, payment_link=payment_link)
+        body = render_email_template(body, payment_link=payment_link)
+
+        # Step 3: generate / fetch the two PDFs.
         statement_pdf = generate_job_statement_pdf(invoice)
         qbo_invoice_pdf = QBOInvoiceSyncService._download_qbo_pdf(client, invoice.qbo_id)
 
-        # Step 3: send via tracked outbound.
+        # Step 4: send via tracked outbound.
         attachments = [
             (f'Invoice-{invoice.invoice_number}.pdf', qbo_invoice_pdf, 'application/pdf'),
             (f'JobStatement-{invoice.invoice_number}.pdf', statement_pdf, 'application/pdf'),
@@ -432,7 +441,7 @@ class InvoiceEmailService:
             associate_with={'job': invoice.job},
         )
 
-        # Step 4: status transition on success.
+        # Step 5: status transition on success.
         if invoice.status == Invoice.STATUS_DRAFT:
             invoice.status = Invoice.STATUS_OPEN
             invoice.save()

@@ -52,7 +52,7 @@
         default:
           'Hi {contact_fname},\n\n' +
           'Please find attached your invoice {document_number} for {job_name}. ' +
-          'The invoice includes a Pay Now link.\n\n' +
+          'You can view and pay it online here: {payment_link}\n\n' +
           'Thanks,\n{my_user_name}',
       },
     },
@@ -233,7 +233,9 @@
         Per-document aliases also work: <code>{'{estimate_number}'}</code> on the
         Estimate template, <code>{'{po_number}'}</code> /
         <code>{'{vendor_name}'}</code> on the Purchase Order template,
-        <code>{'{invoice_number}'}</code> on the Invoice template, and
+        <code>{'{invoice_number}'}</code> /
+        <code>{'{payment_link}'}</code> (the QBO pay-online link, substituted
+        at send time) on the Invoice template, and
         <code>{'{change_order_number}'}</code> / <code>{'{estimate_number}'}</code> /
         <code>{'{object_url}'}</code> (the customer portal link) on the Change
         Order template. Unknown

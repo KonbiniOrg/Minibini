@@ -437,6 +437,19 @@ class QBOInvoiceSyncService:
         return None
 
     @staticmethod
+    def _fetch_invoice_link(client, qbo_id):
+        """Shareable hosted-invoice URL (carries the Pay button when QBO
+        Payments is active). '' when QBO returns none.
+
+        The installed python-quickbooks get()/get_single_object() can't pass
+        query params, so this builds the request directly on the client.
+        """
+        url = "{0}/company/{1}/invoice/{2}/".format(
+            client.api_url, client.company_id, qbo_id)
+        result = client.get(url, {}, params={'include': 'invoiceLink'})
+        return (result.get('Invoice') or {}).get('invoiceLink', '') or ''
+
+    @staticmethod
     def _mark_as_sent(client, qbo_id):
         """Mark a QBO invoice as sent without triggering QBO's email."""
         from quickbooks.objects.invoice import Invoice as QBOInvoice
