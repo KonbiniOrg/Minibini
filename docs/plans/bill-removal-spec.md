@@ -29,20 +29,31 @@ against a vendor. Konbini will not use QBO's PO or inventory systems.
 
 ## Decisions
 
-### 1. Model removal
+### 1. Model retirement (schema retained — RM decision 2026-07-23)
 
-- Delete `Bill`, `BillLineItem`, `BillPayment` (models + a migration dropping
-  the three tables). No data export/migration — pre-production; real bills
-  will be born in QBO.
-- `PurchaseOrder` loses `billed_total` / `is_fully_billed` and the `bills`
-  reverse relation. PO status machine unchanged — lifecycle ends at
-  `received_in_full` / `cancelled`. No "billed" state or flag is added:
-  invoice-vs-PO reconciliation is bookkeeper work done in QBO; a konbini-side
-  flag verified against nothing would drift.
-- KEEP: `AccountingCategory.qbo_expense_account_id` and
+- `Bill`, `BillLineItem`, `BillPayment` model classes STAY, stripped to bare
+  schema declarations marked **UNUSED/RETIRED** (docstring + comment), so
+  **no destructive migration** is generated — the tables and their dev-DB
+  rows survive in case of reversion. All business logic (clean/save
+  overrides, transitions, properties), admin registration, and every active
+  consumer is removed. A LATER entry records the follow-up: if this isn't
+  reverted, a table-dropping migration is still owed.
+- Passive row-safety code that merely *references* the retained models stays:
+  the `PROTECT` FKs, the contacts deletion-protection checks, and
+  `InventoryItem.has_document_line_refs`' BillLineItem clause — legacy rows
+  may exist and must keep blocking unsafe deletes.
+- `PurchaseOrder` loses `billed_total` / `is_fully_billed` (active logic;
+  the `bills` reverse relation remains implicitly via the retained FK). PO
+  status machine unchanged — lifecycle ends at `received_in_full` /
+  `cancelled`. No "billed" state or flag is added: invoice-vs-PO
+  reconciliation is bookkeeper work done in QBO; a konbini-side flag
+  verified against nothing would drift.
+- `EmailRecord.bill` FK column likewise retained-but-unused; the `'bill'`
+  assoc option is removed from active code (§3).
+- KEEP (in active use): `AccountingCategory.qbo_expense_account_id` and
   `Configuration['qbo_payment_accounts']` (+`QBOPaymentAccountService`) —
-  expenses/reimbursements use both. KEEP `Business.qbo_vendor_id` (harmless;
-  the future QBO-pull may repopulate it; `QBODisplayNameService` reads it for
+  expenses/reimbursements use both. KEEP `Business.qbo_vendor_id` (the
+  future QBO-pull may repopulate it; `QBODisplayNameService` reads it for
   the suffix rule).
 
 ### 2. QBO layer
@@ -66,8 +77,9 @@ against a vendor. Konbini will not use QBO's PO or inventory systems.
   existing `EmailRecord.purchase_order` association (already used by
   outbound PO sends). The PO detail's email panel then shows that the vendor
   invoice arrived.
-- Drop the `EmailRecord.bill` FK and the `'bill'` entry in
-  `OutboundEmailService._ASSOC_FIELDS`.
+- Remove the `'bill'` entry from `OutboundEmailService._ASSOC_FIELDS` and
+  every bill-linking action/serializer field; the `EmailRecord.bill` column
+  itself is retained-but-unused (§1).
 
 ### 4. SPA removal
 
@@ -107,7 +119,9 @@ against a vendor. Konbini will not use QBO's PO or inventory systems.
   `test_qbo_bill_polling` bill slice, `test_bill_payment_qbo_lifecycle`,
   `test_qbo_bill_payment_push`, bill parts of purchasing/API/search/email
   tests); update PO tests that touch `billed_total`/bills; new tests for
-  email→PO linking action. Full suite fresh (migrations — no `--keepdb`).
+  email→PO linking action. Full suite fresh (no `--keepdb` — even though no
+  migration is expected, `makemigrations --check --dry-run` must confirm the
+  stripped models generate none).
 - Vitest: delete bill component specs; update PO detail, email action panel,
   search, nav, sync-failures specs; new spec for link-email-to-PO.
 - E2E: strip bills from the committed seed; delete/adjust bill flows; the
