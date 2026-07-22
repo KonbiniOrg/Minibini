@@ -507,6 +507,7 @@ class ServiceItem(models.Model):
                 description=resolved_description,
                 assignee=assignee,
                 sort_order=sort_order,
+                service_item=self,
                 rate_scheme=self.rate_scheme,
                 active_modifiers=resolved_modifiers,
                 est_qty=est_qty,

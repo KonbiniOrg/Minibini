@@ -985,6 +985,7 @@ class TaskService:
                 job=job,
                 name=template.template_name,
                 assignee=assignee,
+                service_item=template,
                 rate_scheme=template.rate_scheme,
                 active_modifiers=copy_active_modifiers(template.default_active_modifiers),
                 est_qty=est_qty if est_qty is not None else Decimal('1'),
