@@ -9,7 +9,7 @@ from apps.core.models import (
 )
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
-from apps.purchasing.models import PurchaseOrder, Bill
+from apps.purchasing.models import PurchaseOrder
 
 
 class CleanupTempEmailsCommandTest(TestCase):
@@ -184,50 +184,6 @@ class CleanupTempEmailsCommandTest(TestCase):
         call_command('cleanup_temp_emails')
 
         self.assertFalse(TempEmail.objects.filter(email_record=rec).exists())
-
-    # --- linked to a Bill ---------------------------------------------------
-
-    def test_linked_paid_bill_old_transition_purged(self):
-        biz = self._make_business('V4')
-        bill = Bill.objects.create(
-            vendor_invoice_number='BIL-A', business=biz,
-            status=Bill.STATUS_PAID_IN_FULL,
-        )
-        self._record_status_change(
-            'bill', bill.pk, Bill.STATUS_PAID_IN_FULL, days_ago=120,
-        )
-        rec, _ = self._make_temp('bill-paid', 10, bill=bill)
-
-        call_command('cleanup_temp_emails')
-
-        self.assertFalse(TempEmail.objects.filter(email_record=rec).exists())
-
-    def test_linked_refunded_bill_treated_as_final(self):
-        biz = self._make_business('V5')
-        bill = Bill.objects.create(
-            vendor_invoice_number='BIL-B', business=biz,
-            status=Bill.STATUS_REFUNDED,
-        )
-        self._record_status_change(
-            'bill', bill.pk, Bill.STATUS_REFUNDED, days_ago=200,
-        )
-        rec, _ = self._make_temp('bill-refunded', 10, bill=bill)
-
-        call_command('cleanup_temp_emails')
-
-        self.assertFalse(TempEmail.objects.filter(email_record=rec).exists())
-
-    def test_linked_active_bill_kept(self):
-        biz = self._make_business('V6')
-        bill = Bill.objects.create(
-            vendor_invoice_number='BIL-C', business=biz,
-            status=Bill.STATUS_RECEIVED,
-        )
-        rec, _ = self._make_temp('bill-active', 999, bill=bill)
-
-        call_command('cleanup_temp_emails')
-
-        self.assertTrue(TempEmail.objects.filter(email_record=rec).exists())
 
     # --- multi-link (strictest: all must be purgeable) ----------------------
 

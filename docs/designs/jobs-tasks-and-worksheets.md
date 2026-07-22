@@ -27,7 +27,7 @@ A Job is the central work-tracking entity. Each Job aggregates its work
 - 0+ **Materials** (inventory-backed or freeform; optionally linked to a Task)
 - 0+ **Fees** (fixed charges: `quantity × unit_rate`; optionally linked to a Task)
 - 0+ Estimates (customer-facing quotes — lens over the atoms)
-- 0+ Invoices, Purchase Orders, Bills
+- 0+ Invoices, Purchase Orders
 
 Tasks are the only work-execution container the system has. The former
 `WorkOrder` model is gone; `Task.job` is a direct FK. Bleps (time
@@ -43,7 +43,7 @@ separate planning container.
         ┌─────────┬───────┼────────┬──────────────┐
         ▼         ▼       ▼        ▼              ▼
       Tasks   Materials  Fees   Estimates     Invoices
-        │      (opt FK   (opt FK   (lens)      POs, Bills
+        │      (opt FK   (opt FK   (lens)      POs
         ▼      to Task)  to Task)
       Bleps
 ```
@@ -436,7 +436,7 @@ projects the new Job's atoms (`estimates-and-prices.md` §7).
 
 #### Never copied (either path)
 
-Estimates, invoices, purchase orders, bills, shipments, change orders,
+Estimates, invoices, purchase orders, shipments, change orders,
 history entries, and bleps are never carried over to the new Job.
 
 ## 4. Task

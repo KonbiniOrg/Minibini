@@ -136,17 +136,6 @@ def unlink_from_po(request, pk):
     return _unlink_email_from(pk, 'purchase_order')
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated, CanManageFinancials])
-def link_to_bill(request, pk):
-    return _link_email_to(request, pk, 'bill', 'bill_id')
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated, CanManageFinancials])
-def unlink_from_bill(request, pk):
-    return _unlink_email_from(pk, 'bill')
-
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, CanManageFinancials])
@@ -371,7 +360,6 @@ def reply_defaults(request, pk):
         'inherit_associations': {
             'job': parent.job_id,
             'purchase_order': parent.purchase_order_id,
-            'bill': parent.bill_id,
         },
     })
 
@@ -384,9 +372,9 @@ def reply(request, pk):
     - to, cc, bcc, subject, body (text)
     - in_reply_to, references (text — the SPA echoes them from
       /reply-defaults/)
-    - inherit_job, inherit_purchase_order, inherit_bill — PK strings,
+    - inherit_job, inherit_purchase_order — PK strings,
       any combination. The first non-blank in priority order
-      Job > PO > Bill becomes the outbound's associate_with target.
+      Job > PO becomes the outbound's associate_with target.
     - attachments — zero or more uploaded files
 
     Returns {email_record_id} on success; 400 on missing to; 502 on
@@ -413,7 +401,6 @@ def reply(request, pk):
     associate_with = None
     inherit_job = (request.data.get('inherit_job') or '').strip()
     inherit_po = (request.data.get('inherit_purchase_order') or '').strip()
-    inherit_bill = (request.data.get('inherit_bill') or '').strip()
     if inherit_job:
         from apps.jobs.models import Job
         try:
@@ -428,13 +415,6 @@ def reply(request, pk):
         except (PurchaseOrder.DoesNotExist, ValueError):
             return Response({'inherit_purchase_order': ['Not found.']}, status=status.HTTP_400_BAD_REQUEST)
         associate_with = {'purchase_order': po}
-    elif inherit_bill:
-        from apps.purchasing.models import Bill
-        try:
-            bill = Bill.objects.get(pk=int(inherit_bill))
-        except (Bill.DoesNotExist, ValueError):
-            return Response({'inherit_bill': ['Not found.']}, status=status.HTTP_400_BAD_REQUEST)
-        associate_with = {'bill': bill}
 
     attachments = []
     for uploaded in request.FILES.getlist('attachments'):

@@ -40,7 +40,6 @@ _OBJECT_URL_PATHS = {
     'change_order': 'change-orders',
     'purchase_order': 'purchase-orders',
     'invoice': 'invoices',
-    'bill': 'bills',
 }
 
 

@@ -1,11 +1,11 @@
 # QuickBooks Online Integration
 
-QBO is Minibini's accounting system of record. Minibini pushes invoices, bills, and expense purchases into QBO; QBO calculates tax, owns the customer-facing payment experience, and is polled for payment status. Estimates are not pushed.
+QBO is Minibini's accounting system of record. Minibini pushes invoices and expense purchases into QBO; QBO calculates tax, owns the customer-facing payment experience, and is polled for payment status. Estimates are not pushed. Vendor invoices (bills) are entered, tracked, and paid **entirely in QBO** — the konbini Bill domain was retired 2026-07-23 (see materials-inventory-and-purchasing.md §13).
 
 This doc owns the QBO push mechanics, OAuth lifecycle, sync log, and polling. Domain models on the Minibini side live with their owning docs:
 
 - `Invoice`, `Expense`, `Reimbursement` — [invoicing-and-expenses.md](invoicing-and-expenses.md)
-- `Bill`, `PurchaseOrder` — [materials-inventory-and-purchasing.md](materials-inventory-and-purchasing.md)
+- `PurchaseOrder` — [materials-inventory-and-purchasing.md](materials-inventory-and-purchasing.md)
 - `Estimate` (not pushed) — [estimates-and-prices.md](estimates-and-prices.md)
 
 Developer setup (env file, redirect URI registration, dependencies, first-connect walkthrough) and the production cutover checklist (real QBO company instead of a sandbox) are in the Appendices at the end of this doc.
@@ -39,9 +39,9 @@ Append-only audit trail. Every push attempt writes a row, success or failure.
 
 | Field | Notes |
 |---|---|
-| `entity_type` | `'invoice'`, `'bill'`, `'expense'`, `'reimbursement'`, `'customer'`, `'vendor'`, `'contact_customer'` |
+| `entity_type` | `'invoice'`, `'expense'`, `'reimbursement'`, `'customer'`, `'contact_customer'`. Historical rows with `'bill'` / `'bill_payment'` / `'vendor'` remain in the log (append-only) — those types stopped occurring with the 2026-07-23 bill retirement |
 | `entity_id` | Minibini PK |
-| `qbo_entity_type` | `'Invoice'`, `'Bill'`, `'Purchase'`, `'Customer'`, `'Vendor'` |
+| `qbo_entity_type` | `'Invoice'`, `'Purchase'`, `'Customer'` (historical rows: `'Bill'`, `'BillPayment'`, `'Vendor'`) |
 | `qbo_entity_id` | QBO ID on success; empty string on failure |
 | `action` | `'create'`, `'update'`, `'delete'` |
 | `status` | `'success'` or `'failed'` |
@@ -96,7 +96,7 @@ JSON list of payment accounts (Bank, Credit Card, Other Current Asset) used by t
 { "qbo_account_id": "35", "display_name": "Business Checking", "account_type": "Bank" }
 ```
 
-Read via `QBOExpenseSyncService._load_payment_accounts()`; individual lookup via `_lookup_account(payment_account_id)` (raises `ValueError` if not configured).
+Read via `QBOExpenseSyncService._load_payment_accounts()`; individual lookup via `_lookup_account(payment_account_id)` (raises `ValueError` if not configured). Used by the expense/reimbursement pushes only (the bill-payment push that also read it was retired 2026-07-23).
 
 ## Gotcha: QBO's raw JSON field capitalization is inconsistent
 
@@ -120,12 +120,12 @@ Test code mocks at this layer rather than at the python-quickbooks SDK level. Mo
 
 ## Shared sync scaffolding
 
-The per-entity sync services (`QBOCustomerSyncService`, `QBOVendorSyncService`, `QBOInvoiceSyncService`, `QBOBillSyncService`, `QBOExpenseSyncService`) are organized by QBO entity — each owns the *builder* for its QBO object, which genuinely differs (a `Customer`, an `Invoice`, a `BillPayment`, a `Purchase`…). What they used to duplicate has been factored into four shared pieces:
+The per-entity sync services (`QBOCustomerSyncService`, `QBOInvoiceSyncService`, `QBOExpenseSyncService`) are organized by QBO entity — each owns the *builder* for its QBO object, which genuinely differs (a `Customer`, an `Invoice`, a `Purchase`…). What they used to duplicate has been factored into four shared pieces:
 
-- **`QBOSyncable`** (`apps/core/models.py`) — abstract model base carrying the sync-state fields `qbo_id`, `qbo_sync_status` (`pending` / `synced` / `sync_failed`), `qbo_sync_error`, **`qbo_pending_op`** (`''` / `create` / `update` / `delete` — the operation a `sync_failed` record still owes QBO), plus `mark_synced(qbo_id)` (clears the op) / `mark_failed(error, op)` (records the op). Adopted by `Expense`, `Reimbursement`, and `BillPayment`. (`Expense.status` is business-only — `submitted`/`reimbursed`/`rejected`; its QBO sync state lives in the inherited `qbo_sync_status`. `Reimbursement`'s sole status *is* its `qbo_sync_status`.)
+- **`QBOSyncable`** (`apps/core/models.py`) — abstract model base carrying the sync-state fields `qbo_id`, `qbo_sync_status` (`pending` / `synced` / `sync_failed`), `qbo_sync_error`, **`qbo_pending_op`** (`''` / `create` / `update` / `delete` — the operation a `sync_failed` record still owes QBO), plus `mark_synced(qbo_id)` (clears the op) / `mark_failed(error, op)` (records the op). Adopted by `Expense` and `Reimbursement` (formerly also `BillPayment`, retired 2026-07-23). (`Expense.status` is business-only — `submitted`/`reimbursed`/`rejected`; its QBO sync state lives in the inherited `qbo_sync_status`. `Reimbursement`'s sole status *is* its `qbo_sync_status`.)
 - **`QBOSyncService`** (`apps/qbo/services.py`) — the push orchestrators, one per verb: `run_create(record, push_callable)`, `run_update(record, update_callable)`, `run_delete(record, delete_callable)`. Each runs its callable and on failure calls `record.mark_failed(e, record.OP_<verb>)` — so a `sync_failed` row is **self-describing** about which operation to retry. `run_create`/`run_update` **swallow** (a QBO failure never blocks the local write that already committed); `run_delete` **re-raises** so a refused delete aborts the local removal and retains the row. (`run_update` was formerly named `run_resync` — "resync" now means *retry a failure*, not "an edit happened, push the update.")
 - **`QBOService.save_and_log(qbo_obj, client, *, entity_type, qbo_entity_type, entity_id, action='create')`** — saves a QBO SDK object, writes the success/failure `QBOSyncLog` row, returns `str(qbo_obj.Id)`, re-raises on error. Every create/update push method calls it, so the save-and-log boilerplate lives in one place. (The `void_*` deletes and the invoice send — whose log lands after `_mark_as_sent` — keep their own shape.)
-- **`QBOPaymentAccountService`** (`apps/qbo/services.py`) — owns the `Configuration['qbo_payment_accounts']` lookup (`load_accounts()` / `lookup(id)`), shared by the expense/reimbursement `Purchase` push and the bill-payment push.
+- **`QBOPaymentAccountService`** (`apps/qbo/services.py`) — owns the `Configuration['qbo_payment_accounts']` lookup (`load_accounts()` / `lookup(id)`), used by the expense/reimbursement `Purchase` push.
 
 A typical push method is now: short-circuit on existing id → get client (raise if none) → build the QBO object → `save_and_log(...)` → persist the id on the record; wrapped by `run_create`/`run_update` where the record is a `QBOSyncable`.
 
@@ -134,7 +134,7 @@ A typical push method is now: short-circuit on existing id → get client (raise
 Two separate audit trails, with a clean seam between them — and **attribution flows from the request context, never threaded**:
 
 - **QBO-mechanics audit → `QBOSyncLog`** (the swap-the-backend seam): every push/update/void writes a row; `triggered_by` records who initiated it (auto from the request context; `None` for cron). QBO-coupled facts (qbo ids, sync status, error text) live only here.
-- **Domain audit → the history partitions** (`docs/designs/architecture-and-conventions.md`): `Expense` is `@history`-decorated into a new **`ExpensesHistory`** partition (`object_type='expense'`/`'reimbursement'`), with `exclude=[…, qbo_id, qbo_sync_status, qbo_sync_error, qbo_pending_op]` so QBO sync churn never enters the domain timeline. The two **adjuncts** record their lifecycle imperatively on their **primary's** timeline via `record_action(object_type, object_id, action)`: `BillPayment` → the **Bill** (`'bill'`: recorded / edited / deleted), `Reimbursement` → each member **Expense** (`'expense'`: reimbursed-in-batch / unwound). `record_action` and `log_sync` both default their author to `current_request_user()`, so no service threads an actor.
+- **Domain audit → the history partitions** (`docs/designs/architecture-and-conventions.md`): `Expense` is `@history`-decorated into a new **`ExpensesHistory`** partition (`object_type='expense'`/`'reimbursement'`), with `exclude=[…, qbo_id, qbo_sync_status, qbo_sync_error, qbo_pending_op]` so QBO sync churn never enters the domain timeline. The **adjunct** records its lifecycle imperatively on its **primary's** timeline via `record_action(object_type, object_id, action)`: `Reimbursement` → each member **Expense** (`'expense'`: reimbursed-in-batch / unwound). (`BillPayment` → Bill was the other adjunct until the 2026-07-23 bill retirement.) `record_action` and `log_sync` both default their author to `current_request_user()`, so no service threads an actor.
 
 ### Retry & sync failures
 
@@ -142,16 +142,16 @@ Each domain service exposes the same small sync-dispatch surface so a failure ca
 
 - `_push_create(record)` / `_push_update(record)` — the create and update push wrappers (the update one carries any domain routing, e.g. a personal `Expense`'s edit resyncs its reimbursement **batch**, not the expense).
 - `retry(record, …)` — guards `qbo_sync_status == sync_failed`, then **dispatches on `qbo_pending_op`**: `delete` → re-run the full delete (re-void + local removal); `update` → `_push_update`; `create`/blank → `_push_create`. This fixes the old bug where a blind retry always create-pushed — which **short-circuited on `qbo_id` and silently marked a failed *update* as synced without re-applying the edit**, and abandoned a failed *delete*.
-- `ExpenseService.retry`, `ReimbursementService.retry`, `BillPaymentService.retry` (each backed by a per-entity `POST …/retry-sync/` endpoint). Bill payments' retry endpoint is `POST /api/bills/{id}/payments/{pid}/retry-sync/`.
+- `ExpenseService.retry`, `ReimbursementService.retry` (each backed by a per-entity `POST …/retry-sync/` endpoint).
 
-**Cross-entity failures view.** `QBOSyncFailureService.list_failures()` aggregates every `sync_failed` company `Expense` (personal expenses never carry their own failure — their batch does), `Reimbursement`, and `BillPayment` into one list (`entity_type`, `id`, `label`, `amount`, `qbo_pending_op`, `qbo_sync_error`, `retry_url`). Exposed at:
+**Cross-entity failures view.** `QBOSyncFailureService.list_failures()` aggregates every `sync_failed` company `Expense` (personal expenses never carry their own failure — their batch does) and `Reimbursement` into one list (`entity_type`, `id`, `label`, `amount`, `qbo_pending_op`, `qbo_sync_error`, `retry_url`). Exposed at:
 
 | Method | Path | Permission | Purpose |
 |---|---|---|---|
-| `GET` | `/api/qbo/sync-failures/` | `can_manage_financials` | List all QBO sync failures across the three money pushes |
+| `GET` | `/api/qbo/sync-failures/` | `can_manage_financials` | List all QBO sync failures across the money pushes |
 | `POST` | `/api/qbo/sync-failures/retry-all/` | `can_manage_financials` | Retry each (isolated per-record); returns `{retried, still_failing}` |
 
-The SPA surfaces this as `QBOSyncFailures.svelte` (per-row Retry + Retry all) on the Settings page; the failures view covers **only** the three `QBOSyncable` money pushes (Customers/Vendors/Invoices use ad-hoc sync state and are out of scope).
+The SPA surfaces this as `QBOSyncFailures.svelte` (per-row Retry + Retry all) on the Settings page; the failures view covers **only** the two `QBOSyncable` money pushes (Customers/Invoices use ad-hoc sync state and are out of scope; the `BillPayment` slice was retired 2026-07-23).
 
 ## Customer sync — `QBOCustomerSyncService`
 
@@ -172,8 +172,8 @@ QBO's 6240 Duplicate Name error, the push queries the existing Customer by
 row (accurate history); the adopt then proceeds. If the name query finds
 nothing (e.g. the collision is with an inactive record), the original error
 re-raises. Accepted trade-off: a same-named-but-genuinely-different customer
-binds silently. Vendors do NOT adopt yet — `push_vendor` still fails on
-collision.
+binds silently. (Vendors never gained the adopt path — the vendor push was
+retired with bills, 2026-07-23.)
 
 ### DisplayName collision logic — `QBODisplayNameService`
 
@@ -183,7 +183,7 @@ QBO requires unique `DisplayName` per entity type. The same Minibini `Business` 
 - If the business already has the *other* role's QBO ID (e.g. pushing as customer and `qbo_vendor_id` is set), the display name gets a ` (Customer)` or ` (Vendor)` suffix.
 - `QBO_DISPLAY_NAME_MAX = 500`; long names are truncated before the suffix is appended.
 
-The current logic only inspects Minibini's own QBO IDs. A pre-existing QBO customer named "Acme Inc." created outside Minibini is handled by the adopt-on-duplicate path above (customers); for vendors it still surfaces as an SDK error and a failed sync-log row.
+The current logic only inspects Minibini's own QBO IDs. A pre-existing QBO customer named "Acme Inc." created outside Minibini is handled by the adopt-on-duplicate path above.
 
 ### What gets pushed
 
@@ -197,13 +197,13 @@ The current logic only inspects Minibini's own QBO IDs. A pre-existing QBO custo
 
 Billing address, shipping address, payment terms, tax exemption, and notes are not pushed.
 
-## Vendor sync — `QBOVendorSyncService`
+## Vendor sync — retired 2026-07-23
 
-Parallel to customer sync. `push_vendor(business)` is called lazily by `QBOBillSyncService.push_bill` and (transitively) by anything else that needs a vendor ID. Same DisplayName collision logic. Stores `qbo_vendor_id` on the `Business`.
+`QBOVendorSyncService` (`push_vendor`) was deleted with the bill retirement — its only caller was the bill push. `Business.qbo_vendor_id` is **kept**: `QBODisplayNameService` still reads it for the suffix rule, and a future setup-time QBO pull may repopulate it. `QBOSyncLog` rows with `entity_type='vendor'` remain as history.
 
 ## Invoice push — `InvoiceEmailService.send_invoice`
 
-The invoice QBO push is **fused into the invoice's Send action** — there is no separate `send-to-qbo` endpoint for invoices (bills have one; invoices do not). Entry point: `POST /api/invoices/{id}/send` (the `send` action on `InvoiceViewSet`, `apps/api/invoicing/views.py`). Requires `can_manage_financials`. Body:
+The invoice QBO push is **fused into the invoice's Send action** — there is no separate `send-to-qbo` endpoint. Entry point: `POST /api/invoices/{id}/send` (the `send` action on `InvoiceViewSet`, `apps/api/invoicing/views.py`). Requires `can_manage_financials`. Body:
 
 ```json
 { "to": "customer@example.com", "subject": "...", "body": "...", "cc": "...", "bcc": "..." }
@@ -238,35 +238,9 @@ Each pushed line's `ItemRef` resolves in order:
 
 When step 1 finds a catalog entity with no `qbo_id`, the QBO Item is created mid-push: `InventoryItem` → Type `NonInventory` (never QBO's `Inventory` type — stock stays konbini-side), Name = `code`; `ServiceItem` → Type `Service`, Name = `template_name`. `IncomeAccountRef` is **copied from the category's generic fallback Item** fetched live from QBO — the bookkeeper configures income accounts exactly once, in QBO, on the per-category Items; konbini never stores income accounts. On QBO's duplicate-name error (`6240`), the existing Item is adopted by name (also how pre-existing QBO catalogs converge). If the entity's category has no `qbo_item_id` mapped, nothing is minted and the resolution falls through. The minted/adopted id persists on `entity.qbo_id` (plain CharField — not `QBOSyncable`; a failed mint fails the invoice push, whose retry path covers it). Catalog renames do NOT propagate to QBO Items (LATER).
 
-## Bill push — `QBOBillSyncService.push_bill`
+## Bill push — retired 2026-07-23
 
-Entry point: `POST /api/bills/{id}/send-to-qbo/` (defined in `apps/api/purchasing/views.py`). Requires `can_manage_financials`.
-
-Flow:
-
-1. Short-circuit on `bill.qbo_id`.
-2. Require `bill.business` (vendor). Raise `ValueError` if missing.
-3. Lazy-push vendor via `QBOVendorSyncService.push_vendor` if `qbo_vendor_id` is not set.
-4. Build a QBO `Bill` with `VendorRef`, optional `DocNumber` from `bill.vendor_invoice_number`, and one `AccountBasedExpenseLine` per `BillLineItem`. Each line's `AccountRef` comes from `AccountingCategory.qbo_expense_account_id`. Lines without a category, or with a category that has no expense account mapped, will fail at the QBO end.
-5. Save, store `qbo_id`, log.
-
-Bills do not push attachments, do not mark-as-sent, and do not send emails. The push is one-way and silent.
-
-### Bill payment push — `QBOBillSyncService.push_bill_payment` / `update_bill_payment` / `void_bill_payment`
-
-The bill-payment push lives **inside the Minibini payment process**, not as a separate user action. `BillPaymentService.record_payment` calls `push_bill_payment(payment)` immediately after recording a `BillPayment`; `update_payment` resyncs on edit; `delete_payment` voids on delete. All three are best-effort — failures are swallowed-and-logged (`record_payment`/`update_payment` go through `QBOSyncService.run_create`/`run_resync`; `void_bill_payment` swallows internally) so a QBO hiccup never blocks the local write.
-
-`push_bill_payment` (live):
-
-1. **Idempotent** — short-circuit if `payment.qbo_id` is already set.
-2. **Connection / account required** — `QBOService.get_client()`; raise `ValueError('No active QBO connection')` if none, and `ValueError` if `payment.payment_account_id` is blank. Both land the payment in `qbo_sync_status='sync_failed'` with the message (the recovery path is editing the payment, which re-pushes). The API requires `payment_account_id` while QBO is connected (400 otherwise).
-3. **Ensure the parent Bill exists** — `push_bill(bill)` if `bill.qbo_id` unset (which in turn lazy-pushes the vendor).
-4. **Build the QBO `BillPayment`** — `VendorRef` from `bill.business.qbo_vendor_id`; `TotalAmt`; one `Line` with a `LinkedTxn` (`TxnId = bill.qbo_id`, `TxnType = 'Bill'`) — that link is what pays the bill down; `DocNumber` from `reference`. **PayType is driven by the selected payment account's `account_type`** (resolved via `QBOPaymentAccountService.lookup(payment.payment_account_id)`): `Credit Card` → `PayType='CreditCard'` + `CreditCardPayment.CCAccountRef`; anything else (`Bank`, `Other Current Asset`, incl. a Petty-Cash account used for a cash payment) → `PayType='Check'` + `CheckPayment.BankAccountRef`.
-5. **Save + log + write back** — via `QBOService.save_and_log`; `run_create` then writes `qbo_id` and `qbo_sync_status='synced'` onto the payment.
-
-`update_bill_payment` re-fetches the QBO `BillPayment`, rebuilds `TotalAmt`/`DocNumber`/line amount, saves. `void_bill_payment` deletes the QBO `BillPayment` (logs but never raises — the caller is mid-delete). On edit, `update_payment` resyncs when `payment.qbo_id` is set, else pushes fresh (covers a payment first recorded while disconnected).
-
-The `BillPayment` model carries the result via the shared `QBOSyncable` fields (`qbo_id` written by the push, `qbo_sync_status`, `qbo_sync_error`); `cleared_date` remains the deferred clearance-poller's field. There is no `method` field — the human descriptor is derived from the payment account + reference.
+`QBOBillSyncService` (bill push, bill-payment push/update/void) was deleted with the bill retirement — vendor invoices and their payments are entered directly in QBO, so there is nothing to push. The `/api/bills/{id}/send-to-qbo/` and bill-payment endpoints are gone. `Bill`/`BillLineItem`/`BillPayment` survive only as schema-only stubs (materials-inventory-and-purchasing.md §13); `QBOSyncLog` rows with `entity_type` `'bill'` / `'bill_payment'` remain as history.
 
 ## Expense push — `QBOExpenseSyncService`
 
@@ -314,7 +288,7 @@ Personal reimbursement batches do **not** set `EntityRef` on the Purchase. That 
 
 ## Inventory write-offs are not pushed (by design)
 
-`InventoryService.write_off` zeroes a lot's on-hand and books the remainder to `qty_wasted`, recording an `InventoryHistory` entry — it pushes **nothing** to QBO, deliberately. Inventory cost is *expensed at purchase time*: Bills push as a QBO `Bill` and company-paid Expenses as a QBO `Purchase`, both with `AccountBasedExpenseLine`s posting to an **expense / COGS account** (`AccountingCategory.qbo_expense_account_id`), never to a capitalized inventory asset. So the cost already hit QBO's P&L when the bill/expense was recorded; a write-off is a pure quantity event in Minibini with no QBO consequence, and pushing one would **double-count** the cost. This only changes if QBO is ever switched to true inventory-asset tracking (Items with quantities, COGS on sale) — then write-offs would need to relieve the asset; that is a much larger change and is not planned.
+`InventoryService.write_off` zeroes a lot's on-hand and books the remainder to `qty_wasted`, recording an `InventoryHistory` entry — it pushes **nothing** to QBO, deliberately. Inventory cost is *expensed at purchase time*: vendor bills are entered directly in QBO, and company-paid Expenses push as a QBO `Purchase` with `AccountBasedExpenseLine`s posting to an **expense / COGS account** (`AccountingCategory.qbo_expense_account_id`), never to a capitalized inventory asset. So the cost already hit QBO's P&L when the bill/expense was recorded; a write-off is a pure quantity event in Minibini with no QBO consequence, and pushing one would **double-count** the cost. This only changes if QBO is ever switched to true inventory-asset tracking (Items with quantities, COGS on sale) — then write-offs would need to relieve the asset; that is a much larger change and is not planned.
 
 ## Accounting categories — `QBOAccountsService`
 
@@ -323,9 +297,9 @@ Two endpoints feed the settings UI mapping page:
 | Method | Pulls | Used for |
 |---|---|---|
 | `get_income_items()` | QBO `Item` records with `Type` in `('Service', 'NonInventory')`, `Active=True` | Mapping `AccountingCategory.qbo_item_id` — invoice lines reference QBO Items, not accounts |
-| `get_expense_accounts()` | QBO `Account` records with `AccountType` in `('Expense', 'Cost of Goods Sold')`, `Active=True` (dedupe by ID) | Mapping `AccountingCategory.qbo_expense_account_id` — bill and purchase lines reference accounts directly |
+| `get_expense_accounts()` | QBO `Account` records with `AccountType` in `('Expense', 'Cost of Goods Sold')`, `Active=True` (dedupe by ID) | Mapping `AccountingCategory.qbo_expense_account_id` — purchase lines reference accounts directly |
 
-Both fields live on `apps.core.models.AccountingCategory`. Both are `CharField(max_length=50, blank=True, default='')`. A category used only for invoicing needs only `qbo_item_id`; one used only for bills/expenses needs only `qbo_expense_account_id`; categories that flow both directions need both.
+Both fields live on `apps.core.models.AccountingCategory`. Both are `CharField(max_length=50, blank=True, default='')`. A category used only for invoicing needs only `qbo_item_id`; one used only for expenses needs only `qbo_expense_account_id`; categories that flow both directions need both.
 
 Both methods are live fetches against QBO — there is no caching layer and no "refresh accounts" endpoint, just `GET /api/qbo/accounts/`.
 
@@ -347,26 +321,21 @@ Walks every `Invoice` where `qbo_id` is set and the Minibini status is still `op
 
 **First-run healing:** an invoice left at `open` with a stale cached `qbo_payment_status='Paid'` (from the old cache-only polling) will transition to `paid` — and complete its job — on the first run under the status-driving code. See `invoicing-and-expenses.md` for the full status-machine view.
 
-### Bill clearance polling — `QBOBillPaymentPollingService.poll_all()` (stubbed)
-
-Walks every `BillPayment` where `cleared_date` is null and `qbo_id` is non-empty (i.e. payments pushed to QBO but not yet confirmed as cleared). When the live QBO fetch lands (**all polling is deferred to a later session**), this service will write `cleared_date` per `BillPayment`. **Today the inner loop body is a stub** — no QBO fetch or `cleared_date` write occurs. Note the bill-payment *push* is now live and writes `qbo_id`, so rows can match this filter; the stub simply doesn't act on them yet.
-
 ### Unified inbound orchestrator — `QBOInboundPollingService`
 
-`QBOInboundPollingService.poll_all()` is the single entry point for all QBO → Minibini polling:
+`QBOInboundPollingService.poll_all()` is the single entry point for all QBO → Minibini polling (future: Job-P&L actuals, CDC):
 
 ```python
 {
     'invoices': QBOPaymentPollingService.poll_all(),
-    'bills': QBOBillPaymentPollingService.poll_all(),
 }
 ```
 
-Both sub-pollers run in the same call; the invoice branch is live, the bill branch is stubbed.
+(The bill-clearance sub-poller, `QBOBillPaymentPollingService`, was deleted with the 2026-07-23 bill retirement; the command's stats no longer report `bills_*` keys.)
 
 ### Management command
 
-`python manage.py poll_qbo_payments` (`apps/invoicing/management/commands/poll_qbo_payments.py`) drives `QBOInboundPollingService.poll_all()` — **both invoice and bill polling** (bill branch currently stubbed). It is a `ScheduledProcessCommand` (`architecture-and-conventions.md` §9), so each run records a `ScheduledProcessRun` row (`ok` / `failed` / `skipped`). The scheduler **is** wired: the docker-compose `cron` service runs it every 15 minutes.
+`python manage.py poll_qbo_payments` (`apps/invoicing/management/commands/poll_qbo_payments.py`) drives `QBOInboundPollingService.poll_all()`. It is a `ScheduledProcessCommand` (`architecture-and-conventions.md` §9), so each run records a `ScheduledProcessRun` row (`ok` / `failed` / `skipped`). The scheduler **is** wired: the docker-compose `cron` service runs it every 15 minutes.
 
 **Operational note — credentials and timezone.** The cron service runs in its own container; the committed `docker-compose.yml` mirrors only the `DATABASE_*` env onto it. QBO OAuth credentials and the email/IMAP credentials are injected at deploy time and **must reach the cron container too** — otherwise `poll_qbo_payments` records `skipped` runs (no QBO connection) and the email-related jobs `failed` runs. The cron schedules are evaluated in the **container timezone (UTC by default)**; set `TZ` on the cron service to schedule in local time.
 
@@ -402,7 +371,6 @@ Push endpoints live on the owning resource's viewset:
 | Method | Path | Permission | Service |
 |---|---|---|---|
 | `POST` | `/api/invoices/{id}/send` | `can_manage_financials` | `InvoiceEmailService.send_invoice` — QBO push fused into the send-email action; **no** separate invoice send-to-qbo endpoint |
-| `POST` | `/api/bills/{id}/send-to-qbo/` | `can_manage_financials` | `QBOBillSyncService.push_bill` |
 
 Expense and reimbursement pushes are triggered server-side from their respective save / finalize flows in `apps/expenses` and `apps/reimbursements` — not via dedicated REST actions.
 
@@ -410,7 +378,6 @@ There is no `GET /api/qbo/sync-log/` endpoint yet; `QBOSyncLog` is currently ins
 
 ## Unfinished work
 
-- **Bill clearance polling.** `QBOBillPaymentPollingService` is folded into `QBOInboundPollingService` and called by `poll_qbo_payments`, but the inner loop body (QBO fetch + `cleared_date` write) is stubbed. **All QBO → Minibini polling is deferred to a dedicated later session** — the bill-payment *push* is live (writes `qbo_id`) but its inbound clearance confirmation is not yet built.
 - **Sync log UI.** No `/api/qbo/sync-log/` endpoint or settings panel showing recent push attempts; failures are visible only via the Django admin.
 - **Employee-as-Vendor sync for personal reimbursements** — tracked in `invoicing-and-expenses.md`.
 - **Job P&L view.** Phase 5 of the original plan — pull QBO-reported actuals back into Minibini for a per-job profit & loss view. Tracked in `invoicing-and-expenses.md`.
@@ -469,10 +436,12 @@ For the non-production version of the same problem — prepping a sample dataset
 
 - `core.accountingcategory`: `qbo_item_id` / `qbo_expense_account_id` → `''`
 - `core.configuration` rows with key `qbo_payment_accounts` → dropped (other keys untouched)
-- `invoicing.invoice`: `qbo_id` → null, plus its poll caches `qbo_payment_status` → `''` and `qbo_amount_paid` → null; `purchasing.bill`: `qbo_id` → null and `qbo_payment_status` → `''`
+- `invoicing.invoice`: `qbo_id` → null, plus its poll caches `qbo_payment_status` → `''` and `qbo_amount_paid` → null
 - `contacts.business` `qbo_customer_id` / `qbo_vendor_id` and `contacts.contact` `qbo_customer_id` → null
-- The `QBOSyncable` trio (`expenses.expense`, `expenses.reimbursement`, `purchasing.billpayment`): `qbo_id` → `''`, `qbo_sync_status` → `pending`, `qbo_sync_error` / `qbo_pending_op` cleared
+- The `QBOSyncable` pair (`expenses.expense`, `expenses.reimbursement`): `qbo_id` → `''`, `qbo_sync_status` → `pending`, `qbo_sync_error` / `qbo_pending_op` cleared
 - All `qbo.qboconnection` and `qbo.qbosynclog` records → dropped
+
+(The retired bill models are no longer reset — 2026-07-23; legacy `purchasing.bill` / `purchasing.billpayment` rows in a dump pass through untouched.)
 
 It prints per-model scrubbed/dropped counts. Only fields actually present in a record are overwritten, so a dump from an older schema stays loadable. The flip side: models with no data in the dump (e.g. QBO features unfinished at dump time) exercise nothing — **when new QBO-coupled models or fields land, extend the command's tables and recheck against a fresh dump.** **What it does not touch:** domain state derived from the old company stays as-is — invoices remain `paid`/`partly-paid` with no QBO record behind them (accepted follow-on effect), and `payment_account_id` values on expenses/reimbursements/payments are kept even though they now dangle (the which-account information stays readable). After loading the purged dump, the new instance must connect to its new sandbox account and regenerate the category mappings and payment-account list per §3 above.  The existing domain state will remain inconsistent with the new sandbox, acceptable in a staging environment.
 

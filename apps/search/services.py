@@ -7,7 +7,7 @@ from apps.estimates.models import Estimate, EstimateLineItem
 from apps.contacts.models import Contact, Business
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import InventoryItem
-from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
+from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 
 
 class SearchService:
@@ -20,7 +20,6 @@ class SearchService:
     CATEGORY_INVOICES = 4
     CATEGORY_JOBS = 5
     CATEGORY_ESTIMATES = 6
-    CATEGORY_BILLS = 9
     CATEGORY_PURCHASE_ORDERS = 10
 
     # Mapping from category ID to internal key name
@@ -31,7 +30,6 @@ class SearchService:
         CATEGORY_INVOICES: 'invoices',
         CATEGORY_JOBS: 'jobs',
         CATEGORY_ESTIMATES: 'estimates',
-        CATEGORY_BILLS: 'bills',
         CATEGORY_PURCHASE_ORDERS: 'purchase_orders',
     }
 
@@ -46,14 +44,13 @@ class SearchService:
         CATEGORY_INVOICES: 'Invoices',
         CATEGORY_JOBS: 'Jobs',
         CATEGORY_ESTIMATES: 'Estimates',
-        CATEGORY_BILLS: 'Bills',
         CATEGORY_PURCHASE_ORDERS: 'Purchase Orders',
     }
 
     # Legacy support: List of category keys (for backward compatibility)
     AVAILABLE_CATEGORIES = [
         'businesses', 'inventory_items', 'contacts', 'invoices', 'jobs',
-        'estimates', 'bills', 'purchase_orders'
+        'estimates', 'purchase_orders'
     ]
 
     @classmethod
@@ -283,50 +280,6 @@ class SearchService:
         return list(job_dict.values())
 
     @staticmethod
-    def search_bills_with_line_items(query):
-        """Search for bills and their line items, returning grouped results"""
-        bills = Bill.objects.filter(
-            Q(vendor_invoice_number__icontains=query) |
-            Q(purchase_order__po_number__icontains=query) |
-            Q(contact__first_name__icontains=query) |
-            Q(contact__middle_initial__icontains=query) |
-            Q(contact__last_name__icontains=query)
-        ).select_related('purchase_order', 'contact').prefetch_related('billlineitem_set')
-
-        bill_line_items = BillLineItem.objects.annotate(
-            price_text=Cast('price', CharField()),
-            qty_text=Cast('qty', CharField()),
-            total_amount_calc=F('qty') * F('price'),
-            total_amount_text=Cast(F('qty') * F('price'), CharField())
-        ).filter(
-            Q(description__icontains=query) |
-            Q(bill__vendor_invoice_number__icontains=query) |
-            Q(price_text__icontains=query) |
-            Q(qty_text__icontains=query) |
-            Q(units__icontains=query) |
-            Q(total_amount_text__icontains=query)
-        ).select_related('bill', 'bill__purchase_order', 'bill__contact')
-
-        # Build a dict of bills with their matching line items
-        bill_dict = {}
-        for bill in bills:
-            bill_dict[bill.bill_id] = {
-                'parent': bill,
-                'line_items': []
-            }
-
-        for line_item in bill_line_items:
-            bill_id = line_item.bill.bill_id
-            if bill_id not in bill_dict:
-                bill_dict[bill_id] = {
-                    'parent': line_item.bill,
-                    'line_items': []
-                }
-            bill_dict[bill_id]['line_items'].append(line_item)
-
-        return list(bill_dict.values()) if bill_dict else []
-
-    @staticmethod
     def search_purchase_orders_with_line_items(query):
         """Search for purchase orders and their line items, returning grouped results"""
         from apps.inventory.models import Material
@@ -437,18 +390,6 @@ class SearchService:
             }
 
         # BILLS (with line items grouped by parent)
-        bill_groups = cls.search_bills_with_line_items(query)
-        if bill_groups:
-            parents_with_line_items = []
-            for group in bill_groups:
-                parent = group['parent']
-                parent.matching_line_items = group['line_items']
-                parents_with_line_items.append(parent)
-            categories['bills'] = {
-                'items': parents_with_line_items,
-                'subcategories': {}
-            }
-
         # PURCHASE ORDERS (with line items grouped by parent)
         po_groups = cls.search_purchase_orders_with_line_items(query)
         if po_groups:
@@ -585,7 +526,7 @@ class SearchService:
     def apply_price_filter(cls, categories, price_min, price_max):
         """Filter results by price range.
         - inventory_items: filters by selling_price.
-        - invoices/estimates/bills/purchase_orders: keeps the entity if any matching line item
+        - invoices/estimates/purchase_orders: keeps the entity if any matching line item
           is in range; if no matching line items exist (entity matched on header fields), it passes through.
         - All other categories pass through unchanged.
         """
@@ -613,7 +554,7 @@ class SearchService:
                 if kept:
                     filtered[key] = {'grouped_items': kept}
 
-            elif key in ('bills', 'purchase_orders'):
+            elif key == 'purchase_orders':
                 kept = []
                 for item in data.get('items', []):
                     line_items = getattr(item, 'matching_line_items', [])
@@ -708,7 +649,6 @@ class SearchService:
             'inventory_items': 'InventoryItem',
             'invoices': 'Invoice',
             'estimates': 'Estimate',
-            'bills': 'Bill',
             'purchase_orders': 'PurchaseOrder',
         }
 
@@ -917,46 +857,6 @@ class SearchService:
                 categories['estimates'] = {
                     'grouped_items': result_estimates,
                     'items': result_estimates,
-                }
-
-        # BILLS
-        if 'Bill' in result_ids and result_ids['Bill']:
-            bills = Bill.objects.filter(
-                pk__in=result_ids['Bill']
-            ).filter(
-                Q(vendor_invoice_number__icontains=within_query) |
-                Q(purchase_order__po_number__icontains=within_query) |
-                Q(contact__first_name__icontains=within_query) |
-                Q(contact__middle_initial__icontains=within_query) |
-                Q(contact__last_name__icontains=within_query)
-            ).select_related('purchase_order', 'contact')
-
-            bill_line_items = BillLineItem.objects.annotate(
-                price_text=Cast('price', CharField()),
-                qty_text=Cast('qty', CharField()),
-                total_amount_text=Cast(F('qty') * F('price'), CharField())
-            ).filter(bill_id__in=result_ids['Bill']).filter(
-                Q(description__icontains=within_query) |
-                Q(price_text__icontains=within_query) |
-                Q(qty_text__icontains=within_query) |
-                Q(units__icontains=within_query) |
-                Q(total_amount_text__icontains=within_query)
-            ).select_related('bill', 'bill__purchase_order', 'bill__contact')
-
-            bill_dict = {b.pk: b for b in bills}
-            for b in bill_dict.values():
-                b.matching_line_items = []
-            for li in bill_line_items:
-                if li.bill_id not in bill_dict:
-                    bill_dict[li.bill_id] = li.bill
-                    li.bill.matching_line_items = []
-                bill_dict[li.bill_id].matching_line_items.append(li)
-
-            if bill_dict:
-                result_bills = list(bill_dict.values())
-                categories['bills'] = {
-                    'items': result_bills,
-                    'subcategories': {}
                 }
 
         # PURCHASE ORDERS

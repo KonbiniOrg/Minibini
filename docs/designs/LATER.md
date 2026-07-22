@@ -954,3 +954,17 @@ Cross-cutting UI/API conventions and shared components.
   final full-suite run crossing midnight.
   _Done when:_ the fixtures pin their dates (or derive them from today) and
   the module passes on every weekday.
+
+- **Bill tables are schema-only leftovers — a drop migration is owed.** — _added 2026-07-23_
+  The Bill domain was retired (bills live in QBO; see
+  `docs/plans/bill-removal-spec.md`), but `Bill`, `BillLineItem`, and
+  `BillPayment` models were kept as bare schema declarations so the branch
+  carries no destructive migration and the change stays revertible.
+  `EmailRecord.bill` and `Business.qbo_vendor_id` columns likewise remain.
+  Legacy rows still load (dev DB, e2e/neals fixtures may carry them) and
+  passive deletion-protection still references them.
+  _Done when:_ either the removal is reverted, or — once RM declares the
+  retirement permanent — a migration drops the three tables (+
+  `EmailRecord.bill`), the schema-stub models are deleted, and the passive
+  references (contacts deletion checks, inventory merge/has_document_line_refs
+  clauses) go with them.

@@ -12,8 +12,8 @@ from apps.estimates.models import Estimate, ServiceItem
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import InventoryItem
 from apps.estimates.models import EstimateLineItem
-from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
-from apps.purchasing.models import PurchaseOrder, Bill
+from apps.purchasing.models import PurchaseOrderLineItem
+from apps.purchasing.models import PurchaseOrder
 
 
 class ComprehensiveModelIntegrationTest(TestCase):
@@ -144,14 +144,6 @@ class ComprehensiveModelIntegrationTest(TestCase):
         purchase_order.status = PurchaseOrder.STATUS_ISSUED
         purchase_order.save()
 
-        bill = Bill.objects.create(
-            purchase_order=purchase_order,
-            business=self.business,
-            contact=self.contact,
-            vendor_invoice_number="VENDOR001"
-        )
-
-        # Test creating both purchase order and bill line items
         # Create price list item for testing
         price_item = InventoryItem.objects.create(
             code="TEST001",
@@ -167,17 +159,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             price=Decimal('50.00')
         )
 
-        bill_line_item = BillLineItem.objects.create(
-            bill=bill,
-            inventory_item=price_item,
-            qty=Decimal('2.00'),
-            description="Bill item",
-            price=Decimal('50.00')
-        )
-
-        self.assertEqual(bill.purchase_order, purchase_order)
         self.assertEqual(po_line_item.purchase_order, purchase_order)
-        self.assertEqual(bill_line_item.bill, bill)
 
     def test_estimate_superseding(self):
         job = Job.objects.create(
@@ -380,12 +362,6 @@ class LineItemValidationTest(TestCase):
         self.purchase_order.status = PurchaseOrder.STATUS_ISSUED
         self.purchase_order.save()
 
-        self.bill = Bill.objects.create(
-            purchase_order=self.purchase_order,
-            business=self.business,
-            contact=self.contact,
-            vendor_invoice_number="VIN_VALID001"
-        )
         from apps.jobs.models import RateScheme
         self.cm_ac = AccountingCategory.objects.create(code='CM-AC', name='cm-ac')
         self.cm_scheme = RateScheme.objects.create(
@@ -444,30 +420,6 @@ class LineItemValidationTest(TestCase):
         """Test PurchaseOrderLineItem cannot have both task and inventory_item"""
         line_item = PurchaseOrderLineItem(
             purchase_order=self.purchase_order,
-            task=self.task,
-            inventory_item=self.inventory_item,
-            description="Invalid - has both"
-        )
-        with self.assertRaises(ValidationError) as context:
-            line_item.full_clean()
-        self.assertIn("cannot have both task and inventory_item", str(context.exception))
-
-    def test_bill_line_item_validation_both_null_allowed(self):
-        """Test BillLineItem allows both task and inventory_item to be null"""
-        line_item = BillLineItem.objects.create(
-            bill=self.bill,
-            task=None,
-            inventory_item=None,
-            description="No task or price item"
-        )
-        line_item.full_clean()  # Should not raise
-        self.assertIsNone(line_item.task)
-        self.assertIsNone(line_item.inventory_item)
-
-    def test_bill_line_item_validation_cannot_have_both(self):
-        """Test BillLineItem cannot have both task and inventory_item"""
-        line_item = BillLineItem(
-            bill=self.bill,
             task=self.task,
             inventory_item=self.inventory_item,
             description="Invalid - has both"

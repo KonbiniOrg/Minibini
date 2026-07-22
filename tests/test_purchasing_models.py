@@ -4,6 +4,10 @@ from django.db import models
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill
 from apps.contacts.models import Contact, Business
 
+# Bill is a RETIRED, schema-only model (bills live in QBO). The Bill tests
+# below cover only the KEPT passive row-safety behavior: legacy rows must
+# not block or be broken by PO/contact operations.
+
 
 class PurchaseOrderModelTest(TestCase):
     def setUp(self):
@@ -28,6 +32,13 @@ class PurchaseOrderModelTest(TestCase):
         with self.assertRaises(Exception):
             PurchaseOrder.objects.create(business=self.business, po_number="UNIQUE001")
 
+    def test_po_total_sums_line_items(self):
+        po = PurchaseOrder.objects.create(business=self.business, po_number="PO-TOTAL")
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=po, line_number=1, description='x',
+            qty=Decimal('2'), price=Decimal('100.00'), units='none')
+        self.assertEqual(po.po_total, Decimal('200.00'))
+
 
 class BillModelTest(TestCase):
     def setUp(self):
@@ -51,27 +62,6 @@ class BillModelTest(TestCase):
         PurchaseOrderLineItem.objects.create(purchase_order=self.purchase_order, description='Test item', price=Decimal('100.00'))
         self.purchase_order.status = PurchaseOrder.STATUS_ISSUED
         self.purchase_order.save()
-        
-    def test_bill_creation(self):
-        bill = Bill.objects.create(
-            purchase_order=self.purchase_order,
-            business=self.business,
-            contact=self.contact,
-            vendor_invoice_number="VIN001"
-        )
-        self.assertEqual(bill.purchase_order, self.purchase_order)
-        self.assertEqual(bill.business, self.business)
-        self.assertEqual(bill.contact, self.contact)
-        self.assertEqual(bill.vendor_invoice_number, "VIN001")
-        
-    def test_bill_str_method(self):
-        bill = Bill.objects.create(
-            purchase_order=self.purchase_order,
-            business=self.business,
-            contact=self.contact,
-            vendor_invoice_number="VIN002"
-        )
-        self.assertEqual(str(bill), f"Bill {bill.vendor_invoice_number}")
         
     def test_bill_protected_from_po_delete(self):
         """Test that PurchaseOrders with Bills cannot be deleted (PROTECT)."""
@@ -112,46 +102,3 @@ class BillModelTest(TestCase):
         # Cannot delete the contact due to PROTECT
         with self.assertRaises(models.ProtectedError):
             self.contact.delete()
-
-
-class BillBalanceTest(TestCase):
-    """The coarse-balance rule lives once on the model and is shared by both
-    the detail (BillSerializer) and summary (BillSummarySerializer / the SQL
-    annotation) read paths."""
-
-    def setUp(self):
-        self.default_contact = Contact.objects.create(
-            first_name='Default', last_name='', email='bal.default@test.com')
-        self.business = Business.objects.create(
-            business_name="Bal Vendor", default_contact=self.default_contact)
-        self.default_contact.business = self.business
-        self.default_contact.save()
-
-    def _bill(self, status=Bill.STATUS_RECEIVED, lines=(('2', '25.00'),)):
-        from apps.purchasing.models import BillLineItem
-        bill = Bill.objects.create(
-            business=self.business, vendor_invoice_number='VB-1', status=status)
-        for i, (qty, price) in enumerate(lines, start=1):
-            BillLineItem.objects.create(
-                bill=bill, line_number=i, description='Parts',
-                qty=Decimal(qty), units='ea', price=Decimal(price))
-        return bill
-
-    def test_total_sums_line_items(self):
-        bill = self._bill(lines=(('2', '25.00'), ('1', '10.00')))
-        self.assertEqual(bill.total, Decimal('60.00'))
-
-    def test_balance_is_total_when_unresolved(self):
-        bill = self._bill(status=Bill.STATUS_RECEIVED)
-        self.assertEqual(bill.balance, Decimal('50.00'))
-
-    def test_balance_zero_for_paid_cancelled_refunded(self):
-        # Terminal statuses carry no outstanding balance (Bill.balance rule —
-        # payment-aware since the BillPayment work superseded the old
-        # ZERO_BALANCE_STATUSES coarse rule this test originally pinned).
-        for status in (Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED,
-                       Bill.STATUS_REFUNDED):
-            bill = self._bill(status=status)
-            self.assertEqual(
-                bill.balance, Decimal('0.00'),
-                f'{status} bills should report a zero balance')

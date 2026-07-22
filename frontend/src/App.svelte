@@ -28,9 +28,6 @@
   import InvoiceListPage from './routes/invoices/InvoiceListPage.svelte';
   import InvoiceSendPage from './routes/invoices/InvoiceSendPage.svelte';
   import InvoiceWizardRedirect from './routes/invoices/InvoiceWizardRedirect.svelte';
-  import BillListPage from './routes/bills/BillListPage.svelte';
-  import BillFormPage from './routes/bills/BillFormPage.svelte';
-  import BillDetailPage from './routes/bills/BillDetailPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import SchedulePage from './routes/schedule/SchedulePage.svelte';
   import SearchPage from './routes/Search.svelte';
@@ -58,10 +55,8 @@
   import EmailDetailPage from './routes/email/EmailDetailPage.svelte';
   import EmailCreateJobPage from './routes/email/EmailCreateJobPage.svelte';
   import EmailCreatePOPage from './routes/email/EmailCreatePOPage.svelte';
-  import EmailCreateBillPage from './routes/email/EmailCreateBillPage.svelte';
   import EmailAssociatePage from './routes/email/EmailAssociatePage.svelte';
   import EmailAssociatePOPage from './routes/email/EmailAssociatePOPage.svelte';
-  import EmailAssociateBillPage from './routes/email/EmailAssociateBillPage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
   import JobChangeOrderPage from './routes/jobs/JobChangeOrderPage.svelte';
   import ChangeOrderRedirect from './routes/change-orders/ChangeOrderRedirect.svelte';
@@ -111,10 +106,6 @@
     '/invoices/:id/wizard': InvoiceWizardRedirect,
     '/invoices/:id/send': InvoiceSendPage,
     '/invoices/:id': InvoiceDetailPage,
-    '/bills': BillListPage,
-    '/bills/new': BillFormPage,
-    '/bills/:id/edit': BillFormPage,
-    '/bills/:id': BillDetailPage,
     '/settings': SettingsPage,
     '/catalog': CatalogInventoryPage,
     '/catalog/service-items': CatalogServiceItemsPage,
@@ -127,10 +118,8 @@
     '/email': EmailInboxPage,
     '/email/:id/create-job': EmailCreateJobPage,
     '/email/:id/create-po': EmailCreatePOPage,
-    '/email/:id/create-bill': EmailCreateBillPage,
     '/email/:id/associate': EmailAssociatePage,
     '/email/:id/associate-po': EmailAssociatePOPage,
-    '/email/:id/associate-bill': EmailAssociateBillPage,
     '/email/:id': EmailDetailPage,
     // Home with the Profile / Help tab active (tab derived from location
     // in Home).

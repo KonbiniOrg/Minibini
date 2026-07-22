@@ -161,7 +161,7 @@ apps/api/
     inventory/               # InventoryItem, Material
     invoicing/               # Invoice
     jobs/                    # Job + board views
-    purchasing/              # PurchaseOrder, Bill
+    purchasing/              # PurchaseOrder
     rate_schemes/            # RateScheme
     reimbursements/          # expense reimbursement batches
     search/                  # SearchService dispatch
@@ -257,7 +257,7 @@ viewsets disable it (e.g., `UserViewSet` sets `pagination_class = None`).
 > it look like "everything" when it's the first 100. Known instances fixed by
 > page-walking: `InventoryListPage` (2026-06). Fixed by server-side-search
 > rework (2026-06): `InventoryItemPicker` (formerly `InventoryItemPicker`),
-> email-association pickers (jobs/POs/bills).
+> email-association pickers (jobs/POs, plus the since-retired bills picker).
 
 #### Type-ahead pickers: `SearchPicker` + per-entity wrappers
 
@@ -279,13 +279,12 @@ params, and row/selected rendering:
 | `JobPicker` | `/api/jobs/?search=` | |
 | `ContactPicker` | `/api/contacts/?search=` | |
 | `PurchaseOrderPicker` | `/api/purchase-orders/?search=` | Global (po_number, vendor name) |
-| `BillPicker` | `/api/bills/?search=` | vendor_invoice_number, PO number, vendor name |
 | `InventoryItemPicker` | `/api/inventory/?search=` | Accepts `params` prop; "None (freeform)" via `header` snippet |
 | `CustomerPicker` | dual-source contacts + businesses | Emits `{type, id}` (not a plain id) |
 
 **Shared single-model picker contract:** `value` (bindable entity id), `onSelect(fullRow|null)`, optional `selectedItem` for id-based prefill. `CustomerPicker` deviates: its `value` is `{type, id}`.
 
-**Backend `?search=`** is hand-rolled in `get_queryset` for purchase-orders (po_number, vendor name), bills (vendor_invoice_number, PO number, vendor name), and inventory items (code, description) — the same pattern as contacts/jobs. DRF `SearchFilter` is not used.
+**Backend `?search=`** is hand-rolled in `get_queryset` for purchase-orders (po_number, vendor name) and inventory items (code, description) — the same pattern as contacts/jobs. DRF `SearchFilter` is not used.
 
 ### 3.4 Mixin catalog
 
@@ -294,9 +293,9 @@ All in `apps/api/mixins.py`.
 | Mixin | Used by | One-line description |
 |---|---|---|
 | `StatusTransitionMixin` | Every document viewset | Auto-registers `@action` POST endpoints from a `status_actions` dict, with optional `requires_reason` validation and HistoryEntry attachment. |
-| `LineItemMixin` | EstimateViewSet, InvoiceViewSet, PurchaseOrderViewSet, BillViewSet | Adds `line-items/`, `line-items/{id}/`, `line-items/reorder/` actions; delegates all writes to `line_item_service_class`. |
+| `LineItemMixin` | EstimateViewSet, InvoiceViewSet, PurchaseOrderViewSet | Adds `line-items/`, `line-items/{id}/`, `line-items/reorder/` actions; delegates all writes to `line_item_service_class`. |
 | `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. (The Job's `materials/` and `fees/` actions live on `JobViewSet` directly.) |
-| `JSONDestroyMixin` | JobViewSet, BillViewSet, InventoryItemViewSet, WorkTemplateViewSet, ServiceItemViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
+| `JSONDestroyMixin` | JobViewSet, InventoryItemViewSet, WorkTemplateViewSet, ServiceItemViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
 | `ConfirmDeleteMixin` | ContactViewSet, BusinessViewSet, ReimbursementViewSet | Two-phase delete; first DELETE returns `{'confirm_required': True, 'impact': {…}}`, DELETE with `?confirm=true` runs the delete. Subclasses implement `get_deletion_impact(obj)` and `perform_confirmed_destroy(obj)`. |
 | `JobScopedPermissionMixin` | JobViewSet, EstimateViewSet, ChangeOrderViewSet, DeliverableViewSet, TaskViewSet | Resolves a viewset's target Job for `CanManageJobOrPM` via `get_object_job(obj)` / `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'estimate.job'`), `job_create_field` (create-body key naming the parent Job), and `job_url_kwarg` (job-nested URL kwarg). |
 | `JobScopedCanManageMixin` | Job/Estimate/ChangeOrder/Deliverable/Task serializers | Serializer mixin adding a server-computed read-only `can_manage` boolean (`JobService.user_can_manage(request.user, <job>)`, job reached via `can_manage_job_path`). Caches the atom check per-request to keep list serialization O(1) queries. The SPA gates job-scoped edit affordances on this per-object flag — same convention as the line-item `editable`/`deletable` booleans. |
@@ -309,7 +308,7 @@ worksheet layer.)
 ```python
 status_actions = {
     'mark-open': {'service': EstimateService.mark_open},
-    'cancel':    {'service': BillService.cancel,
+    'cancel':    {'service': InvoiceService.cancel,
                   'requires_reason': True},
 }
 ```
@@ -386,7 +385,6 @@ a runtime error in the SPA.
 - `RateSchemeViewSet` — `apps/api/rate_schemes/views.py`
 - `ExpenseViewSet` — `apps/api/expenses/views.py`
 - `JobViewSet` — `JSONDestroyMixin`
-- `BillViewSet` — `JSONDestroyMixin`
 - `InventoryItemViewSet` — `JSONDestroyMixin`
 - `WorkTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
 - `ServiceItemViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
@@ -522,8 +520,10 @@ deletes stays. Full frontend rules and the uniform catch-block snippet:
 
 ## 4. Line item API pattern
 
-Four entities have line items (Estimate, Invoice, PurchaseOrder, Bill).
+Three entities have line items (Estimate, Invoice, PurchaseOrder).
 All use `LineItemMixin` and route every write through a service class.
+(`BillLineItem` survives only as retired schema — 2026-07-23, see
+materials-inventory-and-purchasing.md §13.)
 
 A viewset wires up the mixin with three attributes:
 
@@ -992,7 +992,7 @@ all sharing the abstract `HistoryEntryBase`:
 - `JobHistory` (`job_history`) — Job + everything that hangs off it (task,
   estimate, change order, invoice, material, deliverable, shipment).
 - `CrmHistory` (`crm_history`) — contacts and businesses.
-- `PurchasingHistory` (`purchasing_history`) — purchase orders, bills, **and bill payments** (a payment is an adjunct of its bill — see §7.4).
+- `PurchasingHistory` (`purchasing_history`) — purchase orders (plus legacy bill / bill-payment entries from before the 2026-07-23 bill retirement).
 - `InventoryHistory` (`inventory_history`) — inventory items.
 - `ExpensesHistory` (`expenses_history`) — expenses **and reimbursement batches** (a batch is an adjunct of its member expenses — see §7.4).
 
@@ -1020,12 +1020,12 @@ Models opt in with `@history(exclude=[...])` from `apps/core/history.py`:
 - `Job`, `Task` — `apps/jobs/models.py`
 - `Estimate`, `ChangeOrder` — `apps/estimates/models.py`
 - `Invoice` — `apps/invoicing/models.py`
-- `PurchaseOrder`, `Bill` — `apps/purchasing/models.py`
+- `PurchaseOrder` — `apps/purchasing/models.py` (Bill's decorator was removed with the 2026-07-23 retirement; its old entries remain)
 - `Material` — `apps/inventory/models.py`
 - `Deliverable`, `Shipment` — `apps/deliverables/models.py`
 - `Expense` — `apps/expenses/models.py`. Excludes the four `qbo_*` fields (`qbo_id`, `qbo_sync_status`, `qbo_sync_error`, `qbo_pending_op`) so QBO sync-state churn never enters the expense timeline — the domain↔QBO seam (QBO sync state lives in `QBOSyncLog`, not here).
 
-`BillPayment` and `Reimbursement` are deliberately **not** decorated — they're adjuncts whose history is written imperatively onto their *primary* (§7.4), which the decorator (keyed to a model's own `object_type`) can't express.
+`Reimbursement` is deliberately **not** decorated — it's an adjunct whose history is written imperatively onto its *primary* (§7.4), which the decorator (keyed to a model's own `object_type`) can't express. (`BillPayment` followed the same pattern until the bill retirement.)
 
 Time/workforce models (`Shift`, `ShiftChangeRequest`, `BlepChangeRequest`)
 are **not** tracked: their lifecycle is already first-class data
@@ -1086,10 +1086,10 @@ permission `actor`s) remain. Tests that invoke views via `APIRequestFactory`
 
 **Adjunct → primary.** The `@history` decorator keys entries to a model's *own*
 `object_type`, so a sub-resource can't auto-route its history to its parent. Adjuncts
-therefore record imperatively on the **primary's** timeline: `BillPayment` lifecycle
-(recorded / edited / deleted) → `record_action(object_type='bill', object_id=bill_id, …)`;
+therefore record imperatively on the **primary's** timeline:
 `Reimbursement` lifecycle (reimbursed-in-batch / unwound) → `record_action(object_type='expense', …)`
-on each member expense. Delete entries are written on the **success path only** (after
+on each member expense. (`BillPayment` → its Bill was the other adjunct
+until the 2026-07-23 bill retirement.) Delete entries are written on the **success path only** (after
 the QBO void succeeds and just before the local row is removed — capture the parent id +
 amount first).
 
@@ -1186,10 +1186,10 @@ retention policy described in §7.7a.
 `cleanup_temp_emails` scheduled command) decides eligibility per
 `TempEmail` row:
 
-- **Unlinked** (the `EmailRecord` has no `job` / `purchase_order` /
-  `bill`): clock starts at `TempEmail.created_at`. Purged once
+- **Unlinked** (the `EmailRecord` has no `job` / `purchase_order`):
+  clock starts at `TempEmail.created_at`. Purged once
   `email_retention_days` have elapsed. This is the original behavior.
-- **Linked to one or more of Job / PurchaseOrder / Bill**: the clock
+- **Linked to one or more of Job / PurchaseOrder**: the clock
   is the *finality date* of those records, not the email's own date.
   Each linked record contributes its own clock; the strictest one wins
   (the email is purged only when **every** linked record is past its
@@ -1209,7 +1209,9 @@ Final-status sets ("practically done"):
 |---|---|
 | `Job` | `completed`, `rejected`, `cancelled` |
 | `PurchaseOrder` | `received_in_full`, `cancelled` |
-| `Bill` | `paid_in_full`, `cancelled`, `refunded` |
+
+(The Bill slice of the finality map was removed with the 2026-07-23 bill
+retirement; a legacy `EmailRecord.bill` link no longer contributes a clock.)
 
 `EmailRecord` rows are preserved permanently regardless of `TempEmail`
 purge — the auditable record of an email having existed survives even
@@ -1220,21 +1222,23 @@ once its cached body and metadata are gone.
 
 ### 7.8 Email detail action panel
 
-`EmailRecord` has three independent association FKs — `job`,
-`purchase_order`, and `bill`, all `on_delete=SET_NULL`. Any
-combination is valid; the user chooses which apply per email.
+`EmailRecord` has two active association FKs — `job` and
+`purchase_order`, both `on_delete=SET_NULL`. Any combination is valid;
+the user chooses which apply per email. (The third FK, `bill`, is
+retained-but-unused legacy schema since the 2026-07-23 bill retirement —
+vendor-invoice emails link to the PO instead.)
 
 `frontend/src/components/email/EmailActionPanel.svelte` is the
 right-rail side panel on the email detail page (`EmailDetailPage.svelte`
 lays out content + rail in a two-column flexbox). One section per
-target (Job, Purchase Order, Bill). When the email is linked to that
+target (Job, Purchase Order). When the email is linked to that
 target the section shows the linked entity as a navigation link plus a
 Disassociate `<button>`; when unlinked it shows two `<a>`s styled like
 buttons — *Create new* and *Link existing* — that route to the
 respective Create-from-Email and Associate-with-Existing pages. Each
 section is hidden when the viewer lacks the relevant permission atom
 (`can_manage_jobs` for the Job section; `can_manage_financials` for
-PO and Bill).
+PO).
 
 The Create-from-Email pages share `SenderResolutionForm.svelte`
 (`frontend/src/components/email/`), the sender-info + contact-picker /
@@ -1252,28 +1256,28 @@ SPA routes registered in `App.svelte`:
 
 - `/email/:id/create-job` → `EmailCreateJobPage.svelte`
 - `/email/:id/create-po` → `EmailCreatePOPage.svelte`
-- `/email/:id/create-bill` → `EmailCreateBillPage.svelte` (resolves the
-  Contact+Business, then navigates to `#/bills/new?email=&vendor=` —
-  the actual Bill creation page is future work)
 - `/email/:id/associate` → `EmailAssociatePage.svelte` (Job picker)
 - `/email/:id/associate-po` → `EmailAssociatePOPage.svelte`
-- `/email/:id/associate-bill` → `EmailAssociateBillPage.svelte`
 
-`EmailRecordSerializer` exposes `job` + `job_number`,
-`purchase_order` + `po_number`, and `bill` + `vendor_invoice_number`
+(The create-bill / associate-bill routes and pages were deleted with the
+2026-07-23 bill retirement.)
+
+`EmailRecordSerializer` exposes `job` + `job_number` and
+`purchase_order` + `po_number`
 read-only so the panel can render linked-entity labels without extra
-fetches.
+fetches. (It no longer exposes `bill` / `vendor_invoice_number`.)
 
 ### 7.9 `EmailService` association helpers
 
 `EmailService.associate_with(email_pk, target_field, target_pk)` and
 `disassociate_from(email_pk, target_field)` are parameterized over the
-three target fields (`'job'`, `'purchase_order'`, `'bill'`), validated
-against an allowlist. The five Email-action API endpoints
-(`link-to-job` / `unlink-from-job` / `link-to-po` / `unlink-from-po` /
-`link-to-bill` / `unlink-from-bill`) route through these via a
+two target fields (`'job'`, `'purchase_order'`), validated
+against an allowlist (`'bill'` was removed from the allowlist with the
+2026-07-23 retirement). The four Email-action API endpoints
+(`link-to-job` / `unlink-from-job` / `link-to-po` / `unlink-from-po`)
+route through these via a
 `_link_email_to(target_field, body_key, …)` / `_unlink_email_from`
-helper pair in `apps/api/email/views.py` so the six views are
+helper pair in `apps/api/email/views.py` so the views are
 one-liners. `EmailService.associate_with_job` and
 `disassociate_from_job` remain as backwards-compatible shims that
 delegate to the parameterized pair; callers that already used the
@@ -1291,8 +1295,8 @@ owned by `OutboundEmailService.send_tracked` in `apps/core/services.py`:
    lands). Set as the outgoing message's `Message-ID` header so
    customer replies' `In-Reply-To` round-trips back to a row we own.
 2. Persist the `EmailRecord` (direction=outbound, message_id, the
-   association FK passed in `associate_with={'job'|'purchase_order'|
-   'bill': obj}`) + a `TempEmail` row holding the composed
+   association FK passed in `associate_with={'job'|'purchase_order':
+   obj}`) + a `TempEmail` row holding the composed
    subject/from/to/cc/bcc/body and the attachments_metadata. Both
    committed in a single transaction *before* SMTP runs.
 3. Call `EmailMessage.send()`. On success, set `sent_at=now()`. On
@@ -1351,7 +1355,7 @@ right-to-left, looking up each token against existing
 exist but have no FKs to copy** — that lets a new reply inherit
 context from a grandparent when the immediate parent happens to be
 orphaned itself. The first parent that contributes at least one
-non-null FK wins; its `job` / `purchase_order` / `bill` values are
+non-null FK wins; its `job` / `purchase_order` values are
 copied onto the new reply EmailRecord. Behavior is silent — no
 "auto-linked via reply" badge; the action panel's existing
 Disassociate handles any mis-correlated auto-links.
@@ -1364,7 +1368,7 @@ since IMAP-fetched inbound can't see BCC).
 
 ### 7.11a Thread-wide association propagation
 
-Every place that sets a `job` / `purchase_order` / `bill` FK on an
+Every place that sets a `job` / `purchase_order` FK on an
 EmailRecord — `EmailService.associate_with` (called by the
 link-to-X endpoints and the create-X-from-email paths) and
 `correlate_reply` (called at IMAP fetch time) — invokes
@@ -1417,7 +1421,7 @@ the right-rail `EmailActionPanel`. The page tracks a small
 `replyMode = $state(null)` (one of `null | 'reply' | 'reply-all'`); the
 action panel's Reply / Reply All buttons set it via an `onReply(mode)`
 callback prop. The right rail uses `position: sticky` so the action
-panel (Job / PO / Bill associations + Reply controls) stays visible
+panel (Job / PO associations + Reply controls) stays visible
 while the user scrolls between the compose form and the original
 email below it.
 
@@ -1444,7 +1448,7 @@ Backend endpoints:
   (parent's `message_id`), `references` (parent's references chain
   extended with the parent's own message_id), and
   `inherit_associations` (the parent's `job_id` /
-  `purchase_order_id` / `bill_id`).
+  `purchase_order_id`).
 - `POST /api/emails/{id}/reply/` — accepts multipart form data,
   echoes the threading headers + first non-null inherited
   association FK back as `associate_with`, delegates to
@@ -1458,7 +1462,7 @@ is the email reader's own words; not a permission decision).
 
 The reply correlation pass (§7.11) runs unchanged on the inbound
 side: customer's reply to our outbound auto-links to the same Job
-/ PO / Bill the outbound was associated with.
+/ PO the outbound was associated with.
 
 ### 7.14 Outbound email — single entry point
 
@@ -1506,7 +1510,6 @@ Purchasing         → /purchase-orders
 Catalog            → /catalog
 ─── Financials ─── (label only if user has can_manage_financials)
 Invoices           (can_manage_financials) → /invoices
-Bills              (can_manage_financials) → /bills
 Expenses           (can_manage_financials)
 ─── Admin ───      (label only if user has can_manage_config)
 Users              (can_manage_config)
@@ -1635,19 +1638,19 @@ Concrete items, smallest first:
   empty; `apps/estimates/signals.py` is 123 lines. Decide on one
   pattern and document it in CLAUDE.md.
 
-- **Negative-price sanity check on line items.** All four line-item
-  subclasses (Estimate, Invoice, PO, Bill) accept any decimal price
+- **Negative-price sanity check on line items.** All the line-item
+  subclasses (Estimate, Invoice, PO) accept any decimal price
   with no validation. Negative values are legitimate (discount lines,
   credits), but typos that flip a sign go through silently. A serializer-
   or service-level warning (not a hard reject) would catch obvious
-  mistakes. Concern is shared across all four subclasses since it lives
+  mistakes. Concern is shared across the subclasses since it lives
   on `BaseLineItem`.
 
-- **`accounting_category` required on all four line-item subclasses
-  (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`,
-  `BillLineItem`).** Currently nullable (inherited from
+- **`accounting_category` required on the line-item subclasses
+  (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`).**
+  Currently nullable (inherited from
   `BaseLineItem`); a null AC falls back to silently tax-exempt at QBO
   push time. Should become NOT NULL after existing rows are backfilled.
-  One project-wide migration across all four subclasses — the change
+  One project-wide migration across the subclasses — the change
   lives in `apps/core/models.py` (`BaseLineItem`) plus a backfill step
   per subclass.

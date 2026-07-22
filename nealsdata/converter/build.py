@@ -2630,7 +2630,8 @@ def build_purchasing(c):
             'created_date': job_created.get(job_pk) or _HISTORY_FALLBACK_DATE,
         })
 
-    # --- PO + Bill synthesis ----------------------------------------------
+    # --- PO synthesis (from the FreeAgent Bills sheet; konbini Bills are
+    # retired — vendor invoices live in QBO) ---------------------------------
     po_count = 0
     for base, bill in sorted(bill_for_base.items()):
         job_pk = c.job_map[base]
@@ -2669,7 +2670,6 @@ def build_purchasing(c):
             'received_date': dstr,
             'cancel_date': None,
         })
-        bill_pk = c.next_pk('purchasing.bill')
         line_no = 0
         for mf in mats:
             line_no += 1
@@ -2691,32 +2691,6 @@ def build_purchasing(c):
                 'qty_cancelled': '0.00',
             })
             mf['po_line_item'] = poli_pk
-            c.add_fixture('purchasing.billlineitem',
-                          c.next_pk('purchasing.billlineitem'), {
-                'bill': bill_pk,
-                'task': None,
-                'inventory_item': mf['inventory_item'],
-                'line_number': line_no,
-                'qty': mf['quantity'],
-                'units': mf['units'],
-                'description': mf['description'],
-                'price': mf['unit_cost'],
-                'accounting_category': mf['accounting_category'],
-            })
-        c.add_fixture('purchasing.bill', bill_pk, {
-            'purchase_order': po_pk,
-            'business': ent['business'],
-            'contact': ent.get('default_contact'),
-            'vendor_invoice_number': (bill['ref'] or f'BILL-{bill_pk:04d}')[:50],
-            'status': 'received',
-            'created_date': dstr,
-            'due_date': None,
-            'received_date': dstr,
-            'paid_date': None,
-            'cancelled_date': None,
-            'qbo_id': None,
-            'qbo_payment_status': '',
-        })
 
     # Advance the po_counter AppState past the generated POs.
     for f in c.fixture_data:
@@ -2727,7 +2701,7 @@ def build_purchasing(c):
     if c.verbose:
         consumed = sum(1 for mats in materials_by_job.values()
                        for mf in mats if mf['consumption_state'] == 'consumed')
-        print(f'  purchasing: {po_count} POs+Bills from matched bills; '
+        print(f'  purchasing: {po_count} POs from matched bills; '
               f'{consumed} materials consumed; {len(earmarks)} earmarks')
 
 

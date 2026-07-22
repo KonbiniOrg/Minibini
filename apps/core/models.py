@@ -195,7 +195,8 @@ class EmailRecord(models.Model):
         help_text='Associated purchase order for this email'
     )
 
-    # Bill association — independent of job/purchase_order.
+    # Bill association — RETIRED 2026-07-23 (bills live in QBO). Column
+    # retained for legacy rows only; no active code sets or reads it.
     bill = models.ForeignKey(
         'purchasing.Bill',
         on_delete=models.SET_NULL,

@@ -66,12 +66,11 @@ describe('Sidebar', () => {
     expect(api.post).toHaveBeenCalledWith('/api/auth/logout/');
   });
 
-  it('shows the Financials section with Invoices, Bills, and Expenses for financials users', () => {
+  it('shows the Financials section with Invoices and Expenses for financials users', () => {
     user.set({ username: 'fin', permissions: ['can_manage_financials'] });
     const { getByText, queryByText } = render(Sidebar);
     expect(getByText('Financials')).toBeInTheDocument();
     expect(getByText('Invoices')).toBeInTheDocument();
-    expect(getByText('Bills')).toBeInTheDocument();
     expect(getByText('Expenses')).toBeInTheDocument();
   });
 
@@ -80,6 +79,5 @@ describe('Sidebar', () => {
     const { queryByText } = render(Sidebar);
     expect(queryByText('Financials')).not.toBeInTheDocument();
     expect(queryByText('Invoices')).not.toBeInTheDocument();
-    expect(queryByText('Bills')).not.toBeInTheDocument();
   });
 });

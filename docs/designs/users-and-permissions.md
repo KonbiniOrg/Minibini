@@ -54,7 +54,7 @@ The project defines four custom permission atoms on `User.Meta.permissions`:
 | Atom | Scope |
 |---|---|
 | `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, plan-tasks, contacts, businesses. Status transitions on each. Cancel/reorder tasks and mark all a job's work complete. Email-to-job actions: link, unlink, create-job-from-email. (Adding/editing/deleting and completing individual tasks is open to any authenticated user — see below.) A Job's `project_manager` gets this atom's powers **scoped to that one job** via `CanManageJobOrPM` — see "Project-manager object access". |
-| `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. Email-to-PO / email-to-bill actions: link, unlink, create-po-from-email. |
+| `can_manage_financials` | Full CRUD on invoices, purchase orders, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. Email-to-PO actions: link, unlink, create-po-from-email. (Bill endpoints were retired 2026-07-23 — bills live in QBO. The `Permission` row's label string still says "bills"; left unchanged **deliberately** to avoid a migration.) |
 | `can_manage_time` | Edit or delete any user's bleps and shifts, clock another worker in/out, and approve/deny shift & blep change requests. (Tracking, clocking, or editing one's own recent time is `IsAuthenticated`.) |
 | `can_manage_config` | Settings endpoint, work templates, accounting categories, user admin viewset, QBO connection management. Service-item (the saved-work catalog) writes are shared three ways — see the endpoint table. |
 
@@ -72,7 +72,7 @@ CanManageTimeOrFinancials  # OR of the two — gates the payroll shift report
 
 ### `IsAuthenticated` (no atom)
 
-Any logged-in user gets read access to jobs, estimates, worksheets, tasks, bleps, contacts, businesses, payment terms, templates, accounting categories, search, price-list items, invoices, purchase orders, bills, and emails. They also get write access to notes on jobs/contacts/businesses, can add / edit / delete tasks on existing jobs (delete blocked when the task has Bleps or is in_progress/complete) and complete individual tasks, and can track their own time and submit their own expenses.
+Any logged-in user gets read access to jobs, estimates, worksheets, tasks, bleps, contacts, businesses, payment terms, templates, accounting categories, search, price-list items, invoices, purchase orders, and emails. They also get write access to notes on jobs/contacts/businesses, can add / edit / delete tasks on existing jobs (delete blocked when the task has Bleps or is in_progress/complete) and complete individual tasks, and can track their own time and submit their own expenses.
 
 ### `is_superuser` bypass
 
@@ -134,7 +134,6 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/accounting-categories/` | `IsAuthenticated` | `can_manage_config` | |
 | `/api/invoices/` | `IsAuthenticated` | `can_manage_financials` | `send-defaults` (GET) IsAuth; `send` (POST) `can_manage_financials`. The legacy `send-to-qbo` was removed when the new send flow shipped. |
 | `/api/purchase-orders/` | `IsAuthenticated` | `can_manage_financials` | |
-| `/api/bills/` | `IsAuthenticated` | `can_manage_financials` | `send-to-qbo` also `can_manage_financials` |
 | `/api/inventory/` (`InventoryItemViewSet`) | `IsAuthenticated` | `can_manage_financials` **or** `can_manage_config` | `order` action (`POST /api/inventory/{id}/order/` — order to stock, no material/job) is `can_manage_financials` only |
 | `/api/earmarks/` (`EarmarkViewSet`) | `IsAuthenticated` | (read-only) | New — `ReadOnlyModelViewSet`, unpaginated, backs the Catalog Earmarks tab |
 | `/api/materials/` | `IsAuthenticated` | `IsAuthenticated` | service enforces consumption-state and immutability rules |
@@ -144,8 +143,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/auth/users/` (assignee dropdown) | `IsAuthenticated` | — | distinct from `/api/users/` |
 | `/api/emails/` | `IsAuthenticated` | (no writes from this viewset) | reads only |
 | `/api/emails/{id}/link-to-job/` etc. | — | `can_manage_jobs` | link-to-job, unlink-from-job, create-job |
-| `/api/emails/{id}/link-to-po/` etc. | — | `can_manage_financials` | link-to-po, unlink-from-po, create-po |
-| `/api/emails/{id}/link-to-bill/` etc. | — | `can_manage_financials` | link-to-bill, unlink-from-bill |
+| `/api/emails/{id}/link-to-po/` etc. | — | `can_manage_financials` | link-to-po, unlink-from-po, create-po (link-to-bill/unlink-from-bill retired 2026-07-23) |
 | `/api/emails/{id}/reply-defaults/` | `IsAuthenticated` | — | Pre-populated form payload for Reply / Reply All |
 | `/api/emails/{id}/reply/` | — | `IsAuthenticated` | POST a reply (multipart); delegates to `send_tracked` |
 | `/api/search/` | `IsAuthenticated` | — | |

@@ -557,7 +557,7 @@ class EmailService:
         Retention clock semantics (the "tweak"):
 
         - An unlinked TempEmail (its EmailRecord has no ``job`` /
-          ``purchase_order`` / ``bill``) uses ``TempEmail.created_at`` as the
+          ``purchase_order``) uses ``TempEmail.created_at`` as the
           clock start — original behavior.
         - A linked TempEmail uses the *finality date* of its linked objects
           instead: the most recent ``HistoryEntry`` recording a transition into
@@ -575,7 +575,7 @@ class EmailService:
         from django.db.models import Max
         from apps.core.history import history_model_for
         from apps.jobs.models import Job
-        from apps.purchasing.models import PurchaseOrder, Bill
+        from apps.purchasing.models import PurchaseOrder
 
         if retention_days is None:
             try:
@@ -596,11 +596,6 @@ class EmailService:
                 PurchaseOrder,
                 'purchase_order_id',
                 {PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_CANCELLED},
-            ),
-            'bill': (
-                Bill,
-                'bill_id',
-                {Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED, Bill.STATUS_REFUNDED},
             ),
         }
 
@@ -635,7 +630,6 @@ class EmailService:
             'temp_email_id', 'created_at',
             'email_record__job_id',
             'email_record__purchase_order_id',
-            'email_record__bill_id',
         )
         for temp in candidates:
             er = temp.email_record
@@ -644,8 +638,6 @@ class EmailService:
                 links.append(('job', er.job_id))
             if er.purchase_order_id:
                 links.append(('purchaseorder', er.purchase_order_id))
-            if er.bill_id:
-                links.append(('bill', er.bill_id))
 
             if not links:
                 if temp.created_at < cutoff:
@@ -690,7 +682,6 @@ class EmailService:
     _ASSOC_TARGETS = {
         'job': ('apps.jobs.models', 'Job'),
         'purchase_order': ('apps.purchasing.models', 'PurchaseOrder'),
-        'bill': ('apps.purchasing.models', 'Bill'),
     }
 
     @staticmethod
@@ -712,7 +703,7 @@ class EmailService:
 
         Args:
             email_record_id: PK of EmailRecord
-            target_field: one of 'job', 'purchase_order', 'bill'
+            target_field: one of 'job', 'purchase_order'
             target_pk: PK of the target row
 
         Returns:
@@ -772,7 +763,7 @@ class EmailService:
 
         Args:
             email_record_id: PK of EmailRecord
-            target_field: one of 'job', 'purchase_order', 'bill'
+            target_field: one of 'job', 'purchase_order'
 
         Returns:
             EmailRecord with the target FK cleared
@@ -809,7 +800,7 @@ class EmailService:
 
         Walks In-Reply-To first (the immediate parent — wins on conflict),
         then the References chain right-to-left (most recent first). The
-        first match's job / purchase_order / bill FKs are copied onto
+        first match's job / purchase_order FKs are copied onto
         `email_record` (any that are non-null on the parent).
 
         Args:
@@ -843,7 +834,7 @@ class EmailService:
             # whatever might already be set on the reply (rare, but possible
             # if someone manually pre-associated before the correlation pass).
             updates = {}
-            for field in ('job_id', 'purchase_order_id', 'bill_id'):
+            for field in ('job_id', 'purchase_order_id'):
                 parent_value = getattr(parent, field)
                 if parent_value and not getattr(email_record, field):
                     updates[field] = parent_value
@@ -909,7 +900,7 @@ class LineItemService:
     """
     Service for managing line items across different container types.
 
-    Works with any container object (Estimate, Invoice, PurchaseOrder, Bill)
+    Works with any container object (Estimate, Invoice, PurchaseOrder)
     that has line items inheriting from BaseLineItem.
 
     Status validation is the responsibility of calling domain services
@@ -1100,7 +1091,6 @@ class LineItemService:
             'Estimate': 'estimate',
             'Invoice': 'invoice',
             'PurchaseOrder': 'purchase_order',
-            'Bill': 'bill'
         }
 
         parent_field_name = field_name_map.get(container_type)
@@ -1233,7 +1223,7 @@ class OutboundEmailService:
     """Sends emails via SMTP with optional attachments."""
 
     # Allowlist of association target fields for send_tracked.
-    _ASSOC_FIELDS = ('job', 'purchase_order', 'bill')
+    _ASSOC_FIELDS = ('job', 'purchase_order')
 
     # Fallback Message-ID domain when no `our_domain` Configuration row exists.
     DEFAULT_OUR_DOMAIN = 'example.com'
@@ -1279,8 +1269,8 @@ class OutboundEmailService:
             body: plain text email body
             cc / bcc: list[str] or None
             attachments: list of (filename, content_bytes, mime_type) tuples
-            associate_with: dict of at most one of {'job': obj, 'purchase_order': obj,
-                'bill': obj}, used to set the EmailRecord's FK and to find any
+            associate_with: dict of at most one of {'job': obj,
+                'purchase_order': obj}, used to set the EmailRecord's FK and to find any
                 pending retry row.
             in_reply_to: parent Message-ID when this is a reply (optional).
                 Flows to the outgoing ``In-Reply-To`` header and the

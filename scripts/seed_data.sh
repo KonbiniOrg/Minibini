@@ -145,8 +145,7 @@ for pair in \
     'invoice_counter:0' \
     'po_number_sequence:PO-{year}-{counter:04d}' \
     'po_counter:0' \
-    'bill_number_sequence:BILL-{year}-{counter:04d}' \
-    'bill_counter:0'; do
+; do
     key="${pair%%:*}"
     val="${pair#*:}"
     if needs_config "$key"; then

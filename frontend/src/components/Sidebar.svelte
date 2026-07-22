@@ -66,7 +66,6 @@
     {#if showFinancials}
       <div class="section-label">Financials</div>
       <a href="/invoices" use:link>Invoices</a>
-      <a href="/bills" use:link>Bills</a>
       <a href="/expenses" use:link>Expenses</a>
     {/if}
     {#if $canManageConfig}

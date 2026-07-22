@@ -34,7 +34,6 @@
     { key: 'businesses', label: 'Businesses' },
     { key: 'invoices', label: 'Invoices' },
     { key: 'estimates', label: 'Estimates' },
-    { key: 'bills', label: 'Bills' },
     { key: 'purchase_orders', label: 'Purchase Orders' },
     { key: 'inventory_items', label: 'Inventory Items' },
   ];
@@ -275,28 +274,6 @@
           </table>
         {/if}
 
-        {#if results.results.bills?.length}
-          <h3>Bills</h3>
-          <table class="data-table">
-            <thead>
-              <tr><th>Bill</th><th>Vendor Invoice #</th><th>Contact</th><th>PO #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
-            </thead>
-            <tbody>
-              {#each results.results.bills as bill}
-                <tr>
-                  <td><a href="#/bills/{bill.bill_id}">Bill #{bill.bill_id}</a></td>
-                  <td>{@html hl(bill.vendor_invoice_number)}</td>
-                  <td>{@html hl(bill.contact_name)}</td>
-                  <td>{@html hl(bill.po_number)}</td>
-                  <td>{bill.status}</td>
-                  <td>{formatDate(bill.created_date)}</td>
-                  <td>{@html hlt(bill.matching_descriptions?.join(', ') || null)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-
         {#if results.results.purchase_orders?.length}
           <h3>Purchase Orders</h3>
           <table class="data-table">
@@ -428,7 +405,7 @@
             </button>
           </legend>
           {#if sectionPrice}
-            <p><small>Applies to invoices, estimates, bills, POs, and inventory items.</small></p>
+            <p><small>Applies to invoices, estimates, POs, and inventory items.</small></p>
             <p>
               <label for="price-min"><strong>Min ($)</strong></label><br>
               <input type="number" id="price-min" min="0" step="0.01" bind:value={priceMin}>

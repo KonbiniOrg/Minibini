@@ -16,7 +16,7 @@ The customer-facing billing side of Minibini and the employee/company expense le
 - `Job`, `Task`, `Blep`, `WorkTemplate` shape. See `docs/designs/jobs-tasks-and-worksheets.md`.
 - The estimate wizard (`EstimateLineItemSource`, the same Job atoms, in-sync rule). The invoice wizard mirrors it; see `docs/designs/estimates-and-prices.md` for the shared structure and the `LineItemSource` claim model.
 - `Material` shape, `MaterialService.consume`, `is_expense_bound`, the "Materials (no task)" bucket. See `docs/designs/materials-inventory-and-purchasing.md`.
-- `Bill` (vendor-side AP, lives next to `PurchaseOrder`). See `docs/designs/materials-inventory-and-purchasing.md`.
+- Vendor-side AP: bills live entirely in QBO — the konbini Bill domain was retired 2026-07-23. See `docs/designs/materials-inventory-and-purchasing.md` §13.
 - OAuth, `QBOSyncLog`, payment polling, sync-failure plumbing. See `docs/designs/quickbooks-integration.md`. This doc references the push points but does not describe their internals.
 
 ---
@@ -932,13 +932,13 @@ Per-user reimbursement page sections:
 
 ## Job P&L (unfinished)
 
-The Job P&L view consumes invoices, bills, expenses, and bleps to compute revenue and cost on a job. Invoices and Expenses produce the data; the consumer side is not yet built. See "Unfinished work."
+The Job P&L view consumes invoices, expenses, and bleps to compute revenue and cost on a job (vendor bills live in QBO since 2026-07-23; their cost side would arrive via a future QBO pull). Invoices and Expenses produce the data; the consumer side is not yet built. See "Unfinished work."
 
 ---
 
 ## Unfinished work
 
-- **Job P&L view** — consumes Invoices + Bills + Expenses + Bleps. Was Phase 5 of the QBO integration roadmap. Data is being captured today; the view is not built.
+- **Job P&L view** — consumes Invoices + Expenses + Bleps (plus, eventually, QBO-side vendor-bill actuals). Was Phase 5 of the QBO integration roadmap. Data is being captured today; the view is not built.
 - **`superseded` and `defaulted` statuses.** Both are defined in the status machine's choices but have no transition path that sets them. (Payment polling now drives `partly-paid` / `paid` — see "Payment polling" above — so those two are no longer dead.)
 - **One-click invoice generation.** Auto-create a draft invoice from all uninvoiced atoms when a Job hits `work_complete`, without going through the wizard. Will share the data model with the wizard. Out of scope per the 2026-04-09 design.
 - **Invoice list customer filter — cross-contact rollup.** The `CustomerPicker` → `?business=` filter rolls up all of a business's contacts' invoices via an annotated queryset join; this may produce unexpected results for businesses where multiple contacts have separate billing relationships.

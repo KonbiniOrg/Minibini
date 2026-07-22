@@ -2,7 +2,7 @@ from django.test import TestCase
 from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate
 from apps.invoicing.models import Invoice
-from apps.purchasing.models import PurchaseOrder, Bill
+from apps.purchasing.models import PurchaseOrder
 from apps.contacts.models import Contact, Business
 from apps.inventory.models import Material
 from apps.deliverables.models import Deliverable, Shipment
@@ -11,7 +11,7 @@ from apps.deliverables.models import Deliverable, Shipment
 class AllTrackedModelsTest(TestCase):
     TRACKED_MODELS = [
         Job, Task, Estimate,
-        Invoice, PurchaseOrder, Bill, Contact, Business,
+        Invoice, PurchaseOrder, Contact, Business,
         Material, Deliverable, Shipment,
     ]
 

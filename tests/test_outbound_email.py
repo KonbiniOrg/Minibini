@@ -249,7 +249,6 @@ class CorrelateReplyTest(TestCase):
         reply.refresh_from_db()
         self.assertIsNone(reply.job)
         self.assertIsNone(reply.purchase_order)
-        self.assertIsNone(reply.bill)
 
     def test_in_reply_to_wins_over_conflicting_references(self):
         """When In-Reply-To and References point to differently-associated
@@ -270,14 +269,13 @@ class CorrelateReplyTest(TestCase):
         reply.refresh_from_db()
         self.assertEqual(reply.job, self.job)
 
-    def test_copies_all_three_associations(self):
+    def test_copies_both_associations(self):
         from apps.core.services import EmailService
-        from apps.purchasing.models import PurchaseOrder, Bill
+        from apps.purchasing.models import PurchaseOrder
         po = PurchaseOrder.objects.create(po_number='PO-CORR', business=self.business)
-        bill = Bill.objects.create(vendor_invoice_number='B-CORR', business=self.business)
         EmailRecord.objects.create(
             message_id='<multi@example.com>',
-            job=self.job, purchase_order=po, bill=bill,
+            job=self.job, purchase_order=po,
         )
         reply = self._create_inbound(
             '<reply@example.com>', in_reply_to='<multi@example.com>',
@@ -286,7 +284,6 @@ class CorrelateReplyTest(TestCase):
         reply.refresh_from_db()
         self.assertEqual(reply.job, self.job)
         self.assertEqual(reply.purchase_order, po)
-        self.assertEqual(reply.bill, bill)
 
 
 class IMAPFetchPopulatesHeadersAndCorrelatesTest(TestCase):

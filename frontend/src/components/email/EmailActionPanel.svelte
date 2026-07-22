@@ -16,7 +16,6 @@
       const id = emailRecord.email_record_id;
       if (target === 'job') await emailApi.unlinkFromJob(id);
       else if (target === 'purchase_order') await emailApi.unlinkFromPo(id);
-      else if (target === 'bill') await emailApi.unlinkFromBill(id);
       if (onChange) await onChange();
     } catch (e) {
       actionError = e.message;
@@ -82,24 +81,6 @@
       {/if}
     </section>
 
-    <section>
-      <h4>Bill</h4>
-      {#if emailRecord.bill}
-        <p>
-          Linked: <a href="#/bills/{emailRecord.bill}">{emailRecord.vendor_invoice_number || `Bill #${emailRecord.bill}`}</a>
-        </p>
-        <p>
-          <button type="button" class="action-button" onclick={() => disassociate('bill')}>Disassociate</button>
-        </p>
-      {:else}
-        <p>
-          <a class="action-button" href="#/email/{emailRecord.email_record_id}/create-bill">Create new</a>
-        </p>
-        <p>
-          <a class="action-button" href="#/email/{emailRecord.email_record_id}/associate-bill">Link existing</a>
-        </p>
-      {/if}
-    </section>
   {/if}
 </aside>
 

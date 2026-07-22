@@ -75,7 +75,6 @@
       const ia = replyDefaults?.inherit_associations || {};
       if (ia.job) fd.append('inherit_job', String(ia.job));
       if (ia.purchase_order) fd.append('inherit_purchase_order', String(ia.purchase_order));
-      if (ia.bill) fd.append('inherit_bill', String(ia.bill));
       for (const file of payload.extraFiles) {
         fd.append('attachments', file);
       }

@@ -296,61 +296,6 @@ class QBOCustomerSyncService:
         return customer
 
 
-class QBOVendorSyncService:
-    """Syncs Minibini Business records to QBO as Vendors."""
-
-    @staticmethod
-    def push_vendor(business):
-        """
-        Push a Business to QBO as a Vendor.
-        Returns the QBO Vendor ID.
-        Skips if already synced (qbo_vendor_id is set).
-        """
-        if business.qbo_vendor_id:
-            return business.qbo_vendor_id
-
-        client = QBOService.get_client()
-        if not client:
-            raise ValueError('No active QBO connection')
-
-        vendor = QBOVendorSyncService._build_vendor(business)
-
-        qbo_id = QBOService.save_and_log(
-            vendor, client,
-            entity_type='vendor',
-            qbo_entity_type='Vendor',
-            entity_id=business.pk,
-        )
-        with transaction.atomic():
-            business.qbo_vendor_id = qbo_id
-            business.save(update_fields=['qbo_vendor_id'])
-        return qbo_id
-
-    @staticmethod
-    def _build_vendor(business):
-        """Build a QBO Vendor object from a Business."""
-        from quickbooks.objects.vendor import Vendor
-
-        vendor = Vendor()
-        vendor.CompanyName = business.business_name
-        vendor.DisplayName = QBODisplayNameService.generate_display_name(
-            business, role='vendor'
-        )
-
-        if business.business_phone:
-            from quickbooks.objects.base import PhoneNumber
-            vendor.PrimaryPhone = PhoneNumber()
-            vendor.PrimaryPhone.FreeFormNumber = business.business_phone
-
-        default_contact = business.default_contact
-        if default_contact and default_contact.email:
-            from quickbooks.objects.base import EmailAddress
-            vendor.PrimaryEmailAddr = EmailAddress()
-            vendor.PrimaryEmailAddr.Address = default_contact.email
-
-        return vendor
-
-
 class QBOInvoiceSyncService:
     """Helpers used by InvoiceEmailService.send_invoice to push an Invoice
     to QBO and fetch the rendered PDF. The full send orchestration lives
@@ -496,176 +441,6 @@ class QBOInvoiceSyncService:
         qbo_invoice = QBOInvoice.get(qbo_id, qb=client)
         return qbo_invoice.download_pdf(qb=client)
 
-class QBOBillSyncService:
-    """Pushes Minibini bills to QBO."""
-
-    @staticmethod
-    def push_bill(bill):
-        if bill.qbo_id:
-            return bill.qbo_id
-
-        business = bill.business
-        if not business:
-            raise ValueError('Bill must have a vendor business')
-
-        client = QBOService.get_client()
-        if not client:
-            raise ValueError('No active QBO connection')
-
-        # Auto-sync vendor to QBO if not already synced
-        if not business.qbo_vendor_id:
-            QBOVendorSyncService.push_vendor(business)
-
-        qbo_bill = QBOBillSyncService._build_qbo_bill(bill)
-
-        qbo_id = QBOService.save_and_log(
-            qbo_bill, client,
-            entity_type='bill',
-            qbo_entity_type='Bill',
-            entity_id=bill.pk,
-        )
-        bill.qbo_id = qbo_id
-        bill.save(update_fields=['qbo_id'])
-        return qbo_id
-
-    @staticmethod
-    def push_bill_payment(payment):
-        """Create a QBO BillPayment for a recorded Minibini BillPayment.
-        Idempotent on payment.qbo_id. Never raises — records sync state on the
-        payment via QBOSyncService."""
-        if payment.qbo_id:
-            return payment.qbo_id
-        return QBOSyncService.run_create(
-            payment,
-            lambda: QBOBillSyncService._build_qbo_bill_payment(payment),
-        )
-
-    @staticmethod
-    def _build_qbo_bill_payment(payment):
-        from quickbooks.objects.billpayment import (
-            BillPayment as QBOBillPayment, BillPaymentLine,
-            CheckPayment, BillPaymentCreditCard,
-        )
-        from quickbooks.objects.base import Ref, LinkedTxn
-
-        client = QBOService.get_client()
-        if not client:
-            raise ValueError('No active QBO connection')
-        if not payment.payment_account_id:
-            raise ValueError('No payment account selected for this bill payment')
-
-        bill = payment.bill
-        if not bill.qbo_id:
-            QBOBillSyncService.push_bill(bill)
-
-        account = QBOPaymentAccountService.lookup(payment.payment_account_id)
-
-        qbp = QBOBillPayment()
-        qbp.TotalAmt = float(payment.amount)
-        if payment.reference:
-            qbp.DocNumber = payment.reference
-
-        vendor_ref = Ref()
-        vendor_ref.value = bill.business.qbo_vendor_id
-        qbp.VendorRef = vendor_ref
-
-        acct_ref = Ref()
-        acct_ref.value = account['qbo_account_id']
-        if account['account_type'] == 'Credit Card':
-            qbp.PayType = 'CreditCard'
-            cc = BillPaymentCreditCard()
-            cc.CCAccountRef = acct_ref
-            qbp.CreditCardPayment = cc
-        else:
-            qbp.PayType = 'Check'
-            chk = CheckPayment()
-            chk.BankAccountRef = acct_ref
-            qbp.CheckPayment = chk
-
-        line = BillPaymentLine()
-        line.Amount = float(payment.amount)
-        linked = LinkedTxn()
-        linked.TxnId = bill.qbo_id
-        linked.TxnType = 'Bill'
-        line.LinkedTxn = [linked]
-        qbp.Line = [line]
-
-        return QBOService.save_and_log(
-            qbp, client,
-            entity_type='bill_payment',
-            qbo_entity_type='BillPayment',
-            entity_id=payment.pk,
-        )
-
-    @staticmethod
-    def update_bill_payment(payment):
-        """Re-fetch and update the QBO BillPayment with the current local values.
-        Raises ValueError if the payment has no qbo_id or there is no active connection."""
-        from quickbooks.objects.billpayment import BillPayment as QBOBillPayment
-        if not payment.qbo_id:
-            raise ValueError('BillPayment has no qbo_id — use push_bill_payment')
-        client = QBOService.get_client()
-        if not client:
-            raise ValueError('No active QBO connection')
-        existing = QBOBillPayment.get(payment.qbo_id, qb=client)
-        existing.TotalAmt = float(payment.amount)
-        if payment.reference:
-            existing.DocNumber = payment.reference
-        if existing.Line:
-            existing.Line[0].Amount = float(payment.amount)
-        QBOService.save_and_log(
-            existing, client,
-            entity_type='bill_payment',
-            qbo_entity_type='BillPayment',
-            entity_id=payment.pk,
-            action='update',
-        )
-        return payment.qbo_id
-
-    @staticmethod
-    def void_bill_payment(payment):
-        """Delete the QBO BillPayment. Raises on failure so the caller refuses the local delete."""
-        from quickbooks.objects.billpayment import BillPayment as QBOBillPayment
-        if not payment.qbo_id:
-            return
-        client = QBOService.get_client()
-        if not client:
-            raise ValueError('No active QBO connection')
-        QBOService.delete_and_log(
-            QBOBillPayment, payment.qbo_id, client,
-            entity_type='bill_payment', qbo_entity_type='BillPayment', entity_id=payment.pk,
-        )
-
-    @staticmethod
-    def _build_qbo_bill(bill):
-        from quickbooks.objects.bill import Bill as QBOBill
-        from quickbooks.objects.detailline import AccountBasedExpenseLine, AccountBasedExpenseLineDetail
-        from quickbooks.objects.base import Ref
-
-        qbo_bill = QBOBill()
-        qbo_bill.VendorRef = Ref()
-        qbo_bill.VendorRef.value = bill.business.qbo_vendor_id
-
-        if bill.vendor_invoice_number:
-            qbo_bill.DocNumber = bill.vendor_invoice_number
-
-        qbo_bill.Line = []
-        for item in bill.billlineitem_set.select_related('accounting_category').all():
-            line = AccountBasedExpenseLine()
-            line.Amount = float(item.total_amount)
-            line.Description = item.description
-
-            detail = AccountBasedExpenseLineDetail()
-            if item.accounting_category and item.accounting_category.qbo_expense_account_id:
-                detail.AccountRef = Ref()
-                detail.AccountRef.value = item.accounting_category.qbo_expense_account_id
-
-            line.AccountBasedExpenseLineDetail = detail
-            qbo_bill.Line.append(line)
-
-        return qbo_bill
-
-
 def _is_duplicate_name_error(exc):
     """QBO's 6240 Duplicate Name Exists Error, in any of its phrasings."""
     text = str(exc)
@@ -794,8 +569,8 @@ class QBOAccountsService:
 
 
 class QBOPaymentAccountService:
-    """Owns the `qbo_payment_accounts` Configuration lookup. Shared by the
-    expense/reimbursement Purchase push and the bill-payment push."""
+    """Owns the `qbo_payment_accounts` Configuration lookup, used by the
+    expense/reimbursement Purchase push."""
 
     @staticmethod
     def load_accounts():
@@ -820,8 +595,7 @@ class QBOPaymentAccountService:
 
 
 class QBOExpenseSyncService:
-    """Pushes Minibini expenses and reimbursement batches to QBO.
-    Follows the pattern of QBOBillSyncService."""
+    """Pushes Minibini expenses and reimbursement batches to QBO."""
 
     @staticmethod
     def get_payment_accounts():
@@ -1175,44 +949,20 @@ class QBOPaymentPollingService:
         return QBOInvoice.get(qbo_id, qb=client)
 
 
-class QBOBillPaymentPollingService:
-    """Polls QBO for payment status updates on synced bills."""
-
-    @staticmethod
-    def poll_all():
-        """Clear per-BillPayment from QBO reconciliation. STUBBED: all QBO ->
-        Minibini polling is deferred to a dedicated later session. The
-        bill-payment push is live and writes `qbo_id`, so rows can match the
-        filter below; the inner loop just doesn't fetch/confirm clearance yet."""
-        from apps.purchasing.models import BillPayment
-        stats = {'checked': 0, 'cleared': 0, 'errors': []}
-        client = QBOService.get_client()
-        if not client:
-            stats['error'] = 'No active QBO connection'
-            return stats
-        pending = BillPayment.objects.filter(
-            cleared_date__isnull=True).exclude(qbo_id='')
-        for payment in pending:
-            stats['checked'] += 1
-            # QBO reconciliation fetch + cleared_date set lands in the QBO session.
-        return stats
-
-
 class QBOInboundPollingService:
     """Single entry point for all QBO -> Minibini polling. Sweeps every inbound
-    type (invoice payments, bill clearance; future: Job-P&L actuals, CDC)."""
+    type (invoice payments; future: Job-P&L actuals, CDC)."""
 
     @staticmethod
     def poll_all():
         return {
             'invoices': QBOPaymentPollingService.poll_all(),
-            'bills': QBOBillPaymentPollingService.poll_all(),
         }
 
 
 class QBOSyncFailureService:
     """Returns a unified list of all sync-failed records across the three
-    money-push entity types: company Expense, Reimbursement, BillPayment."""
+    money-push entity types: company Expense and Reimbursement."""
 
     @staticmethod
     def list_failures():
@@ -1224,7 +974,6 @@ class QBOSyncFailureService:
         own QBO failure — their Reimbursement batch does).
         """
         from apps.expenses.models import Expense, Reimbursement
-        from apps.purchasing.models import BillPayment
 
         results = []
 
@@ -1253,19 +1002,6 @@ class QBOSyncFailureService:
                 'qbo_pending_op': b.qbo_pending_op,
                 'qbo_sync_error': b.qbo_sync_error,
                 'retry_url': f'/api/reimbursements/{b.pk}/retry-sync/',
-            })
-
-        for p in BillPayment.objects.filter(
-            qbo_sync_status=BillPayment.SYNC_FAILED,
-        ).select_related('bill'):
-            results.append({
-                'entity_type': 'bill_payment',
-                'id': p.pk,
-                'label': f"Payment on bill {p.bill.vendor_invoice_number}",
-                'amount': str(p.amount),
-                'qbo_pending_op': p.qbo_pending_op,
-                'qbo_sync_error': p.qbo_sync_error,
-                'retry_url': f'/api/bills/{p.bill_id}/payments/{p.pk}/retry-sync/',
             })
 
         return results

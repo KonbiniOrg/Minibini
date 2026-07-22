@@ -11,8 +11,6 @@ export const emailApi = {
     api.post(`/api/emails/${id}/create-job/`, { contact, name, description }),
   linkToPo: (id, poId) => api.post(`/api/emails/${id}/link-to-po/`, { po_id: poId }),
   unlinkFromPo: (id) => api.post(`/api/emails/${id}/unlink-from-po/`, {}),
-  linkToBill: (id, billId) => api.post(`/api/emails/${id}/link-to-bill/`, { bill_id: billId }),
-  unlinkFromBill: (id) => api.post(`/api/emails/${id}/unlink-from-bill/`, {}),
   createPo: (id, { vendor_business_id }) =>
     api.post(`/api/emails/${id}/create-po/`, { vendor_business_id }),
   replyDefaults: (id) => api.get(`/api/emails/${id}/reply-defaults/`),

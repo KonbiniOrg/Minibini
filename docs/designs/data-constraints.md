@@ -316,7 +316,8 @@ with `default_contact` pointing to that Contact, then update the Contact's
   (mutual exclusivity — contacts with a business use the business's QBO ID)
 - **Deletion blocked** if contact is the sole contact for a business (the
   business would lose its required `default_contact`), or if it has any
-  associated Job or Bill
+  associated Job or Bill (the Bill check guards legacy rows only — retired
+  schema, §1.18)
 
 ---
 
@@ -803,7 +804,7 @@ Enforced in `Estimate.clean()`.
   blank.']}`). A PLI-linked line backfills `units` from the PLI in
   `_populate_from_pli()`; a freeform line must carry its own (default `'none'`).
   This is a **BaseLineItem-wide** rule — it holds for InvoiceLineItem,
-  PurchaseOrderLineItem, BillLineItem, and ChangeOrderLineItem too. Empty-string
+  PurchaseOrderLineItem, and ChangeOrderLineItem too. Empty-string
   units can therefore only exist as legacy/bulk-inserted rows that bypassed
   `save()`; the normal path can't produce them, and re-saving such a row (e.g.
   `revise_estimate` copying line items) will raise.
@@ -1176,76 +1177,24 @@ line item ordered (`Material.po_line_item`).
 
 ---
 
-### 1.18 Bill (+ BillLineItem)
+### 1.18 Bill (+ BillLineItem, BillPayment) — retired 2026-07-23
 
-Depends on: Business, (optionally) Contact, PurchaseOrder.
+Vendor invoices live entirely in QBO. `Bill`, `BillLineItem`, and
+`BillPayment` remain in `apps/purchasing/models.py` as **schema-only stubs**
+(kept to avoid a destructive migration; legacy rows may exist), but no
+active code creates, mutates, or displays them, so they carry **no live
+constraints** — the former status machine, date rules, payment recompute,
+and line-item requirements are gone with the business logic. What persists:
 
-#### Status machine
+- The **PROTECT FKs** from legacy rows (business, contact, purchase_order,
+  BillLineItem → InventoryItem) still block unsafe deletes of their targets
+  — see the Contact deletion rule (§1.5), the business-delete impact counts,
+  and `InventoryItem.has_document_line_refs`.
+- `EmailRecord.bill` (§1.27) is a legacy-only column; the email API no
+  longer exposes `bill` / `vendor_invoice_number`.
 
-```
-draft → received → partly_paid → paid_in_full → refunded
-                 ↘ paid_in_full
-                 ↘ cancelled
-```
-
-Valid transitions:
-- `draft` → `received`
-- `received` → `partly_paid`, `paid_in_full`, `cancelled`
-- `partly_paid` → `paid_in_full`
-- `paid_in_full` → `refunded`
-- `cancelled`, `refunded` → (terminal)
-
-#### Fields
-
-- **business** (required FK → Business, PROTECT)
-- **contact** (optional FK → Contact, PROTECT): same rules as PurchaseOrder
-  (must have business, must match on creation)
-- **vendor_invoice_number**: optional (`blank=True`), max 50 chars. The
-  vendor's own number from the invoice; serves as the primary human-facing
-  identifier for the Bill (no Minibini-side auto-generated number). Blank is
-  allowed because a draft Bill created from a PO exists before the real vendor
-  invoice arrives; the number is filled in when the invoice is matched
-  (`__str__` falls back to the bill pk when blank).
-- **purchase_order** (optional FK → PurchaseOrder, PROTECT): if set, PO must
-  NOT be in `draft` status. PO's business must match bill's business.
-- If contact is provided on creation and business is not explicitly set,
-  business is auto-populated from contact's business.
-- **qbo_id**: optional QBO sync ID
-- **qbo_payment_status**: optional QBO payment state string
-
-#### Date rules
-
-- **created_date**: set on creation, immutable thereafter
-- **received_date**: auto-set to `now()` on transition to `received`.
-  Immutable once set.
-- **paid_date**: auto-set to `now()` on transition to `paid_in_full`.
-  Immutable once set.
-- **cancelled_date**: auto-set to `now()` on transition to `cancelled`.
-  Immutable once set.
-- **due_date**: optional, user-set
-
-#### Line item requirement
-
-Cannot transition out of `draft` without at least one BillLineItem.
-
-#### Deletion
-
-Only `draft` Bills can be deleted.
-
-#### BillLineItem
-
-- **bill** (required FK → Bill, CASCADE)
-- **task** (optional FK → Task, PROTECT): reserved alongside
-  `PurchaseOrderLineItem.task` for the future "service PO" feature.
-  Only `BillService.create_bill_from_po` writes to it (copying the value
-  from the source PO line); since PO-line `task` is always null today,
-  this field is null in practice too. Defined directly on the subclass,
-  not on `BaseLineItem`.
-- **inventory_item** (optional FK → InventoryItem, PROTECT)
-- Cannot have both **task** and **inventory_item** set (mutually exclusive
-  per `BaseLineItem.clean()`)
-- **line_number**: auto-generated sequentially per bill if null
-- **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work) values
+See `materials-inventory-and-purchasing.md` §13 for the full retirement
+record. Vendor-invoice emails now link to the **PurchaseOrder** instead.
 
 ---
 
@@ -1492,7 +1441,8 @@ in the application, not the schema). See
 
 Append-only audit trail of sync operations. No invariants beyond schema.
 
-- **entity_type** (e.g. `invoice`, `bill`, `expense`); **entity_id** (int)
+- **entity_type** (e.g. `invoice`, `expense`; historical rows retain retired
+  types — `bill`, `bill_payment`, `vendor`); **entity_id** (int)
 - **qbo_entity_type** / **qbo_entity_id** (max 50 chars, blank)
 - **action** (e.g. `create`, `update`); **status** (e.g. `success`,
   `failure`)
@@ -1516,13 +1466,16 @@ system) both live here, distinguished by `direction`.
   cleared on a successful send.
 - **job** (optional FK → Job, `on_delete=SET_NULL`)
 - **purchase_order** (optional FK → PurchaseOrder, `on_delete=SET_NULL`)
-- **bill** (optional FK → Bill, `on_delete=SET_NULL`)
+- **bill** (optional FK → Bill, `on_delete=SET_NULL`): **legacy-only**
+  since the 2026-07-23 bill retirement — no active code sets or exposes it
+  (the email API no longer serializes `bill` / `vendor_invoice_number`);
+  vendor-invoice emails link to the PO instead
 - **created_at**: auto-set on creation
 
-The three associations are not exclusive: a single email can
-simultaneously link to a Job (e.g. the customer thread it relates to),
-a PO (the vendor quote it spawned), and a Bill (the vendor invoice it
-carried). Deleting any of the target entities clears that FK; the
+The associations are not exclusive: a single email can
+simultaneously link to a Job (e.g. the customer thread it relates to)
+and a PO (the vendor quote it spawned, or the vendor invoice for it).
+Deleting any of the target entities clears that FK; the
 EmailRecord itself persists.
 
 Outbound rows are created at send time by
@@ -1849,7 +1802,8 @@ as side effects of object operations.
 - **entry_type**: `audit` (field changes), `action` (system status
   transitions), `note` (user-written text)
 - **object_type**: string identifier (e.g. `job`, `estimate`, `contact`,
-  `business`, `inventoryitem`, `invoice`, `purchaseorder`, `bill`)
+  `business`, `inventoryitem`, `invoice`, `purchaseorder`; historical rows
+  may carry `bill` — retired 2026-07-23)
 - **object_id**: integer PK of the referenced object
 - **user** (FK → User, nullable): `audit` → acting user; `action` →
   `system` user; `note` → authoring user
@@ -1861,7 +1815,9 @@ as side effects of object operations.
 ### What generates history
 
 `@history`-decorated models: Contact, Business, Job, Estimate, ChangeOrder,
-Invoice, PurchaseOrder, Bill, Shift, ShiftChangeRequest, BlepChangeRequest.
+Invoice, PurchaseOrder, Shift, ShiftChangeRequest, BlepChangeRequest.
+(Bill's decorator was removed with the 2026-07-23 retirement; its old
+entries remain.)
 The decorator creates `audit` entries on create and update.
 
 Signal handlers create `action` entries (as `system` user) for:

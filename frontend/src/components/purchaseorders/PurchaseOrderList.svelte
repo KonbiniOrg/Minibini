@@ -24,7 +24,6 @@
         <th>Created</th>
         <th>Requested</th>
         <th class="text-right">Total</th>
-        <th>Bill</th>
       </tr>
     </thead>
     <tbody>
@@ -44,15 +43,6 @@
           <td>{formatDate(po.created_date)}</td>
           <td>{formatDate(po.requested_date)}</td>
           <td class="text-right">${totalAmount(po.line_items).toFixed(2)}</td>
-          <td>
-            {#if po.bills?.length}
-              {#each po.bills as b}
-                <a href={`#/bills/${b.bill_id}`}>{b.vendor_invoice_number || `#${b.bill_id}`}</a>{' '}
-              {/each}
-            {:else}
-              —
-            {/if}
-          </td>
         </tr>
       {/each}
     </tbody>
