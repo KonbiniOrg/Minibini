@@ -24,7 +24,7 @@ class InvoiceClaimService:
             inv = src.invoice_line_item.invoice
             result[(src.source_type, src.source_pk)] = {
                 'invoice_id': inv.pk,
-                'invoice_number': inv.invoice_number,
+                'invoice_number': inv.display_number,
             }
         return result
 

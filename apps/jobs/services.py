@@ -2235,6 +2235,7 @@ class BoardService:
             invoices.append({
                 'invoice_id': inv.invoice_id,
                 'invoice_number': inv.invoice_number,
+                'display_number': inv.display_number,
                 'status': inv.status,
                 'total': total,
                 'created_date': inv.created_date.isoformat() if inv.created_date else None,

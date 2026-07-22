@@ -244,7 +244,7 @@
             <tbody>
               {#each results.results.invoices as inv}
                 <tr>
-                  <td><a href="#/invoices/{inv.invoice_id}">{@html hl(inv.invoice_number)}</a></td>
+                  <td><a href="#/invoices/{inv.invoice_id}">{@html hl(inv.display_number)}</a></td>
                   <td>{@html hl(inv.job_number)}</td>
                   <td>{inv.status}</td>
                   <td>{formatDate(inv.created_date)}</td>

@@ -8,7 +8,6 @@
   let board_closed_retention_days = $state('');
   let average_labor_cost = $state('');
   let job_number_sequence = $state('');
-  let invoice_number_sequence = $state('');
   let po_number_sequence = $state('');
 
   let saveMessage = $state('');
@@ -21,7 +20,6 @@
       board_closed_retention_days = data.board_closed_retention_days ?? '';
       average_labor_cost = data.average_labor_cost ?? '';
       job_number_sequence = data.job_number_sequence ?? '';
-      invoice_number_sequence = data.invoice_number_sequence ?? '';
       po_number_sequence = data.po_number_sequence ?? '';
     } catch (_) {}
   }
@@ -84,13 +82,6 @@
     {#if errors.job_number_sequence}<em class="err">{errors.job_number_sequence}</em>{/if}
   </p>
   <p>
-    <label><strong>Invoice number</strong><br>
-      <input type="text" class="pattern" bind:value={invoice_number_sequence}
-             placeholder="INV-{'{year}'}-{'{counter:04d}'}">
-    </label>
-    {#if errors.invoice_number_sequence}<em class="err">{errors.invoice_number_sequence}</em>{/if}
-  </p>
-  <p>
     <label><strong>Purchase Order number</strong><br>
       <input type="text" class="pattern" bind:value={po_number_sequence}
              placeholder="PO-{'{year}'}-{'{counter:04d}'}">
@@ -99,7 +90,7 @@
   </p>
   <p>
     <button type="button"
-            onclick={() => save({ job_number_sequence, invoice_number_sequence, po_number_sequence }, 'Numbering')}>Save numbering</button>
+            onclick={() => save({ job_number_sequence, po_number_sequence }, 'Numbering')}>Save numbering</button>
   </p>
 </fieldset>
 

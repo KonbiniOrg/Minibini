@@ -578,7 +578,7 @@ class InvoiceWizardService(BaseWizardService):
                     'claiming_line_item_id': None,
                     'claiming_line_number': None,
                     'claiming_invoice_id': inv.pk,
-                    'claiming_invoice_number': inv.invoice_number,
+                    'claiming_invoice_number': inv.display_number,
                     'not_billable_reason': None,
                 }
 

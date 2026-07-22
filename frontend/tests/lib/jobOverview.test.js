@@ -526,7 +526,7 @@ describe('invoicingBlock', () => {
   it('active — paid-latency clock, remaining, billed percent', () => {
     const b = invoicingBlock({
       invoices: [
-        { invoice_number: 'INV-0088', status: 'paid', sent_date: '2025-06-20', closed_date: '2025-06-24', total: '3000.00' },
+        { invoice_number: 'INV-0088', display_number: 'INV-0088', status: 'paid', sent_date: '2025-06-20', closed_date: '2025-06-24', total: '3000.00' },
       ],
       scopeTotal: 12400,
       invoicedTotal: 3000,
@@ -549,8 +549,8 @@ describe('invoicingBlock', () => {
     // must agree: a draft's amount is not billed yet.
     const b = invoicingBlock({
       invoices: [
-        { invoice_number: 'INV-0088', status: 'paid', sent_date: '2025-06-20', closed_date: '2025-06-24', total: '3000.00' },
-        { invoice_number: 'INV-0092', status: 'draft', total: '9400.00' },
+        { invoice_number: 'INV-0088', display_number: 'INV-0088', status: 'paid', sent_date: '2025-06-20', closed_date: '2025-06-24', total: '3000.00' },
+        { invoice_number: 'INV-0092', display_number: 'INV-0092', status: 'draft', total: '9400.00' },
       ],
       scopeTotal: 12400,
       invoicedTotal: 3000, // the server's figure already excludes the draft
@@ -568,7 +568,7 @@ describe('invoicingBlock', () => {
 
   it('a draft invoice alone never reads fully-billed/frozen', () => {
     const b = invoicingBlock({
-      invoices: [{ invoice_number: 'INV-0093', status: 'draft', total: '12400.00' }],
+      invoices: [{ invoice_number: 'INV-0093', display_number: 'INV-0093', status: 'draft', total: '12400.00' }],
       scopeTotal: 12400,
       invoicedTotal: 0, // draft-only job: nothing invoiced yet, server-side
       now: '2025-07-09',
@@ -581,7 +581,7 @@ describe('invoicingBlock', () => {
   it('active — unpaid aging clock', () => {
     const b = invoicingBlock({
       invoices: [
-        { invoice_number: 'INV-0090', status: 'open', sent_date: '2025-06-20', total: '2000.00' },
+        { invoice_number: 'INV-0090', display_number: 'INV-0090', status: 'open', sent_date: '2025-06-20', total: '2000.00' },
       ],
       scopeTotal: 12400,
       now: '2025-07-09',
@@ -594,7 +594,7 @@ describe('invoicingBlock', () => {
   it('active — paid invoice with no closed_date reads just "paid", not aged-unpaid', () => {
     const b = invoicingBlock({
       invoices: [
-        { invoice_number: 'INV-0091', status: 'paid', sent_date: '2025-06-20', total: '2000.00' },
+        { invoice_number: 'INV-0091', display_number: 'INV-0091', status: 'paid', sent_date: '2025-06-20', total: '2000.00' },
       ],
       scopeTotal: 12400,
       now: '2025-07-09',
@@ -606,10 +606,10 @@ describe('invoicingBlock', () => {
 
   it('active — exactly 4 invoices does not collapse', () => {
     const invoices = [
-      { invoice_number: 'INV-01', status: 'paid', sent_date: '2025-01-01', closed_date: '2025-01-05', total: '100.00' },
-      { invoice_number: 'INV-02', status: 'paid', sent_date: '2025-02-01', closed_date: '2025-02-05', total: '100.00' },
-      { invoice_number: 'INV-03', status: 'open', sent_date: '2025-03-01', total: '100.00' },
-      { invoice_number: 'INV-04', status: 'open', sent_date: '2025-04-01', total: '100.00' },
+      { invoice_number: 'INV-01', display_number: 'INV-01', status: 'paid', sent_date: '2025-01-01', closed_date: '2025-01-05', total: '100.00' },
+      { invoice_number: 'INV-02', display_number: 'INV-02', status: 'paid', sent_date: '2025-02-01', closed_date: '2025-02-05', total: '100.00' },
+      { invoice_number: 'INV-03', display_number: 'INV-03', status: 'open', sent_date: '2025-03-01', total: '100.00' },
+      { invoice_number: 'INV-04', display_number: 'INV-04', status: 'open', sent_date: '2025-04-01', total: '100.00' },
     ];
     const b = invoicingBlock({ invoices, scopeTotal: 12400, now: '2025-07-09' });
     expect(stat(b, 'INV-01')).toBeTruthy();
@@ -621,12 +621,12 @@ describe('invoicingBlock', () => {
 
   it('active — >4 invoices collapse oldest paid into one group', () => {
     const invoices = [
-      { invoice_number: 'INV-01', status: 'paid', sent_date: '2025-01-01', closed_date: '2025-01-05', total: '100.00' },
-      { invoice_number: 'INV-02', status: 'paid', sent_date: '2025-02-01', closed_date: '2025-02-05', total: '100.00' },
-      { invoice_number: 'INV-03', status: 'paid', sent_date: '2025-03-01', closed_date: '2025-03-05', total: '100.00' },
-      { invoice_number: 'INV-04', status: 'open', sent_date: '2025-04-01', total: '100.00' },
-      { invoice_number: 'INV-05', status: 'open', sent_date: '2025-05-01', total: '100.00' },
-      { invoice_number: 'INV-06', status: 'open', sent_date: '2025-06-01', total: '100.00' },
+      { invoice_number: 'INV-01', display_number: 'INV-01', status: 'paid', sent_date: '2025-01-01', closed_date: '2025-01-05', total: '100.00' },
+      { invoice_number: 'INV-02', display_number: 'INV-02', status: 'paid', sent_date: '2025-02-01', closed_date: '2025-02-05', total: '100.00' },
+      { invoice_number: 'INV-03', display_number: 'INV-03', status: 'paid', sent_date: '2025-03-01', closed_date: '2025-03-05', total: '100.00' },
+      { invoice_number: 'INV-04', display_number: 'INV-04', status: 'open', sent_date: '2025-04-01', total: '100.00' },
+      { invoice_number: 'INV-05', display_number: 'INV-05', status: 'open', sent_date: '2025-05-01', total: '100.00' },
+      { invoice_number: 'INV-06', display_number: 'INV-06', status: 'open', sent_date: '2025-06-01', total: '100.00' },
     ];
     const b = invoicingBlock({ invoices, scopeTotal: 12400, now: '2025-07-09' });
     // 6 live > 4 → collapse 3 oldest paid
@@ -642,7 +642,7 @@ describe('invoicingBlock', () => {
   it('frozen — fully billed and paid', () => {
     const b = invoicingBlock({
       invoices: [
-        { invoice_number: 'INV-0088', status: 'paid', sent_date: '2025-06-20', closed_date: '2025-06-24', total: '12400.00' },
+        { invoice_number: 'INV-0088', display_number: 'INV-0088', status: 'paid', sent_date: '2025-06-20', closed_date: '2025-06-24', total: '12400.00' },
       ],
       scopeTotal: 12400,
       invoicedTotal: 12400,

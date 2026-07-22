@@ -163,7 +163,7 @@
     <tbody>
       {#each visibleInvoices as inv}
         <tr>
-          <td><a href="#/invoices/{inv.invoice_id}">{inv.invoice_number}</a></td>
+          <td><a href="#/invoices/{inv.invoice_id}">{inv.display_number}</a></td>
           <td><a href="#/jobs/{inv.job}">{inv.job_number}</a></td>
           <td>{inv.status}</td>
           <td>{formatAmount(inv.total)}</td>

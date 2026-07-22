@@ -193,6 +193,7 @@ class ActivityService:
                 'kind': 'sent',
                 'invoice_id': inv.pk,
                 'invoice_number': inv.invoice_number,
+                'display_number': inv.display_number,
                 'date': _date(inv.sent_date),
                 '_sort': inv.sent_date,
             })
@@ -204,6 +205,7 @@ class ActivityService:
                 'kind': 'paid',
                 'invoice_id': inv.pk,
                 'invoice_number': inv.invoice_number,
+                'display_number': inv.display_number,
                 'date': _date(inv.closed_date),
                 '_sort': inv.closed_date,
             })

@@ -51,7 +51,7 @@ describe('JobDetail — Invoicing block', () => {
   it('activates and reads the server-supplied invoice total', () => {
     const props = baseProps({
       invoices: { results: [{
-        invoice_id: 3, invoice_number: 'INV-3', status: 'open',
+        invoice_id: 3, invoice_number: 'INV-3', display_number: 'INV-3', status: 'open',
         sent_date: '2026-07-01', closed_date: null, total: '400.00',
       }] },
     });

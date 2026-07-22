@@ -190,7 +190,7 @@
   let subnavItems = $derived(
     sortedInvoices.map((inv) => ({
       id: `inv-${inv.invoice_id}`,
-      label: inv.invoice_number,
+      label: inv.display_number,
       status: inv.status,
       href: `#/jobs/${job.job_id}/invoice/${inv.invoice_id}`,
       current: String(inv.invoice_id) === String(invoiceId),
@@ -248,7 +248,7 @@
   {:else if invoice}
   <div class="page-body">
   <div class="toolbar">
-    <span class="page-title">Invoice: {invoice.invoice_number}</span>
+    <span class="page-title">Invoice: {invoice.display_number}</span>
     <span class="status-badge status-{invoice.status}">{invoice.status}</span>
     {#if $canManageFinancials}
       {#if allLinesHaveCategory}
@@ -283,7 +283,7 @@
   <table class="data-table">
     <tbody>
       <tr><th>Field</th><th>Value</th></tr>
-      <tr><td>Invoice Number</td><td>{invoice.invoice_number}</td></tr>
+      <tr><td>Invoice Number</td><td>{invoice.display_number}</td></tr>
       <tr><td>Status</td><td>{invoice.status}</td></tr>
       <tr><td>Created Date</td><td>{fmtDate(invoice.created_date)}</td></tr>
       <tr><td>Sent Date</td><td>{invoice.sent_date ? fmtDate(invoice.sent_date) : 'Not sent yet'}</td></tr>

@@ -94,7 +94,7 @@
     <tbody>
       {#each invoices.results as inv (inv.invoice_id)}
         <tr>
-          <td><a href={`#/invoices/${inv.invoice_id}`}>{inv.invoice_number}</a></td>
+          <td><a href={`#/invoices/${inv.invoice_id}`}>{inv.display_number}</a></td>
           <td>
             {#if inv.job}<a href={`#/jobs/${inv.job}`}>{inv.job_number}</a>{/if}
           </td>

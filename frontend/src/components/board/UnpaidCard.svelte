@@ -91,7 +91,7 @@
           {#each job.invoices || [] as inv}
             {@const pill = invoiceStatusPill(inv)}
             <tr>
-              <td class="col-num">{inv.invoice_number}</td>
+              <td class="col-num">{inv.display_number}</td>
               <td class="col-status"><span class="pill {pill.cls}">{pill.label}</span></td>
               <td class="col-date">{inv.sent_date ? `Sent ${formatDate(inv.sent_date)}` : ''}</td>
               <td class="col-amt {amountClass(inv)}">{formatAmount(inv.total)}</td>

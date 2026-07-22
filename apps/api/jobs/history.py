@@ -53,7 +53,7 @@ def build_job_history(job):
     for c in change_orders:
         reg('changeorder', c.pk, f'Change Order {c.change_order_number}')
     for inv in invoices:
-        reg('invoice', inv.pk, f'Invoice {inv.invoice_number}', f'#/invoices/{inv.pk}')
+        reg('invoice', inv.pk, f'Invoice {inv.display_number}', f'#/invoices/{inv.pk}')
     for t in tasks:
         reg('task', t.pk, f'Task: {t.name}', f'#/jobs/{job.pk}/tasks/{t.pk}')
     for d in deliverables:

@@ -46,7 +46,7 @@ describe('GeneralSettings', () => {
     const { getByRole, findByText } = render(GeneralSettings);
     await fireEvent.click(getByRole('button', { name: 'Save numbering' }));
     expect(api.patch).toHaveBeenCalledWith('/api/settings/', expect.objectContaining({
-      job_number_sequence: '', invoice_number_sequence: '', po_number_sequence: '',
+      job_number_sequence: '', po_number_sequence: '',
     }));
     expect(await findByText('Numbering saved.')).toBeInTheDocument();
   });

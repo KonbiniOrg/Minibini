@@ -84,8 +84,8 @@ describe('ActivityPage', () => {
         { kind: 'received', po_id: 6, po_number: 'PO-2026-0004', date: '2026-06-12' },
       ],
       invoice_events: [
-        { kind: 'sent', invoice_id: 9, invoice_number: 'INV-2026-0002', date: '2026-06-11' },
-        { kind: 'paid', invoice_id: 10, invoice_number: 'INV-2026-0005', date: '2026-06-10' },
+        { kind: 'sent', invoice_id: 9, invoice_number: 'INV-2026-0002', display_number: 'INV-2026-0002', date: '2026-06-11' },
+        { kind: 'paid', invoice_id: 10, invoice_number: 'INV-2026-0005', display_number: 'INV-2026-0005', date: '2026-06-10' },
       ],
     }));
     const { findByText, getByText } = render(ActivityPage);
