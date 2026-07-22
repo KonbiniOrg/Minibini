@@ -106,11 +106,12 @@ class PurgeQBODataTest(SimpleTestCase):
         self.assertIsNone(fields['qbo_amount_paid'])
         self.assertEqual(fields['status'], 'paid')
 
-    def test_clears_bill_qbo_fields(self):
+    def test_leaves_retired_bill_rows_untouched(self):
+        # Bill models are retired schema-only stubs; purge no longer manages
+        # them — legacy dump rows pass through unchanged.
         _, by_model, _ = self.purge()
         fields = by_model['purchasing.bill'][0]['fields']
-        self.assertIsNone(fields['qbo_id'])
-        self.assertEqual(fields['qbo_payment_status'], '')
+        self.assertEqual(fields['qbo_id'], '401')
 
     def test_clears_business_and_contact_ids(self):
         _, by_model, _ = self.purge()
@@ -122,8 +123,7 @@ class PurgeQBODataTest(SimpleTestCase):
 
     def test_resets_syncable_records(self):
         _, by_model, _ = self.purge()
-        for model in ('expenses.expense', 'expenses.reimbursement',
-                      'purchasing.billpayment'):
+        for model in ('expenses.expense', 'expenses.reimbursement'):
             fields = by_model[model][0]['fields']
             self.assertEqual(fields['qbo_id'], '')
             self.assertEqual(fields['qbo_sync_status'], 'pending')
@@ -134,8 +134,7 @@ class PurgeQBODataTest(SimpleTestCase):
         # Dangling references to the purged account list are accepted; the
         # which-account information itself stays readable.
         _, by_model, _ = self.purge()
-        for model in ('expenses.expense', 'expenses.reimbursement',
-                      'purchasing.billpayment'):
+        for model in ('expenses.expense', 'expenses.reimbursement'):
             self.assertEqual(
                 by_model[model][0]['fields']['payment_account_id'], '42')
 
