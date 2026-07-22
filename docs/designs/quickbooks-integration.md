@@ -188,34 +188,31 @@ The action delegates to `InvoiceEmailService.send_invoice` (`apps/invoicing/serv
 
 Service flow (`InvoiceEmailService.send_invoice`, `apps/invoicing/services.py`):
 
-1. **Short-circuit** — if `invoice.qbo_id` is set, return it. No re-pushing.
-2. **Resolve QBO customer** — push `business` (or `contact`) as customer if not yet synced.
-3. **Group lines** — `InvoiceGroupingService.group_for_qbo(invoice)` collapses `InvoiceLineItem` rows into one QBO line per `(AccountingCategory, taxable)` tuple. Description: `"Job {job_number}: {category_name} (taxable|non-taxable)"`. Items with no category bucket under `"Uncategorized"`.
-4. **Build QBO Invoice** — `_build_qbo_invoice`. Each line gets `Amount`, `Description`, `SalesItemLineDetail.ItemRef` (from `AccountingCategory.qbo_item_id`), and `SalesItemLineDetail.TaxCodeRef = 'TAX'` or `'NON'` based on the group's taxability.
-5. **Save** — `qbo_invoice.save(qb=client)`. **Immediately persist `qbo_id` on the Minibini invoice** before doing anything else, so a downstream failure can't cause a duplicate push on retry.
-6. **Generate the Minibini job-statement PDF** — `generate_job_statement_pdf(invoice)` (in `apps/invoicing/pdf.py`). The PDF is attached to the customer email only; it is **not** uploaded to QBO. The bookkeeper sees the statement via Minibini, not via the QBO invoice record.
-7. **Mark as sent** — `_mark_as_sent` re-fetches the invoice, sets `EmailStatus = 'EmailSent'`, and re-saves. This prevents QBO from showing the invoice as "needs to be sent" in its own UI.
-8. **Download QBO PDF** — `_download_qbo_pdf` retrieves QBO's rendered invoice PDF (which carries the Pay Now link and tax calculations).
-9. **Send email via Minibini** — `_send_email` calls `OutboundEmailService.send_email` with both PDFs attached. Subject: `"Invoice {invoice_number} — {job_number}"`. Body is a fixed default — no template system.
-10. **Log success** to `QBOSyncLog`.
+1. **Gate** — `_assert_all_lines_categorized` raises before any external call if any line lacks an accounting category.
+2. **Short-circuit** — if `invoice.qbo_id` is set, skip the push (retry path).
+3. **Resolve QBO customer** — push `business` (or `contact`) as customer if not yet synced.
+4. **Build QBO Invoice, per-line** — `_build_qbo_invoice(invoice, qbo_customer_id, client)`. One `SalesItemLine` per `InvoiceLineItem`, in `line_number` order — the QBO invoice mirrors the konbini invoice exactly (no more per-category bundling; `InvoiceGroupingService` was deleted 2026-07-21). Per line: `Amount` = `total_amount`, `Description` = the line's text **verbatim** (wizard edits ride along), `ItemRef` from `_resolve_item_ref` (below), `TaxCodeRef` = `'TAX'`/`'NON'` straight from the line's `accounting_category.taxable` flag (the per-line `taxable_override` phantom was removed along with `TaxCalculationService`). Invoice-level: `CustomerMemo` = `"Job {job_number} — {job name}"`, `BillEmail` from the job contact's email, and `AllowOnlineCreditCardPayment` / `AllowOnlineACHPayment` both true (the hosted invoice carries the Pay button when QBO Payments is active).
+5. **Save** — `qbo_invoice.save(qb=client)`. **Immediately persist `qbo_id` AND `invoice_number` (from QBO's `DocNumber`)** on the Minibini invoice — QBO owns invoice numbering (see invoicing-and-expenses.md). A retry send whose invoice predates the writeback backfills `DocNumber` via `Invoice.get`.
+6. **Fetch the payment link** — `_fetch_invoice_link(client, qbo_id)` reads the invoice back with `include=invoiceLink` (built directly on the client — the installed python-quickbooks `get()` can't pass query params) and substitutes the URL into the email subject/body wherever the `{payment_link}` placeholder appears.
+7. **Generate the Minibini job-statement PDF** — `generate_job_statement_pdf(invoice)` (in `apps/invoicing/pdf.py`). The PDF is attached to the customer email only; it is **not** uploaded to QBO.
+8. **Mark as sent** — `_mark_as_sent` re-fetches the invoice, sets `EmailStatus = 'EmailSent'`, and re-saves. This prevents QBO from showing the invoice as "needs to be sent" in its own UI, and suppresses QBO's own email.
+9. **Download QBO PDF** — `_download_qbo_pdf` retrieves QBO's rendered invoice PDF.
+10. **Send email via Minibini** — `OutboundEmailService.send_tracked` with both PDFs attached, Configuration-driven subject/body templates, To/CC/BCC from the send dialog, and a job-linked `EmailRecord`.
+11. **Log success** to `QBOSyncLog`.
 
-On any exception, `QBOSyncLog` records `status='failed'` with the error message, and the exception re-raises. There is no compensating action — if step 7 succeeds but step 8 fails, the invoice exists in QBO with `qbo_id` set on Minibini but is in an inconsistent "marked sent, not emailed" state. Manual cleanup is required.
+On any exception, `QBOSyncLog` records `status='failed'` with the error message, and the exception re-raises. There is no compensating action — if step 8 succeeds but step 9 fails, the invoice exists in QBO with `qbo_id` set on Minibini but is in an inconsistent "marked sent, not emailed" state. Manual cleanup is required.
 
-### Line grouping — `InvoiceGroupingService.group_for_qbo`
+### ItemRef resolution — `QBOInvoiceSyncService._resolve_item_ref`
 
-Lives in `apps/invoicing/services.py`. Returns a list of dicts sorted by category name:
+Each pushed line's `ItemRef` resolves in order:
 
-```python
-{
-    'amount': Decimal,
-    'category_name': str,        # or 'Uncategorized'
-    'qbo_item_id': str,          # from AccountingCategory.qbo_item_id; '' if uncategorized
-    'taxable': bool,             # effective taxability via TaxCalculationService
-    'description': str,          # "Job JOB-2026-0001: Service (taxable)"
-}
-```
+1. **The line's catalog entity's mirrored QBO Item** — `_catalog_entity_for_line` finds the single `InventoryItem` or `ServiceItem` the line sells: the line's direct `inventory_item` FK, else its source atoms (all task sources sharing one `Task.service_item`, or all material sources sharing one `Material.inventory_item`). Adjustment lines, expense/fee sources, provisional materials, mixed bundles, and hand lines have no catalog identity → fall through.
+2. **The category's generic fallback Item** — `AccountingCategory.qbo_item_id` (the pre-existing per-category mapping, now demoted to fallback).
+3. **No ItemRef** — QBO applies its default item.
 
-Effective taxability per line is computed by `TaxCalculationService.get_effective_taxability(item)`, which honors `taxable_override` on the line item with fallback to the category default.
+### Lazy Item minting — `QBOItemMintService.ensure_item(entity, client)`
+
+When step 1 finds a catalog entity with no `qbo_id`, the QBO Item is created mid-push: `InventoryItem` → Type `NonInventory` (never QBO's `Inventory` type — stock stays konbini-side), Name = `code`; `ServiceItem` → Type `Service`, Name = `template_name`. `IncomeAccountRef` is **copied from the category's generic fallback Item** fetched live from QBO — the bookkeeper configures income accounts exactly once, in QBO, on the per-category Items; konbini never stores income accounts. On QBO's duplicate-name error (`6240`), the existing Item is adopted by name (also how pre-existing QBO catalogs converge). If the entity's category has no `qbo_item_id` mapped, nothing is minted and the resolution falls through. The minted/adopted id persists on `entity.qbo_id` (plain CharField — not `QBOSyncable`; a failed mint fails the invoice push, whose retry path covers it). Catalog renames do NOT propagate to QBO Items (LATER).
 
 ## Bill push — `QBOBillSyncService.push_bill`
 

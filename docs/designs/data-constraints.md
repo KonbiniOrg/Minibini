@@ -42,7 +42,7 @@ Both have **key** as primary key (unique, max 100 chars) and a string **value**.
 | Configuration (pattern) | AppState (counter) |
 |---|---|
 | `job_number_sequence` | `job_counter` |
-| `invoice_number_sequence` | `invoice_counter` |
+| `invoice_number_sequence` | `invoice_counter` | _(retired 2026-07-21 — QBO assigns invoice numbers; rows are harmless leftovers)_ |
 | `po_number_sequence` | `po_counter` |
 
 Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
@@ -259,10 +259,15 @@ Standalone. No FK dependencies.
 
 - **code**: unique, max 20 chars (e.g. "SVC", "MAT")
 - **name**: max 100 chars
-- **taxable**: boolean, default True
+- **taxable**: boolean, default True. The **only** konbini-side taxability
+  signal: per-line QBO TaxCodeRef reads it directly (the per-line
+  `taxable_override`/`tax_rate_override` fields were removed 2026-07-21).
 - **is_active**: boolean, default True (soft delete)
 - **qbo_item_id** / **qbo_expense_account_id**: optional, populated after
-  connecting QBO
+  connecting QBO. `qbo_item_id` is the **fallback** ItemRef for invoice
+  lines with no catalog identity, and the source of `IncomeAccountRef`
+  when `QBOItemMintService` mints catalog Items in the category (see
+  quickbooks-integration.md).
 
 ---
 
@@ -1033,8 +1038,12 @@ A `cancelled` Job may carry `open` / `partly-paid` / `paid` Invoices: `CANCELLED
 #### Fields
 
 - **job** (required FK → Job, CASCADE)
-- **invoice_number**: unique, max 50 chars. Auto-generated via
-  NumberGenerationService if not provided.
+- **invoice_number**: unique, max 50 chars, **nullable** (2026-07-21). QBO
+  owns invoice numbering: NULL on drafts; the first QBO push writes QBO's
+  `DocNumber` back (retry sends backfill). Never generated konbini-side —
+  the `'invoice'` NumberGenerationService pattern is retired. UI surfaces
+  render the `display_number` property (`invoice_number` or
+  `"Draft — {job_number}"`), never raw `invoice_number`.
 - **created_date**: set on creation
 - **sent_date**: nullable. Auto-set to `now()` by `Invoice.save()` on the
   `draft → open` transition (the send-to-customer step; mirrors `Estimate`), and

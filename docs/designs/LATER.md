@@ -931,3 +931,17 @@ Cross-cutting UI/API conventions and shared components.
 
 - **Job History Summary hides an "accidental start cancelled" task revert.** — _added 2026-07-13_
   A task's accidental-start-cancelled revert is recorded only as a standalone action entry (no status diff), so `frontend/src/lib/historyLog.js`'s standalone-action rule excludes it and the Summary shows "started" with no visible revert row. Revisit if this confuses users in practice.
+
+- **Catalog renames don't propagate to mirrored QBO Items.** — _added 2026-07-21_
+  A ServiceItem/InventoryItem renamed after its QBO Item was minted keeps the
+  old Item Name in QBO (line Descriptions carry the real text, so invoices are
+  unaffected; only QBO-side Item reporting shows the stale name).
+  _Done when:_ a rename sync (or an explicit "update QBO Item" action) exists,
+  or we record a decision that drift is acceptable.
+
+- **Business-level tax exemption is display-only.** — _added 2026-07-21_
+  `Business.tax_exemption_number` / `tax_multiplier` are editable in the UI but
+  nothing consumes them. Planned as its own QBO changeset: map onto the QBO
+  Customer's taxable/exempt settings. Note: QBO is binary taxable/exempt per
+  customer — the multiplier's fractional-rate idea won't map cleanly.
+  _Done when:_ the business-level exemption changeset ships (spec first).

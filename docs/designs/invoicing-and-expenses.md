@@ -33,7 +33,7 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 |---|---|---|
 | `invoice_id` | AutoField PK | |
 | `job` | FK Job (CASCADE) | |
-| `invoice_number` | CharField(50), unique | Auto-generated on first save via `NumberGenerationService.generate_next_number('invoice')` if blank. See "Document numbering" in CLAUDE.md. |
+| `invoice_number` | CharField(50), unique, **nullable** | **QBO-assigned** (2026-07-21): NULL until the first QBO push writes QBO's `DocNumber` back. Konbini no longer generates invoice numbers. The `display_number` property (`invoice_number` or `"Draft — {job_number}"`) is what every UI surface renders — serializers expose it read-only. |
 | `status` | CharField — see machine below | Default `draft`. |
 | `created_date` | DateTimeField | `default=timezone.now`. |
 | `sent_date` | DateTimeField, nullable | Stamped by `Invoice.save()` the first time the invoice transitions `draft → open` (the send-to-customer step; mirrors `Estimate`), if not already set. A row created directly as `open` is not stamped. The serializer's derived `due_date` (`sent_date + 30 days`) and `is_late` read off this. |
@@ -80,7 +80,7 @@ Guaranteed by the application-level get-or-create in `InvoiceWizardService.open_
 
 ### Document numbering
 
-`Invoice.save()` calls `NumberGenerationService.generate_next_number('invoice')` if `invoice_number` is blank. Counter and pattern keys live in `Configuration` (`invoice_number_sequence`, `invoice_counter`). See "Document Numbering" in `CLAUDE.md`.
+**QBO owns invoice numbering** (2026-07-21). `Invoice.save()` no longer auto-generates a number; the `'invoice'` NumberGenerationService pattern is retired (its `Configuration` rows are harmless leftovers, and the settings UI no longer offers the invoice pattern). On the first QBO push, `send_invoice` writes QBO's `DocNumber` into `invoice_number`; a retry send backfills it from QBO if missing. Rationale: future tenants arrive with QBO already numbering their invoices — konbini attaches to that scheme instead of competing. Drafts render `display_number`'s placeholder (`"Draft — {job_number}"`; unambiguous because of single-draft-per-job).
 
 ---
 
@@ -453,19 +453,28 @@ when `qbo_id` is already set).
 3. The service:
    - **If `invoice.qbo_id` is unset:** resolves a QBO customer ref
      (creates one for the job's business or contact if needed); builds
-     the QBO Invoice via
-     `InvoiceGroupingService.group_for_qbo(invoice)` — line items
-     grouped by `(accounting_category, taxable)`, one QBO line per
-     group, with `Description = "Job {number}: {category}
-     (taxable|non-taxable)"`; saves it; stores `qbo_id`; marks the QBO
-     invoice as Sent. Logs to `QBOSyncLog`.
+     the QBO Invoice **per-line** — one `SalesItemLine` per
+     `InvoiceLineItem` in line order, Description verbatim, ItemRef
+     from the line's catalog entity (lazily minting QBO Items) or the
+     category fallback, per-line TaxCodeRef from
+     `accounting_category.taxable`, `CustomerMemo` carrying the job
+     reference, BillEmail, and online-payment flags — see
+     `docs/designs/quickbooks-integration.md` for the full push
+     mechanics. Saves it; stores `qbo_id` **and adopts QBO's
+     `DocNumber` as `invoice_number`**; marks the QBO invoice as
+     Sent. Logs to `QBOSyncLog`.
    - **If `invoice.qbo_id` is set:** skips the push entirely (this is
      the retry path — the previous version had a bug where retries
-     re-pushed and duplicated the QBO Invoice).
+     re-pushed and duplicated the QBO Invoice). Backfills
+     `invoice_number` from QBO if the row predates the writeback.
+   - Fetches the hosted-invoice **payment link**
+     (`include=invoiceLink`) and substitutes it wherever the
+     `{payment_link}` placeholder appears in the subject/body (the
+     placeholder survives the send dialog literally; substitution
+     happens at send time).
    - Generates a job-statement PDF
      (`apps/invoicing/pdf.generate_job_statement_pdf`).
-   - Downloads the QBO-rendered invoice PDF (which carries the Pay
-     Now link, the QBO branding, the calculated tax).
+   - Downloads the QBO-rendered invoice PDF.
    - Calls `OutboundEmailService.send_tracked` with
      `associate_with={'job': invoice.job}` and both PDFs attached;
      user-uploaded extras append. The send-tracked path persists the
@@ -505,7 +514,9 @@ Configuration keys for the body/subject templates:
 (defaults documented in
 `architecture-and-conventions.md` §7.10). The common template
 variable set is available; `{invoice_number}` aliases
-`{document_number}`.
+`{document_number}` (both render `display_number`), and
+`{payment_link}` renders QBO's hosted-invoice pay-online URL,
+substituted at send time (it shows literally in the compose dialog).
 
 For OAuth, the `QBOSyncLog` model, payment polling internals, the
 customer-sync flow, and connection lifecycle, see

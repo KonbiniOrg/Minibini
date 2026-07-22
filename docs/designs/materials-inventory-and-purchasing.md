@@ -97,6 +97,7 @@ behind freeform Materials at establishment (§3, §4).
 | `qty_wasted` | `Decimal(10,2)` | Bumped by negative `manual_adjustment` / write-off |
 | `is_active` | bool, default **True** | The only retirement flag. "Can't get this any more / won't reorder, but it is still referenced." A **human judgment**, set manually — nothing auto-retires an item. Pickers default to `?is_active=true` |
 | `accounting_category` | FK PROTECT | Required |
+| `qbo_id` | `CharField(50)` blank, default `''` | QBO Item mirror (2026-07-21): the id of this item's QBO Item, minted lazily (type `NonInventory`, Name = `code`) by `QBOItemMintService` on the first invoice push that sells it. `''` = not mirrored. Plain field, not `QBOSyncable`. Stock quantities never sync to QBO. See quickbooks-integration.md. |
 
 Derived:
 

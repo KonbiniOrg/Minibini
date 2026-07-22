@@ -573,6 +573,7 @@ clears.
 | Field | Description |
 |---|---|
 | `rate_scheme` | FK to `RateScheme` (PROTECT). Required at the DB level on Task. Algorithms: `elapsed_time` / `entered_qty` / `percentage` (no `flat_fee` — fixed charges are the `Fee` atom, §4.7). |
+| `service_item` | Nullable FK to `ServiceItem` (SET_NULL), added 2026-07-21. **Catalog identity**, not document provenance: stamped by `ServiceItem.generate_task` (every path — template population, estimate/CO acceptance crystallization) and `TaskService.create_from_template`; included in `copy_fields()` so clones keep it. Lets the QBO invoice push resolve a task-sourced line to its mirrored QBO Item (quickbooks-integration.md). Hand-created tasks have none. |
 | `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`); always a list, never a dict |
 | `est_qty` | Estimated billable quantity in the rate scheme's units. Nullable on Task. Drives `compute_estimate_amount` (the estimate lens). |
 | `est_worker_time` | DurationField — estimated worker time for scheduling. Required once the Task is **explicitly assigned**: assigned work must be schedulable. Enforced on the assign gestures (`TaskService.assign` / `create_direct`-with-assignee / `update_task`-setting-assignee), **not** `Task.clean()` — auto-assign on start (`start_work` / `create_historical` claiming an unassigned task for its first worker) deliberately skips it, so assignee-without-est-time is a legal model state the schedule must tolerate. |
@@ -965,7 +966,7 @@ Materials directly on the Job.
 | Model | Path | Role |
 |---|---|---|
 | `WorkTemplate` | `apps/estimates/models.py` | Job-shaped template; carries optional `base_price` |
-| `ServiceItem` | `apps/estimates/models.py` | A single reusable task template; carries `rate_scheme`, `default_active_modifiers` (a list of pre-checked modifier keys). |
+| `ServiceItem` | `apps/estimates/models.py` | A single reusable task template; carries `rate_scheme`, `default_active_modifiers` (a list of pre-checked modifier keys), and `qbo_id` (2026-07-21: the id of its mirrored QBO Item, minted lazily as type `Service` with Name = `template_name` by `QBOItemMintService` on the first invoice push billing a task generated from it; `''` = not mirrored — see quickbooks-integration.md). |
 | `TemplateTaskAssociation` | `apps/estimates/models.py` | M2M-with-extras between WorkTemplate and ServiceItem; carries `est_qty` and `sort_order` |
 | `TemplateMaterialAssociation` | `apps/inventory` | Links materials to a WorkTemplate; covered in the Materials doc |
 
