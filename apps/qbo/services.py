@@ -551,6 +551,64 @@ class QBOBillSyncService:
         return qbo_bill
 
 
+class QBOItemMintService:
+    """Lazily mirrors konbini catalog entities (InventoryItem, ServiceItem)
+    into QBO Items at invoice-push time.
+
+    The income account for a minted Item is copied from the entity's
+    AccountingCategory's generic fallback Item — income-account
+    configuration lives in QBO: the bookkeeper sets it once, on the
+    per-category Items, and konbini never stores income accounts.
+    """
+
+    @staticmethod
+    def ensure_item(entity, client):
+        """Return the QBO Item id for entity, minting/adopting if needed.
+
+        Returns '' when the entity's category has no qbo_item_id mapped
+        (no income account to copy) — the caller falls back to the
+        category Item / no ItemRef. On QBO's duplicate-name error the
+        existing Item is adopted by name.
+        """
+        if entity.qbo_id:
+            return entity.qbo_id
+
+        from apps.inventory.models import InventoryItem
+        if isinstance(entity, InventoryItem):
+            category = entity.accounting_category
+            name = entity.code
+            qbo_type = 'NonInventory'
+        else:  # ServiceItem
+            category = entity.effective_accounting_category
+            name = entity.template_name
+            qbo_type = 'Service'
+
+        if not category or not category.qbo_item_id:
+            return ''
+
+        from quickbooks.objects.item import Item
+        generic = Item.get(category.qbo_item_id, qb=client)
+
+        item = Item()
+        item.Name = name
+        item.Type = qbo_type
+        item.IncomeAccountRef = generic.IncomeAccountRef
+        try:
+            item.save(qb=client)
+            qbo_id = str(item.Id)
+        except Exception as e:
+            if 'Duplicate Name Exists' not in str(e) and '6240' not in str(e):
+                raise
+            existing = Item.filter(Name=name, qb=client)
+            if not existing:
+                raise
+            qbo_id = str(existing[0].Id)
+
+        entity.qbo_id = qbo_id
+        entity.save(update_fields=['qbo_id'])
+        return qbo_id
+
+
 class QBOAccountsService:
     """Pulls Items and chart of accounts from QBO for category mapping."""
 
