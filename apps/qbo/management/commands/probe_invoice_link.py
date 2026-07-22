@@ -31,8 +31,10 @@ class Command(BaseCommand):
             client.api_url, client.company_id, qbo_id)
         params = {'include': 'invoiceLink', 'minorversion': '75'}
 
-        self.stdout.write(f'GET {url}')
-        self.stdout.write(f'params: {params}')
+        from urllib.parse import urlencode
+        # params are sent as a standard query string by the requests library;
+        # print the assembled URL so the output is copy-paste unambiguous.
+        self.stdout.write(f'GET {url}?{urlencode(params)}')
 
         result = client.get(url, {}, params=params)
 

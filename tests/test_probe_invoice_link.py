@@ -27,7 +27,8 @@ class ProbeInvoiceLinkTest(SimpleTestCase):
         text = out.getvalue()
 
         self.assertIn('/invoice/179', text)
-        self.assertIn("'minorversion': '75'", text)
+        self.assertIn('minorversion=75', text)
+        self.assertIn('include=invoiceLink', text)
         self.assertIn("invoiceLink: 'https://pay.example/i/179'", text)
         self.assertIn('AllowOnlineCreditCardPayment: True', text)
         self.assertIn('"DocNumber": "1060"', text)
