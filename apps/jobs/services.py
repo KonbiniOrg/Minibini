@@ -2227,7 +2227,7 @@ class BoardService:
         from apps.invoicing.models import Invoice
         data = BoardService._serialize_job(job)
         invoices = []
-        for inv in job.invoice_set.exclude(
+        for inv in job.invoice_set.select_related('job').exclude(
                 status__in=[Invoice.STATUS_CANCELLED, Invoice.STATUS_SUPERSEDED]).order_by('created_date'):
             total = inv.invoicelineitem_set.aggregate(
                 total=models.Sum(models.F('qty') * models.F('price'))

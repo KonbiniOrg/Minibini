@@ -38,7 +38,8 @@ INVOICE_ORDERING = {
 
 
 class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
-    queryset = Invoice.objects.all().order_by('-created_date')
+    # select_related('job'): display_number and job_number both read the job.
+    queryset = Invoice.objects.select_related('job').order_by('-created_date')
     serializer_class = InvoiceSerializer
     lookup_field = 'pk'
 

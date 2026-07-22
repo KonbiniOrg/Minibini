@@ -265,7 +265,7 @@ class GetSourcePoolTest(TestCase):
         )
         self.assertEqual(claimed['state'], 'claimed_by_other')
         self.assertEqual(claimed['claiming_invoice_id'], other_invoice.pk)
-        self.assertEqual(claimed['claiming_invoice_number'], other_invoice.invoice_number)
+        self.assertEqual(claimed['claiming_invoice_number'], other_invoice.display_number)
 
     def test_atoms_on_cancelled_invoice_are_available(self):
         other_invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_CANCELLED)

@@ -20,7 +20,9 @@ class InvoiceClaimService:
     @classmethod
     def _map(cls, queryset):
         result = {}
-        for src in queryset.select_related('invoice_line_item__invoice'):
+        # display_number reads invoice.job.job_number — join it here or every
+        # claim row costs a job query.
+        for src in queryset.select_related('invoice_line_item__invoice__job'):
             inv = src.invoice_line_item.invoice
             result[(src.source_type, src.source_pk)] = {
                 'invoice_id': inv.pk,

@@ -44,6 +44,7 @@ class TaskBaseCopyFieldsTest(TestCase):
             'est_worker_time': timedelta(hours=2),
             'est_qty': Decimal('3.00'),
             'rate_scheme_id': scheme.pk,
+            'service_item_id': None,
             'active_modifiers': mods,
         })
 

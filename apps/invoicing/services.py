@@ -549,7 +549,7 @@ class InvoiceWizardService(BaseWizardService):
             InvoiceLineItemSource.objects
             .filter(invoice_line_item__invoice__job=job)
             .exclude(invoice_line_item__invoice__status=Invoice.STATUS_CANCELLED)
-            .select_related('invoice_line_item', 'invoice_line_item__invoice')
+            .select_related('invoice_line_item', 'invoice_line_item__invoice__job')
         )
         # Atoms an accepted change order struck from the agreement but
         # crystallization left live (consumed/complete/expense-bound/…).

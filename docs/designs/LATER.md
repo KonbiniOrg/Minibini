@@ -945,3 +945,12 @@ Cross-cutting UI/API conventions and shared components.
   Customer's taxable/exempt settings. Note: QBO is binary taxable/exempt per
   customer — the multiplier's fractional-rate idea won't map cleanly.
   _Done when:_ the business-level exemption changeset ships (spec first).
+
+- **`tests.test_api_schedule` has date-sensitive failures.** — _added 2026-07-22_
+  4 tests (`ScheduleWorkCompleteHistoryTest` ×2, `ScheduleForecastScopeTest`,
+  `ScheduleWorkDrivenScopeTest`) fail on 2026-07-22 on `main` as well as
+  feature branches — worker lanes come back empty, so likely a weekday/window
+  assumption in the fixtures. Unrelated to the QBO work; discovered by its
+  final full-suite run crossing midnight.
+  _Done when:_ the fixtures pin their dates (or derive them from today) and
+  the module passes on every weekday.
