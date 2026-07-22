@@ -1328,11 +1328,17 @@ Body / subject templates live as `Configuration` keys
 `str.format_map` wrapper that leaves unknown `{placeholders}`
 literal so user-edited templates can't crash a send. Variables shared
 across all three document types: `{contact_fname}`, `{contact_lname}`,
-`{contact_business}`, `{my_user_name}`, `{job_number}`, `{job_name}`,
+`{contact_business}`, `{my_user_name}` (the requesting user's full
+name, falling back to username — resolved via
+`email_templates.user_display_name(request.user)`, wired through every
+`get_email_defaults(doc, user=…)`; fixed 2026-07-22 after rendering
+blank since inception), `{job_number}`, `{job_name}`,
 `{document_number}`. Per-document aliases (`{estimate_number}`,
-`{po_number}`, `{invoice_number}`, `{vendor_name}`) also work. The
-shop's own business name isn't a variable — users hard-code it into
-the boilerplate where they want it.
+`{po_number}`, `{invoice_number}`, `{vendor_name}`) also work — and on
+the Invoice template, `{document_number}`/`{invoice_number}` and
+`{payment_link}` are **send-time** substitutions (see
+invoicing-and-expenses.md). The shop's own business name isn't a
+variable — users hard-code it into the boilerplate where they want it.
 
 ### 7.11 Reply correlation
 
