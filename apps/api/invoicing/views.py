@@ -326,7 +326,7 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         """Pre-populated values for the Send Email page."""
         from apps.invoicing.services import InvoiceEmailService
         invoice = self.get_object()
-        return Response(InvoiceEmailService.get_email_defaults(invoice))
+        return Response(InvoiceEmailService.get_email_defaults(invoice, user=request.user))
 
     @action(detail=True, methods=['post'], url_path='send')
     def send(self, request, pk=None):

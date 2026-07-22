@@ -286,8 +286,9 @@ class InvoiceEmailService:
     )
 
     @staticmethod
-    def get_email_defaults(invoice):
-        """Pre-populated send-form fields for an Invoice."""
+    def get_email_defaults(invoice, user=None):
+        """Pre-populated send-form fields for an Invoice. ``user`` is the
+        requesting user — resolves {my_user_name}."""
         from apps.core.models import Configuration
         from apps.core.email_templates import render_email_template
 
@@ -311,7 +312,7 @@ class InvoiceEmailService:
         if contact and contact.business:
             contact_business = contact.business.business_name
 
-        from apps.core.email_templates import build_object_url
+        from apps.core.email_templates import build_object_url, user_display_name
         # {document_number}/{invoice_number} are deliberately absent: the
         # QBO-assigned number doesn't exist at compose time, so the tokens
         # survive into the dialog literally and send_invoice substitutes
@@ -320,7 +321,7 @@ class InvoiceEmailService:
             'contact_fname': contact.first_name if contact else '',
             'contact_lname': contact.last_name if contact else '',
             'contact_business': contact_business,
-            'my_user_name': '',
+            'my_user_name': user_display_name(user),
             'job_number': job.job_number if job else '',
             'job_name': job.name if job else '',
             'object_url': build_object_url('invoice', invoice.invoice_id),

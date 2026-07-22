@@ -591,7 +591,7 @@ class PurchaseOrderEmailService:
     )
 
     @staticmethod
-    def get_email_defaults(po):
+    def get_email_defaults(po, user=None):
         """Get the pre-populated email fields for a PO."""
         from apps.core.models import Configuration
 
@@ -629,12 +629,12 @@ class PurchaseOrderEmailService:
         contact_business = ''
         if contact and contact.business:
             contact_business = contact.business.business_name
-        from apps.core.email_templates import build_object_url
+        from apps.core.email_templates import build_object_url, user_display_name
         common = {
             'contact_fname': contact_fname,
             'contact_lname': contact_lname,
             'contact_business': contact_business,
-            'my_user_name': '',
+            'my_user_name': user_display_name(user),
             'document_number': po.po_number,
             'object_url': build_object_url('purchase_order', po.po_id),
         }

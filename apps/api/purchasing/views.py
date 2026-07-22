@@ -271,7 +271,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
     def send_defaults(self, request, pk=None):
         """Get pre-populated email fields for sending a PO."""
         po = self.get_object()
-        defaults = PurchaseOrderEmailService.get_email_defaults(po)
+        defaults = PurchaseOrderEmailService.get_email_defaults(po, user=request.user)
         return Response(defaults)
 
     @action(detail=True, methods=['post'], url_path='send', url_name='send')

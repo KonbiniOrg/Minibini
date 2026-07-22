@@ -44,6 +44,14 @@ _OBJECT_URL_PATHS = {
 }
 
 
+def user_display_name(user):
+    """Resolve the ``{my_user_name}`` template placeholder: the sender's
+    full name, falling back to username; '' when no user is in hand."""
+    if user is None:
+        return ''
+    return user.get_full_name() or user.username
+
+
 def build_object_url(kind, obj_id):
     """Resolve the ``{object_url}`` template placeholder for a given doc.
 
