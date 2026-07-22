@@ -176,3 +176,17 @@ invoiceLink), `docs/designs/invoicing-and-expenses.md` (numbering, send flow,
 statuses), `docs/designs/estimates-and-prices.md` /
 `materials-inventory-and-purchasing.md` (catalog `qbo_id` fields),
 `docs/designs/data-constraints.md` (config keys, invoice_number semantics).
+
+## Follow-ups queued on this branch (post-review notes, 2026-07-22)
+
+- **Customer push: adopt-by-name on 6240.** `QBOCustomerSyncService` currently
+  creates blind and re-raises QBO's Duplicate Name error. Mirror the Item
+  mint's adopt: on 6240, query the QBO Customer by DisplayName and adopt its
+  Id into `qbo_customer_id`. Product-correct (future tenants arrive with
+  populated QBO customer lists), and dissolves the reseeded-dev-DB vs.
+  stale-sandbox drift RM hit in testing. Same accepted caveat as Items:
+  same-named-but-different customer binds silently.
+- **Job-statement PDF: dropped from the send (done 2026-07-22).**
+  `apps/invoicing/pdf.py` + `templates/invoicing/job_statement.html` (and
+  `tests/test_invoice_pdf.py`) are now orphaned — delete outright, or keep
+  for a future statement surface? RM to decide.

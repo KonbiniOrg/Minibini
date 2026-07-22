@@ -472,11 +472,12 @@ when `qbo_id` is already set).
      `{payment_link}` placeholder appears in the subject/body (the
      placeholder survives the send dialog literally; substitution
      happens at send time).
-   - Generates a job-statement PDF
-     (`apps/invoicing/pdf.generate_job_statement_pdf`).
-   - Downloads the QBO-rendered invoice PDF.
+   - Downloads the QBO-rendered invoice PDF — the only
+     auto-attachment (the job-statement PDF was dropped from the send
+     2026-07-22; `apps/invoicing/pdf.py` and
+     `templates/invoicing/job_statement.html` are currently orphaned).
    - Calls `OutboundEmailService.send_tracked` with
-     `associate_with={'job': invoice.job}` and both PDFs attached;
+     `associate_with={'job': invoice.job}` and the QBO PDF attached;
      user-uploaded extras append. The send-tracked path persists the
      outbound `EmailRecord` before SMTP runs, so SMTP failures keep
      the row around with `last_send_error` populated.
@@ -503,10 +504,9 @@ when `qbo_id` is already set).
 
 ### Why we own the email pipeline (and QBO is invisible plumbing)
 
-QBO renders the invoice PDF (with Pay Now link and tax). Minibini
-generates the job-statement PDF (the detailed breakdown the customer
-asks about when there's a question). Both go out as attachments on
-*our* outbound email so reply correlation, threading, and the
+QBO renders the invoice PDF (and computes tax; the payment link rides
+in the email body via `{payment_link}`). It goes out as an attachment
+on *our* outbound email so reply correlation, threading, and the
 Email-panel view all work uniformly across Estimate / PO / Invoice.
 
 Configuration keys for the body/subject templates:

@@ -105,11 +105,10 @@ class DocNumberWritebackTest(TestCase):
         self.assertEqual(self.invoice.invoice_number, '1042')
         self.assertEqual(self.invoice.qbo_id, '42')
 
-    def test_attachment_names_use_qbo_number(self):
+    def test_attachment_is_qbo_invoice_pdf_only(self):
         mock_send = self._send()
         filenames = [a[0] for a in mock_send.call_args.kwargs['attachments']]
-        self.assertIn('Invoice-1042.pdf', filenames)
-        self.assertIn('JobStatement-1042.pdf', filenames)
+        self.assertEqual(filenames, ['Invoice-1042.pdf'])
 
     def test_retry_backfills_doc_number_from_qbo(self):
         self.invoice.qbo_id = '42'

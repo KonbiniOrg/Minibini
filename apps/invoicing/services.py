@@ -270,11 +270,11 @@ class InvoiceEmailService:
     """Orchestrates sending an Invoice to the customer.
 
     Steps on each send: ensure the invoice exists in QBO (push only if
-    qbo_id is unset — fixes the duplicate-push-on-retry bug), generate
-    the Minibini job-statement PDF, download the QBO-rendered invoice
-    PDF (which carries the Pay Now link), call OutboundEmailService.
-    send_tracked with both PDFs attached, then transition the Invoice
-    draft -> open on send success.
+    qbo_id is unset — fixes the duplicate-push-on-retry bug), adopt QBO's
+    DocNumber, fetch the hosted-invoice payment link, download the
+    QBO-rendered invoice PDF, call OutboundEmailService.send_tracked with
+    that PDF attached, then transition the Invoice draft -> open on send
+    success.
     """
 
     DEFAULT_SUBJECT = 'Invoice {document_number} for {job_number}'
@@ -333,8 +333,6 @@ class InvoiceEmailService:
         attachments_preview = [
             {'filename': f'Invoice-{invoice.display_number}.pdf',
              'content_type': 'application/pdf', 'size': 0},
-            {'filename': f'JobStatement-{invoice.display_number}.pdf',
-             'content_type': 'application/pdf', 'size': 0},
         ]
         return {
             'to': to, 'subject': subject, 'body': body,
@@ -364,13 +362,12 @@ class InvoiceEmailService:
     @staticmethod
     def send_invoice(invoice, *, to, subject, body, cc=None, bcc=None,
                      extra_attachments=None):
-        """Send an Invoice. Pushes to QBO if needed, attaches both QBO PDF
-        and statement PDF, calls send_tracked, transitions status on success.
+        """Send an Invoice. Pushes to QBO if needed, attaches the QBO
+        invoice PDF, calls send_tracked, transitions status on success.
 
         Returns the outbound EmailRecord.
         """
         from apps.core.services import OutboundEmailService
-        from apps.invoicing.pdf import generate_job_statement_pdf
         from apps.qbo.services import (
             QBOService, QBOInvoiceSyncService, QBOCustomerSyncService,
         )
@@ -438,14 +435,13 @@ class InvoiceEmailService:
         subject = render_email_template(subject, payment_link=payment_link)
         body = render_email_template(body, payment_link=payment_link)
 
-        # Step 3: generate / fetch the two PDFs.
-        statement_pdf = generate_job_statement_pdf(invoice)
+        # Step 3: fetch QBO's rendered invoice PDF — the only auto-attachment
+        # (the konbini Job Statement was dropped from the send 2026-07-22).
         qbo_invoice_pdf = QBOInvoiceSyncService._download_qbo_pdf(client, invoice.qbo_id)
 
         # Step 4: send via tracked outbound.
         attachments = [
             (f'Invoice-{invoice.display_number}.pdf', qbo_invoice_pdf, 'application/pdf'),
-            (f'JobStatement-{invoice.display_number}.pdf', statement_pdf, 'application/pdf'),
         ]
         if extra_attachments:
             attachments.extend(extra_attachments)

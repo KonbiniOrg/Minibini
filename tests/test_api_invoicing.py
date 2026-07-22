@@ -233,9 +233,11 @@ class InvoiceSendTest(BaseTestCase):
         self.assertIn('subject', response.data)
         self.assertIn('body', response.data)
         self.assertIn('attachments_preview', response.data)
-        # Two auto-attached PDFs: the QBO invoice + the local Job Statement.
+        # One auto-attached PDF: the QBO invoice (the Job Statement was
+        # dropped from the send 2026-07-22).
         filenames = [a['filename'] for a in response.data['attachments_preview']]
-        self.assertEqual(len(filenames), 2)
+        self.assertEqual(len(filenames), 1)
+        self.assertTrue(filenames[0].startswith('Invoice-'))
 
     @patch('apps.qbo.services.QBOService.get_client')
     @patch('apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice')

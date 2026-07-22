@@ -254,7 +254,7 @@ The only server-rendered Django templates left live in `templates/` and are rend
 | `templates/estimates/estimate_pdf.html` | `apps/estimates/pdf.py` | `POST /api/estimates/{id}/send` |
 | `templates/estimates/change_order_pdf.html` | `apps/estimates/pdf.py` | `POST /api/change-orders/{id}/send` |
 | `templates/purchasing/purchase_order_pdf.html` | `apps/purchasing/pdf.py` | `POST /api/purchase-orders/{id}/send` |
-| `templates/invoicing/job_statement.html` | `apps/invoicing/pdf.py` | `POST /api/invoices/{id}/send` |
+| `templates/invoicing/job_statement.html` | `apps/invoicing/pdf.py` | _orphaned 2026-07-22 — dropped from the invoice send (QBO's PDF is the sole attachment); removal pending decision_ |
 
 These are self-contained (no `{% extends %}`/`{% include %}`). Email subject/body templates are NOT files — they live in `Configuration` rows and render via `apps/core/email_templates.py`.
 
