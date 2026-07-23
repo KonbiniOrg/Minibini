@@ -148,6 +148,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/jobs/board/*` | `IsAuthenticated` | — | one bulk reorder endpoint requires `can_manage_jobs` |
 | `/api/home/` | `IsAuthenticated` | — | |
 | `/api/settings/` | `IsAuthenticated` | `can_manage_config` | including `/api/settings/units/` |
+| `/api/setup/status/` | GET | IsAuthenticated | Per-area setup gate availability + messages (sidebar/Home Help) |
 | `/api/qbo/*` | `can_manage_config` | `can_manage_config` | OAuth + connection state — see `quickbooks-integration.md` |
 
 #### Special cases
