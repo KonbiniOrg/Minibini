@@ -31,7 +31,7 @@ class SeededDefaultsTest(TestCase):
     def test_seed_is_idempotent_and_preserves_existing(self):
         from apps.core.migrations import _seed_setup_defaults as seeder
         AppState.objects.filter(key='job_counter').delete()
-        AppState.objects.create(key='job_counter', value='42')
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '42'})
         Configuration.objects.filter(key='units_list').update(value='["none","furlongs"]')
         from django.apps import apps as global_apps
         seeder.seed(global_apps, None)

@@ -10,7 +10,7 @@ from apps.jobs.models import Job
 class _Setup(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        Configuration.objects.create(key='units_list', value='["none","sheets","ea"]')
+        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","sheets","ea"]'})
         cls.user = User.objects.create_user(username='u', password='p')
         perm = Permission.objects.get(codename='can_manage_jobs', content_type__app_label='core')
         cls.user.user_permissions.add(perm)

@@ -18,9 +18,9 @@ class AcceptanceProvisionalMaterialTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
         Configuration.objects.create(key='estimate_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
         Configuration.objects.create(key='default_material_markup_percent', value='25')
-        AppState.objects.create(key='job_counter', value='0')
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.cat = AccountingCategory.objects.create(name='Mat', is_active=True, code='MAT')
         self.contact = Contact.objects.create(

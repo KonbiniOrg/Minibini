@@ -215,10 +215,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
     def test_configuration_number_sequences(self):
         # Create configuration entries for number sequences
-        job_seq = Configuration.objects.create(
-            key="job_number_sequence",
-            value="JOB-{year}-{counter:05d}"
-        )
+        job_seq, _ = Configuration.objects.update_or_create(key="job_number_sequence", defaults={'value': "JOB-{year}-{counter:05d}"})
         estimate_seq = Configuration.objects.create(
             key="estimate_number_sequence",
             value="EST-{year}-{counter:05d}"
@@ -227,10 +224,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             key="invoice_number_sequence",
             value="INV-{year}-{counter:05d}"
         )
-        po_seq = Configuration.objects.create(
-            key="po_number_sequence",
-            value="PO-{year}-{counter:05d}"
-        )
+        po_seq, _ = Configuration.objects.update_or_create(key="po_number_sequence", defaults={'value': "PO-{year}-{counter:05d}"})
 
         self.assertIn("{year}", job_seq.value)
         self.assertIn("{counter:", job_seq.value)

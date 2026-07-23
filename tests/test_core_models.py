@@ -92,10 +92,7 @@ class GroupModelTest(TestCase):
 
 class ConfigurationModelTest(TestCase):
     def test_configuration_creation(self):
-        config = Configuration.objects.create(
-            key="job_number_sequence",
-            value="JOB-{year}-{counter:04d}"
-        )
+        config, _ = Configuration.objects.update_or_create(key="job_number_sequence", defaults={'value': "JOB-{year}-{counter:04d}"})
         self.assertEqual(config.key, "job_number_sequence")
         self.assertEqual(config.value, "JOB-{year}-{counter:04d}")
 

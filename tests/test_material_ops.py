@@ -269,9 +269,8 @@ class DrawMoreTest(TestCase):
         row's supply; the recourse is a second material row, ordered on its
         own (spec: one row ↔ one procurement story)."""
         from apps.core.models import AppState, Configuration
-        Configuration.objects.create(
-            key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        AppState.objects.create(key='po_counter', value='0')
+        Configuration.objects.update_or_create(key='po_number_sequence', defaults={'value': 'PO-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='po_counter', defaults={'value': '0'})
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('1'), inventory_item=self.pli,

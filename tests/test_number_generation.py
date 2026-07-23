@@ -19,8 +19,8 @@ class CollisionRecoveryTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
             first_name='J', last_name='D', mobile_number='555-0',
         )

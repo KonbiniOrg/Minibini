@@ -22,9 +22,8 @@ from apps.purchasing.services import PurchaseOrderService
 
 class VendorlessDraftTests(TestCase):
     def setUp(self):
-        Configuration.objects.create(
-            key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        AppState.objects.create(key='po_counter', value='0')
+        Configuration.objects.update_or_create(key='po_number_sequence', defaults={'value': 'PO-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='po_counter', defaults={'value': '0'})
 
     def test_draft_po_without_business(self):
         po = PurchaseOrderService.create_po()
@@ -51,9 +50,8 @@ class VendorlessDraftAPITests(TestCase):
     """The REST endpoints must not be able to bypass the issue gate."""
 
     def setUp(self):
-        Configuration.objects.create(
-            key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        AppState.objects.create(key='po_counter', value='0')
+        Configuration.objects.update_or_create(key='po_number_sequence', defaults={'value': 'PO-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='po_counter', defaults={'value': '0'})
         self.user = User.objects.create_user(
             username='po_admin', password='x', is_superuser=True)
         self.client = APIClient()
