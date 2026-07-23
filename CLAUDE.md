@@ -53,7 +53,7 @@ docker compose up                       # Full stack (app, mysql, nginx)
 - Never run `python -c "import django; django.setup(); ..."` followed by ORM writes for the same reason.
 - Never run `python manage.py loaddata` against the dev DB.
 - Never connect to the DB directly via `mysql` / `psql` / a Python DB driver and execute writes.
-- Never run scripts in the repo (`scripts/seed_data.sh`, anything in `apps/core/management/commands/`) that mutate the DB.
+- Never run scripts in the repo (anything in `apps/core/management/commands/`, data generators) that mutate the DB.
 
 If you need to verify model behavior, write a test and run `python manage.py test` (which uses a separate test DB and tears it down). If you need to see the current state of dev data, ask the user to run the query themselves and paste the result.
 
@@ -81,7 +81,6 @@ Minibini/
 ├── templates/      # PDF templates only (estimate/change-order/PO/job-statement) rendered by the API via WeasyPrint
 ├── fixtures/       # Test data fixtures (JSON)
 ├── tests/          # Test suite
-├── scripts/        # Utility scripts (seed_data.sh)
 ├── docs/designs/   # Topic reference docs (nine consolidated areas — see below)
 ├── docs/plans/     # Working directory for short-lived implementation plans (disposable; deleted once shipped)
 ├── minibini/       # Project configuration (settings, urls)
@@ -361,7 +360,6 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 
 ## Development Features
 
-- **Seed script** — `scripts/seed_data.sh` seeds realistic data through API endpoints (requires dev server on :8000)
 - **Management commands** — `populate_data.py` (base), `populate_contact_data.py`, `populate_job_data.py`
 
 ### QuickBooks Online Integration

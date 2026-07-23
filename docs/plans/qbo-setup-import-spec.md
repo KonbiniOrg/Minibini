@@ -40,8 +40,9 @@ Also fold in two adjacent bugfixes surfaced by the config audit:
   (`apps/api/templates_config/views.py:280`) — guard with the same
   `DEFAULT_UNITS` fallback the rest of the app uses. (Seeding makes it
   unreachable, but the endpoint shouldn't be able to 500.)
-- `scripts/seed_data.sh:139-154` PATCHes counters through `/api/settings/`,
-  which writes Configuration, not AppState — dead code; remove or fix.
+- `scripts/seed_data.sh` — DELETED (RM, 2026-07-23): the curl-based seeding
+  approach was superseded by the nealsdata converter; its counter PATCH was
+  also silently broken (wrote Configuration, not AppState).
 
 ## Part 2 — Per-tenant email settings (Settings → Email tab)
 
