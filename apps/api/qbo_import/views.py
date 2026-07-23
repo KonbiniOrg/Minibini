@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from apps.qbo.import_services import (
     QBOImportState, QBOImportSummary, QBOSnapshotService,
+    QBOSuggestionService,
 )
 from apps.qbo.services import QBOService
 
@@ -53,3 +54,13 @@ def import_dismiss(request):
         return error
     QBOImportState.dismiss(area)
     return Response({'dismissed': area})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def import_suggestions(request, area):
+    if area not in QBOImportState.AREAS:
+        return Response({'area': ['Unknown import area.']}, status=400)
+    if not request.user.has_perm(AREA_PERMS[area]):
+        return Response(status=403)
+    return Response(QBOSuggestionService.suggestions(area))

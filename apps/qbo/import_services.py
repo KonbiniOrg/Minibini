@@ -223,3 +223,259 @@ class QBOImportSummary:
             'vendors': count(snapshot['vendors'], vendor_ids),
             'terms': count(snapshot['terms'], term_ids),
         }
+
+
+def _slug_code(name, taken):
+    """Short uppercase code from a name ('Service Income' → 'SI'), padded
+    from the name when too short, uniquified against `taken`."""
+    initials = ''.join(w[0] for w in name.split() if w and w[0].isalnum())
+    base = (initials or name[:3]).upper()[:10] or 'CAT'
+    if len(base) < 2:
+        base = (name.replace(' ', '')[:3].upper() or 'CAT')
+    code = base
+    n = 2
+    while code in taken:
+        code = f'{base}{n}'
+        n += 1
+    return code
+
+
+def _category_by_income_account(snapshot):
+    """{income_account_id: AccountingCategory pk} via each committed kAC's
+    fallback Item (the item's income account identifies the cluster)."""
+    from apps.core.models import AccountingCategory
+    item_income = {i['qbo_id']: i['income_account_id']
+                   for i in snapshot['items']}
+    mapping = {}
+    for pk, item_id in AccountingCategory.objects.exclude(
+            qbo_item_id='').values_list('pk', 'qbo_item_id'):
+        account = item_income.get(item_id)
+        if account:
+            mapping[account] = pk
+    return mapping
+
+
+class QBOSuggestionService:
+    """Live diffs of the snapshot against the database, per panel area.
+
+    Short-circuits BEFORE any snapshot parse when the area is dismissed."""
+
+    @staticmethod
+    def suggestions(area):
+        QBOImportState._check(area)
+        if QBOImportState.dismissed().get(area):
+            return {'dismissed': True, 'fetched_at': None, 'rows': []}
+        snapshot = QBOSnapshotService.load()
+        if snapshot is None:
+            return {'dismissed': False, 'fetched_at': None, 'rows': []}
+        rows = getattr(QBOSuggestionService, f'_{area}')(snapshot)
+        return {'dismissed': False, 'fetched_at': snapshot['fetched_at'],
+                'rows': rows}
+
+    # ---- categories ----
+
+    @staticmethod
+    def _categories(snapshot):
+        from apps.core.models import AccountingCategory
+        existing_codes = set(
+            AccountingCategory.objects.values_list('code', flat=True))
+        existing_item_ids = set(
+            AccountingCategory.objects.exclude(qbo_item_id='')
+            .values_list('qbo_item_id', flat=True))
+
+        clusters = {}
+        for item in snapshot['items']:
+            account = item['income_account_id']
+            if not account:
+                continue
+            clusters.setdefault(account, []).append(item)
+
+        account_names = {a['qbo_id']: a['name']
+                         for a in snapshot['income_accounts']}
+        rows = []
+        taken = set(existing_codes)
+        all_accounts = list(dict.fromkeys(
+            list(clusters.keys())
+            + [a['qbo_id'] for a in snapshot['income_accounts']]))
+        for account in all_accounts:
+            members = clusters.get(account, [])
+            name = account_names.get(
+                account,
+                members[0]['income_account_name'] if members else account)
+            code = _slug_code(name, taken)
+            taken.add(code)
+            taxable_votes = [m['taxable'] for m in members]
+            expense_votes = [m['expense_account_id'] for m in members
+                             if m['expense_account_id']]
+            imported = any(m['qbo_id'] in existing_item_ids for m in members)
+            rows.append({
+                'income_account': {'qbo_id': account, 'name': name},
+                'member_count': len(members),
+                'suggested': {
+                    'name': name,
+                    'code': code,
+                    'taxable': (sum(taxable_votes) * 2 >= len(taxable_votes))
+                               if taxable_votes else True,
+                },
+                'fallback_item_options': [
+                    {'qbo_id': m['qbo_id'], 'name': m['name']}
+                    for m in members],
+                'fallback_item_default': members[0]['qbo_id'] if members else '',
+                'expense_account_default': (
+                    max(set(expense_votes), key=expense_votes.count)
+                    if expense_votes else ''),
+                'state': 'imported' if imported else 'new',
+            })
+        return rows
+
+    # ---- schemes ----
+
+    @staticmethod
+    def _schemes(snapshot):
+        from apps.estimates.models import ServiceItem
+        imported_ids = set(ServiceItem.objects.exclude(qbo_id='')
+                           .values_list('qbo_id', flat=True))
+        category_map = _category_by_income_account(snapshot)
+        rows = []
+        for item in snapshot['items']:
+            if item['type'] != 'Service':
+                continue
+            rows.append({
+                'qbo_item_id': item['qbo_id'],
+                'name': item['name'],
+                'rate': item['unit_price'],
+                'algorithm_default': 'entered_qty',
+                'unit_default': 'ea',
+                'category': category_map.get(item['income_account_id']),
+                'price_group': item['unit_price'],
+                'state': ('imported' if item['qbo_id'] in imported_ids
+                          else 'new'),
+            })
+        return rows
+
+    # ---- catalog ----
+
+    @staticmethod
+    def _catalog(snapshot):
+        from decimal import Decimal, InvalidOperation
+
+        from apps.estimates.models import ServiceItem
+        from apps.inventory.models import InventoryItem
+
+        def dec(value):
+            try:
+                return Decimal(str(value))
+            except (InvalidOperation, TypeError):
+                return Decimal('0')
+
+        category_map = _category_by_income_account(snapshot)
+        inv_by_qbo = {i.qbo_id: i for i in
+                      InventoryItem.objects.exclude(qbo_id='')}
+        svc_by_qbo = {s.qbo_id: s for s in
+                      ServiceItem.objects.exclude(qbo_id='')
+                      .select_related('rate_scheme')}
+        taken_codes = set(
+            InventoryItem.objects.values_list('code', flat=True))
+
+        rows = []
+        for item in snapshot['items']:
+            if item['type'] == 'Service':
+                existing = svc_by_qbo.get(item['qbo_id'])
+                if existing is None:
+                    state = 'new'
+                elif (dec(existing.rate_scheme.rate) != dec(item['unit_price'])
+                        or existing.template_name != item['name']):
+                    state = 'changed'
+                else:
+                    state = 'imported'
+                rows.append({
+                    'kind': 'service',
+                    'qbo_id': item['qbo_id'],
+                    'name': item['name'],
+                    'description': item['description'],
+                    'rate': item['unit_price'],
+                    'state': state,
+                })
+            else:  # NonInventory + Inventory → konbini inventory items
+                existing = inv_by_qbo.get(item['qbo_id'])
+                if existing is None:
+                    state = 'new'
+                    code = item['name']
+                    n = 2
+                    while code in taken_codes:
+                        code = f"{item['name']}-{n}"
+                        n += 1
+                    taken_codes.add(code)
+                elif (dec(existing.selling_price) != dec(item['unit_price'])
+                        or (existing.description or '') != item['description']):
+                    state = 'changed'
+                    code = existing.code
+                else:
+                    state = 'imported'
+                    code = existing.code
+                rows.append({
+                    'kind': 'inventory',
+                    'qbo_id': item['qbo_id'],
+                    'code_suggestion': code,
+                    'description': item['description'] or item['name'],
+                    'selling_price': item['unit_price'],
+                    'purchase_price': item['purchase_cost'],
+                    'category': category_map.get(item['income_account_id']),
+                    'state': state,
+                })
+        return rows
+
+    # ---- contacts (customers / vendors / terms) ----
+
+    @staticmethod
+    def _contacts(snapshot):
+        from apps.contacts.models import Business, Contact, PaymentTerms
+
+        biz_by_customer = {b.qbo_customer_id: b for b in
+                           Business.objects.exclude(qbo_customer_id=None)}
+        contact_by_customer = {c.qbo_customer_id: c for c in
+                               Contact.objects.exclude(qbo_customer_id=None)}
+        biz_by_vendor = {b.qbo_vendor_id: b for b in
+                         Business.objects.exclude(qbo_vendor_id=None)}
+        term_by_qbo = {t.qbo_id: t for t in
+                       PaymentTerms.objects.exclude(qbo_id='')}
+        customer_names = {c['display_name'] for c in snapshot['customers']}
+
+        rows = []
+        for c in snapshot['customers']:
+            business = biz_by_customer.get(c['qbo_id'])
+            contact = contact_by_customer.get(c['qbo_id'])
+            if business is None and contact is None:
+                state = 'new'
+            else:
+                mirrored_email = (business.default_contact.email
+                                  if business and business.default_contact
+                                  else contact.email if contact else '')
+                changed = (
+                    (business and business.business_name != c['company_name']
+                     and c['company_name'])
+                    or (mirrored_email or '') != c['email'])
+                state = 'changed' if changed else 'imported'
+            rows.append({'kind': 'customer', 'state': state, **c})
+        for v in snapshot['vendors']:
+            existing = biz_by_vendor.get(v['qbo_id'])
+            if existing is None:
+                state = 'new'
+            else:
+                state = ('changed'
+                         if existing.business_name != v['display_name']
+                         and v['company_name'] else 'imported')
+            rows.append({'kind': 'vendor', 'state': state,
+                         'merge_hint': v['display_name'] in customer_names,
+                         **v})
+        for t in snapshot['terms']:
+            existing = term_by_qbo.get(t['qbo_id'])
+            if existing is None:
+                state = 'new'
+            elif (existing.name != t['name']
+                  or (existing.days or 0) != t['due_days']):
+                state = 'changed'
+            else:
+                state = 'imported'
+            rows.append({'kind': 'term', 'state': state, **t})
+        return rows
