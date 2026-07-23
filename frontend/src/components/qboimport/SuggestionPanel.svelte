@@ -13,7 +13,7 @@
   import { refreshSetupStatus } from '../../stores/setupStatus.js';
   import { errorMessage } from '../../lib/api.js';
 
-  let { area, title, table, commit, onCommitted = () => {},
+  let { area, title, table, commit, onCommitted = () => {}, onLoaded = () => {},
         rowKey = (r) => r.qbo_id, defaultChecked = (r) => r.state !== 'new' ? true : true } = $props();
 
   let data = $state(null);          // suggestions response
@@ -35,6 +35,7 @@
         next[rowKey(row)] = row.state === 'imported' ? true : defaultChecked(row);
       }
       checked = next;
+      onLoaded(data.rows, data);
     } catch (e) {
       data = { dismissed: false, fetched_at: null, rows: [] };
     }
@@ -96,7 +97,7 @@
     </header>
     {#if pullSummary}<p class="summary">{pullSummary}</p>{/if}
     {#if message}<p class="error">{message}</p>{/if}
-    {@render table(data.rows, toggles)}
+    {@render table(data.rows, toggles, data)}
     {#if actionable}
       <p>
         <button type="button" onclick={commitChecked} disabled={busy}>

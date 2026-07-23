@@ -1,4 +1,6 @@
 <script>
+  import SchemesImportPanel from './qboimport/SchemesImportPanel.svelte';
+  import QboPullButton from './qboimport/QboPullButton.svelte';
   import { api, errorMessage } from '../lib/api.js';
   import { triageError } from '../lib/errorTriage.js';
   import { showError } from '../stores/messages.js';
@@ -203,6 +205,8 @@
 </script>
 
 <h3>Rate Schemes</h3>
+<QboPullButton area="schemes" />
+<SchemesImportPanel onCommitted={load} />
 
 {#if error}<p><em>{error}</em></p>{/if}
 {#if loading}<p>Loading...</p>{/if}

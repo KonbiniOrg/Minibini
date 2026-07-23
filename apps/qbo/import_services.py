@@ -269,8 +269,21 @@ class QBOSuggestionService:
         if snapshot is None:
             return {'dismissed': False, 'fetched_at': None, 'rows': []}
         rows = getattr(QBOSuggestionService, f'_{area}')(snapshot)
-        return {'dismissed': False, 'fetched_at': snapshot['fetched_at'],
-                'rows': rows}
+        out = {'dismissed': False, 'fetched_at': snapshot['fetched_at'],
+               'rows': rows}
+        if area == 'categories':
+            out['expense_accounts'] = snapshot['expense_accounts']
+        elif area in ('schemes', 'catalog'):
+            from apps.core.models import AccountingCategory
+            from apps.jobs.models import RateScheme
+            out['category_options'] = list(
+                AccountingCategory.objects.filter(is_active=True)
+                .values('pk', 'name'))
+            if area == 'catalog':
+                out['scheme_options'] = list(
+                    RateScheme.objects.filter(replaced_by__isnull=True)
+                    .values('pk', 'name'))
+        return out
 
     # ---- categories ----
 
@@ -368,6 +381,10 @@ class QBOSuggestionService:
             except (InvalidOperation, TypeError):
                 return Decimal('0')
 
+        from apps.jobs.models import RateScheme
+        scheme_by_name = dict(
+            RateScheme.objects.filter(replaced_by__isnull=True)
+            .values_list('name', 'pk'))
         category_map = _category_by_income_account(snapshot)
         inv_by_qbo = {i.qbo_id: i for i in
                       InventoryItem.objects.exclude(qbo_id='')}
@@ -394,6 +411,7 @@ class QBOSuggestionService:
                     'name': item['name'],
                     'description': item['description'],
                     'rate': item['unit_price'],
+                    'rate_scheme_default': scheme_by_name.get(item['name']),
                     'state': state,
                 })
             else:  # NonInventory + Inventory → konbini inventory items

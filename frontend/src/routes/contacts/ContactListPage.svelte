@@ -1,6 +1,8 @@
 <script>
   import { api } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
+  import ContactsImportPanel from '../../components/qboimport/ContactsImportPanel.svelte';
+  import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
 
   let allItems = $state([]);
   let count = $state(0);
@@ -103,6 +105,9 @@
     loadAll();
   });
 </script>
+
+<QboPullButton area="contacts" />
+<ContactsImportPanel onCommitted={loadAll} />
 
 <div class="page-body">
 <h2>Contacts &amp; Businesses ({count})</h2>

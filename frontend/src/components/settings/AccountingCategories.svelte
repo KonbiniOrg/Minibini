@@ -1,4 +1,6 @@
 <script>
+  import CategoriesImportPanel from '../qboimport/CategoriesImportPanel.svelte';
+  import QboPullButton from '../qboimport/QboPullButton.svelte';
   import { onMount } from 'svelte';
   import { api } from '../../lib/api.js';
 
@@ -114,6 +116,9 @@
     loadData();
   });
 </script>
+
+<QboPullButton area="categories" />
+<CategoriesImportPanel onCommitted={loadCategories} />
 
 {#if loadingCategories}
   <p>Loading accounting categories...</p>

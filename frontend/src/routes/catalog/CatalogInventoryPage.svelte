@@ -6,6 +6,8 @@
   import { stockShortfall } from '../../lib/stockShortfall.js';
   import Modal from '../../components/Modal.svelte';
   import CatalogTabs from '../../components/CatalogTabs.svelte';
+  import CatalogImportPanel from '../../components/qboimport/CatalogImportPanel.svelte';
+  import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
 
   // Write access: either the money role or the admin role.
   let canManage = $derived($canManageFinancials || $canManageConfig);
@@ -130,6 +132,11 @@
 
 <div class="page-body">
 <CatalogTabs />
+
+{#if canManage}
+  <QboPullButton area="catalog" />
+  <CatalogImportPanel onCommitted={load} />
+{/if}
 
 {#if canManage}
   <p>
