@@ -550,3 +550,188 @@ class QBOImportCommitService:
                 mapping[row['qbo_item_id']] = scheme.pk
         QBOImportCommitService._auto_dismiss('schemes')
         return mapping
+
+
+def _catalog_commit_rows(rows):
+    """Apply catalog rows; returns (created, updated)."""
+    from decimal import Decimal
+
+    from apps.estimates.models import ServiceItem
+    from apps.inventory.models import InventoryItem
+
+    created = updated = 0
+    for row in rows:
+        if row['kind'] == 'inventory':
+            if row['action'] == 'create':
+                InventoryItem.objects.create(
+                    code=row['code'],
+                    description=row.get('description', ''),
+                    selling_price=Decimal(str(row.get('selling_price') or '0')),
+                    purchase_price=Decimal(str(row.get('purchase_price') or '0')),
+                    units=row.get('units') or 'none',
+                    accounting_category_id=row['accounting_category'],
+                    qbo_id=row['qbo_id'],
+                )
+                created += 1
+            else:
+                item = InventoryItem.objects.get(qbo_id=row['qbo_id'])
+                item.description = row.get('description', item.description)
+                item.selling_price = Decimal(
+                    str(row.get('selling_price') or item.selling_price))
+                item.purchase_price = Decimal(
+                    str(row.get('purchase_price') or item.purchase_price))
+                item.save()
+                updated += 1
+        else:  # service
+            if row['action'] == 'create':
+                ServiceItem.objects.create(
+                    template_name=row['name'],
+                    description=row.get('description', ''),
+                    rate_scheme_id=row['rate_scheme'],
+                    qbo_id=row['qbo_id'],
+                )
+                created += 1
+            else:
+                from apps.core.services import ConfigurationService
+                svc = (ServiceItem.objects
+                       .select_related('rate_scheme')
+                       .get(qbo_id=row['qbo_id']))
+                new_rate = Decimal(str(row.get('rate') or '0'))
+                if (row.get('rate') is not None
+                        and svc.rate_scheme.rate != new_rate):
+                    # Pricing integrity: price changes supersede, never a
+                    # bare rate edit. supersede() does NOT repoint catalog
+                    # users, so repoint the ServiceItem explicitly.
+                    new_scheme = ConfigurationService.supersede_rate_scheme(
+                        svc.rate_scheme, rate=new_rate)
+                    svc.rate_scheme = new_scheme
+                if row.get('name'):
+                    svc.template_name = row['name']
+                svc.save()
+                updated += 1
+    return created, updated
+
+
+# QBOImportCommitService extensions (catalog + contacts) — attached here to
+# keep the class definition above focused; staticmethods assigned below.
+
+def _commit_catalog(rows):
+    with transaction.atomic():
+        created, updated = _catalog_commit_rows(rows)
+    QBOImportCommitService._auto_dismiss('catalog')
+    return {'created': created, 'updated': updated}
+
+
+def _commit_contacts(payload):
+    """Terms first, then customers, then vendors (merge-by-name)."""
+    from apps.contacts.models import Business, Contact, PaymentTerms
+
+    counts = {'terms': {'created': 0, 'updated': 0},
+              'customers': {'created': 0, 'updated': 0},
+              'vendors': {'created': 0, 'updated': 0}}
+    with transaction.atomic():
+        for row in payload.get('terms') or []:
+            if row['action'] == 'create':
+                PaymentTerms.objects.create(
+                    name=row['name'], days=row.get('due_days'),
+                    qbo_id=row['qbo_id'])
+                counts['terms']['created'] += 1
+            else:
+                term = PaymentTerms.objects.get(qbo_id=row['qbo_id'])
+                term.name = row['name']
+                term.days = row.get('due_days')
+                term.save()
+                counts['terms']['updated'] += 1
+
+        term_by_qbo = {t.qbo_id: t for t in
+                       PaymentTerms.objects.exclude(qbo_id='')}
+
+        for row in payload.get('customers') or []:
+            term = term_by_qbo.get(row.get('term_qbo_id') or '')
+            if row['action'] == 'create':
+                if row.get('company_name'):
+                    contact = Contact.objects.create(
+                        first_name=row.get('given_name') or row['display_name'],
+                        last_name=row.get('family_name') or '',
+                        email=row.get('email') or '',
+                        mobile_number=row.get('phone') or '',
+                    )
+                    business = Business.objects.create(
+                        business_name=row['company_name'],
+                        business_phone=row.get('phone') or '',
+                        default_contact=contact,
+                        qbo_customer_id=row['qbo_id'],
+                        terms=term,
+                    )
+                    Contact.objects.filter(pk=contact.pk).update(
+                        business=business)
+                else:
+                    Contact.objects.create(
+                        first_name=row.get('given_name') or row['display_name'],
+                        last_name=row.get('family_name') or '',
+                        email=row.get('email') or '',
+                        mobile_number=row.get('phone') or '',
+                        qbo_customer_id=row['qbo_id'],
+                    )
+                counts['customers']['created'] += 1
+            else:
+                business = Business.objects.filter(
+                    qbo_customer_id=row['qbo_id']).first()
+                if business is not None:
+                    if row.get('company_name'):
+                        business.business_name = row['company_name']
+                    if term is not None:
+                        business.terms = term
+                    business.save()
+                    contact = business.default_contact
+                else:
+                    contact = Contact.objects.get(
+                        qbo_customer_id=row['qbo_id'])
+                if contact is not None:
+                    contact.first_name = (row.get('given_name')
+                                          or contact.first_name)
+                    contact.last_name = (row.get('family_name')
+                                         or contact.last_name)
+                    contact.email = row.get('email') or ''
+                    if row.get('phone'):
+                        contact.mobile_number = row['phone']
+                    contact.save()
+                counts['customers']['updated'] += 1
+
+        for row in payload.get('vendors') or []:
+            name = row.get('company_name') or row['display_name']
+            if row['action'] == 'create':
+                existing = Business.objects.filter(
+                    business_name__iexact=name).first()
+                if existing is not None:
+                    # Same-named business (usually a customer) — one
+                    # Business plays both roles; adopt, don't duplicate.
+                    existing.qbo_vendor_id = row['qbo_id']
+                    existing.save(update_fields=['qbo_vendor_id'])
+                else:
+                    contact = Contact.objects.create(
+                        first_name=name, last_name='',
+                        email=row.get('email') or '',
+                        mobile_number=row.get('phone') or '',
+                    )
+                    business = Business.objects.create(
+                        business_name=name,
+                        business_phone=row.get('phone') or '',
+                        default_contact=contact,
+                        qbo_vendor_id=row['qbo_id'],
+                    )
+                    Contact.objects.filter(pk=contact.pk).update(
+                        business=business)
+                counts['vendors']['created'] += 1
+            else:
+                business = Business.objects.get(qbo_vendor_id=row['qbo_id'])
+                if row.get('company_name'):
+                    business.business_name = row['company_name']
+                business.save()
+                counts['vendors']['updated'] += 1
+    QBOImportCommitService._auto_dismiss('contacts')
+    return counts
+
+
+QBOImportCommitService.commit_catalog = staticmethod(_commit_catalog)
+QBOImportCommitService.commit_contacts = staticmethod(_commit_contacts)

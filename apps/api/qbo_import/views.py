@@ -85,3 +85,20 @@ def import_commit_schemes(request):
         request.data.get('rows') or [])
     return Response({'created': len(set(mapping.values())),
                      'scheme_pk_by_qbo_item_id': mapping})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def import_commit_catalog(request):
+    if not request.user.has_perm(AREA_PERMS['catalog']):
+        return Response(status=403)
+    return Response(QBOImportCommitService.commit_catalog(
+        request.data.get('rows') or []))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def import_commit_contacts(request):
+    if not request.user.has_perm(AREA_PERMS['contacts']):
+        return Response(status=403)
+    return Response(QBOImportCommitService.commit_contacts(request.data))
