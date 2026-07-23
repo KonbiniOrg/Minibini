@@ -4,6 +4,8 @@
   import ContactsImportPanel from '../../components/qboimport/ContactsImportPanel.svelte';
   import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
 
+  let pullEpoch = $state(0);
+
   let allItems = $state([]);
   let count = $state(0);
   let page = $state(1);
@@ -106,8 +108,10 @@
   });
 </script>
 
-<QboPullButton area="contacts" />
-<ContactsImportPanel onCommitted={loadAll} />
+<QboPullButton area="contacts" onPulled={() => pullEpoch++} />
+{#key pullEpoch}
+  <ContactsImportPanel onCommitted={loadAll} />
+{/key}
 
 <div class="page-body">
 <h2>Contacts &amp; Businesses ({count})</h2>

@@ -4,6 +4,8 @@
   import { onMount } from 'svelte';
   import { api } from '../../lib/api.js';
 
+  let pullEpoch = $state(0);
+
   let categories = $state([]);
   let qboAccounts = $state(null);
   let loadingCategories = $state(true);
@@ -117,8 +119,10 @@
   });
 </script>
 
-<QboPullButton area="categories" />
-<CategoriesImportPanel onCommitted={loadCategories} />
+<QboPullButton area="categories" onPulled={() => pullEpoch++} />
+{#key pullEpoch}
+  <CategoriesImportPanel onCommitted={loadCategories} />
+{/key}
 
 {#if loadingCategories}
   <p>Loading accounting categories...</p>

@@ -7,6 +7,8 @@
   import FieldError from './FieldError.svelte';
   import FormMessage from './FormMessage.svelte';
 
+  let pullEpoch = $state(0);
+
   let schemes = $state([]);
   let categories = $state([]);
   let unitsList = $state([]);
@@ -205,8 +207,10 @@
 </script>
 
 <h3>Rate Schemes</h3>
-<QboPullButton area="schemes" />
-<SchemesImportPanel onCommitted={load} />
+<QboPullButton area="schemes" onPulled={() => pullEpoch++} />
+{#key pullEpoch}
+  <SchemesImportPanel onCommitted={load} />
+{/key}
 
 {#if error}<p><em>{error}</em></p>{/if}
 {#if loading}<p>Loading...</p>{/if}

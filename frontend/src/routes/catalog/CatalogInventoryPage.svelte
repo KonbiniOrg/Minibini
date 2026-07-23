@@ -10,6 +10,8 @@
   import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
 
   // Write access: either the money role or the admin role.
+  let pullEpoch = $state(0);
+
   let canManage = $derived($canManageFinancials || $canManageConfig);
 
   let items = $state([]);
@@ -134,8 +136,10 @@
 <CatalogTabs />
 
 {#if canManage}
-  <QboPullButton area="catalog" />
-  <CatalogImportPanel onCommitted={load} />
+  <QboPullButton area="catalog" onPulled={() => pullEpoch++} />
+  {#key pullEpoch}
+    <CatalogImportPanel onCommitted={load} />
+  {/key}
 {/if}
 
 {#if canManage}

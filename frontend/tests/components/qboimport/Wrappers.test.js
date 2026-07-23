@@ -70,3 +70,22 @@ describe('ContactsImportPanel', () => {
     expect(payload.vendors[0].action).toBe('create');
   });
 });
+
+
+describe('pull-button → panel reload wiring', () => {
+  it('AccountingCategories keys its panel on pullEpoch (remount on pull)', async () => {
+    // Wiring is identical across the four embeds; assert the pattern once
+    // at the source level so a regression can't silently drop the {#key}.
+    const fs = await import('fs');
+    for (const path of [
+      'src/components/settings/AccountingCategories.svelte',
+      'src/components/RateSchemeManager.svelte',
+      'src/routes/catalog/CatalogInventoryPage.svelte',
+      'src/routes/contacts/ContactListPage.svelte',
+    ]) {
+      const src = fs.readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
+      expect(src, path).toContain('onPulled={() => pullEpoch++}');
+      expect(src, path).toContain('{#key pullEpoch}');
+    }
+  });
+});
