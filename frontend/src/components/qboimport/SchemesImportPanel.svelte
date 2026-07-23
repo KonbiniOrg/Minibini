@@ -5,7 +5,7 @@
   import SuggestionPanel from './SuggestionPanel.svelte';
   import { qboImportApi } from '../../lib/qboImport.js';
 
-  let { onCommitted = () => {} } = $props();
+  let { onCommitted = () => {}, unitsList = [] } = $props();
   let edits = $state({});
 
   function initEdits(rows) {
@@ -72,8 +72,17 @@
               <option value="elapsed_time">elapsed time (hourly)</option>
             </select>
           </td>
-          <td><input type="text" class="unit" value={edit(row).unit_label}
-                     oninput={(e) => set(row, 'unit_label', e.target.value)}></td>
+          <td>
+            <select class="unit" value={edit(row).unit_label}
+                    onchange={(e) => set(row, 'unit_label', e.target.value)}>
+              {#each unitsList as u}
+                <option value={u}>{u}</option>
+              {/each}
+              {#if !unitsList.includes(edit(row).unit_label)}
+                <option value={edit(row).unit_label}>{edit(row).unit_label}</option>
+              {/if}
+            </select>
+          </td>
           <td>
             <select value={edit(row).accounting_category}
                     onchange={(e) => set(row, 'accounting_category', Number(e.target.value) || null)}>

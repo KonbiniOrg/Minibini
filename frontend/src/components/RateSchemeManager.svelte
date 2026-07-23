@@ -209,7 +209,7 @@
 <h3>Rate Schemes</h3>
 <QboPullButton area="schemes" onPulled={() => pullEpoch++} />
 {#key pullEpoch}
-  <SchemesImportPanel onCommitted={load} />
+  <SchemesImportPanel onCommitted={load} {unitsList} />
 {/key}
 
 {#if error}<p><em>{error}</em></p>{/if}
