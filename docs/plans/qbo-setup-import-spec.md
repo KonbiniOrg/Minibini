@@ -78,11 +78,10 @@ greyed — not tracked state.
   | Area | Available when |
   |---|---|
   | Email | email settings configured (DB or env) |
-  | Catalog | ≥1 AccountingCategory — deliberately NOT "≥1 RateScheme":
-    scheme suggestions live inside RateSchemeManager, which is inside
-    Catalog, so requiring a scheme would deadlock a QBO-driven setup. An
-    empty RateSchemeManager is the surface where the first scheme is
-    imported or hand-created. |
+  | Catalog | ≥1 AccountingCategory AND ≥1 RateScheme (both are authored
+    in Settings — categories in Settings → Accounting, schemes in
+    Settings → RateSchemeManager — so the prerequisites are satisfiable
+    before Catalog opens; no ordering deadlock) |
   | Contacts & Businesses | always |
   | Jobs (board/list) | ≥1 Contact |
   | Estimates | Jobs available |
@@ -162,7 +161,7 @@ Row states, computed by `qbo_id` match:
   (items need category FKs); the panels' gating order enforces this
   naturally (Catalog is unreachable until a category and scheme exist).
 
-### 5b. Rate schemes — inside RateSchemeManager (Catalog area)
+### 5b. Rate schemes — inside RateSchemeManager (Settings)
 
 - One suggested RateScheme per snapshot Service item: name from the item,
   `rate = UnitPrice`, algorithm defaulted `entered_qty`, unit label `'ea'`,
