@@ -989,3 +989,11 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the password field on Settings → Email is read-only behind a
   modal that verifies the requesting user's app password before allowing a
   new mail password to be entered and saved.
+
+- **Setup callouts should link to the settings they point at.** — _added 2026-07-23_
+  The sidebar's setup arrows name their unlock path in prose ("Settings →
+  Email") but aren't clickable. Add an in-callout link navigating to the
+  named surface (Settings tab, Contacts, etc.) — the callout already
+  survives hovering onto it, so a link is workable; needs hint text/link
+  pairs in `frontend/src/lib/setupHints.js`.
+  _Done when:_ each callout carries a working "take me there" link.

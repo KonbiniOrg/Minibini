@@ -281,6 +281,5 @@
     white-space: nowrap;
     color: #6b7480;   /* greyed by color only — an opacity here would
                          bleed onto the SetupCallout child */
-    cursor: not-allowed;
   }
 </style>

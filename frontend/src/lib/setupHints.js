@@ -9,11 +9,11 @@ export const setupHints = {
     'Add your email service configuration on the Settings → Email tab.',
   catalog:
     'The catalog needs at least one accounting category and one rate ' +
-    'scheme. Create them in Settings — or connect QuickBooks there and ' +
-    'pull your existing setup.',
+    'scheme. Create them — or connect a QuickBooks instance and ' +
+    'pull your existing setup - in Settings.',
   jobs:
     'Jobs belong to customers. Add a contact — or import your QBO ' +
-    'customers from the Contacts area — and this unlocks.',
+    'customers from the Contacts area — to be able to create a job.',
   estimates:
     'Estimates live on jobs, and jobs need a customer contact first.',
   invoices:
