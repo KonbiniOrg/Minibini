@@ -3,6 +3,7 @@
 // spec a live greyed-entry + callout to assert. Everything else is set up.
 // The QBO pull flows are backend+Vitest territory (no QBO connection).
 import { expect, test } from '@playwright/test';
+import { apiAs } from '../fixtures/api.js';
 import { personas } from '../fixtures/personas.js';
 
 test.use({ storageState: personas.finjobs.storageState });
@@ -24,22 +25,27 @@ test('setup status: only email is unavailable on the seeded DB', async ({ page }
 
 test('sidebar greys exactly the email entry, with its callout on hover', async ({ page }) => {
   await page.goto('/');
+  // The sidebar is a pull-out that animates on hover — physical hover
+  // fights Playwright's stability check, so dispatch the event directly.
+  await page.locator('.sidebar').dispatchEvent('mouseenter');
   const nav = page.getByRole('navigation');
   for (const label of ['Jobs', 'Purchasing', 'Catalog']) {
-    await expect(nav.getByRole('link', { name: label })).toBeVisible();
+    await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
   }
   const emailEntry = nav.locator('.nav-disabled', { hasText: 'Email' });
   await expect(emailEntry).toBeVisible();
   await expect(nav.locator('.nav-disabled')).toHaveCount(1);
-  await emailEntry.hover();
+  await emailEntry.dispatchEvent('mouseenter');
   await expect(page.getByRole('tooltip')).toContainText('email service');
 });
 
-test('import pull reports the missing QBO connection gracefully', async ({ page }) => {
-  const resp = await page.request.post('/api/qbo/import/pull/', {
-    data: { area: 'contacts' },
-  });
-  expect(resp.status()).toBe(400);
-  const data = await resp.json();
-  expect(data.detail).toBe('No active QBO connection.');
+test('import pull reports the missing QBO connection gracefully', async () => {
+  const api = await apiAs(personas.finjobs);
+  try {
+    const resp = await api.postRaw('/api/qbo/import/pull/', { area: 'contacts' });
+    expect(resp.status()).toBe(400);
+    expect((await resp.json()).detail).toBe('No active QBO connection.');
+  } finally {
+    await api.dispose();
+  }
 });
