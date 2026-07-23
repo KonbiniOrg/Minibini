@@ -980,7 +980,7 @@ are preserved.
 nothing else in the system holds a back-reference to a WorkTemplate, so
 a delete cascades cleanly through its TemplateTaskAssociation /
 TemplateMaterialAssociation join rows without touching any Job,
-Worksheet, Task, or Material.
+Task, or Material.
 
 ### 7.2 generate_task
 
