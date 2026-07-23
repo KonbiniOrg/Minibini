@@ -54,6 +54,7 @@
 </script>
 
 {#snippet table(rows, toggles, data)}
+  <p><small><em>needs better explanation</em></small></p>
   {#if !(data?.category_options || []).length}
     <p class="dep-note"><strong>No accounting categories exist yet.</strong>
       Every rate scheme needs one, so this panel can't apply anything until
