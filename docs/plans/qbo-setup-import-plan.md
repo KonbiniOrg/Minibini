@@ -95,7 +95,8 @@ Predicates exactly per spec Part 3 table (email ← `email_configured()`; catalo
 
 **Files:** Modify `apps/contacts/models.py` (`PaymentTerms`: add `name = CharField(100, blank True default '')`, `days = PositiveIntegerField(null=True, blank=True)`, `qbo_id = CharField(50, blank, default '')`, `__str__` returns name or pk), migration; `apps/api/contacts/serializers.py` keeps `fields='__all__'` (verify it now emits the new fields). Test: extend `tests/test_contact_business_associations.py` or the payment-terms API test module (find it: `grep -rln payment-terms tests/`).
 
-- [ ] Steps: failing test (create term with name/days, serializer round-trip) → implement + `makemigrations contacts` → fresh-DB module runs → docs (`contacts-and-businesses.md`, `data-constraints.md` §1.4) → commit.
+- [ ] Steps: failing test (create term with name/days, serializer round-trip) → implement + `makemigrations contacts` → fresh-DB module runs → also fix `frontend/src/components/contacts/BusinessForm.svelte:97`, which renders `{term.term_id}` as the option label (bare pk today) — becomes `{term.name || term.term_id}` (+ Vitest) → docs (`contacts-and-businesses.md`, `data-constraints.md` §1.4) → commit.
+- NOTE (recorded in LATER.md): PaymentTerms gets no management CRUD UI in this batch — the import creates rows and BusinessForm assigns them; a terms manager is follow-up work.
 
 ### Task 6: Phase A verification
 
