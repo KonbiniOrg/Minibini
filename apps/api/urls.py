@@ -22,7 +22,7 @@ from apps.api.home.views import current_blep_view, home_view
 from apps.api.stubs import stub_501
 from apps.api.templates_config.views import (
     WorkTemplateViewSet, ServiceItemViewSet,
-    AccountingCategoryViewSet, settings_view, units_view,
+    AccountingCategoryViewSet, settings_view, units_view, email_verify_view,
 )
 from apps.api.rate_schemes.views import RateSchemeViewSet
 from apps.api.change_orders.views import ChangeOrderViewSet
@@ -91,6 +91,7 @@ urlpatterns = [
     path('schedule/', schedule_view, name='api-schedule'),
     path('activity/', activity_view, name='api-activity'),
     path('settings/units/', units_view, name='api-settings-units'),
+    path('settings/email-verify/', email_verify_view, name='api-settings-email-verify'),
     path('settings/', settings_view, name='api-settings'),
     path('shifts/', include('apps.api.time_tracking.urls')),
     path('expenses/', include('apps.api.expenses.urls')),

@@ -244,10 +244,13 @@ class EmailService:
     """
 
     def __init__(self):
-        """Initialize with IMAP configuration from Django settings."""
-        self.imap_server = getattr(settings, 'EMAIL_IMAP_SERVER', None)
-        self.email = getattr(settings, 'EMAIL_HOST_USER', None)
-        self.password = getattr(settings, 'EMAIL_HOST_PASSWORD', None)
+        """Initialize with IMAP configuration: Configuration rows first
+        (Settings → Email), env settings fallback."""
+        from apps.core.email_account import email_account
+        account = email_account()
+        self.imap_server = account['imap_server'] or None
+        self.email = account['address'] or None
+        self.password = account['password'] or None
         self.mailbox_folder = getattr(settings, 'EMAIL_IMAP_FOLDER', 'INBOX')
 
     def fetch_new_emails(self, mark_as_seen=False):
@@ -1219,6 +1222,15 @@ class ConfigurationService:
         return scheme.supersede(**overrides)
 
 
+def _outbound_from_email():
+    """The tenant's sending address (Configuration-first), falling back to
+    the deployment default."""
+    from apps.core.email_account import email_account
+    return (email_account()['address']
+            or getattr(settings, 'DEFAULT_FROM_EMAIL', '')
+            or 'unknown@example.com')
+
+
 class OutboundEmailService:
     """Sends emails via SMTP with optional attachments."""
 
@@ -1328,7 +1340,7 @@ class OutboundEmailService:
                 email_record=email_record,
                 uid='',  # No IMAP UID for outbound
                 subject=subject,
-                from_email=getattr(settings, 'EMAIL_HOST_USER', '') or 'unknown@example.com',
+                from_email=_outbound_from_email(),
                 to_email=', '.join(to_list),
                 cc_email=', '.join(cc_list),
                 bcc_email=', '.join(bcc_list),
@@ -1344,14 +1356,16 @@ class OutboundEmailService:
         # Step 2: SMTP attempt. On failure we update the row in a fresh
         # transaction so the error persists even though we re-raise.
         from django.core.mail import EmailMessage
+        from apps.core.email_account import smtp_connection
         try:
             msg = EmailMessage(
                 subject=subject,
                 body=body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
+                from_email=_outbound_from_email(),
                 to=to_list,
                 cc=cc_list,
                 bcc=bcc_list,
+                connection=smtp_connection(),  # None → default backend
             )
             msg.extra_headers['Message-ID'] = email_record.message_id
             if in_reply_to:

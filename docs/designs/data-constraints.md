@@ -45,6 +45,12 @@ Both have **key** as primary key (unique, max 100 chars) and a string **value**.
 | `invoice_number_sequence` | `invoice_counter` | _(retired 2026-07-21 — QBO assigns invoice numbers; rows are harmless leftovers)_ |
 | `po_number_sequence` | `po_counter` |
 
+Per-tenant email account (2026-07-23, Settings → Email; Configuration-first
+with env-settings fallback via `apps/core/email_account.py`):
+`email_imap_server`, `email_address`, `email_password`, `email_smtp_host`,
+`email_smtp_port`. `email_configured()` (imap+address+password) gates the
+Email area; `POST /api/settings/email-verify/` live-tests both directions.
+
 The live pattern rows, both AppState counters, and `units_list` are **seeded
 by data migration** (`core/0027_seed_setup_defaults`, idempotent, never
 overwrites) — a migrate-only fresh database can create Jobs/POs without

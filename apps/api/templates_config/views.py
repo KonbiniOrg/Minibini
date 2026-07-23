@@ -7,6 +7,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.estimates.models import WorkTemplate, ServiceItem
 from apps.estimates.services import WorkTemplateService
+from django.core.mail import get_connection
+from imap_tools import MailBox
+
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
 from apps.api.permissions import CanManageConfig, CanManageJobsOrFinancialsOrConfig
@@ -300,3 +303,41 @@ def units_view(request):
 
     ConfigurationService.set('units_list', json.dumps(units))
     return Response(units)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def email_verify_view(request):
+    """Attempt an IMAP login and an SMTP connection with the resolved
+    email account; report each independently. Never 500s — failures are
+    data, not errors. can_manage_config only."""
+    if not request.user.has_perm('core.can_manage_config'):
+        return Response(status=403)
+    from apps.core.email_account import email_account
+    account = email_account()
+
+    result = {'imap': {'ok': False, 'error': ''},
+              'smtp': {'ok': False, 'error': ''}}
+    try:
+        with MailBox(account['imap_server']).login(
+                account['address'], account['password']):
+            pass
+        result['imap']['ok'] = True
+    except Exception as e:  # noqa: BLE001 — reported, not raised
+        result['imap']['error'] = str(e)
+
+    try:
+        conn = get_connection(
+            host=account['smtp_host'],
+            port=int(account['smtp_port'] or 587),
+            username=account['address'],
+            password=account['password'],
+            use_tls=True,
+        )
+        conn.open()
+        conn.close()
+        result['smtp']['ok'] = True
+    except Exception as e:  # noqa: BLE001
+        result['smtp']['error'] = str(e)
+
+    return Response(result)
