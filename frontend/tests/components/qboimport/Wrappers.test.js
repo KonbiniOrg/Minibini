@@ -62,6 +62,10 @@ describe('ContactsImportPanel', () => {
       ],
     });
     const { findByText } = render(ContactsImportPanel);
+    // Terms render as their own clearly-typed section, not as contacts.
+    expect(await findByText('Payment terms')).toBeInTheDocument();
+    expect(await findByText('Customers')).toBeInTheDocument();
+    expect(await findByText('Vendors')).toBeInTheDocument();
     await fireEvent.click(await findByText('Apply selected'));
     const payload = api.post.mock.calls.find(
       (c) => c[0] === '/api/qbo/import/commit/contacts/')[1];
