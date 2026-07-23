@@ -75,7 +75,7 @@
       await load();
       onCommitted();
     } catch (e) {
-      message = errorMessage(e);
+      message = e?.data ? errorMessage(e) : (e?.message || 'Failed');
     } finally {
       busy = false;
     }

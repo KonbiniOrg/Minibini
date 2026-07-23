@@ -561,6 +561,17 @@ class QBOImportCommitService:
 
         from apps.jobs.models import RateScheme
 
+        from django.core.exceptions import ValidationError
+
+        missing = [row.get('name') or row.get('qbo_item_id')
+                   for row in rows if not row.get('accounting_category')]
+        if missing:
+            raise ValidationError({'accounting_category': [
+                'Every scheme needs a category. Missing on: '
+                + ', '.join(str(m) for m in missing)
+                + '. Commit your accounting categories first if the '
+                  'pulldowns are empty.']})
+
         mapping = {}
         group_schemes = {}
         with transaction.atomic():
@@ -604,6 +615,28 @@ def _catalog_commit_rows(rows):
 
     from apps.estimates.models import ServiceItem
     from apps.inventory.models import InventoryItem
+
+    from django.core.exceptions import ValidationError
+
+    bad_inventory = [row.get('code') or row['qbo_id'] for row in rows
+                     if row['kind'] == 'inventory'
+                     and row['action'] == 'create'
+                     and not row.get('accounting_category')]
+    bad_service = [row.get('name') or row['qbo_id'] for row in rows
+                   if row['kind'] == 'service'
+                   and row['action'] == 'create'
+                   and not row.get('rate_scheme')]
+    errors = {}
+    if bad_inventory:
+        errors['accounting_category'] = [
+            'Every inventory item needs a category. Missing on: '
+            + ', '.join(str(m) for m in bad_inventory)]
+    if bad_service:
+        errors['rate_scheme'] = [
+            'Every service needs a rate scheme. Missing on: '
+            + ', '.join(str(m) for m in bad_service)]
+    if errors:
+        raise ValidationError(errors)
 
     created = updated = 0
     for row in rows:

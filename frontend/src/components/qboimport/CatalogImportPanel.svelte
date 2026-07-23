@@ -39,6 +39,18 @@
   }
 
   function commit(rows) {
+    const missingScheme = rows.filter(
+      (r) => r.kind === 'service' && r.state !== 'changed' && !edit(r).rate_scheme);
+    const missingCat = rows.filter(
+      (r) => r.kind === 'inventory' && r.state !== 'changed' && !edit(r).accounting_category);
+    if (missingScheme.length || missingCat.length) {
+      const parts = [];
+      if (missingScheme.length) parts.push(
+        'pick a rate scheme for: ' + missingScheme.map((r) => r.name).join(', '));
+      if (missingCat.length) parts.push(
+        'pick a category for: ' + missingCat.map((r) => edit(r).code).join(', '));
+      throw new Error('Before applying, ' + parts.join('; ') + '.');
+    }
     return qboImportApi.commitCatalog(rows.map((r) => {
       const action = r.state === 'changed' ? 'update' : 'create';
       if (r.kind === 'service') {

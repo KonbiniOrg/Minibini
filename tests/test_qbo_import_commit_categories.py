@@ -117,3 +117,24 @@ class CommitEndpointsTest(TestCase):
         self.assertEqual(resp.data['created'], 1)
         self.assertTrue(
             AccountingCategory.objects.filter(code='SVC').exists())
+
+
+class CommitValidationTest(TestCase):
+    def test_scheme_without_category_is_contract_400_not_500(self):
+        from django.core.exceptions import ValidationError as DjangoVE
+        cat_missing_row = [{'name': 'Orphan', 'rate': '10', 'algorithm':
+                            'entered_qty', 'unit_label': 'ea',
+                            'accounting_category': None,
+                            'qbo_item_id': '99', 'collapse_group': None}]
+        with self.assertRaises(DjangoVE) as ctx:
+            QBOImportCommitService.commit_schemes(cat_missing_row)
+        self.assertIn('accounting_category', ctx.exception.message_dict)
+        self.assertEqual(RateScheme.objects.count(), 0)
+
+    def test_catalog_service_without_scheme_rejected(self):
+        from django.core.exceptions import ValidationError as DjangoVE
+        with self.assertRaises(DjangoVE) as ctx:
+            QBOImportCommitService.commit_catalog([
+                {'kind': 'service', 'action': 'create', 'qbo_id': '11',
+                 'name': 'CNC', 'description': '', 'rate_scheme': None}])
+        self.assertIn('rate_scheme', ctx.exception.message_dict)

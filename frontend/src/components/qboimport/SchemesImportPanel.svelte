@@ -38,6 +38,13 @@
   }
 
   function commit(rows) {
+    const missing = rows.filter((r) => !edit(r).accounting_category);
+    if (missing.length) {
+      throw new Error(
+        'Pick a category for: '
+        + missing.map((r) => r.name).join(', ')
+        + (missing.length ? ' — commit your accounting categories first if the pulldown is empty.' : ''));
+    }
     return qboImportApi.commitSchemes(rows.map((r) => ({
       qbo_item_id: r.qbo_item_id,
       ...edit(r),
@@ -99,6 +106,11 @@
       {/each}
     </tbody>
   </table>
+  {#if !(data?.category_options || []).length}
+    <p><strong>No accounting categories exist yet</strong> — commit the
+      category suggestions on the Accounting tab first, then pull here
+      again (or reload).</p>
+  {/if}
   <p><small>Rows sharing a group name share ONE scheme (first row names it).
     Same-price rows are adjacent to make sharing easy to spot.</small></p>
 {/snippet}
