@@ -979,3 +979,13 @@ Cross-cutting UI/API conventions and shared components.
   needed the day a shop wants a konbini-only term or to tidy imports.
   _Done when:_ a small terms manager exists (likely a Settings or Contacts
   surface), or a decision is recorded that terms are import-only.
+
+- **Email password change should re-authenticate via a modal.** — _added 2026-07-23_
+  Settings → Email currently lets any config admin overwrite the stored mail
+  password by typing a new one into the form. RM wants a "change email
+  password" modal that requires re-entering the user's own app password
+  before granting access to the change (same shape as sensitive-action
+  confirmation flows elsewhere).
+  _Done when:_ the password field on Settings → Email is read-only behind a
+  modal that verifies the requesting user's app password before allowing a
+  new mail password to be entered and saved.
