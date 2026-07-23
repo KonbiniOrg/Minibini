@@ -12,17 +12,19 @@
 <style>
   .setup-callout {
     position: absolute;
-    left: calc(100% + 12px);
+    left: calc(100% + 18px);
     top: 50%;
     transform: translateY(-50%);
-    width: 240px;
-    background: #1f2937;
-    color: #f9fafb;
-    padding: 10px 12px;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    line-height: 1.35;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    width: 340px;
+    background: #b45309;
+    color: #fffbeb;
+    border: 2px solid #f59e0b;
+    padding: 16px 18px;
+    border-radius: 10px;
+    font-size: 1.05rem;
+    font-weight: 500;
+    line-height: 1.45;
+    box-shadow: 0 6px 22px rgba(0,0,0,0.35);
     z-index: 50;
   }
   .pointer {
@@ -30,7 +32,7 @@
     right: 100%;
     top: 50%;
     transform: translateY(-50%);
-    border: 8px solid transparent;
-    border-right-color: #1f2937;
+    border: 14px solid transparent;
+    border-right-color: #f59e0b;
   }
 </style>

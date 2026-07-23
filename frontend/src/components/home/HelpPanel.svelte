@@ -1,6 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { setupStatus } from '../../stores/setupStatus.js';
+  import { setupHint } from '../../lib/setupHints.js';
 
   // The getting-started tutorial, converted to HTML with in-app links.
   // Source of truth: docs/designs/tutorial.md — keep the two in sync when
@@ -11,7 +12,9 @@
   // sidebar; no stored flag).
   let unmetGates = $derived(
     $setupStatus.areas
-      ? Object.values($setupStatus.areas).filter((a) => !a.available)
+      ? Object.entries($setupStatus.areas)
+          .filter(([, a]) => !a.available)
+          .map(([area, a]) => setupHint(area, a.message))
       : []
   );
 </script>
@@ -23,8 +26,8 @@
     <h3>Finish setting up</h3>
     <p>Some areas are still locked until their configuration exists:</p>
     <ul>
-      {#each unmetGates as gate}
-        <li>{gate.message}</li>
+      {#each unmetGates as hint}
+        <li>{hint}</li>
       {/each}
     </ul>
     <p>Start in <a href="/settings" use:link>Settings</a> — connect

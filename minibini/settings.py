@@ -132,21 +132,21 @@ DATABASES = {
 
 # Email settings
 # WARNING: Move to environment variables for production
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'minibini.test@gmail.com')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+#EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'minibini.test@gmail.com')
+#EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 
 # IMAP (inbound email fetch)
-EMAIL_IMAP_SERVER = 'imap.gmail.com'
-EMAIL_IMAP_FOLDER = 'INBOX'  # Default folder to monitor
-EMAIL_IMAP_SSL = True  # Use SSL/TLS (port 993)
-EMAIL_IMAP_PORT = None  # None = auto-detect (993 for SSL, 143 for non-SSL)
+#EMAIL_IMAP_SERVER = 'imap.gmail.com'
+#EMAIL_IMAP_FOLDER = 'INBOX'  # Default folder to monitor
+#EMAIL_IMAP_SSL = True  # Use SSL/TLS (port 993)
+#EMAIL_IMAP_PORT = None  # None = auto-detect (993 for SSL, 143 for non-SSL)
 
 # SMTP (outbound email)
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+#EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+#EMAIL_HOST = 'smtp.gmail.com'
+#EMAIL_PORT = 587
+#EMAIL_USE_TLS = True
+#DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 
 # QuickBooks Online Integration

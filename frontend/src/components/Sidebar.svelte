@@ -4,6 +4,7 @@
   import { canManageFinancials, canManageConfig } from '../stores/permissions.js';
   import { setupStatus } from '../stores/setupStatus.js';
   import SetupCallout from './SetupCallout.svelte';
+  import { setupHint } from '../lib/setupHints.js';
   import { viewMode, toggleViewMode } from '../stores/viewMode.js';
 
   let { open = $bindable(false) } = $props();
@@ -72,7 +73,7 @@
               onmouseleave={() => hoveredGate = null}>
           {label}
           {#if hoveredGate === area}
-            <SetupCallout message={gate(area).message} />
+            <SetupCallout message={setupHint(area, gate(area).message)} />
           {/if}
         </span>
       {:else}
