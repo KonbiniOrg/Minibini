@@ -78,7 +78,11 @@ greyed — not tracked state.
   | Area | Available when |
   |---|---|
   | Email | email settings configured (DB or env) |
-  | Catalog | ≥1 AccountingCategory AND ≥1 RateScheme |
+  | Catalog | ≥1 AccountingCategory — deliberately NOT "≥1 RateScheme":
+    scheme suggestions live inside RateSchemeManager, which is inside
+    Catalog, so requiring a scheme would deadlock a QBO-driven setup. An
+    empty RateSchemeManager is the surface where the first scheme is
+    imported or hand-created. |
   | Contacts & Businesses | always |
   | Jobs (board/list) | ≥1 Contact |
   | Estimates | Jobs available |
@@ -102,7 +106,10 @@ greyed — not tracked state.
 
 - Button **"Pull current QBO settings"** in Settings → Accounting → the
   existing QuickBooks Online section, with the **last-pull timestamp
-  displayed beside it**. Requires `can_manage_config` + active connection.
+  displayed beside it** — and repeated inside each suggestion panel (§5),
+  so every area can refresh without a Settings round-trip. All buttons
+  write the same shared snapshot. Requires `can_manage_config` (Settings
+  button) / the area's own permission (panel buttons) + active connection.
 - `POST /api/qbo/import/pull` fetches in one sweep: sellable Items (Service /
   NonInventory / Inventory types, with `IncomeAccountRef`, `ExpenseAccountRef`
   where two-sided, UnitPrice, descriptions, tax defaults), income accounts,
@@ -173,6 +180,13 @@ Row states, computed by `qbo_id` match:
   description, `selling_price = UnitPrice`, `purchase_price = PurchaseCost`
   when two-sided, units `'none'`, category from cluster, `qbo_id` set — so
   imported items and lazily-minted ones converge on the same field.
+- **Per-row category resolution**: an item's kAC is derived by the chain
+  item → `IncomeAccountRef` → the committed kAC whose fallback Item
+  (`qbo_item_id`) shares that income account in the snapshot. Rows where
+  the chain resolves show the category pre-filled; rows where it doesn't
+  (cluster's candidate was discarded, or the kAC was committed without a
+  fallback Item) show a blank **required category pulldown**. ServiceItems
+  get their category transitively via their scheme.
 - "Update" rows: InventoryItem price/description = field overwrite;
   **ServiceItem price change routes through RateScheme supersession**
   (existing machinery), never a bare rate edit.
