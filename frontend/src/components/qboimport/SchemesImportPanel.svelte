@@ -54,6 +54,13 @@
 </script>
 
 {#snippet table(rows, toggles, data)}
+  {#if !(data?.category_options || []).length}
+    <p class="dep-note"><strong>No accounting categories exist yet.</strong>
+      Every rate scheme needs one, so this panel can't apply anything until
+      at least one category is saved — commit the category suggestions on
+      the Settings → Accounting tab first, then pull here again (or
+      reload).</p>
+  {/if}
   <table class="data-table">
     <thead>
       <tr><th></th><th>Service</th><th>Rate</th><th>Algorithm</th>
@@ -91,7 +98,10 @@
             </select>
           </td>
           <td>
-            <select value={edit(row).accounting_category}
+            <select value={edit(row).accounting_category ?? ''}
+                    class:missing={row.state !== 'imported'
+                                   && toggles.isChecked(row)
+                                   && !edit(row).accounting_category}
                     onchange={(e) => set(row, 'accounting_category', Number(e.target.value) || null)}>
               <option value="">— required —</option>
               {#each data?.category_options || [] as cat}
@@ -106,11 +116,6 @@
       {/each}
     </tbody>
   </table>
-  {#if !(data?.category_options || []).length}
-    <p><strong>No accounting categories exist yet</strong> — commit the
-      category suggestions on the Accounting tab first, then pull here
-      again (or reload).</p>
-  {/if}
   <p><small>Rows sharing a group name share ONE scheme (first row names it).
     Same-price rows are adjacent to make sharing easy to spot.</small></p>
 {/snippet}
@@ -122,4 +127,12 @@
 <style>
   .unit { width: 6em; }
   .group { width: 9em; }
+  select.missing { border: 2px solid #b91c1c; background: #fef2f2; }
+  .dep-note {
+    border: 2px solid #f59e0b;
+    background: #fffbeb;
+    color: #b45309;
+    border-radius: 6px;
+    padding: 0.5em 0.75em;
+  }
 </style>

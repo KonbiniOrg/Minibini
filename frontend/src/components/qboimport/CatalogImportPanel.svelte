@@ -68,6 +68,17 @@
 </script>
 
 {#snippet table(rows, toggles, data)}
+  {#if rows.some((r) => r.kind === 'service') && !(data?.scheme_options || []).length}
+    <p class="dep-note"><strong>No rate schemes exist yet.</strong>
+      Service items bind to a rate scheme, so those rows can't apply until
+      at least one scheme is saved — commit the rate-scheme suggestions in
+      Settings → Pricing first, then pull here again (or reload).</p>
+  {/if}
+  {#if rows.some((r) => r.kind === 'inventory') && !(data?.category_options || []).length}
+    <p class="dep-note"><strong>No accounting categories exist yet.</strong>
+      Inventory items need one — commit the category suggestions on the
+      Settings → Accounting tab first, then pull here again (or reload).</p>
+  {/if}
   <p><input type="search" placeholder="Filter…" bind:value={filter}></p>
   <table class="data-table">
     <thead>
@@ -97,7 +108,10 @@
           <td>${row.kind === 'service' ? row.rate : row.selling_price}</td>
           <td>
             {#if row.kind === 'service'}
-              <select value={edit(row).rate_scheme}
+              <select value={edit(row).rate_scheme ?? ''}
+                      class:missing={row.state === 'new'
+                                     && toggles.isChecked(row)
+                                     && !edit(row).rate_scheme}
                       onchange={(e) => set(row, 'rate_scheme', Number(e.target.value) || null)}>
                 <option value="">— required —</option>
                 {#each data?.scheme_options || [] as s}
@@ -105,7 +119,10 @@
                 {/each}
               </select>
             {:else}
-              <select value={edit(row).accounting_category}
+              <select value={edit(row).accounting_category ?? ''}
+                      class:missing={row.state === 'new'
+                                     && toggles.isChecked(row)
+                                     && !edit(row).accounting_category}
                       onchange={(e) => set(row, 'accounting_category', Number(e.target.value) || null)}>
                 <option value="">— required —</option>
                 {#each data?.category_options || [] as cat}
@@ -123,3 +140,14 @@
 
 <SuggestionPanel area="catalog" title="Catalog suggestions from QuickBooks"
   {table} {commit} {onCommitted} onLoaded={initEdits} />
+
+<style>
+  select.missing { border: 2px solid #b91c1c; background: #fef2f2; }
+  .dep-note {
+    border: 2px solid #f59e0b;
+    background: #fffbeb;
+    color: #b45309;
+    border-radius: 6px;
+    padding: 0.5em 0.75em;
+  }
+</style>
