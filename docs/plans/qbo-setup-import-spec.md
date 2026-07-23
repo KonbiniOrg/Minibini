@@ -61,13 +61,19 @@ Also fold in two adjacent bugfixes surfaced by the config audit:
 
 ## Part 3 — Gating (gradual setup)
 
-**Gates are derived, the flag controls the mode.**
+**Gates are pure live predicates. There is NO setup flag** (RM decision
+2026-07-23): an area is greyed whenever its predicate fails, ungreys the
+moment it passes, and re-greys if it ever fails again — which is the honest
+state, and largely self-correcting anyway (the data gates are PROTECT
+targets: you can't delete the last Business while it has POs, the last
+RateScheme while it has tasks, etc.). "Setup complete" is emergent — nothing
+greyed — not tracked state.
 
 - `GET /api/setup/status` (IsAuthenticated) returns, per gated area:
-  `{available: bool, message: str}` plus the global `setup_complete` flag and
-  last-pull metadata. Single source of truth; the sidebar and Home Help both
-  consume it. Messages name the unlock path, e.g. "Add your email service
-  configuration on Settings → Email".
+  `{available: bool, message: str}` plus last-pull metadata. Single source
+  of truth; the sidebar and Home Help both consume it. Messages name the
+  unlock path, e.g. "Add your email service configuration on
+  Settings → Email".
 - Gate predicates (live queries, cheap):
   | Area | Available when |
   |---|---|
@@ -76,19 +82,21 @@ Also fold in two adjacent bugfixes surfaced by the config audit:
   | Contacts & Businesses | always |
   | Jobs (board/list) | ≥1 Contact |
   | Estimates / Worksheets | Jobs available |
-  | Invoices | QBO connected |
+  | Invoices | Jobs available — NOT QBO-connectedness: invoice *viewing* and
+    drafting must never be hidden by a lapsed/disconnected QBO (history!);
+    QBO and line-item categories are send-time concerns with existing
+    per-action errors (`_assert_all_lines_categorized`, 'No active QBO
+    connection.') |
   | Purchase Orders | ≥1 Business |
   | Expenses | always (company-paid already has its own inline guard) |
   | Schedule / Search / Activity / Home / Users / Settings | always |
-- **While `setup_complete` is unset**: unavailable areas render greyed in the
-  sidebar with hovertext (`title` attr / tooltip) from the status message;
-  their routes redirect to Home. Home's Help content leads with the setup
-  checklist (driven by the same endpoint).
-- **`setup_complete`** (Configuration key): auto-set by the status endpoint
-  the first time every gate passes. Once set, gating retires permanently —
-  areas stay reachable regardless of later data deletion, and the app relies
-  on its normal per-action errors. (No re-locking.) Manual override possible
-  by editing the key; no UI for that.
+- Greyed areas: sidebar entry greyed, route redirects Home. Hint UI is a
+  **large floating callout** anchored to the greyed item — a box with a
+  pointer aimed at the menu entry (not a native `title` tooltip) — shown on
+  hover, carrying the status message. Hints simply don't exist for
+  available areas.
+- Home's Help content leads with the setup checklist while any gate is
+  unmet (same emergent rule) and reads as ordinary help once none are.
 
 ## Part 4 — QBO snapshot pull
 
