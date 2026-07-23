@@ -1,42 +1,34 @@
-// Gradual-setup gates against the seeded DB. The e2e environment has no
-// email credentials, so the Email gate genuinely fails here — giving this
-// spec a live greyed-entry + callout to assert. Everything else is set up.
-// The QBO pull flows are backend+Vitest territory (no QBO connection).
+// Gradual-setup gates against the seeded DB, which is fully set up
+// (including fake mail credentials seeded precisely so the Email area is
+// reachable for the email specs). Greyed-entry/callout rendering is
+// covered by Vitest against mocked gate states; the QBO pull flows are
+// backend+Vitest territory (no QBO connection here).
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../fixtures/api.js';
 import { personas } from '../fixtures/personas.js';
 
 test.use({ storageState: personas.finjobs.storageState });
 
-test('setup status: only email is unavailable on the seeded DB', async ({ page }) => {
+test('setup status: every area available on the seeded DB', async ({ page }) => {
   const resp = await page.request.get('/api/setup/status/');
   expect(resp.ok()).toBeTruthy();
   const data = await resp.json();
   for (const [area, state] of Object.entries(data.areas)) {
-    if (area === 'email') {
-      expect(state.available).toBe(false);
-      expect(state.message).toContain('Settings');
-    } else {
-      expect(state.available, `area ${area}`).toBe(true);
-      expect(state.message).toBe('');
-    }
+    expect(state.available, `area ${area}`).toBe(true);
+    expect(state.message).toBe('');
   }
 });
 
-test('sidebar greys exactly the email entry, with its callout on hover', async ({ page }) => {
+test('sidebar renders every entry as a live link (nothing greyed)', async ({ page }) => {
   await page.goto('/');
   // The sidebar is a pull-out that animates on hover — physical hover
   // fights Playwright's stability check, so dispatch the event directly.
   await page.locator('.sidebar').dispatchEvent('mouseenter');
   const nav = page.getByRole('navigation');
-  for (const label of ['Jobs', 'Purchasing', 'Catalog']) {
+  for (const label of ['Jobs', 'Email', 'Purchasing', 'Catalog']) {
     await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
   }
-  const emailEntry = nav.locator('.nav-disabled', { hasText: 'Email' });
-  await expect(emailEntry).toBeVisible();
-  await expect(nav.locator('.nav-disabled')).toHaveCount(1);
-  await emailEntry.dispatchEvent('mouseenter');
-  await expect(page.getByRole('tooltip')).toContainText('email service');
+  await expect(nav.locator('.nav-disabled')).toHaveCount(0);
 });
 
 test('import pull reports the missing QBO connection gracefully', async () => {

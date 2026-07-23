@@ -94336,5 +94336,19 @@
     "created_at": "2026-07-17T17:20:00Z",
     "updated_at": "2026-07-17T17:20:00Z"
   }
+},
+{
+  "model": "core.configuration",
+  "pk": "email_address",
+  "fields": {
+    "value": "test+shop@robot-six.com"
+  }
+},
+{
+  "model": "core.configuration",
+  "pk": "email_password",
+  "fields": {
+    "value": "e2e-fake-password"
+  }
 }
 ]
