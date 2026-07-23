@@ -136,3 +136,90 @@ class QBOSnapshotService:
             return None
         except (TypeError, ValueError):
             return None
+
+
+class QBOImportState:
+    """Sticky per-area dismissal flags for the suggestion panels.
+
+    Dismissal is total for its area (panel gone; only the pull button
+    remains) and survives pulls made from OTHER areas — only the area's
+    own pull clears its flag. Spec Part 4."""
+
+    DISMISS_KEY = 'qbo_import_dismissed'
+    AREAS = ('categories', 'schemes', 'catalog', 'contacts')
+
+    @staticmethod
+    def dismissed():
+        try:
+            raw = Configuration.objects.get(
+                key=QBOImportState.DISMISS_KEY).value
+            return json.loads(raw) or {}
+        except Configuration.DoesNotExist:
+            return {}
+        except (TypeError, ValueError):
+            return {}
+
+    @staticmethod
+    def _write(flags):
+        Configuration.objects.update_or_create(
+            key=QBOImportState.DISMISS_KEY,
+            defaults={'value': json.dumps(flags)})
+
+    @staticmethod
+    def _check(area):
+        if area not in QBOImportState.AREAS:
+            raise ValueError(f'Unknown import area: {area!r}')
+
+    @staticmethod
+    def dismiss(area):
+        QBOImportState._check(area)
+        flags = QBOImportState.dismissed()
+        flags[area] = True
+        QBOImportState._write(flags)
+
+    @staticmethod
+    def undismiss(area):
+        QBOImportState._check(area)
+        flags = QBOImportState.dismissed()
+        flags.pop(area, None)
+        QBOImportState._write(flags)
+
+
+class QBOImportSummary:
+    """Post-pull diff counts per kind (already-imported matched by the
+    qbo_id-family fields)."""
+
+    @staticmethod
+    def diff_summary():
+        from apps.contacts.models import Business, Contact, PaymentTerms
+        from apps.estimates.models import ServiceItem
+        from apps.inventory.models import InventoryItem
+
+        snapshot = QBOSnapshotService.load()
+        if snapshot is None:
+            return {}
+
+        def count(rows, imported_ids):
+            imported = sum(1 for r in rows if r['qbo_id'] in imported_ids)
+            return {'total': len(rows), 'imported': imported,
+                    'new': len(rows) - imported}
+
+        item_ids = (set(InventoryItem.objects.exclude(qbo_id='')
+                        .values_list('qbo_id', flat=True))
+                    | set(ServiceItem.objects.exclude(qbo_id='')
+                          .values_list('qbo_id', flat=True)))
+        customer_ids = (set(Business.objects.exclude(qbo_customer_id=None)
+                            .values_list('qbo_customer_id', flat=True))
+                        | set(Contact.objects.exclude(qbo_customer_id=None)
+                              .values_list('qbo_customer_id', flat=True)))
+        vendor_ids = set(Business.objects.exclude(qbo_vendor_id=None)
+                         .values_list('qbo_vendor_id', flat=True))
+        term_ids = set(PaymentTerms.objects.exclude(qbo_id='')
+                       .values_list('qbo_id', flat=True))
+
+        return {
+            'items': count(snapshot['items'], item_ids),
+            'customers': count(snapshot['customers'], customer_ids),
+            'vendors': count(snapshot['vendors'], vendor_ids),
+            'terms': count(snapshot['terms'], term_ids),
+        }

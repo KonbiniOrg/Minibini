@@ -21,6 +21,7 @@ from apps.api.jobs.board_views import (
 from apps.api.home.views import current_blep_view, home_view
 from apps.api.stubs import stub_501
 from apps.api.setup.views import setup_status
+from apps.api.qbo_import.views import import_pull, import_dismiss
 from apps.api.templates_config.views import (
     WorkTemplateViewSet, ServiceItemViewSet,
     AccountingCategoryViewSet, settings_view, units_view, email_verify_view,
@@ -94,6 +95,8 @@ urlpatterns = [
     path('settings/units/', units_view, name='api-settings-units'),
     path('settings/email-verify/', email_verify_view, name='api-settings-email-verify'),
     path('setup/status/', setup_status, name='api-setup-status'),
+    path('qbo/import/pull/', import_pull, name='api-qbo-import-pull'),
+    path('qbo/import/dismiss/', import_dismiss, name='api-qbo-import-dismiss'),
     path('settings/', settings_view, name='api-settings'),
     path('shifts/', include('apps.api.time_tracking.urls')),
     path('expenses/', include('apps.api.expenses.urls')),
