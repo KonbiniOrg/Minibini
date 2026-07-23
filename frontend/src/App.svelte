@@ -1,5 +1,6 @@
 <script>
-  import Router, { location } from 'svelte-spa-router';
+  import Router, { location, replace } from 'svelte-spa-router';
+  import { setupStatus, refreshSetupStatus, areaUnavailable } from './stores/setupStatus.js';
   import Sidebar from './components/Sidebar.svelte';
   import CurrentBlepBand from './components/CurrentBlepBand.svelte';
   import ShiftBand from './components/ShiftBand.svelte';
@@ -147,6 +148,27 @@
   });
   $effect(() => {
     if ($user) sessionExpired = false;
+  });
+
+  // Setup gating: load gate state on auth; redirect greyed areas Home.
+  const GATED_ROUTE_PREFIXES = [
+    ['/jobs', 'jobs'], ['/email', 'email'],
+    ['/purchase-orders', 'purchasing'], ['/catalog', 'catalog'],
+    ['/invoices', 'invoices'], ['/estimates', 'estimates'],
+  ];
+  $effect(() => {
+    if ($user) refreshSetupStatus();
+  });
+  $effect(() => {
+    if (!$user) return;
+    $setupStatus;  // re-run when gates load/refresh
+    const path = $location;
+    for (const [prefix, area] of GATED_ROUTE_PREFIXES) {
+      if (path.startsWith(prefix) && areaUnavailable(area)) {
+        replace('/');
+        return;
+      }
+    }
   });
 
   // Refresh the global shift + current-Blep bands on auth + every SPA

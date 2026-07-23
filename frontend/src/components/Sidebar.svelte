@@ -2,6 +2,8 @@
   import { link, push } from 'svelte-spa-router';
   import { user, logout } from '../stores/auth.js';
   import { canManageFinancials, canManageConfig } from '../stores/permissions.js';
+  import { setupStatus } from '../stores/setupStatus.js';
+  import SetupCallout from './SetupCallout.svelte';
   import { viewMode, toggleViewMode } from '../stores/viewMode.js';
 
   let { open = $bindable(false) } = $props();
@@ -24,6 +26,13 @@
   }
 
   let showFinancials = $derived($canManageFinancials);
+
+  // Setup gating: null areas (not yet loaded) = everything available.
+  let gates = $derived($setupStatus.areas);
+  let hoveredGate = $state(null);
+  function gate(area) {
+    return gates && gates[area] && !gates[area].available ? gates[area] : null;
+  }
 
   let searchQuery = $state('');
   let searchFocused = $state(false);
@@ -56,16 +65,30 @@
 >
   <nav>
     <a href="/" use:link>Home</a>
-    <a href="/jobs/board" use:link>Jobs</a>
+    {#snippet gated(area, href, label)}
+      {#if gate(area)}
+        <span class="nav-disabled"
+              onmouseenter={() => hoveredGate = area}
+              onmouseleave={() => hoveredGate = null}>
+          {label}
+          {#if hoveredGate === area}
+            <SetupCallout message={gate(area).message} />
+          {/if}
+        </span>
+      {:else}
+        <a {href} use:link>{label}</a>
+      {/if}
+    {/snippet}
+    {@render gated('jobs', '/jobs/board', 'Jobs')}
     <a href="/schedule" use:link>Schedule</a>
     <a href="/activity" use:link>Activity</a>
     <a href="/contacts" use:link>Contacts</a>
-    <a href="/email" use:link>Email</a>
-    <a href="/purchase-orders" use:link>Purchasing</a>
-    <a href="/catalog" use:link>Catalog</a>
+    {@render gated('email', '/email', 'Email')}
+    {@render gated('purchasing', '/purchase-orders', 'Purchasing')}
+    {@render gated('catalog', '/catalog', 'Catalog')}
     {#if showFinancials}
       <div class="section-label">Financials</div>
-      <a href="/invoices" use:link>Invoices</a>
+      {@render gated('invoices', '/invoices', 'Invoices')}
       <a href="/expenses" use:link>Expenses</a>
     {/if}
     {#if $canManageConfig}
@@ -248,5 +271,15 @@
   .bottom-area {
     border-top: 1px solid #2d5468;
     padding: 4px 0;
+  }
+  .nav-disabled {
+    display: block;
+    position: relative;
+    padding: 9px 12px;
+    font-size: 15px;
+    white-space: nowrap;
+    color: #8a949e;
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 </style>

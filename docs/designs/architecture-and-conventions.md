@@ -1488,6 +1488,20 @@ the stub resolution flips to signed tokens when that work lands.
 
 ---
 
+
+
+### Setup gating (gradual setup)
+
+`GET /api/setup/status/` (`apps/core/setup_gates.gate_status`) returns
+per-area `{available, message}` from **live predicates** (no stored flag;
+spec: docs/plans/qbo-setup-import-spec.md Part 3). Consumers:
+`stores/setupStatus.js` (refreshed on auth and after gate-flipping
+actions), the Sidebar (unavailable entries render as greyed spans with a
+`SetupCallout` floating hint on hover), an App-level route guard
+(gated prefixes redirect Home), and the Home HelpPanel's
+"Finish setting up" checklist. Areas/predicates live in the endpoint —
+docs must not duplicate the table.
+
 ## 8. Sidebar nav
 
 `frontend/src/components/Sidebar.svelte` is the nav for every SPA page.

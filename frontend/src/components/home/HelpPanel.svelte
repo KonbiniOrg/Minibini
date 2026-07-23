@@ -1,12 +1,37 @@
 <script>
   import { link } from 'svelte-spa-router';
+  import { setupStatus } from '../../stores/setupStatus.js';
 
   // The getting-started tutorial, converted to HTML with in-app links.
   // Source of truth: docs/designs/tutorial.md — keep the two in sync when
   // the tutorial changes (no markdown renderer in the SPA by design).
+
+  // Setup checklist: unmet gates lead the help while setup is incomplete
+  // and vanish once every area is available (same live predicates as the
+  // sidebar; no stored flag).
+  let unmetGates = $derived(
+    $setupStatus.areas
+      ? Object.values($setupStatus.areas).filter((a) => !a.available)
+      : []
+  );
 </script>
 
 <div class="help">
+
+{#if unmetGates.length}
+  <div class="setup-checklist">
+    <h3>Finish setting up</h3>
+    <p>Some areas are still locked until their configuration exists:</p>
+    <ul>
+      {#each unmetGates as gate}
+        <li>{gate.message}</li>
+      {/each}
+    </ul>
+    <p>Start in <a href="/settings" use:link>Settings</a> — connect
+    QuickBooks Online there and pull your existing accounting setup,
+    catalog, and customers to fill most of this in.</p>
+  </div>
+{/if}
 
 <p>Minibini is a job shop management system. It tracks a job from the
 first customer email through quoting, work on the floor, time tracking,
@@ -327,5 +352,12 @@ job, one set of atoms, start to finish.</p>
   }
   .help h3 {
     margin-top: 1.5em;
+  }
+  .setup-checklist {
+    border: 1px solid #d97706;
+    background: #fffbeb;
+    border-radius: 6px;
+    padding: 4px 16px 12px;
+    margin-bottom: 20px;
   }
 </style>
