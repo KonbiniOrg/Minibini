@@ -39,6 +39,8 @@
 </script>
 
 {#snippet table(rows, toggles, data)}
+  <p><small>Consider this a starter set. You will be able to update the
+    categories at any time.</small></p>
   <table class="data-table">
     <thead>
       <tr><th></th><th>Name</th><th>Code</th><th>Taxable</th><th>Items</th>
