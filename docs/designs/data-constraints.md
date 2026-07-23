@@ -45,6 +45,11 @@ Both have **key** as primary key (unique, max 100 chars) and a string **value**.
 | `invoice_number_sequence` | `invoice_counter` | _(retired 2026-07-21 — QBO assigns invoice numbers; rows are harmless leftovers)_ |
 | `po_number_sequence` | `po_counter` |
 
+The live pattern rows, both AppState counters, and `units_list` are **seeded
+by data migration** (`core/0027_seed_setup_defaults`, idempotent, never
+overwrites) — a migrate-only fresh database can create Jobs/POs without
+fixtures (2026-07-23; previously fixture-only, a fresh-tenant trap).
+
 Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
 `{day:02d}`, `{counter:04d}`. Counter values are string-encoded integers.
 Estimates are **not** numbered via `NumberGenerationService` — they derive

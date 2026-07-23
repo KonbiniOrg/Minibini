@@ -277,7 +277,13 @@ def units_view(request):
     if request.method == 'GET':
         if not request.user.is_authenticated:
             return Response(status=403)
-        config = Configuration.objects.get(key='units_list')
+        try:
+            config = Configuration.objects.get(key='units_list')
+        except Configuration.DoesNotExist:
+            # Seeded by migration normally; fall back to the same built-in
+            # list the rest of the app uses rather than 500.
+            from apps.core.units import DEFAULT_UNITS
+            return Response(DEFAULT_UNITS)
         return Response(json.loads(config.value))
 
     # PATCH — replace the units list
