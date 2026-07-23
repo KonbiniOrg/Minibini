@@ -81,7 +81,7 @@ greyed — not tracked state.
   | Catalog | ≥1 AccountingCategory AND ≥1 RateScheme |
   | Contacts & Businesses | always |
   | Jobs (board/list) | ≥1 Contact |
-  | Estimates / Worksheets | Jobs available |
+  | Estimates | Jobs available |
   | Invoices | Jobs available — NOT QBO-connectedness: invoice *viewing* and
     drafting must never be hidden by a lapsed/disconnected QBO (history!);
     QBO and line-item categories are send-time concerns with existing
