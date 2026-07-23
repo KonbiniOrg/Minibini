@@ -120,17 +120,27 @@ greyed — not tracked state.
   shown at the button. QBO Inventory-type items are pulled and offered as
   inventory items (konbini remains the stock authority; their QBO quantity
   tracking is ignored).
-- Re-pull replaces the snapshot. No other state: **no discard memory** —
-  suggestions are recomputed live from snapshot vs database every time a
-  panel renders, so discarding is just unchecking (or dismissing), and a
-  re-pull re-offers everything not yet imported. Changing your mind = pull
-  again.
+- Re-pull replaces the snapshot. **No per-row discard memory** — but there
+  IS per-area dismissal (RM decision 2026-07-23): a Configuration JSON map
+  `qbo_import_dismissed = {area: fetched_at}`. Each panel's suggestions
+  endpoint checks it FIRST: when `dismissed[area]` matches the snapshot's
+  `fetched_at`, it returns immediately — no snapshot parse, no diff — so
+  dismissed areas cost one Configuration read per page load. Dismissal is
+  **total** (the panel and its affordances vanish from the area; no
+  residual "suggestions (N)" reminder) and is set explicitly by the
+  dismiss control or automatically when a commit leaves the area's diff
+  empty. A re-pull writes a new `fetched_at`, which invalidates every
+  dismissal — panels reappear wherever the fresh diff has rows. Changing
+  your mind about anything skipped = pull again (from the canonical
+  Settings → Accounting button).
 
 ## Part 5 — Suggestion panels (the distributed import)
 
-A shared panel component embedded in four existing surfaces. A panel renders
-iff the live diff for its kind is non-empty (or immediately after a pull, to
-show the summary; dismissible; naturally gone on re-navigation when empty).
+A shared panel component embedded in four existing surfaces. A panel
+renders iff its area is not dismissed for the current snapshot AND its
+diff (computed at render time from snapshot vs database — no re-pull
+needed when moving between areas) is non-empty. Immediately after a pull
+the summary shows at the button regardless.
 
 Row states, computed by `qbo_id` match:
 - **new** (not in konbini): unchecked by default for judgment kinds
