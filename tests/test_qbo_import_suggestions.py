@@ -108,6 +108,31 @@ class SchemeSuggestionTest(TestCase):
         rows = QBOSuggestionService.suggestions('schemes')['rows']
         self.assertEqual(rows[0]['state'], 'imported')
 
+    def test_committed_scheme_marks_row_imported_via_map(self):
+        # Scheme commit persists the map; the panel must treat mapped rows
+        # as imported even before the catalog commit creates ServiceItems.
+        from apps.qbo.import_services import (
+            QBOImportCommitService, QBOImportState)
+        QBOImportCommitService.commit_schemes([
+            {'name': 'Concrete', 'rate': '95.0', 'algorithm': 'entered_qty',
+             'unit_label': 'ea', 'accounting_category': self.cat.pk,
+             'qbo_item_id': '11', 'collapse_group': None}])
+        QBOImportState.undismiss('schemes')   # simulate a re-pull
+        rows = QBOSuggestionService.suggestions('schemes')['rows']
+        self.assertEqual(rows[0]['state'], 'imported')
+
+    def test_mapped_but_deleted_scheme_reverts_to_new(self):
+        from apps.qbo.import_services import (
+            QBOImportCommitService, QBOImportState)
+        QBOImportCommitService.commit_schemes([
+            {'name': 'Concrete', 'rate': '95.0', 'algorithm': 'entered_qty',
+             'unit_label': 'ea', 'accounting_category': self.cat.pk,
+             'qbo_item_id': '11', 'collapse_group': None}])
+        RateScheme.objects.get(name='Concrete').delete()
+        QBOImportState.undismiss('schemes')
+        rows = QBOSuggestionService.suggestions('schemes')['rows']
+        self.assertEqual(rows[0]['state'], 'new')
+
 
 class CatalogSuggestionTest(TestCase):
     def setUp(self):

@@ -119,6 +119,71 @@ class CommitEndpointsTest(TestCase):
             AccountingCategory.objects.filter(code='SVC').exists())
 
 
+class CommitSchemesUpsertTest(TestCase):
+    """Re-applying the panel must update mapped schemes, never duplicate."""
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(code='SVC', name='Service')
+        store_snapshot()
+
+    def _row(self, **overrides):
+        row = {'name': 'Concrete', 'rate': '0', 'algorithm': 'entered_qty',
+               'unit_label': 'ea', 'accounting_category': self.cat.pk,
+               'qbo_item_id': '11', 'collapse_group': None}
+        row.update(overrides)
+        return row
+
+    def test_recommit_updates_unreferenced_scheme_in_place(self):
+        QBOImportCommitService.commit_schemes([self._row()])
+        mapping = QBOImportCommitService.commit_schemes([
+            self._row(rate='95.0', algorithm='elapsed_time',
+                      unit_label='hours')])
+        self.assertEqual(RateScheme.objects.count(), 1)
+        scheme = RateScheme.objects.get()
+        self.assertEqual(scheme.rate, Decimal('95.0'))
+        self.assertEqual(scheme.algorithm, RateScheme.ELAPSED_TIME)
+        self.assertEqual(scheme.unit_label, 'hours')
+        self.assertEqual(mapping['11'], scheme.pk)
+
+    def test_recommit_referenced_scheme_supersedes_and_repoints(self):
+        from apps.estimates.models import ServiceItem
+        mapping = QBOImportCommitService.commit_schemes([
+            self._row(rate='95.0')])
+        old = RateScheme.objects.get(pk=mapping['11'])
+        svc = ServiceItem.objects.create(
+            template_name='Concrete', rate_scheme=old, qbo_id='11')
+        mapping2 = QBOImportCommitService.commit_schemes([
+            self._row(rate='110.0')])
+        old.refresh_from_db()
+        svc.refresh_from_db()
+        self.assertIsNotNone(old.replaced_by_id)
+        self.assertEqual(mapping2['11'], old.replaced_by_id)
+        self.assertEqual(svc.rate_scheme_id, old.replaced_by_id)
+        self.assertEqual(svc.rate_scheme.rate, Decimal('110.0'))
+
+    def test_recommit_referenced_scheme_unchanged_is_noop(self):
+        from apps.estimates.models import ServiceItem
+        mapping = QBOImportCommitService.commit_schemes([
+            self._row(rate='95.0')])
+        old = RateScheme.objects.get(pk=mapping['11'])
+        ServiceItem.objects.create(
+            template_name='Concrete', rate_scheme=old, qbo_id='11')
+        QBOImportCommitService.commit_schemes([self._row(rate='95.0')])
+        old.refresh_from_db()
+        self.assertIsNone(old.replaced_by_id)     # no version churn
+        self.assertEqual(RateScheme.objects.count(), 1)
+
+    def test_create_name_collision_is_contract_400_not_500(self):
+        RateScheme.objects.create(
+            name='Concrete', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('50.0'), unit_label='ea',
+            accounting_category=self.cat)
+        with self.assertRaises(ValidationError) as ctx:
+            QBOImportCommitService.commit_schemes([self._row()])
+        self.assertIn('name', ctx.exception.message_dict)
+        self.assertEqual(RateScheme.objects.count(), 1)
+
+
 class CommitValidationTest(TestCase):
     def test_scheme_without_category_is_contract_400_not_500(self):
         from django.core.exceptions import ValidationError as DjangoVE

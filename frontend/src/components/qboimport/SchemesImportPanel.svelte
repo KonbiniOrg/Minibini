@@ -117,7 +117,9 @@
     </tbody>
   </table>
   <p><small>Rows sharing a group name share ONE scheme (first row names it).
-    Same-price rows are adjacent to make sharing easy to spot.</small></p>
+    Same-price rows are adjacent to make sharing easy to spot.
+    Already-imported rows are locked here — edit those schemes in the
+    manager below instead.</small></p>
 {/snippet}
 
 <SuggestionPanel area="schemes" title="Rate scheme suggestions from QuickBooks"

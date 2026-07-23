@@ -255,6 +255,18 @@ def _category_by_income_account(snapshot):
     return mapping
 
 
+def _load_scheme_map():
+    """{qbo_item_id: RateScheme pk} persisted at scheme commit — the durable
+    record of which QBO service items have already been imported as schemes."""
+    try:
+        return json.loads(Configuration.objects.get(
+            key='qbo_import_scheme_map').value)
+    except Configuration.DoesNotExist:
+        return {}
+    except (TypeError, ValueError):
+        return {}
+
+
 class QBOSuggestionService:
     """Live diffs of the snapshot against the database, per panel area.
 
@@ -346,8 +358,15 @@ class QBOSuggestionService:
     @staticmethod
     def _schemes(snapshot):
         from apps.estimates.models import ServiceItem
+        from apps.jobs.models import RateScheme
         imported_ids = set(ServiceItem.objects.exclude(qbo_id='')
                            .values_list('qbo_id', flat=True))
+        # A mapped item whose scheme still exists (even superseded) was
+        # imported by a scheme commit — ServiceItems only appear later, at
+        # the catalog commit, so the map is the authoritative marker here.
+        scheme_pks = set(RateScheme.objects.values_list('pk', flat=True))
+        imported_ids |= {qid for qid, pk in _load_scheme_map().items()
+                         if pk in scheme_pks}
         category_map = _category_by_income_account(snapshot)
         rows = []
         for item in snapshot['items']:
@@ -385,14 +404,7 @@ class QBOSuggestionService:
         scheme_by_name = dict(
             RateScheme.objects.filter(replaced_by__isnull=True)
             .values_list('name', 'pk'))
-        scheme_map = {}
-        try:
-            scheme_map = json.loads(Configuration.objects.get(
-                key='qbo_import_scheme_map').value)
-        except Configuration.DoesNotExist:
-            pass
-        except (TypeError, ValueError):
-            pass
+        scheme_map = _load_scheme_map()
         live = set(RateScheme.objects.filter(replaced_by__isnull=True)
                    .values_list('pk', flat=True))
         category_map = _category_by_income_account(snapshot)
@@ -572,11 +584,94 @@ class QBOImportCommitService:
                 + '. Commit your accounting categories first if the '
                   'pulldowns are empty.']})
 
+        from apps.core.models import AccountingCategory
+        from apps.core.services import ConfigurationService
+        from apps.estimates.models import ServiceItem
+
+        stored_map = _load_scheme_map()
+
+        def current(pk):
+            """The live end of pk's supersession chain, or None if gone."""
+            try:
+                scheme = RateScheme.objects.get(pk=pk)
+            except RateScheme.DoesNotExist:
+                return None
+            while scheme.replaced_by_id:
+                scheme = scheme.replaced_by
+            return scheme
+
+        # Rows whose item was committed before update their existing scheme;
+        # only genuinely new rows insert — so a stale panel or a re-apply
+        # can never duplicate.
+        targets = {row['qbo_item_id']: current(stored_map[row['qbo_item_id']])
+                   if row['qbo_item_id'] in stored_map else None
+                   for row in rows}
+        target_pks = {s.pk for s in targets.values() if s is not None}
+        taken_names = set(RateScheme.objects.exclude(pk__in=target_pks)
+                          .values_list('name', flat=True))
+        collisions = []
+        for row in rows:
+            if targets[row['qbo_item_id']] is not None:
+                continue
+            if row.get('collapse_group'):     # group members share one row
+                continue
+            if row['name'] in taken_names:
+                collisions.append(row['name'])
+            taken_names.add(row['name'])
+        if collisions:
+            raise ValidationError({'name': [
+                'A rate scheme with this name already exists: '
+                + ', '.join(collisions)
+                + '. Edit it in the scheme manager below, or pick a '
+                  'different name.']})
+
         mapping = {}
         group_schemes = {}
+        handled = {}                # original pk → scheme updated this call
         with transaction.atomic():
             for row in rows:
                 group = row.get('collapse_group') or None
+                target = targets[row['qbo_item_id']]
+                if target is not None:
+                    if target.pk in handled:
+                        target = handled[target.pk]
+                    else:
+                        original_pk = target.pk
+                        fields = {
+                            'name': row['name'],
+                            'algorithm': row['algorithm'],
+                            'rate': Decimal(str(row['rate'] or '0')),
+                            'unit_label': row['unit_label'],
+                            'accounting_category_id': row['accounting_category'],
+                        }
+                        changed = any(getattr(target, f) != v
+                                      for f, v in fields.items())
+                        if changed and target.is_referenced():
+                            # Frozen once referenced: new pricing is a new
+                            # version. supersede() does NOT repoint catalog
+                            # users, so repoint ServiceItems explicitly.
+                            new = ConfigurationService.supersede_rate_scheme(
+                                target,
+                                name=row['name'],
+                                algorithm=row['algorithm'],
+                                rate=fields['rate'],
+                                unit_label=row['unit_label'],
+                                accounting_category=AccountingCategory.objects
+                                    .get(pk=row['accounting_category']),
+                            )
+                            for svc in ServiceItem.objects.filter(
+                                    rate_scheme=target):
+                                svc.rate_scheme = new
+                                svc.save()
+                            target = new
+                        elif changed:
+                            ConfigurationService.update_rate_scheme(
+                                target, **fields)
+                        handled[original_pk] = target
+                    mapping[row['qbo_item_id']] = target.pk
+                    if group and group not in group_schemes:
+                        group_schemes[group] = target
+                    continue
                 if group and group in group_schemes:
                     mapping[row['qbo_item_id']] = group_schemes[group].pk
                     continue
@@ -592,19 +687,12 @@ class QBOImportCommitService:
                 mapping[row['qbo_item_id']] = scheme.pk
             # Persist the linkage so the catalog panel can bind services to
             # their schemes reliably (name-matching breaks for collapsed
-            # groups and renames).
-            existing = {}
-            try:
-                existing = json.loads(Configuration.objects.get(
-                    key='qbo_import_scheme_map').value)
-            except Configuration.DoesNotExist:
-                pass
-            except (TypeError, ValueError):
-                pass
-            existing.update(mapping)
+            # groups and renames), and so re-applies update instead of
+            # duplicating.
+            stored_map.update(mapping)
             Configuration.objects.update_or_create(
                 key='qbo_import_scheme_map',
-                defaults={'value': json.dumps(existing)})
+                defaults={'value': json.dumps(stored_map)})
         QBOImportCommitService._auto_dismiss('schemes')
         return mapping
 
