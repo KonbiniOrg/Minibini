@@ -478,6 +478,12 @@ class EmailServiceTest(TestCase):
     )
     def test_email_service_initialization(self):
         """Test EmailService initialization with settings."""
+        # The setup migration seeds gmail server defaults into Configuration,
+        # which outrank env settings — clear them to test the env path.
+        from apps.core.models import Configuration
+        Configuration.objects.filter(
+            key__in=('email_imap_server', 'email_smtp_host',
+                     'email_smtp_port')).delete()
         service = EmailService()
         self.assertEqual(service.imap_server, 'imap.example.com')
         self.assertEqual(service.email, 'test@example.com')
