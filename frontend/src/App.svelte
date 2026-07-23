@@ -157,9 +157,6 @@
     ['/invoices', 'invoices'], ['/estimates', 'estimates'],
   ];
   $effect(() => {
-    if ($user) refreshSetupStatus();
-  });
-  $effect(() => {
     if (!$user) return;
     $setupStatus;  // re-run when gates load/refresh
     const path = $location;
@@ -171,14 +168,15 @@
     }
   });
 
-  // Refresh the global shift + current-Blep bands on auth + every SPA
-  // route change.
+  // Refresh the global shift + current-Blep bands and the setup gate
+  // state on auth + every SPA route change (standard refresh pattern).
   $effect(() => {
     if ($user) {
       // Touch $location so this effect re-runs on navigation.
       $location;
       refreshCurrentBlep();
       refreshCurrentShift();
+      refreshSetupStatus();
     } else {
       currentBlep.set(null);
       currentShift.set(null);

@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn(), post: vi.fn() } }));
+vi.mock('@/stores/setupStatus.js', () => ({ refreshSetupStatus: vi.fn() }));
 
 import { api } from '@/lib/api.js';
+import { refreshSetupStatus } from '@/stores/setupStatus.js';
 import EmailAccountSettings from '@/components/settings/EmailAccountSettings.svelte';
 
 beforeEach(() => {
@@ -34,6 +36,7 @@ describe('EmailAccountSettings', () => {
       email_password: expect.anything(),
     }));
     expect(await findByText('Email account saved.')).toBeInTheDocument();
+    expect(refreshSetupStatus).toHaveBeenCalled();
   });
 
   it('renders both verify results', async () => {

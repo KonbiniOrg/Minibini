@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { refreshSetupStatus } from '../../stores/setupStatus.js';
 
   // The tenant's mail account (drives both IMAP fetch and SMTP send).
   // Stored in Configuration; env settings remain the fallback until saved.
@@ -37,6 +38,7 @@
       await api.patch('/api/settings/', payload);
       saveMessage = 'Email account saved.';
       if (email_password !== '') { passwordSet = true; email_password = ''; }
+      refreshSetupStatus();  // ungrey the Email area immediately
     } catch (err) {
       errors = (err.data && typeof err.data === 'object')
         ? err.data : { _general: err.message || 'Save failed' };
@@ -48,6 +50,7 @@
     verifyResult = null;
     try {
       verifyResult = await api.post('/api/settings/email-verify/', {});
+      refreshSetupStatus();
     } catch (err) {
       verifyResult = {
         imap: { ok: false, error: err.message || 'Verify failed' },
