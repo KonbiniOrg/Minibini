@@ -149,6 +149,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/home/` | `IsAuthenticated` | — | |
 | `/api/settings/` | `IsAuthenticated` | `can_manage_config` | including `/api/settings/units/` |
 | `/api/setup/status/` | GET | IsAuthenticated | Per-area setup gate availability + messages (sidebar/Home Help) |
+| `/api/qbo/import/*` | POST/GET | per area: config (categories/schemes), financials (catalog), jobs (contacts) | QBO snapshot pull, suggestions, commits, dismissals |
 | `/api/qbo/*` | `can_manage_config` | `can_manage_config` | OAuth + connection state — see `quickbooks-integration.md` |
 
 #### Special cases

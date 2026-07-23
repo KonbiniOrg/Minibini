@@ -98,6 +98,47 @@ JSON list of payment accounts (Bank, Credit Card, Other Current Asset) used by t
 
 Read via `QBOExpenseSyncService._load_payment_accounts()`; individual lookup via `_lookup_account(payment_account_id)` (raises `ValueError` if not configured). Used by the expense/reimbursement pushes only (the bill-payment push that also read it was retired 2026-07-23).
 
+## Setup-time data import (snapshot + suggestion panels)
+
+Spec: `docs/plans/qbo-setup-import-spec.md`. Code: `apps/qbo/import_services.py`,
+endpoints in `apps/api/qbo_import/views.py`.
+
+- **Snapshot**: `QBOSnapshotService.pull(client)` fetches sellable Items
+  (Service/NonInventory/Inventory; Category rows excluded), income and
+  expense/COGS accounts, Customers, Vendors, Terms — paginated
+  (`start_position`/`max_results`) — into one JSON blob
+  (`Configuration['qbo_import_snapshot']`, `fetched_at` inside).
+- **Endpoints** (area ∈ categories/schemes/catalog/contacts; permission per
+  area: config/config/financials/jobs):
+  `POST /api/qbo/import/pull/` (refreshes the shared snapshot, clears ONLY
+  the pulling area's dismissal, returns a diff summary),
+  `POST /api/qbo/import/dismiss/`,
+  `GET /api/qbo/import/suggestions/<area>/`,
+  `POST /api/qbo/import/commit/{categories,schemes,catalog,contacts}/`.
+- **Dismissal** (`Configuration['qbo_import_dismissed']`, `{area: true}`):
+  sticky across pulls made elsewhere; total for the area (panel gone; the
+  area's pull button remains); auto-set when a commit leaves the area's
+  diff empty. The suggestions endpoint short-circuits on the flag before
+  any snapshot parse.
+- **Suggestions** (`QBOSuggestionService`): live snapshot-vs-DB diffs. Row
+  states: `new` / `imported` (matched by the qbo_id-family field, shown
+  inert) / `changed` (mirrored fields drifted → "update" action).
+  Categories cluster items by `IncomeAccountRef` (+ itemless income
+  accounts); item→category resolution runs item → income account → the
+  committed kAC whose fallback Item shares that account.
+- **Commits** (`QBOImportCommitService`): categories (atomic, unique-code
+  guarded); schemes (one per row; `collapse_group` rows share one);
+  catalog (inventory = field overwrites, **service price changes go
+  through RateScheme supersession** and repoint the ServiceItem);
+  contacts (terms → customers → vendors; a vendor whose name matches an
+  existing Business adopts `qbo_vendor_id` onto it — one Business, both
+  roles).
+- **SPA**: shared `SuggestionPanel.svelte` + per-kind wrappers embedded in
+  Settings → Accounting (categories), Settings → pricing/RateSchemeManager
+  (schemes), Catalog (items), Contacts (customers/vendors/terms); each
+  surface keeps a permanently-visible `QboPullButton` with the shared
+  last-pull timestamp (also in `GET /api/setup/status/`).
+
 ## Gotcha: QBO's raw JSON field capitalization is inconsistent
 
 When reading QBO's raw JSON directly (bypassing the SDK's object mapping —

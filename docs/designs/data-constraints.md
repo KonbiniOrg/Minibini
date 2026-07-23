@@ -45,6 +45,10 @@ Both have **key** as primary key (unique, max 100 chars) and a string **value**.
 | `invoice_number_sequence` | `invoice_counter` | _(retired 2026-07-21 — QBO assigns invoice numbers; rows are harmless leftovers)_ |
 | `po_number_sequence` | `po_counter` |
 
+QBO import state (2026-07-23): `qbo_import_snapshot` (the pulled JSON blob,
+`fetched_at` inside) and `qbo_import_dismissed` (`{area: true}` sticky
+per-area panel dismissals) — see quickbooks-integration.md.
+
 Per-tenant email account (2026-07-23, Settings → Email; Configuration-first
 with env-settings fallback via `apps/core/email_account.py`):
 `email_imap_server`, `email_address`, `email_password`, `email_smtp_host`,
