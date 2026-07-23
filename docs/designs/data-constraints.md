@@ -48,7 +48,9 @@ Both have **key** as primary key (unique, max 100 chars) and a string **value**.
 Per-tenant email account (2026-07-23, Settings → Email; Configuration-first
 with env-settings fallback via `apps/core/email_account.py`):
 `email_imap_server`, `email_address`, `email_password`, `email_smtp_host`,
-`email_smtp_port`. `email_configured()` (imap+address+password) gates the
+`email_smtp_port` — the two server hosts and port are **seeded gmail
+defaults** (migration 0027; tenant supplies address+password).
+`email_configured()` (imap+address+password) gates the
 Email area; `POST /api/settings/email-verify/` live-tests both directions.
 
 The live pattern rows, both AppState counters, and `units_list` are **seeded

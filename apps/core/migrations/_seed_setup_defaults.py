@@ -14,6 +14,11 @@ APPSTATE_DEFAULTS = {
 CONFIGURATION_DEFAULTS = {
     'job_number_sequence': 'JOB-{year}-{counter:04d}',
     'po_number_sequence': 'PO-{year}-{counter:04d}',
+    # Email service defaults (gmail); the tenant supplies address+password.
+    # Seeded as REAL values, not UI placeholders — what you see works.
+    'email_imap_server': 'imap.gmail.com',
+    'email_smtp_host': 'smtp.gmail.com',
+    'email_smtp_port': '587',
     # units_list is JSON-encoded at seed time from DEFAULT_UNITS below.
 }
 

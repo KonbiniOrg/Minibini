@@ -19,6 +19,13 @@ DB_KEYS = {
 
 
 class EmailAccountResolutionTest(TestCase):
+    def setUp(self):
+        # The setup migration seeds gmail server defaults; remove them so
+        # these tests exercise pure resolution order.
+        Configuration.objects.filter(
+            key__in=('email_imap_server', 'email_smtp_host',
+                     'email_smtp_port')).delete()
+
     def _seed_db_keys(self):
         for k, v in DB_KEYS.items():
             Configuration.objects.create(key=k, value=v)
@@ -77,7 +84,7 @@ class EmailVerifyEndpointTest(TestCase):
             username='cfg', password='x', is_superuser=True)
         self.client.force_authenticate(user=self.user)
         for k, v in DB_KEYS.items():
-            Configuration.objects.create(key=k, value=v)
+            Configuration.objects.update_or_create(key=k, defaults={'value': v})
 
     @patch('apps.api.templates_config.views.get_connection')
     @patch('apps.api.templates_config.views.MailBox')

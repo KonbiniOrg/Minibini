@@ -23,6 +23,16 @@ class SeededDefaultsTest(TestCase):
             Configuration.objects.get(key='po_number_sequence').value,
             'PO-{year}-{counter:04d}')
 
+    def test_email_service_defaults_seeded(self):
+        self.assertEqual(
+            Configuration.objects.get(key='email_imap_server').value,
+            'imap.gmail.com')
+        self.assertEqual(
+            Configuration.objects.get(key='email_smtp_host').value,
+            'smtp.gmail.com')
+        self.assertEqual(
+            Configuration.objects.get(key='email_smtp_port').value, '587')
+
     def test_units_list_seeded(self):
         self.assertEqual(
             json.loads(Configuration.objects.get(key='units_list').value),

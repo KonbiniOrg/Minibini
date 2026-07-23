@@ -55,7 +55,8 @@ class GatePredicateTest(TestCase):
         for key, value in (('email_imap_server', 'imap.x.com'),
                            ('email_address', 'a@x.com'),
                            ('email_password', 'p')):
-            Configuration.objects.create(key=key, value=value)
+            Configuration.objects.update_or_create(
+                key=key, defaults={'value': value})
         self.assertTrue(gate_status()['areas']['email']['available'])
 
     def test_available_areas_have_empty_message(self):
