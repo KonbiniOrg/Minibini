@@ -140,7 +140,7 @@
           <th>Taxable</th>
           <th>Active</th>
           {#if qboAccounts || loadingQBO}
-            <th>QBO Item (Income)</th>
+            <th>Fallback QBO Item</th>
             <th>QBO Expense Account</th>
           {/if}
           <th>Actions</th>

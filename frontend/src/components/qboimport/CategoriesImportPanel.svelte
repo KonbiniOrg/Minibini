@@ -44,7 +44,7 @@
   <table class="data-table">
     <thead>
       <tr><th></th><th>Name</th><th>Code</th><th>Taxable</th><th>Items</th>
-          <th>Fallback QBO item</th><th>Expense account</th></tr>
+          <th>Fallback QBO Item</th><th>QBO Expense Account</th></tr>
     </thead>
     <tbody>
       {#each rows as row (row.income_account.qbo_id)}
