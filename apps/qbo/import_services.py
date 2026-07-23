@@ -479,3 +479,74 @@ class QBOSuggestionService:
                 state = 'imported'
             rows.append({'kind': 'term', 'state': state, **t})
         return rows
+
+
+class QBOImportCommitService:
+    """Applies user-confirmed suggestion rows. Each commit is atomic for
+    its kind; after a commit, if the area's diff is empty the area is
+    auto-dismissed (finished == dismissed)."""
+
+    @staticmethod
+    def _auto_dismiss(area):
+        if not QBOSuggestionService.suggestions(area)['rows']:
+            QBOImportState.dismiss(area)
+        else:
+            remaining = QBOSuggestionService.suggestions(area)['rows']
+            if all(r.get('state') == 'imported' for r in remaining):
+                QBOImportState.dismiss(area)
+
+    @staticmethod
+    def commit_categories(rows):
+        from django.core.exceptions import ValidationError
+
+        from apps.core.models import AccountingCategory
+        created = []
+        with transaction.atomic():
+            for row in rows:
+                category = AccountingCategory(
+                    name=row['name'],
+                    code=row['code'],
+                    taxable=bool(row.get('taxable', True)),
+                    qbo_item_id=row.get('qbo_item_id', '') or '',
+                    qbo_expense_account_id=(
+                        row.get('qbo_expense_account_id', '') or ''),
+                )
+                try:
+                    category.validate_unique()
+                except ValidationError:
+                    raise ValidationError(
+                        {'code': [f"Duplicate category code: {row['code']}"]})
+                category.save()
+                created.append(category)
+        QBOImportCommitService._auto_dismiss('categories')
+        return created
+
+    @staticmethod
+    def commit_schemes(rows):
+        """One RateScheme per row, except rows sharing a collapse_group,
+        which share ONE scheme (first row wins the name/rate/etc.).
+        Returns {qbo_item_id: scheme_pk} for the catalog panel handoff."""
+        from decimal import Decimal
+
+        from apps.jobs.models import RateScheme
+
+        mapping = {}
+        group_schemes = {}
+        with transaction.atomic():
+            for row in rows:
+                group = row.get('collapse_group') or None
+                if group and group in group_schemes:
+                    mapping[row['qbo_item_id']] = group_schemes[group].pk
+                    continue
+                scheme = RateScheme.objects.create(
+                    name=row['name'],
+                    algorithm=row['algorithm'],
+                    rate=Decimal(str(row['rate'] or '0')),
+                    unit_label=row['unit_label'],
+                    accounting_category_id=row['accounting_category'],
+                )
+                if group:
+                    group_schemes[group] = scheme
+                mapping[row['qbo_item_id']] = scheme.pk
+        QBOImportCommitService._auto_dismiss('schemes')
+        return mapping

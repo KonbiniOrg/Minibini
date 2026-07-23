@@ -10,7 +10,7 @@ from rest_framework.response import Response
 
 from apps.qbo.import_services import (
     QBOImportState, QBOImportSummary, QBOSnapshotService,
-    QBOSuggestionService,
+    QBOSuggestionService, QBOImportCommitService,
 )
 from apps.qbo.services import QBOService
 
@@ -64,3 +64,24 @@ def import_suggestions(request, area):
     if not request.user.has_perm(AREA_PERMS[area]):
         return Response(status=403)
     return Response(QBOSuggestionService.suggestions(area))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def import_commit_categories(request):
+    if not request.user.has_perm(AREA_PERMS['categories']):
+        return Response(status=403)
+    created = QBOImportCommitService.commit_categories(
+        request.data.get('rows') or [])
+    return Response({'created': len(created)})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def import_commit_schemes(request):
+    if not request.user.has_perm(AREA_PERMS['schemes']):
+        return Response(status=403)
+    mapping = QBOImportCommitService.commit_schemes(
+        request.data.get('rows') or [])
+    return Response({'created': len(set(mapping.values())),
+                     'scheme_pk_by_qbo_item_id': mapping})
