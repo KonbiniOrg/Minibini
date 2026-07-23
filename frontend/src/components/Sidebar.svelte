@@ -279,8 +279,8 @@
     padding: 9px 12px;
     font-size: 15px;
     white-space: nowrap;
-    color: #8a949e;
-    opacity: 0.6;
+    color: #6b7480;   /* greyed by color only — an opacity here would
+                         bleed onto the SetupCallout child */
     cursor: not-allowed;
   }
 </style>

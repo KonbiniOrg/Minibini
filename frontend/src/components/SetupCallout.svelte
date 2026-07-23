@@ -15,16 +15,18 @@
     left: calc(100% + 18px);
     top: 50%;
     transform: translateY(-50%);
-    width: 340px;
+    width: 420px;
     background: #b45309;
     color: #fffbeb;
-    border: 2px solid #f59e0b;
-    padding: 16px 18px;
-    border-radius: 10px;
-    font-size: 1.05rem;
+    border: 3px solid #f59e0b;
+    padding: 20px 22px;
+    border-radius: 12px;
+    font-size: 1.15rem;
     font-weight: 500;
-    line-height: 1.45;
-    box-shadow: 0 6px 22px rgba(0,0,0,0.35);
+    line-height: 1.5;
+    white-space: normal;      /* undo the nav's nowrap so text wraps */
+    overflow-wrap: break-word;
+    box-shadow: 0 8px 26px rgba(0,0,0,0.4);
     z-index: 50;
   }
   .pointer {
@@ -32,7 +34,7 @@
     right: 100%;
     top: 50%;
     transform: translateY(-50%);
-    border: 14px solid transparent;
+    border: 18px solid transparent;
     border-right-color: #f59e0b;
   }
 </style>
