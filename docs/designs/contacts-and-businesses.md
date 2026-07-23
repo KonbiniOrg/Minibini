@@ -400,6 +400,13 @@ full tag list (`/api/tags/?page_size=200`) to render filter chips —
 
 ## PaymentTerms
 
+
+PaymentTerms gained real fields 2026-07-23 (previously a `term_id`-only
+stub): `name` (CharField 100), `days` (nullable positive int), `qbo_id`
+(QBO Term mirror, '' = not imported). `__str__` = name. The BusinessForm
+terms select labels options by name. No management CRUD UI exists yet —
+see LATER.md.
+
 `apps/contacts/models.py` — `PaymentTerms`. Currently a stub: only
 `term_id` (AutoField PK), `db_table='terms'`. No net-terms fields (e.g. "Net
 30") exist yet on the model itself, despite `Business.terms` (FK,

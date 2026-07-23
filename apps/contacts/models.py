@@ -277,7 +277,13 @@ class Business(models.Model):
 
 class PaymentTerms(models.Model):
     term_id = models.AutoField(primary_key=True)
-    # Additional fields not visible in diagram
+    name = models.CharField(max_length=100, blank=True, default='')
+    days = models.PositiveIntegerField(null=True, blank=True)
+    # QBO Term mirror ('' = not imported from QBO)
+    qbo_id = models.CharField(max_length=50, blank=True, default='')
+
+    def __str__(self):
+        return self.name or f'Terms {self.term_id}'
 
     class Meta:
         db_table = 'terms'
