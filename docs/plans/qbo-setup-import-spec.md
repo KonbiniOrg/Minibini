@@ -103,12 +103,14 @@ greyed — not tracked state.
 
 ## Part 4 — QBO snapshot pull
 
-- Button **"Pull current QBO settings"** in Settings → Accounting → the
-  existing QuickBooks Online section, with the **last-pull timestamp
-  displayed beside it** — and repeated inside each suggestion panel (§5),
-  so every area can refresh without a Settings round-trip. All buttons
-  write the same shared snapshot. Requires `can_manage_config` (Settings
-  button) / the area's own permission (panel buttons) + active connection.
+- A **"Pull from QuickBooks" button lives permanently in each of the four
+  panel surfaces** (Settings → Accounting's QBO section, Settings →
+  RateSchemeManager, Catalog, Contacts & Businesses), each showing the
+  shared **last-pull timestamp** — visible even while that area's panel is
+  dismissed, so the way back is discoverable in the area itself. All
+  buttons fetch and store the SAME shared snapshot; what differs is the
+  local effect (see dismissal semantics below). Requires the area's own
+  permission + active connection.
 - `POST /api/qbo/import/pull` fetches in one sweep: sellable Items (Service /
   NonInventory / Inventory types, with `IncomeAccountRef`, `ExpenseAccountRef`
   where two-sided, UnitPrice, descriptions, tax defaults), income accounts,
@@ -121,18 +123,23 @@ greyed — not tracked state.
   inventory items (konbini remains the stock authority; their QBO quantity
   tracking is ignored).
 - Re-pull replaces the snapshot. **No per-row discard memory** — but there
-  IS per-area dismissal (RM decision 2026-07-23): a Configuration JSON map
-  `qbo_import_dismissed = {area: fetched_at}`. Each panel's suggestions
-  endpoint checks it FIRST: when `dismissed[area]` matches the snapshot's
-  `fetched_at`, it returns immediately — no snapshot parse, no diff — so
-  dismissed areas cost one Configuration read per page load. Dismissal is
-  **total** (the panel and its affordances vanish from the area; no
-  residual "suggestions (N)" reminder) and is set explicitly by the
-  dismiss control or automatically when a commit leaves the area's diff
-  empty. A re-pull writes a new `fetched_at`, which invalidates every
-  dismissal — panels reappear wherever the fresh diff has rows. Changing
-  your mind about anything skipped = pull again (from the canonical
-  Settings → Accounting button).
+  IS per-area dismissal (RM decisions 2026-07-23): a Configuration JSON
+  map `qbo_import_dismissed = {area: true}`, one entry per panel area
+  (categories, schemes, catalog items, contacts). Semantics:
+  - Each panel's suggestions endpoint checks the flag FIRST: a dismissed
+    area returns immediately — no snapshot parse, no diff — so dismissed
+    areas cost one Configuration read per page load.
+  - Dismissal is **total** for the panel (no residual "suggestions (N)"
+    reminder; only the area's pull button remains). Set explicitly by the
+    dismiss control, or automatically when a commit leaves the area's
+    diff empty.
+  - **Dismissal is sticky across pulls made elsewhere**: pulling from an
+    area refreshes the shared snapshot and clears ONLY that area's flag.
+    A pull from Catalog never resurfaces the Settings or Contacts panels.
+  - Un-dismissed areas always diff against the current snapshot, so any
+    pull can surface panels in areas that were never dismissed — which
+    also covers the very first pull (no flags set → every panel with
+    rows appears, wherever the pull originated).
 
 ## Part 5 — Suggestion panels (the distributed import)
 
