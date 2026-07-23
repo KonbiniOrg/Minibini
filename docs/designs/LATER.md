@@ -997,3 +997,15 @@ Cross-cutting UI/API conventions and shared components.
   survives hovering onto it, so a link is workable; needs hint text/link
   pairs in `frontend/src/lib/setupHints.js`.
   _Done when:_ each callout carries a working "take me there" link.
+
+- **QBO import panels need a usability pass.** — _added 2026-07-23_
+  RM's first hands-on run (against the Intuit sample company) found the flow
+  "very confusing and unclear" despite the agreed design: barren
+  parent-account category candidates read as noise, the collapse-group
+  column needs explaining, unit/scheme columns needed fixes, and the
+  step-to-step handoff (categories → schemes → catalog) is not
+  self-narrating. Also open: cluster-by-top-level-account toggle (pending
+  RM's accountant's read on real-world Item-tree usage), and a possible
+  marked name-match guess for the expense-account pulldown.
+  _Done when:_ a dedicated usability revision of the four panels ships,
+  informed by RM's full walkthrough notes and the accountant conversation.

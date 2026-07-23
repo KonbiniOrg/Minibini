@@ -385,6 +385,16 @@ class QBOSuggestionService:
         scheme_by_name = dict(
             RateScheme.objects.filter(replaced_by__isnull=True)
             .values_list('name', 'pk'))
+        scheme_map = {}
+        try:
+            scheme_map = json.loads(Configuration.objects.get(
+                key='qbo_import_scheme_map').value)
+        except Configuration.DoesNotExist:
+            pass
+        except (TypeError, ValueError):
+            pass
+        live = set(RateScheme.objects.filter(replaced_by__isnull=True)
+                   .values_list('pk', flat=True))
         category_map = _category_by_income_account(snapshot)
         inv_by_qbo = {i.qbo_id: i for i in
                       InventoryItem.objects.exclude(qbo_id='')}
@@ -411,7 +421,10 @@ class QBOSuggestionService:
                     'name': item['name'],
                     'description': item['description'],
                     'rate': item['unit_price'],
-                    'rate_scheme_default': scheme_by_name.get(item['name']),
+                    'rate_scheme_default': (
+                        scheme_map.get(item['qbo_id'])
+                        if scheme_map.get(item['qbo_id']) in live
+                        else scheme_by_name.get(item['name'])),
                     'state': state,
                 })
             else:  # NonInventory + Inventory → konbini inventory items
@@ -566,6 +579,21 @@ class QBOImportCommitService:
                 if group:
                     group_schemes[group] = scheme
                 mapping[row['qbo_item_id']] = scheme.pk
+            # Persist the linkage so the catalog panel can bind services to
+            # their schemes reliably (name-matching breaks for collapsed
+            # groups and renames).
+            existing = {}
+            try:
+                existing = json.loads(Configuration.objects.get(
+                    key='qbo_import_scheme_map').value)
+            except Configuration.DoesNotExist:
+                pass
+            except (TypeError, ValueError):
+                pass
+            existing.update(mapping)
+            Configuration.objects.update_or_create(
+                key='qbo_import_scheme_map',
+                defaults={'value': json.dumps(existing)})
         QBOImportCommitService._auto_dismiss('schemes')
         return mapping
 

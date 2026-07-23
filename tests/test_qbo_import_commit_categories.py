@@ -71,6 +71,21 @@ class CommitSchemesTest(TestCase):
             RateScheme.objects.get(pk=mapping['12']).algorithm,
             RateScheme.ELAPSED_TIME)
 
+    def test_scheme_mapping_feeds_catalog_defaults(self):
+        from tests.test_qbo_import_state import store_snapshot
+        from apps.qbo.import_services import QBOSuggestionService
+        store_snapshot()
+        mapping = QBOImportCommitService.commit_schemes([
+            {'name': 'Shop rate', 'rate': '95.0', 'algorithm': 'elapsed_time',
+             'unit_label': 'hours', 'accounting_category': self.cat.pk,
+             'qbo_item_id': '11', 'collapse_group': 'shop'},
+        ])
+        rows = QBOSuggestionService.suggestions('catalog')['rows']
+        svc = next(r for r in rows if r['qbo_id'] == '11')
+        # Name-matching would fail ('Shop rate' != 'CNC Cutting'); the
+        # persisted mapping resolves it.
+        self.assertEqual(svc['rate_scheme_default'], mapping['11'])
+
     def test_collapse_group_shares_one_scheme(self):
         mapping = QBOImportCommitService.commit_schemes([
             {'name': 'Shop rate', 'rate': '95.0', 'algorithm': 'elapsed_time',
