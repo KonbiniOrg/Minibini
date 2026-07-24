@@ -1000,3 +1000,20 @@ Cross-cutting UI/API conventions and shared components.
   marked name-match guess for the expense-account pulldown.
   _Done when:_ a dedicated usability revision of the four panels ships,
   informed by RM's full walkthrough notes and the accountant conversation.
+
+- **No way to see whether a contact is QBO-linked.** — _added 2026-07-23_
+  Contacts (and businesses) carry `qbo_customer_id` / `qbo_vendor_id`, but
+  no konbini surface shows whether a given contact has a QBO ID or not —
+  relevant when judging import states and future sync behavior. (The
+  payment-terms manager's green "QBO" badge is the pattern to reuse.)
+  _Done when:_ contact/business detail (and/or list) indicates QBO
+  linkage.
+
+- **Contacts import needs a dedupe process.** — _added 2026-07-23_
+  QBO happily holds multiple customers ("locations") sharing one email or
+  company name; konbini's unique constraints (contact email, business
+  name) reject them. The commit now skips such rows and reports why
+  (2026-07-23), but there's no way to resolve them: merge locations into
+  one konbini business, pick a winner, or edit-then-retry inline.
+  _Done when:_ a deliberate dedupe/merge flow exists for skipped
+  contact imports.
