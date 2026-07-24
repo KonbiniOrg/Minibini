@@ -897,12 +897,62 @@ def _commit_terms(rows):
 
 
 def _commit_contacts(payload):
-    """Terms first, then customers, then vendors (merge-by-name)."""
+    """Terms first, then customers, then vendors (merge-by-name).
+
+    QBO holds things konbini can't: customers ("locations") sharing one
+    email or company name, and contacts with no email at all — but
+    konbini requires a unique non-blank contact email and a unique
+    business name. Such rows are SKIPPED (never a 500, never a batch
+    rollback) and reported in counts[kind]['skipped'] as
+    {'name', 'reason'} for the panel to display."""
     from apps.contacts.models import Business, Contact, PaymentTerms
 
     counts = {'terms': {'created': 0, 'updated': 0},
-              'customers': {'created': 0, 'updated': 0},
-              'vendors': {'created': 0, 'updated': 0}}
+              'customers': {'created': 0, 'updated': 0, 'skipped': []},
+              'vendors': {'created': 0, 'updated': 0, 'skipped': []}}
+
+    batch_emails = {}   # email.lower() → earlier row's display name
+    batch_names = {}    # business name.lower() → earlier row's display name
+
+    def email_holder(email, exclude_pk=None):
+        """Display name of whoever already holds this email, or None."""
+        qs = Contact.objects.filter(email__iexact=email)
+        if exclude_pk is not None:
+            qs = qs.exclude(pk=exclude_pk)
+        contact = qs.select_related('business').first()
+        if contact is None:
+            return None
+        if contact.business is not None:
+            return contact.business.business_name
+        return str(contact)
+
+    def reject_email(email, exclude_pk=None):
+        if not email:
+            return 'no email address in QBO (konbini contacts require one)'
+        holder = email_holder(email, exclude_pk)
+        if holder:
+            return f'duplicate email with {holder}'
+        if email.lower() in batch_emails:
+            return f'duplicate email with {batch_emails[email.lower()]}'
+        return None
+
+    def reject_business_name(name, exclude_pk=None):
+        if not name:
+            return None
+        qs = Business.objects.filter(business_name__iexact=name.strip())
+        if exclude_pk is not None:
+            qs = qs.exclude(pk=exclude_pk)
+        if qs.exists():
+            return f'a business named "{name}" already exists'
+        key = name.strip().lower()
+        if key in batch_names:
+            return f'duplicate business name with {batch_names[key]}'
+        return None
+
+    def skip(kind, row, reason):
+        counts[kind]['skipped'].append(
+            {'name': row['display_name'], 'reason': reason})
+
     with transaction.atomic():
         # The SPA's terms panel commits via commit_terms; this branch stays
         # for API-compat with payloads that still bundle terms.
@@ -913,12 +963,19 @@ def _commit_contacts(payload):
 
         for row in payload.get('customers') or []:
             term = term_by_qbo.get(row.get('term_qbo_id') or '')
+            email = (row.get('email') or '').strip()
             if row['action'] == 'create':
+                reason = reject_email(email)
+                if reason is None and row.get('company_name'):
+                    reason = reject_business_name(row['company_name'])
+                if reason:
+                    skip('customers', row, reason)
+                    continue
                 if row.get('company_name'):
                     contact = Contact.objects.create(
                         first_name=row.get('given_name') or row['display_name'],
                         last_name=row.get('family_name') or '',
-                        email=row.get('email') or '',
+                        email=email,
                         mobile_number=row.get('phone') or '',
                     )
                     business = Business.objects.create(
@@ -930,34 +987,55 @@ def _commit_contacts(payload):
                     )
                     Contact.objects.filter(pk=contact.pk).update(
                         business=business)
+                    batch_names[row['company_name'].strip().lower()] = (
+                        row['display_name'])
                 else:
                     Contact.objects.create(
                         first_name=row.get('given_name') or row['display_name'],
                         last_name=row.get('family_name') or '',
-                        email=row.get('email') or '',
+                        email=email,
                         mobile_number=row.get('phone') or '',
                         qbo_customer_id=row['qbo_id'],
                     )
+                batch_emails[email.lower()] = row['display_name']
                 counts['customers']['created'] += 1
             else:
                 business = Business.objects.filter(
                     qbo_customer_id=row['qbo_id']).first()
+                contact = (business.default_contact if business is not None
+                           else Contact.objects.filter(
+                               qbo_customer_id=row['qbo_id']).first())
+                if business is None and contact is None:
+                    skip('customers', row,
+                         'not found in konbini — pull again')
+                    continue
+                reason = None
+                if email and contact is not None:
+                    holder = email_holder(email, exclude_pk=contact.pk)
+                    if holder:
+                        reason = f'duplicate email with {holder}'
+                if (reason is None and business is not None
+                        and row.get('company_name')):
+                    reason = reject_business_name(
+                        row['company_name'], exclude_pk=business.pk)
+                if reason:
+                    skip('customers', row, reason)
+                    continue
                 if business is not None:
                     if row.get('company_name'):
                         business.business_name = row['company_name']
                     if term is not None:
                         business.terms = term
                     business.save()
-                    contact = business.default_contact
-                else:
-                    contact = Contact.objects.get(
-                        qbo_customer_id=row['qbo_id'])
                 if contact is not None:
                     contact.first_name = (row.get('given_name')
                                           or contact.first_name)
                     contact.last_name = (row.get('family_name')
                                          or contact.last_name)
-                    contact.email = row.get('email') or ''
+                    # A blank QBO email means QBO doesn't know it — never
+                    # blank a konbini email over that.
+                    if email:
+                        contact.email = email
                     if row.get('phone'):
                         contact.mobile_number = row['phone']
                     contact.save()
@@ -965,32 +1043,50 @@ def _commit_contacts(payload):
 
         for row in payload.get('vendors') or []:
             name = row.get('company_name') or row['display_name']
+            email = (row.get('email') or '').strip()
             if row['action'] == 'create':
                 existing = Business.objects.filter(
                     business_name__iexact=name).first()
                 if existing is not None:
                     # Same-named business (usually a customer) — one
                     # Business plays both roles; adopt, don't duplicate.
+                    # No contact is created, so no email is needed.
                     existing.qbo_vendor_id = row['qbo_id']
                     existing.save(update_fields=['qbo_vendor_id'])
-                else:
-                    contact = Contact.objects.create(
-                        first_name=name, last_name='',
-                        email=row.get('email') or '',
-                        mobile_number=row.get('phone') or '',
-                    )
-                    business = Business.objects.create(
-                        business_name=name,
-                        business_phone=row.get('phone') or '',
-                        default_contact=contact,
-                        qbo_vendor_id=row['qbo_id'],
-                    )
-                    Contact.objects.filter(pk=contact.pk).update(
-                        business=business)
+                    counts['vendors']['created'] += 1
+                    continue
+                reason = reject_email(email)
+                if reason:
+                    skip('vendors', row, reason)
+                    continue
+                contact = Contact.objects.create(
+                    first_name=name, last_name='',
+                    email=email,
+                    mobile_number=row.get('phone') or '',
+                )
+                business = Business.objects.create(
+                    business_name=name,
+                    business_phone=row.get('phone') or '',
+                    default_contact=contact,
+                    qbo_vendor_id=row['qbo_id'],
+                )
+                Contact.objects.filter(pk=contact.pk).update(
+                    business=business)
+                batch_emails[email.lower()] = row['display_name']
+                batch_names[name.strip().lower()] = row['display_name']
                 counts['vendors']['created'] += 1
             else:
-                business = Business.objects.get(qbo_vendor_id=row['qbo_id'])
+                business = Business.objects.filter(
+                    qbo_vendor_id=row['qbo_id']).first()
+                if business is None:
+                    skip('vendors', row, 'not found in konbini — pull again')
+                    continue
                 if row.get('company_name'):
+                    reason = reject_business_name(
+                        row['company_name'], exclude_pk=business.pk)
+                    if reason:
+                        skip('vendors', row, reason)
+                        continue
                     business.business_name = row['company_name']
                 business.save()
                 counts['vendors']['updated'] += 1

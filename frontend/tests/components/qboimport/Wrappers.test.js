@@ -73,6 +73,30 @@ describe('ContactsImportPanel', () => {
     expect(payload.vendors[0].action).toBe('create');
   });
 
+  it('reports skipped rows after a partial commit', async () => {
+    api.get.mockResolvedValue({
+      dismissed: false, fetched_at: 'x', missing_term_refs: false,
+      rows: [
+        { kind: 'customer', qbo_id: '71', display_name: 'Blah Company',
+          company_name: 'Blah Company', email: 'x@blah.com', state: 'new' },
+        { kind: 'customer', qbo_id: '72', display_name: 'Bulb Company',
+          company_name: 'Bulb Company', email: 'x@blah.com', state: 'new' },
+      ],
+    });
+    api.post.mockResolvedValue({
+      customers: { created: 1, updated: 0, skipped: [
+        { name: 'Bulb Company',
+          reason: 'duplicate email with Blah Company' }] },
+      vendors: { created: 0, updated: 0, skipped: [] },
+    });
+    const { findByText } = render(ContactsImportPanel);
+    await fireEvent.click(await findByText('Apply selected'));
+    expect(await findByText("1 contact couldn't be imported:"))
+      .toBeInTheDocument();
+    expect(await findByText('Bulb Company: duplicate email with Blah Company'))
+      .toBeInTheDocument();
+  });
+
   it('warns when customers reference unimported terms', async () => {
     api.get.mockResolvedValue({
       dismissed: false, fetched_at: 'x', missing_term_refs: true,

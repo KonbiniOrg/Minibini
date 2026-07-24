@@ -16,7 +16,8 @@ def _payload(**overrides):
                        'phone': '555-1000', 'term_qbo_id': '3',
                        'action': 'create'}],
         'vendors': [{'qbo_id': '81', 'display_name': 'Moore Newton',
-                     'company_name': 'Moore Newton', 'email': '',
+                     'company_name': 'Moore Newton',
+                     'email': 'sales@moorenewton.com',
                      'phone': '', 'action': 'create'}],
     }
     payload.update(overrides)
@@ -66,6 +67,107 @@ class CommitTermsTest(TestCase):
                       'action': 'create'}]}, format='json')
         self.assertEqual(resp.status_code, 200, resp.data)
         self.assertEqual(resp.data['created'], 1)
+
+
+def _customer(**overrides):
+    row = {'qbo_id': '72', 'display_name': 'Blah Company',
+           'company_name': 'Blah Company', 'given_name': 'Bea',
+           'family_name': 'Blah', 'email': 'bea@blah.com',
+           'phone': '', 'term_qbo_id': '', 'action': 'create'}
+    row.update(overrides)
+    return row
+
+
+class CommitContactsSkipTest(TestCase):
+    """Un-importable rows are skipped and reported, never a 500.
+
+    Konbini requires a unique, non-blank contact email and a unique
+    business name; QBO doesn't. The commit imports what it can and
+    returns {'name', 'reason'} entries for the rest."""
+
+    def test_duplicate_email_with_existing_contact(self):
+        Contact.objects.create(first_name='Bulb', last_name='Co',
+                               email='bea@blah.com')
+        result = QBOImportCommitService.commit_contacts(
+            {'customers': [_customer()]})
+        self.assertEqual(result['customers']['created'], 0)
+        skip = result['customers']['skipped'][0]
+        self.assertEqual(skip['name'], 'Blah Company')
+        self.assertIn('duplicate email', skip['reason'])
+        self.assertIn('Bulb Co', skip['reason'])
+        self.assertFalse(
+            Business.objects.filter(business_name='Blah Company').exists())
+
+    def test_duplicate_email_within_batch(self):
+        result = QBOImportCommitService.commit_contacts({'customers': [
+            _customer(),
+            _customer(qbo_id='73', display_name='Blah Company - East',
+                      company_name='Blah Company East'),
+        ]})
+        self.assertEqual(result['customers']['created'], 1)
+        skip = result['customers']['skipped'][0]
+        self.assertEqual(skip['name'], 'Blah Company - East')
+        self.assertIn('duplicate email', skip['reason'])
+        self.assertIn('Blah Company', skip['reason'])
+
+    def test_missing_email_skipped(self):
+        result = QBOImportCommitService.commit_contacts(
+            {'customers': [_customer(email='')]})
+        self.assertEqual(result['customers']['created'], 0)
+        skip = result['customers']['skipped'][0]
+        self.assertIn('no email', skip['reason'])
+
+    def test_duplicate_business_name_skipped(self):
+        contact = Contact.objects.create(
+            first_name='X', last_name='Y', email='other@blah.com')
+        Business.objects.create(business_name='Blah Company',
+                                default_contact=contact)
+        result = QBOImportCommitService.commit_contacts(
+            {'customers': [_customer()]})
+        self.assertEqual(result['customers']['created'], 0)
+        self.assertIn('business named',
+                      result['customers']['skipped'][0]['reason'])
+
+    def test_update_with_blank_email_keeps_existing(self):
+        QBOImportCommitService.commit_contacts({'customers': [_customer()]})
+        result = QBOImportCommitService.commit_contacts({'customers': [
+            _customer(action='update', email='')]})
+        self.assertEqual(result['customers']['updated'], 1)
+        business = Business.objects.get(business_name='Blah Company')
+        self.assertEqual(business.default_contact.email, 'bea@blah.com')
+
+    def test_update_email_collision_skipped(self):
+        QBOImportCommitService.commit_contacts({'customers': [_customer()]})
+        Contact.objects.create(first_name='Taken', last_name='Contact',
+                               email='taken@x.com')
+        result = QBOImportCommitService.commit_contacts({'customers': [
+            _customer(action='update', email='taken@x.com')]})
+        self.assertEqual(result['customers']['updated'], 0)
+        self.assertIn('duplicate email',
+                      result['customers']['skipped'][0]['reason'])
+
+    def test_vendor_missing_email_skipped_but_merge_needs_none(self):
+        result = QBOImportCommitService.commit_contacts({'vendors': [
+            {'qbo_id': '82', 'display_name': 'No Mail Vendor',
+             'company_name': 'No Mail Vendor', 'email': '', 'phone': '',
+             'action': 'create'}]})
+        self.assertEqual(result['vendors']['created'], 0)
+        self.assertIn('no email', result['vendors']['skipped'][0]['reason'])
+        # Merge-by-name adopts the existing business — no contact is
+        # created, so no email is needed.
+        contact = Contact.objects.create(
+            first_name='A', last_name='B', email='a@acme.com')
+        Business.objects.create(business_name='Acme Corp',
+                                default_contact=contact)
+        result = QBOImportCommitService.commit_contacts({'vendors': [
+            {'qbo_id': '83', 'display_name': 'Acme Corp',
+             'company_name': 'Acme Corp', 'email': '', 'phone': '',
+             'action': 'create'}]})
+        self.assertEqual(result['vendors']['created'], 1)
+        self.assertEqual(result['vendors']['skipped'], [])
+        self.assertEqual(
+            Business.objects.get(business_name='Acme Corp').qbo_vendor_id,
+            '83')
 
 
 class CommitContactsTest(TestCase):

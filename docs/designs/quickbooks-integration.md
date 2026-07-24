@@ -155,7 +155,15 @@ endpoints in `apps/api/qbo_import/views.py`.
   Business, both roles; customers resolve `term_qbo_id` against EXISTING
   PaymentTerms — unresolved refs are left unset, and the contacts
   suggestions carry `missing_term_refs` so the panel warns to import
-  terms first).
+  terms first). **Skip-and-report (2026-07-23):** QBO rows konbini can't
+  hold — blank contact email, duplicate email (vs konbini or within the
+  batch — QBO "locations" share emails), duplicate business name — are
+  skipped, never 500/rollback; `counts[kind]['skipped']` carries
+  `{'name', 'reason'}` and the panel renders "N contacts couldn't be
+  imported:" with per-row reasons. Skipped rows stay importable after
+  the user resolves the conflict. Blank QBO emails never overwrite a
+  konbini email on update. A dedupe/merge flow for skipped rows is
+  LATER.
 - **SPA**: shared `SuggestionPanel.svelte` + per-kind wrappers embedded in
   Settings → Accounting (categories), Settings → pricing/RateSchemeManager
   (schemes), Catalog → Inventory tab (`InventoryImportPanel`), Catalog →

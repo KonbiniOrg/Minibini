@@ -20,6 +20,7 @@
   let checked = $state({});         // rowKey → bool
   let busy = $state(false);
   let message = $state('');
+  let warnings = $state([]);        // commit-skip report: [title, ...lines]
   let pullSummary = $state('');
 
   const toggles = {
@@ -66,11 +67,14 @@
   }
 
   async function commitChecked() {
-    busy = true; message = '';
+    busy = true; message = ''; warnings = [];
     try {
       const rows = data.rows.filter(
         (r) => toggles.isChecked(r) && r.state !== 'imported');
-      await commit(rows);
+      const result = await commit(rows);
+      // A commit may partially succeed: rows konbini can't hold are
+      // skipped server-side and reported here (first line = summary).
+      if (result?.warnings?.length) warnings = result.warnings;
       refreshSetupStatus();
       await load();
       onCommitted();
@@ -97,6 +101,14 @@
     </header>
     {#if pullSummary}<p class="summary">{pullSummary}</p>{/if}
     {#if message}<p class="error">{message}</p>{/if}
+    {#if warnings.length}
+      <div class="skip-report">
+        <p><strong>{warnings[0]}</strong></p>
+        <ul>
+          {#each warnings.slice(1) as line}<li>{line}</li>{/each}
+        </ul>
+      </div>
+    {/if}
     {@render table(data.rows, toggles, data)}
     {#if actionable}
       <p>
@@ -121,4 +133,13 @@
   .pulled { color: #92400e; font-size: 0.85rem; }
   .summary { color: #92400e; font-size: 0.9rem; }
   .error { color: #b91c1c; }
+  .skip-report {
+    border: 2px solid #b91c1c;
+    background: #fef2f2;
+    color: #b91c1c;
+    border-radius: 6px;
+    padding: 0.5em 0.75em;
+    margin: 8px 0;
+  }
+  .skip-report ul { margin: 0.25em 0 0; }
 </style>

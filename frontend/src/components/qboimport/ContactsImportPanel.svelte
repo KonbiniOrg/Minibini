@@ -7,14 +7,22 @@
 
   let { onCommitted = () => {} } = $props();
 
-  function commit(rows) {
+  async function commit(rows) {
     const withAction = (r) => ({
       ...r, action: r.state === 'changed' ? 'update' : 'create',
     });
-    return qboImportApi.commitContacts({
+    const resp = await qboImportApi.commitContacts({
       customers: rows.filter((r) => r.kind === 'customer').map(withAction),
       vendors: rows.filter((r) => r.kind === 'vendor').map(withAction),
     });
+    const skipped = [...(resp.customers?.skipped || []),
+                     ...(resp.vendors?.skipped || [])];
+    if (!skipped.length) return resp;
+    const noun = skipped.length === 1 ? 'contact' : 'contacts';
+    return { warnings: [
+      `${skipped.length} ${noun} couldn't be imported:`,
+      ...skipped.map((s) => `${s.name}: ${s.reason}`),
+    ] };
   }
 </script>
 
