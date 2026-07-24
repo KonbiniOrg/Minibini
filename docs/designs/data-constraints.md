@@ -46,10 +46,13 @@ Both have **key** as primary key (unique, max 100 chars) and a string **value**.
 | `po_number_sequence` | `po_counter` |
 
 QBO import state (2026-07-23): `qbo_import_snapshot` (the pulled JSON blob,
-`fetched_at` inside) and `qbo_import_dismissed` (`{area: true}` sticky
+`fetched_at` inside), `qbo_import_dismissed` (`{area: true}` sticky
 per-area panel dismissals), `qbo_import_scheme_map` (`{qbo_item_id:
-scheme_pk}` written at scheme commit so the catalog panel binds services
-to their schemes without name-matching) — see quickbooks-integration.md.
+scheme_pk}` written at scheme commit; binds catalog services to schemes
+without name-matching AND makes scheme re-commits upsert instead of
+duplicate), `qbo_import_catalog_fingerprints` (`{qbo_id: import-time QBO
+item fields}` written at catalog commit; the `changed` diff baseline —
+never live konbini values) — see quickbooks-integration.md.
 
 Per-tenant email account (2026-07-23, Settings → Email; Configuration-first
 with env-settings fallback via `apps/core/email_account.py`):

@@ -108,36 +108,59 @@ endpoints in `apps/api/qbo_import/views.py`.
   expense/COGS accounts, Customers, Vendors, Terms — paginated
   (`start_position`/`max_results`) — into one JSON blob
   (`Configuration['qbo_import_snapshot']`, `fetched_at` inside).
-- **Endpoints** (area ∈ categories/schemes/catalog/contacts; permission per
-  area: config/config/financials/jobs):
+- **Endpoints** (area ∈ categories/schemes/inventory/services/contacts;
+  permission per area: config/config/financials/financials/jobs):
   `POST /api/qbo/import/pull/` (refreshes the shared snapshot, clears ONLY
   the pulling area's dismissal, returns a diff summary),
   `POST /api/qbo/import/dismiss/`,
   `GET /api/qbo/import/suggestions/<area>/`,
-  `POST /api/qbo/import/commit/{categories,schemes,catalog,contacts}/`.
+  `POST /api/qbo/import/commit/{categories,schemes,catalog,contacts}/`
+  (one `catalog` commit endpoint serves both the inventory and services
+  areas — rows carry `kind`).
 - **Dismissal** (`Configuration['qbo_import_dismissed']`, `{area: true}`):
   sticky across pulls made elsewhere; total for the area (panel gone; the
   area's pull button remains); auto-set when a commit leaves the area's
   diff empty. The suggestions endpoint short-circuits on the flag before
   any snapshot parse.
 - **Suggestions** (`QBOSuggestionService`): live snapshot-vs-DB diffs. Row
-  states: `new` / `imported` (matched by the qbo_id-family field, shown
-  inert) / `changed` (mirrored fields drifted → "update" action).
+  states: `new` / `imported` (shown inert, no editable bindings) /
+  `changed` → "update" action. **`changed` means QBO drifted since import**
+  — the diff compares the snapshot against the import-time fingerprint
+  (`Configuration['qbo_import_catalog_fingerprints']`, written at catalog
+  commit), never against live konbini values, which legitimately diverge
+  (own codes, own scheme rates). Existing objects with no fingerprint
+  (pre-fingerprint imports) read as `imported`. Scheme rows are
+  `imported` when their item is in `qbo_import_scheme_map` and the scheme
+  still exists (ServiceItems only appear at the later catalog commit).
   Categories cluster items by `IncomeAccountRef` (+ itemless income
   accounts); item→category resolution runs item → income account → the
   committed kAC whose fallback Item shares that account.
 - **Commits** (`QBOImportCommitService`): categories (atomic, unique-code
-  guarded); schemes (one per row; `collapse_group` rows share one);
-  catalog (inventory = field overwrites, **service price changes go
-  through RateScheme supersession** and repoint the ServiceItem);
-  contacts (terms → customers → vendors; a vendor whose name matches an
-  existing Business adopts `qbo_vendor_id` onto it — one Business, both
-  roles).
+  guarded); schemes — **an upsert**: rows resolve through
+  `qbo_import_scheme_map` (following the supersession chain); mapped rows
+  update the existing scheme (in place while unreferenced, mirroring
+  `update_rate_scheme`; supersede + repoint ServiceItems once referenced;
+  no-op when unchanged) and only unmapped rows insert (`collapse_group`
+  rows share one scheme; missing category and name collisions raise
+  contract 400s, never 500s); catalog (inventory = field overwrites;
+  **service price changes go through RateScheme supersession** and repoint
+  the ServiceItem — but only when QBO's own price moved vs the
+  fingerprint, so a deliberate konbini rate divergence survives QBO-side
+  renames); contacts (terms → customers → vendors; a vendor whose name
+  matches an existing Business adopts `qbo_vendor_id` onto it — one
+  Business, both roles).
 - **SPA**: shared `SuggestionPanel.svelte` + per-kind wrappers embedded in
   Settings → Accounting (categories), Settings → pricing/RateSchemeManager
-  (schemes), Catalog (items), Contacts (customers/vendors/terms); each
-  surface keeps a permanently-visible `QboPullButton` with the shared
-  last-pull timestamp (also in `GET /api/setup/status/`).
+  (schemes), Catalog → Inventory tab (`InventoryImportPanel`), Catalog →
+  Service items tab (`ServiceItemsImportPanel`), Contacts
+  (customers/vendors/terms); each surface keeps a permanently-visible
+  `QboPullButton` with the shared last-pull timestamp (also in
+  `GET /api/setup/status/`). Required bindings are enforced before the
+  POST: blank category/scheme pulldowns on checked rows get a red
+  `.missing` highlight, panels show amber dependency notices when their
+  prerequisite is absent (schemes + inventory need ≥1 kAC; services need
+  ≥1 scheme), and commit functions refuse with a row-naming error.
+  Editable binding pulldowns render only on `new` rows.
 
 ## Gotcha: QBO's raw JSON field capitalization is inconsistent
 
