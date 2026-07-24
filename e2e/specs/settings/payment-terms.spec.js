@@ -14,27 +14,28 @@ test('terms CRUD roundtrip and business-form visibility', async ({ page }) => {
   await page.getByRole('button', { name: 'Business' }).click();
   await expect(page.getByRole('heading', { name: 'Payment terms' })).toBeVisible();
 
-  // Create via the modal.
+  // Create via the modal (scope to it — the settings form has its own Save).
   await page.getByRole('button', { name: '+ New terms' }).click();
-  await page.getByPlaceholder('Net 30').fill('Net 45 E2E');
-  await page.getByPlaceholder('30').fill('45');
-  await page.getByRole('button', { name: 'Save' }).click();
+  const createModal = page.getByLabel('New payment terms');
+  await createModal.getByRole('textbox', { name: 'Name' }).fill('Net 45 E2E');
+  await createModal.getByRole('spinbutton', { name: 'Days until due' }).fill('45');
+  await createModal.getByRole('button', { name: 'Save' }).click();
   const row = page.locator('tr', { hasText: 'Net 45 E2E' });
   await expect(row).toBeVisible();
   await expect(row).toContainText('45');
 
   // Duplicate name is rejected in the modal, under the name field.
   await page.getByRole('button', { name: '+ New terms' }).click();
-  await page.getByPlaceholder('Net 30').fill('net 45 e2e');
-  await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText(/already exist/i)).toBeVisible();
-  await page.getByRole('button', { name: 'Cancel' }).click();
+  await createModal.getByRole('textbox', { name: 'Name' }).fill('net 45 e2e');
+  await createModal.getByRole('button', { name: 'Save' }).click();
+  await expect(createModal.getByText(/already exist/i)).toBeVisible();
+  await createModal.getByRole('button', { name: 'Cancel' }).click();
 
   // Edit via the modal.
   await row.getByRole('button', { name: 'Edit' }).click();
-  const nameInput = page.getByPlaceholder('Net 30');
-  await nameInput.fill('Net 45 EOM E2E');
-  await page.getByRole('button', { name: 'Save' }).click();
+  const editModal = page.getByLabel('Edit payment terms');
+  await editModal.getByRole('textbox', { name: 'Name' }).fill('Net 45 EOM E2E');
+  await editModal.getByRole('button', { name: 'Save' }).click();
   await expect(page.locator('tr', { hasText: 'Net 45 EOM E2E' })).toBeVisible();
 
   // The new term is offered on the business form's assignment select.
