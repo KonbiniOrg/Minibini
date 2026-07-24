@@ -1,8 +1,10 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
   import ContactsImportPanel from '../../components/qboimport/ContactsImportPanel.svelte';
   import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
+  import { canManageJobs } from '../../stores/permissions.js';
+  import { showError, showSuccess } from '../../stores/messages.js';
 
   let pullEpoch = $state(0);
 
@@ -96,6 +98,33 @@
     page = 1;
   }
 
+  let deleteConfirmTag = $state(null);
+
+  async function handleDeleteTag(tag) {
+    try {
+      const result = await api.delete(`/api/tags/${tag.tag_id}/`);
+      if (result && result.confirm_required) {
+        deleteConfirmTag = { tag, impact: result.impact };
+      }
+    } catch (e) {
+      showError(errorMessage(e, 'Could not delete tag.'));
+    }
+  }
+
+  async function confirmDeleteTag() {
+    const tag = deleteConfirmTag.tag;
+    deleteConfirmTag = null;
+    try {
+      const result = await api.delete(`/api/tags/${tag.tag_id}/?confirm=true`);
+      showSuccess(result.message || 'Tag deleted.');
+      allTags = allTags.filter(t => t.tag_id !== tag.tag_id);
+      selectedTagIds = selectedTagIds.filter(id => id !== tag.tag_id);
+      await loadAll();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not delete tag.'));
+    }
+  }
+
   function handleSearchInput() {
     page = 1;
   }
@@ -135,16 +164,34 @@
   <div class="tag-filter">
     <span class="tag-filter-label">Tags:</span>
     {#each allTags as tag (tag.tag_id)}
-      <button
-        class="tag-chip"
-        class:active={selectedTagIds.includes(tag.tag_id)}
-        onclick={() => toggleTag(tag.tag_id)}
-      >{tag.name}</button>
+      <span class="tag-chip-wrap">
+        <button
+          class="tag-chip"
+          class:active={selectedTagIds.includes(tag.tag_id)}
+          onclick={() => toggleTag(tag.tag_id)}
+        >{tag.name}</button>
+        {#if $canManageJobs}
+          <button
+            type="button"
+            class="tag-chip-delete"
+            title={`Delete "${tag.name}" everywhere`}
+            onclick={() => handleDeleteTag(tag)}
+          >×</button>
+        {/if}
+      </span>
     {/each}
     {#if selectedTagIds.length > 0}
       <button class="tag-clear" onclick={() => { selectedTagIds = []; page = 1; }}>Clear</button>
     {/if}
   </div>
+  {#if deleteConfirmTag}
+    <p class="tag-delete-confirm">
+      <strong>Delete tag "{deleteConfirmTag.tag.name}"?</strong>
+      This removes it from {deleteConfirmTag.impact.contacts} contact(s) and {deleteConfirmTag.impact.businesses} business(es).
+      <button onclick={confirmDeleteTag}>Yes, delete</button>
+      <button onclick={() => { deleteConfirmTag = null; }}>Cancel</button>
+    </p>
+  {/if}
 {/if}
 
 <p>
@@ -257,6 +304,12 @@
     margin-right: 2px;
   }
 
+  .tag-chip-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+  }
+
   .tag-chip {
     padding: 2px 8px;
     font-size: 12px;
@@ -273,6 +326,38 @@
     background: #1a3344;
     color: #fff;
     border-color: #1a3344;
+  }
+
+  .tag-chip-wrap:has(.tag-chip-delete) .tag-chip {
+    border-radius: 3px 0 0 3px;
+  }
+
+  .tag-chip-delete {
+    padding: 2px 6px;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    border: 1px solid #b0c8d8;
+    border-left: none;
+    background: #e8f0f5;
+    border-radius: 0 3px 3px 0;
+    font-family: inherit;
+    color: #888;
+  }
+
+  .tag-chip-delete:hover {
+    background: #f5d7d7;
+    color: #c00;
+    border-color: #d8a8a8;
+  }
+
+  .tag-delete-confirm {
+    background: #fdf3f3;
+    border: 1px solid #e0b8b8;
+    border-radius: 3px;
+    padding: 6px 10px;
+    font-size: 13px;
+    margin: -0.25rem 0 0.75rem;
   }
 
   .tag-clear {
