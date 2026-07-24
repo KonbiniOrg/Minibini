@@ -166,6 +166,13 @@ exists in the seed (its deliverable has no pickup shipment — a
 lifecycle shortcut acceptable in fake data). Also note the seed still
 carries 13 inert legacy Bill rows (retired schema; kept deliberately).
 
+A **QBO import snapshot** Configuration row (`qbo_import_snapshot`) was
+appended 2026-07-23: two customers (one clean, one whose email collides
+with seeded contact 1), empty items/terms/vendors lists so ONLY the
+contacts panel renders anywhere. Exercised by
+`specs/contacts/import-skip-report.spec.js` (partial commit + skip
+report). Panels need no live QBO connection — only the pull button does.
+
 **Rebase:** the seed is frozen history — left alone, the 7-day Recent
 Time window, the 30-hour blep-edit window, board retention, schedule
 forecasting, and estimate expiry would all drift out of test reach as it
