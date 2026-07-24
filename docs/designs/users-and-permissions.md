@@ -119,7 +119,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/jobs/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (`CanManageJobOrPM`) | create stays atom-only; several action exceptions — see below |
 | `/api/contacts/` | `IsAuthenticated` | `can_manage_jobs` | atom-only — **not** PM-scoped |
 | `/api/businesses/` | `IsAuthenticated` | `can_manage_jobs` | atom-only — **not** PM-scoped |
-| `/api/payment-terms/` | `IsAuthenticated` | (read-only) | |
+| `/api/payment-terms/` | `IsAuthenticated` | `can_manage_config` | Settings → Business manager (2026-07-23); two-phase confirm delete |
 | `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (incl. line items) | also `send-defaults` (GET, IsAuth), `send` (POST, can_manage_jobs) |
 | `/api/tasks/` (flat lifecycle) | `IsAuthenticated` | `IsAuthenticated` (incl. `cancel`, opened 2026-07-12) | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
 | `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 30h rolling rule + `can_manage_time` for editing others |

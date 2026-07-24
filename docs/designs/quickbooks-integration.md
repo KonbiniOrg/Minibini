@@ -108,15 +108,18 @@ endpoints in `apps/api/qbo_import/views.py`.
   expense/COGS accounts, Customers, Vendors, Terms — paginated
   (`start_position`/`max_results`) — into one JSON blob
   (`Configuration['qbo_import_snapshot']`, `fetched_at` inside).
-- **Endpoints** (area ∈ categories/schemes/inventory/services/contacts;
-  permission per area: config/config/financials/financials/jobs):
+- **Endpoints** (area ∈ categories/schemes/inventory/services/contacts/
+  terms; permission per area: config/config/financials/financials/jobs/
+  config):
   `POST /api/qbo/import/pull/` (refreshes the shared snapshot, clears ONLY
   the pulling area's dismissal, returns a diff summary),
   `POST /api/qbo/import/dismiss/`,
   `GET /api/qbo/import/suggestions/<area>/`,
-  `POST /api/qbo/import/commit/{categories,schemes,catalog,contacts}/`
+  `POST /api/qbo/import/commit/{categories,schemes,catalog,contacts,terms}/`
   (one `catalog` commit endpoint serves both the inventory and services
-  areas — rows carry `kind`).
+  areas — rows carry `kind`; `commit/contacts` still accepts a bundled
+  `terms` list for API-compat but the SPA commits terms via
+  `commit/terms`).
 - **Dismissal** (`Configuration['qbo_import_dismissed']`, `{area: true}`):
   sticky across pulls made elsewhere; total for the area (panel gone; the
   area's pull button remains); auto-set when a commit leaves the area's
@@ -146,14 +149,19 @@ endpoints in `apps/api/qbo_import/views.py`.
   **service price changes go through RateScheme supersession** and repoint
   the ServiceItem — but only when QBO's own price moved vs the
   fingerprint, so a deliberate konbini rate divergence survives QBO-side
-  renames); contacts (terms → customers → vendors; a vendor whose name
+  renames); terms (create/update PaymentTerms mirrors — own panel since
+  2026-07-23); contacts (customers → vendors; a vendor whose name
   matches an existing Business adopts `qbo_vendor_id` onto it — one
-  Business, both roles).
+  Business, both roles; customers resolve `term_qbo_id` against EXISTING
+  PaymentTerms — unresolved refs are left unset, and the contacts
+  suggestions carry `missing_term_refs` so the panel warns to import
+  terms first).
 - **SPA**: shared `SuggestionPanel.svelte` + per-kind wrappers embedded in
   Settings → Accounting (categories), Settings → pricing/RateSchemeManager
   (schemes), Catalog → Inventory tab (`InventoryImportPanel`), Catalog →
   Service items tab (`ServiceItemsImportPanel`), Contacts
-  (customers/vendors/terms); each surface keeps a permanently-visible
+  (customers/vendors), Settings → Business (`TermsImportPanel`, above
+  the payment-terms manager); each surface keeps a permanently-visible
   `QboPullButton` with the shared last-pull timestamp (also in
   `GET /api/setup/status/`). Required bindings are enforced before the
   POST: blank category/scheme pulldowns on checked rows get a red

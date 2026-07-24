@@ -400,24 +400,34 @@ full tag list (`/api/tags/?page_size=200`) to render filter chips —
 
 ## PaymentTerms
 
+`apps/contacts/models.py` — `PaymentTerms`, `db_table='terms'`. Fields
+(real since 2026-07-23; previously a `term_id`-only stub): `term_id`
+(AutoField PK), `name` (CharField 100, blank-allowed at the model),
+`days` (nullable positive int), `qbo_id` (QBO Term mirror, '' = not
+imported). `__str__` = name.
 
-PaymentTerms gained real fields 2026-07-23 (previously a `term_id`-only
-stub): `name` (CharField 100), `days` (nullable positive int), `qbo_id`
-(QBO Term mirror, '' = not imported). `__str__` = name. The BusinessForm
-terms select labels options by name. No management CRUD UI exists yet —
-see LATER.md.
+**Management UI (2026-07-23): Settings → Business tab.** A flat list
+(name, days, a green "QBO" badge on mirrored rows, in-use business
+count) with modal create/edit (`PaymentTermsManager.svelte`, standard
+`Modal.svelte` keyboard contract) and a two-phase confirm delete — the
+FK is `SET_NULL`, so the confirm quotes "used by N businesses — their
+terms will be cleared". Directly above it sits the terms QBO import
+panel (`TermsImportPanel`, area `terms`, own pull button + sticky
+dismissal — see quickbooks-integration.md). No individual term page.
 
-`apps/contacts/models.py` — `PaymentTerms`. Currently a stub: only
-`term_id` (AutoField PK), `db_table='terms'`. No net-terms fields (e.g. "Net
-30") exist yet on the model itself, despite `Business.terms` (FK,
-`SET_NULL`) implying that's the intent — `PaymentTermsSerializer` uses
-`fields = '__all__'`, so it only ever serializes the PK. `PaymentTermsViewSet`
-is `ReadOnlyModelViewSet` with `pagination_class = None` (unpaginated flat
-list) — there's no create/update UI or endpoint since there's nothing
-meaningful to edit yet. Displayed read-only as `business.terms` (the FK's
-`__str__`, currently just the PK) on `BusinessDetail.svelte`. Treat this as
-a placeholder model to flesh out (a name/description/net-days field) rather
-than a deliberately minimal design.
+**API**: `PaymentTermsViewSet` is a full ModelViewSet +
+`ConfirmDeleteMixin`, unpaginated, ordered by name. Reads are
+`IsAuthenticated` (the BusinessForm assignment select); writes require
+`can_manage_config` (the Settings surface's atom — deliberately NOT
+`can_manage_jobs`). The serializer enforces what the model doesn't:
+`name` required and case-insensitively unique (the model stays
+permissive so QBO-import merges can't trip), `qbo_id` read-only,
+annotated `business_count`.
+
+**QBO-mirror policy**: rows with a `qbo_id` are editable (badge visible);
+local edits surface as `changed` on the next terms pull and the import
+panel arbitrates. Deleting a mirrored term is allowed — it re-appears as
+`new` after the next pull.
 
 ---
 

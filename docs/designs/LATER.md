@@ -971,15 +971,6 @@ Cross-cutting UI/API conventions and shared components.
 
   link-email-to-PO (and ideally create-PO-from-email).
 
-- **PaymentTerms has no management UI.** — _added 2026-07-23_
-  The setup/import work gives PaymentTerms real fields (name, days, qbo_id)
-  and the QBO import creates rows, but the only konbini surface is the
-  assignment select on BusinessForm — there is no CRUD for the terms
-  themselves (create/rename/delete a "Net 30"). Fine while terms mirror QBO;
-  needed the day a shop wants a konbini-only term or to tidy imports.
-  _Done when:_ a small terms manager exists (likely a Settings or Contacts
-  surface), or a decision is recorded that terms are import-only.
-
 - **Email password change should re-authenticate via a modal.** — _added 2026-07-23_
   Settings → Email currently lets any config admin overwrite the stored mail
   password by typing a new one into the form. RM wants a "change email
