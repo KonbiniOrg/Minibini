@@ -208,7 +208,7 @@ Status coupling, transitions, and what a job may do at each stage.
 
 The overview replaced its accordion pillars with six lifecycle summary
 blocks this pass (2026-07-09 redesign; durable reference
-`docs/designs/jobs-tasks-and-worksheets.md` §9). Debt and open
+`docs/designs/jobs-and-tasks.md` §9). Debt and open
 questions specific to that redesign:
 
 - **Block-internal specific-document links.** — _added 2026-07-12 (from the 2026-07-09 design's deferred list)_
@@ -549,7 +549,7 @@ The atom-pull surfaces on estimates and invoices.
   DOCUMENTED rule (`users-and-permissions.md` twice; `data-constraints.md`
   §1.2a's self-edit window deliberately says edit/create only). This is a
   documented **asymmetry with bleps**, where own create/edit/**delete** is
-  allowed within the 30h window (`jobs-tasks-and-worksheets.md` §5.2). RM's
+  allowed within the 30h window (`jobs-and-tasks.md` §5.2). RM's
   expectation was symmetric self-service. Decide: (a) open shift deletion to
   the own-30h-window rule (service + docs + tests change; the orphaned-bleps
   guard stays for everyone), or (b) keep manager-only and hide the worker's

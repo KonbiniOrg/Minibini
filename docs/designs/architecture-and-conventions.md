@@ -179,7 +179,7 @@ The `WorkOrder` model has been removed; Tasks live directly on `Job`. The
 planning layer (`EstWorksheet` / `PlanTask` / the `worksheets/` and
 `plan_tasks/` API apps) has also been removed — the Job owns its work atoms
 (`Task` / `Material` / `Fee`) directly. See
-`docs/designs/jobs-tasks-and-worksheets.md` for the job-owns-atoms shape.
+`docs/designs/jobs-and-tasks.md` for the job-owns-atoms shape.
 
 **Shared change-request viewset.** `apps/api/shifts/views.py` defines a
 `_ChangeRequestViewSet` base that `ShiftChangeRequestViewSet` and
@@ -692,7 +692,7 @@ The three page categories of the `.page-body` rollout
    (gray-800 `#1f2937` — the 2026-07-08 job workspace restructure
    formalized this into a reusable shell, `JobShell.svelte`:
    `JobHeader` + `JobNavRail` + a collapsible `JobContextBand`, with one
-   section panel hosted per page; see `jobs-tasks-and-worksheets.md`
+   section panel hosted per page; see `jobs-and-tasks.md`
    §9.6) and **customer** (`CustomerHeader`, red-950 `#450a0a`, no rail
    yet). More areas are planned; as each lands, its pages move from III
    to II without other change. `JobShell`'s header+rail+band+panel
@@ -765,7 +765,7 @@ page-specific names or references:
   (`.stat-chip-body`) size to content so header bars stay uniform
   across the strip. `money` on a chip tints its header green to group
   financial chips into a family. First consumer: the task detail
-  header (jobs-tasks-and-worksheets §10.2).
+  header (jobs-and-tasks §10.2).
 - **`.action-band`** — a full-width strip of the actions operating on
   the entity above it; buttons inside get consistent sizing, with
   `primary` (the one most-expected action) and `quiet` (housekeeping,
@@ -781,7 +781,7 @@ page-specific names or references:
   `.stat-sub` / an optional `.stat-progress` bar. `.clock-line` (+
   `.clock-good` / `.clock-warn` / `.clock-bad`) is a hairline-topped
   trailing status line inside an active block. First (and so far only)
-  consumer: the job overview's six blocks (`jobs-tasks-and-worksheets.md`
+  consumer: the job overview's six blocks (`jobs-and-tasks.md`
   §9) — generic on purpose, named for reuse by other lifecycle
   summaries.
 

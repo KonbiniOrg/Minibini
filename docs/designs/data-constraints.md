@@ -12,7 +12,7 @@ Consumers: the data validator (`validate_data.py`), the translation script
 
 This doc owns cross-model invariants and field-by-field constraints. The
 seven topic docs (`architecture-and-conventions.md`,
-`jobs-tasks-and-worksheets.md`, `estimates-and-prices.md`,
+`jobs-and-tasks.md`, `estimates-and-prices.md`,
 `materials-inventory-and-purchasing.md`, `invoicing-and-expenses.md`,
 `quickbooks-integration.md`, `users-and-permissions.md`) own the workflows;
 relevant sections cross-reference them.
@@ -113,7 +113,7 @@ rollup (`apps/jobs/financials.py`). A stand-in until per-worker pay/cost rates
 exist; missing or blank is treated as `0`, so labor contributes nothing until an
 operator sets it. Editable in **Settings → Setup → Defaults**; the settings API
 (`PATCH /api/settings/`) validates it as a non-negative number (blank allowed).
-See `jobs-tasks-and-worksheets.md` §9.3.
+See `jobs-and-tasks.md` §9.3.
 
 Time tracking: `blep_minimum_minutes` (`1`) — below this elapsed duration
 (whole minutes; times are minute-granular) a blep is an accidental start.
@@ -121,12 +121,12 @@ Closing one (via any path — stop, clock-out, logout/deactivation) cancels it
 with full `cancel_work` undo (delete + first/only-activity revert) rather than
 persisting a closed blep; the UI's Stop control reads Cancel below the
 threshold. **Invariant: a sub-minimum close is never persisted — it is
-cancelled.** See `jobs-tasks-and-worksheets.md` §4.5/§5.5.
+cancelled.** See `jobs-and-tasks.md` §4.5/§5.5.
 
 Materials: `default_material_accounting_category` (unset) — string-encoded
 `AccountingCategory` PK applied to `is_material=True` hand-lines (Estimate and
 ChangeOrder) with no explicit AC, and used to pre-fill `MaterialModal`'s
-category field (`jobs-tasks-and-worksheets.md` §9.5). Editable in **Settings →
+category field (`jobs-and-tasks.md` §9.5). Editable in **Settings →
 Accounting Categories → Materials** (blank clears it). The settings API
 (`PATCH /api/settings/`) rejects a value that isn't blank or an existing
 **active** `AccountingCategory` id. See `estimates-and-prices.md` §6.4.
@@ -271,7 +271,7 @@ lives in core, `BlepChangeRequest` in `apps/jobs/models.py`.
   manager's review queue links straight to the record to adjust, then approve.
 
 See `docs/designs/users-and-permissions.md` for the endpoint/atom mapping and
-`jobs-tasks-and-worksheets.md` §5 for the Blep side.
+`jobs-and-tasks.md` §5 for the Blep side.
 
 ---
 
@@ -540,7 +540,7 @@ While held (`on_hold` flag), the following are blocked (purely by flag filter �
 - Schedule forecasting (`ScheduleService` never forecasts a held job; its history bars still render).
 - Shipment creation (`ShipmentService._assert_job_not_on_hold`).
 
-See `docs/designs/jobs-tasks-and-worksheets.md` for the loose-pending-material
+See `docs/designs/jobs-and-tasks.md` for the loose-pending-material
 guard on `in_progress → work_complete`.
 
 ---
@@ -644,7 +644,7 @@ Valid transitions:
 - **est_worker_time**: optional Duration — **required when explicitly
   assigning** (the invariant lives on the assign gestures, not
   `Task.clean()`; auto-assign on start is exempt — see
-  `jobs-tasks-and-worksheets.md` §4.4)
+  `jobs-and-tasks.md` §4.4)
 - **actual_qty**: optional decimal — running total of worker-entered increments for `entered_qty`
   schemes. Null for `elapsed_time` (derived from Bleps). Drives the
   **invoice** lens (`Task.compute_amount`).
@@ -1346,7 +1346,7 @@ customer-facing manifest distinct from billing line items.
 **Constraint**: `qty_ordered > 0` (validated by service when supplied via
 API; not a DB constraint).
 
-See `docs/designs/jobs-tasks-and-worksheets.md` for the workflow and §2.12
+See `docs/designs/jobs-and-tasks.md` for the workflow and §2.12
 below for the estimate-send guard.
 
 ---
@@ -1413,7 +1413,7 @@ counter (no global document number).
 makes it impossible to remove a Deliverable that any Shipment references.
 This is the anchoring invariant from the database side — see §1.23.
 
-See `docs/designs/jobs-tasks-and-worksheets.md` for the full
+See `docs/designs/jobs-and-tasks.md` for the full
 fulfillment workflow.
 
 ---
@@ -1438,7 +1438,7 @@ Immutable, write-once frozen copy of a Deliverable's agreed scope at the moment 
 - A document has at most one snapshot set. `DeliverableService.snapshot_document` short-circuits if any snapshot already exists for that document.
 - Snapshots are never edited or deleted by application code.
 
-See `docs/designs/jobs-tasks-and-worksheets.md` §12.9.
+See `docs/designs/jobs-and-tasks.md` §12.9.
 
 ---
 

@@ -1,6 +1,6 @@
 """Explicit logout closes the user's active blep(s). Session expiry does NOT
 (there's no server-side expiry hook) — so the close lives only in the logout
-endpoint. See docs/designs/jobs-tasks-and-worksheets.md §5.
+endpoint. See docs/designs/jobs-and-tasks.md §5.
 """
 from datetime import timedelta
 

@@ -607,7 +607,7 @@ Serializers: add `'display_number'` (read-only — it's a property, DRF handles 
 - Modify docs (same session, per repo rule):
   - `docs/designs/quickbooks-integration.md` — per-line push, `QBOItemMintService`, ItemRef resolution, invoiceLink fetch, DocNumber writeback
   - `docs/designs/invoicing-and-expenses.md` — numbering (QBO-assigned, `display_number`), send flow, `{payment_link}` placeholder
-  - `docs/designs/jobs-tasks-and-worksheets.md` + `estimates-and-prices.md` — `Task.service_item` provenance; ServiceItem `qbo_id`
+  - `docs/designs/jobs-and-tasks.md` + `estimates-and-prices.md` — `Task.service_item` provenance; ServiceItem `qbo_id`
   - `docs/designs/materials-inventory-and-purchasing.md` — InventoryItem `qbo_id`
   - `docs/designs/data-constraints.md` — `invoice_number` now nullable/QBO-assigned; removed tax-override fields; retired `invoice` numbering pattern
   - `docs/designs/LATER.md` — add: catalog rename propagation to QBO Items; business-level tax exemption via QBO Customer

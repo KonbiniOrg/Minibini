@@ -13,7 +13,7 @@ The customer-facing billing side of Minibini and the employee/company expense le
 ## What this doc does not own
 
 - Service-layer conventions, `LineItemMixin`, `StatusTransitionMixin`, two-phase delete, the line-item delete-and-renumber rule. See `docs/designs/architecture-and-conventions.md` and `CLAUDE.md`.
-- `Job`, `Task`, `Blep`, `WorkTemplate` shape. See `docs/designs/jobs-tasks-and-worksheets.md`.
+- `Job`, `Task`, `Blep`, `WorkTemplate` shape. See `docs/designs/jobs-and-tasks.md`.
 - The estimate wizard (`EstimateLineItemSource`, the same Job atoms, in-sync rule). The invoice wizard mirrors it; see `docs/designs/estimates-and-prices.md` for the shared structure and the `LineItemSource` claim model.
 - `Material` shape, `MaterialService.consume`, `is_expense_bound`, the "Materials (no task)" bucket. See `docs/designs/materials-inventory-and-purchasing.md`.
 - Vendor-side AP: bills live entirely in QBO — the konbini Bill domain was retired 2026-07-23. See `docs/designs/materials-inventory-and-purchasing.md` §13.
@@ -327,7 +327,7 @@ The invoice detail view lives at `#/jobs/:jobId/invoice[/:docId]` →
 `JobInvoicePage.svelte` (`frontend/src/routes/jobs/`), which hosts
 `InvoicePanel.svelte` (`frontend/src/components/invoices/`) inside the
 job workspace shell (`JobShell` — header + nav rail + collapsible
-context band; see `jobs-tasks-and-worksheets.md` §9.6). The bare
+context band; see `jobs-and-tasks.md` §9.6). The bare
 section route restores whichever invoice the user last viewed for this
 job (or the latest); picking a different invoice via the panel's
 subnav (`DocSubnav.svelte`, one pill per invoice with a status badge)
@@ -892,7 +892,7 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 **Superseded by the 2026-07-08 job-workspace restructure and the
 2026-07-09 overview redesign:** there is no longer an "invoice pillar"
 on the job overview — the overview has no authoring affordances at all
-(display-only summary blocks; see `jobs-tasks-and-worksheets.md` §9).
+(display-only summary blocks; see `jobs-and-tasks.md` §9).
 The Create/View model now lives entirely on the Invoices section
 (`InvoicePanel.svelte`, when the job has no invoices yet):
 

@@ -328,7 +328,7 @@ describe('TaskDetailPage prompt modals vs background refetch', () => {
     // finishing elsewhere) makes the page refetch. That refetch must NOT
     // blank the page ("Loading…") and remount TaskActions — that would
     // destroy any open prompt modal. Regression caught by driving the
-    // real app; invariants documented in jobs-tasks-and-worksheets §10.1a.
+    // real app; invariants documented in jobs-and-tasks §10.1a.
     mockApi({ scheme_algorithm: 'entered_qty', scheme_name: 'Press',
               scheme_unit_label: 'pcs', actual_qty: '9.00',
               status: 'in_progress' });

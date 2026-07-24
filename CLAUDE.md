@@ -106,7 +106,7 @@ Minibini/
 | Doc | Covers |
 |---|---|
 | `architecture-and-conventions.md` | Service layer, mixin catalog, permissions plumbing, line-item pattern, view-mode, history capture, sidebar |
-| `jobs-tasks-and-worksheets.md` | Job, Task, Blep, Templates, Job Board, lifecycle service, Deliverables, Shipments (filename is historical — the worksheet layer was removed) |
+| `jobs-and-tasks.md` | Job, Task, Blep, Templates, Job Board, lifecycle service, Deliverables, Shipments |
 | `estimates-and-prices.md` | RateScheme + supersession, billable atoms, Estimate + wizard, atom carry-over, AC pass-through |
 | `materials-inventory-and-purchasing.md` | InventoryItem (catalog/lots), Material, Earmarks, units, PurchaseOrder, the Bill retirement |
 | `contacts-and-businesses.md` | Contact, Business, Tag, PaymentTerms, duplicate-email/name detection, financials rollup, the combined Contacts & Businesses frontend surface |
@@ -121,14 +121,14 @@ Minibini/
 | App | Models | Authoritative doc |
 |---|---|---|
 | `apps.core` | User, Configuration, AccountingCategory, BaseLineItem (abstract), AbstractWorkContainer (abstract), HistoryEntry, EmailRecord, TempEmail | architecture, users-and-permissions, data-constraints |
-| `apps.jobs` | Job, Task, Blep, RateScheme, Fee | jobs-tasks-and-worksheets (Job/Task/Blep) + estimates-and-prices (RateScheme) |
-| `apps.estimates` | Estimate, ChangeOrder, EstimateLineItem, EstimateLineItemSource, WorkTemplate, ServiceItem, TemplateTaskAssociation | estimates-and-prices + jobs-tasks-and-worksheets (templates) |
+| `apps.jobs` | Job, Task, Blep, RateScheme, Fee | jobs-and-tasks (Job/Task/Blep) + estimates-and-prices (RateScheme) |
+| `apps.estimates` | Estimate, ChangeOrder, EstimateLineItem, EstimateLineItemSource, WorkTemplate, ServiceItem, TemplateTaskAssociation | estimates-and-prices + jobs-and-tasks (templates) |
 | `apps.contacts` | Contact, Business, PaymentTerms, Tag | contacts-and-businesses + data-constraints §1.5, §1.4 |
 | `apps.inventory` | InventoryItem (was PriceListItem; `is_catalog` flag), Material, Earmark, TemplateMaterialAssociation | materials-inventory-and-purchasing |
 | `apps.purchasing` | PurchaseOrder, PurchaseOrderLineItem (Bill/BillLineItem/BillPayment are retired schema-only stubs, 2026-07-23 — bills live in QBO) | materials-inventory-and-purchasing |
 | `apps.invoicing` | Invoice, InvoiceLineItem, InvoiceLineItemSource | invoicing-and-expenses |
 | `apps.expenses` | Expense, Reimbursement | invoicing-and-expenses |
-| `apps.deliverables` | Deliverable, Shipment, ShipmentItem | jobs-tasks-and-worksheets §12 |
+| `apps.deliverables` | Deliverable, Shipment, ShipmentItem | jobs-and-tasks §12 |
 | `apps.qbo` | QBOConnection, QBOSyncLog | quickbooks-integration |
 | `apps.schedule` | _(no models)_ — `ScheduleService` produces the `/schedule` view's per-worker bars from Tasks + Bleps + `Job.accent_color` + Configuration | `docs/designs/schedule.md` |
 

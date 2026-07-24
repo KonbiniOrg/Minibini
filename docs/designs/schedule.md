@@ -131,7 +131,7 @@ work happened and renders; only the future is paused.
 **Jobs (chip strip).** The `jobs` payload that feeds the top `JobChipStrip`
 is the board's In Progress column payload, **verbatim** — both surfaces
 consume `BoardService.strip_jobs_payload()` (see
-`jobs-tasks-and-worksheets.md`), which owns the set
+`jobs-and-tasks.md`), which owns the set
 (`in_progress_column_jobs()`: every `in_progress` job, held or not, plus
 unheld pre-approval jobs with ≥1 assigned, still-planned task, by
 `due_date`) AND the serialization (`sub_status`, `pre_approval` /
@@ -266,7 +266,7 @@ Board's `JobChipStrip` is reused at the top.
   embedded `TaskActions`, reassign via `AssignModal`, and a link to the full
   task. For `can_manage_time` managers it also offers on-behalf
   "Start/Stop for «worker»" (gated server-side; see
-  `jobs-tasks-and-worksheets.md` §4.5/§5.2).
+  `jobs-and-tasks.md` §4.5/§5.2).
 
 ---
 

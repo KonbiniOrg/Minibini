@@ -17,7 +17,7 @@ Sibling docs:
 - `docs/designs/architecture-and-conventions.md` — service-layer pattern,
   `LineItemMixin`, `LineItemService.delete_line_item_with_renumber`,
   delete-confirm pattern.
-- `docs/designs/jobs-tasks-and-worksheets.md` — `Job`, `Task`, `Fee`,
+- `docs/designs/jobs-and-tasks.md` — `Job`, `Task`, `Fee`,
   `WorkTemplate`, populate-from-template path, the Work surface.
 - `docs/designs/estimates-and-prices.md` — `RateScheme`, billable atoms
   (Materials are atoms), AccountingCategory pass-through.
@@ -432,7 +432,7 @@ Enforcement lives in `apps/inventory/serializer_helpers.py`
 Every Material starts `pending` and transitions to `consumed` when work
 begins. Consumption is one-way for users; the lone reversal is
 `unconsume` (`consumed → pending`), used only by the blep-cancel undo
-(see `jobs-tasks-and-worksheets.md` §4.5). The state machine is uniform
+(see `jobs-and-tasks.md` §4.5). The state machine is uniform
 across PLI types and attachment mode.
 
 | State | Restock | Draw more | Consume | Edit description |
@@ -616,7 +616,7 @@ Receipt only bumps QOH.
   during pre-approval work already drew down QOH, so re-earmarking it would
   phantom-reserve stock that's already used. Correspondingly, `unconsume`
   skips earmark restoration on pre-approval jobs — they carry no earmarks by
-  design. See jobs-tasks-and-worksheets.md §"Job-status guard" for the
+  design. See jobs-and-tasks.md §"Job-status guard" for the
   pre-approval-work flow that motivates both.
 
 ### Inventory history trail (InventoryHistory)
@@ -751,7 +751,7 @@ For each instance × association:
   generated material attaches there.
 - Otherwise, the generated material is task-less.
 
-Pointer: `docs/designs/jobs-tasks-and-worksheets.md` covers the
+Pointer: `docs/designs/jobs-and-tasks.md` covers the
 `AbstractWorkContainer.populate_from_template` orchestration that
 generates BOTH tasks AND materials and runs `create_earmarks_for_job`
 afterward.
@@ -1272,7 +1272,7 @@ wires everything.) The handler halves are shared too: prompt-based ops in
 has no raw material-delete button — removal is the **release** action
 (full-quantity restock), the same vocabulary as everywhere else.
 
-The job overview (2026-07-09 six-block redesign; `jobs-tasks-and-worksheets.md`
+The job overview (2026-07-09 six-block redesign; `jobs-and-tasks.md`
 §9) does **not** mount `TaskTree` at all — it never lists rows. Its
 Materials block (`MaterialsBlock.svelte` → `materialsBlock()` in
 `lib/jobOverview.js`) shows a **Coverage** stat instead: `SHORT` (red)
