@@ -62,8 +62,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
             'line_item_id', 'line_number', 'inventory_item',
             'qty', 'units', 'description', 'price',
             'accounting_category', 'accounting_category_name',
-            'taxable_override', 'tax_rate_override',
-            'adjustment_service', 'adjustment_target_categories',
+                        'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail',
             'sources',
         ]
@@ -101,7 +100,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
         fields = [
-            'invoice_id', 'job', 'invoice_number', 'status',
+            'invoice_id', 'job', 'invoice_number', 'display_number', 'status',
             'created_date', 'sent_date', 'closed_date',
             'qbo_id', 'qbo_payment_status', 'qbo_amount_paid',
             'line_items', 'default_send_to',
@@ -110,7 +109,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'job_has_other_invoices', 'total',
         ]
         read_only_fields = [
-            'invoice_id', 'invoice_number', 'created_date',
+            'invoice_id', 'invoice_number', 'display_number', 'created_date',
             'sent_date', 'closed_date',
             'qbo_id', 'qbo_payment_status', 'qbo_amount_paid',
             'due_date', 'is_late',
@@ -196,7 +195,7 @@ class InvoiceSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
         fields = [
-            'invoice_id', 'invoice_number', 'status', 'job',
+            'invoice_id', 'invoice_number', 'display_number', 'status', 'job',
             'job_number', 'job_name', 'customer_name',
             'sent_date', 'due_date', 'is_late',
             'total', 'amount_paid', 'balance',

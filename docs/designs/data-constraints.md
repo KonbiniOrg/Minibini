@@ -12,7 +12,7 @@ Consumers: the data validator (`validate_data.py`), the translation script
 
 This doc owns cross-model invariants and field-by-field constraints. The
 seven topic docs (`architecture-and-conventions.md`,
-`jobs-tasks-and-worksheets.md`, `estimates-and-prices.md`,
+`jobs-and-tasks.md`, `estimates-and-prices.md`,
 `materials-inventory-and-purchasing.md`, `invoicing-and-expenses.md`,
 `quickbooks-integration.md`, `users-and-permissions.md`) own the workflows;
 relevant sections cross-reference them.
@@ -42,8 +42,30 @@ Both have **key** as primary key (unique, max 100 chars) and a string **value**.
 | Configuration (pattern) | AppState (counter) |
 |---|---|
 | `job_number_sequence` | `job_counter` |
-| `invoice_number_sequence` | `invoice_counter` |
+| `invoice_number_sequence` | `invoice_counter` | _(retired 2026-07-21 — QBO assigns invoice numbers; rows are harmless leftovers)_ |
 | `po_number_sequence` | `po_counter` |
+
+QBO import state (2026-07-23): `qbo_import_snapshot` (the pulled JSON blob,
+`fetched_at` inside), `qbo_import_dismissed` (`{area: true}` sticky
+per-area panel dismissals), `qbo_import_scheme_map` (`{qbo_item_id:
+scheme_pk}` written at scheme commit; binds catalog services to schemes
+without name-matching AND makes scheme re-commits upsert instead of
+duplicate), `qbo_import_catalog_fingerprints` (`{qbo_id: import-time QBO
+item fields}` written at catalog commit; the `changed` diff baseline —
+never live konbini values) — see quickbooks-integration.md.
+
+Per-tenant email account (2026-07-23, Settings → Email; Configuration-first
+with env-settings fallback via `apps/core/email_account.py`):
+`email_imap_server`, `email_address`, `email_password`, `email_smtp_host`,
+`email_smtp_port` — the two server hosts and port are **seeded gmail
+defaults** (migration 0027; tenant supplies address+password).
+`email_configured()` (imap+address+password) gates the
+Email area; `POST /api/settings/email-verify/` live-tests both directions.
+
+The live pattern rows, both AppState counters, and `units_list` are **seeded
+by data migration** (`core/0027_seed_setup_defaults`, idempotent, never
+overwrites) — a migrate-only fresh database can create Jobs/POs without
+fixtures (2026-07-23; previously fixture-only, a fresh-tenant trap).
 
 Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
 `{day:02d}`, `{counter:04d}`. Counter values are string-encoded integers.
@@ -91,7 +113,7 @@ rollup (`apps/jobs/financials.py`). A stand-in until per-worker pay/cost rates
 exist; missing or blank is treated as `0`, so labor contributes nothing until an
 operator sets it. Editable in **Settings → Setup → Defaults**; the settings API
 (`PATCH /api/settings/`) validates it as a non-negative number (blank allowed).
-See `jobs-tasks-and-worksheets.md` §9.3.
+See `jobs-and-tasks.md` §9.3.
 
 Time tracking: `blep_minimum_minutes` (`1`) — below this elapsed duration
 (whole minutes; times are minute-granular) a blep is an accidental start.
@@ -99,12 +121,12 @@ Closing one (via any path — stop, clock-out, logout/deactivation) cancels it
 with full `cancel_work` undo (delete + first/only-activity revert) rather than
 persisting a closed blep; the UI's Stop control reads Cancel below the
 threshold. **Invariant: a sub-minimum close is never persisted — it is
-cancelled.** See `jobs-tasks-and-worksheets.md` §4.5/§5.5.
+cancelled.** See `jobs-and-tasks.md` §4.5/§5.5.
 
 Materials: `default_material_accounting_category` (unset) — string-encoded
 `AccountingCategory` PK applied to `is_material=True` hand-lines (Estimate and
 ChangeOrder) with no explicit AC, and used to pre-fill `MaterialModal`'s
-category field (`jobs-tasks-and-worksheets.md` §9.5). Editable in **Settings →
+category field (`jobs-and-tasks.md` §9.5). Editable in **Settings →
 Accounting Categories → Materials** (blank clears it). The settings API
 (`PATCH /api/settings/`) rejects a value that isn't blank or an existing
 **active** `AccountingCategory` id. See `estimates-and-prices.md` §6.4.
@@ -249,7 +271,7 @@ lives in core, `BlepChangeRequest` in `apps/jobs/models.py`.
   manager's review queue links straight to the record to adjust, then approve.
 
 See `docs/designs/users-and-permissions.md` for the endpoint/atom mapping and
-`jobs-tasks-and-worksheets.md` §5 for the Blep side.
+`jobs-and-tasks.md` §5 for the Blep side.
 
 ---
 
@@ -259,10 +281,15 @@ Standalone. No FK dependencies.
 
 - **code**: unique, max 20 chars (e.g. "SVC", "MAT")
 - **name**: max 100 chars
-- **taxable**: boolean, default True
+- **taxable**: boolean, default True. The **only** konbini-side taxability
+  signal: per-line QBO TaxCodeRef reads it directly (the per-line
+  `taxable_override`/`tax_rate_override` fields were removed 2026-07-21).
 - **is_active**: boolean, default True (soft delete)
 - **qbo_item_id** / **qbo_expense_account_id**: optional, populated after
-  connecting QBO
+  connecting QBO. `qbo_item_id` is the **fallback** ItemRef for invoice
+  lines with no catalog identity, and the source of `IncomeAccountRef`
+  when `QBOItemMintService` mints catalog Items in the category (see
+  quickbooks-integration.md).
 
 ---
 
@@ -311,7 +338,8 @@ with `default_contact` pointing to that Contact, then update the Contact's
   (mutual exclusivity — contacts with a business use the business's QBO ID)
 - **Deletion blocked** if contact is the sole contact for a business (the
   business would lose its required `default_contact`), or if it has any
-  associated Job or Bill
+  associated Job or Bill (the Bill check guards legacy rows only — retired
+  schema, §1.18)
 
 ---
 
@@ -512,7 +540,7 @@ While held (`on_hold` flag), the following are blocked (purely by flag filter �
 - Schedule forecasting (`ScheduleService` never forecasts a held job; its history bars still render).
 - Shipment creation (`ShipmentService._assert_job_not_on_hold`).
 
-See `docs/designs/jobs-tasks-and-worksheets.md` for the loose-pending-material
+See `docs/designs/jobs-and-tasks.md` for the loose-pending-material
 guard on `in_progress → work_complete`.
 
 ---
@@ -616,7 +644,7 @@ Valid transitions:
 - **est_worker_time**: optional Duration — **required when explicitly
   assigning** (the invariant lives on the assign gestures, not
   `Task.clean()`; auto-assign on start is exempt — see
-  `jobs-tasks-and-worksheets.md` §4.4)
+  `jobs-and-tasks.md` §4.4)
 - **actual_qty**: optional decimal — running total of worker-entered increments for `entered_qty`
   schemes. Null for `elapsed_time` (derived from Bleps). Drives the
   **invoice** lens (`Task.compute_amount`).
@@ -798,7 +826,7 @@ Enforced in `Estimate.clean()`.
   blank.']}`). A PLI-linked line backfills `units` from the PLI in
   `_populate_from_pli()`; a freeform line must carry its own (default `'none'`).
   This is a **BaseLineItem-wide** rule — it holds for InvoiceLineItem,
-  PurchaseOrderLineItem, BillLineItem, and ChangeOrderLineItem too. Empty-string
+  PurchaseOrderLineItem, and ChangeOrderLineItem too. Empty-string
   units can therefore only exist as legacy/bulk-inserted rows that bypassed
   `save()`; the normal path can't produce them, and re-saving such a row (e.g.
   `revise_estimate` copying line items) will raise.
@@ -1033,8 +1061,12 @@ A `cancelled` Job may carry `open` / `partly-paid` / `paid` Invoices: `CANCELLED
 #### Fields
 
 - **job** (required FK → Job, CASCADE)
-- **invoice_number**: unique, max 50 chars. Auto-generated via
-  NumberGenerationService if not provided.
+- **invoice_number**: unique, max 50 chars, **nullable** (2026-07-21). QBO
+  owns invoice numbering: NULL on drafts; the first QBO push writes QBO's
+  `DocNumber` back (retry sends backfill). Never generated konbini-side —
+  the `'invoice'` NumberGenerationService pattern is retired. UI surfaces
+  render the `display_number` property (`invoice_number` or
+  `"Draft — {job_number}"`), never raw `invoice_number`.
 - **created_date**: set on creation
 - **sent_date**: nullable. Auto-set to `now()` by `Invoice.save()` on the
   `draft → open` transition (the send-to-customer step; mirrors `Estimate`), and
@@ -1167,76 +1199,24 @@ line item ordered (`Material.po_line_item`).
 
 ---
 
-### 1.18 Bill (+ BillLineItem)
+### 1.18 Bill (+ BillLineItem, BillPayment) — retired 2026-07-23
 
-Depends on: Business, (optionally) Contact, PurchaseOrder.
+Vendor invoices live entirely in QBO. `Bill`, `BillLineItem`, and
+`BillPayment` remain in `apps/purchasing/models.py` as **schema-only stubs**
+(kept to avoid a destructive migration; legacy rows may exist), but no
+active code creates, mutates, or displays them, so they carry **no live
+constraints** — the former status machine, date rules, payment recompute,
+and line-item requirements are gone with the business logic. What persists:
 
-#### Status machine
+- The **PROTECT FKs** from legacy rows (business, contact, purchase_order,
+  BillLineItem → InventoryItem) still block unsafe deletes of their targets
+  — see the Contact deletion rule (§1.5), the business-delete impact counts,
+  and `InventoryItem.has_document_line_refs`.
+- `EmailRecord.bill` (§1.27) is a legacy-only column; the email API no
+  longer exposes `bill` / `vendor_invoice_number`.
 
-```
-draft → received → partly_paid → paid_in_full → refunded
-                 ↘ paid_in_full
-                 ↘ cancelled
-```
-
-Valid transitions:
-- `draft` → `received`
-- `received` → `partly_paid`, `paid_in_full`, `cancelled`
-- `partly_paid` → `paid_in_full`
-- `paid_in_full` → `refunded`
-- `cancelled`, `refunded` → (terminal)
-
-#### Fields
-
-- **business** (required FK → Business, PROTECT)
-- **contact** (optional FK → Contact, PROTECT): same rules as PurchaseOrder
-  (must have business, must match on creation)
-- **vendor_invoice_number**: optional (`blank=True`), max 50 chars. The
-  vendor's own number from the invoice; serves as the primary human-facing
-  identifier for the Bill (no Minibini-side auto-generated number). Blank is
-  allowed because a draft Bill created from a PO exists before the real vendor
-  invoice arrives; the number is filled in when the invoice is matched
-  (`__str__` falls back to the bill pk when blank).
-- **purchase_order** (optional FK → PurchaseOrder, PROTECT): if set, PO must
-  NOT be in `draft` status. PO's business must match bill's business.
-- If contact is provided on creation and business is not explicitly set,
-  business is auto-populated from contact's business.
-- **qbo_id**: optional QBO sync ID
-- **qbo_payment_status**: optional QBO payment state string
-
-#### Date rules
-
-- **created_date**: set on creation, immutable thereafter
-- **received_date**: auto-set to `now()` on transition to `received`.
-  Immutable once set.
-- **paid_date**: auto-set to `now()` on transition to `paid_in_full`.
-  Immutable once set.
-- **cancelled_date**: auto-set to `now()` on transition to `cancelled`.
-  Immutable once set.
-- **due_date**: optional, user-set
-
-#### Line item requirement
-
-Cannot transition out of `draft` without at least one BillLineItem.
-
-#### Deletion
-
-Only `draft` Bills can be deleted.
-
-#### BillLineItem
-
-- **bill** (required FK → Bill, CASCADE)
-- **task** (optional FK → Task, PROTECT): reserved alongside
-  `PurchaseOrderLineItem.task` for the future "service PO" feature.
-  Only `BillService.create_bill_from_po` writes to it (copying the value
-  from the source PO line); since PO-line `task` is always null today,
-  this field is null in practice too. Defined directly on the subclass,
-  not on `BaseLineItem`.
-- **inventory_item** (optional FK → InventoryItem, PROTECT)
-- Cannot have both **task** and **inventory_item** set (mutually exclusive
-  per `BaseLineItem.clean()`)
-- **line_number**: auto-generated sequentially per bill if null
-- **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work) values
+See `materials-inventory-and-purchasing.md` §13 for the full retirement
+record. Vendor-invoice emails now link to the **PurchaseOrder** instead.
 
 ---
 
@@ -1366,7 +1346,7 @@ customer-facing manifest distinct from billing line items.
 **Constraint**: `qty_ordered > 0` (validated by service when supplied via
 API; not a DB constraint).
 
-See `docs/designs/jobs-tasks-and-worksheets.md` for the workflow and §2.12
+See `docs/designs/jobs-and-tasks.md` for the workflow and §2.12
 below for the estimate-send guard.
 
 ---
@@ -1433,7 +1413,7 @@ counter (no global document number).
 makes it impossible to remove a Deliverable that any Shipment references.
 This is the anchoring invariant from the database side — see §1.23.
 
-See `docs/designs/jobs-tasks-and-worksheets.md` for the full
+See `docs/designs/jobs-and-tasks.md` for the full
 fulfillment workflow.
 
 ---
@@ -1458,7 +1438,7 @@ Immutable, write-once frozen copy of a Deliverable's agreed scope at the moment 
 - A document has at most one snapshot set. `DeliverableService.snapshot_document` short-circuits if any snapshot already exists for that document.
 - Snapshots are never edited or deleted by application code.
 
-See `docs/designs/jobs-tasks-and-worksheets.md` §12.9.
+See `docs/designs/jobs-and-tasks.md` §12.9.
 
 ---
 
@@ -1483,7 +1463,8 @@ in the application, not the schema). See
 
 Append-only audit trail of sync operations. No invariants beyond schema.
 
-- **entity_type** (e.g. `invoice`, `bill`, `expense`); **entity_id** (int)
+- **entity_type** (e.g. `invoice`, `expense`; historical rows retain retired
+  types — `bill`, `bill_payment`, `vendor`); **entity_id** (int)
 - **qbo_entity_type** / **qbo_entity_id** (max 50 chars, blank)
 - **action** (e.g. `create`, `update`); **status** (e.g. `success`,
   `failure`)
@@ -1507,13 +1488,16 @@ system) both live here, distinguished by `direction`.
   cleared on a successful send.
 - **job** (optional FK → Job, `on_delete=SET_NULL`)
 - **purchase_order** (optional FK → PurchaseOrder, `on_delete=SET_NULL`)
-- **bill** (optional FK → Bill, `on_delete=SET_NULL`)
+- **bill** (optional FK → Bill, `on_delete=SET_NULL`): **legacy-only**
+  since the 2026-07-23 bill retirement — no active code sets or exposes it
+  (the email API no longer serializes `bill` / `vendor_invoice_number`);
+  vendor-invoice emails link to the PO instead
 - **created_at**: auto-set on creation
 
-The three associations are not exclusive: a single email can
-simultaneously link to a Job (e.g. the customer thread it relates to),
-a PO (the vendor quote it spawned), and a Bill (the vendor invoice it
-carried). Deleting any of the target entities clears that FK; the
+The associations are not exclusive: a single email can
+simultaneously link to a Job (e.g. the customer thread it relates to)
+and a PO (the vendor quote it spawned, or the vendor invoice for it).
+Deleting any of the target entities clears that FK; the
 EmailRecord itself persists.
 
 Outbound rows are created at send time by
@@ -1840,7 +1824,8 @@ as side effects of object operations.
 - **entry_type**: `audit` (field changes), `action` (system status
   transitions), `note` (user-written text)
 - **object_type**: string identifier (e.g. `job`, `estimate`, `contact`,
-  `business`, `inventoryitem`, `invoice`, `purchaseorder`, `bill`)
+  `business`, `inventoryitem`, `invoice`, `purchaseorder`; historical rows
+  may carry `bill` — retired 2026-07-23)
 - **object_id**: integer PK of the referenced object
 - **user** (FK → User, nullable): `audit` → acting user; `action` →
   `system` user; `note` → authoring user
@@ -1852,7 +1837,9 @@ as side effects of object operations.
 ### What generates history
 
 `@history`-decorated models: Contact, Business, Job, Estimate, ChangeOrder,
-Invoice, PurchaseOrder, Bill, Shift, ShiftChangeRequest, BlepChangeRequest.
+Invoice, PurchaseOrder, Shift, ShiftChangeRequest, BlepChangeRequest.
+(Bill's decorator was removed with the 2026-07-23 retirement; its old
+entries remain.)
 The decorator creates `audit` entries on create and update.
 
 Signal handlers create `action` entries (as `system` user) for:

@@ -61,3 +61,17 @@ describe('BusinessForm', () => {
     expect(footer.closest('[role="alert"]')).not.toBeNull();
   });
 });
+
+
+describe('BusinessForm payment terms options', () => {
+  it('labels options with the term name, falling back to the id', () => {
+    const { getByRole } = render(BusinessForm, { props: {
+      paymentTerms: [
+        { term_id: 1, name: 'Net 30' },
+        { term_id: 2, name: '' },
+      ],
+    }});
+    expect(getByRole('option', { name: 'Net 30' })).toBeInTheDocument();
+    expect(getByRole('option', { name: '2' })).toBeInTheDocument();
+  });
+});

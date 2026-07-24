@@ -10,7 +10,7 @@ beforeEach(() => { api.get.mockReset(); });
 describe('PurchaseOrderPicker', () => {
   it('searches all POs globally and emits the picked PO', async () => {
     api.get.mockResolvedValue({ results: [
-      { po_id: 7, po_number: 'PO-7', business: { business_name: 'Acme' } },
+      { po_id: 7, po_number: 'PO-7', business: 3, business_name: 'Acme' },
     ] });
     const onSelect = vi.fn();
     const { getByPlaceholderText, findByRole } = render(PurchaseOrderPicker, { props: { onSelect } });

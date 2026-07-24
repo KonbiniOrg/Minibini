@@ -42,19 +42,6 @@ describe('BusinessDetail', () => {
     expect(queryByText('JOB-2')).toBeNull();
   });
 
-  it('pages bills via the callback', async () => {
-    const onBillPageChange = vi.fn();
-    const { getByRole } = render(BusinessDetail, {
-      props: {
-        business: business(),
-        bills: { results: [{ bill_id: 1, vendor_invoice_number: 'V1', status: 'open' }], next: 'http://x/?page=3', previous: null, count: 50 },
-        onBillPageChange,
-      },
-    });
-    await fireEvent.click(getByRole('button', { name: 'Next' }));
-    expect(onBillPageChange).toHaveBeenCalledWith(3);
-  });
-
   it('fires edit and delete callbacks (manager)', async () => {
     const onEdit = vi.fn();
     const onDelete = vi.fn();

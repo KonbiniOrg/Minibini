@@ -13,7 +13,7 @@ from apps.core.models import CrmHistory
 from apps.core.history import record_history
 from apps.core.services import ServiceError, NotFoundError
 from apps.api.mixins import ConfirmDeleteMixin
-from apps.api.permissions import CanManageJobs
+from apps.api.permissions import CanManageJobs, CanManageConfig
 from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import ContactSerializer, ContactDetailSerializer, BusinessSerializer, BusinessDetailSerializer, PaymentTermsSerializer, TagSerializer
 
@@ -420,7 +420,29 @@ class TagViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class PaymentTermsViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = PaymentTerms.objects.all()
+class PaymentTermsViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
+    """Settings → Business terms manager. Reads stay open (the BusinessForm
+    assignment select); writes are config-gated. Deletes are two-phase:
+    Business.terms is SET_NULL, so the impact count is what the user is
+    really confirming."""
     serializer_class = PaymentTermsSerializer
     pagination_class = None
+
+    def get_queryset(self):
+        from django.db.models import Count
+        return (PaymentTerms.objects
+                .annotate(business_count=Count('business'))
+                .order_by('name'))
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), CanManageConfig()]
+
+    def get_deletion_impact(self, obj):
+        return {'businesses': Business.objects.filter(terms=obj).count()}
+
+    def perform_confirmed_destroy(self, obj):
+        name = str(obj)
+        obj.delete()
+        return Response({'message': f'Payment terms "{name}" deleted.'})

@@ -3,12 +3,13 @@ import { render, fireEvent } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
 vi.mock('svelte-spa-router', () => ({ link: () => ({}), push: vi.fn() }));
-vi.mock('@/lib/api.js', () => ({ api: { post: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { post: vi.fn(), get: vi.fn() } }));
 
 import { push } from 'svelte-spa-router';
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import { viewMode } from '@/stores/viewMode.js';
+import { setupStatus } from '@/stores/setupStatus.js';
 import Sidebar from '@/components/Sidebar.svelte';
 
 beforeEach(() => {
@@ -17,6 +18,7 @@ beforeEach(() => {
   api.post.mockResolvedValue(undefined);
   user.set({ username: 'rachel', permissions: [] });
   viewMode.set('lite');
+  setupStatus.set({ areas: null, last_pull_at: null });
 });
 
 describe('Sidebar', () => {
@@ -66,12 +68,11 @@ describe('Sidebar', () => {
     expect(api.post).toHaveBeenCalledWith('/api/auth/logout/');
   });
 
-  it('shows the Financials section with Invoices, Bills, and Expenses for financials users', () => {
+  it('shows the Financials section with Invoices and Expenses for financials users', () => {
     user.set({ username: 'fin', permissions: ['can_manage_financials'] });
     const { getByText, queryByText } = render(Sidebar);
     expect(getByText('Financials')).toBeInTheDocument();
     expect(getByText('Invoices')).toBeInTheDocument();
-    expect(getByText('Bills')).toBeInTheDocument();
     expect(getByText('Expenses')).toBeInTheDocument();
   });
 
@@ -80,6 +81,35 @@ describe('Sidebar', () => {
     const { queryByText } = render(Sidebar);
     expect(queryByText('Financials')).not.toBeInTheDocument();
     expect(queryByText('Invoices')).not.toBeInTheDocument();
-    expect(queryByText('Bills')).not.toBeInTheDocument();
+  });
+});
+
+
+describe('Sidebar setup gating', () => {
+  it('renders all entries as links when gates are unloaded', () => {
+    const { getByText } = render(Sidebar);
+    expect(getByText('Email').tagName).toBe('A');
+    expect(getByText('Catalog').tagName).toBe('A');
+  });
+
+  it('greys an unavailable area and shows its callout on hover', async () => {
+    setupStatus.set({ areas: {
+      email: { available: false, message: 'Add your email service configuration on Settings → Email.' },
+      jobs: { available: true, message: '' },
+      catalog: { available: true, message: '' },
+      purchasing: { available: true, message: '' },
+      invoices: { available: true, message: '' },
+      estimates: { available: true, message: '' },
+    }, last_pull_at: null });
+    const { getByText, queryByText, findByRole } = render(Sidebar);
+    const email = getByText('Email');
+    expect(email.tagName).toBe('SPAN');
+    expect(getByText('Jobs').tagName).toBe('A');
+    expect(queryByText(/email service configuration/)).toBeNull();
+    await fireEvent.mouseEnter(email);
+    const callout = await findByRole('tooltip');
+    expect(callout.textContent).toContain('Settings → Email');
+    await fireEvent.mouseLeave(email);
+    expect(queryByText(/email service configuration/)).toBeNull();
   });
 });

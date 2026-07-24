@@ -103,6 +103,21 @@ class ContactDetailSerializer(ContactSerializer):
 
 
 class PaymentTermsSerializer(serializers.ModelSerializer):
+    # The model stays permissive (QBO-import merges need blank names on
+    # mirror rows); the API enforces hand-entry hygiene instead.
+    name = serializers.CharField(max_length=100)
+    business_count = serializers.IntegerField(read_only=True, default=0)
+
     class Meta:
         model = PaymentTerms
-        fields = '__all__'
+        fields = ['term_id', 'name', 'days', 'qbo_id', 'business_count']
+        read_only_fields = ['qbo_id']
+
+    def validate_name(self, value):
+        existing = PaymentTerms.objects.filter(name__iexact=value)
+        if self.instance is not None:
+            existing = existing.exclude(pk=self.instance.pk)
+        if existing.exists():
+            raise serializers.ValidationError(
+                'Payment terms with this name already exist.')
+        return value

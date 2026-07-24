@@ -5,15 +5,12 @@ and POST /api/qbo/sync-failures/retry-all/.
 from decimal import Decimal
 from datetime import date
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from django.test import TestCase, Client
-from django.utils import timezone
 from django.contrib.auth.models import Permission
 
 from apps.core.models import Configuration, AccountingCategory
-from apps.contacts.models import Contact, Business
 from apps.expenses.models import Expense, Reimbursement
-from apps.purchasing.models import Bill, BillPayment
 from apps.qbo.services import QBOSyncFailureService
 
 from django.contrib.auth import get_user_model
@@ -44,18 +41,6 @@ class QBOSyncFailureServiceTest(TestCase):
         )
         self.worker = User.objects.create_user(username='worker', password='testpass')
         self.admin = User.objects.create_user(username='admin', password='testpass')
-
-        contact = Contact.objects.create(first_name='Acme', last_name='Vendor')
-        self.business = Business.objects.create(
-            business_name='Acme Corp', default_contact=contact,
-            qbo_vendor_id='qbo-v-1',
-        )
-        self.bill = Bill.objects.create(
-            business=self.business,
-            vendor_invoice_number='INV-001',
-            status=Bill.STATUS_RECEIVED,
-            qbo_id='qbo-bill-1',
-        )
 
     def _failed_company_expense(self, pending_op=Expense.OP_CREATE):
         return Expense.objects.create(
@@ -106,18 +91,6 @@ class QBOSyncFailureServiceTest(TestCase):
         )
         return batch
 
-    def _failed_bill_payment(self, pending_op=BillPayment.OP_CREATE):
-        return BillPayment.objects.create(
-            bill=self.bill,
-            amount=Decimal('200.00'),
-            payment_date=timezone.now(),
-            payment_account_id='57',
-            created_by=self.admin,
-            qbo_sync_status=BillPayment.SYNC_FAILED,
-            qbo_pending_op=pending_op,
-            qbo_sync_error='Auth failed',
-        )
-
     def test_list_failures_includes_company_expense(self):
         exp = self._failed_company_expense()
         failures = QBOSyncFailureService.list_failures()
@@ -144,23 +117,13 @@ class QBOSyncFailureServiceTest(TestCase):
         self.assertEqual(match['id'], batch.pk)
         self.assertEqual(match['qbo_pending_op'], Reimbursement.OP_CREATE)
 
-    def test_list_failures_includes_bill_payment(self):
-        pay = self._failed_bill_payment()
-        failures = QBOSyncFailureService.list_failures()
-        entity_types = [f['entity_type'] for f in failures]
-        self.assertIn('bill_payment', entity_types)
-        match = next(f for f in failures if f['entity_type'] == 'bill_payment')
-        self.assertEqual(match['id'], pay.pk)
-        self.assertEqual(match['qbo_pending_op'], BillPayment.OP_CREATE)
-
-    def test_list_failures_all_three_types(self):
-        exp = self._failed_company_expense()
-        batch = self._failed_reimbursement()
-        pay = self._failed_bill_payment()
+    def test_list_failures_both_types(self):
+        self._failed_company_expense()
+        self._failed_reimbursement()
         failures = QBOSyncFailureService.list_failures()
         entity_types = {f['entity_type'] for f in failures}
-        self.assertEqual(entity_types, {'expense', 'reimbursement', 'bill_payment'})
-        self.assertEqual(len(failures), 3)
+        self.assertEqual(entity_types, {'expense', 'reimbursement'})
+        self.assertEqual(len(failures), 2)
 
     def test_list_failures_dict_shape(self):
         self._failed_company_expense()
@@ -181,12 +144,6 @@ class QBOSyncFailureServiceTest(TestCase):
         failures = QBOSyncFailureService.list_failures()
         match = next(f for f in failures if f['entity_type'] == 'reimbursement')
         self.assertEqual(match['retry_url'], f'/api/reimbursements/{batch.pk}/retry-sync/')
-
-    def test_retry_url_bill_payment(self):
-        pay = self._failed_bill_payment()
-        failures = QBOSyncFailureService.list_failures()
-        match = next(f for f in failures if f['entity_type'] == 'bill_payment')
-        self.assertEqual(match['retry_url'], f'/api/bills/{self.bill.pk}/payments/{pay.pk}/retry-sync/')
 
     def test_list_failures_empty_when_none(self):
         failures = QBOSyncFailureService.list_failures()
@@ -232,18 +189,9 @@ class SyncFailuresEndpointTest(TestCase):
             code='EP2', name='EP Test Cat', qbo_expense_account_id='500',
         )
         self.worker = User.objects.create_user(username='ep2_worker', password='testpass')
-
-        contact = Contact.objects.create(first_name='Test', last_name='Vendor2')
-        self.business = Business.objects.create(
-            business_name='Test Corp', default_contact=contact, qbo_vendor_id='qbo-v-2',
-        )
-        self.bill = Bill.objects.create(
-            business=self.business, vendor_invoice_number='INV-EP2',
-            status=Bill.STATUS_RECEIVED, qbo_id='qbo-bill-2',
-        )
         self.admin = User.objects.create_user(username='ep2_admin', password='testpass')
 
-    def _make_all_three(self):
+    def _make_both(self):
         exp = Expense.objects.create(
             entered_by=self.worker, amount=Decimal('10.00'),
             purchased_on=date(2026, 5, 1), accounting_category=self.cat,
@@ -263,13 +211,7 @@ class SyncFailuresEndpointTest(TestCase):
             payment_method=Expense.PAYMENT_METHOD_PERSONAL,
             status=Expense.STATUS_REIMBURSED, reimbursement=batch,
         )
-        pay = BillPayment.objects.create(
-            bill=self.bill, amount=Decimal('30.00'), payment_date=timezone.now(),
-            payment_account_id='57', created_by=self.admin,
-            qbo_sync_status=BillPayment.SYNC_FAILED,
-            qbo_pending_op=BillPayment.OP_CREATE,
-        )
-        return exp, batch, pay
+        return exp, batch
 
     def test_requires_authentication(self):
         r = self.client_http.get('/api/qbo/sync-failures/')
@@ -281,18 +223,18 @@ class SyncFailuresEndpointTest(TestCase):
         r = self.client_http.get('/api/qbo/sync-failures/')
         self.assertEqual(r.status_code, 403)
 
-    def test_returns_all_three_failure_types(self):
-        exp, batch, pay = self._make_all_three()
+    def test_returns_both_failure_types(self):
+        self._make_both()
         self.client_http.force_login(self.fin_user)
         r = self.client_http.get('/api/qbo/sync-failures/')
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertIn('failures', data)
         entity_types = {f['entity_type'] for f in data['failures']}
-        self.assertEqual(entity_types, {'expense', 'reimbursement', 'bill_payment'})
+        self.assertEqual(entity_types, {'expense', 'reimbursement'})
 
     def test_each_failure_has_required_fields(self):
-        self._make_all_three()
+        self._make_both()
         self.client_http.force_login(self.fin_user)
         r = self.client_http.get('/api/qbo/sync-failures/')
         for f in r.json()['failures']:
@@ -320,13 +262,12 @@ class SyncFailuresEndpointTest(TestCase):
         self.assertNotIn(personal.pk, pks)
 
     def test_qbo_pending_op_included(self):
-        self._make_all_three()
+        self._make_both()
         self.client_http.force_login(self.fin_user)
         r = self.client_http.get('/api/qbo/sync-failures/')
         ops = {f['entity_type']: f['qbo_pending_op'] for f in r.json()['failures']}
         self.assertEqual(ops['expense'], Expense.OP_CREATE)
         self.assertEqual(ops['reimbursement'], Reimbursement.OP_UPDATE)
-        self.assertEqual(ops['bill_payment'], BillPayment.OP_CREATE)
 
 
 class RetryAllEndpointTest(TestCase):
@@ -347,16 +288,7 @@ class RetryAllEndpointTest(TestCase):
         self.worker = User.objects.create_user(username='rat_worker', password='testpass')
         self.admin = User.objects.create_user(username='rat_admin', password='testpass')
 
-        contact = Contact.objects.create(first_name='Retry', last_name='Vendor')
-        self.business = Business.objects.create(
-            business_name='Retry Corp', default_contact=contact, qbo_vendor_id='qbo-v-3',
-        )
-        self.bill = Bill.objects.create(
-            business=self.business, vendor_invoice_number='INV-RAT',
-            status=Bill.STATUS_RECEIVED, qbo_id='qbo-bill-3',
-        )
-
-    def _make_all_three_failed(self):
+    def _make_both_failed(self):
         exp = Expense.objects.create(
             entered_by=self.worker, amount=Decimal('11.00'),
             purchased_on=date(2026, 6, 1), accounting_category=self.cat,
@@ -376,13 +308,7 @@ class RetryAllEndpointTest(TestCase):
             payment_method=Expense.PAYMENT_METHOD_PERSONAL,
             status=Expense.STATUS_REIMBURSED, reimbursement=batch,
         )
-        pay = BillPayment.objects.create(
-            bill=self.bill, amount=Decimal('33.00'), payment_date=timezone.now(),
-            payment_account_id='57', created_by=self.admin,
-            qbo_sync_status=BillPayment.SYNC_FAILED,
-            qbo_pending_op=BillPayment.OP_CREATE,
-        )
-        return exp, batch, pay
+        return exp, batch
 
     def test_requires_authentication(self):
         r = self.client_http.post('/api/qbo/sync-failures/retry-all/',
@@ -398,62 +324,45 @@ class RetryAllEndpointTest(TestCase):
 
     @patch('apps.qbo.services.QBOExpenseSyncService.push_expense')
     @patch('apps.qbo.services.QBOExpenseSyncService.push_reimbursement')
-    @patch('apps.qbo.services.QBOBillSyncService.push_bill_payment')
-    def test_retry_all_three_reports_retried_3(self, mock_bp, mock_reimb, mock_exp):
-        """With mocked QBO pushes succeeding: retried=3, still_failing=0.
+    def test_retry_all_reports_retried_2(self, mock_reimb, mock_exp):
+        """With mocked QBO pushes succeeding: retried=2, still_failing=0.
 
         push_expense and push_reimbursement are used by QBOSyncService.run_create,
         which calls record.mark_synced() on success.
-        push_bill_payment is used directly by BillPaymentService._push_create and
-        itself calls run_create internally; we therefore give the mock a side_effect
-        that marks the payment synced so the still_failing count sees 0.
         """
         mock_exp.return_value = 'qbo-e-1'
         mock_reimb.return_value = 'qbo-r-1'
 
-        exp, batch, pay = self._make_all_three_failed()
-
-        def _bp_side_effect(payment):
-            payment.mark_synced('qbo-p-1')
-            return 'qbo-p-1'
-
-        mock_bp.side_effect = _bp_side_effect
+        self._make_both_failed()
 
         self.client_http.force_login(self.fin_user)
         r = self.client_http.post('/api/qbo/sync-failures/retry-all/',
                                   content_type='application/json')
         self.assertEqual(r.status_code, 200)
         data = r.json()
-        self.assertEqual(data['retried'], 3)
+        self.assertEqual(data['retried'], 2)
         self.assertEqual(data['still_failing'], 0)
 
     @patch('apps.qbo.services.QBOExpenseSyncService.push_expense')
     @patch('apps.qbo.services.QBOExpenseSyncService.push_reimbursement')
-    @patch('apps.qbo.services.QBOBillSyncService.push_bill_payment')
-    def test_retry_all_one_failure_doesnt_abort_rest(self, mock_bp, mock_reimb, mock_exp):
+    def test_retry_all_one_failure_doesnt_abort_rest(self, mock_reimb, mock_exp):
         """One push raising must not abort the retry loop; the others complete.
 
         The expense push raises → QBOSyncService.run_create catches it and calls
-        mark_failed (keeps it sync_failed). The reimbursement and bill-payment
-        succeed so only 1 is still_failing.
+        mark_failed (keeps it sync_failed). The reimbursement succeeds so only
+        1 is still_failing.
         """
         mock_exp.side_effect = Exception('QBO down')
         mock_reimb.return_value = 'qbo-r-1'
 
-        exp, batch, pay = self._make_all_three_failed()
-
-        def _bp_side_effect(payment):
-            payment.mark_synced('qbo-p-1')
-            return 'qbo-p-1'
-
-        mock_bp.side_effect = _bp_side_effect
+        self._make_both_failed()
 
         self.client_http.force_login(self.fin_user)
         r = self.client_http.post('/api/qbo/sync-failures/retry-all/',
                                   content_type='application/json')
         self.assertEqual(r.status_code, 200)
         data = r.json()
-        self.assertEqual(data['retried'], 3)
+        self.assertEqual(data['retried'], 2)
         # Expense push failed so it is still_failing
         self.assertEqual(data['still_failing'], 1)
 

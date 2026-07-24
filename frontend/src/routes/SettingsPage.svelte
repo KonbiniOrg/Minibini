@@ -4,6 +4,7 @@
   import AccountingCategories from '../components/settings/AccountingCategories.svelte';
   import UnitsManager from '../components/UnitsManager.svelte';
   import RateSchemeManager from '../components/RateSchemeManager.svelte';
+  import EmailAccountSettings from '../components/settings/EmailAccountSettings.svelte';
   import ScheduleSettings from '../components/settings/ScheduleSettings.svelte';
   import EmailTemplates from '../components/settings/EmailTemplates.svelte';
   import BusinessSettings from '../components/settings/BusinessSettings.svelte';
@@ -129,6 +130,8 @@
   <ScheduleSettings />
 
 {:else if tab === 'email'}
+  <EmailAccountSettings />
+
   <EmailTemplates />
 {:else if tab === 'business'}
   <BusinessSettings />

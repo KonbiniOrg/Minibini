@@ -1,11 +1,10 @@
-from collections import defaultdict
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.jobs.models import Job
-from apps.core.services import NotFoundError, TaxCalculationService
+from apps.core.services import NotFoundError
 from apps.core.wizard import BaseWizardService
 
 
@@ -271,24 +270,25 @@ class InvoiceEmailService:
     """Orchestrates sending an Invoice to the customer.
 
     Steps on each send: ensure the invoice exists in QBO (push only if
-    qbo_id is unset — fixes the duplicate-push-on-retry bug), generate
-    the Minibini job-statement PDF, download the QBO-rendered invoice
-    PDF (which carries the Pay Now link), call OutboundEmailService.
-    send_tracked with both PDFs attached, then transition the Invoice
-    draft -> open on send success.
+    qbo_id is unset — fixes the duplicate-push-on-retry bug), adopt QBO's
+    DocNumber, fetch the hosted-invoice payment link, download the
+    QBO-rendered invoice PDF, call OutboundEmailService.send_tracked with
+    that PDF attached, then transition the Invoice draft -> open on send
+    success.
     """
 
     DEFAULT_SUBJECT = 'Invoice {document_number} for {job_number}'
     DEFAULT_BODY = (
         'Hi {contact_fname},\n\n'
         'Please find attached your invoice {document_number} for {job_name}. '
-        'The invoice includes a Pay Now link.\n\n'
+        'You can view and pay it online here: {payment_link}\n\n'
         'Thanks,\n{my_user_name}'
     )
 
     @staticmethod
-    def get_email_defaults(invoice):
-        """Pre-populated send-form fields for an Invoice."""
+    def get_email_defaults(invoice, user=None):
+        """Pre-populated send-form fields for an Invoice. ``user`` is the
+        requesting user — resolves {my_user_name}."""
         from apps.core.models import Configuration
         from apps.core.email_templates import render_email_template
 
@@ -312,16 +312,18 @@ class InvoiceEmailService:
         if contact and contact.business:
             contact_business = contact.business.business_name
 
-        from apps.core.email_templates import build_object_url
+        from apps.core.email_templates import build_object_url, user_display_name
+        # {document_number}/{invoice_number} are deliberately absent: the
+        # QBO-assigned number doesn't exist at compose time, so the tokens
+        # survive into the dialog literally and send_invoice substitutes
+        # them after the push (same mechanism as {payment_link}).
         values = {
             'contact_fname': contact.first_name if contact else '',
             'contact_lname': contact.last_name if contact else '',
             'contact_business': contact_business,
-            'my_user_name': '',
+            'my_user_name': user_display_name(user),
             'job_number': job.job_number if job else '',
             'job_name': job.name if job else '',
-            'document_number': invoice.invoice_number,
-            'invoice_number': invoice.invoice_number,
             'object_url': build_object_url('invoice', invoice.invoice_id),
         }
         subject = render_email_template(subject_template, **values)
@@ -332,9 +334,7 @@ class InvoiceEmailService:
             to = contact.email
 
         attachments_preview = [
-            {'filename': f'Invoice-{invoice.invoice_number}.pdf',
-             'content_type': 'application/pdf', 'size': 0},
-            {'filename': f'JobStatement-{invoice.invoice_number}.pdf',
+            {'filename': f'Invoice-{invoice.display_number}.pdf',
              'content_type': 'application/pdf', 'size': 0},
         ]
         return {
@@ -365,13 +365,12 @@ class InvoiceEmailService:
     @staticmethod
     def send_invoice(invoice, *, to, subject, body, cc=None, bcc=None,
                      extra_attachments=None):
-        """Send an Invoice. Pushes to QBO if needed, attaches both QBO PDF
-        and statement PDF, calls send_tracked, transitions status on success.
+        """Send an Invoice. Pushes to QBO if needed, attaches the QBO
+        invoice PDF, calls send_tracked, transitions status on success.
 
         Returns the outbound EmailRecord.
         """
         from apps.core.services import OutboundEmailService
-        from apps.invoicing.pdf import generate_job_statement_pdf
         from apps.qbo.services import (
             QBOService, QBOInvoiceSyncService, QBOCustomerSyncService,
         )
@@ -400,14 +399,17 @@ class InvoiceEmailService:
                     contact.refresh_from_db()
                 qbo_customer_id = contact.qbo_customer_id
 
-            grouped_lines = InvoiceGroupingService.group_for_qbo(invoice)
             qbo_invoice = QBOInvoiceSyncService._build_qbo_invoice(
-                invoice, qbo_customer_id, grouped_lines,
+                invoice, qbo_customer_id, client,
             )
             qbo_invoice.save(qb=client)
             qbo_id = str(qbo_invoice.Id)
             invoice.qbo_id = qbo_id
-            invoice.save(update_fields=['qbo_id'])
+            # QBO owns invoice numbering: adopt its DocNumber.
+            doc_number = str(getattr(qbo_invoice, 'DocNumber', '') or '')
+            if doc_number:
+                invoice.invoice_number = doc_number
+            invoice.save(update_fields=['qbo_id', 'invoice_number'])
 
             QBOInvoiceSyncService._mark_as_sent(client, qbo_id)
             QBOService.log_sync(
@@ -416,14 +418,40 @@ class InvoiceEmailService:
                 action='create', status='success',
             )
 
-        # Step 2: generate / fetch the two PDFs.
-        statement_pdf = generate_job_statement_pdf(invoice)
+        # Retry sends of an already-pushed invoice may predate the DocNumber
+        # writeback — backfill it from QBO so attachments and display carry
+        # the real number.
+        if not invoice.invoice_number:
+            from quickbooks.objects.invoice import Invoice as SDKInvoice
+            fetched = SDKInvoice.get(invoice.qbo_id, qb=client)
+            doc_number = str(getattr(fetched, 'DocNumber', '') or '')
+            if doc_number:
+                invoice.invoice_number = doc_number
+                invoice.save(update_fields=['invoice_number'])
+
+        # Step 2: substitute the send-time-only values — the hosted-invoice
+        # payment link and the QBO-assigned number. Both survive the send
+        # dialog as literal tokens (unknown placeholders pass through
+        # render_email_template untouched); the number only exists now,
+        # after the push wrote DocNumber back.
+        from apps.core.email_templates import render_email_template
+        payment_link = QBOInvoiceSyncService._fetch_invoice_link(
+            client, invoice.qbo_id)
+        send_time_values = {
+            'payment_link': payment_link,
+            'document_number': invoice.display_number,
+            'invoice_number': invoice.display_number,
+        }
+        subject = render_email_template(subject, **send_time_values)
+        body = render_email_template(body, **send_time_values)
+
+        # Step 3: fetch QBO's rendered invoice PDF — the only auto-attachment
+        # (the konbini Job Statement was dropped from the send 2026-07-22).
         qbo_invoice_pdf = QBOInvoiceSyncService._download_qbo_pdf(client, invoice.qbo_id)
 
-        # Step 3: send via tracked outbound.
+        # Step 4: send via tracked outbound.
         attachments = [
-            (f'Invoice-{invoice.invoice_number}.pdf', qbo_invoice_pdf, 'application/pdf'),
-            (f'JobStatement-{invoice.invoice_number}.pdf', statement_pdf, 'application/pdf'),
+            (f'Invoice-{invoice.display_number}.pdf', qbo_invoice_pdf, 'application/pdf'),
         ]
         if extra_attachments:
             attachments.extend(extra_attachments)
@@ -434,51 +462,12 @@ class InvoiceEmailService:
             associate_with={'job': invoice.job},
         )
 
-        # Step 4: status transition on success.
+        # Step 5: status transition on success.
         if invoice.status == Invoice.STATUS_DRAFT:
             invoice.status = Invoice.STATUS_OPEN
             invoice.save()
 
         return record
-
-
-class InvoiceGroupingService:
-    """Groups invoice line items by AccountingCategory + taxability for QBO push."""
-
-    @staticmethod
-    def group_for_qbo(invoice):
-        line_items = invoice.invoicelineitem_set.select_related('accounting_category').all()
-        job_number = invoice.job.job_number
-
-        groups = defaultdict(lambda: {
-            'amount': Decimal('0.00'),
-            'category_name': '',
-            'qbo_item_id': '',
-            'taxable': False,
-        })
-
-        for item in line_items:
-            taxable = TaxCalculationService.get_effective_taxability(item)
-            cat = item.accounting_category
-            cat_id = cat.pk if cat else None
-            key = (cat_id, taxable)
-
-            groups[key]['amount'] += item.total_amount
-            groups[key]['taxable'] = taxable
-
-            if cat:
-                groups[key]['category_name'] = cat.name
-                groups[key]['qbo_item_id'] = cat.qbo_item_id
-            else:
-                groups[key]['category_name'] = 'Uncategorized'
-
-        result = []
-        for (cat_id, taxable), data in groups.items():
-            tax_label = '(taxable)' if taxable else '(non-taxable)'
-            data['description'] = f"Job {job_number}: {data['category_name']} {tax_label}"
-            result.append(data)
-
-        return sorted(result, key=lambda g: g['category_name'])
 
 
 class ClaimConflict(Exception):
@@ -566,7 +555,7 @@ class InvoiceWizardService(BaseWizardService):
             InvoiceLineItemSource.objects
             .filter(invoice_line_item__invoice__job=job)
             .exclude(invoice_line_item__invoice__status=Invoice.STATUS_CANCELLED)
-            .select_related('invoice_line_item', 'invoice_line_item__invoice')
+            .select_related('invoice_line_item', 'invoice_line_item__invoice__job')
         )
         # Atoms an accepted change order struck from the agreement but
         # crystallization left live (consumed/complete/expense-bound/…).
@@ -595,7 +584,7 @@ class InvoiceWizardService(BaseWizardService):
                     'claiming_line_item_id': None,
                     'claiming_line_number': None,
                     'claiming_invoice_id': inv.pk,
-                    'claiming_invoice_number': inv.invoice_number,
+                    'claiming_invoice_number': inv.display_number,
                     'not_billable_reason': None,
                 }
 

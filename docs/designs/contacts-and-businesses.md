@@ -2,7 +2,7 @@
 
 The CRM layer: individual people (`Contact`) and the companies they work for
 (`Business`), plus the shared `Tag` taxonomy and the stub `PaymentTerms`
-model. Every Job, PurchaseOrder, Bill, and Invoice ultimately anchors to a
+model. Every Job, PurchaseOrder, and Invoice ultimately anchors to a
 Contact (directly, or via a Business), so this is the identity substrate the
 rest of the system builds on.
 
@@ -28,8 +28,10 @@ rest of the system builds on.
   those rather than re-describing them.
 - `Job.contact` — the FK itself, and the draft-only reassignment rule added
   on top of it. See `docs/designs/data-constraints.md` §1.8 and §1.5.
-- `PurchaseOrder`/`Bill` contact and business FKs, and vendor QBO push. See
-  `docs/designs/materials-inventory-and-purchasing.md`.
+- `PurchaseOrder` contact and business FKs. See
+  `docs/designs/materials-inventory-and-purchasing.md` (the Bill domain was
+  retired to QBO 2026-07-23 — its §13; the vendor QBO push went with it,
+  though `Business.qbo_vendor_id` remains).
 - `Invoice`'s relationship to a business/contact (via its Job). See
   `docs/designs/invoicing-and-expenses.md`.
 - QBO OAuth, `QBOSyncLog`, and the mechanics of `push_customer` /
@@ -98,7 +100,7 @@ redundant plumbing to remove.
 |---|---|
 | `create_contact(*, business_pk=None, **kwargs)` | Pre-checks for a duplicate email (see "Duplicate detection" below) before constructing the instance. Resolves `business_pk` to a `Business` (raises `NotFoundError` if missing). Calls `full_clean()` + `save()`. |
 | `update_contact(pk, *, business_pk=_sentinel, **kwargs)` | Generic `setattr` loop. `business_pk` is a sentinel-defaulted kwarg so `None` (clear the business) is distinguishable from "not passed." **Does not** pre-check duplicate email — an email collision on update surfaces only as a plain `full_clean()` validation error (a field-level 400, not the rich 409); this is a deliberate narrower scope, not a gap — see "Duplicate detection" below. |
-| `delete_contact(pk, new_default_contact_pk=None)` | Raises `ValidationError` if the contact has any `Job` or `Bill`. If it's a business's sole contact, raises `ValidationError` (a friendlier message than the model's own `PermissionDenied` path, since the service checks it explicitly first via `other_contacts.exists()`). If it's the default contact with siblings, reassigns to `new_default_contact_pk` (validated as belonging to the same business) or the first sibling, then deletes. |
+| `delete_contact(pk, new_default_contact_pk=None)` | Raises `ValidationError` if the contact has any `Job` or `Bill` (the Bill check remains for legacy rows — the retired-but-retained schema, materials doc §13). If it's a business's sole contact, raises `ValidationError` (a friendlier message than the model's own `PermissionDenied` path, since the service checks it explicitly first via `other_contacts.exists()`). If it's the default contact with siblings, reassigns to `new_default_contact_pk` (validated as belonging to the same business) or the first sibling, then deletes. |
 
 ---
 
@@ -172,6 +174,10 @@ order.
 | `delete_business(pk, po_actions=None, bill_actions=None, contact_actions=None, job_actions=None)` | Rich cascading delete — see below. |
 
 ### `delete_business` cascade
+
+(Bill-related branches below remain for **legacy rows only** — the Bill
+domain was retired 2026-07-23 with schema retained; see the materials doc
+§13.)
 
 Four optional dicts key by object pk → `(action, target)`:
 
@@ -331,11 +337,12 @@ Esc-only (no `onSave`) since neither action is a single obvious "confirm" —
 they're both navigation.
 
 Wired into: `ContactFormPage.svelte`, `BusinessFormPage.svelte` (both
-create-only — see above), and the three email-to-{Job,Bill,PO} creation
-pages (`EmailCreateJobPage.svelte`, `EmailCreateBillPage.svelte`,
-`EmailCreatePOPage.svelte`), which create a Contact via
+create-only — see above), and the two email-to-{Job,PO} creation
+pages (`EmailCreateJobPage.svelte`, `EmailCreatePOPage.svelte`;
+`EmailCreateBillPage` was deleted with the 2026-07-23 bill retirement),
+which create a Contact via
 `resolveSenderToContact` (`frontend/src/lib/email.js`) and need the same
-409 handling since that helper POSTs to `/api/contacts/` directly. All five
+409 handling since that helper POSTs to `/api/contacts/` directly. All four
 pages check both `e.data?.code === 'duplicate_email'` and
 `'duplicate_business_name'` before falling through to normal error triage.
 
@@ -393,17 +400,34 @@ full tag list (`/api/tags/?page_size=200`) to render filter chips —
 
 ## PaymentTerms
 
-`apps/contacts/models.py` — `PaymentTerms`. Currently a stub: only
-`term_id` (AutoField PK), `db_table='terms'`. No net-terms fields (e.g. "Net
-30") exist yet on the model itself, despite `Business.terms` (FK,
-`SET_NULL`) implying that's the intent — `PaymentTermsSerializer` uses
-`fields = '__all__'`, so it only ever serializes the PK. `PaymentTermsViewSet`
-is `ReadOnlyModelViewSet` with `pagination_class = None` (unpaginated flat
-list) — there's no create/update UI or endpoint since there's nothing
-meaningful to edit yet. Displayed read-only as `business.terms` (the FK's
-`__str__`, currently just the PK) on `BusinessDetail.svelte`. Treat this as
-a placeholder model to flesh out (a name/description/net-days field) rather
-than a deliberately minimal design.
+`apps/contacts/models.py` — `PaymentTerms`, `db_table='terms'`. Fields
+(real since 2026-07-23; previously a `term_id`-only stub): `term_id`
+(AutoField PK), `name` (CharField 100, blank-allowed at the model),
+`days` (nullable positive int), `qbo_id` (QBO Term mirror, '' = not
+imported). `__str__` = name.
+
+**Management UI (2026-07-23): Settings → Business tab.** A flat list
+(name, days, a green "QBO" badge on mirrored rows, in-use business
+count) with modal create/edit (`PaymentTermsManager.svelte`, standard
+`Modal.svelte` keyboard contract) and a two-phase confirm delete — the
+FK is `SET_NULL`, so the confirm quotes "used by N businesses — their
+terms will be cleared". Directly above it sits the terms QBO import
+panel (`TermsImportPanel`, area `terms`, own pull button + sticky
+dismissal — see quickbooks-integration.md). No individual term page.
+
+**API**: `PaymentTermsViewSet` is a full ModelViewSet +
+`ConfirmDeleteMixin`, unpaginated, ordered by name. Reads are
+`IsAuthenticated` (the BusinessForm assignment select); writes require
+`can_manage_config` (the Settings surface's atom — deliberately NOT
+`can_manage_jobs`). The serializer enforces what the model doesn't:
+`name` required and case-insensitively unique (the model stays
+permissive so QBO-import merges can't trip), `qbo_id` read-only,
+annotated `business_count`.
+
+**QBO-mirror policy**: rows with a `qbo_id` are editable (badge visible);
+local edits surface as `changed` on the next terms pull and the import
+panel arbitrates. Deleting a mirrored term is allowed — it re-appears as
+`new` after the next pull.
 
 ---
 
@@ -476,7 +500,8 @@ returns `{'confirm_required': true, 'impact': {...}}`, second with
 `ContactViewSet.get_deletion_impact` → `{'jobs': <count>}`.
 `BusinessViewSet.get_deletion_impact` → `{'jobs', 'purchase_orders', 'bills',
 'contacts'}` counts (Jobs counted via `contact__business=business`, i.e.
-jobs belonging to any of the business's contacts).
+jobs belonging to any of the business's contacts; the `bills` count covers
+legacy rows only — retired schema, 2026-07-23).
 
 `perform_confirmed_destroy` on both catches `ProtectedError` (→ 400,
 "still referenced by other records") and `ServiceError`/`ValidationError`
@@ -573,7 +598,7 @@ that filter the already-merged client-side list without refetching.
 ### Detail pages
 
 `ContactDetailPage.svelte` / `BusinessDetailPage.svelte` are near-mirrors:
-load the object plus its invoices/POs/bills (paginated, `?contact=`/
+load the object plus its invoices/POs (paginated, `?contact=`/
 `?business=` scoped) and financials/history in parallel, render
 `CustomerHeader` (name + financials banner) above the page body, then the
 `ContactDetail.svelte` / `BusinessDetail.svelte` component, then a delete
@@ -582,8 +607,9 @@ confirmation block if a two-phase delete is in flight.
 `BusinessDetail.svelte` additionally renders (full-mode only, via
 `<FullOnly>` — architecture doc §6.2) a **Contacts** table listing every
 contact on the business with a `(default)` marker, and a `TagEditor`. Both
-detail components render Jobs / Invoices / Purchase Orders / Bills tables
-below that, each filtered by `viewMode` (architecture doc §6) to hide
+detail components render Jobs / Invoices / Purchase Orders tables
+below that (the Bills panels were removed with the 2026-07-23 bill
+retirement), each filtered by `viewMode` (architecture doc §6) to hide
 closed-status rows in `'lite'` mode, then a `HistoryPanel` (architecture
 doc §7.5) with the notes-entry box.
 

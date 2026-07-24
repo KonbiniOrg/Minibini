@@ -9,20 +9,17 @@
     contact,
     invoices = null,
     purchaseOrders = null,
-    bills = null,
     history = null,
     onEdit = null,
     onDelete = null,
     onInvoicePageChange = null,
     onPOPageChange = null,
-    onBillPageChange = null,
     onAddNote = null,
   } = $props();
 
   const closedJobStatuses = ['completed', 'cancelled'];
   const closedInvoiceStatuses = ['paid', 'cancelled', 'superseded'];
   const closedPOStatuses = ['received_in_full', 'cancelled'];
-  const closedBillStatuses = ['paid_in_full', 'cancelled', 'refunded'];
 
   function formatAmount(v) {
     if (v == null || v === '') return '$—';
@@ -54,13 +51,6 @@
       : []
   );
 
-  let visibleBills = $derived(
-    bills?.results
-      ? $viewMode === 'full'
-        ? bills.results
-        : bills.results.filter(b => !closedBillStatuses.includes(b.status))
-      : []
-  );
 
 
 </script>
@@ -179,7 +169,7 @@
     <tbody>
       {#each visibleInvoices as inv}
         <tr>
-          <td><a href="#/invoices/{inv.invoice_id}">{inv.invoice_number}</a></td>
+          <td><a href="#/invoices/{inv.invoice_id}">{inv.display_number}</a></td>
           <td><a href="#/jobs/{inv.job}">{inv.job_number}</a></td>
           <td>{inv.status}</td>
           <td>{formatAmount(inv.total)}</td>
@@ -236,36 +226,6 @@
   {/if}
 {:else}
   <p>No {$viewMode === 'lite' ? 'open ' : ''}purchase orders.</p>
-{/if}
-
-<h3>Bills</h3>
-{#if visibleBills.length > 0}
-  <table class="data-table">
-    <thead>
-      <tr><th>Vendor Invoice</th><th>Status</th></tr>
-    </thead>
-    <tbody>
-      {#each visibleBills as bill}
-        <tr>
-          <td><a href="#/bills/{bill.bill_id}">{bill.vendor_invoice_number || `Bill ${bill.bill_id}`}</a></td>
-          <td>{bill.status}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-  {#if bills}
-    <p>
-      {pageRange(bills)}
-      {#if bills.previous}
-        | <button type="button" onclick={() => onBillPageChange(pageFromUrl(bills.previous))}>Previous</button>
-      {/if}
-      {#if bills.next}
-        | <button type="button" onclick={() => onBillPageChange(pageFromUrl(bills.next))}>Next</button>
-      {/if}
-    </p>
-  {/if}
-{:else}
-  <p>No {$viewMode === 'lite' ? 'open ' : ''}bills.</p>
 {/if}
 
 <HistoryPanel {history} {onAddNote} />

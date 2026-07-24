@@ -141,7 +141,7 @@ def qbo_payment_accounts(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, CanManageFinancials])
 def qbo_sync_failures(request):
-    """Return all sync-failed records across Expense, Reimbursement, BillPayment."""
+    """Return all sync-failed records across Expense and Reimbursement."""
     return Response({'failures': QBOSyncFailureService.list_failures()})
 
 
@@ -150,9 +150,7 @@ def qbo_sync_failures(request):
 def qbo_sync_failures_retry_all(request):
     """Retry every sync-failed record; returns {retried, still_failing}."""
     from apps.expenses.models import Expense, Reimbursement
-    from apps.purchasing.models import BillPayment
     from apps.expenses.services import ExpenseService, ReimbursementService
-    from apps.purchasing.services import BillPaymentService
 
     failures = QBOSyncFailureService.list_failures()
     attempted = 0
@@ -168,8 +166,6 @@ def qbo_sync_failures_retry_all(request):
             elif entity_type == 'reimbursement':
                 batch = Reimbursement.objects.get(pk=pk)
                 ReimbursementService.retry(batch=batch, actor=request.user)
-            elif entity_type == 'bill_payment':
-                BillPaymentService.retry(pk)
         except Exception:  # noqa: BLE001 — one failure must not abort the loop
             pass
 
@@ -186,10 +182,6 @@ def qbo_sync_failures_retry_all(request):
             elif entity_type == 'reimbursement':
                 obj = Reimbursement.objects.get(pk=pk)
                 if obj.qbo_sync_status == Reimbursement.SYNC_FAILED:
-                    still_failing += 1
-            elif entity_type == 'bill_payment':
-                obj = BillPayment.objects.get(pk=pk)
-                if obj.qbo_sync_status == BillPayment.SYNC_FAILED:
                     still_failing += 1
         except Exception:  # noqa: BLE001 — deleted record = resolved
             pass

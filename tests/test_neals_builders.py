@@ -2165,15 +2165,12 @@ class PurchasingBuilderTest(unittest.TestCase):
                 self.assertEqual(poli[lp]['qty_received'], m['fields']['quantity'])
         self.assertGreater(linked, 0)
 
-    def test_bills_link_to_received_pos(self):
-        po_pks = {p['pk'] for p in self._m('purchasing.purchaseorder')}
-        biz_pks = {b['pk'] for b in self._m('contacts.business')}
-        bills = self._m('purchasing.bill')
-        self.assertGreater(len(bills), 0)
-        for b in bills:
-            self.assertIn(b['fields']['purchase_order'], po_pks)
-            self.assertIn(b['fields']['business'], biz_pks)
-            self.assertEqual(b['fields']['status'], 'received')
+    def test_no_bill_records_emitted(self):
+        """Bills are retired (they live in QBO) — the converter builds POs
+        from the FreeAgent Bills sheet but emits no konbini Bill rows."""
+        self.assertEqual(self._m('purchasing.bill'), [])
+        self.assertEqual(self._m('purchasing.billlineitem'), [])
+        self.assertGreater(len(self._m('purchasing.purchaseorder')), 0)
 
     def test_markup_config_emitted(self):
         cfg = {r['pk']: r['fields']['value']

@@ -1,6 +1,6 @@
 """Settings validation for average_labor_cost — must be a non-negative number
 (dollars per hour), blank allowed (treated as 0). See
-docs/designs/jobs-tasks-and-worksheets.md §9.3.
+docs/designs/jobs-and-tasks.md §9.3.
 """
 from rest_framework.test import APIClient
 from django.contrib.auth.models import Permission

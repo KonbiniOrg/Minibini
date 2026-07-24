@@ -23,6 +23,14 @@ class UnitsListEndpointTest(BaseTestCase):
         response = self.client.get('/api/settings/units/')
         self.assertEqual(response.status_code, 403)
 
+    def test_get_units_falls_back_when_config_row_missing(self):
+        """Absent units_list must return the built-in defaults, never 500."""
+        from apps.core.units import DEFAULT_UNITS
+        Configuration.objects.filter(key='units_list').delete()
+        response = self.client.get('/api/settings/units/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, DEFAULT_UNITS)
+
 
 class UnitsUpdateEndpointTest(BaseTestCase):
 

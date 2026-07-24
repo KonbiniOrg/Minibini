@@ -83,7 +83,7 @@
   <hr>
 
   <section class="doc-ref">
-    <h3>Invoice {invoice.invoice_number}</h3>
+    <h3>Invoice {invoice.display_number}</h3>
     <p><strong>Status:</strong> {invoice.status}</p>
     {#if invoice.qbo_id}
       <p><small>QBO ID: {invoice.qbo_id} (already pushed; send will skip QBO re-push)</small></p>

@@ -1,12 +1,40 @@
 <script>
   import { link } from 'svelte-spa-router';
+  import { setupStatus } from '../../stores/setupStatus.js';
+  import { setupHint } from '../../lib/setupHints.js';
 
   // The getting-started tutorial, converted to HTML with in-app links.
   // Source of truth: docs/designs/tutorial.md — keep the two in sync when
   // the tutorial changes (no markdown renderer in the SPA by design).
+
+  // Setup checklist: unmet gates lead the help while setup is incomplete
+  // and vanish once every area is available (same live predicates as the
+  // sidebar; no stored flag).
+  let unmetGates = $derived(
+    $setupStatus.areas
+      ? Object.entries($setupStatus.areas)
+          .filter(([, a]) => !a.available)
+          .map(([area, a]) => setupHint(area, a.message))
+      : []
+  );
 </script>
 
 <div class="help">
+
+{#if unmetGates.length}
+  <div class="setup-checklist">
+    <h3>Finish setting up</h3>
+    <p>Some areas are still locked until their configuration exists:</p>
+    <ul>
+      {#each unmetGates as hint}
+        <li>{hint}</li>
+      {/each}
+    </ul>
+    <p>Start in <a href="/settings" use:link>Settings</a> — connect
+    QuickBooks Online there and pull your existing accounting setup,
+    catalog, and customers to fill most of this in.</p>
+  </div>
+{/if}
 
 <p>Minibini is a job shop management system. It tracks a job from the
 first customer email through quoting, work on the floor, time tracking,
@@ -28,7 +56,6 @@ right now), <a href="/contacts" use:link><strong>Contacts</strong></a>,
 <a href="/catalog" use:link><strong>Catalog</strong></a> (inventory and
 service items), and — depending on your permissions —
 <a href="/invoices" use:link><strong>Invoices</strong></a>,
-<a href="/bills" use:link><strong>Bills</strong></a>,
 <a href="/expenses" use:link><strong>Expenses</strong></a>,
 <a href="/users" use:link><strong>Users</strong></a>, and
 <a href="/settings" use:link><strong>Settings</strong></a>. The sidebar
@@ -196,8 +223,9 @@ also make one under
 <a href="/purchase-orders" use:link>Purchasing</a>. PO lines attributed
 to a job create that job's materials automatically. Email the PO to the
 vendor as a PDF, receive it when the materials arrive to update QOH
-value, then record the vendor's <a href="/bills" use:link>Bill</a>
-against it and log payments on the bill.</p>
+value. The vendor's invoice (bill) is entered and paid in QuickBooks
+Online — link the emailed bill to its PO from the Email page for the
+paper trail.</p>
 
 <h3>Finalizing a Job</h3>
 
@@ -283,7 +311,7 @@ their schedules are.</p>
   <li><strong>Email is a workspace, not just an inbox.</strong> The
     <a href="/email" use:link>Email</a> page shows the shop's mailbox;
     from a message you can create a job (with the contact and business
-    created along the way), or link it to an existing job, PO, or bill.
+    created along the way), or link it to an existing job or PO.
     Documents Minibini sends are recorded too and show up on the job's
     own Email panel.</li>
   <li><strong>Search</strong> (the box at the bottom of the sidebar)
@@ -307,7 +335,7 @@ their schedules are.</p>
 <p>Everyone logged in can see nearly everything, work tasks, and track
 their own time and expenses. Four permission atoms gate the rest:
 <strong>jobs</strong> (create estimates and contacts, job admin),
-<strong>financials</strong> (create invoices, POs, bills),
+<strong>financials</strong> (create invoices and POs),
 <strong>time</strong> (editing others' time), and
 <strong>config</strong> (settings, templates, users). A job's
 <strong>project manager</strong> gets job-level powers on that one job
@@ -327,5 +355,12 @@ job, one set of atoms, start to finish.</p>
   }
   .help h3 {
     margin-top: 1.5em;
+  }
+  .setup-checklist {
+    border: 1px solid #d97706;
+    background: #fffbeb;
+    border-radius: 6px;
+    padding: 4px 16px 12px;
+    margin-bottom: 20px;
   }
 </style>

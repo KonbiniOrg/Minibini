@@ -9,7 +9,7 @@
 > picker. Companions: `Change-Orders.md` §4 (the same picker on a CO) and
 > `Services-and-Adjustments.md` (pricing). Reference:
 > `docs/designs/estimates-and-prices.md` §6/§8/§9,
-> `jobs-tasks-and-worksheets.md` §9.
+> `jobs-and-tasks.md` §9.
 
 **Purpose:** From-the-user's-perspective walkthrough of getting work and lines
 onto a job: the unified service/inventory/freeform picker, the

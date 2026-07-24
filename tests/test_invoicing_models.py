@@ -4,7 +4,7 @@ from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import InventoryItem
 from apps.jobs.models import Job, Task, RateScheme
 from apps.estimates.models import Estimate
-from apps.purchasing.models import PurchaseOrder, Bill
+from apps.purchasing.models import PurchaseOrder
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory, Configuration
 
@@ -148,11 +148,6 @@ class InvoiceLineItemModelTest(TestCase):
             business=self.business,
             po_number="PO001",
             status=PurchaseOrder.STATUS_ISSUED
-        )
-        self.bill = Bill.objects.create(
-            purchase_order=self.purchase_order,
-            contact=self.contact,
-            vendor_invoice_number="VIN001"
         )
         self.inventory_item = InventoryItem.objects.create(
             code="ITEM001",

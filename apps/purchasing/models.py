@@ -183,17 +183,6 @@ class PurchaseOrder(models.Model):
                     for li in self.purchaseorderlineitem_set.all()),
                    Decimal('0.00'))
 
-    @property
-    def billed_total(self):
-        return sum(
-            (bill.total for bill in self.bills.exclude(status=Bill.STATUS_CANCELLED)),
-            Decimal('0.00'))
-
-    @property
-    def is_fully_billed(self):
-        total = self.po_total
-        return total > 0 and self.billed_total >= total
-
     class Meta:
         db_table = 'pos'
 
@@ -201,8 +190,11 @@ class PurchaseOrder(models.Model):
         return f"PO {self.po_number}"
 
 
-@history(exclude=['bill_id'])
 class Bill(models.Model):
+    """RETIRED (2026-07-23): bills live entirely in QBO now. Model retained
+    as bare schema only, to avoid a destructive migration — legacy rows may
+    exist. No konbini code creates, mutates, or displays Bills. See
+    docs/designs/LATER.md for the owed table-dropping migration."""
     STATUS_DRAFT = 'draft'
     STATUS_RECEIVED = 'received'
     STATUS_PARTLY_PAID = 'partly_paid'
@@ -243,198 +235,6 @@ class Bill(models.Model):
     qbo_id = models.CharField(max_length=50, null=True, blank=True)
     qbo_payment_status = models.CharField(max_length=50, blank=True, default='')
 
-    def clean(self):
-        """Validate Bill state transitions, protect immutable date fields, and enforce line item requirement."""
-        super().clean()
-
-        # Validate that if contact is provided, it must have a business
-        if self.contact and not self.contact.business:
-            raise ValidationError(
-                f'Contact "{self.contact}" does not have a Business associated. '
-                'Please assign a Business to this Contact before using it in a Bill.'
-            )
-
-        # Validate that if both contact and business are provided, they must match
-        # Only check on creation (not on updates, since contact's business might change after Bill creation)
-        is_new = not self.pk
-        if is_new and self.contact and self.contact.business and self.business_id:
-            if self.business != self.contact.business:
-                raise ValidationError(
-                    f'Contact "{self.contact}" is associated with Business "{self.contact.business.business_name}", '
-                    f'but Bill is set to use Business "{self.business.business_name}". '
-                    'The Business must match the Contact\'s Business.'
-                )
-
-        # Validate that PO is in issued or later status (not draft)
-        if self.purchase_order and self.purchase_order.status == PurchaseOrder.STATUS_DRAFT:
-            raise ValidationError(
-                'Bills can only be created from Purchase Orders that are in Issued or later status. '
-                f'Purchase Order {self.purchase_order.po_number} is currently in Draft status.'
-            )
-
-        # Define valid transitions for each state
-        VALID_TRANSITIONS = {
-            Bill.STATUS_DRAFT: [Bill.STATUS_RECEIVED],
-            Bill.STATUS_RECEIVED: [Bill.STATUS_PARTLY_PAID, Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED],
-            Bill.STATUS_PARTLY_PAID: [Bill.STATUS_PAID_IN_FULL],
-            Bill.STATUS_PAID_IN_FULL: [Bill.STATUS_REFUNDED],
-            Bill.STATUS_CANCELLED: [],  # Terminal state
-            Bill.STATUS_REFUNDED: [],  # Terminal state
-        }
-
-        # Check if this is an update
-        if self.pk:
-            try:
-                old_bill = Bill.objects.get(pk=self.pk)
-                old_status = old_bill.status
-
-                # Payment-driven recompute bypasses the forward-only guard and
-                # date protection (status moves backward when payments are removed).
-                if getattr(self, '_payment_driven', False):
-                    return
-
-                # Protect immutable date fields
-                if old_bill.created_date and self.created_date != old_bill.created_date:
-                    self.created_date = old_bill.created_date
-
-                if old_bill.received_date and self.received_date != old_bill.received_date:
-                    self.received_date = old_bill.received_date
-
-                if old_bill.paid_date and self.paid_date != old_bill.paid_date:
-                    self.paid_date = old_bill.paid_date
-
-                if old_bill.cancelled_date and self.cancelled_date != old_bill.cancelled_date:
-                    self.cancelled_date = old_bill.cancelled_date
-
-                # If status hasn't changed, no validation needed
-                if old_status == self.status:
-                    return
-
-                # Check if the transition is valid
-                valid_next_states = VALID_TRANSITIONS.get(old_status, [])
-                if self.status not in valid_next_states:
-                    raise ValidationError(
-                        f'Cannot transition Bill from {old_status} to {self.status}. '
-                        f'Valid transitions from {old_status} are: {", ".join(valid_next_states) if valid_next_states else "none (terminal state)"}'
-                    )
-
-                # If transitioning out of draft, ensure at least one line item exists
-                if old_status == Bill.STATUS_DRAFT and self.status != Bill.STATUS_DRAFT:
-                    line_item_count = BillLineItem.objects.filter(bill=self).count()
-                    if line_item_count == 0:
-                        raise ValidationError(
-                            'Cannot change Bill status from Draft without at least one line item. '
-                            'Please add at least one line item before changing the status.'
-                        )
-
-            except Bill.DoesNotExist:
-                pass
-
-    def save(self, *args, **kwargs):
-        """Override save to validate state transitions, set dates, and auto-associate Business from Contact."""
-        old_status = None
-        is_new = not self.pk
-
-        # If contact is provided and has a business, auto-associate the business
-        # Only do this on creation and if business is not already explicitly set
-        if is_new and self.contact and self.contact.business and not self.business_id:
-            self.business = self.contact.business
-
-        # Check if this is an update (not a new object)
-        if self.pk:
-            try:
-                old_bill = Bill.objects.get(pk=self.pk)
-                old_status = old_bill.status
-
-                # Handle state transition date setting
-                if old_status != self.status:
-                    # Transitioning to 'received' - set received_date
-                    if self.status == Bill.STATUS_RECEIVED and not self.received_date:
-                        self.received_date = timezone.now()
-
-                    # Transitioning to 'paid_in_full' - set paid_date
-                    if self.status == Bill.STATUS_PAID_IN_FULL and not self.paid_date:
-                        self.paid_date = timezone.now()
-
-                    # Transitioning to 'cancelled' - set cancelled_date
-                    if self.status == Bill.STATUS_CANCELLED and not self.cancelled_date:
-                        self.cancelled_date = timezone.now()
-
-            except Bill.DoesNotExist:
-                pass
-
-        # Run validation
-        self.full_clean()
-
-        # Call parent save
-        super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        """Override delete to enforce that only draft Bills can be deleted."""
-        if self.status != Bill.STATUS_DRAFT:
-            from django.core.exceptions import PermissionDenied
-            raise PermissionDenied(
-                f'Cannot delete Bill {self.vendor_invoice_number or self.pk}. '
-                'Only Bills in Draft status can be deleted.'
-            )
-        return super().delete(*args, **kwargs)
-
-    @property
-    def total(self):
-        return sum((li.total_amount for li in self.billlineitem_set.all()),
-                   Decimal('0.00'))
-
-    @property
-    def amount_paid(self):
-        return sum((p.amount for p in self.billpayment_set.all()),
-                   Decimal('0.00'))
-
-    @property
-    def balance(self):
-        TERMINAL_STATUSES = {
-            Bill.STATUS_PAID_IN_FULL,
-            Bill.STATUS_CANCELLED,
-            Bill.STATUS_REFUNDED,
-        }
-        if self.status in TERMINAL_STATUSES:
-            return Decimal('0.00')
-        return self.total - self.amount_paid
-
-    def recompute_payment_status(self):
-        """Derive status from BillPayment totals. Payment-driven: bypasses the
-        forward-only transition guard and date protection in clean().
-
-        Only acts on payment-related statuses (received, partly_paid,
-        paid_in_full). Returns immediately for draft, cancelled, and refunded
-        bills to avoid silently overwriting a terminal or pre-payment status.
-        """
-        PAYMENT_STATUSES = {
-            Bill.STATUS_RECEIVED,
-            Bill.STATUS_PARTLY_PAID,
-            Bill.STATUS_PAID_IN_FULL,
-        }
-        if self.status not in PAYMENT_STATUSES:
-            return
-
-        paid = self.amount_paid
-        total = self.total
-        if paid <= 0:
-            new_status = Bill.STATUS_RECEIVED
-        elif paid < total:
-            new_status = Bill.STATUS_PARTLY_PAID
-        else:
-            new_status = Bill.STATUS_PAID_IN_FULL
-        self._payment_driven = True
-        self.status = new_status
-        if new_status == Bill.STATUS_PAID_IN_FULL and not self.paid_date:
-            self.paid_date = timezone.now()
-        elif new_status != Bill.STATUS_PAID_IN_FULL and self.paid_date:
-            self.paid_date = None
-        try:
-            self.save()
-        finally:
-            self._payment_driven = False
-
     class Meta:
         db_table = 'bills'
 
@@ -443,6 +243,7 @@ class Bill(models.Model):
 
 
 class BillPayment(QBOSyncable):
+    """RETIRED (2026-07-23): schema-only, see Bill."""
     payment_id = models.AutoField(primary_key=True)
     bill = models.ForeignKey(Bill, on_delete=models.CASCADE)
     # Payment OUT — entered in Minibini
@@ -467,11 +268,6 @@ class BillPayment(QBOSyncable):
     class Meta:
         db_table = 'bill_payments'
         ordering = ['payment_date']
-
-    def clean(self):
-        super().clean()
-        if self.amount is not None and self.amount <= 0:
-            raise ValidationError('Payment amount must be greater than zero.')
 
     def __str__(self):
         return f"Payment {self.amount} on Bill {self.bill_id}"
@@ -512,7 +308,7 @@ class PurchaseOrderLineItem(BaseLineItem):
 
 
 class BillLineItem(BaseLineItem):
-    """Line item for bills - inherits shared functionality from BaseLineItem."""
+    """RETIRED (2026-07-23): schema-only, see Bill."""
 
     bill = models.ForeignKey(Bill, on_delete=models.CASCADE)
     task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT, null=True, blank=True)

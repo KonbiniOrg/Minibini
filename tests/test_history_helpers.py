@@ -9,7 +9,7 @@ from apps.core.history import (
     set_history_context,
 )
 from apps.core.models import User
-from apps.purchasing.models import Bill
+from apps.purchasing.models import PurchaseOrder
 from tests.base import BaseTestCase
 
 
@@ -96,9 +96,9 @@ class RecordActionTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.user = User.objects.get(username='admin')
-        self.bill = Bill.objects.first()
-        if self.bill is None:
-            self.fail('Fixture must contain at least one Bill')
+        self.po = PurchaseOrder.objects.first()
+        if self.po is None:
+            self.fail('Fixture must contain at least one PurchaseOrder')
 
     def tearDown(self):
         set_history_context(None)
@@ -107,16 +107,16 @@ class RecordActionTest(BaseTestCase):
     def test_writes_action_entry_with_context_user(self):
         ctx = HistoryContext(user=self.user)
         set_history_context(ctx)
-        entry = record_action('bill', self.bill.pk, 'X happened')
+        entry = record_action('purchaseorder', self.po.pk, 'X happened')
         self.assertEqual(entry.entry_type, 'action')
-        self.assertEqual(entry.object_type, 'bill')
-        self.assertEqual(entry.object_id, self.bill.pk)
+        self.assertEqual(entry.object_type, 'purchaseorder')
+        self.assertEqual(entry.object_id, self.po.pk)
         self.assertEqual(entry.changes, {'_action': 'X happened'})
         self.assertEqual(entry.user, self.user)
 
     def test_writes_action_entry_with_null_user_when_no_context(self):
         set_history_context(None)
-        entry = record_action('bill', self.bill.pk, 'no context write')
+        entry = record_action('purchaseorder', self.po.pk, 'no context write')
         self.assertEqual(entry.entry_type, 'action')
         self.assertIsNone(entry.user)
         self.assertEqual(entry.changes, {'_action': 'no context write'})
@@ -129,14 +129,14 @@ class RecordActionTest(BaseTestCase):
             )
         ctx = HistoryContext(user=self.user)
         set_history_context(ctx)
-        entry = record_action('bill', self.bill.pk, 'Y happened', user=other_user)
+        entry = record_action('purchaseorder', self.po.pk, 'Y happened', user=other_user)
         self.assertEqual(entry.user, other_user)
 
     def test_action_persisted_to_db(self):
         """Entry created by record_action is actually saved to the DB."""
         from apps.core.models import PurchasingHistory
         set_history_context(None)
-        entry = record_action('bill', self.bill.pk, 'persist check')
+        entry = record_action('purchaseorder', self.po.pk, 'persist check')
         fetched = PurchasingHistory.objects.get(pk=entry.pk)
         self.assertEqual(fetched.entry_type, 'action')
         self.assertEqual(fetched.changes, {'_action': 'persist check'})

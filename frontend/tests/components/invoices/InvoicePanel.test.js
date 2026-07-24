@@ -24,6 +24,7 @@ function makeInvoice(overrides = {}) {
   return {
     invoice_id: 5,
     invoice_number: 'INV-5',
+    display_number: 'INV-5',
     job: 9,
     status: 'draft',
     created_date: '2026-01-01T00:00:00Z',
@@ -78,11 +79,25 @@ beforeEach(() => {
   api.delete?.mockReset?.();
 });
 
+describe('InvoicePanel draft placeholder identity', () => {
+  it('titles an unnumbered draft with the display placeholder', async () => {
+    user.set({ permissions: [] });
+    const draft = makeInvoice({
+      invoice_number: null, display_number: 'Draft — JOB-9', status: 'draft',
+    });
+    mockApi(draft, { invoices: [draft] });
+    const { findByText } = render(InvoicePanel, {
+      props: { job: JOB, invoiceId: 5 },
+    });
+    await findByText('Invoice: Draft — JOB-9');
+  });
+});
+
 describe('InvoicePanel invoice subnav', () => {
   it('renders one job-scoped link per invoice, active on the shown doc', async () => {
     user.set({ permissions: [] });
-    const i1 = makeInvoice({ invoice_id: 5, invoice_number: 'INV-5', status: 'open', created_date: '2026-01-01T00:00:00Z' });
-    const i2 = makeInvoice({ invoice_id: 6, invoice_number: 'INV-6', status: 'draft', created_date: '2026-01-02T00:00:00Z' });
+    const i1 = makeInvoice({ invoice_id: 5, invoice_number: 'INV-5', display_number: 'INV-5', status: 'open', created_date: '2026-01-01T00:00:00Z' });
+    const i2 = makeInvoice({ invoice_id: 6, invoice_number: 'INV-6', display_number: 'INV-6', status: 'draft', created_date: '2026-01-02T00:00:00Z' });
     mockApi(i2, { invoices: [i1, i2] });
 
     const { findByText, container } = render(InvoicePanel, {
@@ -486,7 +501,7 @@ describe('InvoicePanel "+ New invoice" (create a sibling invoice)', () => {
 
   it('offers "+ New invoice" on the version bar when billable, no open draft, and financials', async () => {
     user.set({ permissions: ['can_manage_financials'] });
-    const sent = makeInvoice({ invoice_id: 5, invoice_number: 'INV-5', status: 'sent' });
+    const sent = makeInvoice({ invoice_id: 5, invoice_number: 'INV-5', display_number: 'INV-5', status: 'sent' });
     mockApi(sent, { invoices: [sent] });
     const { findByRole } = render(InvoicePanel, { props: { job: billableJob, invoiceId: 5 } });
     expect(await findByRole('button', { name: /New invoice/ })).toBeInTheDocument();

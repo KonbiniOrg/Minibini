@@ -28,7 +28,9 @@ class Invoice(models.Model):
 
     invoice_id = models.AutoField(primary_key=True)
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
-    invoice_number = models.CharField(max_length=50, unique=True)
+    # QBO assigns the invoice number: NULL until the first QBO push writes
+    # DocNumber back. Drafts show display_number's placeholder instead.
+    invoice_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
     status = models.CharField(max_length=20, choices=INVOICE_STATUS_CHOICES, default=STATUS_DRAFT)
     created_date = models.DateTimeField(default=timezone.now)
     # date the invoice was sent to the customer and stopped being editable
@@ -71,10 +73,14 @@ class Invoice(models.Model):
                     'A draft invoice already exists for this job.'
                 )
 
-    def save(self, *args, **kwargs):
-        """Override save to auto-generate invoice_number and check job completion."""
-        from apps.core.services import NumberGenerationService
+    @property
+    def display_number(self):
+        """The invoice's user-facing identity: QBO's number once pushed,
+        else a draft placeholder."""
+        return self.invoice_number or f'Draft — {self.job.job_number}'
 
+    def save(self, *args, **kwargs):
+        """Override save to stamp dates and check job completion."""
         old_status = None
         if self.pk:
             try:
@@ -94,10 +100,6 @@ class Invoice(models.Model):
         if (old_status and old_status != self.status
                 and self.status == Invoice.STATUS_PAID and not self.closed_date):
             self.closed_date = timezone.now()
-
-        # Auto-generate invoice_number if not provided
-        if not self.invoice_number:
-            self.invoice_number = NumberGenerationService.generate_next_number('invoice')
 
         self.clean()
 
@@ -135,7 +137,7 @@ class Invoice(models.Model):
         ]
 
     def __str__(self):
-        return f"Invoice {self.invoice_number}"
+        return f"Invoice {self.display_number}"
 
 
 class InvoiceLineItem(BaseLineItem):
@@ -167,7 +169,7 @@ class InvoiceLineItem(BaseLineItem):
         return 'invoice'
 
     def __str__(self):
-        return f"Invoice Line Item {self.pk} for {self.invoice.invoice_number}"
+        return f"Invoice Line Item {self.pk} for {self.invoice.display_number}"
 
 
 class InvoiceLineItemSource(models.Model):

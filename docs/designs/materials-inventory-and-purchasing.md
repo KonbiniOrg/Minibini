@@ -3,7 +3,8 @@
 This document is the consolidated reference for the inventory catalog
 (`InventoryItem`), the materials lifecycle (`Material`, earmarks,
 consumption state), the configurable units system, and purchasing
-(POs, Bills, receiving, PO ↔ Material integration).
+(POs, receiving, PO ↔ Material integration). Bills (vendor invoices)
+were retired to QBO 2026-07-23 — see §13.
 
 > **Job-owns-atoms model.** A `Material` is created **directly on the
 > Job** (via the Work surface or a job-attributed PO line); the former
@@ -16,13 +17,14 @@ Sibling docs:
 - `docs/designs/architecture-and-conventions.md` — service-layer pattern,
   `LineItemMixin`, `LineItemService.delete_line_item_with_renumber`,
   delete-confirm pattern.
-- `docs/designs/jobs-tasks-and-worksheets.md` — `Job`, `Task`, `Fee`,
+- `docs/designs/jobs-and-tasks.md` — `Job`, `Task`, `Fee`,
   `WorkTemplate`, populate-from-template path, the Work surface.
 - `docs/designs/estimates-and-prices.md` — `RateScheme`, billable atoms
   (Materials are atoms), AccountingCategory pass-through.
 - `docs/designs/invoicing-and-expenses.md` — `Invoice` /
   `InvoiceLineItem`, expense-bound Materials.
-- `docs/designs/quickbooks-integration.md` — Bill QBO sync.
+- `docs/designs/quickbooks-integration.md` — QBO integration (expense
+  purchases, payment accounts).
 - `CLAUDE.md` — line-item delete rule, document numbering, `Configuration`
   key-value store, terminal-DB-write rules.
 
@@ -36,7 +38,7 @@ The data model splits into three layers:
 |---|---|---|
 | Inventory | `InventoryItem` | Every physical item — one kind, no catalog/lot fork — with prices, units, accounting category, and universal QOH tracking. Frequently-reordered types and one-off minted lots are the same row at different usage frequencies |
 | Instance | `MaterialBase` (abstract) → `Material`, `TemplateMaterialAssociation` | Materials live on Jobs (`Material`) or Templates (`TemplateMaterialAssociation`) |
-| Procurement | `PurchaseOrder`, `PurchaseOrderLineItem`, `Bill`, `BillLineItem`, `BillPayment` | Order goods from vendors, receive them, record vendor invoices, record payments against bills |
+| Procurement | `PurchaseOrder`, `PurchaseOrderLineItem` | Order goods from vendors and receive them. Vendor invoices (bills) live in QBO — §13 |
 
 A `Material` on a Job represents a *commitment*. It is created directly on
 the Job (Work surface, PO line, or template populate — there is no
@@ -80,7 +82,7 @@ Files:
 > row at different usage frequencies. `is_active` is the only retirement flag.
 
 Every physical item flows through this one table — items that estimates,
-invoices, POs, bills, and Materials reference, and the `LOT-{pk}` lots minted
+invoices, POs, and Materials reference, and the `LOT-{pk}` lots minted
 behind freeform Materials at establishment (§3, §4).
 
 ### Fields
@@ -97,6 +99,7 @@ behind freeform Materials at establishment (§3, §4).
 | `qty_wasted` | `Decimal(10,2)` | Bumped by negative `manual_adjustment` / write-off |
 | `is_active` | bool, default **True** | The only retirement flag. "Can't get this any more / won't reorder, but it is still referenced." A **human judgment**, set manually — nothing auto-retires an item. Pickers default to `?is_active=true` |
 | `accounting_category` | FK PROTECT | Required |
+| `qbo_id` | `CharField(50)` blank, default `''` | QBO Item mirror (2026-07-21): the id of this item's QBO Item, minted lazily (type `NonInventory`, Name = `code`) by `QBOItemMintService` on the first invoice push that sells it. `''` = not mirrored. Plain field, not `QBOSyncable`. Stock quantities never sync to QBO. See quickbooks-integration.md. |
 
 Derived:
 
@@ -145,7 +148,8 @@ when no sell is supplied (used by establishment when minting a `LOT-{pk}` lot).
 
 - **No auto-hiding, no auto-delete.** Inventory rows are shop history and are
   never automatically removed — line items
-  (`EstimateLineItem`/`InvoiceLineItem`/`PurchaseOrderLineItem`/`BillLineItem`)
+  (`EstimateLineItem`/`InvoiceLineItem`/`PurchaseOrderLineItem`, plus legacy
+  `BillLineItem` rows from before the bill retirement, §13)
   and `TemplateMaterialAssociation` reference items via **PROTECT**, so physical
   deletion would raise `ProtectedError`. The removed `is_finished_lot` hide-on-spend
   filter and the retired `collect_if_finished` auto-delete are both gone; a QOH-0
@@ -428,7 +432,7 @@ Enforcement lives in `apps/inventory/serializer_helpers.py`
 Every Material starts `pending` and transitions to `consumed` when work
 begins. Consumption is one-way for users; the lone reversal is
 `unconsume` (`consumed → pending`), used only by the blep-cancel undo
-(see `jobs-tasks-and-worksheets.md` §4.5). The state machine is uniform
+(see `jobs-and-tasks.md` §4.5). The state machine is uniform
 across PLI types and attachment mode.
 
 | State | Restock | Draw more | Consume | Edit description |
@@ -612,7 +616,7 @@ Receipt only bumps QOH.
   during pre-approval work already drew down QOH, so re-earmarking it would
   phantom-reserve stock that's already used. Correspondingly, `unconsume`
   skips earmark restoration on pre-approval jobs — they carry no earmarks by
-  design. See jobs-tasks-and-worksheets.md §"Job-status guard" for the
+  design. See jobs-and-tasks.md §"Job-status guard" for the
   pre-approval-work flow that motivates both.
 
 ### Inventory history trail (InventoryHistory)
@@ -747,7 +751,7 @@ For each instance × association:
   generated material attaches there.
 - Otherwise, the generated material is task-less.
 
-Pointer: `docs/designs/jobs-tasks-and-worksheets.md` covers the
+Pointer: `docs/designs/jobs-and-tasks.md` covers the
 `AbstractWorkContainer.populate_from_template` orchestration that
 generates BOTH tasks AND materials and runs `create_earmarks_for_job`
 afterward.
@@ -779,17 +783,16 @@ then `InventoryService.create_earmarks_for_job(job)`.
 
 Date fields are protected after first save by `PurchaseOrder.clean()`.
 
-**Derived billing properties** (computed from associated Bills at query time; never stored):
+**Derived total** (computed at query time; never stored):
 
 | Property | Type | Notes |
 |---|---|---|
 | `po_total` | Decimal | Sum of all `PurchaseOrderLineItem.total_amount` |
-| `billed_total` | Decimal | Sum of `Bill.total` for non-cancelled Bills linked to this PO via `related_name='bills'` |
-| `is_fully_billed` | bool | True when `po_total > 0` and `billed_total >= po_total` |
 
-`PurchaseOrderSerializer` exposes all three. Double-billing is **surfaced not blocked**: when a PO's billed total covers the PO total, a warning banner appears on the Bill detail page and Bill create form — the system does not prevent a second Bill from being created. Only a draft PO is a hard refusal (Bills cannot be linked to a PO in `draft` status).
-
-`Bill.purchase_order` FK carries `related_name='bills'`, enabling `po.bills.all()` and the `?purchase_order=<id>` filter on `GET /api/bills/`.
+`PurchaseOrderSerializer` exposes it. (`billed_total` / `is_fully_billed`
+and the serializer's `bills` field were removed with the bill retirement,
+2026-07-23 — see §13. There is deliberately **no** "billed" state or flag
+on the PO: invoice-vs-PO reconciliation is bookkeeper work done in QBO.)
 
 ### Status machine
 
@@ -1070,22 +1073,14 @@ PurchaseOrder.objects.filter(
 Job.objects.filter(materials__po_line_item__purchase_order=po).distinct()
 ```
 
-### PO ↔ Bill relationship
+### Vendor-invoice emails link to the PO
 
-Each Bill carries a single optional `purchase_order` FK (`related_name='bills'`). A PO may have multiple Bills (e.g. partial vendor invoices or a corrected invoice), but each Bill references at most one PO. **A many-to-many model (one Bill spanning multiple POs) was considered and rejected** — the added complexity wasn't warranted for the shop's workflow; the single FK is retained.
-
-The Bill create form includes a **PO picker** (vendor-filtered). When navigating to a Bill from the email→bill flow, the vendor-correlated PO is pre-selected. All Bills for a PO are queryable via `?purchase_order=<id>` on `GET /api/bills/`.
-
-`BillSerializer` also returns a `po_billing` hint when a PO is linked:
-
-```json
-{
-  "other_bills": [{"bill_id": …, "vendor_invoice_number": …, "status": …, "total": …}],
-  "po_fully_billed": true
-}
-```
-
-`other_bills` lists sibling non-cancelled Bills on the same PO; `po_fully_billed` flags when the billed total already covers the PO total. The frontend uses this to render an informational notice on the Bill detail page and a warning banner on the Bill form — double-billing is surfaced, not blocked.
+The one bill-adjacent capability konbini keeps (2026-07-23): an inbound
+vendor-invoice email is linked to the **PurchaseOrder** via the existing
+link-to-po / associate-po / create-po-from-email flows and the
+`EmailRecord.purchase_order` association, so the PO's email panel shows
+that the vendor invoice arrived. Everything downstream (entry, payment,
+reconciliation) happens in QBO.
 
 ---
 
@@ -1136,124 +1131,51 @@ page's Send button navigates to this route instead.
 
 ---
 
-## 13. Bill
+## 13. Bills retired → QBO (2026-07-23)
 
-`apps/purchasing/models.py` — `Bill`, `db_table='bills'`, decorated with `@history(exclude=['bill_id'])`. Vendor invoice, optionally linked to a `PurchaseOrder`.
+Konbini no longer manages vendor invoices. Bills are entered, tracked, and
+paid **in QuickBooks Online only**; konbini keeps the purchasing side it is
+good at — POs, receiving, stock intake — plus one breadcrumb: vendor-invoice
+emails link to the PO (§11).
 
-| Field | Type | Notes |
-|---|---|---|
-| `purchase_order` | FK PROTECT nullable (`related_name='bills'`) | PO must be in `issued` or later (not `draft`) |
-| `business` | FK PROTECT | Required |
-| `contact` | FK PROTECT nullable | If set, must belong to `business` |
-| `vendor_invoice_number` | `CharField(50)` `blank` | Vendor's own invoice number; primary human-facing identifier (no Minibini-side auto-number). Optional — a draft Bill created from a PO has none until the real invoice arrives. |
-| `status` | choices | **Derived** from payments via `recompute_payment_status()` for the payment statuses; see state machine |
-| `due_date`, `received_date`, `paid_date`, `cancelled_date` | datetime nullable | `paid_date` managed by `recompute_payment_status()` |
-| `qbo_id`, `qbo_payment_status` | char | QBO sync state |
+**Schema retained, everything else gone.** `Bill`, `BillLineItem`, and
+`BillPayment` still exist in `apps/purchasing/models.py` as **RETIRED
+schema-only stubs** — bare field declarations kept so no destructive
+migration is generated and legacy dev-DB rows survive in case of reversion.
+No active code creates, mutates, or displays them. Removed with the
+retirement:
 
-**Computed properties** (no stored columns):
+- All Bill/BillPayment business logic (clean/save overrides, transitions,
+  computed properties, `recompute_payment_status`), the `@history` capture
+  on Bill, and admin registration.
+- `BillService`, `BillPaymentService`, `BillViewSet`, the bill serializers,
+  and every `/api/bills/` route.
+- The QBO layer: `QBOBillSyncService` (bill push, bill-payment
+  push/update/void), `QBOVendorSyncService` (its only caller was the bill
+  push), the bill slice of payment polling and sync-failures — see
+  `quickbooks-integration.md`.
+- The SPA bill pages/picker/nav entry, bills in search, the business/contact
+  bill panels, the PO detail billed section, and `RecordPaymentModal`.
+- Email link-to-bill/unlink actions and the `'bill'` association target
+  (`EmailRecord.bill` FK column retained as legacy schema only).
 
-| Property | Notes |
-|---|---|
-| `total` | Sum of `BillLineItem.total_amount` |
-| `amount_paid` | Sum of `BillPayment.amount` for all payments on this Bill |
-| `balance` | `total − amount_paid` (exact) |
+**What stays (passive/legacy):** the PROTECT FKs and deletion-protection
+checks that reference the retired models keep guarding legacy rows
+(contacts checks, business-delete impact counts,
+`InventoryItem.has_document_line_refs`' BillLineItem clause, inventory-merge
+repointing of legacy `BillLineItem` rows). `AccountingCategory.qbo_expense_account_id`,
+`Configuration['qbo_payment_accounts']` + `QBOPaymentAccountService`, and
+`Business.qbo_vendor_id` remain in active use by the expense/reimbursement
+pushes and `QBODisplayNameService`.
 
-Status machine:
-
-| From | Allowed |
-|---|---|
-| `draft` | `received` |
-| `received` | `partly_paid`, `paid_in_full`, `cancelled` |
-| `partly_paid` | `paid_in_full` |
-| `paid_in_full` | `refunded` |
-| `cancelled`, `refunded` | (terminal) |
-
-**Status is payment-driven** for the payment statuses (`received`, `partly_paid`, `paid_in_full`). `Bill.recompute_payment_status()` re-derives the status from `amount_paid` vs `total` every time a `BillPayment` is recorded, updated, or deleted:
-
-- `amount_paid == 0` → `received`
-- `0 < amount_paid < total` → `partly_paid`
-- `amount_paid >= total` → `paid_in_full`; sets `paid_date`; clears `paid_date` when moving back
-
-Status can move **backward** (e.g. `paid_in_full` → `partly_paid` when a payment is deleted). A `_payment_driven` flag on the instance bypasses the forward-only transition guard in `clean()` during these recomputes. `recompute_payment_status()` is a no-op for `draft`, `cancelled`, and `refunded` bills.
-
-Date fields are protected after first save (except `paid_date`, which is managed by the payment recompute). `Bill.delete()` is draft-only.
-
-### Line items
-
-`BillLineItem`, `db_table='bill_li'`. Inherits from `BaseLineItem`.
-`task` FK PROTECT nullable. No receiving fields — Bills don't track
-physical receipt (the linked PO does).
-
-### `BillPayment`
-
-`apps/purchasing/models.py` — `BillPayment`, `db_table='bill_payments'`. No `@history` decorator. Child of `Bill` (FK CASCADE, `bill.billpayment_set`). `Meta.ordering = ['payment_date']`.
-
-**Payment-OUT fields** (entered in Minibini):
-
-| Field | Type | Notes |
-|---|---|---|
-| `payment_id` | PK | Auto |
-| `bill` | FK CASCADE | |
-| `amount` | `Decimal(10,2)` | Must be > 0 |
-| `payment_date` | datetime | |
-| `payment_account_id` | `CharField(50)` blank | Which QBO bank/CC account paid (a `qbo_account_id` from `Configuration['qbo_payment_accounts']`); drives the QBO `BillPayment` PayType. Required while QBO is connected. **Replaces the old `method` field** — the human descriptor is derived from the account + reference. |
-| `reference` | `CharField(100)` blank | Cheque number, transaction ID, etc.; becomes the QBO `DocNumber`. |
-| `created_by` | FK User SET_NULL nullable (`related_name='recorded_bill_payments'`) | |
-| `created_date` | datetime | auto |
-
-**QBO sync fields** (from the `QBOSyncable` base — `qbo_id` is written by the push, `cleared_date` by the deferred clearance poller):
-
-| Field | Type | Notes |
-|---|---|---|
-| `qbo_id` | `CharField(50)` blank | QBO `BillPayment` Id; written by `push_bill_payment` (was `qbo_payment_id`) |
-| `qbo_sync_status` | choices | `pending` / `synced` / `sync_failed` (from `QBOSyncable`) |
-| `qbo_sync_error` | text blank | Last push error message |
-| `cleared_date` | datetime nullable | Set by `QBOBillPaymentPollingService` when QBO confirms clearance (deferred — poller stubbed) |
-
-### `BillPaymentService`
-
-Sole writer of `BillPayment` rows (`apps/purchasing/services.py`). Every method recomputes Bill status after the write.
-
-| Method | Purpose |
-|---|---|
-| `record_payment(bill, *, amount, payment_date, method, reference='', user=None)` | Create a `BillPayment`; writes an `action` HistoryEntry on the Bill; triggers `_push_to_qbo` seam; bill must be `received` or `partly_paid` |
-| `update_payment(payment_id, **out_fields)` | Edit payment-OUT fields (`amount`, `payment_date`, `method`, `reference`); blocked on `cancelled`/`refunded` bills |
-| `delete_payment(payment_id)` | Delete payment and recompute Bill status (can move status backward) |
-
-`_push_to_qbo(payment)` calls `QBOBillSyncService.push_bill_payment(payment)` after recording; exceptions are swallowed-and-logged (QBO hiccups must never block recording a payment).
-
-### `BillService`
-
-| Method | Purpose |
-|---|---|
-| `create_bill(**kwargs)` | Create a Bill |
-| `create_bill_from_po(po_id, **kwargs)` | Create bill and copy PO line items |
-| `update_bill(pk, **kwargs)` | Draft-only header update (business, contact, vendor_invoice_number, dates) |
-| `update_status(pk, new_status)` | Direct status change (used by `receive` and `cancel` status actions) |
-| `delete_bill(pk)` | Draft-only delete |
-| `add_line_item`, `add_line_item_from_pli`, `update_line_item`, `reorder_line_items`, `reorder_line_item`, `delete_line_item` | Line item CRUD; all draft-only |
-
-`BillService.update_bill` is the service entry point for PATCH on a Bill's header fields. `BillViewSet.perform_update` routes PATCH requests through it (draft-only; rejects updates on non-draft bills). All bill write actions require `CanManageFinancials`.
-
-`BillViewSet.status_actions` registers: `receive` (draft → received), `cancel` (received → cancelled, requires reason). **`mark_paid` is removed** — the `paid_in_full` status is reached only via payments recorded through `BillPaymentService`.
-
-**Payment endpoints** (all `CanManageFinancials`; DELETE returns 200 + JSON body):
-
-| Method | Path | Purpose |
-|---|---|---|
-| `POST` | `/api/bills/{id}/payments/` | Record a payment via `BillPaymentService.record_payment` |
-| `PATCH` | `/api/bills/{id}/payments/{pid}/` | Update payment-OUT fields |
-| `DELETE` | `/api/bills/{id}/payments/{pid}/` | Delete payment; may roll status backward |
-
-**`?purchase_order=<id>` filter** on `GET /api/bills/` returns bills linked to a given PO.
-
-QBO sync: `POST /api/bills/{id}/send-to-qbo/` calls `QBOBillSyncService.push_bill` (endpoint exists; not yet wired in the UI). See `docs/designs/quickbooks-integration.md` for the push mechanics and the bill-payment push seam.
+If the retirement is not reverted, a table-dropping migration is still owed
+(tracked in `docs/designs/LATER.md`).
 
 ---
 
 ## 14. Line item API pattern
 
-Every purchasing line-item viewset (PO and Bill) uses `LineItemMixin`
+The PO line-item viewset uses `LineItemMixin`
 and `StatusTransitionMixin`. The PO viewset overrides
 `line_items` (POST) and `line_item_detail` (PATCH/DELETE) to handle the
 transient `job` / `material_id` / `sever_decision` parameters.
@@ -1275,48 +1197,7 @@ Routes (`#/`-prefixed hash routes):
 | `#/purchase-orders/:id` | `routes/purchaseorders/PurchaseOrderDetailPage.svelte` → `PurchaseOrderDetail.svelte` |
 | `#/purchase-orders/:id/edit` | `PurchaseOrderFormPage.svelte` (edit mode, draft only) |
 
-The PO detail page (`PurchaseOrderDetail.svelte`) shows `billed_total`, `po_total`, and an `is_fully_billed` marker sourced from `PurchaseOrderSerializer`. It lists the PO's linked Bills (from the serializer's `bills` field — `[{bill_id, vendor_invoice_number, status}]`, prefetched on the viewset to avoid N+1) and, for users with `can_manage_financials` on a billable PO (`issued` / `partly_received` / `received_in_full`), a **Create Bill** link to `#/bills/new?po=<id>`. The PO **list** (`PurchaseOrderList.svelte`) shows a **Bill** column linking each PO's bill(s).
-
-### Bill surfaces
-
-Bill routes live under the **Financials** sidebar section (gated on `can_manage_financials`):
-
-| Route | Component | Notes |
-|---|---|---|
-| `#/bills` | `routes/bills/BillListPage.svelte` | Bill list page |
-| `#/bills/new` | `routes/bills/BillFormPage.svelte` (create mode) | Create a new Bill; accepts `?po=<id>` to pre-populate from a PO and `?email=<id>&vendor=<id>` from the email create-bill flow |
-| `#/bills/:id` | `routes/bills/BillDetailPage.svelte` | Bill detail — interactive |
-| `#/bills/:id/edit` | `routes/bills/BillFormPage.svelte` (edit mode, draft only) | Edit a draft Bill's header fields |
-
-**Bill list page** (`BillListPage.svelte`):
-
-- Columns: Vendor Inv#, Vendor, PO#, Status, Received, Due, Amount, Balance.
-- Default view: status preset **Open** (includes `received` + `partly_paid`), sorted by due date ascending.
-- Status presets: Open / Paid / Draft / Cancelled / Refunded / All.
-- Filters: status preset, due-date range, and a `CustomerPicker` (`?business=` / `?contact=`) for filtering by vendor.
-- **New Bill** button — visible to users with `can_manage_financials` only.
-- **Balance column:** Exact balance (`total − amount_paid`) computed in summary mode via a Subquery on `BillPayment.amount` (fan-out-safe).
-
-**Bill detail page** (`BillDetailPage.svelte`):
-
-- Displays Bill header (vendor invoice#, vendor, PO link, status, dates), exact balance, and a payments section.
-- On `draft` Bills, users with `can_manage_financials` can add, edit, delete, and reorder line items using `LineItemModal.svelte`.
-- On `received` / `partly_paid` Bills, users with `can_manage_financials` can **Record Payment** (opens `RecordPaymentModal.svelte`; also offers a "Pay in full" shortcut that pre-fills the remaining balance) and edit or delete individual payments.
-- Status actions: **Mark Received** (draft → received), **Cancel** (received → cancelled, requires a reason), **Delete** (draft only). **"Mark Paid in Full" is removed** — `paid_in_full` status is reached automatically when payments cover the total.
-- When a PO is linked, an informational notice lists any sibling Bills on the same PO, and a warning banner appears if the PO is already fully billed.
-- No Send-to-QBO button in the UI for this phase (the `send-to-qbo` endpoint exists but is not yet wired).
-
-**Bill form page** (`BillFormPage.svelte`):
-
-- Create mode (`/bills/new`): full header form (vendor business/contact, vendor invoice number, dates). Accepts `?po=<id>` to pre-fill vendor and copy PO line items via `BillService.create_bill_from_po`. Includes a **PO picker** (vendor-filtered via `PurchaseOrderPicker`). A warning banner appears when the selected PO is already fully billed.
-- Edit mode (`/bills/:id/edit`): draft-only header edit; routes through `BillService.update_bill`.
-
-**Serializers:**
-
-- `BillSummarySerializer` — lightweight list serializer (summary mode); exposes `vendor_name`, `po_number`, `purchase_order`, `status`, dates, total, and exact balance (via annotations).
-- `BillSerializer` — full detail/create/update serializer; includes all header fields, line items, nested read-only `payments`, `amount_paid`, exact `balance`, and `po_billing` hint.
-
-**`?summary=true` opt-in (dual contract).** Like the invoice list, `BillViewSet` only uses `BillSummarySerializer` + the default-open status filter + presets/due-range/ordering in **summary mode** (the financials A/P list page calls `GET /api/bills/?summary=true`). **Without** `summary=true`, the list endpoint keeps its original contract — the full `BillSerializer` (with `line_items` and `payments`) and **all** statuses — preserving pre-existing consumers: the **Business detail** (`?business=`) and **Contact detail** (`?contact=`) bill panels and the **email-associate-bill** picker. (`?business=`/`?contact=`/`?purchase_order=` filtering applies in both modes.)
+The PO detail page (`PurchaseOrderDetail.svelte`) shows `po_total` sourced from `PurchaseOrderSerializer`. (The billed section, the Create Bill link, and the PO list's Bill column were removed with the bill retirement, 2026-07-23 — §13.) Its email panel shows linked vendor emails, including inbound vendor invoices linked via the email→PO flow (§11).
 
 Components in `frontend/src/components/purchaseorders/`:
 
@@ -1391,7 +1272,7 @@ wires everything.) The handler halves are shared too: prompt-based ops in
 has no raw material-delete button — removal is the **release** action
 (full-quantity restock), the same vocabulary as everywhere else.
 
-The job overview (2026-07-09 six-block redesign; `jobs-tasks-and-worksheets.md`
+The job overview (2026-07-09 six-block redesign; `jobs-and-tasks.md`
 §9) does **not** mount `TaskTree` at all — it never lists rows. Its
 Materials block (`MaterialsBlock.svelte` → `materialsBlock()` in
 `lib/jobOverview.js`) shows a **Coverage** stat instead: `SHORT` (red)
@@ -1540,4 +1421,4 @@ implementation, two placements. See `estimates-and-prices.md` §6.4 and
   enforce it pre-submit. Worth a separate investigation.
 - **`PurchaseOrderLineItem.task` reserved for future "service PO"
   feature.** Field exists on the model, untouched by current flows.
-- **`accounting_category` required on `PurchaseOrderLineItem` and `BillLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.
+- **`accounting_category` required on `PurchaseOrderLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.

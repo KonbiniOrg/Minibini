@@ -6,8 +6,12 @@
   import { stockShortfall } from '../../lib/stockShortfall.js';
   import Modal from '../../components/Modal.svelte';
   import CatalogTabs from '../../components/CatalogTabs.svelte';
+  import InventoryImportPanel from '../../components/qboimport/InventoryImportPanel.svelte';
+  import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
 
   // Write access: either the money role or the admin role.
+  let pullEpoch = $state(0);
+
   let canManage = $derived($canManageFinancials || $canManageConfig);
 
   let items = $state([]);
@@ -130,6 +134,13 @@
 
 <div class="page-body">
 <CatalogTabs />
+
+{#if canManage}
+  <QboPullButton area="inventory" onPulled={() => pullEpoch++} />
+  {#key pullEpoch}
+    <InventoryImportPanel onCommitted={load} />
+  {/key}
+{/if}
 
 {#if canManage}
   <p>

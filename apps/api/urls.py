@@ -7,7 +7,7 @@ from apps.api.jobs.views import JobViewSet
 from apps.api.contacts.views import ContactViewSet, BusinessViewSet, PaymentTermsViewSet, TagViewSet
 from apps.api.estimates.views import EstimateViewSet
 from apps.api.invoicing.views import InvoiceViewSet
-from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
+from apps.api.purchasing.views import PurchaseOrderViewSet
 from apps.api.inventory.views import InventoryItemViewSet, MaterialViewSet, EarmarkViewSet
 from apps.api.tasks.views import TaskViewSet
 from apps.api.bleps.views import BlepViewSet
@@ -20,9 +20,15 @@ from apps.api.jobs.board_views import (
 )
 from apps.api.home.views import current_blep_view, home_view
 from apps.api.stubs import stub_501
+from apps.api.setup.views import setup_status
+from apps.api.qbo_import.views import (
+    import_pull, import_dismiss, import_suggestions,
+    import_commit_categories, import_commit_schemes,
+    import_commit_catalog, import_commit_contacts, import_commit_terms,
+)
 from apps.api.templates_config.views import (
     WorkTemplateViewSet, ServiceItemViewSet,
-    AccountingCategoryViewSet, settings_view, units_view,
+    AccountingCategoryViewSet, settings_view, units_view, email_verify_view,
 )
 from apps.api.rate_schemes.views import RateSchemeViewSet
 from apps.api.change_orders.views import ChangeOrderViewSet
@@ -43,7 +49,6 @@ def api_root(request):
         'estimates': '/api/estimates/',
         'invoices': '/api/invoices/',
         'purchase-orders': '/api/purchase-orders/',
-        'bills': '/api/bills/',
         'inventory': '/api/inventory/',
         'earmarks': '/api/earmarks/',
         'search': '/api/search/',
@@ -69,7 +74,6 @@ router.register(r'tags', TagViewSet, basename='tag')
 router.register(r'estimates', EstimateViewSet, basename='estimate')
 router.register(r'invoices', InvoiceViewSet, basename='invoice')
 router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchase-order')
-router.register(r'bills', BillViewSet, basename='bill')
 router.register(r'inventory', InventoryItemViewSet, basename='inventory-item')
 router.register(r'earmarks', EarmarkViewSet, basename='earmark')
 router.register(r'materials', MaterialViewSet, basename='material')
@@ -93,6 +97,16 @@ urlpatterns = [
     path('schedule/', schedule_view, name='api-schedule'),
     path('activity/', activity_view, name='api-activity'),
     path('settings/units/', units_view, name='api-settings-units'),
+    path('settings/email-verify/', email_verify_view, name='api-settings-email-verify'),
+    path('setup/status/', setup_status, name='api-setup-status'),
+    path('qbo/import/pull/', import_pull, name='api-qbo-import-pull'),
+    path('qbo/import/dismiss/', import_dismiss, name='api-qbo-import-dismiss'),
+    path('qbo/import/suggestions/<str:area>/', import_suggestions, name='api-qbo-import-suggestions'),
+    path('qbo/import/commit/categories/', import_commit_categories, name='api-qbo-import-commit-categories'),
+    path('qbo/import/commit/schemes/', import_commit_schemes, name='api-qbo-import-commit-schemes'),
+    path('qbo/import/commit/catalog/', import_commit_catalog, name='api-qbo-import-commit-catalog'),
+    path('qbo/import/commit/contacts/', import_commit_contacts, name='api-qbo-import-commit-contacts'),
+    path('qbo/import/commit/terms/', import_commit_terms, name='api-qbo-import-commit-terms'),
     path('settings/', settings_view, name='api-settings'),
     path('shifts/', include('apps.api.time_tracking.urls')),
     path('expenses/', include('apps.api.expenses.urls')),

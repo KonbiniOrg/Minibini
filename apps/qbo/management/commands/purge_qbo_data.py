@@ -35,12 +35,12 @@ FIELD_RESETS = {
     'core.accountingcategory': {'qbo_item_id': '', 'qbo_expense_account_id': ''},
     'invoicing.invoice': {'qbo_id': None, 'qbo_payment_status': '',
                           'qbo_amount_paid': None},
-    'purchasing.bill': {'qbo_id': None, 'qbo_payment_status': ''},
+    'inventory.inventoryitem': {'qbo_id': ''},
+    'estimates.serviceitem': {'qbo_id': ''},
     'contacts.business': {'qbo_customer_id': None, 'qbo_vendor_id': None},
     'contacts.contact': {'qbo_customer_id': None},
     'expenses.expense': SYNCABLE_RESET,
     'expenses.reimbursement': SYNCABLE_RESET,
-    'purchasing.billpayment': SYNCABLE_RESET,
 }
 
 DROP_MODELS = {'qbo.qboconnection', 'qbo.qbosynclog'}

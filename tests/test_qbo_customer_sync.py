@@ -210,3 +210,112 @@ class IndividualContactCustomerSyncTest(TestCase):
         self.assertEqual(customer.DisplayName, 'Jane Solo')
         self.assertFalse(hasattr(customer, 'CompanyName') and customer.CompanyName)
         self.assertEqual(customer.PrimaryEmailAddr.Address, 'jane@solo.com')
+
+
+class CustomerAdoptByNameTest(TestCase):
+    """On QBO's 6240 Duplicate Name error, adopt the existing Customer by
+    DisplayName instead of failing — QBO companies routinely predate konbini
+    (future tenants; reseeded dev DBs against a lived-in sandbox)."""
+
+    DUPLICATE = Exception(
+        'QB Exception 6240: Duplicate Name Exists Error\n'
+        'The name supplied already exists. : null'
+    )
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='John', last_name='Doe',
+            email='john@acme.com', mobile_number='555-5678',
+        )
+        self.business = Business.objects.create(
+            business_name='Acme Corp', business_phone='555-1234',
+            default_contact=self.contact,
+        )
+        self.contact.business = self.business
+        self.contact.save()
+        self.solo = Contact.objects.create(
+            first_name='Jane', last_name='Solo', email='jane@solo.com',
+            mobile_number='555-9999',
+        )
+
+    def _dup_customer(self, display_name):
+        mock_customer = MagicMock()
+        mock_customer.DisplayName = display_name
+        mock_customer.save = MagicMock(side_effect=self.DUPLICATE)
+        return mock_customer
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_push_customer_adopts_existing_on_duplicate_name(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        existing = MagicMock()
+        existing.Id = '333'
+        with patch('apps.qbo.services.QBOCustomerSyncService._build_customer',
+                   return_value=self._dup_customer('Acme Corp')), \
+             patch('quickbooks.objects.customer.Customer.filter',
+                   return_value=[existing]) as mock_filter:
+            result = QBOCustomerSyncService.push_customer(self.business)
+
+        self.assertEqual(result, '333')
+        self.business.refresh_from_db()
+        self.assertEqual(self.business.qbo_customer_id, '333')
+        self.assertEqual(
+            mock_filter.call_args.kwargs.get('DisplayName'), 'Acme Corp')
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_push_customer_reraises_when_no_match_found(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        with patch('apps.qbo.services.QBOCustomerSyncService._build_customer',
+                   return_value=self._dup_customer('Acme Corp')), \
+             patch('quickbooks.objects.customer.Customer.filter',
+                   return_value=[]):
+            with self.assertRaises(Exception):
+                QBOCustomerSyncService.push_customer(self.business)
+        self.business.refresh_from_db()
+        self.assertIsNone(self.business.qbo_customer_id)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_push_customer_reraises_unrelated_errors(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        mock_customer = MagicMock()
+        mock_customer.DisplayName = 'Acme Corp'
+        mock_customer.save = MagicMock(
+            side_effect=Exception('ValidationFault: something else'))
+        with patch('apps.qbo.services.QBOCustomerSyncService._build_customer',
+                   return_value=mock_customer), \
+             patch('quickbooks.objects.customer.Customer.filter') as mock_filter:
+            with self.assertRaises(Exception):
+                QBOCustomerSyncService.push_customer(self.business)
+        mock_filter.assert_not_called()
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_push_contact_as_customer_adopts_existing(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        existing = MagicMock()
+        existing.Id = '444'
+        with patch('apps.qbo.services.QBOCustomerSyncService._build_contact_customer',
+                   return_value=self._dup_customer('Jane Solo')), \
+             patch('quickbooks.objects.customer.Customer.filter',
+                   return_value=[existing]):
+            result = QBOCustomerSyncService.push_contact_as_customer(self.solo)
+
+        self.assertEqual(result, '444')
+        self.solo.refresh_from_db()
+        self.assertEqual(self.solo.qbo_customer_id, '444')
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_failed_create_still_logged_before_adopt(self, mock_get_client):
+        """The failed create attempt keeps its QBOSyncLog row (accurate
+        history), and the adopt proceeds after it."""
+        mock_get_client.return_value = MagicMock()
+        existing = MagicMock()
+        existing.Id = '333'
+        with patch('apps.qbo.services.QBOCustomerSyncService._build_customer',
+                   return_value=self._dup_customer('Acme Corp')), \
+             patch('quickbooks.objects.customer.Customer.filter',
+                   return_value=[existing]):
+            QBOCustomerSyncService.push_customer(self.business)
+
+        failed = QBOSyncLog.objects.filter(
+            entity_type='customer', status='failed')
+        self.assertEqual(failed.count(), 1)
+        self.assertIn('6240', failed.first().error_message)

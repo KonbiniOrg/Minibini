@@ -11,7 +11,7 @@ from apps.jobs.models import Job, Task, RateScheme
 class _Setup(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        Configuration.objects.create(key='units_list', value='["none","ea","sheets","lbs","hours"]')
+        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","ea","sheets","lbs","hours"]'})
         cls.user = User.objects.create_user(username='u', password='p')
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')

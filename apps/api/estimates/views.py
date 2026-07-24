@@ -239,7 +239,7 @@ class EstimateViewSet(
         """Pre-populated values for the Send Email page."""
         from apps.estimates.services import EstimateEmailService
         estimate = self.get_object()
-        return Response(EstimateEmailService.get_email_defaults(estimate))
+        return Response(EstimateEmailService.get_email_defaults(estimate, user=request.user))
 
     @action(detail=True, methods=['post'], url_path='send')
     def send(self, request, pk=None):

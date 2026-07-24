@@ -7,7 +7,7 @@ describe('InvoicingBlock', () => {
   it('active — renders a per-invoice stat with its latency sub', () => {
     const props = {
       invoices: [
-        { invoice_number: 'INV-0088', status: 'paid', total: 3000, sent_date: '2025-06-24', closed_date: '2025-06-28' },
+        { invoice_number: 'INV-0088', display_number: 'INV-0088', status: 'paid', total: 3000, sent_date: '2025-06-24', closed_date: '2025-06-28' },
       ],
       scopeTotal: 12400,
       invoicedTotal: 3000,

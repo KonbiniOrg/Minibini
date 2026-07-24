@@ -96,7 +96,6 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/inventory/',
         '/api/invoices/',
         '/api/purchase-orders/',
-        '/api/bills/',
         '/api/bleps/',
         '/api/emails/',
         '/api/search/?q=test',
@@ -120,8 +119,6 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/invoices/1/line-items/',
         '/api/purchase-orders/1/',
         '/api/purchase-orders/1/line-items/',
-        '/api/bills/1/',
-        '/api/bills/1/line-items/',
         '/api/emails/1/',
     ]
 
@@ -314,7 +311,7 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
 
 class TestCanManageFinancialsAPI(AtomPermissionTestBase):
     """
-    can_manage_financials — manage invoices, POs, bills, price list items.
+    can_manage_financials — manage invoices, POs, price list items.
     """
 
     INVOICE_WRITE_ENDPOINTS = [
@@ -339,15 +336,6 @@ class TestCanManageFinancialsAPI(AtomPermissionTestBase):
         ('post', '/api/purchase-orders/1/cancel/', {'reason': 'test'}),
     ]
 
-    BILL_WRITE_ENDPOINTS = [
-        ('post', '/api/bills/', {'purchase_order': 1, 'vendor': 1}),
-        ('patch', '/api/bills/1/', {'notes': 'test'}),
-        ('delete', '/api/bills/1/', None),
-        ('post', '/api/bills/1/line-items/', {'description': 'Test'}),
-        ('post', '/api/bills/1/line-items/reorder/', {'order': []}),
-        ('post', '/api/bills/1/cancel/', {'reason': 'test'}),
-    ]
-
     PRICE_LIST_WRITE_ENDPOINTS = [
         ('post', '/api/inventory/', {'code': 'TST', 'description': 'Test'}),
         ('patch', '/api/inventory/1/', {'description': 'Updated'}),
@@ -358,7 +346,6 @@ class TestCanManageFinancialsAPI(AtomPermissionTestBase):
         return (
             self.INVOICE_WRITE_ENDPOINTS
             + self.PO_WRITE_ENDPOINTS
-            + self.BILL_WRITE_ENDPOINTS
             + self.PRICE_LIST_WRITE_ENDPOINTS
         )
 
@@ -371,12 +358,6 @@ class TestCanManageFinancialsAPI(AtomPermissionTestBase):
     def test_can_manage_financials_allows_po_writes(self):
         user = self.users['can_manage_financials']
         for method, url, data in self.PO_WRITE_ENDPOINTS:
-            with self.subTest(url=url, method=method):
-                self.assert_allowed(user, method, url, data)
-
-    def test_can_manage_financials_allows_bill_writes(self):
-        user = self.users['can_manage_financials']
-        for method, url, data in self.BILL_WRITE_ENDPOINTS:
             with self.subTest(url=url, method=method):
                 self.assert_allowed(user, method, url, data)
 
@@ -396,11 +377,6 @@ class TestCanManageFinancialsAPI(AtomPermissionTestBase):
             with self.subTest(url=url, method=method):
                 self.assert_denied(self.bare_user, method, url, data)
 
-    def test_bare_user_denied_bill_writes(self):
-        for method, url, data in self.BILL_WRITE_ENDPOINTS:
-            with self.subTest(url=url, method=method):
-                self.assert_denied(self.bare_user, method, url, data)
-
     def test_bare_user_denied_price_list_writes(self):
         for method, url, data in self.PRICE_LIST_WRITE_ENDPOINTS:
             with self.subTest(url=url, method=method):
@@ -413,7 +389,6 @@ class TestCanManageFinancialsAPI(AtomPermissionTestBase):
         # estimate/worksheet flow. Other invoice writes remain financials-only.
         sample = [
             ('post', '/api/purchase-orders/', {'vendor': 1}),
-            ('post', '/api/bills/', {'purchase_order': 1, 'vendor': 1}),
         ]
         for method, url, data in sample:
             with self.subTest(url=url):

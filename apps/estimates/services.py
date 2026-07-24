@@ -612,11 +612,11 @@ class DocumentEmailService:
     # --- shared machinery ---
 
     @classmethod
-    def get_email_defaults(cls, doc):
+    def get_email_defaults(cls, doc, user=None):
         """Pre-populated send-form fields: to, subject, body,
         attachments_preview (the auto-attached document PDF)."""
         from apps.core.models import Configuration
-        from apps.core.email_templates import render_email_template
+        from apps.core.email_templates import render_email_template, user_display_name
 
         subject_template = cls.DEFAULT_SUBJECT
         body_template = cls.DEFAULT_BODY
@@ -641,7 +641,7 @@ class DocumentEmailService:
             'contact_fname': contact.first_name if contact else '',
             'contact_lname': contact.last_name if contact else '',
             'contact_business': contact_business,
-            'my_user_name': '',
+            'my_user_name': user_display_name(user),
             'job_number': job.job_number if job else '',
             'job_name': job.name if job else '',
             'document_number': cls._document_number(doc),

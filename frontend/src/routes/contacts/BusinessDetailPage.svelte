@@ -10,11 +10,9 @@
   let business = $state(null);
   let invoices = $state(null);
   let purchaseOrders = $state(null);
-  let bills = $state(null);
   let history = $state(null);
   let financials = $state(null);
   let poPage = $state(1);
-  let billPage = $state(1);
   let loading = $state(true);
   let loadError = $state(null);
   let deleteConfirm = $state(null);
@@ -24,7 +22,7 @@
     loadError = null;
     try {
       business = await api.get(`/api/businesses/${params.id}/`);
-      await Promise.all([loadInvoices(1), loadPOs(1), loadBills(1), loadHistory(), loadFinancials()]);
+      await Promise.all([loadInvoices(1), loadPOs(1), loadHistory(), loadFinancials()]);
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -39,11 +37,6 @@
   async function loadPOs(page) {
     poPage = page;
     purchaseOrders = await api.get(`/api/purchase-orders/?business=${params.id}&page=${page}`);
-  }
-
-  async function loadBills(page) {
-    billPage = page;
-    bills = await api.get(`/api/bills/?business=${params.id}&page=${page}`);
   }
 
   async function loadFinancials() {
@@ -102,13 +95,11 @@
     {business}
     {invoices}
     {purchaseOrders}
-    {bills}
     {history}
     onEdit={() => push(`/businesses/${params.id}/edit`)}
     onDelete={handleDelete}
     onInvoicePageChange={loadInvoices}
     onPOPageChange={loadPOs}
-    onBillPageChange={loadBills}
     onAddNote={handleAddNote}
   />
 

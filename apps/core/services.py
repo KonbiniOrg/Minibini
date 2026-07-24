@@ -244,10 +244,13 @@ class EmailService:
     """
 
     def __init__(self):
-        """Initialize with IMAP configuration from Django settings."""
-        self.imap_server = getattr(settings, 'EMAIL_IMAP_SERVER', None)
-        self.email = getattr(settings, 'EMAIL_HOST_USER', None)
-        self.password = getattr(settings, 'EMAIL_HOST_PASSWORD', None)
+        """Initialize with IMAP configuration: Configuration rows first
+        (Settings → Email), env settings fallback."""
+        from apps.core.email_account import email_account
+        account = email_account()
+        self.imap_server = account['imap_server'] or None
+        self.email = account['address'] or None
+        self.password = account['password'] or None
         self.mailbox_folder = getattr(settings, 'EMAIL_IMAP_FOLDER', 'INBOX')
 
     def fetch_new_emails(self, mark_as_seen=False):
@@ -557,7 +560,7 @@ class EmailService:
         Retention clock semantics (the "tweak"):
 
         - An unlinked TempEmail (its EmailRecord has no ``job`` /
-          ``purchase_order`` / ``bill``) uses ``TempEmail.created_at`` as the
+          ``purchase_order``) uses ``TempEmail.created_at`` as the
           clock start — original behavior.
         - A linked TempEmail uses the *finality date* of its linked objects
           instead: the most recent ``HistoryEntry`` recording a transition into
@@ -575,7 +578,7 @@ class EmailService:
         from django.db.models import Max
         from apps.core.history import history_model_for
         from apps.jobs.models import Job
-        from apps.purchasing.models import PurchaseOrder, Bill
+        from apps.purchasing.models import PurchaseOrder
 
         if retention_days is None:
             try:
@@ -596,11 +599,6 @@ class EmailService:
                 PurchaseOrder,
                 'purchase_order_id',
                 {PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_CANCELLED},
-            ),
-            'bill': (
-                Bill,
-                'bill_id',
-                {Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED, Bill.STATUS_REFUNDED},
             ),
         }
 
@@ -635,7 +633,6 @@ class EmailService:
             'temp_email_id', 'created_at',
             'email_record__job_id',
             'email_record__purchase_order_id',
-            'email_record__bill_id',
         )
         for temp in candidates:
             er = temp.email_record
@@ -644,8 +641,6 @@ class EmailService:
                 links.append(('job', er.job_id))
             if er.purchase_order_id:
                 links.append(('purchaseorder', er.purchase_order_id))
-            if er.bill_id:
-                links.append(('bill', er.bill_id))
 
             if not links:
                 if temp.created_at < cutoff:
@@ -690,7 +685,6 @@ class EmailService:
     _ASSOC_TARGETS = {
         'job': ('apps.jobs.models', 'Job'),
         'purchase_order': ('apps.purchasing.models', 'PurchaseOrder'),
-        'bill': ('apps.purchasing.models', 'Bill'),
     }
 
     @staticmethod
@@ -712,7 +706,7 @@ class EmailService:
 
         Args:
             email_record_id: PK of EmailRecord
-            target_field: one of 'job', 'purchase_order', 'bill'
+            target_field: one of 'job', 'purchase_order'
             target_pk: PK of the target row
 
         Returns:
@@ -772,7 +766,7 @@ class EmailService:
 
         Args:
             email_record_id: PK of EmailRecord
-            target_field: one of 'job', 'purchase_order', 'bill'
+            target_field: one of 'job', 'purchase_order'
 
         Returns:
             EmailRecord with the target FK cleared
@@ -809,7 +803,7 @@ class EmailService:
 
         Walks In-Reply-To first (the immediate parent — wins on conflict),
         then the References chain right-to-left (most recent first). The
-        first match's job / purchase_order / bill FKs are copied onto
+        first match's job / purchase_order FKs are copied onto
         `email_record` (any that are non-null on the parent).
 
         Args:
@@ -843,7 +837,7 @@ class EmailService:
             # whatever might already be set on the reply (rare, but possible
             # if someone manually pre-associated before the correlation pass).
             updates = {}
-            for field in ('job_id', 'purchase_order_id', 'bill_id'):
+            for field in ('job_id', 'purchase_order_id'):
                 parent_value = getattr(parent, field)
                 if parent_value and not getattr(email_record, field):
                     updates[field] = parent_value
@@ -909,7 +903,7 @@ class LineItemService:
     """
     Service for managing line items across different container types.
 
-    Works with any container object (Estimate, Invoice, PurchaseOrder, Bill)
+    Works with any container object (Estimate, Invoice, PurchaseOrder)
     that has line items inheriting from BaseLineItem.
 
     Status validation is the responsibility of calling domain services
@@ -1100,7 +1094,6 @@ class LineItemService:
             'Estimate': 'estimate',
             'Invoice': 'invoice',
             'PurchaseOrder': 'purchase_order',
-            'Bill': 'bill'
         }
 
         parent_field_name = field_name_map.get(container_type)
@@ -1125,41 +1118,9 @@ class LineItemService:
         return sum(item.total_amount for item in line_items)
 
 
-class TaxCalculationService:
-    """
-    Calculates tax for line items and documents.
-
-    Supports:
-    - AccountingCategory default taxability
-    - Line item taxable_override
-    - Line item tax_rate_override
-    - Customer tax multiplier (for sales exemptions)
-    - Organization tax multiplier (for purchase exemptions)
-    """
-
-    @staticmethod
-    def get_effective_taxability(line_item):
-        """
-        Determine if a line item is taxable.
-
-        Uses taxable_override if set, otherwise falls back to
-        the accounting_category's default taxability.
-
-        Args:
-            line_item: A BaseLineItem subclass instance
-
-        Returns:
-            bool: True if the line item is taxable
-        """
-        if line_item.taxable_override is not None:
-            return line_item.taxable_override
-        if line_item.accounting_category:
-            return line_item.accounting_category.taxable
-        return False  # Default to non-taxable if no type
-
-    # NOTE: tax *amounts* are computed by QuickBooks, not the app. We only
-    # surface per-line taxability (above) so the invoice→QBO export can group
-    # taxable vs non-taxable lines; QBO applies the rate.
+# NOTE: tax *amounts* are computed by QuickBooks, not the app. Per-line
+# taxability is the line's accounting_category.taxable flag, read directly
+# by the QBO invoice push (TaxCodeRef); QBO applies the rate.
 
 
 class ConfigurationService:
@@ -1261,11 +1222,20 @@ class ConfigurationService:
         return scheme.supersede(**overrides)
 
 
+def _outbound_from_email():
+    """The tenant's sending address (Configuration-first), falling back to
+    the deployment default."""
+    from apps.core.email_account import email_account
+    return (email_account()['address']
+            or getattr(settings, 'DEFAULT_FROM_EMAIL', '')
+            or 'unknown@example.com')
+
+
 class OutboundEmailService:
     """Sends emails via SMTP with optional attachments."""
 
     # Allowlist of association target fields for send_tracked.
-    _ASSOC_FIELDS = ('job', 'purchase_order', 'bill')
+    _ASSOC_FIELDS = ('job', 'purchase_order')
 
     # Fallback Message-ID domain when no `our_domain` Configuration row exists.
     DEFAULT_OUR_DOMAIN = 'example.com'
@@ -1311,8 +1281,8 @@ class OutboundEmailService:
             body: plain text email body
             cc / bcc: list[str] or None
             attachments: list of (filename, content_bytes, mime_type) tuples
-            associate_with: dict of at most one of {'job': obj, 'purchase_order': obj,
-                'bill': obj}, used to set the EmailRecord's FK and to find any
+            associate_with: dict of at most one of {'job': obj,
+                'purchase_order': obj}, used to set the EmailRecord's FK and to find any
                 pending retry row.
             in_reply_to: parent Message-ID when this is a reply (optional).
                 Flows to the outgoing ``In-Reply-To`` header and the
@@ -1370,7 +1340,7 @@ class OutboundEmailService:
                 email_record=email_record,
                 uid='',  # No IMAP UID for outbound
                 subject=subject,
-                from_email=getattr(settings, 'EMAIL_HOST_USER', '') or 'unknown@example.com',
+                from_email=_outbound_from_email(),
                 to_email=', '.join(to_list),
                 cc_email=', '.join(cc_list),
                 bcc_email=', '.join(bcc_list),
@@ -1386,14 +1356,16 @@ class OutboundEmailService:
         # Step 2: SMTP attempt. On failure we update the row in a fresh
         # transaction so the error persists even though we re-raise.
         from django.core.mail import EmailMessage
+        from apps.core.email_account import smtp_connection
         try:
             msg = EmailMessage(
                 subject=subject,
                 body=body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
+                from_email=_outbound_from_email(),
                 to=to_list,
                 cc=cc_list,
                 bcc=bcc_list,
+                connection=smtp_connection(),  # None → default backend
             )
             msg.extra_headers['Message-ID'] = email_record.message_id
             if in_reply_to:

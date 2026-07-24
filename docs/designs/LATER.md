@@ -208,7 +208,7 @@ Status coupling, transitions, and what a job may do at each stage.
 
 The overview replaced its accordion pillars with six lifecycle summary
 blocks this pass (2026-07-09 redesign; durable reference
-`docs/designs/jobs-tasks-and-worksheets.md` §9). Debt and open
+`docs/designs/jobs-and-tasks.md` §9). Debt and open
 questions specific to that redesign:
 
 - **Block-internal specific-document links.** — _added 2026-07-12 (from the 2026-07-09 design's deferred list)_
@@ -549,7 +549,7 @@ The atom-pull surfaces on estimates and invoices.
   DOCUMENTED rule (`users-and-permissions.md` twice; `data-constraints.md`
   §1.2a's self-edit window deliberately says edit/create only). This is a
   documented **asymmetry with bleps**, where own create/edit/**delete** is
-  allowed within the 30h window (`jobs-tasks-and-worksheets.md` §5.2). RM's
+  allowed within the 30h window (`jobs-and-tasks.md` §5.2). RM's
   expectation was symmetric self-service. Decide: (a) open shift deletion to
   the own-30h-window rule (service + docs + tests change; the orphaned-bleps
   guard stays for everyone), or (b) keep manager-only and hide the worker's
@@ -931,3 +931,89 @@ Cross-cutting UI/API conventions and shared components.
 
 - **Job History Summary hides an "accidental start cancelled" task revert.** — _added 2026-07-13_
   A task's accidental-start-cancelled revert is recorded only as a standalone action entry (no status diff), so `frontend/src/lib/historyLog.js`'s standalone-action rule excludes it and the Summary shows "started" with no visible revert row. Revisit if this confuses users in practice.
+
+- **Catalog renames don't propagate to mirrored QBO Items.** — _added 2026-07-21_
+  A ServiceItem/InventoryItem renamed after its QBO Item was minted keeps the
+  old Item Name in QBO (line Descriptions carry the real text, so invoices are
+  unaffected; only QBO-side Item reporting shows the stale name).
+  _Done when:_ a rename sync (or an explicit "update QBO Item" action) exists,
+  or we record a decision that drift is acceptable.
+
+- **Business-level tax exemption is display-only.** — _added 2026-07-21_
+  `Business.tax_exemption_number` / `tax_multiplier` are editable in the UI but
+  nothing consumes them. Planned as its own QBO changeset: map onto the QBO
+  Customer's taxable/exempt settings. Note: QBO is binary taxable/exempt per
+  customer — the multiplier's fractional-rate idea won't map cleanly.
+  _Done when:_ the business-level exemption changeset ships (spec first).
+
+- **`tests.test_api_schedule` has date-sensitive failures.** — _added 2026-07-22_
+  4 tests (`ScheduleWorkCompleteHistoryTest` ×2, `ScheduleForecastScopeTest`,
+  `ScheduleWorkDrivenScopeTest`) fail on 2026-07-22 on `main` as well as
+  feature branches — worker lanes come back empty, so likely a weekday/window
+  assumption in the fixtures. Unrelated to the QBO work; discovered by its
+  final full-suite run crossing midnight.
+  _Done when:_ the fixtures pin their dates (or derive them from today) and
+  the module passes on every weekday.
+
+- **Bill tables are schema-only leftovers — a drop migration is owed.** — _added 2026-07-23_
+  The Bill domain was retired (bills live in QBO; see
+  `docs/plans/bill-removal-spec.md`), but `Bill`, `BillLineItem`, and
+  `BillPayment` models were kept as bare schema declarations so the branch
+  carries no destructive migration and the change stays revertible.
+  `EmailRecord.bill` and `Business.qbo_vendor_id` columns likewise remain.
+  Legacy rows still load (dev DB, e2e/neals fixtures may carry them) and
+  passive deletion-protection still references them.
+  _Done when:_ either the removal is reverted, or — once RM declares the
+  retirement permanent — a migration drops the three tables (+
+  `EmailRecord.bill`), the schema-stub models are deleted, and the passive
+  references (contacts deletion checks, inventory merge/has_document_line_refs
+  clauses) go with them.
+
+  link-email-to-PO (and ideally create-PO-from-email).
+
+- **Email password change should re-authenticate via a modal.** — _added 2026-07-23_
+  Settings → Email currently lets any config admin overwrite the stored mail
+  password by typing a new one into the form. RM wants a "change email
+  password" modal that requires re-entering the user's own app password
+  before granting access to the change (same shape as sensitive-action
+  confirmation flows elsewhere).
+  _Done when:_ the password field on Settings → Email is read-only behind a
+  modal that verifies the requesting user's app password before allowing a
+  new mail password to be entered and saved.
+
+- **Setup callouts should link to the settings they point at.** — _added 2026-07-23_
+  The sidebar's setup arrows name their unlock path in prose ("Settings →
+  Email") but aren't clickable. Add an in-callout link navigating to the
+  named surface (Settings tab, Contacts, etc.) — the callout already
+  survives hovering onto it, so a link is workable; needs hint text/link
+  pairs in `frontend/src/lib/setupHints.js`.
+  _Done when:_ each callout carries a working "take me there" link.
+
+- **QBO import panels need a usability pass.** — _added 2026-07-23_
+  RM's first hands-on run (against the Intuit sample company) found the flow
+  "very confusing and unclear" despite the agreed design: barren
+  parent-account category candidates read as noise, the collapse-group
+  column needs explaining, unit/scheme columns needed fixes, and the
+  step-to-step handoff (categories → schemes → catalog) is not
+  self-narrating. Also open: cluster-by-top-level-account toggle (pending
+  RM's accountant's read on real-world Item-tree usage), and a possible
+  marked name-match guess for the expense-account pulldown.
+  _Done when:_ a dedicated usability revision of the four panels ships,
+  informed by RM's full walkthrough notes and the accountant conversation.
+
+- **No way to see whether a contact is QBO-linked.** — _added 2026-07-23_
+  Contacts (and businesses) carry `qbo_customer_id` / `qbo_vendor_id`, but
+  no konbini surface shows whether a given contact has a QBO ID or not —
+  relevant when judging import states and future sync behavior. (The
+  payment-terms manager's green "QBO" badge is the pattern to reuse.)
+  _Done when:_ contact/business detail (and/or list) indicates QBO
+  linkage.
+
+- **Contacts import needs a dedupe process.** — _added 2026-07-23_
+  QBO happily holds multiple customers ("locations") sharing one email or
+  company name; konbini's unique constraints (contact email, business
+  name) reject them. The commit now skips such rows and reports why
+  (2026-07-23), but there's no way to resolve them: merge locations into
+  one konbini business, pick a winner, or edit-then-retry inline.
+  _Done when:_ a deliberate dedupe/merge flow exists for skipped
+  contact imports.

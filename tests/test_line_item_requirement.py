@@ -14,8 +14,8 @@ class EstimateLineItemRequirementTest(TestCase):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{counter:04d}')
         Configuration.objects.create(key='estimate_counter', value='0')
         Configuration.objects.create(key='est_expire_days', value='30')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
@@ -50,8 +50,8 @@ class InvoiceLineItemRequirementTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
@@ -84,8 +84,8 @@ class InvoiceLineItemRequirementTest(TestCase):
 
 class PurchaseOrderLineItemRequirementTest(TestCase):
     def setUp(self):
-        Configuration.objects.create(key='po_number_sequence', value='PO-{counter:04d}')
-        AppState.objects.create(key='po_counter', value='0')
+        Configuration.objects.update_or_create(key='po_number_sequence', defaults={'value': 'PO-{counter:04d}'})
+        AppState.objects.update_or_create(key='po_counter', defaults={'value': '0'})
 
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',

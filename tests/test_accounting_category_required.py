@@ -12,7 +12,7 @@ from apps.jobs.models import Job
 class _Setup(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        Configuration.objects.create(key='units_list', value='["none","ea","sheets"]')
+        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","ea","sheets"]'})
         cls.user = User.objects.create_user(username='u', password='p')
         perm = Permission.objects.get(codename='can_manage_jobs', content_type__app_label='core')
         cls.user.user_permissions.add(perm)
@@ -70,7 +70,7 @@ class FreeformMaterialRequiresCategoryTests(_Setup):
 class ModelLevelNotNullTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        Configuration.objects.create(key='units_list', value='["none"]')
+        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none"]'})
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
         cls.job = Job.objects.create(
             name='J', job_number='J-1', status=Job.STATUS_DRAFT, contact=cls.contact,

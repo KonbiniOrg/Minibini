@@ -54,54 +54,15 @@ class PurchaseOrderModelFixtureTest(TestCase):
 
 class BillModelFixtureTest(TestCase):
     """
-    Test Bill model using fixture data
+    Bill is a RETIRED, schema-only model (bills live in QBO). These tests
+    cover only the KEPT passive row-safety behavior for legacy fixture rows.
     """
     fixtures = ['core_base_data.json', 'contacts_base_data.json', 'jobs_basic_data.json', 'invoicing_data.json', 'purchasing_data.json']
 
-    def test_bills_exist_from_fixture(self):
-        """Test that bills from fixture data exist and have correct properties"""
-        bill1 = Bill.objects.get(vendor_invoice_number="ACME-INV-001")
-        self.assertEqual(bill1.purchase_order.po_number, "PO-2024-0001")
-        self.assertEqual(bill1.contact.name, "Acme Vendor")
-
-        bill2 = Bill.objects.get(vendor_invoice_number="ACME-INV-002")
-        self.assertEqual(bill2.purchase_order.po_number, "PO-2024-0002")
-        self.assertEqual(bill2.contact.name, "Acme Vendor")
-
-    def test_bill_str_method_with_fixture_data(self):
-        """Test bill string representation with fixture data"""
+    def test_bill_fixture_rows_load_inertly(self):
+        """Legacy bill rows in fixtures still load against the schema-only model."""
         bill = Bill.objects.get(vendor_invoice_number="ACME-INV-001")
-        self.assertEqual(str(bill), f"Bill {bill.vendor_invoice_number}")
-
-    def test_bill_purchase_order_relationships(self):
-        """Test that bills are properly linked to purchase orders"""
-        bill = Bill.objects.get(vendor_invoice_number="ACME-INV-001")
-        po = PurchaseOrder.objects.get(po_number="PO-2024-0001")
-        self.assertEqual(bill.purchase_order, po)
-
-    def test_bill_contact_relationships(self):
-        """Test that bills are properly linked to vendor contacts"""
-        bill = Bill.objects.get(vendor_invoice_number="ACME-INV-001")
-        vendor = Contact.objects.get(first_name="Acme", last_name="Vendor")
-        self.assertEqual(bill.contact, vendor)
-
-    def test_create_new_bill_with_existing_relationships(self):
-        """Test creating a new bill with existing PO and contact from fixtures"""
-        po = PurchaseOrder.objects.get(po_number="PO-2024-0001")
-        vendor = Contact.objects.get(first_name="Acme", last_name="Vendor")
-        business = Business.objects.get(pk=2)  # XYZ Industries from fixture
-
-        new_bill = Bill.objects.create(
-            purchase_order=po,
-            business=business,
-            contact=vendor,
-            vendor_invoice_number="ACME-INV-003"
-        )
-
-        self.assertEqual(new_bill.purchase_order, po)
-        self.assertEqual(new_bill.business, business)
-        self.assertEqual(new_bill.contact, vendor)
-        self.assertEqual(Bill.objects.count(), 3)  # 2 from fixture + 1 new
+        self.assertEqual(bill.purchase_order.po_number, "PO-2024-0001")
 
     def test_bill_protected_from_purchase_order_delete(self):
         """Test that PurchaseOrders with Bills cannot be deleted (PROTECT)"""
@@ -112,7 +73,7 @@ class BillModelFixtureTest(TestCase):
         po_id = po.po_id
 
         # Attempt to delete the purchase order should fail
-        # Since Bills can only exist on issued+ POs, our model-level check fires first
+        # The PO's own non-draft delete guard fires first
         from django.core.exceptions import PermissionDenied
         with self.assertRaises(PermissionDenied) as context:
             po.delete()
@@ -138,10 +99,11 @@ class BillModelFixtureTest(TestCase):
             business=business
         )
 
-        # Create a new PO and bill for this test
+        # Create a new legacy-style bill row for this test
         po = PurchaseOrder.objects.get(po_number="PO-2024-0002")
         test_bill = Bill.objects.create(
             purchase_order=po,
+            business=business,
             contact=test_vendor,
             vendor_invoice_number="TEST-INV-001"
         )

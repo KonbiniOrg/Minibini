@@ -14,7 +14,7 @@ describe('InvoiceListPage', () => {
     api.get.mockResolvedValue({
       count: 1, next: null, previous: null,
       results: [{
-        invoice_id: 42, invoice_number: 'INV-2026-0001', customer_name: 'Acme Corp',
+        invoice_id: 42, invoice_number: 'INV-2026-0001', display_number: 'INV-2026-0001', customer_name: 'Acme Corp',
         job: 10, job_number: 'JOB-2026-0001', status: 'open',
         sent_date: '2026-05-01T00:00:00Z', due_date: '2026-05-31',
         is_late: false, total: '500.00', amount_paid: '0.00', balance: '500.00',
@@ -23,6 +23,20 @@ describe('InvoiceListPage', () => {
     const { container } = render(InvoiceListPage);
     expect(await findByText(container, 'INV-2026-0001')).toBeInTheDocument();
     expect(await findByText(container, 'Acme Corp')).toBeInTheDocument();
+  });
+
+  it('renders the draft placeholder for an unnumbered draft', async () => {
+    api.get.mockResolvedValue({
+      count: 1, next: null, previous: null,
+      results: [{
+        invoice_id: 43, invoice_number: null, display_number: 'Draft — JOB-2026-0002',
+        customer_name: 'Acme Corp', job: 11, job_number: 'JOB-2026-0002',
+        status: 'draft', sent_date: null, due_date: null,
+        is_late: false, total: '0.00', amount_paid: '0.00', balance: '0.00',
+      }],
+    });
+    const { container } = render(InvoiceListPage);
+    expect(await findByText(container, 'Draft — JOB-2026-0002')).toBeInTheDocument();
   });
 
   it('defaults to status=open and ordering=due_date on the first API call', async () => {

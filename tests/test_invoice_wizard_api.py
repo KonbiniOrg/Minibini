@@ -15,8 +15,8 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -96,8 +96,8 @@ class SourcePoolEndpointTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -161,8 +161,8 @@ class LineItemsFromAtomsEndpointTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -248,8 +248,8 @@ class AddAtomsEndpointTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -334,8 +334,8 @@ class RemoveAtomsEndpointTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -418,8 +418,8 @@ class StartInvoiceWizardEndpointTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',

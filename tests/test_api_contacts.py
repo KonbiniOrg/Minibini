@@ -202,3 +202,13 @@ class PaymentTermsAPITest(BaseTestCase):
     def test_list_payment_terms(self):
         response = self.client.get('/api/payment-terms/')
         self.assertEqual(response.status_code, 200)
+
+    def test_payment_terms_carry_name_days_qbo_id(self):
+        from apps.contacts.models import PaymentTerms
+        term = PaymentTerms.objects.create(name='Net 30', days=30, qbo_id='7')
+        response = self.client.get('/api/payment-terms/')
+        rows = response.data['results'] if isinstance(response.data, dict) else response.data
+        row = next(r for r in rows if r['term_id'] == term.pk)
+        self.assertEqual(row['name'], 'Net 30')
+        self.assertEqual(row['days'], 30)
+        self.assertEqual(str(term), 'Net 30')

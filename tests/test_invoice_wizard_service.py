@@ -15,8 +15,8 @@ class OpenForJobTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
@@ -107,8 +107,8 @@ class GetSourcePoolTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.user = User.objects.create_user(username='gsp_user', password='pw')
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
@@ -265,7 +265,7 @@ class GetSourcePoolTest(TestCase):
         )
         self.assertEqual(claimed['state'], 'claimed_by_other')
         self.assertEqual(claimed['claiming_invoice_id'], other_invoice.pk)
-        self.assertEqual(claimed['claiming_invoice_number'], other_invoice.invoice_number)
+        self.assertEqual(claimed['claiming_invoice_number'], other_invoice.display_number)
 
     def test_atoms_on_cancelled_invoice_are_available(self):
         other_invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_CANCELLED)
@@ -306,8 +306,8 @@ class AddAtomsToNewLineItemTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.user = User.objects.create_user(username='aatn_user', password='pw')
         self.cat_labor = AccountingCategory.objects.create(code='LBR', name='Labor', is_active=True)
@@ -546,8 +546,8 @@ class AddAtomsToExistingLineItemTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -670,8 +670,8 @@ class RemoveAtomsFromLineItemTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -883,8 +883,8 @@ class DiscardDraftTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -966,8 +966,8 @@ class SourcePoolLooseMaterialsTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
@@ -1046,8 +1046,8 @@ class TaskAttachedPartialRestockTest(TestCase):
         from apps.core.models import Configuration
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.cat = AccountingCategory.objects.create(name='tapr', code='TAPR1')
         self.contact = Contact.objects.create(
             first_name='TP', last_name='R',
@@ -1101,8 +1101,8 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
 
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.user = User.objects.create_user(username='id_user', password='pw')
         self.cat = AccountingCategory.objects.create(code='ID', name='ID')

@@ -10,7 +10,7 @@ three domains; the neighboring docs own their angles and are cross-linked:
 `Inventory.md` (catalog ops, write-off, merge), `Deletion-and-Retirement.md`
 (what delete/cancel leave behind).
 
-Authoritative behavior: `docs/designs/jobs-tasks-and-worksheets.md` §3–5,
+Authoritative behavior: `docs/designs/jobs-and-tasks.md` §3–5,
 `docs/designs/materials-inventory-and-purchasing.md` §3–5.
 
 ## Personas

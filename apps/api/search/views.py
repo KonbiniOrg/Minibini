@@ -7,7 +7,7 @@ from apps.search.services import SearchService
 from apps.api.jobs.serializers import JobSummarySerializer, JobSearchSerializer
 from apps.api.invoicing.serializers import InvoiceSerializer
 from apps.api.estimates.serializers import EstimateSerializer
-from apps.api.purchasing.serializers import BillSummarySerializer, PurchaseOrderSummarySerializer
+from apps.api.purchasing.serializers import PurchaseOrderSummarySerializer
 from apps.api.inventory.serializers import InventoryItemSerializer
 from apps.contacts.models import Contact, Business
 
@@ -69,16 +69,6 @@ def _serialize_categories(categories):
             ]
             result.append(data)
         out['estimates'] = result
-
-    if 'bills' in categories:
-        result = []
-        for item in categories['bills']['items']:
-            data = dict(BillSummarySerializer(item).data)
-            data['matching_descriptions'] = [
-                li.description for li in getattr(item, 'matching_line_items', []) if li.description
-            ]
-            result.append(data)
-        out['bills'] = result
 
     if 'purchase_orders' in categories:
         result = []

@@ -188,22 +188,24 @@ class ActivityService:
     @staticmethod
     def _invoice_events(cutoff):
         events = []
-        for inv in Invoice.objects.filter(sent_date__gte=cutoff):
+        for inv in Invoice.objects.filter(sent_date__gte=cutoff).select_related('job'):
             events.append({
                 'kind': 'sent',
                 'invoice_id': inv.pk,
                 'invoice_number': inv.invoice_number,
+                'display_number': inv.display_number,
                 'date': _date(inv.sent_date),
                 '_sort': inv.sent_date,
             })
         paid = Invoice.objects.filter(
             closed_date__gte=cutoff, status=Invoice.STATUS_PAID,
-        )
+        ).select_related('job')
         for inv in paid:
             events.append({
                 'kind': 'paid',
                 'invoice_id': inv.pk,
                 'invoice_number': inv.invoice_number,
+                'display_number': inv.display_number,
                 'date': _date(inv.closed_date),
                 '_sort': inv.closed_date,
             })

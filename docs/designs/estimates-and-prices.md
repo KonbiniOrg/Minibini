@@ -9,7 +9,7 @@ Read alongside:
 - `docs/designs/architecture-and-conventions.md` — service-layer
   pattern, `LineItemMixin`, exception hierarchy
   (`ServiceError` / `NotFoundError` / `SchemeSupersededError`).
-- `docs/designs/jobs-tasks-and-worksheets.md` — `Task`, `Material`,
+- `docs/designs/jobs-and-tasks.md` — `Task`, `Material`,
   `Fee` (the Job's work atoms), the Work surface, populate paths, signal
   receivers (`estimate_accepted`, `estimate_status_changed_for_job`).
 - `docs/designs/materials-inventory-and-purchasing.md` — `Material`
@@ -341,7 +341,7 @@ impossible.
 
 `Task` carries billing identity directly via `TaskBase` (the abstract
 base in `apps/jobs/models.py`). The full field shape lives in
-`docs/designs/jobs-tasks-and-worksheets.md`. Recap of the billing fields:
+`docs/designs/jobs-and-tasks.md`. Recap of the billing fields:
 
 | Field | On TaskBase / Task | Notes |
 |---|---|---|
@@ -452,7 +452,7 @@ surfaces, all showing the scheme's `unit_label`:
 
 Every own explicit gesture is now **settle-first** — nothing mutates
 until the prompt resolves, so no prompt modal ever has to survive a
-refresh of the page under it (jobs-tasks-and-worksheets.md §10.1a).
+refresh of the page under it (jobs-and-tasks.md §10.1a).
 Paths that close bleps without a prompt (on-behalf gestures, takeover,
 admin closes, `complete_task` closing teammates' bleps, historical
 entry) just leave the running total short; the completion settle-up is
@@ -594,7 +594,7 @@ in `architecture-and-conventions.md` §9; it runs daily.
    (`DeliverableService.snapshot_document(estimate=parent)`), freezing the
    scope the customer saw. The customer portal renders that snapshot for
    the out-of-date estimate; the new draft keeps using the live list. See
-   `jobs-tasks-and-worksheets.md` §12.9 (trigger 1 + portal read rule).
+   `jobs-and-tasks.md` §12.9 (trigger 1 + portal read rule).
 
 The `unique_together = ['estimate_number', 'version']` constraint
 keeps revisions distinct.
@@ -815,7 +815,7 @@ No `Task` is created at authoring time. The Task is created at acceptance by `on
 
 On the **estimate detail page** (`EstimatePanel.svelte`, hosted at `#/jobs/:jobId/estimate/:docId`), the picker is followed by `EstimateAddLineForm.svelte`, which handles the post-selection form (qty, units, AC) and dispatches to the correct endpoint: `line-items-from-service/` for service picks, the standard `line-items/` POST for inventory or freeform picks.
 
-On the **job task-list page** (`JobTaskListPage.svelte`), the same picker opens `WorkItemForm` (service pick → Task via `/add-from-template/`), `MaterialModal` (inventory pick — `presetPli`, `presetDescription`, `defaultMaterialCategoryId`), or `FeeModal` (freeform non-material — `presetDescription`). See `docs/designs/jobs-tasks-and-worksheets.md` §9.5.
+On the **job task-list page** (`JobTaskListPage.svelte`), the same picker opens `WorkItemForm` (service pick → Task via `/add-from-template/`), `MaterialModal` (inventory pick — `presetPli`, `presetDescription`, `defaultMaterialCategoryId`), or `FeeModal` (freeform non-material — `presetDescription`). See `docs/designs/jobs-and-tasks.md` §9.5.
 
 ---
 
@@ -955,7 +955,7 @@ Permissions: read is `IsAuthenticated`; write actions require
 
 | Component | Path | Role |
 |---|---|---|
-| `ReconcileMode.svelte` | `frontend/src/components/wizards/` | Reconcile-mode view, rendered in place by `EstimatePanel`/`InvoicePanel` (§12; `jobs-tasks-and-worksheets.md` §9.6) — not a route. Two-column layout (source pool left, line items right), parameterized per `docType` via a config block. Loads doc + line-items + source-pool on mount; re-fetches line items after every action and reconciles atom states locally |
+| `ReconcileMode.svelte` | `frontend/src/components/wizards/` | Reconcile-mode view, rendered in place by `EstimatePanel`/`InvoicePanel` (§12; `jobs-and-tasks.md` §9.6) — not a route. Two-column layout (source pool left, line items right), parameterized per `docType` via a config block. Loads doc + line-items + source-pool on mount; re-fetches line items after every action and reconciles atom states locally |
 | `WizardSourcePool.svelte` | `frontend/src/components/estimates/` | Renders the flat atom list; binds `selectedAtoms` to `ReconcileMode`. Each atom is a `WizardAtomRow`. The invoice wizard has its own task-grouped `WizardSourcePool.svelte` that reuses the same row. |
 | `WizardAtomRow.svelte` | `frontend/src/components/wizards/` | One source-pool atom row, shared by both wizards: checkbox + `description — qty units × $rate = $total` + claim state |
 | `WizardLineItemCard.svelte` | `frontend/src/components/wizards/` | One line-item card with its source rows; surfaces "Add Here" and per-source remove |
@@ -1079,7 +1079,7 @@ walks the Job's status when its estimate moves, via the receiver in
 never-sent draft dying does not reject the Job (out of scope). Only the
 `open → {expired, rejected}` edge fires the rejection.
 
-Pointer: `docs/designs/jobs-tasks-and-worksheets.md` §13 for the full
+Pointer: `docs/designs/jobs-and-tasks.md` §13 for the full
 receiver-by-receiver behavior.
 
 ---
@@ -1131,7 +1131,7 @@ Route: `#/jobs/:jobId/estimate[/:docId]` → `JobEstimatePage.svelte`
 (`frontend/src/routes/jobs/`), which hosts `EstimatePanel.svelte`
 (`frontend/src/components/estimates/`) inside the job workspace shell
 (`JobShell` — header + nav rail + collapsible context band; see
-`jobs-tasks-and-worksheets.md` §9.6). The bare section route
+`jobs-and-tasks.md` §9.6). The bare section route
 (`#/jobs/:jobId/estimate`) restores whichever version/CO the user last
 viewed for this job (or the latest); picking a different version via
 the panel's subnav (`DocSubnav.svelte`) updates the URL to
@@ -1152,7 +1152,7 @@ Top-down:
    `change_order_number` order. Change-order pills link to the
    job-scoped `#/jobs/:jobId/change-order/:coId` route, hosted by
    `JobChangeOrderPage` → `ChangeOrderPanel` since the 2026-07-19
-   extraction (see `jobs-tasks-and-worksheets.md` §9.6).
+   extraction (see `jobs-and-tasks.md` §9.6).
 3. **Toolbar** — back link, page title (with `superseded` styling
    when applicable), status pill (interactive `<select>` for users
    with `can_manage_jobs` when transitions are allowed), action
@@ -1210,7 +1210,7 @@ atoms-only projection is a deferred consolidation pass.
 **Superseded by the 2026-07-08 job-workspace restructure and the
 2026-07-09 overview redesign** (the "job detail, estimate pillar" this
 section used to describe no longer exists — the job overview has no
-authoring affordances at all; see `jobs-tasks-and-worksheets.md` §9).
+authoring affordances at all; see `jobs-and-tasks.md` §9).
 The Create/View model now lives entirely on `EstimatePanel.svelte`
 (the Estimates section page, `#/jobs/:jobId/estimate`):
 
@@ -1223,7 +1223,7 @@ The Create/View model now lives entirely on `EstimatePanel.svelte`
   estimate exists.
 - **Viewing** — once an estimate exists, the panel simply renders it
   (no separate "View" affordance needed — the Estimates section route
-  *is* the view). The overview's Scope block (§ jobs-tasks-and-worksheets.md
+  *is* the view). The overview's Scope block (§ jobs-and-tasks.md
   §9) shows a stat summary only, with no link into the panel (the rail
   is the navigation).
 
@@ -1304,7 +1304,7 @@ entry, or a separate wizard route.
 
 Two signals, defined in `apps/estimates/signals.py` and fired by
 `Estimate.save()`. Brief recap; the receiver-by-receiver behavior lives
-in `docs/designs/jobs-tasks-and-worksheets.md` §13. (The former
+in `docs/designs/jobs-and-tasks.md` §13. (The former
 `estimate_status_changed_for_worksheet` signal was removed with the
 worksheet layer.)
 
@@ -1484,7 +1484,7 @@ add/replace lines of **accepted** COs — authoring never creates one.
 
 COs are authored only while the parent Job is **held** — the `on_hold`
 flag, an orthogonal pause that leaves the job's true status untouched
-(see `jobs-tasks-and-worksheets.md`). The flow:
+(see `jobs-and-tasks.md`). The flow:
 
 1. User pauses the Job (`JobService.hold_job` — the flag goes up; the
    status stays `approved`/`in_progress` underneath). The pause
@@ -1612,7 +1612,7 @@ are resolved).
 - `DELETE /api/change-orders/{id}/line-items/{liid}/`
 - `GET /api/change-orders/{id}/deliverables-baseline/` — the snapshot
   of deliverables-at-CO-creation used to render the CO-edit view's
-  baseline (see `jobs-tasks-and-worksheets.md` §12 for snapshot
+  baseline (see `jobs-and-tasks.md` §12 for snapshot
   mechanics)
 - `GET /api/change-orders/{id}/send-defaults/` — pre-populated
   send-to-customer form fields (to / subject / body with the portal
@@ -1963,7 +1963,7 @@ the customer wants the job but needs changes. Reject declines the *job*
 2. Calls `revise_estimate` (§5.3): a fresh `draft` revision, sources moved,
    parent `superseded`.
 3. Reverts the Job `submitted → draft` (a transition added for this; see
-   `jobs-tasks-and-worksheets.md`), so a draft job + draft estimate keep it
+   `jobs-and-tasks.md`), so a draft job + draft estimate keep it
    in the pipeline. Reverting to `draft` fires no job-status side effects.
 4. Emails the shop via `notify_shop_of_decision(estimate, 'requested changes',
    reason=...)`.
@@ -2080,7 +2080,7 @@ transitions the CO `draft → open`.
 - **`@history` decorator on `Task`** — billing-config changes on a Task
   (service-price reassignment, modifier toggles) are a normal
   estimating-related event but don't surface in the Job HistoryPanel.
-  Tracked in `jobs-tasks-and-worksheets.md`.
+  Tracked in `jobs-and-tasks.md`.
 
 - **`accounting_category` required on `EstimateLineItem`** — part of the
   project-wide line-item AC-NOT-NULL migration tracked in

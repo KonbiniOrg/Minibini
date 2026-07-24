@@ -53,8 +53,8 @@ The project defines four custom permission atoms on `User.Meta.permissions`:
 
 | Atom | Scope |
 |---|---|
-| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, plan-tasks, contacts, businesses. Status transitions on each. Cancel/reorder tasks and mark all a job's work complete. Email-to-job actions: link, unlink, create-job-from-email. (Adding/editing/deleting and completing individual tasks is open to any authenticated user — see below.) A Job's `project_manager` gets this atom's powers **scoped to that one job** via `CanManageJobOrPM` — see "Project-manager object access". |
-| `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. Email-to-PO / email-to-bill actions: link, unlink, create-po-from-email. |
+| `can_manage_jobs` | Full CRUD on jobs, estimates, change orders, contacts, businesses. Status transitions on each. Cancel/reorder tasks and mark all a job's work complete. Email-to-job actions: link, unlink, create-job-from-email. (Adding/editing/deleting and completing individual tasks is open to any authenticated user — see below.) A Job's `project_manager` gets this atom's powers **scoped to that one job** via `CanManageJobOrPM` — see "Project-manager object access". (The `Permission` row's label string still says "worksheets, work orders" — the worksheet layer is gone; left unchanged **deliberately** to avoid a migration, same as the "bills" label below.) |
+| `can_manage_financials` | Full CRUD on invoices, purchase orders, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. Email-to-PO actions: link, unlink, create-po-from-email. (Bill endpoints were retired 2026-07-23 — bills live in QBO. The `Permission` row's label string still says "bills"; left unchanged **deliberately** to avoid a migration.) |
 | `can_manage_time` | Edit or delete any user's bleps and shifts, clock another worker in/out, and approve/deny shift & blep change requests. (Tracking, clocking, or editing one's own recent time is `IsAuthenticated`.) |
 | `can_manage_config` | Settings endpoint, work templates, accounting categories, user admin viewset, QBO connection management. Service-item (the saved-work catalog) writes are shared three ways — see the endpoint table. |
 
@@ -72,7 +72,7 @@ CanManageTimeOrFinancials  # OR of the two — gates the payroll shift report
 
 ### `IsAuthenticated` (no atom)
 
-Any logged-in user gets read access to jobs, estimates, worksheets, tasks, bleps, contacts, businesses, payment terms, templates, accounting categories, search, price-list items, invoices, purchase orders, bills, and emails. They also get write access to notes on jobs/contacts/businesses, can add / edit / delete tasks on existing jobs (delete blocked when the task has Bleps or is in_progress/complete) and complete individual tasks, and can track their own time and submit their own expenses.
+Any logged-in user gets read access to jobs, estimates, tasks, bleps, contacts, businesses, payment terms, templates, accounting categories, search, price-list items, invoices, purchase orders, and emails. They also get write access to notes on jobs/contacts/businesses, can add / edit / delete tasks on existing jobs (delete blocked when the task has Bleps or is in_progress/complete) and complete individual tasks, and can track their own time and submit their own expenses.
 
 ### `is_superuser` bypass
 
@@ -100,10 +100,10 @@ It tolerates `AnonymousUser` / `job=None`. A companion, `JobService.user_holds_m
 **The permission class.** `CanManageJobOrPM` (in `apps/api/permissions.py`) gates writes. It is **view-authoritative**: `has_permission` short-circuits `SAFE_METHODS`, passes atom holders, and otherwise resolves the request's target Job (looked-up instance, job-nested URL kwarg, or the create body's parent-Job field) via the view and PM-checks it — it does not rely on `has_object_permission` firing, because custom `@action`s don't all call `get_object()`. `has_object_permission` remains as defense-in-depth for the standard update/destroy path.
 
 **The mixins** (in `apps/api/mixins.py`):
-- `JobScopedPermissionMixin` — gives a viewset `get_object_job(obj)` and `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'job'`, `'est_worksheet.job'`, `'estimate.job'`, `'change_order.job'`), `job_create_field` (request-body key naming the parent Job on create), and `job_url_kwarg` (URL kwarg holding the job id on job-nested routes).
+- `JobScopedPermissionMixin` — gives a viewset `get_object_job(obj)` and `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job — `'self'` on `JobViewSet`, `'job'` on the task/estimate/change-order/deliverable viewsets), `job_create_field` (request-body key naming the parent Job on create), and `job_url_kwarg` (URL kwarg holding the job id on job-nested routes).
 - `JobScopedCanManageMixin` — a serializer mixin adding a read-only `can_manage` boolean computed from `JobService.user_can_manage(request.user, <job>)`, where the job is reached via `can_manage_job_path`. The SPA gates per-object job-scoped edit affordances on this field instead of the global `$canManageJobs` store.
 
-**Where `can_manage` is exposed / where PM writes are accepted.** The `can_manage` field is on the Job, EstWorksheet, Estimate, PlanTask(Detail), ChangeOrder, Deliverable, and Task serializers. `CanManageJobOrPM` gates writes on `JobViewSet`, `EstWorksheetViewSet`, `EstimateViewSet` (incl. its line items), `PlanTaskViewSet` (incl. material actions), `ChangeOrderViewSet` (incl. its line items), and the job-nested `DeliverableViewSet`. So a PM may manage the job's tasks, worksheets, plan-tasks, estimates, change orders, deliverables, and their line items.
+**Where `can_manage` is exposed / where PM writes are accepted.** The `can_manage` field is on the Job, Estimate, ChangeOrder, Deliverable, and Task serializers. `CanManageJobOrPM` gates writes on `JobViewSet`, `EstimateViewSet` (incl. its line items), `ChangeOrderViewSet` (incl. its line items), and the job-nested `DeliverableViewSet`. (Task writes are `IsAuthenticated` — see the endpoint table.) So a PM may manage the job's estimates, change orders, deliverables, and their line items, plus the manager-only task actions (reorder, mark-all-complete).
 
 **Explicitly NOT PM-scoped:**
 - **Contacts and businesses** — they share the `can_manage_jobs` atom at the view layer but are not job-owned, so they stay **atom-only**. A PM gets no access to them through this mechanism.
@@ -119,11 +119,9 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/jobs/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (`CanManageJobOrPM`) | create stays atom-only; several action exceptions — see below |
 | `/api/contacts/` | `IsAuthenticated` | `can_manage_jobs` | atom-only — **not** PM-scoped |
 | `/api/businesses/` | `IsAuthenticated` | `can_manage_jobs` | atom-only — **not** PM-scoped |
-| `/api/payment-terms/` | `IsAuthenticated` | (read-only) | |
+| `/api/payment-terms/` | `IsAuthenticated` | `can_manage_config` | Settings → Business manager (2026-07-23); two-phase confirm delete |
 | `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (incl. line items) | also `send-defaults` (GET, IsAuth), `send` (POST, can_manage_jobs) |
-| `/api/est-worksheets/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM | |
 | `/api/tasks/` (flat lifecycle) | `IsAuthenticated` | `IsAuthenticated` (incl. `cancel`, opened 2026-07-12) | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
-| `/api/plan-tasks/` (worksheet-side) | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (incl. material actions) | retrieve open to all |
 | `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 30h rolling rule + `can_manage_time` for editing others |
 | `/api/shifts/` | `IsAuthenticated` | `IsAuthenticated` for `PATCH` (service enforces 30h self-edit window) | `DELETE` requires `can_manage_time` (200 + JSON body); `?user=me\|<id>`, `?since=` |
 | `/api/shift-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | serializes a read-only `conflicts` list (the records the request collides with); a worker can't target another user's record (403 unless `can_manage_time`) |
@@ -134,7 +132,6 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/accounting-categories/` | `IsAuthenticated` | `can_manage_config` | |
 | `/api/invoices/` | `IsAuthenticated` | `can_manage_financials` | `send-defaults` (GET) IsAuth; `send` (POST) `can_manage_financials`. The legacy `send-to-qbo` was removed when the new send flow shipped. |
 | `/api/purchase-orders/` | `IsAuthenticated` | `can_manage_financials` | |
-| `/api/bills/` | `IsAuthenticated` | `can_manage_financials` | `send-to-qbo` also `can_manage_financials` |
 | `/api/inventory/` (`InventoryItemViewSet`) | `IsAuthenticated` | `can_manage_financials` **or** `can_manage_config` | `order` action (`POST /api/inventory/{id}/order/` — order to stock, no material/job) is `can_manage_financials` only |
 | `/api/earmarks/` (`EarmarkViewSet`) | `IsAuthenticated` | (read-only) | New — `ReadOnlyModelViewSet`, unpaginated, backs the Catalog Earmarks tab |
 | `/api/materials/` | `IsAuthenticated` | `IsAuthenticated` | service enforces consumption-state and immutability rules |
@@ -144,14 +141,15 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/auth/users/` (assignee dropdown) | `IsAuthenticated` | — | distinct from `/api/users/` |
 | `/api/emails/` | `IsAuthenticated` | (no writes from this viewset) | reads only |
 | `/api/emails/{id}/link-to-job/` etc. | — | `can_manage_jobs` | link-to-job, unlink-from-job, create-job |
-| `/api/emails/{id}/link-to-po/` etc. | — | `can_manage_financials` | link-to-po, unlink-from-po, create-po |
-| `/api/emails/{id}/link-to-bill/` etc. | — | `can_manage_financials` | link-to-bill, unlink-from-bill |
+| `/api/emails/{id}/link-to-po/` etc. | — | `can_manage_financials` | link-to-po, unlink-from-po, create-po (link-to-bill/unlink-from-bill retired 2026-07-23) |
 | `/api/emails/{id}/reply-defaults/` | `IsAuthenticated` | — | Pre-populated form payload for Reply / Reply All |
 | `/api/emails/{id}/reply/` | — | `IsAuthenticated` | POST a reply (multipart); delegates to `send_tracked` |
 | `/api/search/` | `IsAuthenticated` | — | |
 | `/api/jobs/board/*` | `IsAuthenticated` | — | one bulk reorder endpoint requires `can_manage_jobs` |
 | `/api/home/` | `IsAuthenticated` | — | |
 | `/api/settings/` | `IsAuthenticated` | `can_manage_config` | including `/api/settings/units/` |
+| `/api/setup/status/` | GET | IsAuthenticated | Per-area setup gate availability + messages (sidebar/Home Help) |
+| `/api/qbo/import/*` | POST/GET | per area: config (categories/schemes), financials (catalog), jobs (contacts) | QBO snapshot pull, suggestions, commits, dismissals |
 | `/api/qbo/*` | `can_manage_config` | `can_manage_config` | OAuth + connection state — see `quickbooks-integration.md` |
 
 #### Special cases

@@ -151,6 +151,28 @@ first full flow spec should follow `docs/ui-flows/Expenses.md`):
 **Source:** `fixtures/playwright/seed.json`, a committed `dumpdata`
 export of a populated dev database. It is never modified by a test run.
 
+The export was augmented by hand 2026-07-23 with **email fixtures**
+(10 `EmailRecord` + `TempEmail` pairs, appended in dumpdata format):
+one thread per job lifecycle state — a draft-job inquiry, estimate
+sends with acceptance replies (approved, in_progress), invoice sends
+with replies (work_complete, completed), threaded via
+`in_reply_to`/`references` and linked to their jobs — plus one
+**unlinked vendor-invoice email** used by
+`specs/email/inbox-and-po-link.spec.js` to exercise the
+link-email-to-PO breadcrumb. Outbound bodies mirror the app's default
+estimate/invoice templates (including the `{payment_link}` URL shape).
+Job 67 was flipped to `completed` in the same pass so that state
+exists in the seed (its deliverable has no pickup shipment — a
+lifecycle shortcut acceptable in fake data). Also note the seed still
+carries 13 inert legacy Bill rows (retired schema; kept deliberately).
+
+A **QBO import snapshot** Configuration row (`qbo_import_snapshot`) was
+appended 2026-07-23: two customers (one clean, one whose email collides
+with seeded contact 1), empty items/terms/vendors lists so ONLY the
+contacts panel renders anywhere. Exercised by
+`specs/contacts/import-skip-report.spec.js` (partial commit + skip
+report). Panels need no live QBO connection — only the pull button does.
+
 **Rebase:** the seed is frozen history — left alone, the 7-day Recent
 Time window, the 30-hour blep-edit window, board retention, schedule
 forecasting, and estimate expiry would all drift out of test reach as it

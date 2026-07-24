@@ -233,25 +233,26 @@ class InvoiceSendTest(BaseTestCase):
         self.assertIn('subject', response.data)
         self.assertIn('body', response.data)
         self.assertIn('attachments_preview', response.data)
-        # Two auto-attached PDFs: the QBO invoice + the local Job Statement.
+        # One auto-attached PDF: the QBO invoice (the Job Statement was
+        # dropped from the send 2026-07-22).
         filenames = [a['filename'] for a in response.data['attachments_preview']]
-        self.assertEqual(len(filenames), 2)
+        self.assertEqual(len(filenames), 1)
+        self.assertTrue(filenames[0].startswith('Invoice-'))
 
     @patch('apps.qbo.services.QBOService.get_client')
     @patch('apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice')
     @patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent')
     @patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf')
-    @patch('apps.invoicing.pdf.generate_job_statement_pdf')
     @patch('django.core.mail.EmailMessage')
     def test_send_happy_path(
-        self, MockEmailMessage, mock_stmt_pdf, mock_dl_pdf, mock_mark,
+        self, MockEmailMessage, mock_dl_pdf, mock_mark,
         mock_build, mock_get_client,
     ):
         MockEmailMessage.return_value = MagicMock()
-        mock_stmt_pdf.return_value = b'%PDF-stmt'
         mock_dl_pdf.return_value = b'%PDF-qbo'
         qbo_invoice = MagicMock()
         qbo_invoice.Id = '42'
+        qbo_invoice.DocNumber = '1042'
         qbo_invoice.save = MagicMock(return_value=qbo_invoice)
         mock_build.return_value = qbo_invoice
         mock_get_client.return_value = MagicMock()
@@ -280,10 +281,9 @@ class InvoiceSendTest(BaseTestCase):
     @patch('apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice')
     @patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent')
     @patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf')
-    @patch('apps.invoicing.pdf.generate_job_statement_pdf')
     @patch('django.core.mail.EmailMessage')
     def test_send_with_qbo_id_set_skips_qbo_push(
-        self, MockEmailMessage, mock_stmt_pdf, mock_dl_pdf, mock_mark,
+        self, MockEmailMessage, mock_dl_pdf, mock_mark,
         mock_build, mock_get_client,
     ):
         """Retry: qbo_id already set means skip the QBO push step (fixes
@@ -292,7 +292,6 @@ class InvoiceSendTest(BaseTestCase):
         self.invoice.save()
 
         MockEmailMessage.return_value = MagicMock()
-        mock_stmt_pdf.return_value = b'%PDF-stmt'
         mock_dl_pdf.return_value = b'%PDF-qbo'
         mock_get_client.return_value = MagicMock()
 

@@ -137,7 +137,7 @@
         <ul>
           {#each data.invoice_events as e (e.kind + '-' + e.invoice_id + '-' + e.date)}
             <li>
-              <a href={`/invoices/${e.invoice_id}`} use:link>{e.invoice_number}</a>
+              <a href={`/invoices/${e.invoice_id}`} use:link>{e.display_number}</a>
               — {e.kind} · {fmtDate(e.date)}
             </li>
           {/each}

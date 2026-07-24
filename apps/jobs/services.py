@@ -985,6 +985,7 @@ class TaskService:
                 job=job,
                 name=template.template_name,
                 assignee=assignee,
+                service_item=template,
                 rate_scheme=template.rate_scheme,
                 active_modifiers=copy_active_modifiers(template.default_active_modifiers),
                 est_qty=est_qty if est_qty is not None else Decimal('1'),
@@ -2226,7 +2227,7 @@ class BoardService:
         from apps.invoicing.models import Invoice
         data = BoardService._serialize_job(job)
         invoices = []
-        for inv in job.invoice_set.exclude(
+        for inv in job.invoice_set.select_related('job').exclude(
                 status__in=[Invoice.STATUS_CANCELLED, Invoice.STATUS_SUPERSEDED]).order_by('created_date'):
             total = inv.invoicelineitem_set.aggregate(
                 total=models.Sum(models.F('qty') * models.F('price'))
@@ -2234,6 +2235,7 @@ class BoardService:
             invoices.append({
                 'invoice_id': inv.invoice_id,
                 'invoice_number': inv.invoice_number,
+                'display_number': inv.display_number,
                 'status': inv.status,
                 'total': total,
                 'created_date': inv.created_date.isoformat() if inv.created_date else None,

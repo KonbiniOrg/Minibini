@@ -323,7 +323,7 @@ Clear `formError`/`errors` at submit start and on open/cancel.
     `<JobShell>` and passes its content as the slotted children — one
     section panel for the other seven routes, the six summary blocks for
     the overview. See "Job workspace state" below and
-    `docs/designs/jobs-tasks-and-worksheets.md` §9.6, §9.1a.
+    `docs/designs/jobs-and-tasks.md` §9.6, §9.1a.
   - **Subheaders:** anything a page wants to render *inside* the body that reads
     as a sub-bar (toolbars, filter rows) lives inside `.page-body` and aligns to
     the 10px gutter (drop any of its own horizontal padding so it lines up). A
@@ -357,7 +357,7 @@ Clear `formError`/`errors` at submit start and on open/cancel.
        invoice "wizard" is no longer a separate page — it's a mode of the
        estimate/invoice panel at the same route; see "Job workspace state"
        below.) The overview's `.page-body` holds its six summary blocks
-       (`docs/designs/jobs-tasks-and-worksheets.md` §9.1a) — a bespoke,
+       (`docs/designs/jobs-and-tasks.md` §9.1a) — a bespoke,
        individualized body inside the shared `JobShell` chrome, not a kit
        consumer; see `docs/designs/architecture-and-conventions.md` §5.5a for
        the "hybrid" categorization this creates.
@@ -398,7 +398,7 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   slice each.
 - Restoring a remembered `reconcile` mode is validated against the
   document's live status (only offered on a draft) before being
-  applied — see `docs/designs/jobs-tasks-and-worksheets.md` §9.6.
+  applied — see `docs/designs/jobs-and-tasks.md` §9.6.
 - Routes: every job section is a real route under `#/jobs/:jobId/…`
   (`estimate[/:docId]`, `invoice[/:docId]`, `tasks[/:taskId]`,
   `shipments`, `pos`, `emails`, `history`). Old top-level document
@@ -425,7 +425,7 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   too: `lib/materialOps.js` and the Order / Mark-received dialogs in
   `components/materials/MaterialFulfillmentModals.svelte`. The job overview
   doesn't render material rows at all — its Materials block is an aggregate
-  Coverage stat only (`docs/designs/jobs-tasks-and-worksheets.md` §9.1a).
+  Coverage stat only (`docs/designs/jobs-and-tasks.md` §9.1a).
 - Full vocabulary + backend contract: `docs/designs/materials-inventory-and-purchasing.md` §16.
 
 ### Delete Flow

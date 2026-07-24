@@ -187,12 +187,24 @@ class QBOCustomerSyncService:
 
         customer = QBOCustomerSyncService._build_customer(business)
 
-        qbo_id = QBOService.save_and_log(
-            customer, client,
-            entity_type='customer',
-            qbo_entity_type='Customer',
-            entity_id=business.pk,
-        )
+        try:
+            qbo_id = QBOService.save_and_log(
+                customer, client,
+                entity_type='customer',
+                qbo_entity_type='Customer',
+                entity_id=business.pk,
+            )
+        except Exception as e:
+            # Duplicate DisplayName → the Customer already exists in QBO;
+            # adopt it (same pattern as QBOItemMintService). save_and_log
+            # already recorded the failed create attempt.
+            if not _is_duplicate_name_error(e):
+                raise
+            from quickbooks.objects.customer import Customer
+            qbo_id = _adopt_id_by_name(
+                Customer, client, DisplayName=customer.DisplayName)
+            if not qbo_id:
+                raise
         with transaction.atomic():
             business.qbo_customer_id = qbo_id
             business.save(update_fields=['qbo_customer_id'])
@@ -240,12 +252,21 @@ class QBOCustomerSyncService:
 
         customer = QBOCustomerSyncService._build_contact_customer(contact)
 
-        qbo_id = QBOService.save_and_log(
-            customer, client,
-            entity_type='contact_customer',
-            qbo_entity_type='Customer',
-            entity_id=contact.pk,
-        )
+        try:
+            qbo_id = QBOService.save_and_log(
+                customer, client,
+                entity_type='contact_customer',
+                qbo_entity_type='Customer',
+                entity_id=contact.pk,
+            )
+        except Exception as e:
+            if not _is_duplicate_name_error(e):
+                raise
+            from quickbooks.objects.customer import Customer
+            qbo_id = _adopt_id_by_name(
+                Customer, client, DisplayName=customer.DisplayName)
+            if not qbo_id:
+                raise
         with transaction.atomic():
             contact.qbo_customer_id = qbo_id
             contact.save(update_fields=['qbo_customer_id'])
@@ -275,61 +296,6 @@ class QBOCustomerSyncService:
         return customer
 
 
-class QBOVendorSyncService:
-    """Syncs Minibini Business records to QBO as Vendors."""
-
-    @staticmethod
-    def push_vendor(business):
-        """
-        Push a Business to QBO as a Vendor.
-        Returns the QBO Vendor ID.
-        Skips if already synced (qbo_vendor_id is set).
-        """
-        if business.qbo_vendor_id:
-            return business.qbo_vendor_id
-
-        client = QBOService.get_client()
-        if not client:
-            raise ValueError('No active QBO connection')
-
-        vendor = QBOVendorSyncService._build_vendor(business)
-
-        qbo_id = QBOService.save_and_log(
-            vendor, client,
-            entity_type='vendor',
-            qbo_entity_type='Vendor',
-            entity_id=business.pk,
-        )
-        with transaction.atomic():
-            business.qbo_vendor_id = qbo_id
-            business.save(update_fields=['qbo_vendor_id'])
-        return qbo_id
-
-    @staticmethod
-    def _build_vendor(business):
-        """Build a QBO Vendor object from a Business."""
-        from quickbooks.objects.vendor import Vendor
-
-        vendor = Vendor()
-        vendor.CompanyName = business.business_name
-        vendor.DisplayName = QBODisplayNameService.generate_display_name(
-            business, role='vendor'
-        )
-
-        if business.business_phone:
-            from quickbooks.objects.base import PhoneNumber
-            vendor.PrimaryPhone = PhoneNumber()
-            vendor.PrimaryPhone.FreeFormNumber = business.business_phone
-
-        default_contact = business.default_contact
-        if default_contact and default_contact.email:
-            from quickbooks.objects.base import EmailAddress
-            vendor.PrimaryEmailAddr = EmailAddress()
-            vendor.PrimaryEmailAddr.Address = default_contact.email
-
-        return vendor
-
-
 class QBOInvoiceSyncService:
     """Helpers used by InvoiceEmailService.send_invoice to push an Invoice
     to QBO and fetch the rendered PDF. The full send orchestration lives
@@ -338,33 +304,127 @@ class QBOInvoiceSyncService:
     earlier push_invoice path had."""
 
     @staticmethod
-    def _build_qbo_invoice(invoice, qbo_customer_id, grouped_lines):
+    def _build_qbo_invoice(invoice, qbo_customer_id, client):
+        """Build the QBO Invoice with one SalesItemLine per konbini line.
+
+        Description is the konbini line's text verbatim; ItemRef comes from
+        _resolve_item_ref (minting catalog Items lazily via the client);
+        TaxCodeRef is the line's category `taxable` flag. The job reference
+        rides in CustomerMemo; online-payment flags are enabled so the
+        hosted invoice carries the Pay button when QBO Payments is active.
+        """
         from quickbooks.objects.invoice import Invoice as QBOInvoice
         from quickbooks.objects.detailline import SalesItemLine, SalesItemLineDetail
-        from quickbooks.objects.base import Ref
+        from quickbooks.objects.base import Ref, EmailAddress, CustomerMemo
 
         qbo_inv = QBOInvoice()
         qbo_inv.CustomerRef = Ref()
         qbo_inv.CustomerRef.value = qbo_customer_id
+        qbo_inv.AllowOnlineCreditCardPayment = True
+        qbo_inv.AllowOnlineACHPayment = True
+
+        job = invoice.job
+        memo = CustomerMemo()
+        memo.value = f"Job {job.job_number} — {job.name}"
+        qbo_inv.CustomerMemo = memo
+
+        contact = job.contact
+        if contact and contact.email:
+            qbo_inv.BillEmail = EmailAddress()
+            qbo_inv.BillEmail.Address = contact.email
 
         qbo_inv.Line = []
-        for group in grouped_lines:
+        line_items = (invoice.invoicelineitem_set
+                      .select_related('accounting_category', 'inventory_item')
+                      .order_by('line_number'))
+        for li in line_items:
             line = SalesItemLine()
-            line.Amount = float(group['amount'])
-            line.Description = group['description']
+            line.Amount = float(li.total_amount)
+            line.Description = li.description
 
             detail = SalesItemLineDetail()
-            if group['qbo_item_id']:
+            # Qty/UnitPrice make QBO render the qty and rate columns
+            # instead of a bare total.
+            detail.Qty = float(li.qty)
+            detail.UnitPrice = float(li.price)
+            item_id = QBOInvoiceSyncService._resolve_item_ref(li, client)
+            if item_id:
                 detail.ItemRef = Ref()
-                detail.ItemRef.value = group['qbo_item_id']
-
+                detail.ItemRef.value = item_id
             detail.TaxCodeRef = Ref()
-            detail.TaxCodeRef.value = 'TAX' if group['taxable'] else 'NON'
+            detail.TaxCodeRef.value = 'TAX' if li.accounting_category.taxable else 'NON'
 
             line.SalesItemLineDetail = detail
             qbo_inv.Line.append(line)
 
         return qbo_inv
+
+    @staticmethod
+    def _catalog_entity_for_line(line_item):
+        """The single catalog entity (InventoryItem or ServiceItem) this line
+        sells, or None when there isn't exactly one."""
+        if line_item.inventory_item_id:
+            return line_item.inventory_item
+        if line_item.adjustment_service_id:
+            return None
+        entities = set()
+        sources = list(line_item.sources.all())
+        if not sources:
+            return None
+        for source in sources:
+            if source.source_type == source.SOURCE_TASK:
+                task = source.resolve()
+                if not task.service_item_id:
+                    return None
+                entities.add(('service', task.service_item_id))
+            elif source.source_type == source.SOURCE_MATERIAL:
+                material = source.resolve()
+                if not material.inventory_item_id:
+                    return None
+                entities.add(('inventory', material.inventory_item_id))
+            else:  # expense / fee — no catalog identity
+                return None
+        if len(entities) != 1:
+            return None
+        kind, pk = entities.pop()
+        if kind == 'service':
+            from apps.estimates.models import ServiceItem
+            return ServiceItem.objects.get(pk=pk)
+        from apps.inventory.models import InventoryItem
+        return InventoryItem.objects.get(pk=pk)
+
+    @staticmethod
+    def _resolve_item_ref(line_item, client):
+        """QBO Item id for this line, or None to omit ItemRef."""
+        entity = QBOInvoiceSyncService._catalog_entity_for_line(line_item)
+        if entity is not None:
+            qbo_id = QBOItemMintService.ensure_item(entity, client)
+            if qbo_id:
+                return qbo_id
+        category = line_item.accounting_category
+        if category and category.qbo_item_id:
+            return category.qbo_item_id
+        return None
+
+    @staticmethod
+    def _fetch_invoice_link(client, qbo_id):
+        """Shareable hosted-invoice URL (carries the Pay button when QBO
+        Payments is active). '' when QBO returns none.
+
+        The installed python-quickbooks get()/get_single_object() can't pass
+        query params, so this builds the request directly on the client.
+        """
+        url = "{0}/company/{1}/invoice/{2}/".format(
+            client.api_url, client.company_id, qbo_id)
+        # minorversion >= 36 is required or QBO silently omits invoiceLink
+        # from the response (no error — the field just isn't there).
+        result = client.get(url, {}, params={
+            'include': 'invoiceLink', 'minorversion': '75',
+        })
+        inv = result.get('Invoice') or {}
+        # QBO's raw JSON returns 'InvoiceLink' (capital I) even though the
+        # docs and SDK say 'invoiceLink' — accept both.
+        return inv.get('InvoiceLink') or inv.get('invoiceLink') or ''
 
     @staticmethod
     def _mark_as_sent(client, qbo_id):
@@ -381,174 +441,84 @@ class QBOInvoiceSyncService:
         qbo_invoice = QBOInvoice.get(qbo_id, qb=client)
         return qbo_invoice.download_pdf(qb=client)
 
-class QBOBillSyncService:
-    """Pushes Minibini bills to QBO."""
+def _is_duplicate_name_error(exc):
+    """QBO's 6240 Duplicate Name Exists Error, in any of its phrasings."""
+    text = str(exc)
+    return 'Duplicate Name Exists' in text or '6240' in text
+
+
+def _adopt_id_by_name(sdk_class, client, **name_filter):
+    """Adopt an existing QBO record after a duplicate-name refusal.
+
+    QBO companies routinely predate konbini (future tenants; reseeded dev
+    DBs against a lived-in sandbox), so a name collision usually means
+    "this record already exists over there" — query it by its name field
+    and return str(Id). Returns None when no match (e.g. the collision is
+    with an inactive record the default query can't see) — caller
+    re-raises. Accepted trade-off: a same-named-but-genuinely-different
+    record binds silently.
+    """
+    existing = sdk_class.filter(qb=client, **name_filter)
+    if not existing:
+        return None
+    return str(existing[0].Id)
+
+
+class QBOItemMintService:
+    """Lazily mirrors konbini catalog entities (InventoryItem, ServiceItem)
+    into QBO Items at invoice-push time.
+
+    The income account for a minted Item is copied from the entity's
+    AccountingCategory's generic fallback Item — income-account
+    configuration lives in QBO: the bookkeeper sets it once, on the
+    per-category Items, and konbini never stores income accounts.
+    """
 
     @staticmethod
-    def push_bill(bill):
-        if bill.qbo_id:
-            return bill.qbo_id
+    def ensure_item(entity, client):
+        """Return the QBO Item id for entity, minting/adopting if needed.
 
-        business = bill.business
-        if not business:
-            raise ValueError('Bill must have a vendor business')
+        Returns '' when the entity's category has no qbo_item_id mapped
+        (no income account to copy) — the caller falls back to the
+        category Item / no ItemRef. On QBO's duplicate-name error the
+        existing Item is adopted by name.
+        """
+        if entity.qbo_id:
+            return entity.qbo_id
 
-        client = QBOService.get_client()
-        if not client:
-            raise ValueError('No active QBO connection')
+        from apps.inventory.models import InventoryItem
+        if isinstance(entity, InventoryItem):
+            category = entity.accounting_category
+            name = entity.code
+            qbo_type = 'NonInventory'
+        else:  # ServiceItem
+            category = entity.effective_accounting_category
+            name = entity.template_name
+            qbo_type = 'Service'
 
-        # Auto-sync vendor to QBO if not already synced
-        if not business.qbo_vendor_id:
-            QBOVendorSyncService.push_vendor(business)
+        if not category or not category.qbo_item_id:
+            return ''
 
-        qbo_bill = QBOBillSyncService._build_qbo_bill(bill)
+        from quickbooks.objects.item import Item
+        generic = Item.get(category.qbo_item_id, qb=client)
 
-        qbo_id = QBOService.save_and_log(
-            qbo_bill, client,
-            entity_type='bill',
-            qbo_entity_type='Bill',
-            entity_id=bill.pk,
-        )
-        bill.qbo_id = qbo_id
-        bill.save(update_fields=['qbo_id'])
+        item = Item()
+        item.Name = name
+        item.Type = qbo_type
+        item.IncomeAccountRef = generic.IncomeAccountRef
+        try:
+            item.save(qb=client)
+            qbo_id = str(item.Id)
+        except Exception as e:
+            if not _is_duplicate_name_error(e):
+                raise
+            qbo_id = _adopt_id_by_name(Item, client, Name=name)
+            if not qbo_id:
+                raise
+
+        entity.qbo_id = qbo_id
+        entity.save(update_fields=['qbo_id'])
         return qbo_id
-
-    @staticmethod
-    def push_bill_payment(payment):
-        """Create a QBO BillPayment for a recorded Minibini BillPayment.
-        Idempotent on payment.qbo_id. Never raises — records sync state on the
-        payment via QBOSyncService."""
-        if payment.qbo_id:
-            return payment.qbo_id
-        return QBOSyncService.run_create(
-            payment,
-            lambda: QBOBillSyncService._build_qbo_bill_payment(payment),
-        )
-
-    @staticmethod
-    def _build_qbo_bill_payment(payment):
-        from quickbooks.objects.billpayment import (
-            BillPayment as QBOBillPayment, BillPaymentLine,
-            CheckPayment, BillPaymentCreditCard,
-        )
-        from quickbooks.objects.base import Ref, LinkedTxn
-
-        client = QBOService.get_client()
-        if not client:
-            raise ValueError('No active QBO connection')
-        if not payment.payment_account_id:
-            raise ValueError('No payment account selected for this bill payment')
-
-        bill = payment.bill
-        if not bill.qbo_id:
-            QBOBillSyncService.push_bill(bill)
-
-        account = QBOPaymentAccountService.lookup(payment.payment_account_id)
-
-        qbp = QBOBillPayment()
-        qbp.TotalAmt = float(payment.amount)
-        if payment.reference:
-            qbp.DocNumber = payment.reference
-
-        vendor_ref = Ref()
-        vendor_ref.value = bill.business.qbo_vendor_id
-        qbp.VendorRef = vendor_ref
-
-        acct_ref = Ref()
-        acct_ref.value = account['qbo_account_id']
-        if account['account_type'] == 'Credit Card':
-            qbp.PayType = 'CreditCard'
-            cc = BillPaymentCreditCard()
-            cc.CCAccountRef = acct_ref
-            qbp.CreditCardPayment = cc
-        else:
-            qbp.PayType = 'Check'
-            chk = CheckPayment()
-            chk.BankAccountRef = acct_ref
-            qbp.CheckPayment = chk
-
-        line = BillPaymentLine()
-        line.Amount = float(payment.amount)
-        linked = LinkedTxn()
-        linked.TxnId = bill.qbo_id
-        linked.TxnType = 'Bill'
-        line.LinkedTxn = [linked]
-        qbp.Line = [line]
-
-        return QBOService.save_and_log(
-            qbp, client,
-            entity_type='bill_payment',
-            qbo_entity_type='BillPayment',
-            entity_id=payment.pk,
-        )
-
-    @staticmethod
-    def update_bill_payment(payment):
-        """Re-fetch and update the QBO BillPayment with the current local values.
-        Raises ValueError if the payment has no qbo_id or there is no active connection."""
-        from quickbooks.objects.billpayment import BillPayment as QBOBillPayment
-        if not payment.qbo_id:
-            raise ValueError('BillPayment has no qbo_id — use push_bill_payment')
-        client = QBOService.get_client()
-        if not client:
-            raise ValueError('No active QBO connection')
-        existing = QBOBillPayment.get(payment.qbo_id, qb=client)
-        existing.TotalAmt = float(payment.amount)
-        if payment.reference:
-            existing.DocNumber = payment.reference
-        if existing.Line:
-            existing.Line[0].Amount = float(payment.amount)
-        QBOService.save_and_log(
-            existing, client,
-            entity_type='bill_payment',
-            qbo_entity_type='BillPayment',
-            entity_id=payment.pk,
-            action='update',
-        )
-        return payment.qbo_id
-
-    @staticmethod
-    def void_bill_payment(payment):
-        """Delete the QBO BillPayment. Raises on failure so the caller refuses the local delete."""
-        from quickbooks.objects.billpayment import BillPayment as QBOBillPayment
-        if not payment.qbo_id:
-            return
-        client = QBOService.get_client()
-        if not client:
-            raise ValueError('No active QBO connection')
-        QBOService.delete_and_log(
-            QBOBillPayment, payment.qbo_id, client,
-            entity_type='bill_payment', qbo_entity_type='BillPayment', entity_id=payment.pk,
-        )
-
-    @staticmethod
-    def _build_qbo_bill(bill):
-        from quickbooks.objects.bill import Bill as QBOBill
-        from quickbooks.objects.detailline import AccountBasedExpenseLine, AccountBasedExpenseLineDetail
-        from quickbooks.objects.base import Ref
-
-        qbo_bill = QBOBill()
-        qbo_bill.VendorRef = Ref()
-        qbo_bill.VendorRef.value = bill.business.qbo_vendor_id
-
-        if bill.vendor_invoice_number:
-            qbo_bill.DocNumber = bill.vendor_invoice_number
-
-        qbo_bill.Line = []
-        for item in bill.billlineitem_set.select_related('accounting_category').all():
-            line = AccountBasedExpenseLine()
-            line.Amount = float(item.total_amount)
-            line.Description = item.description
-
-            detail = AccountBasedExpenseLineDetail()
-            if item.accounting_category and item.accounting_category.qbo_expense_account_id:
-                detail.AccountRef = Ref()
-                detail.AccountRef.value = item.accounting_category.qbo_expense_account_id
-
-            line.AccountBasedExpenseLineDetail = detail
-            qbo_bill.Line.append(line)
-
-        return qbo_bill
 
 
 class QBOAccountsService:
@@ -599,8 +569,8 @@ class QBOAccountsService:
 
 
 class QBOPaymentAccountService:
-    """Owns the `qbo_payment_accounts` Configuration lookup. Shared by the
-    expense/reimbursement Purchase push and the bill-payment push."""
+    """Owns the `qbo_payment_accounts` Configuration lookup, used by the
+    expense/reimbursement Purchase push."""
 
     @staticmethod
     def load_accounts():
@@ -625,8 +595,7 @@ class QBOPaymentAccountService:
 
 
 class QBOExpenseSyncService:
-    """Pushes Minibini expenses and reimbursement batches to QBO.
-    Follows the pattern of QBOBillSyncService."""
+    """Pushes Minibini expenses and reimbursement batches to QBO."""
 
     @staticmethod
     def get_payment_accounts():
@@ -980,44 +949,20 @@ class QBOPaymentPollingService:
         return QBOInvoice.get(qbo_id, qb=client)
 
 
-class QBOBillPaymentPollingService:
-    """Polls QBO for payment status updates on synced bills."""
-
-    @staticmethod
-    def poll_all():
-        """Clear per-BillPayment from QBO reconciliation. STUBBED: all QBO ->
-        Minibini polling is deferred to a dedicated later session. The
-        bill-payment push is live and writes `qbo_id`, so rows can match the
-        filter below; the inner loop just doesn't fetch/confirm clearance yet."""
-        from apps.purchasing.models import BillPayment
-        stats = {'checked': 0, 'cleared': 0, 'errors': []}
-        client = QBOService.get_client()
-        if not client:
-            stats['error'] = 'No active QBO connection'
-            return stats
-        pending = BillPayment.objects.filter(
-            cleared_date__isnull=True).exclude(qbo_id='')
-        for payment in pending:
-            stats['checked'] += 1
-            # QBO reconciliation fetch + cleared_date set lands in the QBO session.
-        return stats
-
-
 class QBOInboundPollingService:
     """Single entry point for all QBO -> Minibini polling. Sweeps every inbound
-    type (invoice payments, bill clearance; future: Job-P&L actuals, CDC)."""
+    type (invoice payments; future: Job-P&L actuals, CDC)."""
 
     @staticmethod
     def poll_all():
         return {
             'invoices': QBOPaymentPollingService.poll_all(),
-            'bills': QBOBillPaymentPollingService.poll_all(),
         }
 
 
 class QBOSyncFailureService:
     """Returns a unified list of all sync-failed records across the three
-    money-push entity types: company Expense, Reimbursement, BillPayment."""
+    money-push entity types: company Expense and Reimbursement."""
 
     @staticmethod
     def list_failures():
@@ -1029,7 +974,6 @@ class QBOSyncFailureService:
         own QBO failure — their Reimbursement batch does).
         """
         from apps.expenses.models import Expense, Reimbursement
-        from apps.purchasing.models import BillPayment
 
         results = []
 
@@ -1058,19 +1002,6 @@ class QBOSyncFailureService:
                 'qbo_pending_op': b.qbo_pending_op,
                 'qbo_sync_error': b.qbo_sync_error,
                 'retry_url': f'/api/reimbursements/{b.pk}/retry-sync/',
-            })
-
-        for p in BillPayment.objects.filter(
-            qbo_sync_status=BillPayment.SYNC_FAILED,
-        ).select_related('bill'):
-            results.append({
-                'entity_type': 'bill_payment',
-                'id': p.pk,
-                'label': f"Payment on bill {p.bill.vendor_invoice_number}",
-                'amount': str(p.amount),
-                'qbo_pending_op': p.qbo_pending_op,
-                'qbo_sync_error': p.qbo_sync_error,
-                'retry_url': f'/api/bills/{p.bill_id}/payments/{p.pk}/retry-sync/',
             })
 
         return results

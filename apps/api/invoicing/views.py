@@ -38,7 +38,8 @@ INVOICE_ORDERING = {
 
 
 class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
-    queryset = Invoice.objects.all().order_by('-created_date')
+    # select_related('job'): display_number and job_number both read the job.
+    queryset = Invoice.objects.select_related('job').order_by('-created_date')
     serializer_class = InvoiceSerializer
     lookup_field = 'pk'
 
@@ -325,7 +326,7 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         """Pre-populated values for the Send Email page."""
         from apps.invoicing.services import InvoiceEmailService
         invoice = self.get_object()
-        return Response(InvoiceEmailService.get_email_defaults(invoice))
+        return Response(InvoiceEmailService.get_email_defaults(invoice, user=request.user))
 
     @action(detail=True, methods=['post'], url_path='send')
     def send(self, request, pk=None):

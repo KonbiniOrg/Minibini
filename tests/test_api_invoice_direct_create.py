@@ -12,8 +12,8 @@ class InvoiceDirectCreateAPITest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
@@ -32,7 +32,10 @@ class InvoiceDirectCreateAPITest(TestCase):
         resp = self.client.post('/api/invoices/', {'job': self.billable_job.pk}, format='json')
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.data['status'], Invoice.STATUS_DRAFT)
-        self.assertTrue(resp.data['invoice_number'])
+        # QBO assigns numbers at push; a fresh draft has none, only the
+        # display placeholder.
+        self.assertIsNone(resp.data['invoice_number'])
+        self.assertEqual(resp.data['display_number'], 'Draft — JOB-2026-0001')
 
     def test_direct_create_is_idempotent_for_existing_draft(self):
         first = self.client.post('/api/invoices/', {'job': self.billable_job.pk}, format='json')

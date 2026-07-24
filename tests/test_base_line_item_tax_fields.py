@@ -1,6 +1,7 @@
 """
 Tests for BaseLineItem tax-related fields - TDD approach.
-Testing accounting_category FK, taxable_override, and tax_rate_override.
+Testing the accounting_category FK. (The per-line taxable_override /
+tax_rate_override phantom fields were removed with the per-line QBO push.)
 """
 from decimal import Decimal
 from django.test import TestCase
@@ -72,81 +73,6 @@ class BaseLineItemTaxFieldsTest(TestCase):
         self.assertEqual(line_item.accounting_category, self.service_type)
         self.assertEqual(line_item.accounting_category.code, 'SVC')
 
-    def test_taxable_override_null_by_default(self):
-        """Test that taxable_override is null by default (uses type default)."""
-        line_item = EstimateLineItem.objects.create(
-            estimate=self.estimate,
-            accounting_category=self.material_type,
-            qty=Decimal('1.00'),
-            price=Decimal('50.00'),
-            description='Material item'
-        )
-
-        self.assertIsNone(line_item.taxable_override)
-
-    def test_taxable_override_can_be_set_true(self):
-        """Test that taxable_override can be explicitly set to True."""
-        line_item = EstimateLineItem.objects.create(
-            estimate=self.estimate,
-            accounting_category=self.service_type,  # Service is taxable=False by default
-            qty=Decimal('1.00'),
-            price=Decimal('100.00'),
-            description='Taxable service',
-            taxable_override=True  # Override to taxable
-        )
-
-        self.assertTrue(line_item.taxable_override)
-
-    def test_taxable_override_can_be_set_false(self):
-        """Test that taxable_override can be explicitly set to False."""
-        line_item = EstimateLineItem.objects.create(
-            estimate=self.estimate,
-            accounting_category=self.material_type,  # Material is taxable=True by default
-            qty=Decimal('1.00'),
-            price=Decimal('50.00'),
-            description='Non-taxable material',
-            taxable_override=False  # Override to non-taxable
-        )
-
-        self.assertFalse(line_item.taxable_override)
-
-    def test_tax_rate_override_null_by_default(self):
-        """Test that tax_rate_override is null by default (uses app default)."""
-        line_item = EstimateLineItem.objects.create(
-            estimate=self.estimate,
-            accounting_category=self.material_type,
-            qty=Decimal('1.00'),
-            price=Decimal('50.00'),
-            description='Material item'
-        )
-
-        self.assertIsNone(line_item.tax_rate_override)
-
-    def test_tax_rate_override_can_be_set(self):
-        """Test that tax_rate_override can be set to a custom rate."""
-        line_item = EstimateLineItem.objects.create(
-            estimate=self.estimate,
-            accounting_category=self.material_type,
-            qty=Decimal('1.00'),
-            price=Decimal('100.00'),
-            description='Special tax rate item',
-            tax_rate_override=Decimal('0.0500')  # 5% special rate
-        )
-
-        self.assertEqual(line_item.tax_rate_override, Decimal('0.0500'))
-
-    def test_tax_rate_override_precision(self):
-        """Test that tax_rate_override supports 4 decimal places (e.g., 8.25% = 0.0825)."""
-        line_item = EstimateLineItem.objects.create(
-            estimate=self.estimate,
-            accounting_category=self.material_type,
-            qty=Decimal('1.00'),
-            price=Decimal('100.00'),
-            description='Precise tax rate item',
-            tax_rate_override=Decimal('0.0825')  # 8.25%
-        )
-
-        self.assertEqual(line_item.tax_rate_override, Decimal('0.0825'))
 
     def test_accounting_category_protect_on_delete(self):
         """Test that deleting a AccountingCategory is protected if line items reference it."""

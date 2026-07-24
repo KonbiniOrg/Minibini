@@ -9,9 +9,8 @@ from apps.purchasing.models import PurchaseOrder
 
 class OrderStockTest(TestCase):
     def setUp(self):
-        Configuration.objects.create(
-            key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        AppState.objects.create(key='po_counter', value='0')
+        Configuration.objects.update_or_create(key='po_number_sequence', defaults={'value': 'PO-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='po_counter', defaults={'value': '0'})
         cat = AccountingCategory.objects.create(name='c')
         self.item = InventoryItem.objects.create(
             code='SHEET-3', accounting_category=cat,

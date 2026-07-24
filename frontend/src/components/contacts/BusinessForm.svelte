@@ -94,7 +94,7 @@
     <select id="terms" bind:value={form.terms}>
       <option value="">-- None --</option>
       {#each paymentTerms as term}
-        <option value={term.term_id}>{term.term_id}</option>
+        <option value={term.term_id}>{term.name || term.term_id}</option>
       {/each}
     </select>
     <FieldError {errors} field="terms" />

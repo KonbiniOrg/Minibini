@@ -11,7 +11,7 @@ const job = { job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progre
 
 function inv(id, created, status = 'draft') {
   return {
-    invoice_id: id, invoice_number: `INV-${id}`, job: 3, status,
+    invoice_id: id, invoice_number: `INV-${id}`, display_number: `INV-${id}`, job: 3, status,
     created_date: created, sent_date: null, due_date: null, closed_date: null,
     is_late: false, qbo_id: null, qbo_payment_status: null, qbo_amount_paid: null,
     job_has_other_invoices: false, line_items: [],

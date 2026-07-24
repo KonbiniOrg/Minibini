@@ -42,7 +42,6 @@ class EmailRecordSerializer(serializers.ModelSerializer):
     temp_email = TempEmailSerializer(source='temp_data', read_only=True)
     job_number = serializers.CharField(source='job.job_number', read_only=True, default=None)
     po_number = serializers.CharField(source='purchase_order.po_number', read_only=True, default=None)
-    vendor_invoice_number = serializers.CharField(source='bill.vendor_invoice_number', read_only=True, default=None)
     direction = serializers.SerializerMethodField()
     display_address = serializers.SerializerMethodField()
     snippet = serializers.SerializerMethodField()
@@ -53,7 +52,6 @@ class EmailRecordSerializer(serializers.ModelSerializer):
             'email_record_id', 'message_id',
             'job', 'job_number',
             'purchase_order', 'po_number',
-            'bill', 'vendor_invoice_number',
             'created_at', 'temp_email',
             'direction', 'display_address', 'snippet',
         ]

@@ -14,7 +14,7 @@ is the whole map: **Home** (your work, your shifts, your expenses),
 **Jobs** (the board), **Schedule**, **Activity** (who's
 working right now), **Contacts**, **Email**, **Purchasing**, **Catalog**
 (inventory and service items), and — depending on your permissions —
-**Invoices**, **Bills**, **Expenses**, **Users**, and **Settings**.  The
+**Invoices**, **Expenses**, **Users**, and **Settings**.  The
 sidebar slides out from the hamburger menu on the top left of the screen.
 
 The **Job Board** is the overview of all shop work. It's a four-column
@@ -137,9 +137,10 @@ to know about inventory:
 When there's not enough of a Material in inventory, a **Purchase Order**
 button is shown in the job page.  You can also make one under Purchasing.
 PO lines attributed to a job create that job's materials automatically.
-Email the PO to the vendor as a PDF, receive it when the materials arrive
-to update QOH value, then record the vendor's **Bill** against it and log
-payments on the bill.
+Email the PO to the vendor as a PDF, and receive it when the materials
+arrive to update QOH value.  The vendor's invoice is entered and paid in
+QuickBooks Online; link the invoice email to the PO so the PO's Email
+panel shows it arrived.
 
 ## Finalizing a Job
 
@@ -213,8 +214,8 @@ on, and what their schedules are.
   Look for the History panel on a record's page.
 - **Email is a workspace, not just an inbox.** The Email page shows the
   shop's mailbox; from a message you can create a job (with the contact
-  and business created along the way), or link it to an existing job,
-  PO, or bill. Documents Minibini sends are recorded too and show up on
+  and business created along the way), or link it to an existing job
+  or PO. Documents Minibini sends are recorded too and show up on
   the job's own Email panel.
 - **Search** (the box at the bottom of the sidebar) finds jobs,
   contacts, businesses, documents, and catalog items in one query.
@@ -233,7 +234,7 @@ on, and what their schedules are.
 Everyone logged in can see nearly everything, work tasks, and track
 their own time and expenses. Four permission atoms gate the rest:
 **jobs** (create estimates and contacts, job admin), **financials**
-(create invoices, POs, bills), **time** (editing others' time), and
+(create invoices, POs), **time** (editing others' time), and
 **config** (settings, templates, users). A job's **project manager**
 gets job-level powers on that one job without the global permission.
 

@@ -474,17 +474,17 @@ class EmailAPITest(BaseTestCase):
         self.assertNotIn('>', snippet)
 
 
-class EmailPoBillAPITest(BaseTestCase):
-    """Coverage for the new PO/Bill link-unlink + create-po endpoints."""
+class EmailPoAPITest(BaseTestCase):
+    """Coverage for the PO link-unlink + create-po endpoints."""
 
     def setUp(self):
         super().setUp()
         from apps.contacts.models import Contact, Business
-        from apps.purchasing.models import PurchaseOrder, Bill
+        from apps.purchasing.models import PurchaseOrder
         self.client = APIClient()
         self.admin = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.admin)
-        self.email = EmailRecord.objects.create(message_id='<po-bill@example.com>')
+        self.email = EmailRecord.objects.create(message_id='<po-link@example.com>')
         self.contact = Contact.objects.create(
             first_name='Vendor', last_name='Sales',
             email='sales@vendor.com', mobile_number='555-9',
@@ -496,9 +496,6 @@ class EmailPoBillAPITest(BaseTestCase):
         self.contact.save()
         self.po = PurchaseOrder.objects.create(
             po_number='PO-API-1', business=self.business,
-        )
-        self.bill = Bill.objects.create(
-            vendor_invoice_number='BIL-API-1', business=self.business,
         )
 
     # --- link/unlink PO ----------------------------------------------------
@@ -549,47 +546,6 @@ class EmailPoBillAPITest(BaseTestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-    # --- link/unlink Bill --------------------------------------------------
-
-    def test_link_to_bill(self):
-        response = self.client.post(
-            f'/api/emails/{self.email.pk}/link-to-bill/',
-            {'bill_id': self.bill.pk}, format='json',
-        )
-        self.assertEqual(response.status_code, 200)
-        self.email.refresh_from_db()
-        self.assertEqual(self.email.bill_id, self.bill.pk)
-
-    def test_link_to_bill_missing_bill_id(self):
-        response = self.client.post(
-            f'/api/emails/{self.email.pk}/link-to-bill/', {}, format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_link_to_bill_target_not_found(self):
-        response = self.client.post(
-            f'/api/emails/{self.email.pk}/link-to-bill/',
-            {'bill_id': 99999}, format='json',
-        )
-        self.assertEqual(response.status_code, 404)
-
-    def test_unlink_from_bill(self):
-        self.email.bill = self.bill
-        self.email.save()
-        response = self.client.post(f'/api/emails/{self.email.pk}/unlink-from-bill/')
-        self.assertEqual(response.status_code, 200)
-        self.email.refresh_from_db()
-        self.assertIsNone(self.email.bill)
-
-    def test_link_to_bill_requires_can_manage_financials(self):
-        worker = User.objects.create_user(username='worker_bill', password='pw')
-        self.client.force_authenticate(user=worker)
-        response = self.client.post(
-            f'/api/emails/{self.email.pk}/link-to-bill/',
-            {'bill_id': self.bill.pk}, format='json',
-        )
-        self.assertEqual(response.status_code, 403)
-
     # --- create PO from email ---------------------------------------------
 
     def test_create_po_from_email(self):
@@ -630,16 +586,13 @@ class EmailPoBillAPITest(BaseTestCase):
 
     # --- serializer surface -----------------------------------------------
 
-    def test_email_list_exposes_po_and_bill(self):
+    def test_email_list_exposes_po(self):
         self.email.purchase_order = self.po
-        self.email.bill = self.bill
         self.email.save()
         response = self.client.get(f'/api/emails/{self.email.pk}/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['purchase_order'], self.po.pk)
         self.assertEqual(response.data['po_number'], self.po.po_number)
-        self.assertEqual(response.data['bill'], self.bill.pk)
-        self.assertEqual(response.data['vendor_invoice_number'], self.bill.vendor_invoice_number)
 
 
 class EmailReplyAPITest(BaseTestCase):
@@ -717,7 +670,6 @@ class EmailReplyAPITest(BaseTestCase):
         ia = response.data['inherit_associations']
         self.assertEqual(ia['job'], self.job.job_id)
         self.assertIsNone(ia['purchase_order'])
-        self.assertIsNone(ia['bill'])
 
     def test_reply_defaults_reply_all_cc_strips_our_address(self):
         from django.test.utils import override_settings
@@ -853,7 +805,6 @@ class EmailReplyAPITest(BaseTestCase):
         ).order_by('-created_at').first()
         self.assertIsNone(outbound.job)
         self.assertIsNone(outbound.purchase_order)
-        self.assertIsNone(outbound.bill)
 
     def test_reply_missing_to_returns_400(self):
         response = self.client.post(
@@ -957,24 +908,6 @@ class ThreadPropagationAPITest(BaseTestCase):
         self.assertEqual(e1.purchase_order, po)
         self.assertEqual(e2.purchase_order, po)
         self.assertEqual(e3.purchase_order, po)
-
-    def test_link_to_bill_propagates(self):
-        from apps.purchasing.models import Bill
-        e1, e2, e3 = self._thread(3)
-        bill = Bill.objects.create(
-            vendor_invoice_number='B-PROP-API-1', business=self.business,
-        )
-
-        response = self.client.post(
-            f'/api/emails/{e1.pk}/link-to-bill/',
-            {'bill_id': bill.pk}, format='json',
-        )
-        self.assertEqual(response.status_code, 200, response.data)
-
-        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
-        self.assertEqual(e1.bill, bill)
-        self.assertEqual(e2.bill, bill)
-        self.assertEqual(e3.bill, bill)
 
     def test_create_po_from_email_propagates(self):
         e1, e2, e3 = self._thread(3)

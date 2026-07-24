@@ -1,6 +1,10 @@
 <script>
   import { api } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
+  import ContactsImportPanel from '../../components/qboimport/ContactsImportPanel.svelte';
+  import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
+
+  let pullEpoch = $state(0);
 
   let allItems = $state([]);
   let count = $state(0);
@@ -106,6 +110,11 @@
 
 <div class="page-body">
 <h2>Contacts &amp; Businesses ({count})</h2>
+
+<QboPullButton area="contacts" onPulled={() => pullEpoch++} />
+{#key pullEpoch}
+  <ContactsImportPanel onCommitted={loadAll} />
+{/key}
 
 <p><a href="#/contacts/new">New Contact</a> &nbsp; <a href="#/businesses/new">New Business</a></p>
 

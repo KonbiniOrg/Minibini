@@ -13,10 +13,10 @@ The customer-facing billing side of Minibini and the employee/company expense le
 ## What this doc does not own
 
 - Service-layer conventions, `LineItemMixin`, `StatusTransitionMixin`, two-phase delete, the line-item delete-and-renumber rule. See `docs/designs/architecture-and-conventions.md` and `CLAUDE.md`.
-- `Job`, `Task`, `Blep`, `WorkTemplate` shape. See `docs/designs/jobs-tasks-and-worksheets.md`.
+- `Job`, `Task`, `Blep`, `WorkTemplate` shape. See `docs/designs/jobs-and-tasks.md`.
 - The estimate wizard (`EstimateLineItemSource`, the same Job atoms, in-sync rule). The invoice wizard mirrors it; see `docs/designs/estimates-and-prices.md` for the shared structure and the `LineItemSource` claim model.
 - `Material` shape, `MaterialService.consume`, `is_expense_bound`, the "Materials (no task)" bucket. See `docs/designs/materials-inventory-and-purchasing.md`.
-- `Bill` (vendor-side AP, lives next to `PurchaseOrder`). See `docs/designs/materials-inventory-and-purchasing.md`.
+- Vendor-side AP: bills live entirely in QBO — the konbini Bill domain was retired 2026-07-23. See `docs/designs/materials-inventory-and-purchasing.md` §13.
 - OAuth, `QBOSyncLog`, payment polling, sync-failure plumbing. See `docs/designs/quickbooks-integration.md`. This doc references the push points but does not describe their internals.
 
 ---
@@ -33,7 +33,7 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 |---|---|---|
 | `invoice_id` | AutoField PK | |
 | `job` | FK Job (CASCADE) | |
-| `invoice_number` | CharField(50), unique | Auto-generated on first save via `NumberGenerationService.generate_next_number('invoice')` if blank. See "Document numbering" in CLAUDE.md. |
+| `invoice_number` | CharField(50), unique, **nullable** | **QBO-assigned** (2026-07-21): NULL until the first QBO push writes QBO's `DocNumber` back. Konbini no longer generates invoice numbers. The `display_number` property (`invoice_number` or `"Draft — {job_number}"`) is what every UI surface renders — serializers expose it read-only. |
 | `status` | CharField — see machine below | Default `draft`. |
 | `created_date` | DateTimeField | `default=timezone.now`. |
 | `sent_date` | DateTimeField, nullable | Stamped by `Invoice.save()` the first time the invoice transitions `draft → open` (the send-to-customer step; mirrors `Estimate`), if not already set. A row created directly as `open` is not stamped. The serializer's derived `due_date` (`sent_date + 30 days`) and `is_late` read off this. |
@@ -80,7 +80,7 @@ Guaranteed by the application-level get-or-create in `InvoiceWizardService.open_
 
 ### Document numbering
 
-`Invoice.save()` calls `NumberGenerationService.generate_next_number('invoice')` if `invoice_number` is blank. Counter and pattern keys live in `Configuration` (`invoice_number_sequence`, `invoice_counter`). See "Document Numbering" in `CLAUDE.md`.
+**QBO owns invoice numbering** (2026-07-21). `Invoice.save()` no longer auto-generates a number; the `'invoice'` NumberGenerationService pattern is retired (its `Configuration` rows are harmless leftovers, and the settings UI no longer offers the invoice pattern). On the first QBO push, `send_invoice` writes QBO's `DocNumber` into `invoice_number`; a retry send backfills it from QBO if missing. Rationale: future tenants arrive with QBO already numbering their invoices — konbini attaches to that scheme instead of competing. Drafts render `display_number`'s placeholder (`"Draft — {job_number}"`; unambiguous because of single-draft-per-job).
 
 ---
 
@@ -327,7 +327,7 @@ The invoice detail view lives at `#/jobs/:jobId/invoice[/:docId]` →
 `JobInvoicePage.svelte` (`frontend/src/routes/jobs/`), which hosts
 `InvoicePanel.svelte` (`frontend/src/components/invoices/`) inside the
 job workspace shell (`JobShell` — header + nav rail + collapsible
-context band; see `jobs-tasks-and-worksheets.md` §9.6). The bare
+context band; see `jobs-and-tasks.md` §9.6). The bare
 section route restores whichever invoice the user last viewed for this
 job (or the latest); picking a different invoice via the panel's
 subnav (`DocSubnav.svelte`, one pill per invoice with a status badge)
@@ -453,21 +453,31 @@ when `qbo_id` is already set).
 3. The service:
    - **If `invoice.qbo_id` is unset:** resolves a QBO customer ref
      (creates one for the job's business or contact if needed); builds
-     the QBO Invoice via
-     `InvoiceGroupingService.group_for_qbo(invoice)` — line items
-     grouped by `(accounting_category, taxable)`, one QBO line per
-     group, with `Description = "Job {number}: {category}
-     (taxable|non-taxable)"`; saves it; stores `qbo_id`; marks the QBO
-     invoice as Sent. Logs to `QBOSyncLog`.
+     the QBO Invoice **per-line** — one `SalesItemLine` per
+     `InvoiceLineItem` in line order, Description verbatim, ItemRef
+     from the line's catalog entity (lazily minting QBO Items) or the
+     category fallback, per-line TaxCodeRef from
+     `accounting_category.taxable`, `CustomerMemo` carrying the job
+     reference, BillEmail, and online-payment flags — see
+     `docs/designs/quickbooks-integration.md` for the full push
+     mechanics. Saves it; stores `qbo_id` **and adopts QBO's
+     `DocNumber` as `invoice_number`**; marks the QBO invoice as
+     Sent. Logs to `QBOSyncLog`.
    - **If `invoice.qbo_id` is set:** skips the push entirely (this is
      the retry path — the previous version had a bug where retries
-     re-pushed and duplicated the QBO Invoice).
-   - Generates a job-statement PDF
-     (`apps/invoicing/pdf.generate_job_statement_pdf`).
-   - Downloads the QBO-rendered invoice PDF (which carries the Pay
-     Now link, the QBO branding, the calculated tax).
+     re-pushed and duplicated the QBO Invoice). Backfills
+     `invoice_number` from QBO if the row predates the writeback.
+   - Fetches the hosted-invoice **payment link**
+     (`include=invoiceLink`) and substitutes it wherever the
+     `{payment_link}` placeholder appears in the subject/body (the
+     placeholder survives the send dialog literally; substitution
+     happens at send time).
+   - Downloads the QBO-rendered invoice PDF — the only
+     auto-attachment (the job-statement PDF was dropped from the send
+     2026-07-22; `apps/invoicing/pdf.py` and
+     `templates/invoicing/job_statement.html` were deleted 2026-07-23).
    - Calls `OutboundEmailService.send_tracked` with
-     `associate_with={'job': invoice.job}` and both PDFs attached;
+     `associate_with={'job': invoice.job}` and the QBO PDF attached;
      user-uploaded extras append. The send-tracked path persists the
      outbound `EmailRecord` before SMTP runs, so SMTP failures keep
      the row around with `last_send_error` populated.
@@ -494,18 +504,22 @@ when `qbo_id` is already set).
 
 ### Why we own the email pipeline (and QBO is invisible plumbing)
 
-QBO renders the invoice PDF (with Pay Now link and tax). Minibini
-generates the job-statement PDF (the detailed breakdown the customer
-asks about when there's a question). Both go out as attachments on
-*our* outbound email so reply correlation, threading, and the
+QBO renders the invoice PDF (and computes tax; the payment link rides
+in the email body via `{payment_link}`). It goes out as an attachment
+on *our* outbound email so reply correlation, threading, and the
 Email-panel view all work uniformly across Estimate / PO / Invoice.
 
 Configuration keys for the body/subject templates:
 `invoice_email_subject_template`, `invoice_email_body_template`
 (defaults documented in
 `architecture-and-conventions.md` §7.10). The common template
-variable set is available; `{invoice_number}` aliases
-`{document_number}`.
+variable set is available, with three **send-time-only** tokens:
+`{invoice_number}` / `{document_number}` (aliases; both render
+`display_number`) and `{payment_link}` (QBO's hosted-invoice
+pay-online URL). All three show literally in the compose dialog and
+are substituted during the send itself — the QBO-assigned number and
+link don't exist until the push happens, so compose-time substitution
+would bake in the draft placeholder (a bug fixed 2026-07-22).
 
 For OAuth, the `QBOSyncLog` model, payment polling internals, the
 customer-sync flow, and connection lifecycle, see
@@ -878,7 +892,7 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 **Superseded by the 2026-07-08 job-workspace restructure and the
 2026-07-09 overview redesign:** there is no longer an "invoice pillar"
 on the job overview — the overview has no authoring affordances at all
-(display-only summary blocks; see `jobs-tasks-and-worksheets.md` §9).
+(display-only summary blocks; see `jobs-and-tasks.md` §9).
 The Create/View model now lives entirely on the Invoices section
 (`InvoicePanel.svelte`, when the job has no invoices yet):
 
@@ -918,13 +932,13 @@ Per-user reimbursement page sections:
 
 ## Job P&L (unfinished)
 
-The Job P&L view consumes invoices, bills, expenses, and bleps to compute revenue and cost on a job. Invoices and Expenses produce the data; the consumer side is not yet built. See "Unfinished work."
+The Job P&L view consumes invoices, expenses, and bleps to compute revenue and cost on a job (vendor bills live in QBO since 2026-07-23; their cost side would arrive via a future QBO pull). Invoices and Expenses produce the data; the consumer side is not yet built. See "Unfinished work."
 
 ---
 
 ## Unfinished work
 
-- **Job P&L view** — consumes Invoices + Bills + Expenses + Bleps. Was Phase 5 of the QBO integration roadmap. Data is being captured today; the view is not built.
+- **Job P&L view** — consumes Invoices + Expenses + Bleps (plus, eventually, QBO-side vendor-bill actuals). Was Phase 5 of the QBO integration roadmap. Data is being captured today; the view is not built.
 - **`superseded` and `defaulted` statuses.** Both are defined in the status machine's choices but have no transition path that sets them. (Payment polling now drives `partly-paid` / `paid` — see "Payment polling" above — so those two are no longer dead.)
 - **One-click invoice generation.** Auto-create a draft invoice from all uninvoiced atoms when a Job hits `work_complete`, without going through the wizard. Will share the data model with the wizard. Out of scope per the 2026-04-09 design.
 - **Invoice list customer filter — cross-contact rollup.** The `CustomerPicker` → `?business=` filter rolls up all of a business's contacts' invoices via an annotated queryset join; this may produce unexpected results for businesses where multiple contacts have separate billing relationships.

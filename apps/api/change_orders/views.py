@@ -136,7 +136,7 @@ class ChangeOrderViewSet(
         """Pre-populated values for the Send-to-customer form (link, no PDF)."""
         from apps.estimates.services import ChangeOrderEmailService
         co = self.get_object()
-        return Response(ChangeOrderEmailService.get_email_defaults(co))
+        return Response(ChangeOrderEmailService.get_email_defaults(co, user=request.user))
 
     @action(detail=True, methods=['post'], url_path='send')
     def send(self, request, pk=None):

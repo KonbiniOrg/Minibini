@@ -53,7 +53,7 @@ docker compose up                       # Full stack (app, mysql, nginx)
 - Never run `python -c "import django; django.setup(); ..."` followed by ORM writes for the same reason.
 - Never run `python manage.py loaddata` against the dev DB.
 - Never connect to the DB directly via `mysql` / `psql` / a Python DB driver and execute writes.
-- Never run scripts in the repo (`scripts/seed_data.sh`, anything in `apps/core/management/commands/`) that mutate the DB.
+- Never run scripts in the repo (anything in `apps/core/management/commands/`, data generators) that mutate the DB.
 
 If you need to verify model behavior, write a test and run `python manage.py test` (which uses a separate test DB and tears it down). If you need to see the current state of dev data, ask the user to run the query themselves and paste the result.
 
@@ -68,12 +68,12 @@ Minibini/
 ├── apps/
 │   ├── api/        # REST API (DRF viewsets, serializers, permissions, mixins)
 │   ├── core/       # User, Configuration, BaseLineItem, AccountingCategory, HistoryEntry, Email
-│   ├── jobs/       # Job, Task, PlanTask, Blep
-│   ├── estimates/  # Estimate, EstWorksheet, EstimateLineItem, Templates
+│   ├── jobs/       # Job, Task, Blep, RateScheme
+│   ├── estimates/  # Estimate, ChangeOrder, EstimateLineItem, Templates
 │   ├── contacts/   # Contact, Business, PaymentTerms
 │   ├── invoicing/  # Invoice, InvoiceLineItem
 │   ├── inventory/  # InventoryItem (catalog/lots), Material, Earmark
-│   ├── purchasing/ # PurchaseOrder, Bill, line items
+│   ├── purchasing/ # PurchaseOrder + line items (Bill models are retired schema-only stubs — bills live in QBO)
 │   ├── deliverables/ # Deliverable, Shipment, ShipmentItem
 │   ├── search/     # Cross-entity search service
 │   └── schedule/   # ScheduleService — per-worker time-axis layout (model-less)
@@ -81,7 +81,6 @@ Minibini/
 ├── templates/      # PDF templates only (estimate/change-order/PO/job-statement) rendered by the API via WeasyPrint
 ├── fixtures/       # Test data fixtures (JSON)
 ├── tests/          # Test suite
-├── scripts/        # Utility scripts (seed_data.sh)
 ├── docs/designs/   # Topic reference docs (nine consolidated areas — see below)
 ├── docs/plans/     # Working directory for short-lived implementation plans (disposable; deleted once shipped)
 ├── minibini/       # Project configuration (settings, urls)
@@ -89,14 +88,14 @@ Minibini/
 ```
 
 **Key Patterns:**
-- The Svelte SPA + REST API is the only UI. The deprecated Django HTML view layer (`apps/*/views.py` + `templates/*.html`) has been fully removed; the only server-rendered templates left are the four PDF templates (see Template/PDF section below)
-- API views: DRF ModelViewSets with reusable mixins (`StatusTransitionMixin`, `LineItemMixin`, `JobTaskMixin`, `PlanTaskMixin`) — see `docs/designs/architecture-and-conventions.md`
+- The Svelte SPA + REST API is the only UI. The deprecated Django HTML view layer (`apps/*/views.py` + `templates/*.html`) has been fully removed; the only server-rendered templates left are the three PDF templates (see Template/PDF section below)
+- API views: DRF ModelViewSets with reusable mixins (`StatusTransitionMixin`, `LineItemMixin`, `JobTaskMixin`) — see `docs/designs/architecture-and-conventions.md`
 - Service classes in `apps/*/services.py` contain business logic — viewsets are thin wrappers
 - Job status side effects live in `apps/jobs/services.py` (`apps/jobs/signals.py` is empty). Estimate-driven cross-model side effects live in `apps/estimates/signals.py`
 - Abstract `BaseLineItem` shared by all line item types
-- Template system: `WorkTemplate` ↔ `TaskTemplate` via `TemplateTaskAssociation`, plus `TemplateMaterialAssociation` for materials
+- Template system: `WorkTemplate` ↔ `ServiceItem` via `TemplateTaskAssociation`, plus `TemplateMaterialAssociation` for materials
 
-**Workflow:** Job → EstWorksheet (optionally from template) → Estimate → atoms carry over to Job on accept → Tasks worked → Invoice → QBO push
+**Workflow:** Job (tasks optionally generated from a WorkTemplate) → Estimate (wizard composes line items from the job's atoms) → accept crystallizes service hand-lines into Tasks → Tasks worked → Invoice → QBO push
 
 ## Topic reference docs
 
@@ -107,9 +106,9 @@ Minibini/
 | Doc | Covers |
 |---|---|
 | `architecture-and-conventions.md` | Service layer, mixin catalog, permissions plumbing, line-item pattern, view-mode, history capture, sidebar |
-| `jobs-tasks-and-worksheets.md` | Job, Task, Blep, EstWorksheet, PlanTask, Templates, Job Board, lifecycle service, Deliverables, Shipments |
+| `jobs-and-tasks.md` | Job, Task, Blep, Templates, Job Board, lifecycle service, Deliverables, Shipments |
 | `estimates-and-prices.md` | RateScheme + supersession, billable atoms, Estimate + wizard, atom carry-over, AC pass-through |
-| `materials-inventory-and-purchasing.md` | InventoryItem (catalog/lots), Material, PlanMaterial, Earmarks, units, PurchaseOrder, Bill |
+| `materials-inventory-and-purchasing.md` | InventoryItem (catalog/lots), Material, Earmarks, units, PurchaseOrder, the Bill retirement |
 | `contacts-and-businesses.md` | Contact, Business, Tag, PaymentTerms, duplicate-email/name detection, financials rollup, the combined Contacts & Businesses frontend surface |
 | `invoicing-and-expenses.md` | Invoice + wizard, send-to-customer flow, Expense + Reimbursement |
 | `quickbooks-integration.md` | QBO models, OAuth, sync services, polling, developer setup appendix |
@@ -122,14 +121,14 @@ Minibini/
 | App | Models | Authoritative doc |
 |---|---|---|
 | `apps.core` | User, Configuration, AccountingCategory, BaseLineItem (abstract), AbstractWorkContainer (abstract), HistoryEntry, EmailRecord, TempEmail | architecture, users-and-permissions, data-constraints |
-| `apps.jobs` | Job, Task, PlanTask, Blep, RateScheme | jobs-tasks-and-worksheets (Job/Task/Blep/PlanTask) + estimates-and-prices (RateScheme) |
-| `apps.estimates` | Estimate, EstimateLineItem, EstimateLineItemSource, EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation | estimates-and-prices + jobs-tasks-and-worksheets (worksheets, templates) |
+| `apps.jobs` | Job, Task, Blep, RateScheme, Fee | jobs-and-tasks (Job/Task/Blep) + estimates-and-prices (RateScheme) |
+| `apps.estimates` | Estimate, ChangeOrder, EstimateLineItem, EstimateLineItemSource, WorkTemplate, ServiceItem, TemplateTaskAssociation | estimates-and-prices + jobs-and-tasks (templates) |
 | `apps.contacts` | Contact, Business, PaymentTerms, Tag | contacts-and-businesses + data-constraints §1.5, §1.4 |
-| `apps.inventory` | InventoryItem (was PriceListItem; `is_catalog` flag), Material, PlanMaterial, Earmark, TemplateMaterialAssociation | materials-inventory-and-purchasing |
-| `apps.purchasing` | PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem, BillPayment | materials-inventory-and-purchasing |
+| `apps.inventory` | InventoryItem (was PriceListItem; `is_catalog` flag), Material, Earmark, TemplateMaterialAssociation | materials-inventory-and-purchasing |
+| `apps.purchasing` | PurchaseOrder, PurchaseOrderLineItem (Bill/BillLineItem/BillPayment are retired schema-only stubs, 2026-07-23 — bills live in QBO) | materials-inventory-and-purchasing |
 | `apps.invoicing` | Invoice, InvoiceLineItem, InvoiceLineItemSource | invoicing-and-expenses |
 | `apps.expenses` | Expense, Reimbursement | invoicing-and-expenses |
-| `apps.deliverables` | Deliverable, Shipment, ShipmentItem | jobs-tasks-and-worksheets §12 |
+| `apps.deliverables` | Deliverable, Shipment, ShipmentItem | jobs-and-tasks §12 |
 | `apps.qbo` | QBOConnection, QBOSyncLog | quickbooks-integration |
 | `apps.schedule` | _(no models)_ — `ScheduleService` produces the `/schedule` view's per-worker bars from Tasks + Bleps + `Job.accent_color` + Configuration | `docs/designs/schedule.md` |
 
@@ -167,9 +166,9 @@ Django serves only two URL prefixes now: `/admin/` (Django admin) and `/api/` (t
 ### REST API (`/api/`)
 - `/api/auth/` — login, logout, me, me/password, refresh stub, lightweight users dropdown
 - `/api/jobs/`, `/api/contacts/`, `/api/businesses/`, `/api/payment-terms/`
-- `/api/estimates/`, `/api/est-worksheets/`, `/api/plan-tasks/`, `/api/rate-schemes/`, `/api/tasks/`, `/api/bleps/`
-- `/api/invoices/`, `/api/purchase-orders/`, `/api/bills/`
-- `/api/inventory/`, `/api/materials/`, `/api/earmarks/` (read-only), `/api/work-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
+- `/api/estimates/`, `/api/change-orders/`, `/api/rate-schemes/`, `/api/tasks/`, `/api/bleps/`
+- `/api/invoices/`, `/api/purchase-orders/`
+- `/api/inventory/`, `/api/materials/`, `/api/earmarks/` (read-only), `/api/work-templates/`, `/api/service-items/`, `/api/accounting-categories/`
 - `/api/expenses/`, `/api/reimbursements/`
 - `/api/jobs/{id}/deliverables/`, `/api/shipments/` (Shipments are flat; Deliverables are job-nested)
 - `/api/users/` (admin), `/api/qbo/` (OAuth + accounts + payment-accounts)
@@ -178,7 +177,7 @@ Django serves only two URL prefixes now: `/admin/` (Django admin) and `/api/` (t
 Per-viewset action endpoints (status transitions, line items, wizard, etc.) live in the topic docs.
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
-Hash-based routing (`#/path`). The SPA is the only UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, catalog (inventory / service items / earmarks tabs), expenses, reimbursements, users, settings, profile, email, search. (The legacy Django HTML views have been removed.)
+Hash-based routing (`#/path`). The SPA is the only UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, change orders, invoices (incl. wizard), purchase orders, catalog (inventory / service items / earmarks tabs), expenses, reimbursements, users, settings, profile, email, search. (The legacy Django HTML views have been removed.)
 
 ## Frontend (Svelte SPA)
 
@@ -206,7 +205,7 @@ DRF-based API serving the Svelte frontend. Session-based authentication (no toke
 
 **Key patterns:**
 - ViewSets use service classes for all business logic (`perform_create`/`perform_update` delegate to services)
-- Reusable mixins: `StatusTransitionMixin`, `LineItemMixin`, `JobTaskMixin`, `PlanTaskMixin` — full catalog in `docs/designs/architecture-and-conventions.md`
+- Reusable mixins: `StatusTransitionMixin`, `LineItemMixin`, `JobTaskMixin` — full catalog in `docs/designs/architecture-and-conventions.md`
 - Permission classes in `apps/api/permissions.py` — factory-generated from the four permission atoms
 - `StandardPagination`: 25 items/page, max 100, via `?page_size=N`
 - Delete confirmation pattern (two-phase): first DELETE returns impact counts, second with `?confirm=true` executes
@@ -254,9 +253,8 @@ The only server-rendered Django templates left live in `templates/` and are rend
 | `templates/estimates/estimate_pdf.html` | `apps/estimates/pdf.py` | `POST /api/estimates/{id}/send` |
 | `templates/estimates/change_order_pdf.html` | `apps/estimates/pdf.py` | `POST /api/change-orders/{id}/send` |
 | `templates/purchasing/purchase_order_pdf.html` | `apps/purchasing/pdf.py` | `POST /api/purchase-orders/{id}/send` |
-| `templates/invoicing/job_statement.html` | `apps/invoicing/pdf.py` | `POST /api/invoices/{id}/send` |
 
-These are self-contained (no `{% extends %}`/`{% include %}`). Email subject/body templates are NOT files — they live in `Configuration` rows and render via `apps/core/email_templates.py`.
+These are self-contained (no `{% extends %}`/`{% include %}`). The invoice send attaches QBO's rendered PDF instead of a local one (the old `job_statement.html` was deleted 2026-07-23). Email subject/body templates are NOT files — they live in `Configuration` rows and render via `apps/core/email_templates.py`.
 
 ## Code Conventions
 
@@ -277,7 +275,7 @@ for contact in Contact.objects.filter(...):
     contact.delete()
 ```
 
-**Line item deletion:** NEVER call `.delete()` directly on a line item (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`, `BillLineItem`). Always go through `LineItemService.delete_line_item_with_renumber(line_item)` — `BaseLineItem.delete()` does NOT renumber survivors, so a direct call leaves gaps in `line_number` (e.g. lines 2, 3, 5, 7). The only legitimate exception is the implementation of `delete_line_item_with_renumber` itself. Cascade deletes from the parent container (Estimate/Invoice/PO/Bill) are fine because Django uses bulk-delete and skips per-instance `.delete()` entirely. If you need to delete a line item from a new code path, route it through the service.
+**Line item deletion:** NEVER call `.delete()` directly on a line item (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`). Always go through `LineItemService.delete_line_item_with_renumber(line_item)` — `BaseLineItem.delete()` does NOT renumber survivors, so a direct call leaves gaps in `line_number` (e.g. lines 2, 3, 5, 7). The only legitimate exception is the implementation of `delete_line_item_with_renumber` itself. Cascade deletes from the parent container (Estimate/Invoice/PO) are fine because Django uses bulk-delete and skips per-instance `.delete()` entirely. If you need to delete a line item from a new code path, route it through the service.
 
 **QuerySet.update() / bulk writes:** NEVER use `QuerySet.update()`, `bulk_update`, or `bulk_create` for fields that `Model.save()` normalizes or that trigger side effects — these bypass `save()` entirely (same reasoning as the `QuerySet.delete()` rule above). `Shift.save()` and `Blep.save()` floor `start_time`/`end_time` to the whole minute, so a `Blep.objects.filter(...).update(end_time=now)` would persist an unfloored timestamp and break shift↔blep minute alignment. Iterate and call `.save()` per instance instead:
 ```python
@@ -315,12 +313,12 @@ Four custom permission atoms on the `User` model:
 
 | Atom | Covers |
 |---|---|
-| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, plan-tasks, contacts, businesses; cancel/reorder tasks and mark all a job's work complete; email-to-job actions (link, unlink, create-job-from-email). (Add/edit/delete and complete *individual* tasks are open to any authenticated user — see below.) A Job's `project_manager` gets this atom's powers **scoped to that one job** (its tasks, worksheets, estimates, change orders, deliverables, line items) via `CanManageJobOrPM` — but **not** contacts/businesses or job creation. |
-| `can_manage_financials` | Full CRUD on invoices, POs, bills, price list items, expenses, reimbursements |
+| `can_manage_jobs` | Full CRUD on jobs, estimates, contacts, businesses; cancel/reorder tasks and mark all a job's work complete; email-to-job actions (link, unlink, create-job-from-email). (Add/edit/delete and complete *individual* tasks are open to any authenticated user — see below.) A Job's `project_manager` gets this atom's powers **scoped to that one job** (its tasks, estimates, change orders, deliverables, line items) via `CanManageJobOrPM` — but **not** contacts/businesses or job creation. |
+| `can_manage_financials` | Full CRUD on invoices, POs, price list items, expenses, reimbursements (bill endpoints retired 2026-07-23 — bills live in QBO; the permission label string still says "bills", kept to avoid a migration) |
 | `can_manage_time` | Edit/delete anyone's bleps (own bleps are `IsAuthenticated` within the 24h rolling window) |
 | `can_manage_config` | Settings, templates, accounting categories, user admin, QBO connection |
 
-**`IsAuthenticated` (no atom):** Read access to jobs, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items, invoices, purchase orders, bills, emails. Write access to notes on jobs/contacts/businesses, adding/editing/deleting (delete blocked when the task has Bleps or is in_progress/complete) and completing tasks on existing jobs, and submitting/tracking own time and expenses.
+**`IsAuthenticated` (no atom):** Read access to jobs, tasks, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items, invoices, purchase orders, emails. Write access to notes on jobs/contacts/businesses, adding/editing/deleting (delete blocked when the task has Bleps or is in_progress/complete) and completing tasks on existing jobs, and submitting/tracking own time and expenses.
 
 **`is_superuser` bypasses every atom check.**
 
@@ -329,7 +327,7 @@ Django Groups are not used; permissions are assigned per-atom on `user_permissio
 ## Business Workflows
 
 ### Job Creation Flow
-Job → EstWorksheet (optionally from template) → Estimate → Tasks on Job → Time tracking (Bleps) → Job advances to `work_complete` when all tasks complete → Invoice
+Job (tasks optionally generated from a WorkTemplate) → Estimate (wizard over the job's atoms) → accept crystallizes service hand-lines into Tasks → Time tracking (Bleps) → Job advances to `work_complete` when all tasks complete → Invoice
 
 ### Email-to-Job Workflow
 1. Fetch emails from IMAP → EmailRecord + TempEmail. `TempEmail.text_body` / `html_body` cache the message body and `TempEmail.attachments_metadata` caches per-attachment filename/content_type/size so list views, `sender_info`, and the email-detail page render without re-hitting IMAP. `EmailService.get_email_content` falls back to IMAP only when `temp_data` is missing or the cache is incomplete (no body cached, or `has_attachments=True` with empty `attachments_metadata` — e.g. pre-backfill rows). Attachment payloads themselves are never cached.
@@ -340,7 +338,7 @@ Job → EstWorksheet (optionally from template) → Estimate → Tasks on Job �
 Key files: `apps/core/services.py` (EmailService), `apps/core/email_utils.py`, and the API viewsets/actions under `apps/api/` (emails, contacts, businesses, jobs). The email-to-job flow is now fully SPA + API driven — the SPA's `EmailCreateJobPage.svelte` calls `POST /api/emails/{id}/create-job/` plus `/api/contacts/` and `/api/businesses/`.
 
 ### Revision Workflow
-Estimates/worksheets support versioning via parent-child relationships. Old versions marked superseded.
+Estimates support versioning via parent-child relationships (`POST /api/estimates/{id}/revise`). Old versions marked superseded.
 
 ## Testing
 
@@ -362,7 +360,6 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 
 ## Development Features
 
-- **Seed script** — `scripts/seed_data.sh` seeds realistic data through API endpoints (requires dev server on :8000)
 - **Management commands** — `populate_data.py` (base), `populate_contact_data.py`, `populate_job_data.py`
 
 ### QuickBooks Online Integration
@@ -395,7 +392,7 @@ See `docs/designs/quickbooks-integration.md` for the full reference, including O
 
 - Models: `apps/*/models.py` | Services: `apps/*/services.py` | Settings: `minibini/settings.py`
 - API: `apps/api/*/views.py` (viewsets), `apps/api/*/serializers.py`, `apps/api/mixins.py`, `apps/api/permissions.py` | URLs: `apps/api/urls.py`, `apps/qbo/urls.py`
-- PDF generation: `apps/{estimates,purchasing,invoicing}/pdf.py` + the four `templates/**/*_pdf.html` / `job_statement.html`
+- PDF generation: `apps/{estimates,purchasing}/pdf.py` + the three `templates/**/*_pdf.html` (invoices attach QBO's rendered PDF)
 - QBO OAuth (browser redirects, not the deleted HTML layer): `apps/qbo/views.py`
 - Frontend: `frontend/src/` — `App.svelte`, `routes/`, `components/`, `stores/`, `lib/api.js`
 - Topic reference docs: `docs/designs/` (nine files; see "Topic reference docs" above)

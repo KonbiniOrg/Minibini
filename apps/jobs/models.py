@@ -210,6 +210,11 @@ class TaskBase(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default='')
     sort_order = models.PositiveIntegerField(blank=True, null=True)
+    service_item = models.ForeignKey(
+        'estimates.ServiceItem', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='+',
+        help_text='Catalog identity: the ServiceItem this task was generated from.',
+    )
     est_worker_time = models.DurationField(
         null=True, blank=True,
         help_text="Estimated worker time for scheduling"
@@ -232,13 +237,17 @@ class TaskBase(models.Model):
     def copy_fields(self):
         """Canonical TaskBase field set for cloning to another container.
 
-        Excludes identity, status, provenance, hierarchy, and assignee — callers
-        add those. Returns the rate scheme as ``rate_scheme_id`` (not the object)
-        so the dict splats straight into ``TaskService.create_direct`` (which
-        takes ``rate_scheme_id``); Django's ``.objects.create()`` accepts the
+        Excludes identity, status, document provenance, hierarchy, and
+        assignee — callers add those. ``service_item_id`` IS included: it is
+        catalog identity ("this task is an instance of this sellable
+        service"), not document provenance, and must survive cloning so the
+        QBO invoice push can resolve the clone's Item. Returns the rate
+        scheme as ``rate_scheme_id`` (not the object) so the dict splats
+        straight into ``TaskService.create_direct`` (which takes
+        ``rate_scheme_id``); Django's ``.objects.create()`` accepts the
         ``_id`` form too, so the raw-create clone paths work as well.
-        ``active_modifiers`` is deep-copied here to keep raw-create callers safe
-        from shared-reference bugs.
+        ``active_modifiers`` is deep-copied here to keep raw-create callers
+        safe from shared-reference bugs.
         """
         return dict(
             name=self.name,
@@ -247,6 +256,7 @@ class TaskBase(models.Model):
             est_worker_time=self.est_worker_time,
             est_qty=self.est_qty,
             rate_scheme_id=self.rate_scheme_id,
+            service_item_id=self.service_item_id,
             active_modifiers=copy_active_modifiers(self.active_modifiers),
         )
 

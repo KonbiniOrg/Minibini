@@ -43,7 +43,6 @@ Per-model field checks:
                    W  non-draft: missing issued_date
                    W  received_in_full: missing received_date
                    W  cancelled: missing cancel_date
-  Bill             E  valid status value
                    E  contact must have a business
                    E  cannot link to draft PO
                    E  non-draft must have at least one line item
@@ -75,7 +74,6 @@ Cross-model relationship checks:
                       have moved job to submitted+)
                    E  completed/cancelled job must not have draft/open estimates
   PO contact/biz   E  contact's business must match PO's business
-  Bill/PO biz      E  bill's business must match linked PO's business
   Earmark/Job      W  earmark on completed/cancelled/rejected job
   Invoice/Job      W  invoice on draft/submitted/rejected job
                    E  cancelled job's invoices must also be cancelled
@@ -86,7 +84,7 @@ from django.db.models import Sum
 
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate
-from apps.purchasing.models import PurchaseOrder, Bill
+from apps.purchasing.models import PurchaseOrder
 from apps.invoicing.models import Invoice
 
 
@@ -118,7 +116,6 @@ class Command(BaseCommand):
         self.check_materials()
         self.check_line_items()
         self.check_purchase_orders()
-        self.check_bills()
         self.check_invoices()
         self.check_deliverables()
         self.check_shipments()
@@ -130,7 +127,6 @@ class Command(BaseCommand):
         self.check_estimate_versioning()
         self.check_job_estimate_status_alignment()
         self.check_po_contact_business_match()
-        self.check_bill_po_business_match()
         self.check_earmark_job_status()
         self.check_invoice_job_status()
         self.check_job_work_complete_gate()
@@ -369,7 +365,7 @@ class Command(BaseCommand):
     def check_line_items(self):
         from apps.estimates.models import EstimateLineItem
         from apps.invoicing.models import InvoiceLineItem
-        from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
+        from apps.purchasing.models import PurchaseOrderLineItem
 
         # (name, model, has_task_fk) — EstimateLineItem.task FK was dropped in
         # favour of EstimateLineItemSource; InvoiceLineItem.task was dropped for
@@ -378,7 +374,6 @@ class Command(BaseCommand):
             ('EstimateLineItem', EstimateLineItem, False),
             ('InvoiceLineItem', InvoiceLineItem, False),
             ('PurchaseOrderLineItem', PurchaseOrderLineItem, True),
-            ('BillLineItem', BillLineItem, True),
         ]
 
         for name, model, has_task_fk in line_item_models:
@@ -422,33 +417,6 @@ class Command(BaseCommand):
             # Cancelled POs should have cancel_date
             if po.status == PurchaseOrder.STATUS_CANCELLED and not po.cancel_date:
                 self.warnings.append(f'PO {po.po_number}: cancelled but no cancel_date')
-
-    # ── Bills ─────────────────────────────────────────────────
-
-    def check_bills(self):
-        from apps.purchasing.models import Bill, BillLineItem
-        valid_statuses = {s[0] for s in Bill.BILL_STATUS_CHOICES}
-
-        for bill in Bill.objects.select_related('business', 'contact', 'purchase_order').all():
-            if bill.status not in valid_statuses:
-                self.errors.append(f'Bill {(bill.vendor_invoice_number or bill.pk)}: invalid status "{bill.status}"')
-
-            # Contact must have a business
-            if bill.contact and not bill.contact.business_id:
-                self.errors.append(f'Bill {(bill.vendor_invoice_number or bill.pk)}: contact has no business')
-
-            # Bill linked to draft PO
-            if bill.purchase_order and bill.purchase_order.status == PurchaseOrder.STATUS_DRAFT:
-                self.errors.append(
-                    f'Bill {(bill.vendor_invoice_number or bill.pk)}: linked to draft PO {bill.purchase_order.po_number}'
-                )
-
-            # Non-draft bills need at least one line item
-            if bill.status != Bill.STATUS_DRAFT:
-                if not BillLineItem.objects.filter(bill=bill).exists():
-                    self.errors.append(
-                        f'Bill {(bill.vendor_invoice_number or bill.pk)}: status is {bill.status} but has no line items'
-                    )
 
     # ── Invoices ──────────────────────────────────────────────
 
@@ -707,20 +675,6 @@ class Command(BaseCommand):
                 self.errors.append(
                     f'PO {po.po_number}: contact belongs to business '
                     f'"{po.contact.business}" but PO is for "{po.business}"'
-                )
-
-    def check_bill_po_business_match(self):
-        """If a bill is linked to a PO, both should reference the same business."""
-        from apps.purchasing.models import Bill
-
-        for bill in Bill.objects.select_related('purchase_order__business', 'business').filter(
-            purchase_order__isnull=False
-        ):
-            if bill.business_id != bill.purchase_order.business_id:
-                self.errors.append(
-                    f'Bill {(bill.vendor_invoice_number or bill.pk)}: business is "{bill.business}" '
-                    f'but linked PO {bill.purchase_order.po_number} '
-                    f'is for "{bill.purchase_order.business}"'
                 )
 
     def check_earmark_job_status(self):

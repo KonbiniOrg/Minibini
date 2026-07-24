@@ -8,8 +8,8 @@ from apps.jobs.models import Job
 
 class JobInProgressStateTest(TestCase):
     def setUp(self):
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
         )

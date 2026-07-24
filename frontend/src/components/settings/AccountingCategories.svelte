@@ -1,6 +1,10 @@
 <script>
+  import CategoriesImportPanel from '../qboimport/CategoriesImportPanel.svelte';
+  import QboPullButton from '../qboimport/QboPullButton.svelte';
   import { onMount } from 'svelte';
   import { api } from '../../lib/api.js';
+
+  let pullEpoch = $state(0);
 
   let categories = $state([]);
   let qboAccounts = $state(null);
@@ -115,6 +119,11 @@
   });
 </script>
 
+<QboPullButton area="categories" onPulled={() => pullEpoch++} />
+{#key pullEpoch}
+  <CategoriesImportPanel onCommitted={loadCategories} />
+{/key}
+
 {#if loadingCategories}
   <p>Loading accounting categories...</p>
 {:else if categories.length === 0 && !adding}
@@ -131,7 +140,7 @@
           <th>Taxable</th>
           <th>Active</th>
           {#if qboAccounts || loadingQBO}
-            <th>QBO Item (Income)</th>
+            <th>Fallback QBO Item</th>
             <th>QBO Expense Account</th>
           {/if}
           <th>Actions</th>

@@ -18,8 +18,8 @@ class OrderFromMaterialTests(TestCase):
     def setUp(self):
         for key, value in (('po_number_sequence', 'PO-{year}-{counter:04d}'),
                            ('default_material_markup_percent', '25')):
-            Configuration.objects.create(key=key, value=value)
-        AppState.objects.create(key='po_counter', value='0')
+            Configuration.objects.update_or_create(key=key, defaults={'value': value})
+        AppState.objects.update_or_create(key='po_counter', defaults={'value': '0'})
         self.cat = AccountingCategory.objects.create(
             name='Materials', is_active=True, code='MAT')
         contact = Contact.objects.create(
