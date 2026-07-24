@@ -68,13 +68,13 @@
 </script>
 
 {#snippet table(rows, toggles, data)}
-  {#if rows.some((r) => r.kind === 'service') && !(data?.scheme_options || []).length}
+  {#if rows.some((r) => r.kind === 'service' && r.state === 'new') && !(data?.scheme_options || []).length}
     <p class="dep-note"><strong>No rate schemes exist yet.</strong>
       Service items bind to a rate scheme, so those rows can't apply until
       at least one scheme is saved — commit the rate-scheme suggestions in
       Settings → Pricing first, then pull here again (or reload).</p>
   {/if}
-  {#if rows.some((r) => r.kind === 'inventory') && !(data?.category_options || []).length}
+  {#if rows.some((r) => r.kind === 'inventory' && r.state === 'new') && !(data?.category_options || []).length}
     <p class="dep-note"><strong>No accounting categories exist yet.</strong>
       Inventory items need one — commit the category suggestions on the
       Settings → Accounting tab first, then pull here again (or reload).</p>
@@ -107,10 +107,13 @@
           </td>
           <td>${row.kind === 'service' ? row.rate : row.selling_price}</td>
           <td>
-            {#if row.kind === 'service'}
+            {#if row.state !== 'new'}
+              <!-- Already imported (or a QBO-side update): bindings live on
+                   the konbini record now; nothing to pick here. -->
+              —
+            {:else if row.kind === 'service'}
               <select value={edit(row).rate_scheme ?? ''}
-                      class:missing={row.state === 'new'
-                                     && toggles.isChecked(row)
+                      class:missing={toggles.isChecked(row)
                                      && !edit(row).rate_scheme}
                       onchange={(e) => set(row, 'rate_scheme', Number(e.target.value) || null)}>
                 <option value="">— required —</option>
@@ -120,8 +123,7 @@
               </select>
             {:else}
               <select value={edit(row).accounting_category ?? ''}
-                      class:missing={row.state === 'new'
-                                     && toggles.isChecked(row)
+                      class:missing={toggles.isChecked(row)
                                      && !edit(row).accounting_category}
                       onchange={(e) => set(row, 'accounting_category', Number(e.target.value) || null)}>
                 <option value="">— required —</option>

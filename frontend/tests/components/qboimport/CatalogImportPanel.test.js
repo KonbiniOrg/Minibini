@@ -50,6 +50,20 @@ describe('CatalogImportPanel required-binding indication', () => {
     expect(container.querySelectorAll('select.missing').length).toBe(2);
   });
 
+  it('renders no binding selects on imported or changed rows', async () => {
+    const { container, findByText } = renderPanel({
+      rows: [
+        { ...SERVICE, state: 'changed' },
+        { ...INVENTORY, state: 'imported' },
+      ],
+      category_options: [{ pk: 7, name: 'Material' }],
+      scheme_options: [{ pk: 3, name: 'CNC' }],
+    });
+    await findByText('CNC Cutting');
+    const cells = container.querySelectorAll('tbody select');
+    expect(cells.length).toBe(0);
+  });
+
   it('does not mark resolved rows or changed services', async () => {
     const { container, findByText } = renderPanel({
       rows: [

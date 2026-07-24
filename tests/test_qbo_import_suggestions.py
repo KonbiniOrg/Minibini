@@ -161,15 +161,68 @@ class CatalogSuggestionTest(TestCase):
         row = next(r for r in out if r['qbo_id'] == '12')
         self.assertEqual(row['code_suggestion'], 'Baltic Birch-2')
 
-    def test_changed_state_on_price_drift(self):
+    def test_changed_means_qbo_drifted_from_fingerprint_not_konbini(self):
+        # Imported with QBO price 85 on record; QBO now says 90 → changed.
         InventoryItem.objects.create(
             code='PLY', qbo_id='12', selling_price=Decimal('80.00'),
             description='4x8', accounting_category=self.cat)
+        from apps.core.models import Configuration
+        import json
+        Configuration.objects.update_or_create(
+            key='qbo_import_catalog_fingerprints',
+            defaults={'value': json.dumps({'12': {
+                'name': 'Baltic Birch', 'description': '4x8',
+                'unit_price': '85.0', 'purchase_cost': '52.5'}})})
         out = QBOSuggestionService.suggestions('catalog')['rows']
+        row = next(r for r in out if r['qbo_id'] == '12')
+        self.assertEqual(row['state'], 'imported')   # QBO matches fingerprint
+        snap = dict(SNAPSHOT)
+        snap['items'] = [dict(i, unit_price='90.0') if i['qbo_id'] == '12'
+                         else i for i in SNAPSHOT['items']]
+        with patch.object(QBOSnapshotService, 'load', return_value=snap):
+            out = QBOSuggestionService.suggestions('catalog')['rows']
         row = next(r for r in out if r['qbo_id'] == '12')
         self.assertEqual(row['state'], 'changed')
 
-    def test_service_changed_when_scheme_rate_drifts(self):
+    def test_divergent_scheme_rate_is_not_changed(self):
+        # The user deliberately bound the item to a scheme with a different
+        # rate at import; konbini divergence is NOT QBO drift.
+        scheme = RateScheme.objects.create(
+            name='Shop rate', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('80.00'), unit_label='ea',
+            accounting_category=self.cat)
+        from apps.qbo.import_services import QBOImportCommitService
+        QBOImportCommitService.commit_catalog([
+            {'kind': 'service', 'action': 'create', 'qbo_id': '11',
+             'name': 'CNC Cutting', 'description': '',
+             'rate_scheme': scheme.pk}])
+        out = QBOSuggestionService.suggestions('catalog')['rows']
+        row = next(r for r in out if r['qbo_id'] == '11')
+        self.assertEqual(row['state'], 'imported')
+
+    def test_empty_qbo_description_does_not_flag_changed(self):
+        # Commit stores the description fallback (name); the diff must not
+        # read that as drift against QBO's empty description.
+        snap = dict(SNAPSHOT)
+        snap['items'] = [dict(i, description='') if i['qbo_id'] == '12'
+                         else i for i in SNAPSHOT['items']]
+        from apps.qbo.import_services import QBOImportCommitService
+        with patch.object(QBOSnapshotService, 'load', return_value=snap):
+            QBOImportCommitService.commit_catalog([
+                {'kind': 'inventory', 'action': 'create', 'qbo_id': '12',
+                 'code': 'Baltic Birch', 'description': 'Baltic Birch',
+                 'selling_price': '85.0', 'purchase_price': '52.5',
+                 'units': 'none', 'accounting_category': self.cat.pk}])
+            out = QBOSuggestionService.suggestions('catalog')['rows']
+        row = next(r for r in out if r['qbo_id'] == '12')
+        self.assertEqual(row['state'], 'imported')
+
+    def test_legacy_import_without_fingerprint_reads_imported(self):
+        # Pre-fingerprint imports (no stored baseline) must not churn as
+        # 'changed' against live konbini values.
+        InventoryItem.objects.create(
+            code='PLY', qbo_id='12', selling_price=Decimal('80.00'),
+            description='old', accounting_category=self.cat)
         scheme = RateScheme.objects.create(
             name='CNC', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('80.00'), unit_label='ea',
@@ -177,8 +230,7 @@ class CatalogSuggestionTest(TestCase):
         ServiceItem.objects.create(
             template_name='CNC Cutting', rate_scheme=scheme, qbo_id='11')
         out = QBOSuggestionService.suggestions('catalog')['rows']
-        row = next(r for r in out if r['qbo_id'] == '11')
-        self.assertEqual(row['state'], 'changed')
+        self.assertTrue(all(r['state'] == 'imported' for r in out))
 
 
 class ContactsSuggestionTest(TestCase):

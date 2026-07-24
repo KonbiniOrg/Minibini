@@ -53,6 +53,29 @@ class CommitCatalogTest(TestCase):
         self.assertEqual(item.selling_price, Decimal('85.0'))
         self.assertEqual(item.description, 'new desc')
 
+    def test_update_preserves_deliberate_rate_divergence(self):
+        # QBO said $0 at import; user bound the item to a $95 scheme. A
+        # later QBO-side update (e.g. rename) must NOT clobber the scheme
+        # back to QBO's unchanged $0.
+        import json
+
+        from apps.core.models import Configuration
+        svc = ServiceItem.objects.create(
+            template_name='CNC Cutting', rate_scheme=self.scheme, qbo_id='11')
+        Configuration.objects.update_or_create(
+            key='qbo_import_catalog_fingerprints',
+            defaults={'value': json.dumps({'11': {
+                'name': 'CNC Cutting', 'description': '',
+                'unit_price': '0', 'purchase_cost': '0'}})})
+        QBOImportCommitService.commit_catalog([
+            {'kind': 'service', 'action': 'update', 'qbo_id': '11',
+             'name': 'CNC Routing', 'description': '', 'rate': '0'}])
+        svc.refresh_from_db()
+        self.scheme.refresh_from_db()
+        self.assertIsNone(self.scheme.replaced_by_id)   # untouched
+        self.assertEqual(svc.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(svc.template_name, 'CNC Routing')
+
     def test_service_price_update_supersedes_scheme(self):
         svc = ServiceItem.objects.create(
             template_name='CNC Cutting', rate_scheme=self.scheme, qbo_id='11')

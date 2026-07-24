@@ -255,6 +255,25 @@ def _category_by_income_account(snapshot):
     return mapping
 
 
+def _load_catalog_fingerprints():
+    """{qbo_id: snapshot item fields at import time}. The 'changed' state
+    means QBO drifted since import — konbini values legitimately diverge
+    (own codes, own scheme rates), so live data is the wrong baseline."""
+    try:
+        return json.loads(Configuration.objects.get(
+            key='qbo_import_catalog_fingerprints').value)
+    except Configuration.DoesNotExist:
+        return {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def _fingerprint(item):
+    return {'name': item['name'], 'description': item['description'],
+            'unit_price': item['unit_price'],
+            'purchase_cost': item['purchase_cost']}
+
+
 def _load_scheme_map():
     """{qbo_item_id: RateScheme pk} persisted at scheme commit — the durable
     record of which QBO service items have already been imported as schemes."""
@@ -416,17 +435,31 @@ class QBOSuggestionService:
         taken_codes = set(
             InventoryItem.objects.values_list('code', flat=True))
 
+        fingerprints = _load_catalog_fingerprints()
+
+        def item_state(existing, item):
+            """new = never imported; changed = QBO drifted since import
+            (vs the stored fingerprint — never vs live konbini values);
+            imported = on record and QBO unchanged. Legacy imports without
+            a fingerprint read as imported: no baseline, no drift claim."""
+            if existing is None:
+                return 'new'
+            fingerprint = fingerprints.get(item['qbo_id'])
+            if fingerprint is None:
+                return 'imported'
+            drifted = any(
+                (dec(fingerprint.get(f)) != dec(item[f])
+                 if f in ('unit_price', 'purchase_cost')
+                 else (fingerprint.get(f) or '') != (item[f] or ''))
+                for f in ('name', 'description', 'unit_price',
+                          'purchase_cost'))
+            return 'changed' if drifted else 'imported'
+
         rows = []
         for item in snapshot['items']:
             if item['type'] == 'Service':
                 existing = svc_by_qbo.get(item['qbo_id'])
-                if existing is None:
-                    state = 'new'
-                elif (dec(existing.rate_scheme.rate) != dec(item['unit_price'])
-                        or existing.template_name != item['name']):
-                    state = 'changed'
-                else:
-                    state = 'imported'
+                state = item_state(existing, item)
                 rows.append({
                     'kind': 'service',
                     'qbo_id': item['qbo_id'],
@@ -441,20 +474,15 @@ class QBOSuggestionService:
                 })
             else:  # NonInventory + Inventory → konbini inventory items
                 existing = inv_by_qbo.get(item['qbo_id'])
+                state = item_state(existing, item)
                 if existing is None:
-                    state = 'new'
                     code = item['name']
                     n = 2
                     while code in taken_codes:
                         code = f"{item['name']}-{n}"
                         n += 1
                     taken_codes.add(code)
-                elif (dec(existing.selling_price) != dec(item['unit_price'])
-                        or (existing.description or '') != item['description']):
-                    state = 'changed'
-                    code = existing.code
                 else:
-                    state = 'imported'
                     code = existing.code
                 rows.append({
                     'kind': 'inventory',
@@ -764,7 +792,15 @@ def _catalog_commit_rows(rows):
                        .select_related('rate_scheme')
                        .get(qbo_id=row['qbo_id']))
                 new_rate = Decimal(str(row.get('rate') or '0'))
+                # Only push a rate when QBO's own price moved since import
+                # (vs the fingerprint) — a deliberately divergent konbini
+                # rate is not drift and must survive QBO-side updates.
+                fingerprint = _load_catalog_fingerprints().get(row['qbo_id'])
+                qbo_moved = (fingerprint is None
+                             or Decimal(str(fingerprint.get('unit_price')
+                                            or '0')) != new_rate)
                 if (row.get('rate') is not None
+                        and qbo_moved
                         and svc.rate_scheme.rate != new_rate):
                     # Pricing integrity: price changes supersede, never a
                     # bare rate edit. supersede() does NOT repoint catalog
@@ -785,6 +821,20 @@ def _catalog_commit_rows(rows):
 def _commit_catalog(rows):
     with transaction.atomic():
         created, updated = _catalog_commit_rows(rows)
+        # Record what QBO said at import time: the 'changed' diff compares
+        # future snapshots against this baseline, never against konbini's
+        # own (legitimately divergent) values.
+        snapshot = QBOSnapshotService.load()
+        if snapshot is not None:
+            by_qbo = {i['qbo_id']: i for i in snapshot['items']}
+            fingerprints = _load_catalog_fingerprints()
+            for row in rows:
+                item = by_qbo.get(row['qbo_id'])
+                if item is not None:
+                    fingerprints[row['qbo_id']] = _fingerprint(item)
+            Configuration.objects.update_or_create(
+                key='qbo_import_catalog_fingerprints',
+                defaults={'value': json.dumps(fingerprints)})
     QBOImportCommitService._auto_dismiss('catalog')
     return {'created': created, 'updated': updated}
 
