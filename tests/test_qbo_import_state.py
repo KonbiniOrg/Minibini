@@ -51,9 +51,9 @@ def store_snapshot():
 class ImportStateTest(TestCase):
     def test_dismiss_roundtrip(self):
         self.assertEqual(QBOImportState.dismissed(), {})
-        QBOImportState.dismiss('catalog')
-        self.assertEqual(QBOImportState.dismissed(), {'catalog': True})
-        QBOImportState.undismiss('catalog')
+        QBOImportState.dismiss('inventory')
+        self.assertEqual(QBOImportState.dismissed(), {'inventory': True})
+        QBOImportState.undismiss('inventory')
         self.assertEqual(QBOImportState.dismissed(), {})
 
     def test_unknown_area_rejected(self):

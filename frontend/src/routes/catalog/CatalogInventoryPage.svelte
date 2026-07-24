@@ -6,7 +6,7 @@
   import { stockShortfall } from '../../lib/stockShortfall.js';
   import Modal from '../../components/Modal.svelte';
   import CatalogTabs from '../../components/CatalogTabs.svelte';
-  import CatalogImportPanel from '../../components/qboimport/CatalogImportPanel.svelte';
+  import InventoryImportPanel from '../../components/qboimport/InventoryImportPanel.svelte';
   import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
 
   // Write access: either the money role or the admin role.
@@ -136,9 +136,9 @@
 <CatalogTabs />
 
 {#if canManage}
-  <QboPullButton area="catalog" onPulled={() => pullEpoch++} />
+  <QboPullButton area="inventory" onPulled={() => pullEpoch++} />
   {#key pullEpoch}
-    <CatalogImportPanel onCommitted={load} />
+    <InventoryImportPanel onCommitted={load} />
   {/key}
 {/if}
 

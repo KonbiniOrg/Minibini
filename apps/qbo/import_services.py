@@ -146,7 +146,7 @@ class QBOImportState:
     own pull clears its flag. Spec Part 4."""
 
     DISMISS_KEY = 'qbo_import_dismissed'
-    AREAS = ('categories', 'schemes', 'catalog', 'contacts')
+    AREAS = ('categories', 'schemes', 'inventory', 'services', 'contacts')
 
     @staticmethod
     def dismissed():
@@ -304,16 +304,16 @@ class QBOSuggestionService:
                'rows': rows}
         if area == 'categories':
             out['expense_accounts'] = snapshot['expense_accounts']
-        elif area in ('schemes', 'catalog'):
+        elif area in ('schemes', 'inventory'):
             from apps.core.models import AccountingCategory
-            from apps.jobs.models import RateScheme
             out['category_options'] = list(
                 AccountingCategory.objects.filter(is_active=True)
                 .values('pk', 'name'))
-            if area == 'catalog':
-                out['scheme_options'] = list(
-                    RateScheme.objects.filter(replaced_by__isnull=True)
-                    .values('pk', 'name'))
+        elif area == 'services':
+            from apps.jobs.models import RateScheme
+            out['scheme_options'] = list(
+                RateScheme.objects.filter(replaced_by__isnull=True)
+                .values('pk', 'name'))
         return out
 
     # ---- categories ----
@@ -404,7 +404,17 @@ class QBOSuggestionService:
             })
         return rows
 
-    # ---- catalog ----
+    # ---- catalog (split into inventory + services panel areas) ----
+
+    @staticmethod
+    def _inventory(snapshot):
+        return [r for r in QBOSuggestionService._catalog(snapshot)
+                if r['kind'] == 'inventory']
+
+    @staticmethod
+    def _services(snapshot):
+        return [r for r in QBOSuggestionService._catalog(snapshot)
+                if r['kind'] == 'service']
 
     @staticmethod
     def _catalog(snapshot):
@@ -835,7 +845,8 @@ def _commit_catalog(rows):
             Configuration.objects.update_or_create(
                 key='qbo_import_catalog_fingerprints',
                 defaults={'value': json.dumps(fingerprints)})
-    QBOImportCommitService._auto_dismiss('catalog')
+    QBOImportCommitService._auto_dismiss('inventory')
+    QBOImportCommitService._auto_dismiss('services')
     return {'created': created, 'updated': updated}
 
 

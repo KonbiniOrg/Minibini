@@ -80,7 +80,7 @@ class CommitSchemesTest(TestCase):
              'unit_label': 'hours', 'accounting_category': self.cat.pk,
              'qbo_item_id': '11', 'collapse_group': 'shop'},
         ])
-        rows = QBOSuggestionService.suggestions('catalog')['rows']
+        rows = QBOSuggestionService.suggestions('services')['rows']
         svc = next(r for r in rows if r['qbo_id'] == '11')
         # Name-matching would fail ('Shop rate' != 'CNC Cutting'); the
         # persisted mapping resolves it.

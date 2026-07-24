@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 
 function props(overrides = {}) {
-  return { area: 'catalog', title: 'From QuickBooks', table,
+  return { area: 'inventory', title: 'From QuickBooks', table,
            commit: vi.fn().mockResolvedValue({}), ...overrides };
 }
 
@@ -64,7 +64,7 @@ describe('SuggestionPanel', () => {
     const { findByText, container } = render(SuggestionPanel, { props: props() });
     await fireEvent.click(await findByText('Dismiss'));
     await new Promise((r) => setTimeout(r, 0));
-    expect(api.post).toHaveBeenCalledWith('/api/qbo/import/dismiss/', { area: 'catalog' });
+    expect(api.post).toHaveBeenCalledWith('/api/qbo/import/dismiss/', { area: 'inventory' });
     expect(container.querySelector('.qbo-panel')).toBeNull();
   });
 

@@ -1,8 +1,8 @@
 """QBO import endpoints: snapshot pull, per-area dismissal.
 
 Area → permission mirrors each panel surface's own write permission:
-categories/schemes are Settings surfaces (config), catalog is financials,
-contacts is jobs.
+categories/schemes are Settings surfaces (config), inventory/services
+(the two Catalog-page panels) are financials, contacts is jobs.
 """
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -17,7 +17,8 @@ from apps.qbo.services import QBOService
 AREA_PERMS = {
     'categories': 'core.can_manage_config',
     'schemes': 'core.can_manage_config',
-    'catalog': 'core.can_manage_financials',
+    'inventory': 'core.can_manage_financials',
+    'services': 'core.can_manage_financials',
     'contacts': 'core.can_manage_jobs',
 }
 
@@ -90,7 +91,7 @@ def import_commit_schemes(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def import_commit_catalog(request):
-    if not request.user.has_perm(AREA_PERMS['catalog']):
+    if not request.user.has_perm(AREA_PERMS['inventory']):
         return Response(status=403)
     return Response(QBOImportCommitService.commit_catalog(
         request.data.get('rows') or []))

@@ -141,11 +141,11 @@ class CatalogSuggestionTest(TestCase):
             code='MAT', name='Material', qbo_item_id='12')
 
     def test_inventory_and_service_rows(self):
-        out = QBOSuggestionService.suggestions('catalog')['rows']
-        inv = [r for r in out if r['kind'] == 'inventory']
-        svc = [r for r in out if r['kind'] == 'service']
-        self.assertEqual(len(inv), 1)
-        self.assertEqual(len(svc), 1)
+        # The two areas partition the snapshot's items by kind.
+        inv = QBOSuggestionService.suggestions('inventory')['rows']
+        svc = QBOSuggestionService.suggestions('services')['rows']
+        self.assertEqual([r['kind'] for r in inv], ['inventory'])
+        self.assertEqual([r['kind'] for r in svc], ['service'])
         row = inv[0]
         self.assertEqual(row['qbo_id'], '12')
         self.assertEqual(row['code_suggestion'], 'Baltic Birch')
@@ -157,7 +157,7 @@ class CatalogSuggestionTest(TestCase):
     def test_code_suggestion_uniquified(self):
         InventoryItem.objects.create(
             code='Baltic Birch', accounting_category=self.cat)
-        out = QBOSuggestionService.suggestions('catalog')['rows']
+        out = QBOSuggestionService.suggestions('inventory')['rows']
         row = next(r for r in out if r['qbo_id'] == '12')
         self.assertEqual(row['code_suggestion'], 'Baltic Birch-2')
 
@@ -173,14 +173,14 @@ class CatalogSuggestionTest(TestCase):
             defaults={'value': json.dumps({'12': {
                 'name': 'Baltic Birch', 'description': '4x8',
                 'unit_price': '85.0', 'purchase_cost': '52.5'}})})
-        out = QBOSuggestionService.suggestions('catalog')['rows']
+        out = QBOSuggestionService.suggestions('inventory')['rows']
         row = next(r for r in out if r['qbo_id'] == '12')
         self.assertEqual(row['state'], 'imported')   # QBO matches fingerprint
         snap = dict(SNAPSHOT)
         snap['items'] = [dict(i, unit_price='90.0') if i['qbo_id'] == '12'
                          else i for i in SNAPSHOT['items']]
         with patch.object(QBOSnapshotService, 'load', return_value=snap):
-            out = QBOSuggestionService.suggestions('catalog')['rows']
+            out = QBOSuggestionService.suggestions('inventory')['rows']
         row = next(r for r in out if r['qbo_id'] == '12')
         self.assertEqual(row['state'], 'changed')
 
@@ -196,7 +196,8 @@ class CatalogSuggestionTest(TestCase):
             {'kind': 'service', 'action': 'create', 'qbo_id': '11',
              'name': 'CNC Cutting', 'description': '',
              'rate_scheme': scheme.pk}])
-        out = QBOSuggestionService.suggestions('catalog')['rows']
+        QBOImportState.undismiss('services')   # simulate a re-pull
+        out = QBOSuggestionService.suggestions('services')['rows']
         row = next(r for r in out if r['qbo_id'] == '11')
         self.assertEqual(row['state'], 'imported')
 
@@ -213,7 +214,8 @@ class CatalogSuggestionTest(TestCase):
                  'code': 'Baltic Birch', 'description': 'Baltic Birch',
                  'selling_price': '85.0', 'purchase_price': '52.5',
                  'units': 'none', 'accounting_category': self.cat.pk}])
-            out = QBOSuggestionService.suggestions('catalog')['rows']
+            QBOImportState.undismiss('inventory')   # simulate a re-pull
+            out = QBOSuggestionService.suggestions('inventory')['rows']
         row = next(r for r in out if r['qbo_id'] == '12')
         self.assertEqual(row['state'], 'imported')
 
@@ -229,7 +231,8 @@ class CatalogSuggestionTest(TestCase):
             accounting_category=self.cat)
         ServiceItem.objects.create(
             template_name='CNC Cutting', rate_scheme=scheme, qbo_id='11')
-        out = QBOSuggestionService.suggestions('catalog')['rows']
+        out = (QBOSuggestionService.suggestions('inventory')['rows']
+               + QBOSuggestionService.suggestions('services')['rows'])
         self.assertTrue(all(r['state'] == 'imported' for r in out))
 
 
