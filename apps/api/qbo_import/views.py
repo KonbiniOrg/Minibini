@@ -20,6 +20,7 @@ AREA_PERMS = {
     'inventory': 'core.can_manage_financials',
     'services': 'core.can_manage_financials',
     'contacts': 'core.can_manage_jobs',
+    'terms': 'core.can_manage_config',   # its Settings → Business home
 }
 
 
@@ -103,3 +104,12 @@ def import_commit_contacts(request):
     if not request.user.has_perm(AREA_PERMS['contacts']):
         return Response(status=403)
     return Response(QBOImportCommitService.commit_contacts(request.data))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def import_commit_terms(request):
+    if not request.user.has_perm(AREA_PERMS['terms']):
+        return Response(status=403)
+    return Response(QBOImportCommitService.commit_terms(
+        request.data.get('rows') or []))

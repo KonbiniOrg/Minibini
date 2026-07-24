@@ -236,15 +236,43 @@ class CatalogSuggestionTest(TestCase):
         self.assertTrue(all(r['state'] == 'imported' for r in out))
 
 
+class TermsSuggestionTest(TestCase):
+    def setUp(self):
+        store_snapshot()
+
+    def test_states(self):
+        rows = QBOSuggestionService.suggestions('terms')['rows']
+        self.assertEqual([r['kind'] for r in rows], ['term'])
+        self.assertEqual(rows[0]['name'], 'Net 30')
+        self.assertEqual(rows[0]['due_days'], 30)
+        self.assertEqual(rows[0]['state'], 'new')
+        PaymentTerms.objects.create(name='Net 30', days=30, qbo_id='3')
+        rows = QBOSuggestionService.suggestions('terms')['rows']
+        self.assertEqual(rows[0]['state'], 'imported')
+        PaymentTerms.objects.filter(qbo_id='3').update(days=45)
+        rows = QBOSuggestionService.suggestions('terms')['rows']
+        self.assertEqual(rows[0]['state'], 'changed')
+
+
 class ContactsSuggestionTest(TestCase):
     def setUp(self):
         store_snapshot()
 
     def test_sublists_and_states(self):
+        # Terms live in their own area now — contacts is customers+vendors.
         out = QBOSuggestionService.suggestions('contacts')['rows']
         kinds = {r['kind'] for r in out}
-        self.assertEqual(kinds, {'customer', 'vendor', 'term'})
+        self.assertEqual(kinds, {'customer', 'vendor'})
         self.assertTrue(all(r['state'] == 'new' for r in out))
+
+    def test_missing_term_refs_flag(self):
+        # Snapshot customer references term '3'; konbini has no such term
+        # → the contacts panel warns to import terms first.
+        out = QBOSuggestionService.suggestions('contacts')
+        self.assertTrue(out['missing_term_refs'])
+        PaymentTerms.objects.create(name='Net 30', days=30, qbo_id='3')
+        out = QBOSuggestionService.suggestions('contacts')
+        self.assertFalse(out['missing_term_refs'])
 
     def test_imported_and_changed_customers(self):
         contact = Contact.objects.create(

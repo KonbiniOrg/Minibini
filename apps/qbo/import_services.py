@@ -146,7 +146,8 @@ class QBOImportState:
     own pull clears its flag. Spec Part 4."""
 
     DISMISS_KEY = 'qbo_import_dismissed'
-    AREAS = ('categories', 'schemes', 'inventory', 'services', 'contacts')
+    AREAS = ('categories', 'schemes', 'inventory', 'services', 'contacts',
+             'terms')
 
     @staticmethod
     def dismissed():
@@ -314,6 +315,16 @@ class QBOSuggestionService:
             out['scheme_options'] = list(
                 RateScheme.objects.filter(replaced_by__isnull=True)
                 .values('pk', 'name'))
+        elif area == 'contacts':
+            # Customers referencing QBO terms konbini doesn't have yet →
+            # the panel warns to import terms (Settings → Business) first;
+            # such assignments are otherwise silently left unset.
+            from apps.contacts.models import PaymentTerms
+            known = set(PaymentTerms.objects.exclude(qbo_id='')
+                        .values_list('qbo_id', flat=True))
+            out['missing_term_refs'] = any(
+                c.get('term_qbo_id') and c['term_qbo_id'] not in known
+                for c in snapshot['customers'])
         return out
 
     # ---- categories ----
@@ -506,11 +517,31 @@ class QBOSuggestionService:
                 })
         return rows
 
-    # ---- contacts (customers / vendors / terms) ----
+    # ---- terms (Settings → Business panel) ----
+
+    @staticmethod
+    def _terms(snapshot):
+        from apps.contacts.models import PaymentTerms
+        term_by_qbo = {t.qbo_id: t for t in
+                       PaymentTerms.objects.exclude(qbo_id='')}
+        rows = []
+        for t in snapshot['terms']:
+            existing = term_by_qbo.get(t['qbo_id'])
+            if existing is None:
+                state = 'new'
+            elif (existing.name != t['name']
+                  or (existing.days or 0) != t['due_days']):
+                state = 'changed'
+            else:
+                state = 'imported'
+            rows.append({'kind': 'term', 'state': state, **t})
+        return rows
+
+    # ---- contacts (customers / vendors) ----
 
     @staticmethod
     def _contacts(snapshot):
-        from apps.contacts.models import Business, Contact, PaymentTerms
+        from apps.contacts.models import Business, Contact
 
         biz_by_customer = {b.qbo_customer_id: b for b in
                            Business.objects.exclude(qbo_customer_id=None)}
@@ -518,8 +549,6 @@ class QBOSuggestionService:
                                Contact.objects.exclude(qbo_customer_id=None)}
         biz_by_vendor = {b.qbo_vendor_id: b for b in
                          Business.objects.exclude(qbo_vendor_id=None)}
-        term_by_qbo = {t.qbo_id: t for t in
-                       PaymentTerms.objects.exclude(qbo_id='')}
         customer_names = {c['display_name'] for c in snapshot['customers']}
 
         rows = []
@@ -549,16 +578,6 @@ class QBOSuggestionService:
             rows.append({'kind': 'vendor', 'state': state,
                          'merge_hint': v['display_name'] in customer_names,
                          **v})
-        for t in snapshot['terms']:
-            existing = term_by_qbo.get(t['qbo_id'])
-            if existing is None:
-                state = 'new'
-            elif (existing.name != t['name']
-                  or (existing.days or 0) != t['due_days']):
-                state = 'changed'
-            else:
-                state = 'imported'
-            rows.append({'kind': 'term', 'state': state, **t})
         return rows
 
 
@@ -850,6 +869,33 @@ def _commit_catalog(rows):
     return {'created': created, 'updated': updated}
 
 
+def _apply_term_rows(rows):
+    """Create/update PaymentTerms mirrors; returns {'created': n,
+    'updated': n}."""
+    from apps.contacts.models import PaymentTerms
+    counts = {'created': 0, 'updated': 0}
+    for row in rows:
+        if row['action'] == 'create':
+            PaymentTerms.objects.create(
+                name=row['name'], days=row.get('due_days'),
+                qbo_id=row['qbo_id'])
+            counts['created'] += 1
+        else:
+            term = PaymentTerms.objects.get(qbo_id=row['qbo_id'])
+            term.name = row['name']
+            term.days = row.get('due_days')
+            term.save()
+            counts['updated'] += 1
+    return counts
+
+
+def _commit_terms(rows):
+    with transaction.atomic():
+        counts = _apply_term_rows(rows)
+    QBOImportCommitService._auto_dismiss('terms')
+    return counts
+
+
 def _commit_contacts(payload):
     """Terms first, then customers, then vendors (merge-by-name)."""
     from apps.contacts.models import Business, Contact, PaymentTerms
@@ -858,18 +904,9 @@ def _commit_contacts(payload):
               'customers': {'created': 0, 'updated': 0},
               'vendors': {'created': 0, 'updated': 0}}
     with transaction.atomic():
-        for row in payload.get('terms') or []:
-            if row['action'] == 'create':
-                PaymentTerms.objects.create(
-                    name=row['name'], days=row.get('due_days'),
-                    qbo_id=row['qbo_id'])
-                counts['terms']['created'] += 1
-            else:
-                term = PaymentTerms.objects.get(qbo_id=row['qbo_id'])
-                term.name = row['name']
-                term.days = row.get('due_days')
-                term.save()
-                counts['terms']['updated'] += 1
+        # The SPA's terms panel commits via commit_terms; this branch stays
+        # for API-compat with payloads that still bundle terms.
+        counts['terms'] = _apply_term_rows(payload.get('terms') or [])
 
         term_by_qbo = {t.qbo_id: t for t in
                        PaymentTerms.objects.exclude(qbo_id='')}
@@ -963,3 +1000,4 @@ def _commit_contacts(payload):
 
 QBOImportCommitService.commit_catalog = staticmethod(_commit_catalog)
 QBOImportCommitService.commit_contacts = staticmethod(_commit_contacts)
+QBOImportCommitService.commit_terms = staticmethod(_commit_terms)

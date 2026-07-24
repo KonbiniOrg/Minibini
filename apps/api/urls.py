@@ -24,7 +24,7 @@ from apps.api.setup.views import setup_status
 from apps.api.qbo_import.views import (
     import_pull, import_dismiss, import_suggestions,
     import_commit_categories, import_commit_schemes,
-    import_commit_catalog, import_commit_contacts,
+    import_commit_catalog, import_commit_contacts, import_commit_terms,
 )
 from apps.api.templates_config.views import (
     WorkTemplateViewSet, ServiceItemViewSet,
@@ -106,6 +106,7 @@ urlpatterns = [
     path('qbo/import/commit/schemes/', import_commit_schemes, name='api-qbo-import-commit-schemes'),
     path('qbo/import/commit/catalog/', import_commit_catalog, name='api-qbo-import-commit-catalog'),
     path('qbo/import/commit/contacts/', import_commit_contacts, name='api-qbo-import-commit-contacts'),
+    path('qbo/import/commit/terms/', import_commit_terms, name='api-qbo-import-commit-terms'),
     path('settings/', settings_view, name='api-settings'),
     path('shifts/', include('apps.api.time_tracking.urls')),
     path('expenses/', include('apps.api.expenses.urls')),

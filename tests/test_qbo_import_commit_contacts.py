@@ -1,8 +1,9 @@
-"""commit_contacts: terms → customers → vendors, with same-name merge."""
+"""commit_contacts: terms → customers → vendors, with same-name merge.
+commit_terms: the standalone Settings → Business terms panel."""
 from django.test import TestCase
 
 from apps.contacts.models import Business, Contact, PaymentTerms
-from apps.qbo.import_services import QBOImportCommitService
+from apps.qbo.import_services import QBOImportCommitService, QBOImportState
 
 
 def _payload(**overrides):
@@ -20,6 +21,51 @@ def _payload(**overrides):
     }
     payload.update(overrides)
     return payload
+
+
+class CommitTermsTest(TestCase):
+    def setUp(self):
+        from tests.test_qbo_import_state import store_snapshot
+        store_snapshot()
+
+    def test_create_update_and_auto_dismiss(self):
+        result = QBOImportCommitService.commit_terms([
+            {'qbo_id': '3', 'name': 'Net 30', 'due_days': 30,
+             'action': 'create'}])
+        self.assertEqual(result['created'], 1)
+        term = PaymentTerms.objects.get(qbo_id='3')
+        self.assertEqual(term.name, 'Net 30')
+        self.assertEqual(term.days, 30)
+        # Snapshot's only term is now imported → area auto-dismisses.
+        self.assertIn('terms', QBOImportState.dismissed())
+        result = QBOImportCommitService.commit_terms([
+            {'qbo_id': '3', 'name': 'Net 30 EOM', 'due_days': 30,
+             'action': 'update'}])
+        self.assertEqual(result['updated'], 1)
+        term.refresh_from_db()
+        self.assertEqual(term.name, 'Net 30 EOM')
+
+    def test_endpoint_requires_config_atom(self):
+        from django.contrib.auth.models import Permission
+        from rest_framework.test import APIClient
+        from apps.core.models import User
+        client = APIClient()
+        user = User.objects.create_user(username='jobs1', password='x')
+        user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_jobs'))
+        client.force_authenticate(user=User.objects.get(pk=user.pk))
+        resp = client.post('/api/qbo/import/commit/terms/', {
+            'rows': [{'qbo_id': '3', 'name': 'Net 30', 'due_days': 30,
+                      'action': 'create'}]}, format='json')
+        self.assertEqual(resp.status_code, 403)
+        user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_config'))
+        client.force_authenticate(user=User.objects.get(pk=user.pk))
+        resp = client.post('/api/qbo/import/commit/terms/', {
+            'rows': [{'qbo_id': '3', 'name': 'Net 30', 'due_days': 30,
+                      'action': 'create'}]}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['created'], 1)
 
 
 class CommitContactsTest(TestCase):
