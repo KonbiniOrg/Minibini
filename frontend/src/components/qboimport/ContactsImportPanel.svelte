@@ -1,6 +1,7 @@
 <script>
-  // Customer / vendor / payment-term suggestions inside Contacts &
-  // Businesses. Straight mirrors — no edits, just include/exclude.
+  // Customer / vendor suggestions inside Contacts & Businesses.
+  // Straight mirrors — no edits, just include/exclude. (Payment terms
+  // have their own panel on Settings → Business.)
   import SuggestionPanel from './SuggestionPanel.svelte';
   import { qboImportApi } from '../../lib/qboImport.js';
 
@@ -11,7 +12,6 @@
       ...r, action: r.state === 'changed' ? 'update' : 'create',
     });
     return qboImportApi.commitContacts({
-      terms: rows.filter((r) => r.kind === 'term').map(withAction),
       customers: rows.filter((r) => r.kind === 'customer').map(withAction),
       vendors: rows.filter((r) => r.kind === 'vendor').map(withAction),
     });
@@ -27,10 +27,15 @@
   {/if}
 {/snippet}
 
-{#snippet table(rows, toggles)}
+{#snippet table(rows, toggles, data)}
   {@const customers = rows.filter((r) => r.kind === 'customer')}
   {@const vendors = rows.filter((r) => r.kind === 'vendor')}
-  {@const terms = rows.filter((r) => r.kind === 'term')}
+
+  {#if data?.missing_term_refs}
+    <p class="dep-note">Some customers reference QBO payment terms that
+      aren't in konbini yet — import terms on Settings → Business first,
+      or those customers will be created without terms.</p>
+  {/if}
 
   {#if customers.length}
     <h5>Customers</h5>
@@ -68,31 +73,19 @@
     </table>
   {/if}
 
-  {#if terms.length}
-    <h5>Payment terms</h5>
-    <p><small>Not contacts — these become entries in the payment-terms
-      list that businesses can be assigned.</small></p>
-    <table class="data-table terms-table">
-      <thead><tr><th></th><th>Terms</th><th>Days</th><th>Action</th></tr></thead>
-      <tbody>
-        {#each terms as row (row.qbo_id)}
-          <tr>
-            <td>{@render checkbox(row, toggles)}</td>
-            <td>{row.name}</td>
-            <td>{row.due_days}</td>
-            <td>{row.state === 'changed' ? 'update' : 'create'}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {/if}
 {/snippet}
 
 <style>
   h5 { margin: 10px 0 4px; }
-  .terms-table { max-width: 420px; background: #f3f4f6; }
+  .dep-note {
+    border: 2px solid #f59e0b;
+    background: #fffbeb;
+    color: #b45309;
+    border-radius: 6px;
+    padding: 0.5em 0.75em;
+  }
 </style>
 
-<SuggestionPanel area="contacts" title="Customers, vendors & terms from QuickBooks"
+<SuggestionPanel area="contacts" title="Customers & vendors from QuickBooks"
   {table} {commit} {onCommitted}
   rowKey={(r) => r.kind + r.qbo_id} />

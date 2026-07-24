@@ -1,6 +1,11 @@
 <script>
   import { api } from '../../lib/api.js';
+  import PaymentTermsManager from './PaymentTermsManager.svelte';
+  import TermsImportPanel from '../qboimport/TermsImportPanel.svelte';
+  import QboPullButton from '../qboimport/QboPullButton.svelte';
 
+  let pullEpoch = $state(0);
+  let refreshEpoch = $state(0);
   let business_email = $state('');
   let our_public_url = $state('');
   let our_domain = $state('');
@@ -64,6 +69,13 @@
   {#if saveMessage}<em>{saveMessage}</em>{/if}
   {#if errors._general}<em class="err">{errors._general}</em>{/if}
 </p>
+
+<hr>
+<QboPullButton area="terms" onPulled={() => pullEpoch++} />
+{#key pullEpoch}
+  <TermsImportPanel onCommitted={() => refreshEpoch++} />
+{/key}
+<PaymentTermsManager {refreshEpoch} />
 
 <style>
   .err { color: #b91c1c; margin-left: 0.5em; }

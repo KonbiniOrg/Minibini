@@ -15,6 +15,7 @@ vi.mock('@/stores/setupStatus.js', () => ({
 import { api } from '@/lib/api.js';
 import CategoriesImportPanel from '@/components/qboimport/CategoriesImportPanel.svelte';
 import ContactsImportPanel from '@/components/qboimport/ContactsImportPanel.svelte';
+import TermsImportPanel from '@/components/qboimport/TermsImportPanel.svelte';
 
 beforeEach(() => {
   api.get.mockReset();
@@ -49,11 +50,10 @@ describe('CategoriesImportPanel', () => {
 });
 
 describe('ContactsImportPanel', () => {
-  it('splits rows into the three payload lists with actions', async () => {
+  it('splits rows into customer/vendor payload lists (terms have their own panel)', async () => {
     api.get.mockResolvedValue({
-      dismissed: false, fetched_at: 'x',
+      dismissed: false, fetched_at: 'x', missing_term_refs: false,
       rows: [
-        { kind: 'term', qbo_id: '3', name: 'Net 30', due_days: 30, state: 'new' },
         { kind: 'customer', qbo_id: '71', display_name: 'Acme Corp',
           company_name: 'Acme Corp', email: 'jo@acme.com', state: 'changed' },
         { kind: 'vendor', qbo_id: '81', display_name: 'Moore Newton',
@@ -61,17 +61,45 @@ describe('ContactsImportPanel', () => {
           merge_hint: false },
       ],
     });
-    const { findByText } = render(ContactsImportPanel);
-    // Terms render as their own clearly-typed section, not as contacts.
-    expect(await findByText('Payment terms')).toBeInTheDocument();
+    const { findByText, queryByText } = render(ContactsImportPanel);
     expect(await findByText('Customers')).toBeInTheDocument();
     expect(await findByText('Vendors')).toBeInTheDocument();
+    expect(queryByText('Payment terms')).toBeNull();
     await fireEvent.click(await findByText('Apply selected'));
     const payload = api.post.mock.calls.find(
       (c) => c[0] === '/api/qbo/import/commit/contacts/')[1];
-    expect(payload.terms[0].action).toBe('create');
+    expect(payload.terms).toBeUndefined();
     expect(payload.customers[0].action).toBe('update');
     expect(payload.vendors[0].action).toBe('create');
+  });
+
+  it('warns when customers reference unimported terms', async () => {
+    api.get.mockResolvedValue({
+      dismissed: false, fetched_at: 'x', missing_term_refs: true,
+      rows: [{ kind: 'customer', qbo_id: '71', display_name: 'Acme Corp',
+               company_name: 'Acme Corp', email: '', state: 'new' }],
+    });
+    const { findByText } = render(ContactsImportPanel);
+    expect(await findByText(/import terms on Settings/i)).toBeInTheDocument();
+  });
+});
+
+describe('TermsImportPanel', () => {
+  it('renders term rows and commits with actions', async () => {
+    api.get.mockResolvedValue({
+      dismissed: false, fetched_at: 'x',
+      rows: [
+        { kind: 'term', qbo_id: '3', name: 'Net 30', due_days: 30, state: 'new' },
+        { kind: 'term', qbo_id: '4', name: 'Net 60', due_days: 60, state: 'changed' },
+      ],
+    });
+    const { findByText } = render(TermsImportPanel);
+    expect(await findByText('Payment terms from QuickBooks')).toBeInTheDocument();
+    expect(await findByText('Net 30')).toBeInTheDocument();
+    await fireEvent.click(await findByText('Apply selected'));
+    const payload = api.post.mock.calls.find(
+      (c) => c[0] === '/api/qbo/import/commit/terms/')[1];
+    expect(payload.rows.map((r) => r.action)).toEqual(['create', 'update']);
   });
 });
 

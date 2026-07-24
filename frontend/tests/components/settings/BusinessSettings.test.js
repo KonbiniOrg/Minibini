@@ -1,7 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() },
+  errorMessage: (e) => e?.message || 'error',
+}));
+vi.mock('@/stores/setupStatus.js', () => ({
+  refreshSetupStatus: vi.fn(),
+  setupStatus: { subscribe: (fn) => { fn({ areas: null, last_pull_at: null }); return () => {}; } },
+}));
+vi.mock('@/stores/messages.js', () => ({
+  showError: vi.fn(), showSuccess: vi.fn(),
+}));
 
 import { api } from '@/lib/api.js';
 import BusinessSettings from '@/components/settings/BusinessSettings.svelte';
@@ -9,7 +19,14 @@ import BusinessSettings from '@/components/settings/BusinessSettings.svelte';
 beforeEach(() => {
   api.get.mockReset();
   api.patch.mockReset();
-  api.get.mockResolvedValue({});
+  // The tab now hosts the terms import panel + manager; route their loads.
+  api.get.mockImplementation(async (url) => {
+    if (url === '/api/payment-terms/') return [];
+    if (url.startsWith('/api/qbo/import/suggestions/')) {
+      return { dismissed: false, fetched_at: null, rows: [] };
+    }
+    return {};
+  });
   api.patch.mockResolvedValue({});
 });
 

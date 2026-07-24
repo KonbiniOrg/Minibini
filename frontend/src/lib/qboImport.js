@@ -10,6 +10,7 @@ export const qboImportApi = {
   commitSchemes: (rows) => api.post('/api/qbo/import/commit/schemes/', { rows }),
   commitCatalog: (rows) => api.post('/api/qbo/import/commit/catalog/', { rows }),
   commitContacts: (payload) => api.post('/api/qbo/import/commit/contacts/', payload),
+  commitTerms: (rows) => api.post('/api/qbo/import/commit/terms/', { rows }),
 };
 
 export function formatPullTime(iso) {
