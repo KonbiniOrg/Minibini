@@ -323,14 +323,22 @@ class AccountingCategory(models.Model):
         rate schemes, fees) points at this category."""
         for rel in self._meta.related_objects:
             if rel.hidden:
-                # related_name='+' relations (e.g. EstimateLineItem's
-                # adjustment_target_categories) have no usable accessor.
+                # related_name='+' relations have no usable reverse accessor;
+                # the ones that actually matter are queried explicitly below.
                 continue
             accessor = rel.get_accessor_name()
             if getattr(self, accessor).exists():
                 return True
-        return False
 
+        # Hidden (related_name='+') M2Ms that still bear a real reference:
+        # adjustment lines target specific categories via these fields.
+        from apps.estimates.models import EstimateLineItem
+        from apps.invoicing.models import InvoiceLineItem
+        if EstimateLineItem.objects.filter(adjustment_target_categories=self).exists():
+            return True
+        if InvoiceLineItem.objects.filter(adjustment_target_categories=self).exists():
+            return True
+        return False
 
 
 class AbstractWorkContainer(models.Model):

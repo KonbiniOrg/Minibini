@@ -34,6 +34,35 @@ class DepositCategoryInvariantTest(TestCase):
             accounting_category=cat)
         self.assertTrue(cat.is_referenced())
 
+    def test_is_referenced_true_via_estimate_line_adjustment_target(self):
+        """A category used ONLY as an adjustment_target_categories entry
+        (a hidden related_name='+' M2M) must still count as referenced —
+        the freeze invariant has to cover it too."""
+        from decimal import Decimal
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        from apps.estimates.models import Estimate, EstimateLineItem
+
+        cat = AccountingCategory.objects.create(
+            code='ADJTGT', name='Adj Target', taxable=True)
+        other_cat = AccountingCategory.objects.create(
+            code='ADJOTH', name='Adj Other', taxable=True)
+        contact = Contact.objects.create(first_name='Adj', last_name='Target')
+        job = Job.objects.create(job_number='ADJ-DEP-1', contact=contact)
+        est = Estimate.objects.create(
+            job=job, estimate_number='EST-ADJ-DEP-1', version=1,
+            status=Estimate.STATUS_DRAFT)
+        line = EstimateLineItem.objects.create(
+            estimate=est, line_number=1,
+            qty=Decimal('1'), price=Decimal('0.00'),
+            accounting_category=other_cat)
+        line.adjustment_target_categories.set([cat.pk])
+
+        self.assertTrue(cat.is_referenced())
+        with self.assertRaises(ValidationError):
+            ConfigurationService.update_accounting_category(
+                cat.pk, taxable=False)
+
 
 class DepositCategoryFreezeTest(TestCase):
     def setUp(self):
