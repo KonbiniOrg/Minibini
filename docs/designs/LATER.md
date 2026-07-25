@@ -1017,3 +1017,14 @@ Cross-cutting UI/API conventions and shared components.
   one konbini business, pick a winner, or edit-then-retry inline.
   _Done when:_ a deliberate dedupe/merge flow exists for skipped
   contact imports.
+
+- **Full AccountingCategory immutability/supersession.** — _added 2026-07-25_
+  The deposits work (`docs/plans/deposit-invoices-spec.md`) freezes only
+  `is_deposit`/`taxable` on a used category; RM wants the RateScheme
+  pattern generalized — a used AC can't be edited, only retired and
+  replaced. Needs its own design: which fields freeze (QBO account/item
+  mappings must likely stay editable for reconnects; name/code are labels),
+  whether replacement repoints anything, and the touch spans every
+  line-item surface plus expenses.
+  _Done when:_ a used AC's semantic fields are immutable behind a
+  retire-and-replace flow, per a dedicated spec.

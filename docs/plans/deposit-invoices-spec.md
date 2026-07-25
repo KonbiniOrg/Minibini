@@ -13,88 +13,113 @@ always user-entered — no standard percentage or amount.
 
 ## Decisions (with rationale)
 
-1. **The line is the special thing, not the invoice.** A new
-   `InvoiceLineItem.is_deposit` boolean (default `False`). An invoice *is* a
-   deposit invoice iff it contains a deposit line — derived everywhere, never
-   stored on Invoice, so it can't drift (delete the line while drafting and
-   the deposit-ness disappears).
-2. **No `kind` enum.** Deduction lines don't need a marker: they are
-   identified by their `InvoiceLineItemSource` row (`source_type='deposit'`,
-   `source_pk=<deposit InvoiceLineItem pk>`), exactly how task/material lines
-   are identified today. Only the deposit line itself carries a flag.
-3. **Not identified by accounting category.** Testing "line's AC == the
-   configured deposit AC" was considered and rejected: the Configuration
-   value is mutable (repointing it would retroactively erase deposit history)
-   and AC is a user-editable field on every line (recategorizing a line could
-   silently create or destroy deposit-ness).
-4. **Unsplittable credit.** A paid deposit is deducted whole by exactly one
+1. **The accounting category is the deposit indicator.** `AccountingCategory`
+   gains an `is_deposit` boolean (default `False`). A line item is a deposit
+   line iff its AC is a deposit category (and it isn't a deduction — see 2);
+   an invoice *is* a deposit invoice iff it contains a deposit line. Nothing
+   is stored on `Invoice` or `InvoiceLineItem` — one source of truth, no
+   line-schema change. Draft-time recategorization toggling deposit-ness is
+   coherent editing, not corruption: line CRUD is draft-only, so everything
+   load-bearing (board pill from *sent*, credit atom from *paid*) reads
+   frozen lines.
+2. **Deduction lines are identified by their source row** —
+   `InvoiceLineItemSource` with `source_type='deposit'`,
+   `source_pk=<deposit InvoiceLineItem pk>` — exactly how task/material
+   lines are identified today. A deduction carries the same (deposit) AC as
+   its source, so deposit-line tests are "deposit AC ∧ no deposit-source
+   row".
+3. **Not "AC == the configured default".** Rejected: the Configuration key
+   stays mutable, so repointing it would retroactively reinterpret history
+   (paid-undeducted credits vanishing). The flag lives on the category;
+   the settings key only chooses which deposit category *new* deposit lines
+   get.
+4. **Targeted AC freeze.** Once a category is referenced by any line item (or
+   other AC-bearing row — exact FK enumeration at plan time), its
+   `is_deposit` and `taxable` fields become immutable: retire (`is_active`)
+   and replace instead, RateScheme-style. Mutating those two on a used AC
+   rewrites the meaning of existing lines; name/code and QBO mappings stay
+   editable (remapping after a QBO reconnect must remain possible; push
+   reads mappings at push time). Attempting a frozen edit raises a
+   ValidationError coaching retire-and-replace. **Full** AC
+   immutability/supersession is deferred to its own effort (noted in
+   `docs/designs/LATER.md`).
+5. **Deposit categories are non-taxable by invariant.** `is_deposit=True`
+   requires `taxable=False`, validated on the category — enforcement, not a
+   settings note. (`taxable_override` no longer exists, removed 2026-07-21;
+   the QBO push derives `TaxCodeRef` from `accounting_category.taxable`.)
+6. **Unsplittable credit.** A paid deposit is deducted whole by exactly one
    invoice. The source-row unique-claim constraint enforces this. If partial
    deduction across progress invoices becomes a real need, that's a future
    remaining-balance model — explicitly deferred.
-5. **Paid-only availability.** The deduction atom exists only once QBO
+7. **Paid-only availability.** The deduction atom exists only once QBO
    reports the deposit invoice paid. You can't deduct money you don't hold.
-6. **Mixing is legal.** A deposit line may coexist with standard lines on one
-   invoice. Unusual but allowed — no validation forbids it. The invoice gets
-   the deposit pill; its deposit line becomes a credit atom when the whole
-   invoice is paid.
-7. **Multiple deposits per job are legal.** Each paid deposit line is its own
-   credit atom.
-8. **Taxability rides on the AC.** `taxable_override` no longer exists
-   (removed 2026-07-21); the QBO push derives `TaxCodeRef` from
-   `accounting_category.taxable`. The deposit default AC is expected to be a
-   non-taxable category; the Settings UI says so next to the field. No
-   hard enforcement.
-9. **No global invoice gate.** Standard invoicing works without the deposit
-   AC configured. Only deposit-line creation requires it (mirrors the
-   materials-default pattern: a coaching error, not a surface lockout).
+8. **Mixing is legal.** A deposit line may coexist with standard lines on one
+   invoice (and any manual line given a deposit AC *becomes* a deposit line,
+   coherently: non-taxable, credit-on-paid). The invoice gets the deposit
+   pill; the deposit line becomes a credit atom when the whole invoice is
+   paid.
+9. **Multiple deposits per job are legal.** Each paid deposit line is its own
+   credit atom. Multiple deposit *categories* are also possible; the
+   settings key picks the default one the picker stamps.
+10. **No global invoice gate.** Standard invoicing works without the deposit
+    default configured. Only deposit-line creation requires it (mirrors the
+    materials-default pattern: a coaching error, not a surface lockout).
 
 ## Data model
 
-- `InvoiceLineItem.is_deposit` — BooleanField, default `False`. Persists for
-  the life of the line (including on cancelled invoices). Editable lines
-  (draft invoice) keep the flag; editing a deposit line edits amount/
-  description like any line but does not expose an is_deposit toggle in edit
-  mode — deposit-ness is chosen at creation.
+- `AccountingCategory.is_deposit` — BooleanField, default `False`.
+  Invariants, validated on the category:
+  - `is_deposit=True` → `taxable=False`;
+  - once the category is referenced by any AC-bearing row, `is_deposit` and
+    `taxable` cannot change (retire/replace instead).
 - Deduction line — an ordinary `InvoiceLineItem` (negative price, qty 1,
   same AC as its source deposit line) plus an `InvoiceLineItemSource` row:
   `source_type='deposit'`, `source_pk=<source deposit line pk>`. The
   existing whole-atom unique constraint on sources prevents a second live
   claim on the same deposit line.
-- No Invoice schema change. Serializers expose derived helpers as needed
-  (e.g. `is_deposit` per line; the invoice list/board data needs enough to
-  render the pills — exact serializer shape decided at plan time).
+- No `Invoice` or `InvoiceLineItem` schema change. Serializers expose
+  derived helpers as needed (per-line "is deposit", enough for the pills —
+  exact shape at plan time).
 
 ## Configuration
 
 - New key: `default_deposit_accounting_category` (AC pk as string), mirroring
-  `default_material_accounting_category` end to end: Settings API
-  validation (must be a real, active category), Settings UI component
-  (copy `DefaultMaterialCategorySetting.svelte`), resolved server-side when a
-  deposit line is created.
-- Settings UI note: "Choose a non-taxable category — deposits must not be
-  taxed."
-- Unset behavior: creating a deposit line raises the coaching
-  `ValidationError` ("No default deposit accounting category is configured.
-  Set it in Settings."); the picker's Deposit entry is disabled with a hint.
-- Add the key to test `setUp()` / fixtures per convention (`data-constraints.md`
-  §1.1 gets the new row).
+  `default_material_accounting_category` end to end: Settings API validation
+  (must be a real, **active, deposit** category), Settings UI component
+  (copy `DefaultMaterialCategorySetting.svelte`; dropdown lists deposit
+  categories only), resolved server-side when a deposit line is created via
+  the picker.
+- Unset behavior: creating a deposit line through the deposit path raises the
+  coaching `ValidationError` ("No default deposit accounting category is
+  configured. Set it in Settings."); the picker's Deposit entry is disabled
+  with a hint.
+- Add the key to test `setUp()` / fixtures per convention
+  (`data-constraints.md` §1.1 gets the new row).
 
 ## Backend behavior
 
+### Category management
+
+The AC admin surface (config-gated) grows the `is_deposit` checkbox. Both
+`is_deposit` and `taxable` are rejected server-side (and disabled in the UI)
+once the category is in use. Retirement (`is_active=False`) remains the
+change mechanism, as today.
+
 ### Creating a deposit line
 
-`InvoiceService.add_line_item` path grows deposit support (exact signature at
-plan time): when a line arrives flagged `is_deposit`, the service stamps the
-configured default AC (error if unset), forces nothing else — description
-and amount are the user's. Draft-only, like all line CRUD.
+The picker's Deposit choice posts a manual line with the default deposit AC
+stamped server-side (coaching error if the key is unset/invalid). Amount and
+description are the user's; description prefills "Deposit on {job_number}".
+Draft-only, like all line CRUD. (A manual line hand-assigned a deposit AC is
+equally a deposit line — same semantics, no special-casing.)
 
 ### The credit atom (wizard source pool)
 
 `InvoiceWizardService.get_source_pool` gains a deposit-credit atom type:
-deposit lines belonging to **paid** invoices of the same job with **no live
-claim** (a claim on a cancelled/discarded invoice doesn't count, matching
-existing claim-release semantics). Pulling the atom creates the deduction
-line:
+deposit lines (deposit AC, no deposit-source row) belonging to **paid**
+invoices of the same job with **no live claim** (a claim on a
+cancelled/discarded invoice doesn't count, matching existing claim-release
+semantics). Pulling the atom creates the deduction line:
 
 - amount locked to the full deposit line total, negated; qty 1; non-editable
   amount (unsplittable rule) — description editable;
@@ -119,8 +144,9 @@ completion gate already leaves task-less deposit-paid jobs alone.)
 ## QBO
 
 No new mechanics. The deposit line pushes as a normal `SalesItemLine`
-(`TaxCodeRef` `'NON'` via its AC), the deduction pushes as a negative-amount
-line — legal in QBO. `ItemRef` resolution via the AC mapping, unchanged.
+(`TaxCodeRef` `'NON'` via its AC — guaranteed by the category invariant),
+the deduction pushes as a negative-amount line — legal in QBO. `ItemRef`
+resolution via the AC mapping, unchanged.
 
 ## Frontend
 
@@ -139,10 +165,11 @@ Invoice line-item adding adopts the estimate flow:
   that still needs invoicing.
 - **Deposit is one more entry in the picker, invoice surface only.** It pulls
   from no catalog: choosing it opens the small prefilled form — amount,
-  editable description ("Deposit on JOB-2026-0042"), default AC applied,
-  `is_deposit` set. Disabled with a Settings hint when the default AC is
-  unconfigured. Estimates/change orders don't get the entry (deposits are an
-  invoicing concept).
+  editable description ("Deposit on JOB-2026-0042"), default deposit AC
+  applied. Disabled with a Settings hint when the default is unconfigured.
+  Estimates/change orders don't get the entry (deposits are an invoicing
+  concept; an estimate line hand-assigned a deposit AC is legal but
+  meaningless and gets no special handling).
 
 ### Indicators (all derived, no stored state)
 
@@ -171,15 +198,17 @@ line renders with its negative amount. No new pane or mode.
 ## Edge cases
 
 - Cancelling a **paid** deposit invoice: out of scope (refund flows don't
-  exist); if it happens, its credit simply stops being offered only if the
-  pool excludes cancelled invoices — pool rule is *paid* status, and
-  cancelled is not paid, so the credit disappears. Already-taken deductions
-  are untouched (history is history).
+  exist). The pool rule is *paid* status, and cancelled is not paid, so such
+  a credit stops being offered. Already-taken deductions are untouched
+  (history is history).
 - Deleting a deposit line: only possible while its invoice is a draft (line
   CRUD is draft-only), at which point nothing can have claimed it. No
   orphan-deduction case exists.
 - A deduction can only target deposits of the **same job** (pool is
   job-scoped by construction).
+- Retiring the deposit category: existing lines keep their FK (retirement
+  never touches history); the settings key validation fails on next save,
+  and the picker entry disables until a new deposit category is configured.
 - Sum sanity: nothing prevents a deduction larger than the invoice's other
   lines (a negative-total invoice). QBO rejects negative-total invoices at
   push time; we accept that as the guard rather than pre-validating. (Note
@@ -187,32 +216,42 @@ line renders with its negative amount. No new pane or mode.
 
 ## Testing
 
-- **Backend** (`tests/`): default-AC resolution + coaching error; deposit
-  line creation; pool exposure rules (paid-only, unclaimed-only, job-scoped,
-  cancelled-claim release); deduction creation (amount lock, AC copy, source
-  row, unique claim); derived deposit-ness; mixing; multiple deposits.
+- **Backend** (`tests/`): category invariants (`is_deposit` → non-taxable;
+  freeze of `is_deposit`/`taxable` once used, coaching error, still editable
+  while unused; name/QBO-mapping edits stay allowed on used ACs);
+  default-key resolution + coaching error + deposit-category-only
+  validation; deposit line creation via the deposit path and via manual
+  AC assignment; pool exposure rules (paid-only, unclaimed-only, job-scoped,
+  cancelled-claim release, deductions never offered); deduction creation
+  (amount lock, AC copy, source row, unique claim); derived deposit-ness;
+  mixing; multiple deposits.
 - **Vitest** (`frontend/tests/`): picker's Deposit entry (present on invoice
   surface, absent on estimate; disabled-with-hint when unconfigured);
-  deposit form prefill; pills in invoices list / `JobCard` / `InvoicingBlock`
-  state logic; wizard credit rendering.
-- **E2E** (`e2e/`): the full flow — configure default deposit AC, create
-  deposit invoice via picker, send, (seeded/simulated) pay, see "DEP PAID" on
-  the board, build final invoice pulling the credit, verify deduction line
-  and pill retirement. Per Definition of Done.
+  deposit form prefill; AC manager freeze behavior; settings dropdown
+  filtering; pills in invoices list / `JobCard` / `InvoicingBlock` state
+  logic; wizard credit rendering.
+- **E2E** (`e2e/`): the full flow — create a deposit category, configure the
+  default, create deposit invoice via picker, send, (seeded/simulated) pay,
+  see "DEP PAID" on the board, build final invoice pulling the credit,
+  verify deduction line and pill retirement. Per Definition of Done.
 
 ## Doc updates (same session as implementation)
 
-- `invoicing-and-expenses.md`: deposit concept, field, pool rules, picker
-  alignment; also fix stale `taxable_override` mentions (§118, §298).
+- `invoicing-and-expenses.md`: deposit concept, category flag, pool rules,
+  picker alignment; also fix stale `taxable_override` mentions (§118, §298).
 - `estimates-and-prices.md` §687: same stale mention.
-- `data-constraints.md`: `is_deposit` field row, new Configuration key
-  (§1.1), claim-constraint note.
+- `data-constraints.md`: `AccountingCategory.is_deposit` row + freeze/taxable
+  invariants, new Configuration key (§1.1), claim-constraint note.
 - `jobs-and-tasks.md`: board pill, if the board section enumerates card
   elements.
+- `docs/designs/LATER.md`: entry for full AC immutability/supersession
+  (added with this spec).
 
 ## Out of scope
 
 - Partial/split deduction (remaining-balance model) — deferred until needed.
 - Refund/undo of a paid deposit.
 - Any invoice-readiness gate beyond the deposit-line coaching error.
-- Estimate-side deposit lines.
+- Full AC immutability/supersession (RateScheme-style) — separate future
+  effort; this branch freezes only `is_deposit`/`taxable` on used
+  categories.
