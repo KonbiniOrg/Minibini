@@ -19,13 +19,38 @@ class InvoiceService:
             )
 
     @staticmethod
-    def add_line_item(invoice_pk, **kwargs):
-        """Add a manual line item to a draft invoice."""
+    def _resolve_deposit_category():
+        """The configured default deposit AC, or a coaching error."""
+        from apps.core.models import AccountingCategory, Configuration
+        cfg = Configuration.objects.filter(
+            key='default_deposit_accounting_category').first()
+        pk = (cfg.value or '').strip() if cfg else ''
+        if not pk:
+            raise ValidationError({'accounting_category': [
+                'No default deposit accounting category is configured. '
+                'Set the default_deposit_accounting_category setting '
+                'in Settings.']})
+        try:
+            return AccountingCategory.objects.get(
+                pk=pk, is_active=True, is_deposit=True)
+        except (AccountingCategory.DoesNotExist, ValueError, TypeError):
+            raise ValidationError({'accounting_category': [
+                f'The configured default deposit accounting category '
+                f'({pk!r}) does not exist, is inactive, or is not a '
+                f'deposit category.']})
+
+    @staticmethod
+    def add_line_item(invoice_pk, deposit=False, **kwargs):
+        """Add a manual line item to a draft invoice. deposit=True stamps
+        the configured default deposit accounting category."""
         try:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
             raise NotFoundError(f'Invoice {invoice_pk} not found')
         InvoiceService._validate_draft(invoice)
+        if deposit:
+            kwargs['accounting_category'] = (
+                InvoiceService._resolve_deposit_category())
         from apps.core.services import LineItemService
         kwargs = LineItemService.normalize_fk_kwargs(InvoiceLineItem, kwargs)
         li = InvoiceLineItem(invoice=invoice, **kwargs)
