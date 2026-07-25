@@ -1126,6 +1126,9 @@ class LineItemService:
 class ConfigurationService:
     """Service for managing configuration: key-value settings and line item types."""
 
+    # Fields frozen once an AccountingCategory is referenced anywhere.
+    FROZEN_WHEN_REFERENCED = ('taxable', 'is_deposit')
+
     @staticmethod
     def set(key, value):
         """Set a Configuration key/value from the settings API — the views
@@ -1154,6 +1157,15 @@ class ConfigurationService:
             cat = AccountingCategory.objects.get(pk=pk)
         except AccountingCategory.DoesNotExist:
             raise NotFoundError(f'AccountingCategory {pk} not found')
+        frozen = [
+            f for f in ConfigurationService.FROZEN_WHEN_REFERENCED
+            if f in kwargs and kwargs[f] != getattr(cat, f)
+        ]
+        if frozen and cat.is_referenced():
+            raise ValidationError(
+                f"{' and '.join(frozen)} cannot change on a category that is "
+                'in use. Retire this category and create a replacement instead.'
+            )
         for field, value in kwargs.items():
             setattr(cat, field, value)
         cat.full_clean()

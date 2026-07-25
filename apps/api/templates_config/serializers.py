@@ -82,10 +82,16 @@ class ConfigurationSerializer(serializers.ModelSerializer):
 
 
 class AccountingCategorySerializer(serializers.ModelSerializer):
+    is_referenced = serializers.SerializerMethodField()
+
     class Meta:
         model = AccountingCategory
         fields = [
-            'id', 'code', 'name', 'taxable', 'default_description', 'is_active',
-            'qbo_item_id', 'qbo_expense_account_id',
+            'id', 'code', 'name', 'taxable', 'is_deposit',
+            'default_description', 'is_active',
+            'qbo_item_id', 'qbo_expense_account_id', 'is_referenced',
         ]
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'is_referenced']
+
+    def get_is_referenced(self, obj):
+        return obj.is_referenced()
