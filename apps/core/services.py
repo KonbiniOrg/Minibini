@@ -70,7 +70,6 @@ class NumberGenerationService:
     Supports patterns like:
     - "JOB-{year}-{counter:04d}" -> JOB-2025-0001
     - "INV-{year}-{month:02d}-{counter:05d}" -> INV-2025-10-00001
-    - "EST-{counter:04d}" -> EST-0001
 
     Thread-safe using database-level locking. Numbers are assigned atomically
     when generate_next_number() is called.
@@ -78,12 +77,13 @@ class NumberGenerationService:
     Configuration keys:
     - job_number_sequence: Pattern for job numbers
     - job_counter: Current counter for jobs
-    - estimate_number_sequence: Pattern for estimate numbers
-    - estimate_counter: Current counter for estimates
     - invoice_number_sequence: Pattern for invoice numbers
     - invoice_counter: Current counter for invoices
     - po_number_sequence: Pattern for PO numbers
     - po_counter: Current counter for POs
+
+    Estimates are not numbered here: an estimate's number is its job's
+    job_number, with the version distinguishing revisions.
     """
 
     # Map document types to their key names. The *pattern* (sequence) is a
@@ -127,7 +127,7 @@ class NumberGenerationService:
         Generate the next sequential number for the given document type.
 
         Args:
-            document_type: One of 'job', 'estimate', 'invoice', 'po'
+            document_type: One of 'job', 'invoice', 'po'
 
         Returns:
             The next formatted document number
