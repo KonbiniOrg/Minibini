@@ -1,3 +1,4 @@
+from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User
@@ -228,3 +229,58 @@ class TagSharingTest(BaseTestCase):
         response = self.client.get('/api/tags/')
         names = [t['name'] for t in response.data['results']]
         self.assertIn('listed-shared-tag', names)
+
+
+class TagDeleteAPITest(BaseTestCase):
+    """DELETE /api/tags/{id}/ removes a tag globally — from every contact
+    and business it's applied to — via the standard two-phase confirm."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(
+            first_name='Global', last_name='Tagged',
+            email='globaltag@test.com', mobile_number='555-100-0005',
+        )
+        dc = Contact.objects.create(
+            first_name='Global', last_name='BizContact',
+            email='globaltagbiz@test.com', mobile_number='555-100-0006',
+        )
+        self.business = Business.objects.create(
+            business_name='Global Tag Corp',
+            default_contact=dc,
+        )
+        self.tag = Tag.objects.create(name='global-remove-me')
+        self.contact.tags.add(self.tag)
+        self.business.tags.add(self.tag)
+
+    def test_delete_without_confirm_returns_impact_counts(self):
+        response = self.client.delete(f'/api/tags/{self.tag.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['confirm_required'])
+        self.assertEqual(response.data['impact'], {'contacts': 1, 'businesses': 1})
+        self.assertTrue(Tag.objects.filter(pk=self.tag.pk).exists())
+
+    def test_delete_with_confirm_removes_tag_from_every_contact_and_business(self):
+        response = self.client.delete(f'/api/tags/{self.tag.pk}/?confirm=true')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Tag.objects.filter(pk=self.tag.pk).exists())
+        self.assertNotIn(self.tag, self.contact.tags.all())
+        self.assertNotIn(self.tag, self.business.tags.all())
+
+    def test_delete_requires_can_manage_jobs(self):
+        worker = User.objects.create_user(username='plain_tag_worker', password='testpass')
+        self.client.force_authenticate(user=worker)
+        response = self.client.delete(f'/api/tags/{self.tag.pk}/?confirm=true')
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Tag.objects.filter(pk=self.tag.pk).exists())
+
+    def test_delete_allowed_with_can_manage_jobs_atom(self):
+        worker = User.objects.create_user(username='pm_tag_worker', password='testpass')
+        worker.user_permissions.add(Permission.objects.get(codename='can_manage_jobs'))
+        self.client.force_authenticate(user=worker)
+        response = self.client.delete(f'/api/tags/{self.tag.pk}/?confirm=true')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Tag.objects.filter(pk=self.tag.pk).exists())

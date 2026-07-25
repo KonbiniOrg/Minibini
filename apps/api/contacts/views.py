@@ -34,7 +34,7 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         return ContactSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = super().get_queryset().prefetch_related('tags')
         business = self.request.query_params.get('business')
         if business:
             qs = qs.filter(business_id=business)
@@ -217,7 +217,7 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         return [IsAuthenticated(), CanManageJobs()]
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = super().get_queryset().prefetch_related('tags')
         starts_with = self.request.query_params.get('starts_with')
         if starts_with == '0-9':
             qs = qs.filter(business_name__regex=r'^[0-9]')
@@ -405,11 +405,13 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         return Response(TagSerializer(TagService.detach(business, tag_id), many=True).data)
 
 
-class TagViewSet(viewsets.ModelViewSet):
+class TagViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
 
     def get_permissions(self):
+        if self.action == 'destroy':
+            return [IsAuthenticated(), CanManageJobs()]
         return [IsAuthenticated()]
 
     def get_queryset(self):
@@ -418,6 +420,17 @@ class TagViewSet(viewsets.ModelViewSet):
         if search:
             qs = qs.filter(name__icontains=search)
         return qs
+
+    def get_deletion_impact(self, tag):
+        return {
+            'contacts': tag.contacts.count(),
+            'businesses': tag.businesses.count(),
+        }
+
+    def perform_confirmed_destroy(self, tag):
+        name = tag.name
+        tag.delete()
+        return Response({'message': f'Tag "{name}" has been deleted.'})
 
 
 class PaymentTermsViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):

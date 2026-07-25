@@ -382,7 +382,19 @@ TagService.detach(obj, tag_id) # obj.tags.remove(tag_id)
 `name__icontains`) for the flat tag list. Per-object attach/detach is via
 `POST /api/contacts/{id}/add-tag/` / `remove-tag/` and the Business
 equivalents (body: `{name}` / `{tag_id}`) — thin wrappers calling
-`TagService` and returning the object's fresh tag list.
+`TagService` and returning the object's fresh tag list. Both
+`ContactViewSet.get_queryset()` and `BusinessViewSet.get_queryset()`
+`prefetch_related('tags')` so list/retrieve don't N+1 on the nested
+`TagSerializer`.
+
+`DELETE /api/tags/{id}/` removes a tag globally — from every contact and
+business it's applied to in one call (deleting the `Tag` row cascades the
+`contact_tags`/`business_tags` through-table rows) — via the standard
+`ConfirmDeleteMixin` two-phase confirm: first call returns
+`{'confirm_required': True, 'impact': {'contacts': N, 'businesses': M}}`,
+`?confirm=true` executes. Gated `IsAuthenticated` + `CanManageJobs`
+(matching the per-object add-tag/remove-tag write gate); all other
+`TagViewSet` actions stay `IsAuthenticated` only.
 
 ### Frontend
 
@@ -390,11 +402,16 @@ equivalents (body: `{name}` / `{tag_id}`) — thin wrappers calling
 an `endpoint` prop (`/api/contacts/{id}` or `/api/businesses/{id}`) and
 `initialTags`, POSTing to `{endpoint}/add-tag/` / `{endpoint}/remove-tag/`.
 Used identically on `ContactDetail.svelte` and `BusinessDetail.svelte`
-(read-only when the viewer lacks `can_manage_jobs`).
+(read-only when the viewer lacks `can_manage_jobs`) — this is the
+per-object removal path (one contact/business at a time).
 
 The combined list page (`ContactListPage.svelte`, below) also fetches the
 full tag list (`/api/tags/?page_size=200`) to render filter chips —
 `?tag=<id>` (repeatable) on both `/api/contacts/` and `/api/businesses/`.
+When the viewer has `can_manage_jobs`, each chip gets a small "×" that
+calls `DELETE /api/tags/{id}/` (global removal, not per-object) and shows
+an inline impact-count confirm panel before the real delete, mirroring the
+delete-confirm pattern on `ContactDetailPage.svelte`.
 
 ---
 
