@@ -168,6 +168,21 @@ class InvoiceLineItem(BaseLineItem):
         """Get the name of the parent field for this line item type."""
         return 'invoice'
 
+    @property
+    def is_deposit_line(self):
+        """A deposit charge: deposit-category line that is not a deduction."""
+        return bool(
+            self.accounting_category_id
+            and self.accounting_category.is_deposit
+            and not self.sources.filter(
+                source_type=InvoiceLineItemSource.SOURCE_DEPOSIT).exists()
+        )
+
+    @property
+    def is_deposit_deduction(self):
+        return self.sources.filter(
+            source_type=InvoiceLineItemSource.SOURCE_DEPOSIT).exists()
+
     def __str__(self):
         return f"Invoice Line Item {self.pk} for {self.invoice.display_number}"
 
@@ -182,11 +197,13 @@ class InvoiceLineItemSource(models.Model):
     SOURCE_TASK = 'task'
     SOURCE_EXPENSE = 'expense'
     SOURCE_FEE = 'fee'
+    SOURCE_DEPOSIT = 'deposit'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_MATERIAL, 'Material'),
         (SOURCE_TASK, 'Task'),
         (SOURCE_EXPENSE, 'Expense'),
         (SOURCE_FEE, 'Fee'),
+        (SOURCE_DEPOSIT, 'Deposit'),
     ]
 
     source_id = models.AutoField(primary_key=True)
@@ -216,6 +233,8 @@ class InvoiceLineItemSource(models.Model):
         if self.source_type == self.SOURCE_FEE:
             from apps.jobs.models import Fee
             return Fee.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_DEPOSIT:
+            return InvoiceLineItem.objects.filter(pk=self.source_pk).first()
         raise ValueError(f'Unknown source_type: {self.source_type}')
 
     def __str__(self):
