@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
   import UnitsSelect from '../UnitsSelect.svelte';
   import Modal from '../Modal.svelte';
 
@@ -78,7 +79,12 @@
       await api.post(url, payload);
       onSaved();
     } catch (e) {
-      error = e.message || 'Could not add line.';
+      // The deposit branch has no AC input of its own — the server's
+      // field-keyed coaching text (no default deposit category configured)
+      // belongs in the form-level error line instead of a FieldError slot.
+      const t = triageError(e);
+      error = (t.fields.accounting_category && t.fields.accounting_category[0])
+        || t.message || 'Could not add line.';
     } finally { busy = false; }
   }
 </script>
