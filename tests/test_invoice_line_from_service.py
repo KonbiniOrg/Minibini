@@ -46,10 +46,34 @@ class InvoiceLineFromServiceTest(TestCase):
         data = resp.json()
         self.assertEqual(data['description'], 'CNC Routing')
         self.assertEqual(Decimal(data['qty']), Decimal('3'))
+        # No default_active_modifiers on self.svc, so effective_rate == rate.
         self.assertEqual(Decimal(data['price']), Decimal('90.00'))
         self.assertEqual(data['accounting_category'], self.cat.pk)
         self.assertEqual(Task.objects.count(), before)  # no job side effects
         self.assertEqual(data['sources'], [])
+
+    def test_price_uses_effective_rate_with_modifiers(self):
+        """Parity with the estimate mirror: price must snapshot
+        scheme.effective_rate(service_item.default_active_modifiers), not
+        the bare scheme.rate — a pre-checked modifier must be folded in."""
+        modifier_scheme = RateScheme.objects.create(
+            name='CNC-hourly-messy', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('90.00'), unit_label='hours',
+            modifiers=[{'key': 'messy', 'label': 'Messy', 'percent': 10}],
+            accounting_category=self.cat)
+        modifier_svc = ServiceItem.objects.create(
+            template_name='CNC Routing (messy)', rate_scheme=modifier_scheme,
+            default_active_modifiers=['messy'])
+        expected_price = modifier_scheme.effective_rate(['messy'])
+        self.assertNotEqual(expected_price, modifier_scheme.rate)
+
+        resp = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items-from-service/',
+            {'service_item': modifier_svc.pk, 'qty': '1'}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertEqual(Decimal(data['price']), expected_price)
+        self.assertNotEqual(Decimal(data['price']), modifier_scheme.rate)
 
     def test_unknown_service_404(self):
         resp = self.client.post(

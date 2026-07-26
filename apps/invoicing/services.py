@@ -110,7 +110,7 @@ class InvoiceService:
             # and trip the 2-decimal-places validator.
             qty=_decimal_or_invalid(qty, 'qty'),
             units=scheme.unit_label or 'none',
-            price=scheme.rate,
+            price=scheme.effective_rate(service_item.default_active_modifiers),
             accounting_category=service_item.effective_accounting_category,
         )
         li.full_clean()
