@@ -1874,19 +1874,26 @@ class BoardService:
         # Pipeline: draft + submitted + approved (estimate accepted, awaiting
         # prep). A held job keeps its true status, so held-from-approved jobs
         # land here automatically with the 'on-hold' sub-status.
-        pipeline_jobs = Job.objects.filter(
+        pipeline_jobs = list(Job.objects.filter(
             status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
                         Job.STATUS_APPROVED]
-        ).select_related('contact', 'project_manager').order_by('due_date')
-        pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
+        ).select_related('contact', 'project_manager').order_by('due_date'))
+        pipeline_deposit_states = BoardService._deposit_states(
+            [j.job_id for j in pipeline_jobs])
+        pipeline = [
+            BoardService._serialize_job(job, pipeline_deposit_states)
+            for job in pipeline_jobs
+        ]
 
         # In Progress (board column key kept as 'approved' for URL stability)
-        approved_jobs = Job.objects.filter(
+        approved_jobs = list(Job.objects.filter(
             status='in_progress'
-        ).select_related('contact', 'project_manager').order_by('due_date')
+        ).select_related('contact', 'project_manager').order_by('due_date'))
+        approved_deposit_states = BoardService._deposit_states(
+            [j.job_id for j in approved_jobs])
         approved_list = []
         for i, job in enumerate(approved_jobs):
-            job_data = BoardService._serialize_job(job)
+            job_data = BoardService._serialize_job(job, approved_deposit_states)
             job_data['accent_color'] = job.accent_color or BoardService.ACCENT_COLORS[
                 i % len(BoardService.ACCENT_COLORS)
             ]
@@ -1924,12 +1931,17 @@ class BoardService:
         unassigned.sort(key=lambda t: t.get('job_due_date') or '9999-12-31')
 
         # Closed: terminal states within retention
-        closed_jobs = Job.objects.filter(
+        closed_jobs = list(Job.objects.filter(
             status__in=[Job.STATUS_COMPLETED, Job.STATUS_REJECTED,
                         Job.STATUS_CANCELLED],
             completed_date__gte=cutoff,
-        ).select_related('contact', 'project_manager').order_by('-completed_date')
-        closed = [BoardService._serialize_closed_job(job) for job in closed_jobs]
+        ).select_related('contact', 'project_manager').order_by('-completed_date'))
+        closed_deposit_states = BoardService._deposit_states(
+            [j.job_id for j in closed_jobs])
+        closed = [
+            BoardService._serialize_closed_job(job, closed_deposit_states)
+            for job in closed_jobs
+        ]
 
         # Available workers: active users not already shown in worker columns
         existing_worker_ids = set(worker_map.keys())
@@ -1954,12 +1966,17 @@ class BoardService:
         """Return pipeline jobs (draft + submitted + approved, held or not)
         with worksheet/estimate info."""
         from apps.jobs.models import Job
-        pipeline_jobs = Job.objects.filter(
+        pipeline_jobs = list(Job.objects.filter(
             status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
                         Job.STATUS_APPROVED]
-        ).select_related('contact', 'project_manager').order_by('due_date')
+        ).select_related('contact', 'project_manager').order_by('due_date'))
+        deposit_states = BoardService._deposit_states(
+            [j.job_id for j in pipeline_jobs])
         return {
-            'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
+            'jobs': [
+                BoardService._serialize_pipeline_job(job, deposit_states)
+                for job in pipeline_jobs
+            ],
         }
 
     @staticmethod
@@ -2013,6 +2030,7 @@ class BoardService:
         from apps.jobs.models import Task
 
         jobs = BoardService.in_progress_column_jobs()
+        deposit_states = BoardService._deposit_states([j.pk for j in jobs])
         stats_by_job = {
             s['job_id']: s
             for s in Task.objects.filter(job_id__in=[j.pk for j in jobs])
@@ -2025,7 +2043,7 @@ class BoardService:
         }
         payload = []
         for i, job in enumerate(jobs):
-            job_data = BoardService._serialize_job(job)
+            job_data = BoardService._serialize_job(job, deposit_states)
             job_data['accent_color'] = job.accent_color or BoardService.ACCENT_COLORS[
                 i % len(BoardService.ACCENT_COLORS)
             ]
@@ -2107,14 +2125,17 @@ class BoardService:
         """
         from apps.jobs.models import Job
         from apps.invoicing.models import Invoice
-        unpaid_jobs = Job.objects.filter(
+        unpaid_jobs = list(Job.objects.filter(
             Q(status=Job.STATUS_WORK_COMPLETE) |
             Q(invoice__status__in=[Invoice.STATUS_DRAFT, Invoice.STATUS_OPEN,
                                    Invoice.STATUS_PARTLY_PAID, Invoice.STATUS_DEFAULTED])
-        ).distinct().select_related('contact', 'project_manager').order_by('due_date')
+        ).distinct().select_related('contact', 'project_manager').order_by('due_date'))
 
+        deposit_states = BoardService._deposit_states(
+            [j.job_id for j in unpaid_jobs])
         unpaid_list = [
-            BoardService._serialize_unpaid_job(job) for job in unpaid_jobs
+            BoardService._serialize_unpaid_job(job, deposit_states)
+            for job in unpaid_jobs
         ]
         return {'jobs': unpaid_list}
 
@@ -2132,15 +2153,56 @@ class BoardService:
 
         cutoff = timezone.now() - timedelta(days=retention_days)
 
-        closed_jobs = Job.objects.filter(
+        closed_jobs = list(Job.objects.filter(
             status__in=[Job.STATUS_COMPLETED, Job.STATUS_REJECTED,
                         Job.STATUS_CANCELLED],
             completed_date__gte=cutoff,
-        ).select_related('contact', 'project_manager').order_by('-completed_date')
-        return {'jobs': [BoardService._serialize_closed_job(job) for job in closed_jobs]}
+        ).select_related('contact', 'project_manager').order_by('-completed_date'))
+        deposit_states = BoardService._deposit_states(
+            [j.job_id for j in closed_jobs])
+        return {
+            'jobs': [
+                BoardService._serialize_closed_job(job, deposit_states)
+                for job in closed_jobs
+            ],
+        }
 
     @staticmethod
-    def _serialize_job(job):
+    def _deposit_states(job_ids):
+        """job_id -> 'requested' | 'paid' for jobs with live deposit
+        signals; jobs absent from the dict have none."""
+        from apps.invoicing.models import (
+            Invoice, InvoiceLineItem, InvoiceLineItemSource,
+        )
+        rows = list(
+            InvoiceLineItem.objects
+            .filter(invoice__job_id__in=job_ids,
+                    accounting_category__is_deposit=True,
+                    invoice__status__in=[
+                        Invoice.STATUS_OPEN, Invoice.STATUS_PARTLY_PAID,
+                        Invoice.STATUS_PAID])
+            .exclude(
+                sources__source_type=InvoiceLineItemSource.SOURCE_DEPOSIT)
+            .values_list('pk', 'invoice__job_id', 'invoice__status')
+        )
+        claimed = set(
+            InvoiceLineItemSource.objects
+            .filter(source_type=InvoiceLineItemSource.SOURCE_DEPOSIT,
+                    source_pk__in=[pk for pk, _, _ in rows])
+            .exclude(invoice_line_item__invoice__status=
+                     Invoice.STATUS_CANCELLED)
+            .values_list('source_pk', flat=True)
+        )
+        states = {}
+        for pk, job_id, status in rows:
+            if status in (Invoice.STATUS_OPEN, Invoice.STATUS_PARTLY_PAID):
+                states[job_id] = 'requested'
+            elif pk not in claimed and states.get(job_id) != 'requested':
+                states[job_id] = 'paid'
+        return states
+
+    @staticmethod
+    def _serialize_job(job, deposit_states=None):
         return {
             'job_id': job.job_id,
             'job_number': job.job_number,
@@ -2160,22 +2222,23 @@ class BoardService:
             ),
             'due_date': job.due_date.isoformat() if job.due_date else None,
             'completed_date': job.completed_date.isoformat() if job.completed_date else None,
+            'deposit_state': (deposit_states or {}).get(job.job_id),
         }
 
     @staticmethod
-    def _serialize_closed_job(job):
+    def _serialize_closed_job(job, deposit_states=None):
         """Serialize a closed job with dates and profitability."""
-        data = BoardService._serialize_job(job)
+        data = BoardService._serialize_job(job, deposit_states)
         data['start_date'] = job.start_date.isoformat() if job.start_date else None
         profitability = BoardService._compute_profitability(job)
         data.update(profitability)
         return data
 
     @staticmethod
-    def _serialize_pipeline_job(job):
+    def _serialize_pipeline_job(job, deposit_states=None):
         """Serialize a pipeline job with worksheet and estimate info."""
         from apps.estimates.models import EstimateLineItem
-        data = BoardService._serialize_job(job)
+        data = BoardService._serialize_job(job, deposit_states)
 
         # The plan/worksheet layer has been removed; work lives directly on the
         # Job. The key is kept (empty) for API-contract stability until the
@@ -2222,10 +2285,10 @@ class BoardService:
         }
 
     @staticmethod
-    def _serialize_unpaid_job(job):
+    def _serialize_unpaid_job(job, deposit_states=None):
         """Serialize an unpaid job with invoice details and profitability."""
         from apps.invoicing.models import Invoice
-        data = BoardService._serialize_job(job)
+        data = BoardService._serialize_job(job, deposit_states)
         invoices = []
         for inv in job.invoice_set.select_related('job').exclude(
                 status__in=[Invoice.STATUS_CANCELLED, Invoice.STATUS_SUPERSEDED]).order_by('created_date'):
