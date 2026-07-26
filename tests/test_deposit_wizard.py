@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from apps.contacts.models import Contact
-from apps.core.models import AccountingCategory, AppState, Configuration, User
+from apps.core.models import AccountingCategory, AppState, Configuration
 from apps.invoicing.models import (
     Invoice, InvoiceLineItem, InvoiceLineItemSource,
 )
@@ -23,8 +23,6 @@ class DepositCreditPoolTest(TestCase):
         AppState.objects.create(key='invoice_counter', value='0')
         self.dep_cat = AccountingCategory.objects.create(
             code='DEP', name='Deposits', taxable=False, is_deposit=True)
-        self.std_cat = AccountingCategory.objects.create(
-            code='SVC', name='Service', taxable=True)
         contact = Contact.objects.create(
             first_name='J', last_name='D', email='j@d.com',
             mobile_number='555')
@@ -149,3 +147,61 @@ class DepositCreditPoolTest(TestCase):
         self.assertNotIn(
             self.draft.invoicelineitem_set.get(price=Decimal('100.00')).pk,
             ids)
+
+    def test_deduction_line_not_reclaimable_as_deposit_atom(self):
+        # A deduction line carries the deposit AC too (copied from its
+        # source), so the bare "is this a deposit-category line + is its
+        # invoice paid" guard used to accept it. That let a paid invoice
+        # holding a -$5,000 deduction line be re-pulled as {'type':
+        # 'deposit', 'id': <deduction pk>} on a fresh draft — the wizard
+        # negates the (already negative) deduction total, producing a
+        # POSITIVE $5,000 charge line under a fresh unique key instead of
+        # rejecting the atom. The guard must require the full
+        # `is_deposit_line` predicate (deposit-category AND not itself a
+        # deduction), not just the category flag.
+        deduction = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.draft, [{'type': 'deposit', 'id': self.dep_line.pk}])
+        self.assertTrue(deduction.is_deposit_deduction)
+        # Promote the deduction's own invoice to paid.
+        Invoice.objects.filter(pk=self.draft.pk).update(
+            status=Invoice.STATUS_PAID)
+
+        new_draft = Invoice.objects.create(job=self.job,
+                                           status=Invoice.STATUS_DRAFT)
+        with self.assertRaises(ValidationError):
+            InvoiceWizardService.add_atoms_to_new_line_item(
+                new_draft, [{'type': 'deposit', 'id': deduction.pk}])
+
+        # The pool must never offer the deduction line as a deposit credit
+        # in the first place.
+        pool = InvoiceWizardService.get_source_pool(new_draft)
+        group = _deposit_group(pool)
+        ids = [a['id'] for a in (group['atoms'] if group else [])]
+        self.assertNotIn(deduction.pk, ids)
+
+    def test_cancelling_claiming_invoice_releases_deposit_credit(self):
+        # Deposit claimed by draft A; promote A to open (queryset update,
+        # mirroring the other status-jump tests in this file), then cancel
+        # it. The claim exclusion in get_source_pool is logical (cancelled
+        # invoices are excluded from the claims query), so a fresh draft
+        # should see the credit as available again.
+        #
+        # NOTE: physical re-claim still 409s on the DB unique constraint —
+        # InvoiceLineItemSource rows survive cancellation (documented in
+        # docs/designs/LATER.md, "Cancelled invoices keep their atom-claim
+        # rows"). That asymmetry is out of scope here; this test only
+        # covers the pool's logical "available" display.
+        claiming_li = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.draft, [{'type': 'deposit', 'id': self.dep_line.pk}])
+        self.assertTrue(claiming_li.is_deposit_deduction)
+        Invoice.objects.filter(pk=self.draft.pk).update(
+            status=Invoice.STATUS_OPEN)
+
+        InvoiceService.cancel(self.draft.pk)
+
+        fresh_draft = Invoice.objects.create(job=self.job,
+                                             status=Invoice.STATUS_DRAFT)
+        pool = InvoiceWizardService.get_source_pool(fresh_draft)
+        atom = _deposit_group(pool)['atoms'][0]
+        self.assertEqual(atom['id'], self.dep_line.pk)
+        self.assertEqual(atom['state'], 'available')

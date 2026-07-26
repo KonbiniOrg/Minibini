@@ -987,8 +987,7 @@ class InvoiceWizardService(BaseWizardService):
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if isinstance(instance, InvoiceLineItem):
-            if not (instance.accounting_category_id
-                    and instance.accounting_category.is_deposit):
+            if not instance.is_deposit_line:
                 raise ValidationError('Not a deposit line.')
             if instance.invoice.status != Invoice.STATUS_PAID:
                 raise ValidationError(
