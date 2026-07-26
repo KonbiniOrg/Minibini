@@ -77,22 +77,21 @@ test('§2-3 Deposit credit: board banner, pulling the credit, claim lifecycle', 
   await test.step('Pulling it (Add Here) creates a negative "Less deposit" line', async () => {
     await depositCreditRow(page).locator('input[type="checkbox"]').check();
     await page.getByRole('button', { name: 'Add Here' }).click();
+    // Claimed in place, live — the Deposit credits group's has_billable_atoms
+    // is presence-based (apps/invoicing/services.py get_source_pool), same
+    // as every other pool group, so the row stays visible and now shows its
+    // claimed marker instead of the group collapsing.
+    await expect(depositCreditRow(page)).toContainText('→ line 1');
     await page.getByRole('button', { name: 'Back to lines' }).click();
     const row = page.locator('tr', { hasText: 'Less deposit (INV-E2E-DEP-1)' });
     await expect(row).toBeVisible();
     await expect(row).toContainText('$-5000.00');
   });
 
-  // Re-opening the pool is a fresh mount (loadAll() re-fetches source-pool
-  // from the server), which is what makes this deterministic — the group's
-  // has_billable_atoms only recomputes server-side. With the sole deposit
-  // credit now claimed, the group collapses to its "no billable items" empty
-  // state (apps/invoicing/services.py get_source_pool) rather than rendering
-  // a distinct "claimed" row — that's how the shipped UI represents "the
-  // credit shows as claimed" here (nothing left available to add).
-  await test.step('Re-opening the pool shows the credit as claimed (nothing left to add)', async () => {
+  await test.step('Re-opening the pool still shows the credit as claimed', async () => {
     await page.getByRole('button', { name: 'Reconcile' }).click();
-    await expect(page.getByText('Deposit credits (no billable items)')).toBeVisible();
+    await expect(page.getByText('Deposit credits', { exact: true })).toBeVisible();
+    await expect(depositCreditRow(page)).toContainText('→ line 1');
   });
 
   await test.step('While claimed by this live draft, the board DEP PAID banner clears', async () => {

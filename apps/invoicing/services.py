@@ -862,8 +862,7 @@ class InvoiceWizardService(BaseWizardService):
             task_list.append({
                 'task_id': None,
                 'name': 'Deposit credits',
-                'has_billable_atoms': any(
-                    a['state'] == 'available' for a in deposit_atoms),
+                'has_billable_atoms': len(deposit_atoms) > 0,
                 'atoms': deposit_atoms,
             })
 

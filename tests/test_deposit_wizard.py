@@ -88,6 +88,18 @@ class DepositCreditPoolTest(TestCase):
         atom = _deposit_group(pool)['atoms'][0]
         self.assertEqual(atom['state'], 'claimed_by_current')
 
+    def test_claimed_credit_group_still_has_billable_atoms(self):
+        # has_billable_atoms must be presence-based (like every other pool
+        # group), not availability-based — otherwise the group collapses to
+        # "no billable items" once its one-and-only credit is claimed,
+        # hiding the claimed row instead of rendering it.
+        InvoiceWizardService.add_atoms_to_new_line_item(
+            self.draft, [{'type': 'deposit', 'id': self.dep_line.pk}])
+        pool = InvoiceWizardService.get_source_pool(self.draft)
+        group = _deposit_group(pool)
+        self.assertEqual(group['atoms'][0]['state'], 'claimed_by_current')
+        self.assertTrue(group['has_billable_atoms'])
+
     def test_claimed_deposit_shows_claimed_by_other(self):
         InvoiceWizardService.add_atoms_to_new_line_item(
             self.draft, [{'type': 'deposit', 'id': self.dep_line.pk}])
