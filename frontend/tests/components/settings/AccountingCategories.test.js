@@ -52,4 +52,35 @@ describe('AccountingCategories', () => {
       name: 'Labor',
     }));
   });
+
+  it('disables taxable and deposit checkboxes for a referenced category', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/accounting-categories/')) {
+        return Promise.resolve({ results: [
+          { id: 1, code: 'SVC', name: 'Service', taxable: true,
+            is_deposit: false, is_active: true, is_referenced: true,
+            default_description: '', qbo_item_id: '', qbo_expense_account_id: '' },
+        ] });
+      }
+      return Promise.resolve({ results: [] });
+    });
+    const { getByRole, findByRole } = render(AccountingCategories);
+    await fireEvent.click(await findByRole('button', { name: /edit/i }));
+    expect(getByRole('checkbox', { name: /taxable by default/i })).toBeDisabled();
+    expect(getByRole('checkbox', { name: /deposit category/i })).toBeDisabled();
+  });
+
+  it('sends is_deposit on create', async () => {
+    const { findByRole, getByLabelText, getByRole } = render(AccountingCategories);
+    await fireEvent.click(await findByRole('button', { name: 'Add category' }));
+
+    await fireEvent.input(getByLabelText(/Code/), { target: { value: 'C3' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Deposits' } });
+    await fireEvent.click(getByRole('checkbox', { name: /deposit category/i }));
+    await fireEvent.click(getByRole('button', { name: 'Create' }));
+
+    expect(api.post).toHaveBeenCalledWith('/api/accounting-categories/', expect.objectContaining({
+      code: 'C3', name: 'Deposits', is_deposit: true, taxable: false,
+    }));
+  });
 });
