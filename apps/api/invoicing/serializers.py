@@ -55,6 +55,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
     units = UnitsField()
     sources = InvoiceLineItemSourceSerializer(many=True, read_only=True)
     adjustment_service_detail = serializers.SerializerMethodField()
+    is_deposit = serializers.SerializerMethodField()
 
     class Meta:
         model = InvoiceLineItem
@@ -64,7 +65,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
             'accounting_category', 'accounting_category_name',
                         'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail',
-            'sources',
+            'sources', 'is_deposit',
         ]
         read_only_fields = ['line_item_id']
 
@@ -72,6 +73,9 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
         if obj.accounting_category:
             return obj.accounting_category.name
         return None
+
+    def get_is_deposit(self, obj):
+        return obj.is_deposit_line
 
     def get_adjustment_service_detail(self, obj):
         if obj.adjustment_service_id is None:
@@ -96,6 +100,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     is_late = serializers.SerializerMethodField()
     job_has_other_invoices = serializers.SerializerMethodField()
     total = serializers.SerializerMethodField()
+    is_deposit = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
@@ -106,7 +111,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'line_items', 'default_send_to',
             'job_number', 'job_name', 'job_description',
             'due_date', 'is_late',
-            'job_has_other_invoices', 'total',
+            'job_has_other_invoices', 'total', 'is_deposit',
         ]
         read_only_fields = [
             'invoice_id', 'invoice_number', 'display_number', 'created_date',
@@ -178,6 +183,10 @@ class InvoiceSerializer(serializers.ModelSerializer):
             status=Invoice.STATUS_CANCELLED,
         ).exists()
 
+    def get_is_deposit(self, obj):
+        return any(li.is_deposit_line
+                   for li in obj.invoicelineitem_set.all())
+
 
 class InvoiceSummarySerializer(serializers.ModelSerializer):
     """Lightweight list serializer for the A/R list. Reads total/amount_paid/
@@ -191,6 +200,8 @@ class InvoiceSummarySerializer(serializers.ModelSerializer):
     total = serializers.SerializerMethodField()
     amount_paid = serializers.SerializerMethodField()
     balance = serializers.SerializerMethodField()
+    is_deposit = serializers.BooleanField(
+        source='has_deposit', read_only=True, default=False)
 
     class Meta:
         model = Invoice
@@ -198,7 +209,7 @@ class InvoiceSummarySerializer(serializers.ModelSerializer):
             'invoice_id', 'invoice_number', 'display_number', 'status', 'job',
             'job_number', 'job_name', 'customer_name',
             'sent_date', 'due_date', 'is_late',
-            'total', 'amount_paid', 'balance',
+            'total', 'amount_paid', 'balance', 'is_deposit',
         ]
 
     def get_job_number(self, obj):
