@@ -4,8 +4,17 @@
   // amount, state, sub_info?, claiming_*}.
   let { atom, selected = false, onToggle } = $props();
 
+  function fmtMoney(n) {
+    return Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  }
+
   // "3 hours × $25.00 = $75.00" — the qty × rate breakdown of the total.
+  // Deposit credit atoms have no meaningful qty × rate breakdown (they're
+  // a negated total pulled solo), so they render as a plain credit amount.
   function formatDetail(a) {
+    if (a.type === 'deposit') {
+      return `${fmtMoney(Math.abs(Number(a.amount)))} credit`;
+    }
     const qty = Number(a.qty);
     const unit = a.units && a.units !== 'none' ? ` ${a.units}` : '';
     return `${qty}${unit} × $${a.rate} = $${a.amount}`;
@@ -19,7 +28,7 @@
 {:else if atom.state === 'available'}
   <label>
     <input type="checkbox" checked={selected} onchange={onToggle}>
-    <small>[{atom.type === 'task' ? 'task' : atom.type === 'expense' ? 'expense' : atom.type === 'fee' ? 'fee' : 'material'}]</small>
+    <small>[{atom.type === 'task' ? 'task' : atom.type === 'expense' ? 'expense' : atom.type === 'fee' ? 'fee' : atom.type === 'deposit' ? 'deposit' : 'material'}]</small>
     {atom.description}
     {#if atom.task_cancelled}<span class="atom-cancelled" title="This task was cancelled; its recorded work is still billable.">cancelled — work done</span>{/if}
     {#if atom.struck_from_agreement}<span class="atom-cancelled" title="An accepted change order removed this from the agreement, but the work or material remains on the job. Bill it consciously, or reconcile the job.">struck from agreement</span>{/if}

@@ -52,3 +52,40 @@ describe('WizardAtomRow cancelled-task flag (C3)', () => {
     expect(getByText(/task not complete/)).toBeInTheDocument();
   });
 });
+
+describe('WizardAtomRow deposit credit atoms', () => {
+  function depositAtom(overrides = {}) {
+    return {
+      type: 'deposit', id: 5,
+      description: 'Deposit credit — INV-1042',
+      sub_info: '',
+      qty: '1', rate: '-5000.00', units: 'none',
+      amount: '-5000.00', state: 'available',
+      ...overrides,
+    };
+  }
+
+  it('labels deposit atoms and shows the credit amount', () => {
+    const { getByText } = render(WizardAtomRow, {
+      props: { atom: depositAtom(), selected: false, onToggle: vi.fn() },
+    });
+    expect(getByText('[deposit]')).toBeInTheDocument();
+    expect(getByText(/credit/i)).toBeInTheDocument();
+    expect(getByText(/\$5,000\.00/)).toBeInTheDocument();
+  });
+
+  it('renders the credit detail (not qty × rate) for a claimed deposit atom', () => {
+    const { getByText } = render(WizardAtomRow, {
+      props: {
+        atom: depositAtom({
+          state: 'claimed_by_other',
+          claiming_invoice_id: 7,
+          claiming_invoice_number: 'INV-1050',
+        }),
+        onToggle: vi.fn(),
+      },
+    });
+    expect(getByText(/\$5,000\.00 credit/)).toBeInTheDocument();
+    expect(getByText(/INV-1050/)).toBeInTheDocument();
+  });
+});
