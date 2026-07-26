@@ -515,7 +515,10 @@ export function invoicingBlock({ invoices = [], scopeTotal = 0, invoicedTotal = 
 }
 
 function invoiceStat(inv, now) {
-  const s = { label: inv.display_number, value: fmtMoney(invoiceTotal(inv)) };
+  const s = {
+    label: inv.is_deposit ? `${inv.display_number} · deposit` : inv.display_number,
+    value: fmtMoney(invoiceTotal(inv)),
+  };
   if (inv.status === 'paid' && inv.sent_date && inv.closed_date) {
     const days = calendarDaysBetween(inv.sent_date, inv.closed_date);
     s.sub = `paid in ${days} days`;

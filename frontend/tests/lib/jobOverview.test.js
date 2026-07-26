@@ -639,6 +639,32 @@ describe('invoicingBlock', () => {
     expect(stat(b, 'INV-06')).toBeTruthy();
   });
 
+  it('marks deposit invoices in the invoicing block', () => {
+    const b = invoicingBlock({
+      invoices: [
+        { display_number: 'INV-1042', status: 'open',
+          sent_date: '2026-07-20T00:00:00Z', total: '5000',
+          is_deposit: true },
+      ],
+      scopeTotal: 10000, invoicedTotal: 5000, now: '2026-07-25',
+    });
+    const s = b.stats.find((s) => s.label.includes('INV-1042'));
+    expect(s.label).toContain('deposit');
+  });
+
+  it('does not append "· deposit" for a non-deposit invoice', () => {
+    const b = invoicingBlock({
+      invoices: [
+        { display_number: 'INV-1043', status: 'open',
+          sent_date: '2026-07-20T00:00:00Z', total: '5000',
+          is_deposit: false },
+      ],
+      scopeTotal: 10000, invoicedTotal: 5000, now: '2026-07-25',
+    });
+    const s = b.stats.find((s) => s.label.includes('INV-1043'));
+    expect(s.label).toBe('INV-1043');
+  });
+
   it('frozen — fully billed and paid', () => {
     const b = invoicingBlock({
       invoices: [
