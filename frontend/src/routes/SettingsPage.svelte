@@ -11,6 +11,7 @@
   import GeneralSettings from '../components/settings/GeneralSettings.svelte';
   import MaterialMarkupSetting from '../components/settings/MaterialMarkupSetting.svelte';
   import DefaultMaterialCategorySetting from '../components/settings/DefaultMaterialCategorySetting.svelte';
+  import DefaultDepositCategorySetting from '../components/settings/DefaultDepositCategorySetting.svelte';
   import { fetchFromQBO, savePaymentAccounts, getPaymentAccounts } from '../lib/paymentAccounts.js';
 
   let tab = $state('accounting');
@@ -76,6 +77,8 @@
   <AccountingCategories />
 
   <DefaultMaterialCategorySetting />
+
+  <DefaultDepositCategorySetting />
 
   <h3>Payment accounts</h3>
 <p>
