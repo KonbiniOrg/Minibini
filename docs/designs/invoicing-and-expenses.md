@@ -555,10 +555,14 @@ error slot shows it, rather than garbled stringified-dict text.
 
 ### The credit atom (invoice wizard source pool)
 
-`InvoiceWizardService.get_source_pool` adds a **"Deposit credits"** group
-(present, like every other pool group, whenever at least one qualifying
-line exists — `has_billable_atoms` is presence-based, matching the rest
-of the pool, not a fixed always-shown group). A line qualifies when:
+`InvoiceWizardService.get_source_pool` adds a **"Deposit credits"** group.
+Unlike the other pool groups (which always render, showing a "(no billable
+items)" placeholder when empty), this group is emitted only when at least
+one qualifying line exists — jobs with no deposit history get no
+placeholder row. Its `has_billable_atoms` is presence-based
+(`len(atoms) > 0`), matching the other groups' formula, so a fully-claimed
+credit still renders its row with the claimed marker. A line qualifies
+when:
 
 - it's a deposit line (deposit-category AC, no deposit-source row);
 - on an invoice that is `paid` (`Invoice.STATUS_PAID`) — **you can't
