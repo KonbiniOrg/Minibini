@@ -1,4 +1,3 @@
-from django.core.exceptions import ValidationError
 from apps.core.history import record_history
 from rest_framework import serializers, status
 from rest_framework.decorators import action
@@ -217,10 +216,10 @@ class LineItemMixin:
                 item = service.add_line_item_from_pli(parent.pk, pli_id, qty)
             else:
                 item = service.add_line_item(parent.pk, **data)
-        except (ValidationError, NotFoundError) as e:
+        except NotFoundError:
             return Response(
-                {'detail': str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
+                {'detail': 'Not found.'},
+                status=status.HTTP_404_NOT_FOUND,
             )
 
         serializer = self.line_item_serializer_class(item)
@@ -236,19 +235,19 @@ class LineItemMixin:
         if request.method == 'DELETE':
             try:
                 service.delete_line_item(item.pk)
-            except (ValidationError, Exception) as e:
+            except NotFoundError:
                 return Response(
-                    {'detail': str(e)},
-                    status=status.HTTP_400_BAD_REQUEST,
+                    {'detail': 'Not found.'},
+                    status=status.HTTP_404_NOT_FOUND,
                 )
             return Response({'message': 'Line item deleted.'})
 
         try:
             item = service.update_line_item(item.pk, **request.data)
-        except (ValidationError, NotFoundError) as e:
+        except NotFoundError:
             return Response(
-                {'detail': str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
+                {'detail': 'Not found.'},
+                status=status.HTTP_404_NOT_FOUND,
             )
         serializer = self.line_item_serializer_class(item)
         return Response(serializer.data)
@@ -266,10 +265,10 @@ class LineItemMixin:
         service = self.line_item_service_class
         try:
             service.reorder_line_items(parent.pk, item_ids)
-        except (ValidationError, NotFoundError) as e:
+        except NotFoundError:
             return Response(
-                {'detail': str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
+                {'detail': 'Not found.'},
+                status=status.HTTP_404_NOT_FOUND,
             )
         items = self._get_line_items_qs(parent)
         serializer = self.line_item_serializer_class(items, many=True)
