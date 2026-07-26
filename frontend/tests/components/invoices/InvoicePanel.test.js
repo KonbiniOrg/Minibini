@@ -57,7 +57,7 @@ function makeLine(overrides = {}) {
   };
 }
 
-function mockApi(invoice, { invoices = null } = {}) {
+function mockApi(invoice, { invoices = null, categories = [] } = {}) {
   const invoiceList = invoices ?? (invoice ? [invoice] : []);
   api.get.mockReset();
   api.get.mockImplementation((url) => {
@@ -67,7 +67,7 @@ function mockApi(invoice, { invoices = null } = {}) {
     if (url.startsWith('/api/invoices/?job=')) {
       return Promise.resolve({ results: invoiceList });
     }
-    if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+    if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: categories });
     if (url.includes('rate-schemes')) return Promise.resolve({ results: [ADJ_SERVICE] });
     return Promise.resolve({});
   });
@@ -256,6 +256,52 @@ describe('InvoicePanel seed buttons', () => {
 
     expect(api.post).toHaveBeenCalledWith(`/api/invoices/${inv.invoice_id}/copy-from-estimate/`, {});
     expect(api.get).toHaveBeenCalledWith(`/api/invoices/${inv.invoice_id}/`);
+  });
+});
+
+// ─── Add-line flow (picker + InvoiceAddLineForm) ─────────────────────────────
+
+describe('InvoicePanel add-line flow', () => {
+  it('opens the picker (not the create-mode LineItemModal) when "Add Line Item" is clicked', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    mockApi(makeInvoice({ status: 'draft', line_items: [] }));
+    const { findByText, findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await fireEvent.click(await findByText('Add Line Item'));
+    expect(await findByRole('dialog')).toBeInTheDocument();
+    expect(await findByText('Add line')).toBeInTheDocument();
+    expect(await findByRole('button', { name: /add deposit/i })).toBeInTheDocument();
+  });
+
+  it('disables Add Deposit in the picker when no active deposit category exists', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    mockApi(makeInvoice({ status: 'draft', line_items: [] }));
+    const { findByText, findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await fireEvent.click(await findByText('Add Line Item'));
+    expect(await findByRole('button', { name: /add deposit/i })).toBeDisabled();
+  });
+
+  it('a deposit choice from the picker renders the deposit form, prefilled and postable', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    mockApi(makeInvoice({ status: 'draft', line_items: [], job_number: 'JOB-9' }), {
+      categories: [{ id: 3, code: 'DEP', name: 'Deposits', is_active: true, is_deposit: true }],
+    });
+    api.post.mockResolvedValue({ line_item_id: 1 });
+    const { findByText, findByRole, getByLabelText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await fireEvent.click(await findByText('Add Line Item'));
+
+    const depositBtn = await findByRole('button', { name: /add deposit/i });
+    expect(depositBtn).not.toBeDisabled();
+    await fireEvent.click(depositBtn);
+
+    expect(await findByText('Add Deposit')).toBeInTheDocument();
+    expect(getByLabelText(/description/i).value).toBe('Deposit on JOB-9');
+
+    await fireEvent.input(getByLabelText(/amount/i), { target: { value: '250' } });
+    await fireEvent.click(await findByRole('button', { name: /^add$/i }));
+
+    expect(api.post).toHaveBeenCalledWith('/api/invoices/5/line-items/', {
+      deposit: true, description: 'Deposit on JOB-9', qty: '1', units: 'none', price: '250',
+    });
   });
 });
 

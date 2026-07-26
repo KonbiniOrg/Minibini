@@ -5,6 +5,8 @@
   import LineItemTable from '../LineItemTable.svelte';
   import LineItemModal from '../LineItemModal.svelte';
   import AdjustmentModal from '../AdjustmentModal.svelte';
+  import PriceListPicker from '../PriceListPicker.svelte';
+  import InvoiceAddLineForm from './InvoiceAddLineForm.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import ReconcileMode from '../wizards/ReconcileMode.svelte';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
@@ -34,9 +36,11 @@
   );
 
   let modalOpen = $state(false);
-  let modalMode = $state('create');
+  let modalMode = $state('edit');
   let modalItem = $state(null);
   let adjustmentModalOpen = $state(false);
+  let pickerOpen = $state(false);
+  let addChoice = $state(null);
 
   // Reconcile (wizard) is a mode of this panel, not a separate route. Initial
   // mode comes from the per-doc workspace memory, but is validated against the
@@ -87,9 +91,25 @@
     }
   }
 
-  function openAddItem() { modalItem = null; modalMode = 'create'; modalOpen = true; }
+  function openAddItem() { pickerOpen = true; }
   function openEditItem(li) { modalItem = li; modalMode = 'edit'; modalOpen = true; }
   function handleSaved() { modalOpen = false; modalItem = null; loadInvoice(); }
+
+  function handleChoose(choice) {
+    pickerOpen = false;
+    addChoice = choice;
+  }
+  function handleLineAdded() {
+    addChoice = null;
+    loadInvoice();
+  }
+
+  // Gates the picker's "Add Deposit" affordance: only offer it once an active
+  // deposit accounting category exists (server stamps it; no AC select shown
+  // in the deposit form), same rule as the settings deposit-category picker.
+  let hasDepositCategory = $derived(
+    categories.some((c) => c.is_active !== false && c.is_deposit)
+  );
 
   async function handleDeleteItem(li) {
     // No confirm: draft-only line edit, re-addable by hand.
@@ -342,6 +362,24 @@
     showSource={true}
     canEdit={canEditLineItems}
     actions={canEditLineItems ? actionsSnippet : null}
+  />
+
+  <PriceListPicker
+    open={pickerOpen}
+    onChoose={handleChoose}
+    depositSurface={true}
+    depositEnabled={hasDepositCategory}
+    onclose={() => { pickerOpen = false; }}
+  />
+
+  <InvoiceAddLineForm
+    open={addChoice != null}
+    choice={addChoice}
+    invoiceId={invoice.invoice_id}
+    jobNumber={invoice.job_number}
+    {categories}
+    onSaved={handleLineAdded}
+    onClose={() => { addChoice = null; }}
   />
 
   <LineItemModal
