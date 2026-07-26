@@ -170,18 +170,25 @@ class InvoiceLineItem(BaseLineItem):
 
     @property
     def is_deposit_line(self):
-        """A deposit charge: deposit-category line that is not a deduction."""
+        """A deposit charge: deposit-category line that is not a deduction.
+
+        Iterates `self.sources.all()` (not `.filter()`) so a
+        `prefetch_related('invoicelineitem_set__sources')` on the parent
+        Invoice queryset actually serves this — `.filter()` on a related
+        manager always issues a fresh query even when the manager was
+        prefetched; only a bare `.all()` iteration consults the cache.
+        """
         return bool(
             self.accounting_category_id
             and self.accounting_category.is_deposit
-            and not self.sources.filter(
-                source_type=InvoiceLineItemSource.SOURCE_DEPOSIT).exists()
+            and not any(s.source_type == InvoiceLineItemSource.SOURCE_DEPOSIT
+                        for s in self.sources.all())
         )
 
     @property
     def is_deposit_deduction(self):
-        return self.sources.filter(
-            source_type=InvoiceLineItemSource.SOURCE_DEPOSIT).exists()
+        return any(s.source_type == InvoiceLineItemSource.SOURCE_DEPOSIT
+                   for s in self.sources.all())
 
     def __str__(self):
         return f"Invoice Line Item {self.pk} for {self.invoice.display_number}"

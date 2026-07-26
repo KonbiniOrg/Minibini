@@ -74,3 +74,52 @@ class DepositSerializerTest(TestCase):
             source_pk=self.dep_line.pk)
         data = self.client.get(f'/api/invoices/{other.pk}/').json()
         self.assertFalse(data['is_deposit'])
+
+    def test_summary_list_excludes_deduction_only_invoice(self):
+        """The has_deposit Exists annotation must exclude an invoice whose
+        only deposit-category line is itself a deduction (a SOURCE_DEPOSIT
+        source row) — mirrors test_deduction_does_not_mark_invoice_as_deposit
+        but exercises the summary-list Exists/exclude SQL rather than the
+        detail serializer's Python property."""
+        Invoice.objects.filter(pk=self.deposit_inv.pk).update(
+            status=Invoice.STATUS_PAID)
+        other = Invoice.objects.create(job=self.job,
+                                       status=Invoice.STATUS_DRAFT)
+        ded = InvoiceLineItem.objects.create(
+            invoice=other, description='Less deposit', qty=Decimal('1'),
+            price=Decimal('-5000.00'), accounting_category=self.dep_cat)
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=ded,
+            source_type=InvoiceLineItemSource.SOURCE_DEPOSIT,
+            source_pk=self.dep_line.pk)
+        data = self.client.get(
+            '/api/invoices/?summary=true&status=all').json()
+        rows = data['results'] if isinstance(data, dict) else data
+        row = next(r for r in rows if r['invoice_id'] == other.pk)
+        self.assertFalse(row['is_deposit'])
+
+    def test_detail_sources_query_count_is_not_per_line(self):
+        """Sanity check for the is_deposit_line/is_deposit_deduction
+        prefetch fix: the invoicelineitem_set__sources prefetch (views.py)
+        only pays off if the properties iterate .sources.all() instead of
+        .sources.filter(...).exists(). Confirms the number of queries
+        touching invoice_line_item_sources on invoice detail does not grow
+        with the number of line items on the invoice."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        def _sources_query_count(n):
+            inv = Invoice.objects.create(job=self.job,
+                                         status=Invoice.STATUS_OPEN)
+            for i in range(n):
+                InvoiceLineItem.objects.create(
+                    invoice=inv, description=f'Line {i}',
+                    qty=Decimal('1'), price=Decimal('10.00'),
+                    accounting_category=self.dep_cat)
+            with CaptureQueriesContext(connection) as ctx:
+                resp = self.client.get(f'/api/invoices/{inv.pk}/')
+                self.assertEqual(resp.status_code, 200)
+            return sum(1 for q in ctx.captured_queries
+                       if 'invoice_line_item_sources' in q['sql'])
+
+        self.assertEqual(_sources_query_count(1), _sources_query_count(10))

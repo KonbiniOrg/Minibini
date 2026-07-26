@@ -1028,16 +1028,3 @@ Cross-cutting UI/API conventions and shared components.
   line-item surface plus expenses.
   _Done when:_ a used AC's semantic fields are immutable behind a
   retire-and-replace flow, per a dedicated spec.
-
-- **`is_deposit_line`/`is_deposit_deduction` N+1 despite prefetch.** — _added 2026-07-25_
-  `InvoiceViewSet.get_queryset` prefetches `invoicelineitem_set__sources` so
-  `InvoiceSerializer`/`InvoiceLineItemSerializer`'s `is_deposit` fields don't
-  N+1 on the detail endpoint, but `InvoiceLineItem.is_deposit_line`/
-  `is_deposit_deduction` call `self.sources.filter(...).exists()` — a fresh
-  `.filter()` on a prefetched related manager always issues a new query
-  instead of consulting Django's prefetch cache (only bare `.all()` iteration
-  does). Measured: 1 extra `invoice_line_item_sources` query per line item on
-  invoice detail. Fix would rewrite the properties to iterate
-  `self.sources.all()` in Python instead of `.filter().exists()`.
-  _Done when:_ those two properties are cache-friendly and a detail fetch
-  with N deposit-eligible lines shows O(1) sources queries, not O(N).
