@@ -131,6 +131,19 @@ Accounting Categories → Materials** (blank clears it). The settings API
 (`PATCH /api/settings/`) rejects a value that isn't blank or an existing
 **active** `AccountingCategory` id. See `estimates-and-prices.md` §6.4.
 
+Deposits: `default_deposit_accounting_category` (unset) — string-encoded
+`AccountingCategory` PK stamped server-side onto a deposit line created via
+the invoice picker's "Add Deposit" entry (`InvoiceService._resolve_deposit_category`),
+and used to filter the Settings dropdown (`DefaultDepositCategorySetting.svelte`,
+Accounting tab) to active deposit categories. Mirrors
+`default_material_accounting_category` end to end. Unset (or pointing at a
+category that's since gone inactive / lost its `is_deposit` flag) makes
+deposit-line creation raise a field-keyed coaching `ValidationError` on
+`accounting_category`; the picker's Add Deposit entry disables with a hint.
+The settings API (`PATCH /api/settings/`) rejects a value that isn't blank
+or an existing **active, deposit** `AccountingCategory` id. See
+`invoicing-and-expenses.md` §Deposits.
+
 ---
 
 ### 1.2 User
@@ -285,6 +298,26 @@ Standalone. No FK dependencies.
   signal: per-line QBO TaxCodeRef reads it directly (the per-line
   `taxable_override`/`tax_rate_override` fields were removed 2026-07-21).
 - **is_active**: boolean, default True (soft delete)
+- **is_deposit**: boolean, default False (added 2026-07-25). Marks the
+  category as a deposit-collection category — see
+  `invoicing-and-expenses.md` §Deposits for the full mechanic (a line's
+  AC being a deposit category, with no deposit-source row, is what makes
+  it a deposit line; nothing is stored on the line or invoice itself).
+  Two invariants, both enforced in service/model code rather than the DB:
+  - **Non-taxable by construction**: `is_deposit=True` requires
+    `taxable=False` — `AccountingCategory.clean()` raises
+    `ValidationError({'is_deposit': [...]})` otherwise.
+  - **Frozen once referenced**: `ConfigurationService.FROZEN_WHEN_REFERENCED
+    = ('taxable', 'is_deposit')`. Once `is_referenced()` is `True` (any
+    line item, expense, inventory item, material, rate scheme, or fee
+    points at the category — including via the hidden
+    `adjustment_target_categories` M2M on `EstimateLineItem`/
+    `InvoiceLineItem`, covered by a 2026-07-25 fix), changing either
+    field is rejected: "retire this category and create a replacement
+    instead." Name, code, and QBO mappings stay editable on a used
+    category. This is a *targeted* freeze, not full AC
+    immutability/supersession (that's a separate future effort — see
+    `docs/designs/LATER.md`).
 - **qbo_item_id** / **qbo_expense_account_id**: optional, populated after
   connecting QBO. `qbo_item_id` is the **fallback** ItemRef for invoice
   lines with no catalog identity, and the source of `IncomeAccountRef`
@@ -1107,13 +1140,21 @@ Enforced in `Invoice.clean()`.
 #### InvoiceLineItemSource
 
 Polymorphic row joining an `InvoiceLineItem` to its source atom (a Job
-`Task`, `Material`, or `Fee`, or a material-less `Expense`).
+`Task`, `Material`, or `Fee`, or a material-less `Expense`) — or, for
+`source_type='deposit'`, to another `InvoiceLineItem` (the deposit line
+being deducted; see `invoicing-and-expenses.md` §Deposits).
 
 - **invoice_line_item** (required FK → InvoiceLineItem, CASCADE)
-- **source_type**: `task`, `material`, `fee`, or `expense`; **source_pk**: integer
+- **source_type**: `task`, `material`, `fee`, `expense`, or `deposit`;
+  **source_pk**: integer — for `deposit`, the claimed deposit
+  `InvoiceLineItem`'s pk rather than a Job-atom pk.
 - `unique_together = [('source_type', 'source_pk')]` — global. An atom can
   be billed by at most one Invoice line, ever. Prevents double-billing
-  across invoice revisions.
+  across invoice revisions. For `deposit` rows this is the mechanism that
+  makes a deposit credit **unsplittable**: a given deposit line can be
+  claimed by at most one deduction line, ever (cancelling the claiming
+  invoice does not delete the row — see the cancelled-claims entry in
+  `docs/designs/LATER.md`).
 
 ---
 

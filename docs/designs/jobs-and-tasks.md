@@ -1108,6 +1108,16 @@ parent task's detail page, both hitting this same endpoint. B3,
 | Closed card | `ClosedCard.svelte` | Same plus profitability (billed / spent / profit, computed in `BoardService._compute_profitability`) |
 | Task card | `TaskCard.svelte` | Task name, activity label + dot (Working / Ongoing / Unstarted / Blocked — see §5.5), assignee, blocked_reason if blocked |
 
+Every board payload row (Pipeline, In Progress, Unpaid, Closed) carries a
+derived `deposit_state` (`'requested'` | `'paid'` | absent — computed by
+`BoardService._deposit_states`, one query pair per board call; see
+`invoicing-and-expenses.md` §Deposits for the underlying rule and the
+requested-wins-over-paid tie-break with multiple deposits). Today only
+`JobCard.svelte` renders it — a **"DEP REQUESTED"**/**"DEP PAID"** banner
+— so it's visible on Pipeline column cards and the In Progress
+chip-hover card (`JobChipStrip.svelte`), not on `UnpaidCard.svelte` or
+`ClosedCard.svelte`.
+
 ## 9. UI: Job Detail page
 
 Route: `#/jobs/:id` → `JobDetailPage.svelte`. This is the job's
