@@ -183,6 +183,23 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         # Decimals need to be serialized as strings
         return Response(_serialize_pool(pool))
 
+    @action(detail=True, methods=['post'], url_path='line-items-from-service')
+    def line_items_from_service(self, request, pk=None):
+        """Ad-hoc service billing line (no Task, no atoms)."""
+        from apps.core.services import NotFoundError
+        invoice = self.get_object()
+        try:
+            line_item = InvoiceService.add_line_item_from_service(
+                invoice.pk,
+                request.data.get('service_item'),
+                request.data.get('qty'),
+            )
+        except NotFoundError as e:
+            return Response({'detail': str(e)},
+                            status=status.HTTP_404_NOT_FOUND)
+        serializer = InvoiceLineItemSerializer(line_item)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['post'], url_path='line-items-from-atoms')
     def line_items_from_atoms(self, request, pk=None):
         """Create a new line item from a list of atoms."""

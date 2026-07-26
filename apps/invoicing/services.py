@@ -86,6 +86,38 @@ class InvoiceService:
         return li
 
     @staticmethod
+    def add_line_item_from_service(invoice_pk, service_item_pk, qty):
+        """Ad-hoc service billing: snapshot description/units/price/AC off
+        the ServiceItem's rate scheme. No Task, no source row — pure line."""
+        from apps.estimates.models import ServiceItem
+        from apps.estimates.services import _decimal_or_invalid
+        try:
+            invoice = Invoice.objects.get(pk=invoice_pk)
+        except Invoice.DoesNotExist:
+            raise NotFoundError(f'Invoice {invoice_pk} not found')
+        InvoiceService._validate_draft(invoice)
+        try:
+            service_item = ServiceItem.objects.select_related(
+                'rate_scheme').get(pk=service_item_pk)
+        except ServiceItem.DoesNotExist:
+            raise NotFoundError(f'ServiceItem {service_item_pk} not found')
+        from apps.core.services import LineItemService
+        scheme = service_item.rate_scheme
+        li = InvoiceLineItem(
+            invoice=invoice,
+            description=service_item.template_name,
+            # str() first: a raw JSON float would expand to its binary value
+            # and trip the 2-decimal-places validator.
+            qty=_decimal_or_invalid(qty, 'qty'),
+            units=scheme.unit_label or 'none',
+            price=scheme.rate,
+            accounting_category=service_item.effective_accounting_category,
+        )
+        li.full_clean()
+        LineItemService.save_line_item(li)
+        return li
+
+    @staticmethod
     def update_line_item(line_item_id, **kwargs):
         """Update an invoice line item — validates draft status."""
         try:
