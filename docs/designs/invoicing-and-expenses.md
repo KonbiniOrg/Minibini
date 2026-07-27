@@ -370,15 +370,13 @@ delete, and reorder line items.
 
 **Adding a line item** (2026-07-25 — adopted the estimate flow) opens
 `PriceListPicker.svelte` (shared with the estimate/CO add-line paths),
-which offers **services**, **inventory** (catalog PLIs), **manual**
-entry, and, invoice-surface-only, **Add Deposit** (see Deposits below —
-`PriceListPicker`'s `depositSurface` prop is only passed `true` on the
-invoice panel; estimates/COs don't render the entry at all). The picked
-choice is handed to `InvoiceAddLineForm.svelte`, which POSTs the right
-shape per choice: `{inventory_item, qty}` (from-PLI, copies
-description/units/selling_price/accounting_category), `{service_item,
-qty}` (from-service — see below), or `{deposit: true, description, qty:
-'1', units: 'none', price}` (deposit). `LineItemModal.svelte` (the modal
+which offers **services**, **inventory** (catalog PLIs), and **manual**
+entry. `PriceListPicker` carries no surface-specific logic (task/estimate
+surfaces are unaffected) — deposits are no longer created through it (see
+below). The picked choice is handed to `InvoiceAddLineForm.svelte`, which
+POSTs the right shape per choice: `{inventory_item, qty}` (from-PLI, copies
+description/units/selling_price/accounting_category), or `{service_item,
+qty}` (from-service — see below). `LineItemModal.svelte` (the modal
 shared with the estimate panel) is **edit-only** on invoices now —
 opening it always starts in `modalMode = 'edit'`; there is no longer a
 manual/from-inventory toggle inside it on the invoice surface. Editing an
@@ -537,21 +535,44 @@ no longer exists, is inactive, or isn't a deposit category. Amount and
 description are user-entered; the frontend prefills description
 `"Deposit on {job_number}"`. This is draft-only, like all line CRUD (a
 manual line hand-assigned a deposit AC is equally a deposit line — same
-semantics, no special-casing).
+semantics, no special-casing). This contract is unchanged by the Task 21
+frontend rework below — only the entry point moved.
 
-**Frontend:** `PriceListPicker.svelte`'s `depositSurface` prop (only
-`true` on the invoice add-line path — estimates/COs never render it)
-adds an **Add Deposit** entry, disabled with a "Set a deposit category in
-Settings first" hint when `depositEnabled` is `false` (no active deposit
-category exists). Choosing it opens `InvoiceAddLineForm.svelte`'s small
-deposit form (amount + editable description, no accounting-category
-input — the server stamps it), which POSTs `{deposit: true, description,
-qty: '1', units: 'none', price}`. Because `LineItemMixin`'s line-item
-actions now let `ValidationError` propagate to the central handler
-instead of flattening it to `{'detail': str(e)}` (a 2026-07-25 fix — see
-`architecture-and-conventions.md` §3.4), the coaching error above renders
-as a real field-keyed body and the form's `accounting_category` field
-error slot shows it, rather than garbled stringified-dict text.
+**Frontend (Task 21, 2026-07 — replaced the picker's Add Deposit entry):**
+`InvoicePanel.svelte` offers an **Add Deposit Invoice** button — next to
+**Start Invoice** in the empty state, and next to the version bar's **+ New
+invoice** trailing action once the job has invoices (offered even while a
+draft is already open — see below). Both placements share Start Invoice's
+gates (`jobBillable`, `job.can_manage`) and are additionally disabled with
+a "Set a deposit category in Settings first" title when `hasDepositCategory`
+is false (no active deposit category exists — same `categories` check as
+before, now loaded independent of `invoiceId` so it's available in the
+empty state too).
+
+Clicking it opens `DepositInvoiceModal.svelte` — a single **Amount** field
+(client-validated `> 0` via a `FieldError` slot) plus Create/Cancel. On
+Create it does a two-step sequence, reusing existing contracts verbatim (no
+backend changes):
+
+1. `POST /api/invoices/` `{job}` — the exact call `InvoicePanel`'s Start
+   Invoice makes. `InvoiceWizardService.open_for_job` is idempotent: if the
+   job already has an open draft, it returns that draft instead of
+   erroring, so the button is safe to offer even when a draft already
+   exists — the deposit line lands on the existing draft ("mixing" a
+   deposit line with ordinary lines on one invoice is legal; see below).
+2. `POST /api/invoices/{id}/line-items/` `{deposit: true, description:
+   "Deposit on {job_number}", qty: '1', units: 'none', price: amount}` —
+   the same deposit line-item contract described above.
+
+Errors route through `triageError`: an overlay-worthy failure (5xx, no
+JSON body) goes to the global overlay; a field-keyed/`detail` failure from
+step 1 renders on the modal's own `FormMessage`/`FieldError` (the invoice
+was never created, so there's nothing else to show). A step-2 failure
+(e.g. the deposit-category coaching message) is different: **the draft
+already exists** at that point, so the modal still navigates to it (same
+as success) and surfaces the coaching text via the global overlay instead
+of a form message on a modal that's about to close — the user can fix the
+Settings config and add the deposit line by hand afterward.
 
 ### The credit atom (invoice wizard source pool)
 

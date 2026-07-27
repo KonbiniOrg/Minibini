@@ -7,6 +7,7 @@
   import AdjustmentModal from '../AdjustmentModal.svelte';
   import PriceListPicker from '../PriceListPicker.svelte';
   import InvoiceAddLineForm from './InvoiceAddLineForm.svelte';
+  import DepositInvoiceModal from './DepositInvoiceModal.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import ReconcileMode from '../wizards/ReconcileMode.svelte';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
@@ -41,6 +42,7 @@
   let adjustmentModalOpen = $state(false);
   let pickerOpen = $state(false);
   let addChoice = $state(null);
+  let depositModalOpen = $state(false);
 
   // Reconcile (wizard) is a mode of this panel, not a separate route. Initial
   // mode comes from the per-doc workspace memory, but is validated against the
@@ -187,13 +189,17 @@
   $effect(() => {
     if (invoiceId) {
       loadInvoice();
-      loadCategories();
     }
   });
 
+  // Categories are needed for the deposit-category gate (hasDepositCategory)
+  // even in the empty state (no invoiceId yet, e.g. the "Add Deposit
+  // Invoice" button before any invoice exists) — load off jobId, not
+  // invoiceId.
   $effect(() => {
     if (jobId) {
       loadInvoices();
+      loadCategories();
     }
   });
 
@@ -244,6 +250,14 @@
       startingInvoice = false;
     }
   }
+
+  // DepositInvoiceModal does its own two-step create (invoice, then deposit
+  // line) and hands back the resulting invoice_id — show the draft exactly
+  // the way Start Invoice does (same navigation).
+  function handleDepositCreated(newInvoiceId) {
+    depositModalOpen = false;
+    window.location.hash = `/jobs/${job.job_id}/invoice/${newInvoiceId}`;
+  }
 </script>
 
 {#snippet newInvoiceAction()}
@@ -252,11 +266,24 @@
   </button>
 {/snippet}
 
+{#snippet addDepositInvoiceAction()}
+  <button type="button" class="new-invoice-btn" onclick={() => { depositModalOpen = true; }}
+    disabled={!hasDepositCategory}
+    title={hasDepositCategory ? '' : 'Set a deposit category in Settings first'}>
+    Add Deposit Invoice
+  </button>
+{/snippet}
+
+{#snippet subnavTrailing()}
+  {#if canCreateInvoice}{@render newInvoiceAction()}{/if}
+  {#if jobBillable && job?.can_manage}{@render addDepositInvoiceAction()}{/if}
+{/snippet}
+
 {#if subnavItems.length > 0}
   <DocSubnav
     items={subnavItems}
     section="invoice"
-    trailing={canCreateInvoice ? newInvoiceAction : null}
+    trailing={(canCreateInvoice || (jobBillable && job?.can_manage)) ? subnavTrailing : null}
   />
 {/if}
 
@@ -367,8 +394,6 @@
   <PriceListPicker
     open={pickerOpen}
     onChoose={handleChoose}
-    depositSurface={true}
-    depositEnabled={hasDepositCategory}
     onclose={() => { pickerOpen = false; }}
   />
 
@@ -376,7 +401,6 @@
     open={addChoice != null}
     choice={addChoice}
     invoiceId={invoice.invoice_id}
-    jobNumber={invoice.job_number}
     {categories}
     onSaved={handleLineAdded}
     onClose={() => { addChoice = null; }}
@@ -410,6 +434,11 @@
       <button type="button" onclick={startInvoice} disabled={startingInvoice}>
         {startingInvoice ? 'Starting…' : 'Start Invoice'}
       </button>
+      <button type="button" onclick={() => { depositModalOpen = true; }}
+        disabled={!hasDepositCategory}
+        title={hasDepositCategory ? '' : 'Set a deposit category in Settings first'}>
+        Add Deposit Invoice
+      </button>
     {:else if job?.can_manage}
       <p>No invoices yet. Invoicing becomes available once the job is approved.</p>
     {:else}
@@ -417,6 +446,13 @@
     {/if}
   </div>
 {/if}
+
+<DepositInvoiceModal
+  open={depositModalOpen}
+  {job}
+  onCreated={handleDepositCreated}
+  onClose={() => { depositModalOpen = false; }}
+/>
 
 <style>
   .error { color: #a8071a; }

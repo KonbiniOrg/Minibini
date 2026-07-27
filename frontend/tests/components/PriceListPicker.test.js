@@ -129,22 +129,4 @@ describe('PriceListPicker (onChoose emitter)', () => {
     await fireEvent.click(addBtn);
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '', isMaterial: false });
   });
-
-  it('shows an Add Deposit button on the deposit surface', async () => {
-    const props = { ...baseProps(), depositSurface: true };
-    const { getByRole } = render(PriceListPicker, { props });
-    await fireEvent.click(getByRole('button', { name: /add deposit/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'deposit', typed: '' });
-  });
-
-  it('disables Add Deposit when no deposit category is configured', () => {
-    const props = { ...baseProps(), depositSurface: true, depositEnabled: false };
-    const { getByRole } = render(PriceListPicker, { props });
-    expect(getByRole('button', { name: /add deposit/i })).toBeDisabled();
-  });
-
-  it('has no deposit button off the deposit surface', () => {
-    const { queryByRole } = render(PriceListPicker, { props: baseProps() });
-    expect(queryByRole('button', { name: /add deposit/i })).toBeNull();
-  });
 });

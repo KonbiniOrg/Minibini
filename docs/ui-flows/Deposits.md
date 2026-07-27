@@ -1,11 +1,13 @@
 # Deposits — UI flow
 
-> Covers creating a deposit-category invoice line (the picker's **Add Deposit**
-> affordance), the resulting **DEPOSIT** pill on the invoices list, the
-> **DEP PAID** / **DEP REQUESTED** board banner, and pulling a paid deposit's
-> credit into a follow-up invoice as a negative **Less deposit (...)** line —
-> including the claim lifecycle (the banner clears while the claiming draft is
-> live, and returns if the draft is discarded). Reference: `docs/plans/deposit-invoices-spec.md`.
+> Covers creating a deposit invoice (the invoice panel's **Add Deposit
+> Invoice** button + modal), the resulting **DEPOSIT** pill on the invoices
+> list, the **DEP PAID** / **DEP REQUESTED** board banner, and pulling a paid
+> deposit's credit into a follow-up invoice as a negative **Less deposit
+> (...)** line — including the claim lifecycle (the banner clears while the
+> claiming draft is live, and returns if the draft is discarded). Reference:
+> `docs/plans/deposit-invoices-spec.md`, Task 21 (2026-07 — replaced the
+> picker's Add Deposit entry with this streamlined generator).
 
 **QBO is unreachable in e2e**, so send/pay transitions are not driven here.
 The **paid** deposit invoice (`INV-E2E-DEP-1`, on the seeded job `08026`) is
@@ -30,15 +32,26 @@ seeded directly in `fixtures/playwright/seed.json` — see
 
 ---
 
-## 1. Creating a deposit line
+## 1. Creating a deposit invoice
 
-Entry: Job invoice panel (`#/jobs/{id}/invoice`), empty draft.
+Entry: Job invoice panel (`#/jobs/{id}/invoice`), any state (empty or already
+carrying invoices).
 
-- [ ] **Add Deposit is offered.** Add Line Item → picker → an **Add Deposit**
-  button is present, enabled once an active deposit category exists.
-- [ ] **Description prefill.** The follow-up form pre-fills Description
-  "Deposit on {job_number}"; Amount is entered by hand (no accounting
-  category field — the server stamps the configured deposit category).
+- [ ] **Add Deposit Invoice is offered.** In the empty state it sits next to
+  **Start Invoice**; once the job has invoices, it sits next to the version
+  bar's **+ New invoice** action (offered even while a draft is already
+  open — the create call is idempotent and adds the deposit line to that
+  existing draft; "mixing" a deposit line with ordinary lines on one invoice
+  is legal). Both placements are gated the same way Start Invoice is
+  (billable job status + `can_manage`), and disabled with a "Set a deposit
+  category in Settings first" hint when no active deposit category exists.
+- [ ] **Modal.** Clicking it opens a small "Add Deposit Invoice" modal with
+  one **Amount** field (required, > 0) and Create/Cancel.
+- [ ] **Create** does the two-step create in one action: opens (or reuses)
+  the job's draft invoice the same way Start Invoice does, then posts the
+  deposit line to it (description defaults to "Deposit on {job_number}"; no
+  accounting-category field — the server stamps the configured deposit
+  category) — then navigates to the resulting draft, same as Start Invoice.
 - [ ] **The line renders** with the deposit category and the entered amount.
 - [ ] **DEPOSIT pill.** The invoices list (`#/invoices`) shows a **DEPOSIT**
   pill next to this invoice's status.
@@ -75,7 +88,7 @@ heading "Tasks and Materials").
 
 | Dimension | Cases |
 |---|---|
-| Creation | Add Deposit button gated on an active deposit category · description prefill · line renders with category+amount · DEPOSIT pill on the invoices list |
+| Creation | Add Deposit Invoice button (empty state + version bar) gated on billable/can_manage and an active deposit category · modal amount entry · two-step create (invoice + deposit line) · line renders with category+amount · DEPOSIT pill on the invoices list |
 | Board | DEP PAID banner on the hover card for a paid, unclaimed deposit |
 | Credit pool | Deposit credits group · `[deposit]` tag · credit amount format ("$X,XXX.XX credit") · Add Here creates a negative deduction line ("Less deposit (...)") |
 | Claim lifecycle | claim clears DEP PAID while the claiming draft is live · discarding the draft releases the claim and DEP PAID returns |

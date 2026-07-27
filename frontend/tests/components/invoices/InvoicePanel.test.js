@@ -269,39 +269,134 @@ describe('InvoicePanel add-line flow', () => {
     await fireEvent.click(await findByText('Add Line Item'));
     expect(await findByRole('dialog')).toBeInTheDocument();
     expect(await findByText('Add line')).toBeInTheDocument();
-    expect(await findByRole('button', { name: /add deposit/i })).toBeInTheDocument();
+  });
+});
+
+// ─── Add Deposit Invoice (Task 21 — replaces the picker's Add Deposit) ───────
+
+describe('InvoicePanel Add Deposit Invoice', () => {
+  it('shows Add Deposit Invoice next to Start Invoice in the empty state, when billable + can_manage', async () => {
+    user.set({ permissions: [] });
+    mockApi(null, { invoices: [] });
+    const { findByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'approved', can_manage: true }, invoiceId: null },
+    });
+    expect(await findByRole('button', { name: /start invoice/i })).toBeInTheDocument();
+    expect(await findByRole('button', { name: /add deposit invoice/i })).toBeInTheDocument();
   });
 
-  it('disables Add Deposit in the picker when no active deposit category exists', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    mockApi(makeInvoice({ status: 'draft', line_items: [] }));
-    const { findByText, findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    await fireEvent.click(await findByText('Add Line Item'));
-    expect(await findByRole('button', { name: /add deposit/i })).toBeDisabled();
+  it('hides Add Deposit Invoice in the empty state on a non-billable job', async () => {
+    user.set({ permissions: [] });
+    mockApi(null, { invoices: [] });
+    const { findByText, queryByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'draft', can_manage: true }, invoiceId: null },
+    });
+    await findByText(/invoicing becomes available/i);
+    expect(queryByRole('button', { name: /add deposit invoice/i })).not.toBeInTheDocument();
   });
 
-  it('a deposit choice from the picker renders the deposit form, prefilled and postable', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    mockApi(makeInvoice({ status: 'draft', line_items: [], job_number: 'JOB-9' }), {
+  it('hides Add Deposit Invoice in the empty state without can_manage', async () => {
+    user.set({ permissions: [] });
+    mockApi(null, { invoices: [] });
+    const { findByText, queryByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'approved', can_manage: false }, invoiceId: null },
+    });
+    await findByText('No invoices yet.');
+    expect(queryByRole('button', { name: /add deposit invoice/i })).not.toBeInTheDocument();
+  });
+
+  it('disables Add Deposit Invoice with a hint when no active deposit category exists', async () => {
+    user.set({ permissions: [] });
+    mockApi(null, { invoices: [], categories: [] });
+    const { findByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'approved', can_manage: true }, invoiceId: null },
+    });
+    const btn = await findByRole('button', { name: /add deposit invoice/i });
+    expect(btn).toBeDisabled();
+    expect(btn.title).toMatch(/set a deposit category/i);
+  });
+
+  it('enables Add Deposit Invoice once an active deposit category exists', async () => {
+    user.set({ permissions: [] });
+    mockApi(null, {
+      invoices: [],
       categories: [{ id: 3, code: 'DEP', name: 'Deposits', is_active: true, is_deposit: true }],
     });
-    api.post.mockResolvedValue({ line_item_id: 1 });
-    const { findByText, findByRole, getByLabelText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    await fireEvent.click(await findByText('Add Line Item'));
-
-    const depositBtn = await findByRole('button', { name: /add deposit/i });
-    expect(depositBtn).not.toBeDisabled();
-    await fireEvent.click(depositBtn);
-
-    expect(await findByText('Add Deposit')).toBeInTheDocument();
-    expect(getByLabelText(/description/i).value).toBe('Deposit on JOB-9');
-
-    await fireEvent.input(getByLabelText(/amount/i), { target: { value: '250' } });
-    await fireEvent.click(await findByRole('button', { name: /^add$/i }));
-
-    expect(api.post).toHaveBeenCalledWith('/api/invoices/5/line-items/', {
-      deposit: true, description: 'Deposit on JOB-9', qty: '1', units: 'none', price: '250',
+    const { findByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'approved', can_manage: true }, invoiceId: null },
     });
+    const btn = await findByRole('button', { name: /add deposit invoice/i });
+    expect(btn).not.toBeDisabled();
+  });
+
+  it('clicking Add Deposit Invoice opens the modal', async () => {
+    user.set({ permissions: [] });
+    mockApi(null, {
+      invoices: [],
+      categories: [{ id: 3, code: 'DEP', name: 'Deposits', is_active: true, is_deposit: true }],
+    });
+    const { findByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'approved', can_manage: true }, invoiceId: null },
+    });
+    await fireEvent.click(await findByRole('button', { name: /add deposit invoice/i }));
+    expect(await findByRole('heading', { name: /add deposit invoice/i })).toBeInTheDocument();
+  });
+
+  it('offers Add Deposit Invoice next to "+ New invoice" on the version bar (non-empty state)', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const sent = makeInvoice({ invoice_id: 5, invoice_number: 'INV-5', display_number: 'INV-5', status: 'sent' });
+    mockApi(sent, {
+      invoices: [sent],
+      categories: [{ id: 3, code: 'DEP', name: 'Deposits', is_active: true, is_deposit: true }],
+    });
+    const { findByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 5 },
+    });
+    expect(await findByRole('button', { name: /new invoice/i })).toBeInTheDocument();
+    expect(await findByRole('button', { name: /add deposit invoice/i })).toBeInTheDocument();
+  });
+
+  it('still offers Add Deposit Invoice on the version bar even while an open draft exists (mixing is legal)', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft' });
+    mockApi(draft, {
+      invoices: [draft],
+      categories: [{ id: 3, code: 'DEP', name: 'Deposits', is_active: true, is_deposit: true }],
+    });
+    const { findByText, findByRole, queryByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 5 },
+    });
+    await findByText('Invoice: INV-5');
+    // "+ New invoice" is hidden (a draft is already open)...
+    expect(queryByRole('button', { name: /new invoice/i })).not.toBeInTheDocument();
+    // ...but Add Deposit Invoice stays offered — its POST is idempotent
+    // server-side and would just add the deposit line to the existing draft.
+    expect(await findByRole('button', { name: /add deposit invoice/i })).toBeInTheDocument();
+  });
+
+  it('Create in the modal navigates to the newly created draft', async () => {
+    user.set({ permissions: [] });
+    mockApi(null, {
+      invoices: [],
+      categories: [{ id: 3, code: 'DEP', name: 'Deposits', is_active: true, is_deposit: true }],
+    });
+    api.post.mockImplementation((url) => {
+      if (url === '/api/invoices/') return Promise.resolve({ invoice_id: 77 });
+      return Promise.resolve({ line_item_id: 1 });
+    });
+    const { findByRole, getByLabelText } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'approved', can_manage: true }, invoiceId: null },
+    });
+    await fireEvent.click(await findByRole('button', { name: /add deposit invoice/i }));
+    await fireEvent.input(getByLabelText(/amount/i), { target: { value: '2500' } });
+    await fireEvent.click(await findByRole('button', { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/api/invoices/77/line-items/', {
+        deposit: true, description: 'Deposit on JOB-9', qty: '1', units: 'none', price: '2500',
+      });
+    });
+    await waitFor(() => expect(window.location.hash).toBe('#/jobs/9/invoice/77'));
   });
 });
 

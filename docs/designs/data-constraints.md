@@ -133,16 +133,16 @@ Accounting Categories → Materials** (blank clears it). The settings API
 
 Deposits: `default_deposit_accounting_category` (unset) — string-encoded
 `AccountingCategory` PK stamped server-side onto a deposit line created via
-the invoice picker's "Add Deposit" entry (`InvoiceService._resolve_deposit_category`),
-and used to filter the Settings dropdown (`DefaultDepositCategorySetting.svelte`,
-Accounting tab) to active deposit categories. Mirrors
-`default_material_accounting_category` end to end. Unset (or pointing at a
-category that's since gone inactive / lost its `is_deposit` flag) makes
-deposit-line creation raise a field-keyed coaching `ValidationError` on
-`accounting_category`; the picker's Add Deposit entry disables with a hint.
-The settings API (`PATCH /api/settings/`) rejects a value that isn't blank
-or an existing **active, deposit** `AccountingCategory` id. See
-`invoicing-and-expenses.md` §Deposits.
+the invoice panel's "Add Deposit Invoice" button + modal
+(`InvoiceService._resolve_deposit_category`), and used to filter the Settings
+dropdown (`DefaultDepositCategorySetting.svelte`, Accounting tab) to active
+deposit categories. Mirrors `default_material_accounting_category` end to
+end. Unset (or pointing at a category that's since gone inactive / lost its
+`is_deposit` flag) makes deposit-line creation raise a field-keyed coaching
+`ValidationError` on `accounting_category`; "Add Deposit Invoice" disables
+with a hint in that case. The settings API (`PATCH /api/settings/`) rejects
+a value that isn't blank or an existing **active, deposit**
+`AccountingCategory` id. See `invoicing-and-expenses.md` §Deposits.
 
 ---
 

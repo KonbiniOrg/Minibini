@@ -11,8 +11,7 @@
   // taskSurface: the task-list footer offers three explicit atom buttons
   // (Task / Material / Fee). Default (estimate) footer is the material checkbox
   // + "Add Line" (there, tasks come only from a ServiceItem pick).
-  let { open = false, onChoose = null, onclose = null, taskSurface = false,
-    depositSurface = false, depositEnabled = true } = $props();
+  let { open = false, onChoose = null, onclose = null, taskSurface = false } = $props();
   let pickerQuery = $state('');
   let isMaterial = $state(false); // freeform: unchecked → Fee, checked → Material
 
@@ -96,13 +95,6 @@
     {:else}
       <label><input type="checkbox" bind:checked={isMaterial}> Is this a material?</label>
       <button type="button" onclick={emitFreeform}>Add Line</button>
-      {#if depositSurface}
-        <button type="button" onclick={() => onChoose?.({ type: 'deposit', typed: pickerQuery })}
-                disabled={!depositEnabled}
-                title={depositEnabled ? '' : 'Set a deposit category in Settings first'}>
-          Add Deposit
-        </button>
-      {/if}
     {/if}
   </div>
 </Modal>

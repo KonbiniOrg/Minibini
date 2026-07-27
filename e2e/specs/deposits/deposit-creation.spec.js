@@ -1,6 +1,7 @@
-// docs/ui-flows/Deposits.md §1 — creating a deposit invoice line via the
-// picker's "Add Deposit" affordance, and the DEPOSIT pill it earns on the
-// invoices list. QBO is unreachable in e2e, so this covers only the
+// docs/ui-flows/Deposits.md §1 — creating a deposit invoice via the
+// invoice panel's "Add Deposit Invoice" button + modal (Task 21, 2026-07 —
+// replaces the picker's "Add Deposit" entry), and the DEPOSIT pill it earns
+// on the invoices list. QBO is unreachable in e2e, so this covers only the
 // draft-side creation UI — the seeded PAID deposit (deposit-credit.spec.js)
 // covers the paid/claimed side.
 import { expect, test } from '@playwright/test';
@@ -33,28 +34,27 @@ async function findInvoicelessJob(statuses) {
   }
 }
 
-test('§1 Creating a deposit line', async ({ page }) => {
+test('§1 Creating a deposit invoice via Add Deposit Invoice', async ({ page }) => {
   const job = await findInvoicelessJob(['approved', 'in_progress']);
   test.skip(!job, 'seed gap: no invoice-less billable job');
 
-  await test.step('Start Invoice → Add Line Item → picker → Add Deposit', async () => {
+  await test.step('Add Deposit Invoice is offered next to Start Invoice', async () => {
     await page.goto(`/#/jobs/${job.job_id}/invoice`);
-    await page.getByRole('button', { name: 'Start Invoice' }).click();
-    await page.getByRole('button', { name: 'Add Line Item' }).click();
-    const picker = page.getByRole('dialog', { name: 'Add line' });
-    await expect(picker.getByRole('button', { name: 'Add Deposit' })).toBeEnabled();
-    await picker.getByRole('button', { name: 'Add Deposit' }).click();
+    await expect(page.getByRole('button', { name: 'Start Invoice' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add Deposit Invoice' })).toBeEnabled();
   });
 
-  await test.step('Description prefills "Deposit on {job_number}"; amount 2500; Add', async () => {
-    const form = page.getByRole('dialog').filter({ hasText: 'Add Deposit' });
-    await expect(form.getByLabel('Description')).toHaveValue(`Deposit on ${job.job_number}`);
-    await form.getByLabel('Amount').fill('2500');
-    await form.getByRole('button', { name: 'Add' }).click();
-    await expect(form).toBeHidden();
+  await test.step('Modal: enter amount 2500, Create', async () => {
+    await page.getByRole('button', { name: 'Add Deposit Invoice' }).click();
+    const modal = page.getByRole('dialog', { name: 'Add Deposit Invoice' });
+    await expect(modal.getByRole('heading', { name: 'Add Deposit Invoice' })).toBeVisible();
+    await modal.getByLabel('Amount').fill('2500');
+    await modal.getByRole('button', { name: 'Create' }).click();
+    await expect(modal).toBeHidden();
   });
 
-  await test.step('The line renders with the deposit category and amount', async () => {
+  await test.step('The draft appears with the deposit line', async () => {
+    await expect(page.getByText(/^Invoice: /)).toBeVisible();
     const row = page.locator('tr', { hasText: `Deposit on ${job.job_number}` });
     await expect(row).toBeVisible();
     await expect(row).toContainText('Customer Deposits');
