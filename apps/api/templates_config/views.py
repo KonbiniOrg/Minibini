@@ -263,6 +263,22 @@ def settings_view(request):
                 return Response(
                     {'default_material_accounting_category': 'unknown or inactive category'},
                     status=400)
+    if 'default_deposit_accounting_category' in request.data:
+        raw = request.data['default_deposit_accounting_category']
+        raw = '' if raw is None else str(raw).strip()
+        if raw != '':
+            try:
+                pk = int(raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {'default_deposit_accounting_category': 'must be a category id'},
+                    status=400)
+            if not AccountingCategory.objects.filter(
+                    pk=pk, is_active=True, is_deposit=True).exists():
+                return Response(
+                    {'default_deposit_accounting_category':
+                     'unknown, inactive, or not a deposit category'},
+                    status=400)
     for key, value in request.data.items():
         # The envelope is stored as canonical JSON; a dict payload must be
         # serialized (str(dict) would write unparseable Python repr).

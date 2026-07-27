@@ -61,6 +61,11 @@
     }
   }
 
+  function categoryLabel(id) {
+    const cat = categories.find((c) => c.id === id);
+    return cat ? `${cat.code} — ${cat.name}` : '';
+  }
+
   function isReferenced(s) {
     const c = s.reference_counts || {};
     return ((c.task_count || 0) + (c.service_item_count || 0)) > 0;
@@ -226,7 +231,7 @@
     <thead>
       <tr>
         <th>Name</th><th>Type</th><th>Rate</th><th>Unit</th>
-        <th>Modifiers</th><th></th>
+        <th>Category</th><th>Modifiers</th><th></th>
       </tr>
     </thead>
     <tbody>
@@ -236,6 +241,7 @@
           <td>{ALGORITHM_LABELS[s.algorithm] || s.algorithm}</td>
           <td>${s.rate}/{s.unit_label}</td>
           <td>{s.unit_label}</td>
+          <td>{categoryLabel(s.accounting_category)}</td>
           <td>{(s.modifiers || []).length}</td>
           <td>
             {#if s.superseded}

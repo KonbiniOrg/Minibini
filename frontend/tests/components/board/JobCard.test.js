@@ -54,6 +54,25 @@ describe('JobCard on-hold treatment', () => {
   });
 });
 
+describe('JobCard deposit banner', () => {
+  it('renders the deposit pill from deposit_state', () => {
+    const { getByText } = render(JobCard, { props: { job: { ...baseJob, deposit_state: 'requested' } } });
+    expect(getByText('DEP REQUESTED')).toBeInTheDocument();
+  });
+
+  it('renders the paid deposit pill from deposit_state', () => {
+    const { getByText, container } = render(JobCard, { props: { job: { ...baseJob, deposit_state: 'paid' } } });
+    const banner = getByText('DEP PAID');
+    expect(banner).toBeInTheDocument();
+    expect(container.querySelector('.deposit-banner.deposit-paid')).not.toBeNull();
+  });
+
+  it('renders no deposit banner when deposit_state is null', () => {
+    const { container } = render(JobCard, { props: { job: { ...baseJob, deposit_state: null } } });
+    expect(container.querySelector('.deposit-banner')).toBeNull();
+  });
+});
+
 describe('JobCard pre-approval treatment', () => {
   it('marks a pre-approval card with the dashed treatment class', () => {
     const { container } = render(JobCard, {

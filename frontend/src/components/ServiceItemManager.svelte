@@ -58,6 +58,16 @@
     return allSchemes.find(s => s.rate_scheme_id === id);
   }
 
+  // "Rush (+50%), Fragile (-10%)" for the item's default-active modifiers.
+  function activeModifierNote(template, scheme) {
+    const active = template.default_active_modifiers || [];
+    if (!scheme || active.length === 0) return '';
+    return (scheme.modifiers || [])
+      .filter(m => active.includes(m.key))
+      .map(m => `${m.label || m.key} (${m.percent >= 0 ? '+' : ''}${m.percent}%)`)
+      .join(', ');
+  }
+
   function isSuperseded(template) {
     const s = schemeFor(template.rate_scheme);
     return !!(s && s.superseded);
@@ -173,6 +183,9 @@
           <td>{t.template_name}</td>
           <td>
             {scheme ? scheme.name : '—'}
+            {#if activeModifierNote(t, scheme)}
+              <br><small>{activeModifierNote(t, scheme)}</small>
+            {/if}
             {#if isSuperseded(t)}
               <br><strong style="color:#a8071a">WARNING: Rate Scheme is superseded — update before next use</strong>
             {/if}

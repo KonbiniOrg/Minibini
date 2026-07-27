@@ -298,6 +298,7 @@ class AccountingCategory(models.Model):
     taxable = models.BooleanField(default=True)  # Default taxability for this type
     default_description = models.TextField(blank=True)  # Template for descriptions
     is_active = models.BooleanField(default=True)  # Soft delete support
+    is_deposit = models.BooleanField(default=False)  # Deposit-collection category
 
     # QBO account mappings (populated after connecting to QBO)
     qbo_item_id = models.CharField(max_length=50, blank=True, default='')
@@ -311,6 +312,33 @@ class AccountingCategory(models.Model):
     def __str__(self):
         return self.name
 
+    def clean(self):
+        super().clean()
+        if self.is_deposit and self.taxable:
+            raise ValidationError({'is_deposit': [
+                'A deposit category must be non-taxable.']})
+
+    def is_referenced(self):
+        """True if any row (line items, expenses, inventory, materials,
+        rate schemes, fees) points at this category."""
+        for rel in self._meta.related_objects:
+            if rel.hidden:
+                # related_name='+' relations have no usable reverse accessor;
+                # the ones that actually matter are queried explicitly below.
+                continue
+            accessor = rel.get_accessor_name()
+            if getattr(self, accessor).exists():
+                return True
+
+        # Hidden (related_name='+') M2Ms that still bear a real reference:
+        # adjustment lines target specific categories via these fields.
+        from apps.estimates.models import EstimateLineItem
+        from apps.invoicing.models import InvoiceLineItem
+        if EstimateLineItem.objects.filter(adjustment_target_categories=self).exists():
+            return True
+        if InvoiceLineItem.objects.filter(adjustment_target_categories=self).exists():
+            return True
+        return False
 
 
 class AbstractWorkContainer(models.Model):

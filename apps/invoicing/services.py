@@ -19,13 +19,38 @@ class InvoiceService:
             )
 
     @staticmethod
-    def add_line_item(invoice_pk, **kwargs):
-        """Add a manual line item to a draft invoice."""
+    def _resolve_deposit_category():
+        """The configured default deposit AC, or a coaching error."""
+        from apps.core.models import AccountingCategory, Configuration
+        cfg = Configuration.objects.filter(
+            key='default_deposit_accounting_category').first()
+        pk = (cfg.value or '').strip() if cfg else ''
+        if not pk:
+            raise ValidationError({'accounting_category': [
+                'No default deposit accounting category is configured. '
+                'Set the default_deposit_accounting_category setting '
+                'in Settings.']})
+        try:
+            return AccountingCategory.objects.get(
+                pk=pk, is_active=True, is_deposit=True)
+        except (AccountingCategory.DoesNotExist, ValueError, TypeError):
+            raise ValidationError({'accounting_category': [
+                f'The configured default deposit accounting category '
+                f'({pk!r}) does not exist, is inactive, or is not a '
+                f'deposit category.']})
+
+    @staticmethod
+    def add_line_item(invoice_pk, deposit=False, **kwargs):
+        """Add a manual line item to a draft invoice. deposit=True stamps
+        the configured default deposit accounting category."""
         try:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
             raise NotFoundError(f'Invoice {invoice_pk} not found')
         InvoiceService._validate_draft(invoice)
+        if deposit:
+            kwargs['accounting_category'] = (
+                InvoiceService._resolve_deposit_category())
         from apps.core.services import LineItemService
         kwargs = LineItemService.normalize_fk_kwargs(InvoiceLineItem, kwargs)
         li = InvoiceLineItem(invoice=invoice, **kwargs)
@@ -61,6 +86,38 @@ class InvoiceService:
         return li
 
     @staticmethod
+    def add_line_item_from_service(invoice_pk, service_item_pk, qty):
+        """Ad-hoc service billing: snapshot description/units/price/AC off
+        the ServiceItem's rate scheme. No Task, no source row — pure line."""
+        from apps.estimates.models import ServiceItem
+        from apps.estimates.services import _decimal_or_invalid
+        try:
+            invoice = Invoice.objects.get(pk=invoice_pk)
+        except Invoice.DoesNotExist:
+            raise NotFoundError(f'Invoice {invoice_pk} not found')
+        InvoiceService._validate_draft(invoice)
+        try:
+            service_item = ServiceItem.objects.select_related(
+                'rate_scheme').get(pk=service_item_pk)
+        except ServiceItem.DoesNotExist:
+            raise NotFoundError(f'ServiceItem {service_item_pk} not found')
+        from apps.core.services import LineItemService
+        scheme = service_item.rate_scheme
+        li = InvoiceLineItem(
+            invoice=invoice,
+            description=service_item.template_name,
+            # str() first: a raw JSON float would expand to its binary value
+            # and trip the 2-decimal-places validator.
+            qty=_decimal_or_invalid(qty, 'qty'),
+            units=scheme.unit_label or 'none',
+            price=scheme.effective_rate(service_item.default_active_modifiers),
+            accounting_category=service_item.effective_accounting_category,
+        )
+        li.full_clean()
+        LineItemService.save_line_item(li)
+        return li
+
+    @staticmethod
     def update_line_item(line_item_id, **kwargs):
         """Update an invoice line item — validates draft status."""
         try:
@@ -68,6 +125,14 @@ class InvoiceService:
         except InvoiceLineItem.DoesNotExist:
             raise NotFoundError(f'InvoiceLineItem {line_item_id} not found')
         InvoiceService._validate_draft(li.invoice)
+        if li.is_deposit_deduction:
+            locked = {'qty', 'price', 'accounting_category',
+                      'accounting_category_id', 'inventory_item'}
+            touched = locked & set(kwargs.keys())
+            if touched:
+                raise ValidationError(
+                    'A deposit deduction is locked to its deposit — only '
+                    'the description can be edited.')
         from apps.core.services import LineItemService
         kwargs = LineItemService.normalize_fk_kwargs(InvoiceLineItem, kwargs)
         for field, value in kwargs.items():
@@ -764,6 +829,43 @@ class InvoiceWizardService(BaseWizardService):
             'atoms': fee_atoms,
         })
 
+        # "Deposit credits" group — deposit lines on PAID invoices of this
+        # job. (Deduction lines carry a 'deposit' source row and are
+        # excluded; paid-only means you never deduct money not actually
+        # held.)
+        deposit_lines = (
+            InvoiceLineItem.objects
+            .filter(invoice__job=job,
+                    invoice__status=Invoice.STATUS_PAID,
+                    accounting_category__is_deposit=True)
+            .exclude(sources__source_type=InvoiceLineItemSource.SOURCE_DEPOSIT)
+            .select_related('invoice')
+            .order_by('invoice__sent_date', 'pk')
+        )
+        deposit_atoms = []
+        for li in deposit_lines:
+            key = (InvoiceLineItemSource.SOURCE_DEPOSIT, li.pk)
+            state_info = claims.get(key, default_state)
+            credit_amount = (-li.total_amount).quantize(Decimal('0.01'))
+            deposit_atoms.append({
+                'type': 'deposit',
+                'id': li.pk,
+                'description': f'Deposit credit — {li.invoice.display_number}',
+                'sub_info': li.description,
+                'qty': Decimal('1'),
+                'rate': credit_amount,
+                'units': 'none',
+                'amount': credit_amount,
+                **state_info,
+            })
+        if deposit_atoms:
+            task_list.append({
+                'task_id': None,
+                'name': 'Deposit credits',
+                'has_billable_atoms': len(deposit_atoms) > 0,
+                'atoms': deposit_atoms,
+            })
+
         return {'tasks': task_list}
 
     @classmethod
@@ -825,6 +927,36 @@ class InvoiceWizardService(BaseWizardService):
                 cls.add_atoms_to_new_line_item(invoice, [ref])
         return len(available)
 
+    # ── deposit atom rules (no bundling; same-job only; deduction lines
+    #    take no further atoms) ─────────────────────────────────────────
+    @classmethod
+    def add_atoms_to_new_line_item(cls, container, atoms):
+        cls._assert_deposit_atom_rules(container, atoms)
+        return super().add_atoms_to_new_line_item(container, atoms)
+
+    @classmethod
+    def add_atoms_to_line_item(cls, line_item, atoms):
+        cls._assert_deposit_atom_rules(line_item.invoice, atoms,
+                                       appending_to=line_item)
+        return super().add_atoms_to_line_item(line_item, atoms)
+
+    @classmethod
+    def _assert_deposit_atom_rules(cls, invoice, atoms, appending_to=None):
+        deposit_refs = [a for a in atoms if a.get('type') == 'deposit']
+        if not deposit_refs:
+            if appending_to is not None and appending_to.is_deposit_deduction:
+                raise ValidationError(
+                    'A deposit deduction line cannot take other atoms.')
+            return
+        if len(atoms) > 1 or appending_to is not None:
+            raise ValidationError(
+                'A deposit credit must be pulled as its own line.')
+        dep = InvoiceLineItem.objects.filter(
+            pk=deposit_refs[0].get('id')).select_related('invoice').first()
+        if dep is not None and dep.invoice.job_id != invoice.job_id:
+            raise ValidationError(
+                'A deposit can only be deducted on its own job.')
+
     # ── BaseWizardService hooks ────────────────────────────────────────
     @classmethod
     def _line_item_model(cls):
@@ -854,6 +986,13 @@ class InvoiceWizardService(BaseWizardService):
     def _assert_atom_billable(cls, instance):
         from apps.jobs.models import Task
         from apps.inventory.models import Material
+        if isinstance(instance, InvoiceLineItem):
+            if not instance.is_deposit_line:
+                raise ValidationError('Not a deposit line.')
+            if instance.invoice.status != Invoice.STATUS_PAID:
+                raise ValidationError(
+                    'A deposit can only be deducted once its invoice is paid.')
+            return
         # Terminal — not complete — is the billability line (plan C3):
         # a cancelled task's recorded actuals are still work done, the same
         # doctrine that keeps cancelled JOBS in BILLABLE_JOB_STATUSES.
@@ -883,6 +1022,13 @@ class InvoiceWizardService(BaseWizardService):
             return cls._expense_model().objects.get(pk=atom_ref['id'])
         if atom_ref['type'] == 'fee':
             return Fee.objects.get(pk=atom_ref['id'])
+        if atom_ref['type'] == 'deposit':
+            try:
+                return InvoiceLineItem.objects.select_related(
+                    'invoice', 'accounting_category').get(pk=atom_ref['id'])
+            except InvoiceLineItem.DoesNotExist:
+                raise ValidationError(
+                    f"Deposit line {atom_ref['id']} not found")
         raise ValueError(f"Unknown atom type: {atom_ref['type']}")
 
     @classmethod
@@ -890,6 +1036,8 @@ class InvoiceWizardService(BaseWizardService):
         from apps.jobs.models import Task, Fee
         from apps.inventory.models import Material
         from apps.invoicing.models import InvoiceLineItemSource
+        if isinstance(atom_instance, InvoiceLineItem):
+            return InvoiceLineItemSource.SOURCE_DEPOSIT
         if isinstance(atom_instance, Task):
             return InvoiceLineItemSource.SOURCE_TASK
         if isinstance(atom_instance, Material):
@@ -914,8 +1062,20 @@ class InvoiceWizardService(BaseWizardService):
         return 'none'
 
     @classmethod
+    def _atom_computed_amount(cls, atom_instance):
+        # InvoiceLineItem (deposit credits) has no compute_amount() — the
+        # base helper's atom_instance.compute_amount() only applies to
+        # Task/Material/Fee/Expense. A deposit credit's billable amount is
+        # the negated deposit line total.
+        if isinstance(atom_instance, InvoiceLineItem):
+            return (-atom_instance.total_amount).quantize(Decimal('0.01'))
+        return super()._atom_computed_amount(atom_instance)
+
+    @classmethod
     def _atom_category(cls, atom_instance):
         from apps.jobs.models import Fee
+        if isinstance(atom_instance, InvoiceLineItem):
+            return atom_instance.accounting_category
         if isinstance(atom_instance, Fee):
             return atom_instance.accounting_category
         if isinstance(atom_instance, cls._expense_model()):
@@ -925,6 +1085,8 @@ class InvoiceWizardService(BaseWizardService):
     @classmethod
     def _atom_description(cls, atom_instance):
         from apps.jobs.models import Fee
+        if isinstance(atom_instance, InvoiceLineItem):
+            return f'Less deposit ({atom_instance.invoice.display_number})'
         if isinstance(atom_instance, Fee):
             return atom_instance.description
         if isinstance(atom_instance, cls._expense_model()):
@@ -937,6 +1099,10 @@ class InvoiceWizardService(BaseWizardService):
     @classmethod
     def _atom_qty_and_price(cls, atom_instance, total_price):
         from apps.jobs.models import Fee
+        # A deposit credit is always pulled solo: qty 1 at the negated
+        # deposit total (total_price already equals that amount).
+        if isinstance(atom_instance, InvoiceLineItem):
+            return Decimal('1'), total_price
         # A fee line item copies over quantity × unit_rate directly.
         if isinstance(atom_instance, Fee):
             return atom_instance.quantity, atom_instance.unit_rate
@@ -948,6 +1114,10 @@ class InvoiceWizardService(BaseWizardService):
     @classmethod
     def _atom_detail(cls, atom_instance):
         from apps.jobs.models import Fee
+        if isinstance(atom_instance, InvoiceLineItem):
+            amount = cls._atom_computed_amount(atom_instance)
+            return {'qty': Decimal('1'), 'rate': amount,
+                    'units': 'none', 'amount': amount}
         if isinstance(atom_instance, Fee):
             amount = cls._atom_computed_amount(atom_instance)
             return {

@@ -684,8 +684,10 @@ query per row; see `docs/designs/LATER.md` for the N+1 note.
 ### 6.1 EstimateLineItem
 
 Inherits `BaseLineItem` (description, qty, units, price, line_number,
-accounting_category, taxable_override, tax_rate_override; see
-`apps/core/models.py`). Declared in `apps/estimates/models.py`,
+accounting_category; see `apps/core/models.py`; the per-line
+`taxable_override`/`tax_rate_override` fields were removed 2026-07-21 —
+taxability reads `accounting_category.taxable` directly). Declared in
+`apps/estimates/models.py`,
 `db_table = 'est_li'`. Adds:
 
 - `estimate` — FK to `Estimate` (CASCADE).

@@ -1126,6 +1126,9 @@ class LineItemService:
 class ConfigurationService:
     """Service for managing configuration: key-value settings and line item types."""
 
+    # Fields frozen once an AccountingCategory is referenced anywhere.
+    FROZEN_WHEN_REFERENCED = ('taxable', 'is_deposit')
+
     @staticmethod
     def set(key, value):
         """Set a Configuration key/value from the settings API — the views
@@ -1154,28 +1157,47 @@ class ConfigurationService:
             cat = AccountingCategory.objects.get(pk=pk)
         except AccountingCategory.DoesNotExist:
             raise NotFoundError(f'AccountingCategory {pk} not found')
+        frozen = [
+            f for f in ConfigurationService.FROZEN_WHEN_REFERENCED
+            if f in kwargs and kwargs[f] != getattr(cat, f)
+        ]
+        if frozen and cat.is_referenced():
+            raise ValidationError(
+                f"{' and '.join(frozen)} cannot change on a category that is "
+                'in use. Retire this category and create a replacement instead.'
+            )
         for field, value in kwargs.items():
             setattr(cat, field, value)
         cat.full_clean()
         cat.save()
         return cat
 
+    ACCOUNTING_CATEGORY_REFERENCED_MESSAGE = (
+        'Accounting category is in use (materials, services, or '
+        'line items reference it) and cannot be deleted.'
+    )
+
     @staticmethod
     def delete_accounting_category(pk):
-        """Delete an AccountingCategory. Half the schema PROTECTs against it,
-        so a referenced category refuses with a coded error instead of
-        surfacing a ProtectedError 500."""
+        """Delete an AccountingCategory. Most references PROTECT at the FK
+        level; the adjustment_target_categories M2Ms (EstimateLineItem,
+        InvoiceLineItem) don't, so is_referenced() (the same predicate that
+        freezes edits) is checked up front. The ProtectedError catch stays
+        as a backstop against any reference is_referenced() doesn't cover."""
         from django.db.models.deletion import ProtectedError
         try:
             cat = AccountingCategory.objects.get(pk=pk)
         except AccountingCategory.DoesNotExist:
             raise NotFoundError(f'AccountingCategory {pk} not found')
+        if cat.is_referenced():
+            raise ValidationError(
+                ConfigurationService.ACCOUNTING_CATEGORY_REFERENCED_MESSAGE,
+                code='referenced')
         try:
             cat.delete()
         except ProtectedError:
             raise ValidationError(
-                'Accounting category is in use (materials, services, or '
-                'line items reference it) and cannot be deleted.',
+                ConfigurationService.ACCOUNTING_CATEGORY_REFERENCED_MESSAGE,
                 code='referenced')
 
     # -- RateScheme (config-page CRUD; the referenced-freeze decision lives

@@ -115,7 +115,7 @@ cancelled invoice frees its claimed atoms back to the pool.
 
 ### InvoiceLineItem
 
-Inherits `BaseLineItem` (description, qty, units, price, accounting_category, taxable_override, etc. — see `apps/core/models.py`). Has no direct `task` FK; `task` is exposed as a `@property` returning `None` purely so `BaseLineItem.clean()`'s "task XOR inventory_item" rule passes. Source linkage is via the `InvoiceLineItemSource` join table.
+Inherits `BaseLineItem` (description, qty, units, price, accounting_category, etc. — see `apps/core/models.py`; the per-line `taxable_override`/`tax_rate_override` fields were removed 2026-07-21 — taxability reads `accounting_category.taxable` directly). Has no direct `task` FK; `task` is exposed as a `@property` returning `None` purely so `BaseLineItem.clean()`'s "task XOR inventory_item" rule passes. Source linkage is via the `InvoiceLineItemSource` join table.
 
 `db_table = 'invoice_li'`. Parent field name (for `LineItemMixin`) is `invoice`.
 
@@ -133,17 +133,17 @@ Deletion goes through `LineItemService.delete_line_item_with_renumber(line_item)
 
 ### InvoiceLineItemSource
 
-Polymorphic join between `InvoiceLineItem` and the job atom it represents (a `Task`, `Material`, `Fee`, or `Expense`). "Polymorphic" only in the sense that the atom side may be one of several model types; this is not a Django generic relation.
+Polymorphic join between `InvoiceLineItem` and the job atom it represents (a `Task`, `Material`, `Fee`, or `Expense`) — or, for `source_type='deposit'`, another `InvoiceLineItem` (see Deposits below). "Polymorphic" only in the sense that the atom side may be one of several model types; this is not a Django generic relation.
 
 | Field | Type | Notes |
 |---|---|---|
 | `source_id` | AutoField PK | |
 | `invoice_line_item` | FK InvoiceLineItem (CASCADE) | `related_name='sources'`. |
-| `source_type` | CharField(20), choices `'task'` / `'material'` / `'fee'` / `'expense'` | `SOURCE_TASK`, `SOURCE_MATERIAL`, `SOURCE_FEE`, `SOURCE_EXPENSE`. |
-| `source_pk` | PositiveIntegerField | The `Task.pk` / `Material.pk` / `Fee.pk` / `Expense.pk`. |
+| `source_type` | CharField(20), choices `'task'` / `'material'` / `'fee'` / `'expense'` / `'deposit'` | `SOURCE_TASK`, `SOURCE_MATERIAL`, `SOURCE_FEE`, `SOURCE_EXPENSE`, `SOURCE_DEPOSIT`. |
+| `source_pk` | PositiveIntegerField | The `Task.pk` / `Material.pk` / `Fee.pk` / `Expense.pk` — or, for `'deposit'`, the **deposit `InvoiceLineItem.pk`** being claimed (`resolve()` looks it up on `InvoiceLineItem` itself rather than a Job-atom model). |
 
 `db_table = 'invoice_line_item_sources'`.
-`unique_together = [('source_type', 'source_pk')]` — DB-level enforcement of whole-atom claim. An atom cannot appear in two `InvoiceLineItemSource` rows.
+`unique_together = [('source_type', 'source_pk')]` — DB-level enforcement of whole-atom claim. An atom cannot appear in two `InvoiceLineItemSource` rows. For `'deposit'` rows this is what makes the credit **unsplittable**: a paid deposit line can be claimed by at most one deduction, ever (see Deposits below) — the same mechanism that blocks double-billing a Task/Material/Fee/Expense, applied to a deposit line instead of a Job atom.
 
 `InvoiceLineItemSource.resolve()` returns the concrete `Task` / `Material` / `Fee` / `Expense` instance.
 
@@ -295,7 +295,7 @@ sharing one `RateScheme` and identical `active_modifiers`. `add_atoms_to_line_it
 item (re-summarize a uniform bundle, else keep qty and recompute the
 per-unit price).
 
-`taxable_override` is left null on creation (uses the category default).
+The line's taxability is whatever `accounting_category.taxable` says at push time (no per-line override field exists — removed 2026-07-21).
 
 ### In-sync vs. override
 
@@ -366,13 +366,34 @@ to `'lines'`.
 the standard detail view of an invoice. It shares the same **JobHeader**
 band (via `JobShell`) as reconcile mode — same page, same shell. On
 `draft` invoices, users with `can_manage_financials` can add, edit,
-delete, and reorder line items using `LineItemModal.svelte` (the shared
-modal also used on the estimate panel). Adding a line item offers a
-toggle between **manual entry** and **"From Price List"** (catalog
-mode, which POSTs `{inventory_item, qty}` and copies
-description/units/selling_price/accounting_category from the PLI).
-Editing an existing line item edits its fields only, with no catalog
-toggle.
+delete, and reorder line items.
+
+**Adding a line item** (2026-07-25 — adopted the estimate flow) opens
+`PriceListPicker.svelte` (shared with the estimate/CO add-line paths),
+which offers **services**, **inventory** (catalog PLIs), and **manual**
+entry. `PriceListPicker` carries no surface-specific logic (task/estimate
+surfaces are unaffected) — deposits are no longer created through it (see
+below). The picked choice is handed to `InvoiceAddLineForm.svelte`, which
+POSTs the right shape per choice: `{inventory_item, qty}` (from-PLI, copies
+description/units/selling_price/accounting_category), or `{service_item,
+qty}` (from-service — see below). `LineItemModal.svelte` (the modal
+shared with the estimate panel) is **edit-only** on invoices now —
+opening it always starts in `modalMode = 'edit'`; there is no longer a
+manual/from-inventory toggle inside it on the invoice surface. Editing an
+existing line item edits its fields only.
+
+**Ad-hoc service billing** (`POST /api/invoices/{id}/line-items-from-service/`,
+`InvoiceService.add_line_item_from_service`) is the invoice-only "From
+Price List → service" pick: it snapshots `description` (the
+`ServiceItem.template_name`), `units`, `price`
+(`RateScheme.effective_rate(service_item.default_active_modifiers)` —
+the *default*-modifier rate, not a live-editable modifier set), and
+`accounting_category` straight onto a plain `InvoiceLineItem` — no
+`Task` is created and no `InvoiceLineItemSource` row is written. This is
+a pure billing line for work done outside the app that still needs
+invoicing (no job side effects, no actuals tracking); it is distinct
+from the atom-pull wizard, which always bills a real Task/Material/Fee/
+Expense/deposit atom.
 
 A **"Show Billables"** button is shown on the panel only to users with `can_manage_financials`, only when the invoice is in `draft` status, and only when the job has at least one task or material (`hasBillables`) — it flips the panel into reconcile mode rather than navigating. If the invoice is not draft, the user lacks the permission, or the job has no billable sources, the button is absent.
 
@@ -432,6 +453,321 @@ The panel surfaces agreement adjustments through the agreement composition
 layer, not through the wizard atom pool. This means it works on `draft`
 invoices that were created either through the wizard or directly, and
 regardless of which line items have already been added.
+
+---
+
+## Deposits
+
+A deposit is a non-taxable charge collected before work starts, covering
+no atoms — the shop typically does no work until it's paid (the money
+buys materials). A paid deposit is later deducted **in full** from
+exactly one subsequent invoice on the same job. Full design rationale:
+`docs/plans/deposit-invoices-spec.md` (2026-07-25).
+
+### What makes a line a deposit line
+
+**The accounting category is the deposit indicator, not a stored flag on
+the line or the invoice.** `AccountingCategory.is_deposit` (BooleanField,
+default `False`; see `data-constraints.md` §1.3) is the one source of
+truth:
+
+- `InvoiceLineItem.is_deposit_line` — `True` when the line's
+  `accounting_category.is_deposit` is set **and** the line carries no
+  `InvoiceLineItemSource` row with `source_type='deposit'` (i.e. it's a
+  charge, not a deduction of one).
+- `InvoiceLineItem.is_deposit_deduction` — `True` when the line **does**
+  carry such a source row.
+- **An invoice *is* a deposit invoice iff it contains a deposit line**
+  (`InvoiceSerializer`/`InvoiceSummarySerializer.get_is_deposit`: `any(li.is_deposit_line for li in ...)`).
+  Nothing is stored on `Invoice` itself.
+
+Both properties iterate `self.sources.all()` (never `.filter()`) so a
+`prefetch_related('invoicelineitem_set__sources')` on the parent Invoice
+queryset actually serves them (`InvoiceViewSet.get_queryset` prefetches
+`invoicelineitem_set__sources` and `__accounting_category` on the
+detail/list-non-summary path for exactly this).
+
+Because deposit-ness is derived from the category, **draft-time
+recategorization is coherent editing, not corruption**: a manual line
+hand-assigned a deposit AC *becomes* a deposit line with no special
+handling, and re-categorizing it away un-does that — line CRUD is
+draft-only, so everything load-bearing (the board pill from a *sent*
+invoice, the credit atom from a *paid* one) always reads frozen lines.
+Mixing is legal: a deposit line may coexist with ordinary lines on one
+invoice; the invoice still gets the deposit pill, and the deposit line
+still becomes a credit atom once the whole invoice is paid. Multiple
+deposits per job (and even multiple deposit *categories*) are legal —
+each paid deposit line is its own credit atom.
+
+### Category invariants (enforced on `AccountingCategory`, not the line)
+
+- **Non-taxable by construction:** `is_deposit=True` requires
+  `taxable=False` — `AccountingCategory.clean()` raises
+  `ValidationError({'is_deposit': [...]})` otherwise. (`taxable_override`
+  no longer exists — see the `taxable` row change note above — so this is
+  the only taxability lever for a deposit category, and the QBO push
+  derives `TaxCodeRef` from it directly.)
+- **Targeted freeze once referenced:** `ConfigurationService.FROZEN_WHEN_REFERENCED
+  = ('taxable', 'is_deposit')`. Once `AccountingCategory.is_referenced()`
+  is `True` (any line item, expense, inventory item, material, rate
+  scheme, fee, **or `adjustment_target_categories` M2M** points at it —
+  the M2M coverage was a 2026-07-25 fix; a category referenced *only* as
+  an adjustment target used to report `is_referenced() == False`),
+  `ConfigurationService.update_accounting_category` refuses to change
+  either field, coaching "retire this category and create a replacement
+  instead." Name, code, and QBO mappings stay editable on a used category
+  (a QBO reconnect must still be able to remap them). This is a
+  *targeted* freeze — full `AccountingCategory` immutability/supersession
+  (RateScheme-style) is a separate future effort, tracked in
+  `docs/designs/LATER.md`.
+
+### Creating a deposit line
+
+`POST /api/invoices/{id}/line-items/` (the `LineItemMixin` manual-line
+endpoint) with `deposit: true` in the body. `InvoiceService.add_line_item`
+sees the flag and stamps `accounting_category` server-side from the
+`default_deposit_accounting_category` Configuration key (§1.1 in
+`data-constraints.md`) — resolved by `InvoiceService._resolve_deposit_category()`,
+which raises a field-keyed coaching `ValidationError` on
+`accounting_category` ("No default deposit accounting category is
+configured...") if the key is unset, or if it points at a category that
+no longer exists, is inactive, or isn't a deposit category. Amount and
+description are user-entered; the frontend prefills description
+`"Deposit on {job_number}"`. This is draft-only, like all line CRUD (a
+manual line hand-assigned a deposit AC is equally a deposit line — same
+semantics, no special-casing). This contract is unchanged by the Task 21
+frontend rework below — only the entry point moved.
+
+**Frontend (Task 21, 2026-07 — replaced the picker's Add Deposit entry;
+refined 2026-07-26 into three states):** `InvoicePanel.svelte` offers a
+deposit-creation action whose presence and label are derived from the job's
+own `invoices` list — no separate fetch is needed, since `InvoicePanel`'s
+`GET /api/invoices/?job=` call carries no `?summary=` param, so every entry
+is the full `InvoiceSerializer` (nested `line_items` included, same shape
+as the single-invoice GET):
+
+1. **No draft on the job** → **"Add Deposit Invoice"**, placed next to
+   **Start Invoice** in the empty state, and next to the version bar's
+   **+ New invoice** trailing action once the job has (non-draft) invoices.
+2. **A draft exists with zero line items** → relabels to **"Make this a
+   deposit invoice"** (same version-bar placement). The button stays
+   offered because `InvoiceWizardService.open_for_job` is idempotent — see
+   step 1 below — so Create simply adds the deposit line to that existing
+   empty draft.
+3. **A draft exists WITH line items already** → the action is **suppressed
+   entirely**, in both placements — "mixing" a deposit line with ordinary
+   lines on one invoice is legal (see below), it's just no longer offered
+   as a *fresh* deposit-invoice starting point once the draft has any
+   content.
+
+All three states share Start Invoice's gates (`jobBillable`,
+`job.can_manage`) and, in states 1/2, are additionally disabled with a "Set
+a deposit category in Settings first" title when `hasDepositCategory` is
+false (no active deposit category exists — same `categories` check as
+before, loaded independent of `invoiceId` so it's available in the empty
+state too).
+
+Clicking it opens `DepositInvoiceModal.svelte` — a single **Amount** field
+(client-validated `> 0` via a `FieldError` slot) plus Create/Cancel. On
+Create it does a two-step sequence, reusing existing contracts verbatim (no
+backend changes):
+
+1. `POST /api/invoices/` `{job}` — the exact call `InvoicePanel`'s Start
+   Invoice makes. `InvoiceWizardService.open_for_job` is idempotent: if the
+   job already has an open draft, it returns that draft instead of
+   erroring, so state 2's button is safe to offer — the deposit line lands
+   on the existing draft.
+2. `POST /api/invoices/{id}/line-items/` `{deposit: true, description:
+   "Deposit on {job_number}", qty: '1', units: 'none', price: amount}` —
+   the same deposit line-item contract described above.
+
+**Post-create freshness:** `InvoicePanel` compares the returned invoice id
+against the currently-viewed `invoiceId`. If the user was already viewing
+the draft that just received the line (state 2, triggered from that
+draft's own page), the panel calls `loadInvoice()` to reload it **in
+place** — the established convention (same as `handleLineAdded`'s reload
+after any other add-line save), not a full page refresh. Otherwise (state
+1's brand-new draft, or state 2 triggered from a different document) it
+navigates to the draft via `window.location.hash`, same as Start Invoice.
+Either path also reloads the job's `invoices` list so the three-state gate
+above reflects the new line count immediately.
+
+Errors route through `triageError`: an overlay-worthy failure (5xx, no
+JSON body) goes to the global overlay; a field-keyed/`detail` failure from
+step 1 renders on the modal's own `FormMessage`/`FieldError` (the invoice
+was never created, so there's nothing else to show). A step-2 failure
+(e.g. the deposit-category coaching message) is different: **the draft
+already exists** at that point, so the modal still resolves the draft (in
+place or via navigation, per the freshness rule above) and surfaces the
+coaching text via the global overlay instead of a form message on a modal
+that's about to close — the user can fix the Settings config and add the
+deposit line by hand afterward.
+
+### The credit atom (invoice wizard source pool)
+
+`InvoiceWizardService.get_source_pool` adds a **"Deposit credits"** group.
+Unlike the other pool groups (which always render, showing a "(no billable
+items)" placeholder when empty), this group is emitted only when at least
+one qualifying line exists — jobs with no deposit history get no
+placeholder row. Its `has_billable_atoms` is presence-based
+(`len(atoms) > 0`), matching the other groups' formula, so a fully-claimed
+credit still renders its row with the claimed marker. A line qualifies
+when:
+
+- it's a deposit line (deposit-category AC, no deposit-source row);
+- on an invoice that is `paid` (`Invoice.STATUS_PAID`) — **you can't
+  deduct money you don't hold**, so `open`/`partly-paid` deposits never
+  offer a credit;
+- on the **same job** as the invoice whose pool is being built;
+- with **no live claim** — a claim from a *cancelled* invoice doesn't
+  count (see the cancelled-claims note in `docs/designs/LATER.md`).
+
+Pulling the atom (`type: 'deposit'`) creates the deduction line via the
+normal atom-pull endpoints (`line-items-from-atoms`/`add-atoms`), with
+deposit-specific rules enforced by `InvoiceWizardService._assert_deposit_atom_rules`:
+
+- **No bundling** — a deposit credit must be pulled as its own line (not
+  combined with other atoms, and nothing can be appended to a deduction
+  line afterward: `'A deposit deduction line cannot take other atoms.'`).
+- **Same-job only** — pulling a deposit whose invoice belongs to a
+  different job raises `'A deposit can only be deducted on its own job.'`
+- **Locked, unsplittable amount** — the deduction's `qty` is `1` and its
+  `price` is the deposit line's **full total, negated**
+  (`(-li.total_amount).quantize(Decimal('0.01'))`); qty/price/AC edits on
+  a deduction line are rejected (see the "Not a deposit line" /
+  "can only be deducted once its invoice is paid" guards in
+  `InvoiceWizardService._assert_atom_billable`).
+- **Description default:** `"Less deposit ({deposit invoice's display_number})"`
+  (e.g. `Less deposit (INV-1042)`), editable like any line description.
+- **Accounting category:** copied from the source deposit line.
+- **Source row:** `InvoiceLineItemSource(source_type='deposit',
+  source_pk=<deposit line pk>)` — the whole-atom unique constraint on
+  `(source_type, source_pk)` is what makes the claim unsplittable; a
+  second pull attempt on the same deposit line raises `ClaimConflict` →
+  409 `atoms_already_claimed`, exactly like a Task/Material/Fee/Expense
+  double-claim.
+
+Deleting the deduction line (`delete_line_item_with_renumber`, as
+always), discarding its draft invoice, or cancelling its invoice releases
+the claim — the credit returns to the pool (modulo the cancelled-claims
+caveat in `docs/designs/LATER.md`: the source row survives cancellation,
+so the pool's *display* frees the credit but a stale row still exists at
+the DB level). A deposit line never appears in the pool as a *billable*
+atom — it covers no work — only ever as a credit.
+
+**seed-all-atoms / send-all-atoms deliberately pull deposit credits too**
+— they're ordinary available atoms in the pool, same as any Task/
+Material/Fee/Expense, so "Apply everything" / "Send all to Invoice" will
+include an outstanding deposit credit on the same job without special-
+casing it.
+
+### Indicators (all derived, no stored state)
+
+- **Invoices list** (`InvoiceListPage.svelte`): a **DEPOSIT** doc-pill
+  next to the status pill, driven by the invoice's serialized `is_deposit`.
+- **Job overview `InvoicingBlock`** (`lib/jobOverview.js`): a deposit
+  invoice's row label gains `" · deposit"` (`${display_number} · deposit`)
+  — it already lists invoices chronologically, so a deposit reads first
+  naturally; no separate badge component.
+- **Job Board `JobCard.svelte`** (see `jobs-and-tasks.md` §8.5): a
+  banner — **"DEP REQUESTED"** while a deposit invoice is `open` or
+  `partly-paid`; **"DEP PAID"** once a deposit line is on a `paid`
+  invoice with no live claim on it; nothing otherwise (draft deposits,
+  fully-consumed deposits). Computed job-wide by
+  `BoardService._deposit_states` (one query for `open`/`partly-paid`/`paid`
+  deposit lines on the given job ids, one query for live — non-cancelled
+  — deposit-source claims against them): with multiple deposits,
+  **`'requested'` wins over `'paid'`** — any outstanding request shows.
+  Present on every board payload's job rows (Pipeline, In Progress,
+  Unpaid, Closed), but only `JobCard.svelte` (Pipeline column cards, and
+  the In Progress chip-hover card via `JobChipStrip.svelte`) renders the
+  banner today — `UnpaidCard.svelte`/`ClosedCard.svelte` don't. The
+  existing manual `on_hold` + "awaiting deposit" reason remains available
+  and unrelated to this derived signal.
+
+### Unapplied deposit credit — draft-panel notice + send-time confirm (Task 22, frontend-only)
+
+The concept is called an **"unapplied deposit credit"** everywhere
+user-visible (never "unconsumed" — the wording is deliberate, matching the
+RM's terminology). No backend changes: both surfaces below re-derive the
+same set the backend's "Deposit credits" pool group computes, client-side,
+from data already loaded — `frontend/src/lib/depositCredits.js` exports one
+function, `unappliedDepositCredits(invoices)`, used by both surfaces so
+they can't drift apart:
+
+- **Candidate:** a line with `is_deposit === true` on an invoice with
+  `status === 'paid'` (parity with "on an invoice that is paid" above).
+- **Applied (excluded):** any line, on any invoice in the same `invoices`
+  array, whose `status !== 'cancelled'`, carries a `sources` entry with
+  `source_type === 'deposit'` and `source_pk === ` the candidate's
+  `line_item_id` (exact parity with "no live claim" above — a claim from a
+  cancelled invoice doesn't count).
+- The input `invoices` array is the same job-scoped list `InvoicePanel`
+  already loads (`GET /api/invoices/?job=`, no `?summary=` → full
+  `InvoiceSerializer`, nested `line_items`/`sources`) and
+  `InvoiceSendPage` additionally fetches once (keyed off the loaded
+  invoice's `job` id) for the same purpose.
+
+**Part 1 — draft-panel notice + Apply** (`InvoicePanel.svelte`): while
+viewing a **draft** invoice, one row per unapplied credit renders above
+"Line Items" (boxed banner, same amber "needs a decision" vocabulary as
+`JobDetail.svelte`'s `.change-request-banner`): `Unapplied deposit credit —
+$<amount> from <source invoice's display_number>` (amount = the credit
+line's `qty × price`, formatted `${n.toFixed(2)}` — this file's own money
+convention, e.g. `Amount Paid` above; no thousands separator, unlike the
+reconcile pool's `WizardAtomRow`, which uses `toLocaleString`). The notice
+text itself shows to any viewer of the draft; only the **Apply deposit
+credit** button is gated on `canEditLineItems` (same permission as any
+other line-item mutation). Apply posts
+`POST /api/invoices/{draftId}/line-items-from-atoms/` with `{atoms:
+[{type: 'deposit', id: <line_item_id>}]}` — the same atom-pull endpoint
+Reconcile's "Add Here" uses — then reloads the invoice and the job's
+`invoices` list; the deduction line appears and the notice row disappears
+because the credit is now applied. Errors route through `triageError` to
+the overlay (no form here), covering the 409 `atoms_already_claimed` case
+if the credit was claimed elsewhere in the interim; the invoices list is
+also refreshed on that error path so the notice reflects the new reality.
+`InvoicePanel.setMode('lines')` (the "Back to lines" transition) also
+refreshes `invoices`, not just the single invoice — Reconcile's own "Add
+Here" pull can claim/release a credit too, and that only shows up in the
+job-scoped list the notice is derived from.
+
+**Part 2 — send-time confirm** (`InvoiceSendPage.svelte`, not
+`InvoicePanel` — the actual `POST /api/invoices/{id}/send/` lives on this
+separate route, reached via the panel's Send/Resend link): `handleSubmit`
+(the `onSubmit` callback `DocumentSendForm` invokes after its own "Send
+this email to `<recipient>`?" confirm) checks
+`unappliedDepositCredits(jobInvoices).length > 0` and, if so, interposes a
+second `confirm()`: *"There's an unapplied deposit credit on this job —
+send anyway?"*. OK proceeds to the send POST; Cancel returns immediately,
+leaving `submitting`/`submitError` untouched (the dialog was never
+disturbed). No confirm at all when there are no unapplied credits. This is
+a **soft guard** — deducting the credit on a later invoice is legitimate;
+the point is only that silence isn't the default when money is sitting
+unclaimed.
+
+### QBO and the negative-total guard
+
+No new QBO mechanics: the deposit line pushes as an ordinary
+`SalesItemLine` (`TaxCodeRef` `'NON'` via its AC — guaranteed by the
+category invariant above), and a deduction line pushes as a negative-
+amount `SalesItemLine` — legal in QBO. **Nothing in Minibini prevents a
+deduction larger than an invoice's other lines** (a negative-total
+invoice); QBO itself rejects a negative-total invoice at push time, and
+that rejection is accepted as the guard rather than pre-validating
+client- or server-side. Revisit if this bites in practice.
+
+### Out of scope (deliberate)
+
+- **Partial/split deduction.** A deposit is claimed whole by one invoice;
+  a remaining-balance model is a future effort if a real need appears.
+- **Refund/undo of a paid deposit** — cancelling a **paid** deposit
+  invoice is out of scope (no refund flow exists); the pool rule is
+  *paid* status, so a cancelled deposit invoice's line simply stops being
+  offered as a credit. Already-taken deductions are untouched.
+- **Any invoice-readiness gate beyond the deposit-line coaching error** —
+  standard invoicing works without the deposit default configured; only
+  creating a deposit line requires it.
 
 ---
 

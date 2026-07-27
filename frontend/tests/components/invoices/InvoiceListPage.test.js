@@ -48,4 +48,35 @@ describe('InvoiceListPage', () => {
     expect(url).toContain('status=open');
     expect(url).toContain('ordering=due_date');
   });
+
+  it('shows a DEPOSIT pill next to the status', async () => {
+    api.get.mockResolvedValue({
+      count: 1, next: null, previous: null,
+      results: [{
+        invoice_id: 44, invoice_number: 'INV-2026-0003', display_number: 'INV-2026-0003', customer_name: 'Acme Corp',
+        job: 12, job_number: 'JOB-2026-0003', status: 'open',
+        sent_date: '2026-05-01T00:00:00Z', due_date: '2026-05-31',
+        is_late: false, total: '500.00', amount_paid: '0.00', balance: '500.00',
+        is_deposit: true,
+      }],
+    });
+    const { container } = render(InvoiceListPage);
+    expect(await findByText(container, 'DEPOSIT')).toBeInTheDocument();
+  });
+
+  it('omits the DEPOSIT pill for a non-deposit invoice', async () => {
+    api.get.mockResolvedValue({
+      count: 1, next: null, previous: null,
+      results: [{
+        invoice_id: 45, invoice_number: 'INV-2026-0004', display_number: 'INV-2026-0004', customer_name: 'Acme Corp',
+        job: 13, job_number: 'JOB-2026-0004', status: 'open',
+        sent_date: '2026-05-01T00:00:00Z', due_date: '2026-05-31',
+        is_late: false, total: '500.00', amount_paid: '0.00', balance: '500.00',
+        is_deposit: false,
+      }],
+    });
+    const { container, queryByText } = render(InvoiceListPage);
+    await findByText(container, 'INV-2026-0004');
+    expect(queryByText('DEPOSIT')).toBeNull();
+  });
 });

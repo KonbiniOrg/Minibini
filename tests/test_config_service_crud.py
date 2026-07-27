@@ -103,3 +103,31 @@ class AccountingCategoryDeleteGuardTest(TestCase):
         resp = self.client_.delete(f'/api/accounting-categories/{cat.pk}/')
         self.assertEqual(resp.status_code, 200, getattr(resp, 'data', None))
         self.assertFalse(AccountingCategory.objects.filter(pk=cat.pk).exists())
+
+    def test_adjustment_target_only_category_delete_is_409(self):
+        """A category referenced ONLY via adjustment_target_categories (a
+        hidden M2M that doesn't PROTECT) must still refuse deletion — the
+        ProtectedError-only guard would silently delete it and the through
+        row. Mirrors tests.test_deposit_category's adjustment-target setup."""
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        from apps.estimates.models import Estimate, EstimateLineItem
+
+        cat = AccountingCategory.objects.create(name='cfg-adjtgt', code='CFGADJT')
+        other_cat = AccountingCategory.objects.create(name='cfg-adjoth', code='CFGADJO')
+        contact = Contact.objects.create(first_name='Cfg', last_name='Adj')
+        job = Job.objects.create(job_number='JOB-CFG-ADJ-1', contact=contact)
+        est = Estimate.objects.create(
+            job=job, estimate_number='EST-CFG-ADJ-1', version=1,
+            status=Estimate.STATUS_DRAFT)
+        line = EstimateLineItem.objects.create(
+            estimate=est, line_number=1,
+            qty=Decimal('1'), price=Decimal('0.00'),
+            accounting_category=other_cat)
+        line.adjustment_target_categories.set([cat.pk])
+
+        resp = self.client_.delete(f'/api/accounting-categories/{cat.pk}/')
+        self.assertEqual(resp.status_code, 409, getattr(resp, 'data', None))
+        self.assertTrue(AccountingCategory.objects.filter(pk=cat.pk).exists())
+        line.refresh_from_db()
+        self.assertIn(cat.pk, line.adjustment_target_categories.values_list('pk', flat=True))

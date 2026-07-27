@@ -2,9 +2,14 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
   import { canManageFinancials } from '../../stores/permissions.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { unappliedDepositCredits } from '../../lib/depositCredits.js';
   import LineItemTable from '../LineItemTable.svelte';
   import LineItemModal from '../LineItemModal.svelte';
   import AdjustmentModal from '../AdjustmentModal.svelte';
+  import PriceListPicker from '../PriceListPicker.svelte';
+  import InvoiceAddLineForm from './InvoiceAddLineForm.svelte';
+  import DepositInvoiceModal from './DepositInvoiceModal.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import ReconcileMode from '../wizards/ReconcileMode.svelte';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
@@ -34,9 +39,12 @@
   );
 
   let modalOpen = $state(false);
-  let modalMode = $state('create');
+  let modalMode = $state('edit');
   let modalItem = $state(null);
   let adjustmentModalOpen = $state(false);
+  let pickerOpen = $state(false);
+  let addChoice = $state(null);
+  let depositModalOpen = $state(false);
 
   // Reconcile (wizard) is a mode of this panel, not a separate route. Initial
   // mode comes from the per-doc workspace memory, but is validated against the
@@ -56,9 +64,16 @@
   function setMode(next) {
     mode = next;
     rememberMode(job?.job_id, `inv:${invoiceId}`, next);
-    // Returning to lines must show fresh data — reconcile mode may have mutated
-    // the invoice's line items.
-    if (next === 'lines') loadInvoice();
+    // Returning to lines must show fresh data — reconcile mode may have
+    // mutated the invoice's line items. It can also claim/release a deposit
+    // credit (an "Add Here" pull creates the deduction line's source row),
+    // which changes the job-scoped `invoices` list the unapplied-deposit-
+    // credit notice is derived from — refresh that too, not just the single
+    // invoice.
+    if (next === 'lines') {
+      loadInvoice();
+      loadInvoices();
+    }
   }
 
   let lineItems = $derived(
@@ -87,9 +102,61 @@
     }
   }
 
-  function openAddItem() { modalItem = null; modalMode = 'create'; modalOpen = true; }
+  function openAddItem() { pickerOpen = true; }
   function openEditItem(li) { modalItem = li; modalMode = 'edit'; modalOpen = true; }
   function handleSaved() { modalOpen = false; modalItem = null; loadInvoice(); }
+
+  function handleChoose(choice) {
+    pickerOpen = false;
+    addChoice = choice;
+  }
+  function handleLineAdded() {
+    addChoice = null;
+    loadInvoice();
+  }
+
+  // Gates the deposit modal's enabled state: only offer it once an active
+  // deposit accounting category exists (server stamps it; no AC select shown
+  // in the deposit form), same rule as the settings deposit-category picker.
+  let hasDepositCategory = $derived(
+    categories.some((c) => c.is_active !== false && c.is_deposit)
+  );
+
+  // Task 22 — unapplied deposit credit notice (draft-panel only). Derived
+  // from the same job-scoped `invoices` array used for the Add Deposit
+  // Invoice gate above; see lib/depositCredits.js for the exact-parity
+  // derivation. The notice text itself is shown to any viewer of the
+  // draft (informational); only the Apply action is gated on
+  // canEditLineItems, same as any other line-item mutation.
+  let unappliedCredits = $derived(unappliedDepositCredits(invoices));
+  let applyingCreditId = $state(null);
+
+  async function applyDepositCredit(credit) {
+    applyingCreditId = credit.lineItem.line_item_id;
+    try {
+      await api.post(`/api/invoices/${invoice.invoice_id}/line-items-from-atoms/`, {
+        atoms: [{ type: 'deposit', id: credit.lineItem.line_item_id }],
+      });
+      await loadInvoice();
+      await loadInvoices();
+    } catch (e) {
+      // No form here (this is a plain action button) — everything routes
+      // to the overlay, same venue as handleDeleteItem/handleReorder above.
+      // Covers the 409 atoms_already_claimed case (a field-less {detail,
+      // code, atom_ids} body) same as any other operation error.
+      const t = triageError(e);
+      showError(t.overlay || t.message || 'Could not apply deposit credit.');
+      // The credit may have just been claimed by someone else (the 409
+      // case) — refresh so the notice reflects current reality.
+      await loadInvoices();
+    } finally {
+      applyingCreditId = null;
+    }
+  }
+
+  function creditAmount(li) {
+    return Number(li.qty) * Number(li.price);
+  }
 
   async function handleDeleteItem(li) {
     // No confirm: draft-only line edit, re-addable by hand.
@@ -167,13 +234,17 @@
   $effect(() => {
     if (invoiceId) {
       loadInvoice();
-      loadCategories();
     }
   });
 
+  // Categories are needed for the deposit-category gate (hasDepositCategory)
+  // even in the empty state (no invoiceId yet, e.g. the "Add Deposit
+  // Invoice" button before any invoice exists) — load off jobId, not
+  // invoiceId.
   $effect(() => {
     if (jobId) {
       loadInvoices();
+      loadCategories();
     }
   });
 
@@ -212,6 +283,24 @@
   // Change Order gate).
   let jobBillable = $derived(BILLABLE_JOB_STATUSES.includes(job?.status));
 
+  // Add Deposit Invoice — three states, derived from the job's own
+  // `invoices` list (loaded above via loadInvoices, keyed off jobId).
+  // InvoicePanel's GET /api/invoices/?job= call carries no ?summary= param,
+  // so each entry there is the full InvoiceSerializer — nested line_items
+  // included, same shape as the single-invoice GET — so no separate fetch
+  // is needed to know whether the job's draft (if any) already has lines.
+  //   1. no draft on the job      → "Add Deposit Invoice" (create + line)
+  //   2. draft exists, zero lines → "Make this a deposit invoice" (adds the
+  //      line to that draft — open_for_job's idempotent lookup resolves to
+  //      it, so the same modal flow works unchanged)
+  //   3. draft exists, ≥1 lines   → suppressed entirely (both placements)
+  let draftInvoice = $derived((invoices || []).find((i) => i.status === 'draft'));
+  let draftHasLines = $derived((draftInvoice?.line_items?.length ?? 0) > 0);
+  let showDepositButton = $derived(jobBillable && job?.can_manage && !draftHasLines);
+  let depositButtonLabel = $derived(
+    draftInvoice ? 'Make this a deposit invoice' : 'Add Deposit Invoice'
+  );
+
   let startingInvoice = $state(false);
   async function startInvoice() {
     startingInvoice = true;
@@ -224,6 +313,29 @@
       startingInvoice = false;
     }
   }
+
+  // DepositInvoiceModal does its own two-step create (invoice, then deposit
+  // line) and hands back the resulting invoice_id.
+  //   - If the user is already viewing the draft that just received the
+  //     line (state 2 — Make this a deposit invoice, on its own doc),
+  //     reload it in place so the new line appears — the panel's
+  //     established convention (same as handleLineAdded's loadInvoice()
+  //     call after a normal add-line save), not a full page refresh.
+  //   - Otherwise (state 1 — a brand new draft, or state 2 triggered while
+  //     viewing a different doc) navigate to the draft, same as Start
+  //     Invoice's navigation.
+  // Either way, `invoices` is refreshed so the three-state gate above is
+  // correct once the affected draft's line count has changed.
+  function handleDepositCreated(newInvoiceId) {
+    depositModalOpen = false;
+    const viewingCreatedDraft = invoiceId != null && String(invoiceId) === String(newInvoiceId);
+    if (viewingCreatedDraft) {
+      loadInvoice();
+    } else {
+      window.location.hash = `/jobs/${job.job_id}/invoice/${newInvoiceId}`;
+    }
+    loadInvoices();
+  }
 </script>
 
 {#snippet newInvoiceAction()}
@@ -232,11 +344,24 @@
   </button>
 {/snippet}
 
+{#snippet addDepositInvoiceAction()}
+  <button type="button" class="new-invoice-btn" onclick={() => { depositModalOpen = true; }}
+    disabled={!hasDepositCategory}
+    title={hasDepositCategory ? '' : 'Set a deposit category in Settings first'}>
+    {depositButtonLabel}
+  </button>
+{/snippet}
+
+{#snippet subnavTrailing()}
+  {#if canCreateInvoice}{@render newInvoiceAction()}{/if}
+  {#if showDepositButton}{@render addDepositInvoiceAction()}{/if}
+{/snippet}
+
 {#if subnavItems.length > 0}
   <DocSubnav
     items={subnavItems}
     section="invoice"
-    trailing={canCreateInvoice ? newInvoiceAction : null}
+    trailing={(canCreateInvoice || showDepositButton) ? subnavTrailing : null}
   />
 {/if}
 
@@ -307,6 +432,21 @@
       onExit={() => setMode('lines')}
     />
   {:else}
+  {#if invoice.status === 'draft' && unappliedCredits.length > 0}
+    <div class="deposit-credit-notice">
+      {#each unappliedCredits as credit (credit.lineItem.line_item_id)}
+        <div class="deposit-credit-row">
+          <span>Unapplied deposit credit — ${creditAmount(credit.lineItem).toFixed(2)} from {credit.invoice.display_number}</span>
+          {#if canEditLineItems}
+            <button type="button" onclick={() => applyDepositCredit(credit)}
+              disabled={applyingCreditId === credit.lineItem.line_item_id}>
+              {applyingCreditId === credit.lineItem.line_item_id ? 'Applying…' : 'Apply deposit credit'}
+            </button>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  {/if}
   <h3>Line Items</h3>
   {#if canEditLineItems}
     {#if lineItems.length === 0}
@@ -344,6 +484,21 @@
     actions={canEditLineItems ? actionsSnippet : null}
   />
 
+  <PriceListPicker
+    open={pickerOpen}
+    onChoose={handleChoose}
+    onclose={() => { pickerOpen = false; }}
+  />
+
+  <InvoiceAddLineForm
+    open={addChoice != null}
+    choice={addChoice}
+    invoiceId={invoice.invoice_id}
+    {categories}
+    onSaved={handleLineAdded}
+    onClose={() => { addChoice = null; }}
+  />
+
   <LineItemModal
     open={modalOpen}
     mode={modalMode}
@@ -372,6 +527,21 @@
       <button type="button" onclick={startInvoice} disabled={startingInvoice}>
         {startingInvoice ? 'Starting…' : 'Start Invoice'}
       </button>
+      <!-- This branch only renders when the job has zero invoices (see
+           JobInvoicePage's docId derivation — invoiceId is only null when
+           there truly are none), so showDepositButton/depositButtonLabel
+           here always resolve to state 1 ("Add Deposit Invoice") — reusing
+           the same derived values as the version-bar placement below keeps
+           the gate/label logic single-sourced, but this button keeps its
+           own (unstyled, like Start Invoice) markup rather than the
+           subnav-trailing snippet's compact ".new-invoice-btn" styling. -->
+      {#if showDepositButton}
+        <button type="button" onclick={() => { depositModalOpen = true; }}
+          disabled={!hasDepositCategory}
+          title={hasDepositCategory ? '' : 'Set a deposit category in Settings first'}>
+          {depositButtonLabel}
+        </button>
+      {/if}
     {:else if job?.can_manage}
       <p>No invoices yet. Invoicing becomes available once the job is approved.</p>
     {:else}
@@ -379,6 +549,13 @@
     {/if}
   </div>
 {/if}
+
+<DepositInvoiceModal
+  open={depositModalOpen}
+  {job}
+  onCreated={handleDepositCreated}
+  onClose={() => { depositModalOpen = false; }}
+/>
 
 <style>
   .error { color: #a8071a; }
@@ -399,4 +576,22 @@
   .success-msg { padding: 8px 0; color: #166534; }
   .send-blocked { opacity: 0.5; cursor: not-allowed; }
   .send-blocked-note { font-size: 12px; color: #6b7280; }
+  /* Unapplied deposit credit notice — same boxed-banner vocabulary as
+     JobDetail's .change-request-banner (an actionable "needs a decision"
+     note, not an error/success message). */
+  .deposit-credit-notice {
+    background: #ffedd5;
+    border: 1px solid #fdba74;
+    color: #9a3412;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    margin: 14px 0 4px;
+  }
+  .deposit-credit-row {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+  }
+  .deposit-credit-row + .deposit-credit-row {
+    margin-top: 6px; padding-top: 6px; border-top: 1px solid #fdba74;
+  }
 </style>

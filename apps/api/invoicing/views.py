@@ -1,14 +1,15 @@
 from datetime import timedelta
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import (
-    F, Sum, Value, DecimalField, DateTimeField, ExpressionWrapper,
+    Exists, F, OuterRef, Sum, Value, DecimalField, DateTimeField,
+    ExpressionWrapper,
 )
 from django.db.models.functions import Coalesce
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.invoicing.models import Invoice
+from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.invoicing.services import InvoiceService, InvoiceWizardService
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
 from apps.api.permissions import CanManageFinancials, CanManageJobs
@@ -90,7 +91,13 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             qs = qs.filter(job_id=job)
 
         if not (self.action == 'list' and self._summary_mode()):
-            return qs
+            # Detail/list (non-summary) path: prefetch line items' sources and
+            # accounting_category so InvoiceSerializer.get_is_deposit (and the
+            # per-line is_deposit) don't N+1 across invoicelineitem_set.
+            return qs.prefetch_related(
+                'invoicelineitem_set__sources',
+                'invoicelineitem_set__accounting_category',
+            )
 
         # Summary (financials A/R) mode only: select_related to avoid N+1 from
         # InvoiceSummarySerializer
@@ -115,6 +122,14 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             balance_anno=ExpressionWrapper(
                 F('total_anno') - F('amount_paid_anno'), output_field=_MONEY),
         )
+
+        deposit_line = (
+            InvoiceLineItem.objects
+            .filter(invoice=OuterRef('pk'),
+                    accounting_category__is_deposit=True)
+            .exclude(sources__source_type=InvoiceLineItemSource.SOURCE_DEPOSIT)
+        )
+        qs = qs.annotate(has_deposit=Exists(deposit_line))
 
         status_param = self.request.query_params.get('status', 'open')
         if status_param != 'all':
@@ -167,6 +182,23 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         pool = InvoiceWizardService.get_source_pool(invoice)
         # Decimals need to be serialized as strings
         return Response(_serialize_pool(pool))
+
+    @action(detail=True, methods=['post'], url_path='line-items-from-service')
+    def line_items_from_service(self, request, pk=None):
+        """Ad-hoc service billing line (no Task, no atoms)."""
+        from apps.core.services import NotFoundError
+        invoice = self.get_object()
+        try:
+            line_item = InvoiceService.add_line_item_from_service(
+                invoice.pk,
+                request.data.get('service_item'),
+                request.data.get('qty'),
+            )
+        except NotFoundError as e:
+            return Response({'detail': str(e)},
+                            status=status.HTTP_404_NOT_FOUND)
+        serializer = InvoiceLineItemSerializer(line_item)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='line-items-from-atoms')
     def line_items_from_atoms(self, request, pk=None):

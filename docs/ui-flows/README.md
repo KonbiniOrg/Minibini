@@ -43,6 +43,7 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 | QuickBooks sync | payments/expenses sync, Settings §1 | QuickBooks-Sync.md | — (mostly not e2e-able) |
 | Deletion & retirement | cross-cutting | Deletion-and-Retirement.md | — |
 | Production lifecycle (job status × inventory × time) | spans job detail, task list/detail, catalog | Production-Lifecycle.md | — |
+| Settings — Accounting Categories delete guard | `/settings` (Accounting tab) | Settings.md (§1 only) | `settings/` |
 
 ### No flow doc yet (the gap list)
 
@@ -64,7 +65,7 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 | Activity | `/activity` | Cross-user activity feed. |
 | Search | `/search` + navbar search | Cross-entity search + result navigation. |
 | Users admin & profile | `/users`, `/users/new`, `/users/:id`, profile tab | Atom assignment, deactivation, password self-service. |
-| Settings (non-QBO) | `/settings` | Numbering, units, retention, email templates, board config. |
+| Settings (non-QBO) | `/settings` | Numbering, units, retention, email templates, board config. Accounting Categories CRUD beyond the delete guard (see Settings.md §1) is still uncovered. |
 | View-mode & sidebar | cross-cutting | FULL/LITE toggle, sidebar behavior — probably steps inside other docs rather than its own. |
 
 ## House shape

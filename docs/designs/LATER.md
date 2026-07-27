@@ -403,6 +403,39 @@ Billing mechanics and money-record lifecycle.
   expense is ready to bill as soon as it exists. Revisit only if a
   "not ready to bill" expense state is ever needed.
 
+- **Cancelled invoices keep their atom-claim rows.** — _added 2026-07-25_
+  `InvoiceService.cancel` only flips status; `InvoiceLineItemSource` rows
+  survive. The pool shows such atoms (incl. deposit credits) as available
+  — the claim exclusion is logical (`get_source_pool`'s claim lookup
+  excludes cancelled-invoice sources) — but re-pulling one hits the DB
+  unique constraint → 409 `atoms_already_claimed`. The 409 body carries
+  only `detail`/`code`/`atom_ids` — no `claiming_invoice_number` (that
+  field exists only in the pool's `claimed_by_other` state, and a
+  cancelled invoice's claim never reaches it, by the same exclusion) — so
+  the user sees a bare "already claimed" error with no way to see which
+  (cancelled) invoice actually still holds the row. Pre-existing for
+  task/material/fee atoms; deposits inherit it.
+  _Done when:_ cancel releases claims (or re-claim reuses the dead row).
+
+- **`AccountingCategory.adjustment_target_categories` M2M N+1 on invoice/estimate detail.** — _added 2026-07-25_
+  Pre-existing, rediscovered twice during the deposits work: once via the
+  `is_referenced()` freeze-check gap (fixed — see
+  `apps/core/models.py` `AccountingCategory.is_referenced`, which now
+  queries `EstimateLineItem`/`InvoiceLineItem.adjustment_target_categories`
+  explicitly since hidden `related_name='+'` M2Ms don't show up in
+  `_meta.related_objects`), and again while reviewing the invoice detail
+  N+1 fix (`InvoiceViewSet.get_queryset` prefetches
+  `invoicelineitem_set__sources` and `__accounting_category` for
+  `is_deposit`, but not `adjustment_target_categories`). `InvoiceLineItemSerializer`
+  / `EstimateLineItemSerializer` both expose `adjustment_target_categories`
+  as a plain M2M field, so any invoice/estimate detail response with
+  adjustment lines pays one extra query per adjustment line to serialize
+  the field. Candidate for a `Prefetch('invoicelineitem_set__adjustment_target_categories')`
+  (and the estimate-side equivalent) alongside the existing prefetch.
+  _Done when:_ adjustment-line-heavy documents render without an
+  `adjustment_target_categories` N+1, verified with `assertNumQueries` or
+  equivalent.
+
 ## Wizard & line-item UX
 
 The atom-pull surfaces on estimates and invoices.
@@ -1017,3 +1050,78 @@ Cross-cutting UI/API conventions and shared components.
   one konbini business, pick a winner, or edit-then-retry inline.
   _Done when:_ a deliberate dedupe/merge flow exists for skipped
   contact imports.
+
+- **Full AccountingCategory immutability/supersession.** — _added 2026-07-25_
+  The deposits work (`docs/plans/deposit-invoices-spec.md`) freezes only
+  `is_deposit`/`taxable` on a used category; RM wants the RateScheme
+  pattern generalized — a used AC can't be edited, only retired and
+  replaced. Needs its own design: which fields freeze (QBO account/item
+  mappings must likely stay editable for reconnects; name/code are labels),
+  whether replacement repoints anything, and the touch spans every
+  line-item surface plus expenses.
+  _Done when:_ a used AC's semantic fields are immutable behind a
+  retire-and-replace flow, per a dedicated spec.
+
+- **Email settings fields attract browser password autofill.** — _added 2026-07-26_
+  `EmailAccountSettings.svelte` uses a bare `type="email"` input next to a
+  `type="password"` input with no `autocomplete` attributes, so browsers
+  treat the pair as a login form and offer/save the user's stored
+  passwords there. Rename the fields and/or add
+  `autocomplete="off"`/`autocomplete="new-password"` (and non-credential
+  `name` attributes) so the shop's IMAP/SMTP credentials form stops
+  triggering the browser's password manager.
+  _Done when:_ the email settings form no longer prompts browser
+  autofill/save for the password field.
+
+- **Outgoing email flows don't check that email is configured.** — _added 2026-07-26_
+  Nothing gates the send flows on a working email account: with the
+  DB-backed email config unset (post-migration from environment config,
+  RM recalls intending this but no suppression exists in code), the
+  Send buttons on invoices, estimates, change orders, and POs still open
+  their dialogs and fail only at send time, and the Email area still
+  offers fetch/compose. Wanted: a shared "email configured" signal
+  (config rows present + non-blank) that suppresses or disables every
+  outgoing-email affordance (invoice/estimate/CO/PO send, Email area
+  actions) with a pointer to Settings → Email, instead of a late
+  failure.
+  _Done when:_ with no email account configured, every send/compose
+  affordance is disabled or hidden with a Settings hint, and enabling
+  config restores them without a reload dance.
+
+- **Filter-change + stale page race on paginated lists.** — _added 2026-07-26_
+  `InvoiceListPage.svelte` resets `page = 1` in each filter control's
+  `onchange`, but the fetch `$effect` (keyed on page + filters) can flush
+  between Svelte's `bind:value` listener and the reset — firing one
+  request with the new filter and the stale page. Past page 1, switching
+  to a filter with fewer pages 404s ("Invalid page" error note) before
+  the corrected page-1 fetch lands. Reproduced on the invoices list
+  (All p.2 → Open). Fix pattern: compose a filter signature inside the
+  effect; when it changed and `page !== 1`, set `page = 1` and bail
+  (effect re-runs cleanly) — then drop the per-control onchange resets.
+  Audit every paginated list with filters for the same shape (contacts,
+  businesses, POs, expenses, catalog tabs, search, email list …).
+  _Done when:_ list pages share one race-free reset idiom and a filter
+  change from a deep page never issues a stale-page request.
+
+- **Migration cleanup must preserve the hand-written operations.** — _added 2026-07-26_
+  28 migrations carry `RunSQL`/`RunPython`. Two buckets for the planned
+  squash/regeneration: (a) MUST survive into any new initial migrations —
+  `invoicing/0008_unique_draft_invoice_per_job` (MySQL stored generated
+  column `draft_job_id` + unique index = the only DB-level
+  one-draft-per-job enforcement; invisible in models.py) and
+  `core/0027_seed_setup_defaults` (baseline Configuration rows for fresh
+  installs); check `core/0005`/`0007` (default-groups create+cleanup —
+  Groups are unused, the pair may net to nothing and can likely be
+  dropped outright). (b) Safe to lose on from-scratch regeneration — all
+  one-time data backfills (`backfill_*`, `migrate_*`, `rewrite_*`,
+  `copy_*`, `normalize_*`, `cleanup_*`, phase-A), which no empty DB
+  needs; they only matter if some environment must still migrate forward
+  from an old schema. Also: `jobs/migrations/_phase_a_backfill_helper.py`
+  is a plain module imported by `0034`, not a migration — prune
+  accordingly. `squashmigrations` preserves these blocks but fragments
+  around them; regeneration re-authors bucket (a) by hand. After any
+  cleanup, run the full suite WITHOUT --keepdb (fresh from-scratch
+  build) per house rule.
+  _Done when:_ the cleanup lands with bucket (a) re-authored, fresh
+  `migrate` + full suite green from an empty DB, and the e2e seed still
+  loads.

@@ -1633,6 +1633,13 @@
  },
  {
   "model": "core.configuration",
+  "pk": "default_deposit_accounting_category",
+  "fields": {
+   "value": "5"
+  }
+ },
+ {
+  "model": "core.configuration",
   "pk": "default_material_markup_percent",
   "fields": {
    "value": "20"
@@ -1758,6 +1765,20 @@
    "is_active": true,
    "qbo_item_id": "1",
    "qbo_expense_account_id": "56"
+  }
+ },
+ {
+  "model": "core.accountingcategory",
+  "pk": 5,
+  "fields": {
+   "code": "DEP",
+   "name": "Customer Deposits",
+   "taxable": false,
+   "default_description": "",
+   "is_active": true,
+   "is_deposit": true,
+   "qbo_item_id": "",
+   "qbo_expense_account_id": ""
   }
  },
  {
@@ -84753,6 +84774,21 @@
   }
  },
  {
+  "model": "invoicing.invoice",
+  "pk": 28,
+  "fields": {
+   "job": 3,
+   "invoice_number": "INV-E2E-DEP-1",
+   "status": "paid",
+   "created_date": "2026-07-10T09:00:00Z",
+   "sent_date": "2026-07-10T09:05:00Z",
+   "closed_date": "2026-07-12T14:00:00Z",
+   "qbo_id": null,
+   "qbo_payment_status": "",
+   "qbo_amount_paid": "5000.00"
+  }
+ },
+ {
   "model": "invoicing.invoicelineitem",
   "pk": 1,
   "fields": {
@@ -86908,6 +86944,22 @@
    "price": "20.00",
    "accounting_category": 1,
    "invoice": 27,
+   "adjustment_service": null,
+   "adjustment_target_categories": []
+  }
+ },
+ {
+  "model": "invoicing.invoicelineitem",
+  "pk": 136,
+  "fields": {
+   "inventory_item": null,
+   "line_number": 1,
+   "qty": "1.00",
+   "units": "none",
+   "description": "Deposit on 08026",
+   "price": "5000.00",
+   "accounting_category": 5,
+   "invoice": 28,
    "adjustment_service": null,
    "adjustment_target_categories": []
   }

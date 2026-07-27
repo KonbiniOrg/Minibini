@@ -99,7 +99,10 @@
             {#if inv.job}<a href={`#/jobs/${inv.job}`}>{inv.job_number}</a>{/if}
           </td>
           <td>{inv.customer_name || ''}</td>
-          <td>{inv.status}</td>
+          <td>
+            {inv.status}
+            {#if inv.is_deposit}<span class="deposit-pill">DEPOSIT</span>{/if}
+          </td>
           <td>{inv.sent_date ? inv.sent_date.slice(0, 10) : ''}</td>
           <td>{inv.due_date || ''}{#if inv.is_late} ⚠️{/if}</td>
           <td class="text-right">{money(inv.total)}</td>
@@ -123,3 +126,11 @@
   {/if}
 {/if}
 </div>
+
+<style>
+  .deposit-pill {
+    font-size: 9px; padding: 1px 6px; border-radius: 8px;
+    font-weight: 600; background: #e0e7ff; color: #3730a3;
+    margin-left: 6px;
+  }
+</style>

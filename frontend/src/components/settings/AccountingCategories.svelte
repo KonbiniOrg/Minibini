@@ -16,8 +16,9 @@
   let showInactive = $state(false);
   let editing = $state(null);
   let adding = $state(false);
+  let editingReferenced = $state(false);
 
-  const emptyForm = { code: '', name: '', taxable: true, default_description: '', is_active: true };
+  const emptyForm = { code: '', name: '', taxable: true, is_deposit: false, default_description: '', is_active: true };
   let form = $state({ ...emptyForm });
 
   let visibleCategories = $derived(
@@ -55,6 +56,7 @@
 
   function startAdd() {
     editing = null;
+    editingReferenced = false;
     form = { ...emptyForm };
     adding = true;
   }
@@ -62,10 +64,12 @@
   function startEdit(cat) {
     adding = false;
     editing = cat.id;
+    editingReferenced = cat.is_referenced;
     form = {
       code: cat.code,
       name: cat.name,
       taxable: cat.taxable,
+      is_deposit: cat.is_deposit,
       default_description: cat.default_description || '',
       is_active: cat.is_active,
     };
@@ -96,6 +100,20 @@
       error = e.message || 'Failed to save';
     } finally {
       saving = null;
+    }
+  }
+
+  async function deleteCategory(cat) {
+    if (!confirm(`Delete category "${cat.name}"? This cannot be undone.`)) return;
+    error = '';
+    success = '';
+    try {
+      await api.delete(`/api/accounting-categories/${cat.id}/`);
+      success = `Deleted "${cat.name}"`;
+      await loadCategories();
+      setTimeout(() => success = '', 3000);
+    } catch (e) {
+      error = e.message || 'Failed to delete';
     }
   }
 
@@ -138,6 +156,7 @@
           <th>Code</th>
           <th>Name</th>
           <th>Taxable</th>
+          <th>Deposit</th>
           <th>Active</th>
           {#if qboAccounts || loadingQBO}
             <th>Fallback QBO Item</th>
@@ -152,6 +171,7 @@
             <td>{cat.code}</td>
             <td>{cat.name}</td>
             <td>{cat.taxable ? 'Yes' : 'No'}</td>
+            <td>{cat.is_deposit ? 'Yes' : 'No'}</td>
             <td>{cat.is_active ? 'Yes' : 'No'}</td>
             {#if loadingQBO}
               <td>Loading...</td>
@@ -184,6 +204,9 @@
             {/if}
             <td>
               <button type="button" onclick={() => startEdit(cat)} disabled={saving != null}>Edit</button>
+              {#if !cat.is_referenced}
+                <button type="button" onclick={() => deleteCategory(cat)} disabled={saving != null}>Delete</button>
+              {/if}
             </td>
           </tr>
         {/each}
@@ -214,7 +237,21 @@
     </p>
     <p>
       <label>
-        <input type="checkbox" bind:checked={form.taxable}> <strong>Taxable by default</strong>
+        <input type="checkbox" bind:checked={form.taxable}
+               disabled={editing && editingReferenced}
+               title={editing && editingReferenced
+                 ? 'In use — retire and replace to change' : ''}>
+        <strong>Taxable by default</strong>
+      </label>
+    </p>
+    <p>
+      <label>
+        <input type="checkbox" bind:checked={form.is_deposit}
+               disabled={editing && editingReferenced}
+               title={editing && editingReferenced
+                 ? 'In use — retire and replace to change' : ''}
+               onchange={(e) => { if (e.target.checked) form.taxable = false; }}>
+        <strong>Deposit category (non-taxable)</strong>
       </label>
     </p>
     <p>

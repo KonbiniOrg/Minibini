@@ -97,6 +97,11 @@
     {#if job.sub_status === 'on-hold' || job.on_hold}
       <div class="hold-banner" title={job.hold_reason || 'On hold'}>ON HOLD</div>
     {/if}
+    {#if job.deposit_state}
+      <div class="deposit-banner" class:deposit-paid={job.deposit_state === 'paid'}>
+        {job.deposit_state === 'paid' ? 'DEP PAID' : 'DEP REQUESTED'}
+      </div>
+    {/if}
     {#if showProgress}
       {@const total = job.task_total ?? 0}
       {@const completed = job.task_completed ?? 0}
@@ -188,6 +193,13 @@
     text-align: center; padding: 3px 0; letter-spacing: 0.5px;
     border-top: 1px solid #f0f0f0;
   }
+
+  .deposit-banner {
+    font-size: 9px; font-weight: 700; text-align: center;
+    padding: 1px 0; border-radius: 8px;
+    background: #fef3c7; color: #b45309;
+  }
+  .deposit-banner.deposit-paid { background: #dcfce7; color: #15803d; }
 
   .progress-bar {
     position: relative;
