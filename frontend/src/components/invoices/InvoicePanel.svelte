@@ -106,7 +106,7 @@
     loadInvoice();
   }
 
-  // Gates the picker's "Add Deposit" affordance: only offer it once an active
+  // Gates the deposit modal's enabled state: only offer it once an active
   // deposit accounting category exists (server stamps it; no AC select shown
   // in the deposit form), same rule as the settings deposit-category picker.
   let hasDepositCategory = $derived(
@@ -238,6 +238,24 @@
   // Change Order gate).
   let jobBillable = $derived(BILLABLE_JOB_STATUSES.includes(job?.status));
 
+  // Add Deposit Invoice — three states, derived from the job's own
+  // `invoices` list (loaded above via loadInvoices, keyed off jobId).
+  // InvoicePanel's GET /api/invoices/?job= call carries no ?summary= param,
+  // so each entry there is the full InvoiceSerializer — nested line_items
+  // included, same shape as the single-invoice GET — so no separate fetch
+  // is needed to know whether the job's draft (if any) already has lines.
+  //   1. no draft on the job      → "Add Deposit Invoice" (create + line)
+  //   2. draft exists, zero lines → "Make this a deposit invoice" (adds the
+  //      line to that draft — open_for_job's idempotent lookup resolves to
+  //      it, so the same modal flow works unchanged)
+  //   3. draft exists, ≥1 lines   → suppressed entirely (both placements)
+  let draftInvoice = $derived((invoices || []).find((i) => i.status === 'draft'));
+  let draftHasLines = $derived((draftInvoice?.line_items?.length ?? 0) > 0);
+  let showDepositButton = $derived(jobBillable && job?.can_manage && !draftHasLines);
+  let depositButtonLabel = $derived(
+    draftInvoice ? 'Make this a deposit invoice' : 'Add Deposit Invoice'
+  );
+
   let startingInvoice = $state(false);
   async function startInvoice() {
     startingInvoice = true;
@@ -252,11 +270,26 @@
   }
 
   // DepositInvoiceModal does its own two-step create (invoice, then deposit
-  // line) and hands back the resulting invoice_id — show the draft exactly
-  // the way Start Invoice does (same navigation).
+  // line) and hands back the resulting invoice_id.
+  //   - If the user is already viewing the draft that just received the
+  //     line (state 2 — Make this a deposit invoice, on its own doc),
+  //     reload it in place so the new line appears — the panel's
+  //     established convention (same as handleLineAdded's loadInvoice()
+  //     call after a normal add-line save), not a full page refresh.
+  //   - Otherwise (state 1 — a brand new draft, or state 2 triggered while
+  //     viewing a different doc) navigate to the draft, same as Start
+  //     Invoice's navigation.
+  // Either way, `invoices` is refreshed so the three-state gate above is
+  // correct once the affected draft's line count has changed.
   function handleDepositCreated(newInvoiceId) {
     depositModalOpen = false;
-    window.location.hash = `/jobs/${job.job_id}/invoice/${newInvoiceId}`;
+    const viewingCreatedDraft = invoiceId != null && String(invoiceId) === String(newInvoiceId);
+    if (viewingCreatedDraft) {
+      loadInvoice();
+    } else {
+      window.location.hash = `/jobs/${job.job_id}/invoice/${newInvoiceId}`;
+    }
+    loadInvoices();
   }
 </script>
 
@@ -270,20 +303,20 @@
   <button type="button" class="new-invoice-btn" onclick={() => { depositModalOpen = true; }}
     disabled={!hasDepositCategory}
     title={hasDepositCategory ? '' : 'Set a deposit category in Settings first'}>
-    Add Deposit Invoice
+    {depositButtonLabel}
   </button>
 {/snippet}
 
 {#snippet subnavTrailing()}
   {#if canCreateInvoice}{@render newInvoiceAction()}{/if}
-  {#if jobBillable && job?.can_manage}{@render addDepositInvoiceAction()}{/if}
+  {#if showDepositButton}{@render addDepositInvoiceAction()}{/if}
 {/snippet}
 
 {#if subnavItems.length > 0}
   <DocSubnav
     items={subnavItems}
     section="invoice"
-    trailing={(canCreateInvoice || (jobBillable && job?.can_manage)) ? subnavTrailing : null}
+    trailing={(canCreateInvoice || showDepositButton) ? subnavTrailing : null}
   />
 {/if}
 
@@ -434,11 +467,21 @@
       <button type="button" onclick={startInvoice} disabled={startingInvoice}>
         {startingInvoice ? 'Starting…' : 'Start Invoice'}
       </button>
-      <button type="button" onclick={() => { depositModalOpen = true; }}
-        disabled={!hasDepositCategory}
-        title={hasDepositCategory ? '' : 'Set a deposit category in Settings first'}>
-        Add Deposit Invoice
-      </button>
+      <!-- This branch only renders when the job has zero invoices (see
+           JobInvoicePage's docId derivation — invoiceId is only null when
+           there truly are none), so showDepositButton/depositButtonLabel
+           here always resolve to state 1 ("Add Deposit Invoice") — reusing
+           the same derived values as the version-bar placement below keeps
+           the gate/label logic single-sourced, but this button keeps its
+           own (unstyled, like Start Invoice) markup rather than the
+           subnav-trailing snippet's compact ".new-invoice-btn" styling. -->
+      {#if showDepositButton}
+        <button type="button" onclick={() => { depositModalOpen = true; }}
+          disabled={!hasDepositCategory}
+          title={hasDepositCategory ? '' : 'Set a deposit category in Settings first'}>
+          {depositButtonLabel}
+        </button>
+      {/if}
     {:else if job?.can_manage}
       <p>No invoices yet. Invoicing becomes available once the job is approved.</p>
     {:else}

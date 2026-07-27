@@ -538,16 +538,34 @@ manual line hand-assigned a deposit AC is equally a deposit line — same
 semantics, no special-casing). This contract is unchanged by the Task 21
 frontend rework below — only the entry point moved.
 
-**Frontend (Task 21, 2026-07 — replaced the picker's Add Deposit entry):**
-`InvoicePanel.svelte` offers an **Add Deposit Invoice** button — next to
-**Start Invoice** in the empty state, and next to the version bar's **+ New
-invoice** trailing action once the job has invoices (offered even while a
-draft is already open — see below). Both placements share Start Invoice's
-gates (`jobBillable`, `job.can_manage`) and are additionally disabled with
-a "Set a deposit category in Settings first" title when `hasDepositCategory`
-is false (no active deposit category exists — same `categories` check as
-before, now loaded independent of `invoiceId` so it's available in the
-empty state too).
+**Frontend (Task 21, 2026-07 — replaced the picker's Add Deposit entry;
+refined 2026-07-26 into three states):** `InvoicePanel.svelte` offers a
+deposit-creation action whose presence and label are derived from the job's
+own `invoices` list — no separate fetch is needed, since `InvoicePanel`'s
+`GET /api/invoices/?job=` call carries no `?summary=` param, so every entry
+is the full `InvoiceSerializer` (nested `line_items` included, same shape
+as the single-invoice GET):
+
+1. **No draft on the job** → **"Add Deposit Invoice"**, placed next to
+   **Start Invoice** in the empty state, and next to the version bar's
+   **+ New invoice** trailing action once the job has (non-draft) invoices.
+2. **A draft exists with zero line items** → relabels to **"Make this a
+   deposit invoice"** (same version-bar placement). The button stays
+   offered because `InvoiceWizardService.open_for_job` is idempotent — see
+   step 1 below — so Create simply adds the deposit line to that existing
+   empty draft.
+3. **A draft exists WITH line items already** → the action is **suppressed
+   entirely**, in both placements — "mixing" a deposit line with ordinary
+   lines on one invoice is legal (see below), it's just no longer offered
+   as a *fresh* deposit-invoice starting point once the draft has any
+   content.
+
+All three states share Start Invoice's gates (`jobBillable`,
+`job.can_manage`) and, in states 1/2, are additionally disabled with a "Set
+a deposit category in Settings first" title when `hasDepositCategory` is
+false (no active deposit category exists — same `categories` check as
+before, loaded independent of `invoiceId` so it's available in the empty
+state too).
 
 Clicking it opens `DepositInvoiceModal.svelte` — a single **Amount** field
 (client-validated `> 0` via a `FieldError` slot) plus Create/Cancel. On
@@ -557,22 +575,33 @@ backend changes):
 1. `POST /api/invoices/` `{job}` — the exact call `InvoicePanel`'s Start
    Invoice makes. `InvoiceWizardService.open_for_job` is idempotent: if the
    job already has an open draft, it returns that draft instead of
-   erroring, so the button is safe to offer even when a draft already
-   exists — the deposit line lands on the existing draft ("mixing" a
-   deposit line with ordinary lines on one invoice is legal; see below).
+   erroring, so state 2's button is safe to offer — the deposit line lands
+   on the existing draft.
 2. `POST /api/invoices/{id}/line-items/` `{deposit: true, description:
    "Deposit on {job_number}", qty: '1', units: 'none', price: amount}` —
    the same deposit line-item contract described above.
+
+**Post-create freshness:** `InvoicePanel` compares the returned invoice id
+against the currently-viewed `invoiceId`. If the user was already viewing
+the draft that just received the line (state 2, triggered from that
+draft's own page), the panel calls `loadInvoice()` to reload it **in
+place** — the established convention (same as `handleLineAdded`'s reload
+after any other add-line save), not a full page refresh. Otherwise (state
+1's brand-new draft, or state 2 triggered from a different document) it
+navigates to the draft via `window.location.hash`, same as Start Invoice.
+Either path also reloads the job's `invoices` list so the three-state gate
+above reflects the new line count immediately.
 
 Errors route through `triageError`: an overlay-worthy failure (5xx, no
 JSON body) goes to the global overlay; a field-keyed/`detail` failure from
 step 1 renders on the modal's own `FormMessage`/`FieldError` (the invoice
 was never created, so there's nothing else to show). A step-2 failure
 (e.g. the deposit-category coaching message) is different: **the draft
-already exists** at that point, so the modal still navigates to it (same
-as success) and surfaces the coaching text via the global overlay instead
-of a form message on a modal that's about to close — the user can fix the
-Settings config and add the deposit line by hand afterward.
+already exists** at that point, so the modal still resolves the draft (in
+place or via navigation, per the freshness rule above) and surfaces the
+coaching text via the global overlay instead of a form message on a modal
+that's about to close — the user can fix the Settings config and add the
+deposit line by hand afterward.
 
 ### The credit atom (invoice wizard source pool)
 
