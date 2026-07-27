@@ -1087,3 +1087,18 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ with no email account configured, every send/compose
   affordance is disabled or hidden with a Settings hint, and enabling
   config restores them without a reload dance.
+
+- **Filter-change + stale page race on paginated lists.** — _added 2026-07-26_
+  `InvoiceListPage.svelte` resets `page = 1` in each filter control's
+  `onchange`, but the fetch `$effect` (keyed on page + filters) can flush
+  between Svelte's `bind:value` listener and the reset — firing one
+  request with the new filter and the stale page. Past page 1, switching
+  to a filter with fewer pages 404s ("Invalid page" error note) before
+  the corrected page-1 fetch lands. Reproduced on the invoices list
+  (All p.2 → Open). Fix pattern: compose a filter signature inside the
+  effect; when it changed and `page !== 1`, set `page = 1` and bail
+  (effect re-runs cleanly) — then drop the per-control onchange resets.
+  Audit every paginated list with filters for the same shape (contacts,
+  businesses, POs, expenses, catalog tabs, search, email list …).
+  _Done when:_ list pages share one race-free reset idiom and a filter
+  change from a deep page never issues a stale-page request.
