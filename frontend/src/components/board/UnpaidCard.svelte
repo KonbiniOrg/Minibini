@@ -80,6 +80,11 @@
         </div>
       </div>
     </div>
+    {#if job.deposit_state}
+      <div class="deposit-banner" class:deposit-paid={job.deposit_state === 'paid'}>
+        {job.deposit_state === 'paid' ? 'DEP PAID' : 'DEP REQUESTED'}
+      </div>
+    {/if}
     {#if job.sub_status === 'needs-invoice'}
       <div class="needs-invoice">
         <span class="pill needs-inv">Needs Invoice</span>
@@ -117,6 +122,13 @@
 </div>
 
 <style>
+  .deposit-banner {
+    font-size: 9px; font-weight: 700; text-align: center;
+    padding: 1px 0; border-radius: 8px;
+    background: #fef3c7; color: #b45309;
+  }
+  .deposit-banner.deposit-paid { background: #dcfce7; color: #15803d; }
+
   .unpaid-card {
     background: #fff; border-radius: 10px; overflow: hidden;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);

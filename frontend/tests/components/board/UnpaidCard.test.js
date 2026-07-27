@@ -22,3 +22,25 @@ describe('UnpaidCard project manager line', () => {
     expect(container.querySelector('.pm-line')).toBeNull();
   });
 });
+
+describe('UnpaidCard deposit banner', () => {
+  it('shows DEP REQUESTED when the job has an outstanding deposit request', () => {
+    const { getByText } = render(UnpaidCard, {
+      props: { job: { ...baseJob, deposit_state: 'requested' } },
+    });
+    expect(getByText('DEP REQUESTED')).toBeInTheDocument();
+  });
+
+  it('shows DEP PAID when the deposit is paid and unconsumed', () => {
+    const { getByText, container } = render(UnpaidCard, {
+      props: { job: { ...baseJob, deposit_state: 'paid' } },
+    });
+    expect(getByText('DEP PAID')).toBeInTheDocument();
+    expect(container.querySelector('.deposit-banner.deposit-paid')).not.toBeNull();
+  });
+
+  it('renders no banner when deposit_state is null', () => {
+    const { container } = render(UnpaidCard, { props: { job: { ...baseJob } } });
+    expect(container.querySelector('.deposit-banner')).toBeNull();
+  });
+});
