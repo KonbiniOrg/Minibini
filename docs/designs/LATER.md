@@ -1061,3 +1061,29 @@ Cross-cutting UI/API conventions and shared components.
   line-item surface plus expenses.
   _Done when:_ a used AC's semantic fields are immutable behind a
   retire-and-replace flow, per a dedicated spec.
+
+- **Email settings fields attract browser password autofill.** — _added 2026-07-26_
+  `EmailAccountSettings.svelte` uses a bare `type="email"` input next to a
+  `type="password"` input with no `autocomplete` attributes, so browsers
+  treat the pair as a login form and offer/save the user's stored
+  passwords there. Rename the fields and/or add
+  `autocomplete="off"`/`autocomplete="new-password"` (and non-credential
+  `name` attributes) so the shop's IMAP/SMTP credentials form stops
+  triggering the browser's password manager.
+  _Done when:_ the email settings form no longer prompts browser
+  autofill/save for the password field.
+
+- **Outgoing email flows don't check that email is configured.** — _added 2026-07-26_
+  Nothing gates the send flows on a working email account: with the
+  DB-backed email config unset (post-migration from environment config,
+  RM recalls intending this but no suppression exists in code), the
+  Send buttons on invoices, estimates, change orders, and POs still open
+  their dialogs and fail only at send time, and the Email area still
+  offers fetch/compose. Wanted: a shared "email configured" signal
+  (config rows present + non-blank) that suppresses or disables every
+  outgoing-email affordance (invoice/estimate/CO/PO send, Email area
+  actions) with a pointer to Settings → Email, instead of a late
+  failure.
+  _Done when:_ with no email account configured, every send/compose
+  affordance is disabled or hidden with a Settings hint, and enabling
+  config restores them without a reload dance.
