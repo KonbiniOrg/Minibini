@@ -2,6 +2,7 @@
   import { api } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
   import DocumentSendForm from '../../components/email/DocumentSendForm.svelte';
+  import { unappliedDepositCredits } from '../../lib/depositCredits.js';
 
   const { params = {} } = $props();
 
@@ -12,6 +13,12 @@
   let loadError = $state(null);
   let submitting = $state(false);
   let submitError = $state(null);
+  // For the send-time unapplied-deposit-credit soft guard below — the
+  // job's own invoices, fetched once alongside the invoice/send-defaults
+  // load (same "fresh as of reaching the send screen" precision the rest
+  // of this page already works with; no ?summary= param, so each entry is
+  // the full InvoiceSerializer that lib/depositCredits.js expects).
+  let jobInvoices = $state([]);
 
   async function load() {
     loading = true;
@@ -24,6 +31,12 @@
       invoice = inv;
       lineItems = inv.line_items || [];
       sendDefaults = defaults;
+      try {
+        const resp = await api.get(`/api/invoices/?job=${inv.job}`);
+        jobInvoices = resp?.results || resp || [];
+      } catch (_) {
+        jobInvoices = [];
+      }
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -32,6 +45,18 @@
   }
 
   async function handleSubmit(payload) {
+    // Soft guard, not a hard block: deducting the credit on a LATER
+    // invoice is legitimate, so this never prevents sending — it only
+    // makes sure silence isn't the default when money is sitting unclaimed.
+    // DocumentSendForm has already shown its own "Send this email to
+    // …?" confirm by the time onSubmit (this function) runs; this is a
+    // second, invoice-specific confirm layered on top of it.
+    if (unappliedDepositCredits(jobInvoices).length > 0) {
+      const proceed = confirm(
+        "There's an unapplied deposit credit on this job — send anyway?"
+      );
+      if (!proceed) return; // abort — send dialog/state left untouched
+    }
     submitting = true;
     submitError = null;
     try {

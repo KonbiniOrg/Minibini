@@ -1,10 +1,15 @@
 // docs/ui-flows/Deposits.md §2-3 — a paid, unclaimed deposit's DEP PAID
-// banner on the board, pulling its credit into a follow-up invoice as a
-// negative "Less deposit" line, and the claim lifecycle (the banner clears
-// while the claiming draft is live; discarding the draft releases it). QBO
-// is unreachable in e2e, so the PAID deposit invoice (INV-E2E-DEP-1, on
-// seeded job 08026) is seeded directly (fixtures/playwright/seed.json) —
-// send/pay are not driven here.
+// banner on the board, the draft panel's "Unapplied deposit credit" notice
+// (Task 22), pulling its credit into a follow-up invoice as a negative
+// "Less deposit" line (which also clears the notice), and the claim
+// lifecycle (the banner clears while the claiming draft is live; discarding
+// the draft releases it). QBO is unreachable in e2e, so the PAID deposit
+// invoice (INV-E2E-DEP-1, on seeded job 08026) is seeded directly
+// (fixtures/playwright/seed.json) — send/pay are not driven here. The
+// send-time unapplied-deposit-credit confirm (also Task 22) is likewise not
+// e2e-reachable — sending requires a real QBO push, unavailable in this
+// env — and is covered by Vitest only
+// (frontend/tests/routes/invoices/InvoiceSendPage.test.js).
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { loadBackdrop } from '../../fixtures/lookups.js';
@@ -67,6 +72,13 @@ test('§2-3 Deposit credit: board banner, pulling the credit, claim lifecycle', 
     await expect(page.getByRole('heading', { name: 'Tasks and Materials' })).toBeVisible();
   });
 
+  await test.step('The new draft shows the "Unapplied deposit credit" notice', async () => {
+    await page.getByRole('button', { name: 'Back to lines' }).click();
+    await expect(page.getByText(/Unapplied deposit credit .* INV-E2E-DEP-1/)).toBeVisible();
+    await page.getByRole('button', { name: 'Reconcile' }).click();
+    await expect(page.getByRole('heading', { name: 'Tasks and Materials' })).toBeVisible();
+  });
+
   await test.step('Reconcile shows a "Deposit credits" group with the credit row', async () => {
     await expect(page.getByText('Deposit credits', { exact: true })).toBeVisible();
     const row = depositCreditRow(page);
@@ -86,6 +98,8 @@ test('§2-3 Deposit credit: board banner, pulling the credit, claim lifecycle', 
     const row = page.locator('tr', { hasText: 'Less deposit (INV-E2E-DEP-1)' });
     await expect(row).toBeVisible();
     await expect(row).toContainText('$-5000.00');
+    // Now applied — the notice from the earlier step is gone.
+    await expect(page.getByText(/Unapplied deposit credit/)).toHaveCount(0);
   });
 
   await test.step('Re-opening the pool still shows the credit as claimed', async () => {

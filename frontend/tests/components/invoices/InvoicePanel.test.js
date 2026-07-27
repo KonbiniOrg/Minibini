@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  errorMessage: (e, fallback) => e?.data?.detail || e?.message || fallback || 'Error',
 }));
 vi.mock('svelte-spa-router', () => ({
   link: () => {},
@@ -12,6 +14,7 @@ vi.mock('svelte-spa-router', () => ({
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import { getJobWs, rememberMode } from '@/stores/jobWorkspace.js';
+import { overlayMessage } from '@/stores/messages.js';
 import InvoicePanel from '@/components/invoices/InvoicePanel.svelte';
 
 const JOB = {
@@ -761,5 +764,183 @@ describe('InvoicePanel "+ New invoice" (create a sibling invoice)', () => {
     const { findByText, queryByRole } = render(InvoicePanel, { props: { job: billableJob, invoiceId: 5 } });
     await findByText('Invoice: INV-5');
     expect(queryByRole('button', { name: /New invoice/ })).toBeNull();
+  });
+});
+
+// ─── Unapplied deposit credit notice + Apply (Task 22) ───────────────────────
+
+function makeDepositLine(overrides = {}) {
+  return makeLine({
+    line_item_id: 501, line_number: 1, description: 'Deposit on JOB-9',
+    qty: '1', price: '5000.00', units: 'none',
+    accounting_category: { id: 3, name: 'Customer Deposits' },
+    is_deposit: true, sources: [],
+    ...overrides,
+  });
+}
+
+function makeDeductionLine(overrides = {}) {
+  return makeLine({
+    line_item_id: 601, line_number: 1, description: 'Less deposit (INV-1042)',
+    qty: '1', price: '-5000.00', units: 'none',
+    is_deposit: false,
+    sources: [{ source_id: 1, source_type: 'deposit', source_pk: 501 }],
+    ...overrides,
+  });
+}
+
+describe('InvoicePanel unapplied deposit credit notice', () => {
+  it('renders the notice (amount + source invoice number) on a draft when a paid deposit line is unapplied', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
+    const paidDeposit = makeInvoice({
+      invoice_id: 100, invoice_number: 'INV-1042', display_number: 'INV-1042',
+      status: 'paid', line_items: [makeDepositLine()],
+    });
+    mockApi(draft, { invoices: [draft, paidDeposit] });
+    const { findByText, findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    expect(await findByText('Unapplied deposit credit — $5000.00 from INV-1042')).toBeInTheDocument();
+    expect(await findByRole('button', { name: /apply deposit credit/i })).toBeInTheDocument();
+  });
+
+  it('handles multiple unapplied credits as a list', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
+    const paidA = makeInvoice({
+      invoice_id: 100, invoice_number: 'INV-1042', display_number: 'INV-1042',
+      status: 'paid', line_items: [makeDepositLine({ line_item_id: 501, price: '5000.00' })],
+    });
+    const paidB = makeInvoice({
+      invoice_id: 101, invoice_number: 'INV-1043', display_number: 'INV-1043',
+      status: 'paid', line_items: [makeDepositLine({ line_item_id: 502, price: '750.00' })],
+    });
+    mockApi(draft, { invoices: [draft, paidA, paidB] });
+    const { findByText, findAllByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    expect(await findByText('Unapplied deposit credit — $5000.00 from INV-1042')).toBeInTheDocument();
+    expect(await findByText('Unapplied deposit credit — $750.00 from INV-1043')).toBeInTheDocument();
+    expect(await findAllByRole('button', { name: /apply deposit credit/i })).toHaveLength(2);
+  });
+
+  it('is absent when the deposit line is claimed by a live (non-cancelled) invoice', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
+    const paidDeposit = makeInvoice({
+      invoice_id: 100, invoice_number: 'INV-1042', display_number: 'INV-1042',
+      status: 'paid', line_items: [makeDepositLine()],
+    });
+    const claiming = makeInvoice({
+      invoice_id: 200, invoice_number: 'INV-2000', display_number: 'INV-2000',
+      status: 'open', line_items: [makeDeductionLine()],
+    });
+    mockApi(draft, { invoices: [draft, paidDeposit, claiming] });
+    const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Invoice: INV-5');
+    expect(queryByText(/unapplied deposit credit/i)).not.toBeInTheDocument();
+  });
+
+  it('is PRESENT again when the claiming invoice is cancelled (parity with the backend claims rule)', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
+    const paidDeposit = makeInvoice({
+      invoice_id: 100, invoice_number: 'INV-1042', display_number: 'INV-1042',
+      status: 'paid', line_items: [makeDepositLine()],
+    });
+    const cancelledClaim = makeInvoice({
+      invoice_id: 200, invoice_number: 'INV-2000', display_number: 'INV-2000',
+      status: 'cancelled', line_items: [makeDeductionLine()],
+    });
+    mockApi(draft, { invoices: [draft, paidDeposit, cancelledClaim] });
+    const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    expect(await findByText('Unapplied deposit credit — $5000.00 from INV-1042')).toBeInTheDocument();
+  });
+
+  it('is absent on a non-draft invoice view even though an unapplied credit exists on the job', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const sent = makeInvoice({ invoice_id: 5, status: 'sent', line_items: [] });
+    const paidDeposit = makeInvoice({
+      invoice_id: 100, invoice_number: 'INV-1042', display_number: 'INV-1042',
+      status: 'paid', line_items: [makeDepositLine()],
+    });
+    mockApi(sent, { invoices: [sent, paidDeposit] });
+    const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Invoice: INV-5');
+    expect(queryByText(/unapplied deposit credit/i)).not.toBeInTheDocument();
+  });
+
+  it('is absent when no deposit credits exist on the job at all', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
+    mockApi(draft, { invoices: [draft] });
+    const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Invoice: INV-5');
+    expect(queryByText(/unapplied deposit credit/i)).not.toBeInTheDocument();
+  });
+
+  it('the notice text shows even without canManageFinancials, but the Apply button is gated on it', async () => {
+    user.set({ permissions: [] });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
+    const paidDeposit = makeInvoice({
+      invoice_id: 100, invoice_number: 'INV-1042', display_number: 'INV-1042',
+      status: 'paid', line_items: [makeDepositLine()],
+    });
+    mockApi(draft, { invoices: [draft, paidDeposit] });
+    const { findByText, queryByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    expect(await findByText('Unapplied deposit credit — $5000.00 from INV-1042')).toBeInTheDocument();
+    expect(queryByRole('button', { name: /apply deposit credit/i })).not.toBeInTheDocument();
+  });
+
+  it('Apply posts the exact atoms payload and reloads the invoice + invoices list', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
+    const paidDeposit = makeInvoice({
+      invoice_id: 100, invoice_number: 'INV-1042', display_number: 'INV-1042',
+      status: 'paid', line_items: [makeDepositLine()],
+    });
+    mockApi(draft, { invoices: [draft, paidDeposit] });
+    api.post.mockResolvedValue({ line_item_id: 999 });
+    const { findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    const detailCallsBefore = api.get.mock.calls.filter(([u]) => u === '/api/invoices/5/').length;
+    const listCallsBefore = api.get.mock.calls.filter(([u]) => u.startsWith('/api/invoices/?job=')).length;
+
+    await fireEvent.click(await findByRole('button', { name: /apply deposit credit/i }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/api/invoices/5/line-items-from-atoms/', {
+        atoms: [{ type: 'deposit', id: 501 }],
+      });
+    });
+    await waitFor(() => {
+      const after = api.get.mock.calls.filter(([u]) => u === '/api/invoices/5/').length;
+      expect(after).toBeGreaterThan(detailCallsBefore);
+    });
+    await waitFor(() => {
+      const after = api.get.mock.calls.filter(([u]) => u.startsWith('/api/invoices/?job=')).length;
+      expect(after).toBeGreaterThan(listCallsBefore);
+    });
+  });
+
+  it('a 409 atoms_already_claimed error surfaces via the overlay (triageError) without crashing', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
+    const paidDeposit = makeInvoice({
+      invoice_id: 100, invoice_number: 'INV-1042', display_number: 'INV-1042',
+      status: 'paid', line_items: [makeDepositLine()],
+    });
+    mockApi(draft, { invoices: [draft, paidDeposit] });
+    api.post.mockRejectedValue({
+      status: 409,
+      message: 'Some of these atoms are already claimed by another invoice.',
+      data: {
+        detail: 'Some of these atoms are already claimed by another invoice.',
+        code: 'atoms_already_claimed', atom_ids: [501],
+      },
+    });
+    overlayMessage.set(null);
+    const { findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await fireEvent.click(await findByRole('button', { name: /apply deposit credit/i }));
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(get(overlayMessage)?.text).toMatch(/already claimed/i);
+    });
   });
 });

@@ -2,6 +2,8 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
   import { canManageFinancials } from '../../stores/permissions.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { unappliedDepositCredits } from '../../lib/depositCredits.js';
   import LineItemTable from '../LineItemTable.svelte';
   import LineItemModal from '../LineItemModal.svelte';
   import AdjustmentModal from '../AdjustmentModal.svelte';
@@ -62,9 +64,16 @@
   function setMode(next) {
     mode = next;
     rememberMode(job?.job_id, `inv:${invoiceId}`, next);
-    // Returning to lines must show fresh data — reconcile mode may have mutated
-    // the invoice's line items.
-    if (next === 'lines') loadInvoice();
+    // Returning to lines must show fresh data — reconcile mode may have
+    // mutated the invoice's line items. It can also claim/release a deposit
+    // credit (an "Add Here" pull creates the deduction line's source row),
+    // which changes the job-scoped `invoices` list the unapplied-deposit-
+    // credit notice is derived from — refresh that too, not just the single
+    // invoice.
+    if (next === 'lines') {
+      loadInvoice();
+      loadInvoices();
+    }
   }
 
   let lineItems = $derived(
@@ -112,6 +121,42 @@
   let hasDepositCategory = $derived(
     categories.some((c) => c.is_active !== false && c.is_deposit)
   );
+
+  // Task 22 — unapplied deposit credit notice (draft-panel only). Derived
+  // from the same job-scoped `invoices` array used for the Add Deposit
+  // Invoice gate above; see lib/depositCredits.js for the exact-parity
+  // derivation. The notice text itself is shown to any viewer of the
+  // draft (informational); only the Apply action is gated on
+  // canEditLineItems, same as any other line-item mutation.
+  let unappliedCredits = $derived(unappliedDepositCredits(invoices));
+  let applyingCreditId = $state(null);
+
+  async function applyDepositCredit(credit) {
+    applyingCreditId = credit.lineItem.line_item_id;
+    try {
+      await api.post(`/api/invoices/${invoice.invoice_id}/line-items-from-atoms/`, {
+        atoms: [{ type: 'deposit', id: credit.lineItem.line_item_id }],
+      });
+      await loadInvoice();
+      await loadInvoices();
+    } catch (e) {
+      // No form here (this is a plain action button) — everything routes
+      // to the overlay, same venue as handleDeleteItem/handleReorder above.
+      // Covers the 409 atoms_already_claimed case (a field-less {detail,
+      // code, atom_ids} body) same as any other operation error.
+      const t = triageError(e);
+      showError(t.overlay || t.message || 'Could not apply deposit credit.');
+      // The credit may have just been claimed by someone else (the 409
+      // case) — refresh so the notice reflects current reality.
+      await loadInvoices();
+    } finally {
+      applyingCreditId = null;
+    }
+  }
+
+  function creditAmount(li) {
+    return Number(li.qty) * Number(li.price);
+  }
 
   async function handleDeleteItem(li) {
     // No confirm: draft-only line edit, re-addable by hand.
@@ -387,6 +432,21 @@
       onExit={() => setMode('lines')}
     />
   {:else}
+  {#if invoice.status === 'draft' && unappliedCredits.length > 0}
+    <div class="deposit-credit-notice">
+      {#each unappliedCredits as credit (credit.lineItem.line_item_id)}
+        <div class="deposit-credit-row">
+          <span>Unapplied deposit credit — ${creditAmount(credit.lineItem).toFixed(2)} from {credit.invoice.display_number}</span>
+          {#if canEditLineItems}
+            <button type="button" onclick={() => applyDepositCredit(credit)}
+              disabled={applyingCreditId === credit.lineItem.line_item_id}>
+              {applyingCreditId === credit.lineItem.line_item_id ? 'Applying…' : 'Apply deposit credit'}
+            </button>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  {/if}
   <h3>Line Items</h3>
   {#if canEditLineItems}
     {#if lineItems.length === 0}
@@ -516,4 +576,22 @@
   .success-msg { padding: 8px 0; color: #166534; }
   .send-blocked { opacity: 0.5; cursor: not-allowed; }
   .send-blocked-note { font-size: 12px; color: #6b7280; }
+  /* Unapplied deposit credit notice — same boxed-banner vocabulary as
+     JobDetail's .change-request-banner (an actionable "needs a decision"
+     note, not an error/success message). */
+  .deposit-credit-notice {
+    background: #ffedd5;
+    border: 1px solid #fdba74;
+    color: #9a3412;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    margin: 14px 0 4px;
+  }
+  .deposit-credit-row {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+  }
+  .deposit-credit-row + .deposit-credit-row {
+    margin-top: 6px; padding-top: 6px; border-top: 1px solid #fdba74;
+  }
 </style>

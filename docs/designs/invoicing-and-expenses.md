@@ -685,6 +685,67 @@ casing it.
   existing manual `on_hold` + "awaiting deposit" reason remains available
   and unrelated to this derived signal.
 
+### Unapplied deposit credit — draft-panel notice + send-time confirm (Task 22, frontend-only)
+
+The concept is called an **"unapplied deposit credit"** everywhere
+user-visible (never "unconsumed" — the wording is deliberate, matching the
+RM's terminology). No backend changes: both surfaces below re-derive the
+same set the backend's "Deposit credits" pool group computes, client-side,
+from data already loaded — `frontend/src/lib/depositCredits.js` exports one
+function, `unappliedDepositCredits(invoices)`, used by both surfaces so
+they can't drift apart:
+
+- **Candidate:** a line with `is_deposit === true` on an invoice with
+  `status === 'paid'` (parity with "on an invoice that is paid" above).
+- **Applied (excluded):** any line, on any invoice in the same `invoices`
+  array, whose `status !== 'cancelled'`, carries a `sources` entry with
+  `source_type === 'deposit'` and `source_pk === ` the candidate's
+  `line_item_id` (exact parity with "no live claim" above — a claim from a
+  cancelled invoice doesn't count).
+- The input `invoices` array is the same job-scoped list `InvoicePanel`
+  already loads (`GET /api/invoices/?job=`, no `?summary=` → full
+  `InvoiceSerializer`, nested `line_items`/`sources`) and
+  `InvoiceSendPage` additionally fetches once (keyed off the loaded
+  invoice's `job` id) for the same purpose.
+
+**Part 1 — draft-panel notice + Apply** (`InvoicePanel.svelte`): while
+viewing a **draft** invoice, one row per unapplied credit renders above
+"Line Items" (boxed banner, same amber "needs a decision" vocabulary as
+`JobDetail.svelte`'s `.change-request-banner`): `Unapplied deposit credit —
+$<amount> from <source invoice's display_number>` (amount = the credit
+line's `qty × price`, formatted `${n.toFixed(2)}` — this file's own money
+convention, e.g. `Amount Paid` above; no thousands separator, unlike the
+reconcile pool's `WizardAtomRow`, which uses `toLocaleString`). The notice
+text itself shows to any viewer of the draft; only the **Apply deposit
+credit** button is gated on `canEditLineItems` (same permission as any
+other line-item mutation). Apply posts
+`POST /api/invoices/{draftId}/line-items-from-atoms/` with `{atoms:
+[{type: 'deposit', id: <line_item_id>}]}` — the same atom-pull endpoint
+Reconcile's "Add Here" uses — then reloads the invoice and the job's
+`invoices` list; the deduction line appears and the notice row disappears
+because the credit is now applied. Errors route through `triageError` to
+the overlay (no form here), covering the 409 `atoms_already_claimed` case
+if the credit was claimed elsewhere in the interim; the invoices list is
+also refreshed on that error path so the notice reflects the new reality.
+`InvoicePanel.setMode('lines')` (the "Back to lines" transition) also
+refreshes `invoices`, not just the single invoice — Reconcile's own "Add
+Here" pull can claim/release a credit too, and that only shows up in the
+job-scoped list the notice is derived from.
+
+**Part 2 — send-time confirm** (`InvoiceSendPage.svelte`, not
+`InvoicePanel` — the actual `POST /api/invoices/{id}/send/` lives on this
+separate route, reached via the panel's Send/Resend link): `handleSubmit`
+(the `onSubmit` callback `DocumentSendForm` invokes after its own "Send
+this email to `<recipient>`?" confirm) checks
+`unappliedDepositCredits(jobInvoices).length > 0` and, if so, interposes a
+second `confirm()`: *"There's an unapplied deposit credit on this job —
+send anyway?"*. OK proceeds to the send POST; Cancel returns immediately,
+leaving `submitting`/`submitError` untouched (the dialog was never
+disturbed). No confirm at all when there are no unapplied credits. This is
+a **soft guard** — deducting the credit on a later invoice is legitimate;
+the point is only that silence isn't the default when money is sitting
+unclaimed.
+
 ### QBO and the negative-total guard
 
 No new QBO mechanics: the deposit line pushes as an ordinary

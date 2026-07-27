@@ -3,13 +3,15 @@
 > Covers creating a deposit invoice (the invoice panel's **Add Deposit
 > Invoice** / **Make this a deposit invoice** button + modal), the resulting
 > **DEPOSIT** pill on the invoices list, the **DEP PAID** / **DEP REQUESTED**
-> board banner, and pulling a paid deposit's credit into a follow-up invoice
-> as a negative **Less deposit (...)** line — including the claim lifecycle
-> (the banner clears while the claiming draft is live, and returns if the
-> draft is discarded). Reference: `docs/plans/deposit-invoices-spec.md`,
-> Task 21 (2026-07 — replaced the picker's Add Deposit entry with this
-> streamlined generator; refined 2026-07-26 into the three-state button
-> below).
+> board banner, pulling a paid deposit's credit into a follow-up invoice as a
+> negative **Less deposit (...)** line — including the claim lifecycle (the
+> banner clears while the claiming draft is live, and returns if the draft
+> is discarded) — and the **unapplied deposit credit** notice + send-time
+> confirm that nudges toward applying an outstanding credit before sending
+> another invoice. Reference: `docs/plans/deposit-invoices-spec.md`, Task 21
+> (2026-07 — replaced the picker's Add Deposit entry with this streamlined
+> generator; refined 2026-07-26 into the three-state button below), Task 22
+> (2026-07-26 — the unapplied-credit notice + send confirm, §4 below).
 
 **QBO is unreachable in e2e**, so send/pay transitions are not driven here.
 The **paid** deposit invoice (`INV-E2E-DEP-1`, on the seeded job `08026`) is
@@ -106,6 +108,36 @@ heading "Tasks and Materials").
 - [ ] **Discard releases the claim.** Discarding the draft (Discard draft)
   releases the claim — the board's **DEP PAID** banner returns.
 
+## 4. Unapplied deposit credit — draft-panel notice + send-time confirm
+
+Entry: any **draft** invoice on a job that has a paid, unapplied deposit
+credit; and the Send Invoice screen for any invoice on such a job.
+
+- [ ] **Notice.** Viewing a draft invoice on a job with ≥1 unapplied deposit
+  credit shows a row above Line Items: "Unapplied deposit credit — $&lt;amount&gt;
+  from &lt;source invoice's number&gt;" (one row per credit — multiple are
+  possible). The text is visible to any viewer of the draft; only the
+  **Apply deposit credit** button is gated on the same permission as
+  line-item edits.
+- [ ] **Apply.** Clicking **Apply deposit credit** posts the credit onto
+  this draft the same way Reconcile's "Add Here" does (a negative "Less
+  deposit (...)" line appears) and the notice row for that credit
+  disappears.
+- [ ] **Gone once claimed elsewhere too.** Pulling the same credit via
+  Reconcile's "Add Here" (§3 above) also clears the notice — both paths
+  land on the same claim.
+- [ ] **Absent** on non-draft invoice views, and when the job has no
+  unapplied deposit credits.
+- [ ] **Send-time confirm (soft guard).** Confirming a send
+  (`#/invoices/{id}/send`) on a job that still has ≥1 unapplied deposit
+  credit at that moment shows a second confirmation — "There's an
+  unapplied deposit credit on this job — send anyway?" — after the normal
+  "Send this email to...?" confirm. OK proceeds with the send; Cancel
+  aborts, leaving the send screen untouched. No extra confirm when there
+  are no unapplied credits. **Not exercised in e2e** — QBO is unreachable
+  in this env, so the send POST itself can't be driven here; covered by
+  Vitest (`frontend/tests/routes/invoices/InvoiceSendPage.test.js`).
+
 ---
 
 ## Coverage matrix
@@ -116,3 +148,5 @@ heading "Tasks and Materials").
 | Board | DEP PAID banner on the hover card for a paid, unclaimed deposit |
 | Credit pool | Deposit credits group · `[deposit]` tag · credit amount format ("$X,XXX.XX credit") · Add Here creates a negative deduction line ("Less deposit (...)") |
 | Claim lifecycle | claim clears DEP PAID while the claiming draft is live · discarding the draft releases the claim and DEP PAID returns |
+| Unapplied credit notice | notice text + amount + source invoice number · absent when claimed by a live invoice · present again when the claiming invoice is cancelled (parity case) · absent on non-draft views/no credits · Apply posts the exact atoms payload and clears the notice |
+| Send-time confirm | confirms only when ≥1 unapplied credit exists · OK proceeds, Cancel aborts leaving state intact · no confirm when none (Vitest-only, not e2e-reachable) |
