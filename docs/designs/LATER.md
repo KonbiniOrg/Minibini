@@ -1102,3 +1102,26 @@ Cross-cutting UI/API conventions and shared components.
   businesses, POs, expenses, catalog tabs, search, email list …).
   _Done when:_ list pages share one race-free reset idiom and a filter
   change from a deep page never issues a stale-page request.
+
+- **Migration cleanup must preserve the hand-written operations.** — _added 2026-07-26_
+  28 migrations carry `RunSQL`/`RunPython`. Two buckets for the planned
+  squash/regeneration: (a) MUST survive into any new initial migrations —
+  `invoicing/0008_unique_draft_invoice_per_job` (MySQL stored generated
+  column `draft_job_id` + unique index = the only DB-level
+  one-draft-per-job enforcement; invisible in models.py) and
+  `core/0027_seed_setup_defaults` (baseline Configuration rows for fresh
+  installs); check `core/0005`/`0007` (default-groups create+cleanup —
+  Groups are unused, the pair may net to nothing and can likely be
+  dropped outright). (b) Safe to lose on from-scratch regeneration — all
+  one-time data backfills (`backfill_*`, `migrate_*`, `rewrite_*`,
+  `copy_*`, `normalize_*`, `cleanup_*`, phase-A), which no empty DB
+  needs; they only matter if some environment must still migrate forward
+  from an old schema. Also: `jobs/migrations/_phase_a_backfill_helper.py`
+  is a plain module imported by `0034`, not a migration — prune
+  accordingly. `squashmigrations` preserves these blocks but fragments
+  around them; regeneration re-authors bucket (a) by hand. After any
+  cleanup, run the full suite WITHOUT --keepdb (fresh from-scratch
+  build) per house rule.
+  _Done when:_ the cleanup lands with bucket (a) re-authored, fresh
+  `migrate` + full suite green from an empty DB, and the e2e seed still
+  loads.
