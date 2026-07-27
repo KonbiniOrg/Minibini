@@ -6,7 +6,7 @@ vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.f
 import { api } from '@/lib/api.js';
 import RateSchemeManager from '@/components/RateSchemeManager.svelte';
 
-const SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [], reference_counts: {} };
+const SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', accounting_category: 1, modifiers: [], reference_counts: {} };
 
 beforeEach(() => {
   api.get.mockReset();
@@ -26,6 +26,11 @@ describe('RateSchemeManager', () => {
   it('loads and lists schemes', async () => {
     const { findByText } = render(RateSchemeManager);
     expect(await findByText('Hourly')).toBeInTheDocument();
+  });
+
+  it('shows the accounting category in the scheme row', async () => {
+    const { findByText } = render(RateSchemeManager);
+    expect(await findByText('C1 — Labor')).toBeInTheDocument();
   });
 
   it('shows "Rate Schemes" as the section heading', async () => {
