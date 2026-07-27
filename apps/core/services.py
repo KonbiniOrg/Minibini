@@ -1172,22 +1172,32 @@ class ConfigurationService:
         cat.save()
         return cat
 
+    ACCOUNTING_CATEGORY_REFERENCED_MESSAGE = (
+        'Accounting category is in use (materials, services, or '
+        'line items reference it) and cannot be deleted.'
+    )
+
     @staticmethod
     def delete_accounting_category(pk):
-        """Delete an AccountingCategory. Half the schema PROTECTs against it,
-        so a referenced category refuses with a coded error instead of
-        surfacing a ProtectedError 500."""
+        """Delete an AccountingCategory. Most references PROTECT at the FK
+        level; the adjustment_target_categories M2Ms (EstimateLineItem,
+        InvoiceLineItem) don't, so is_referenced() (the same predicate that
+        freezes edits) is checked up front. The ProtectedError catch stays
+        as a backstop against any reference is_referenced() doesn't cover."""
         from django.db.models.deletion import ProtectedError
         try:
             cat = AccountingCategory.objects.get(pk=pk)
         except AccountingCategory.DoesNotExist:
             raise NotFoundError(f'AccountingCategory {pk} not found')
+        if cat.is_referenced():
+            raise ValidationError(
+                ConfigurationService.ACCOUNTING_CATEGORY_REFERENCED_MESSAGE,
+                code='referenced')
         try:
             cat.delete()
         except ProtectedError:
             raise ValidationError(
-                'Accounting category is in use (materials, services, or '
-                'line items reference it) and cannot be deleted.',
+                ConfigurationService.ACCOUNTING_CATEGORY_REFERENCED_MESSAGE,
                 code='referenced')
 
     # -- RateScheme (config-page CRUD; the referenced-freeze decision lives

@@ -103,6 +103,20 @@
     }
   }
 
+  async function deleteCategory(cat) {
+    if (!confirm(`Delete category "${cat.name}"? This cannot be undone.`)) return;
+    error = '';
+    success = '';
+    try {
+      await api.delete(`/api/accounting-categories/${cat.id}/`);
+      success = `Deleted "${cat.name}"`;
+      await loadCategories();
+      setTimeout(() => success = '', 3000);
+    } catch (e) {
+      error = e.message || 'Failed to delete';
+    }
+  }
+
   async function saveMapping(cat, field, value) {
     saving = cat.id;
     error = '';
@@ -190,6 +204,9 @@
             {/if}
             <td>
               <button type="button" onclick={() => startEdit(cat)} disabled={saving != null}>Edit</button>
+              {#if !cat.is_referenced}
+                <button type="button" onclick={() => deleteCategory(cat)} disabled={saving != null}>Delete</button>
+              {/if}
             </td>
           </tr>
         {/each}

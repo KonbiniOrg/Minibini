@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, within } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
 
 import { api } from '@/lib/api.js';
 import AccountingCategories from '@/components/settings/AccountingCategories.svelte';
@@ -13,6 +13,7 @@ beforeEach(() => {
   api.get.mockReset();
   api.post.mockReset();
   api.patch.mockReset();
+  api.delete.mockReset();
   // categories load resolves; QBO accounts rejects → qboAccounts stays null;
   // settings load resolves with no default set unless overridden per-test.
   api.get.mockImplementation((url) => {
@@ -22,6 +23,7 @@ beforeEach(() => {
   });
   api.post.mockResolvedValue({});
   api.patch.mockResolvedValue({});
+  api.delete.mockResolvedValue({});
 });
 
 describe('AccountingCategories', () => {
@@ -82,5 +84,66 @@ describe('AccountingCategories', () => {
     expect(api.post).toHaveBeenCalledWith('/api/accounting-categories/', expect.objectContaining({
       code: 'C3', name: 'Deposits', is_deposit: true, taxable: false,
     }));
+  });
+
+  describe('Delete', () => {
+    function mockReferencedAndUnreferenced() {
+      api.get.mockImplementation((url) => {
+        if (url.startsWith('/api/accounting-categories/')) {
+          return Promise.resolve({ results: [
+            { id: 1, code: 'REF', name: 'Referenced', taxable: true,
+              is_deposit: false, is_active: true, is_referenced: true,
+              default_description: '' },
+            { id: 2, code: 'UNREF', name: 'Unreferenced', taxable: true,
+              is_deposit: false, is_active: true, is_referenced: false,
+              default_description: '' },
+          ] });
+        }
+        return Promise.resolve({ results: [] });
+      });
+    }
+
+    it('shows Delete only for unreferenced categories', async () => {
+      mockReferencedAndUnreferenced();
+      const { findByRole, getAllByRole, getByRole } = render(AccountingCategories);
+      await findByRole('cell', { name: 'Referenced' });
+
+      const refRow = getByRole('cell', { name: 'Referenced' }).closest('tr');
+      const unrefRow = getByRole('cell', { name: 'Unreferenced' }).closest('tr');
+
+      expect(within(refRow).queryByRole('button', { name: 'Delete' })).toBeNull();
+      expect(within(unrefRow).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+      // sanity: two Edit buttons total, one Delete button total
+      expect(getAllByRole('button', { name: 'Edit' })).toHaveLength(2);
+    });
+
+    it('deletes on confirm accept and reloads the list', async () => {
+      mockReferencedAndUnreferenced();
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const { findByRole, getByRole } = render(AccountingCategories);
+      await findByRole('cell', { name: 'Unreferenced' });
+
+      const unrefRow = getByRole('cell', { name: 'Unreferenced' }).closest('tr');
+      await fireEvent.click(within(unrefRow).getByRole('button', { name: 'Delete' }));
+
+      expect(window.confirm).toHaveBeenCalledWith(
+        'Delete category "Unreferenced"? This cannot be undone.');
+      expect(api.delete).toHaveBeenCalledWith('/api/accounting-categories/2/');
+      // reload after delete
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/');
+    });
+
+    it('does not call delete when confirm is cancelled', async () => {
+      mockReferencedAndUnreferenced();
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      const { findByRole, getByRole } = render(AccountingCategories);
+      await findByRole('cell', { name: 'Unreferenced' });
+
+      const unrefRow = getByRole('cell', { name: 'Unreferenced' }).closest('tr');
+      await fireEvent.click(within(unrefRow).getByRole('button', { name: 'Delete' }));
+
+      expect(window.confirm).toHaveBeenCalled();
+      expect(api.delete).not.toHaveBeenCalled();
+    });
   });
 });

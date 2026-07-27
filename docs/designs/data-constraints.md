@@ -318,6 +318,13 @@ Standalone. No FK dependencies.
     category. This is a *targeted* freeze, not full AC
     immutability/supersession (that's a separate future effort — see
     `docs/designs/LATER.md`).
+  - **Deletion refuses via the same predicate**: `ConfigurationService.
+    delete_accounting_category` refuses (409, "in use") whenever
+    `is_referenced()` is `True` — checked explicitly before `cat.delete()`,
+    since the `adjustment_target_categories` M2Ms don't `PROTECT` at the DB
+    level the way the FK relations do (added 2026-07-26, Task 17). An
+    unreferenced category can be hard-deleted (a Delete button in the AC
+    manager, next to Edit); a referenced one retires via `is_active` instead.
 - **qbo_item_id** / **qbo_expense_account_id**: optional, populated after
   connecting QBO. `qbo_item_id` is the **fallback** ItemRef for invoice
   lines with no catalog identity, and the source of `IncomeAccountRef`
