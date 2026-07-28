@@ -204,27 +204,6 @@ Status coupling, transitions, and what a job may do at each stage.
   pool-suppression rule, perhaps with the deferred `FeeItem` catalog) — or the field is dropped in
   that design's place.
 
-## Job overview (2026-07-09 six-block redesign)
-
-The overview replaced its accordion pillars with six lifecycle summary
-blocks this pass (2026-07-09 redesign; durable reference
-`docs/designs/jobs-and-tasks.md` §9). Debt and open
-questions specific to that redesign:
-
-- **Overview Coverage stat counts only `materialStatus` "Needed" as SHORT.** — _added 2026-07-09_
-  The Materials block's Coverage signal (`JobDetail.svelte`'s `coverage`
-  derivation, consumed by `materialsBlock()` in `lib/jobOverview.js`)
-  flags `SHORT` only when a job material's status is exactly **Needed**
-  (established, stock short, no PO link). Materials in **Needs pricing**
-  or **Awaiting customer** are also short of stock with no incoming
-  supply lined up, but don't count toward `SHORT` — so a job stuck
-  waiting on pricing or a customer-supplied item can show a clean `OK`
-  Coverage stat while materials are, in practice, not covered. Revisit
-  if RM wants those statuses folded into the SHORT count (or a separate
-  signal for them) once the block has lived a while.
-  _Done when:_ RM has decided whether Needs-pricing/Awaiting-customer
-  materials should affect the Coverage stat, and the behavior matches.
-
 ## Change orders
 
 The CO surface and its estimate-parallel code.
@@ -477,6 +456,35 @@ The atom-pull surfaces on estimates and invoices.
   (attach == receipt, establishes provisional materials), so the original repro
   context is gone. Re-test on the new flow; if it can't reproduce, delete this
   entry. _Done when:_ reproduced and fixed with a test, or shown obsolete.
+
+- **Expense-created materials are left provisional despite having a cost.** — _added 2026-07-28 (found tracing needs-pricing for the overview Coverage work)_
+  `ExpenseService.attach` handles the two branches of the same real-world event
+  inconsistently. With `material_id` (attach to an existing material) it
+  establishes a provisional target — minting the lot at the expense's unit cost
+  with `cost_source=EXPENSE` — and then calls `receive_ad_hoc_purchase`; the
+  docstring says it outright: *"attach == receipt."* The `new_material` branch
+  (`apps/expenses/services.py` ~L85), for a freeform material with no catalog
+  item, passes the same `cost_source=EXPENSE` and then does **neither** — no
+  `establish`, no receive. `create_on_job`'s mint gate deliberately excludes
+  document-sourced costs, so the material is born provisional with a real
+  recorded cost and zero stock.
+  Consequences: it reads **"Needs pricing"** on every material row though its
+  cost is known; the job overview's Coverage stat counts it as *needs ordering*
+  though it is physically in the shop; `InventoryService.consume` refuses it;
+  and **task completion blocks** on it (`apps/jobs/services.py` ~L1404,
+  "not yet priced/received") — RM: that gate should not fire for material
+  that's actually in hand. Fix the state, not the gate: once expense-created
+  materials establish, provisional means "no cost, not ordered, not received",
+  which is worth blocking on.
+  Parts already exist — `MaterialService.establish` mints the lot,
+  `InventoryService.receive_ad_hoc_purchase` books the stock, and
+  `_default_markup_percent` is there (`establish_reverse_markup` runs it
+  sell→cost; this needs cost→sell). Design question to settle in the pass: does
+  an expense-created material receive its full quantity, or only what the
+  expense paid for?
+  _Done when:_ a material created from an expense is established and stocked
+  like the attach branch, with a markup-derived sell price, and no longer reads
+  "Needs pricing".
 
 - **Decide whether "drops" (offcuts/scraps) get an unbacked-material lane or lightweight lots.** — _added 2026-07-05 (parked during the freeform-materials design)_
   The "no permanently-unbacked Material" rule (every Material establishes to a lot)

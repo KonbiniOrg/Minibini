@@ -1,3 +1,5 @@
+import { materialStatus } from './materialStatus.js';
+
 // jobOverview.js — the pure view-model for the job overview page's six
 // lifecycle blocks (Scope → Work → Materials → Spend → Invoicing → Delivery).
 //
@@ -367,6 +369,51 @@ function dueStatOf(due) {
   return s;
 }
 
+// ---------------------------------------------------------------------------
+// Materials coverage — the three-tone signal behind the Materials block's
+// Coverage stat (2026-07-28; replaces the SHORT/OK pair that counted only
+// `needed`).
+//
+// Materials are bucketed by WHETHER A HUMAN MUST ACT, using the same
+// per-material source of truth the rest of the app renders as chips
+// (materialStatus.js):
+//
+//   needs ordering  — `needed` + `needs-pricing`. Not on hand, nothing
+//                     incoming. A provisional (unpriced) material is not in
+//                     stock and has no supply lined up either, so it belongs
+//                     here rather than in a bucket of its own.
+//   not yet arrived — `ordered` (a PO line still owes qty) + `awaiting-customer`.
+//                     Short, but handled: someone is waiting, not deciding.
+//
+// Terminal rows (released/consumed) and on-hand rows count toward neither.
+// SHORT outranks WAITING so the headline always answers "does this job need me
+// right now?"; the sub-line still reports the waiting count so the SHORT
+// headline never hides it.
+// ---------------------------------------------------------------------------
+const NEEDS_ORDERING_KEYS = ['needed', 'needs-pricing'];
+const NOT_ARRIVED_KEYS = ['ordered', 'awaiting-customer'];
+
+function materialsCoverage(materials) {
+  if (!materials.length) return null;   // no materials → omit the stat entirely
+  let needsOrdering = 0;
+  let notArrived = 0;
+  for (const m of materials) {
+    const key = materialStatus(m).key;
+    if (NEEDS_ORDERING_KEYS.includes(key)) needsOrdering += 1;
+    else if (NOT_ARRIVED_KEYS.includes(key)) notArrived += 1;
+  }
+  const ordering = `${needsOrdering} need${needsOrdering === 1 ? 's' : ''} ordering`;
+  const arriving = `${notArrived} not yet arrived`;
+
+  if (needsOrdering > 0) {
+    const parts = [ordering];
+    if (notArrived > 0) parts.push(arriving);
+    return { label: 'SHORT', tone: 'bad', sub: parts.join(' · ') };
+  }
+  if (notArrived > 0) return { label: 'WAITING', tone: 'warn', sub: arriving };
+  return { label: 'OK', tone: 'good' };
+}
+
 // ===========================================================================
 // 3. MATERIALS — POs touching the job + coverage signal.
 // materialsBlock takes `now` so each open PO's Due value can carry the same
@@ -377,28 +424,33 @@ function dueStatOf(due) {
 // ===========================================================================
 const OPEN_PO_STATUSES = ['draft', 'issued', 'partly_received'];
 
-export function materialsBlock({ jobId, pos = [], coverage = null, now }) {
+export function materialsBlock({ jobId, pos = [], materials = [], now }) {
   const openPOs = pos.filter((p) => OPEN_PO_STATUSES.includes(p.status));
   const receivedPOs = pos.filter((p) => p.status === 'received_in_full');
-  const coverageShort = coverage && coverage.tone === 'bad';
+  const coverage = materialsCoverage(materials);
+  // Anything but a clean OK re-heats the block. Keying on "not good" rather
+  // than "is bad" matters for the PO-less cases: a job waiting on a
+  // customer-supplied material has no PO to make the block active, and would
+  // otherwise read dormant "nothing on order" while hiding the signal.
+  const coverageAlert = coverage != null && coverage.tone !== 'good';
   // Always the job's POs section, even when exactly one PO is named: the PO
   // detail page (`#/purchase-orders/:id`) lives outside the job workspace, and
   // ejecting the user from it is worse than one extra click (RM, 2026-07-28).
   const href = section(jobId, 'pos');
 
   // Dormant — no open/received POs (e.g. none at all, or only cancelled ones)
-  // and no shortfall.
-  if (!openPOs.length && !receivedPOs.length && !coverageShort) {
+  // and no coverage alert.
+  if (!openPOs.length && !receivedPOs.length && !coverageAlert) {
     return { state: 'dormant', dormantText: 'nothing on order', href };
   }
 
-  // Frozen — at least one received PO, none open, coverage not short.
-  if (!openPOs.length && receivedPOs.length && !coverageShort) {
+  // Frozen — at least one received PO, none open, coverage clean.
+  if (!openPOs.length && receivedPOs.length && !coverageAlert) {
     const n = receivedPOs.length;
     return { state: 'frozen', frozenText: `${n} ${n === 1 ? 'PO' : 'POs'}, all received`, href };
   }
 
-  // Active — any open PO or coverage short.
+  // Active — any open PO, or a coverage alert.
   const stats = [];
   for (const po of openPOs) {
     const sent = po.issued_date || po.created_date;

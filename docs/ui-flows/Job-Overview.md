@@ -50,7 +50,11 @@ countdown, payment latency, pickup aging), and the page furniture around them
 - [ ] **Work active — progress:** progress bar proportioned by estimated time and a "N / M tasks" stat.
 - [ ] **Work due countdown:** Due stat shows "N working days left" — uncolored >5, amber ≤5, red when overdue.
 - [ ] **Working-now line:** clock a blep in on a task → green "● {worker} working now — {task}" line appears on Work.
-- [ ] **Materials coverage:** Coverage stat reads `OK` when nothing needs ordering; add a material that is short with no incoming supply → `SHORT` (red) with "N materials need ordering".
+- [ ] **Materials coverage — OK:** every material on hand → `OK` (green), no sub-line.
+- [ ] **Materials coverage — SHORT:** a material short with no incoming supply, or one left unpriced (provisional), → `SHORT` (red) with "N needs ordering".
+- [ ] **Materials coverage — WAITING:** the only short materials are on a live PO line or customer-supplied → `WAITING` (amber) with "N not yet arrived" — *not* SHORT; nobody has anything to order.
+- [ ] **Materials coverage — both buckets:** one needing ordering plus others incoming → `SHORT` with "1 needs ordering · 2 not yet arrived" (the red headline never hides the waiting count).
+- [ ] **Coverage alert alone re-heats the block:** a customer-supplied shortfall with no POs at all → Materials is *active* showing WAITING, not dormant "nothing on order".
 - [ ] **Materials vs POs temperature:** open POs → Materials active with per-PO stats; all POs received and nothing short → frozen "N POs, all received".
 - [ ] **Spend active:** Labor $ (with hours), Materials $, and Total with "% of the $X scope" — figures match the header P&L.
 

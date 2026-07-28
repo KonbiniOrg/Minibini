@@ -1246,6 +1246,34 @@ positioned anchor covering the card, with inner links raised above it)
 — which also costs text selection inside the card. `SummaryBlock`'s
 tests guard this boundary.
 
+**The Materials Coverage signal is three-tone** (2026-07-28; replaces a
+SHORT/OK pair that counted only `materialStatus` **Needed** and so read a
+clean green `OK` on a job whose materials were all unpriced or all
+awaited). Materials are bucketed by **whether a human must act**, using
+the same per-material statuses the app renders as chips
+(`lib/materialStatus.js`; `materials-inventory-and-purchasing.md` §16):
+
+| Bucket | Statuses | Meaning |
+|---|---|---|
+| *needs ordering* | `needed`, `needs-pricing` | not on hand, nothing incoming. A provisional (unpriced) material has no stock **and** no supply lined up, so it belongs here rather than in a bucket of its own |
+| *not yet arrived* | `ordered` (a PO line still owes quantity), `awaiting-customer` | short, but handled — someone is waiting, not deciding |
+
+On-hand and terminal (released/consumed) rows count toward neither.
+The stat then reads **`SHORT`** (red) if anything needs ordering,
+**`WAITING`** (amber) if nothing does but something hasn't arrived, else
+**`OK`** (green); with no materials at all the stat is omitted. `SHORT`
+outranks `WAITING` so the headline always answers "does this job need me
+*right now*", and its sub-line reports both counts
+("1 needs ordering · 2 not yet arrived") so the red headline never hides
+the waiting work. Deliberately *not* one bucket for everything off the
+shelf: a headline that fires on every healthy job awaiting a normal
+delivery stops being read.
+
+Any non-`OK` coverage re-heats the block to active. Keying on "not OK"
+rather than "is SHORT" matters for the PO-less cases — a job waiting on a
+customer-supplied material has no PO to activate the block and would
+otherwise read dormant "nothing on order" while hiding the signal.
+
 **Fixed order: Scope → Work → Materials → Spend → Invoicing → Delivery**
 (the two money blocks sit adjacent deliberately — spent vs. billed vs.
 scope reads as one story). Block names describe *aspects of the job's
@@ -1255,7 +1283,7 @@ health*, not documents (the rail names the surfaces).
 |---|---|---|---|
 | **Scope** | no estimate exists yet | current estimate is draft/open, **or** a draft/open change order re-activates a settled estimate (customer-response clock, 7 days) | estimate terminal and no live CO — total, version, accepted/CO dates, deliverable count |
 | **Work** | job not yet approved | approved/in_progress with non-terminal tasks — progress (by estimated worker time, falling back to task count), task counts + blocked pill, Due stat (working-day countdown, omitted with no due date), "working now" clock | all tasks terminal / job `work_complete`+ (or stopped for good: cancelled/rejected) — task count + hours logged |
-| **Materials** | no POs touch the job, no shortfall | any open PO (number/vendor/due, amber pressure within 5 working days) or coverage short — Coverage stat (`OK`/`SHORT`, counting only `materialStatus` **Needed**, not Needs-pricing/Awaiting-customer — see `materials-inventory-and-purchasing.md` §16, and LATER.md) | POs exist, all received |
+| **Materials** | no POs touch the job and Coverage is clean | any open PO (number/vendor/due, amber pressure within 5 working days), **or** any Coverage alert — see the three-tone signal below | POs exist, all received, Coverage clean |
 | **Spend** | nothing spent | anything spent, job not terminal — Labor ($ + hours), Materials ($ bought), Total spent (% of scope) | job terminal — same three figures as settled facts |
 | **Invoicing** | no invoices | anything unbilled/unpaid — one stat group per invoice (payment-latency clock: green "paid in N days" / red "sent N days ago, unpaid"), Remaining to bill, Billed % (collapses oldest paid invoices past 4 rows) | fully billed and paid |
 | **Delivery** | nothing prepared yet | a prepared shipment awaits pickup (red past 3 working days), or work is done with nothing shipped | everything picked up |
@@ -1300,7 +1328,7 @@ is the only place the `.summary-block`/`.stat-spread` markup lives.
 
 | Component | Role |
 |---|---|
-| `JobDetail.svelte` | Composes the page (~120 lines): mounts `JobShell`, derives the two inputs the lib can't take raw (materials Coverage signal, estimate/CO arrays), renders the change-request banner + six blocks |
+| `JobDetail.svelte` | Composes the page (~110 lines): mounts `JobShell`, shapes the fetched payloads into lists/numbers (it derives no rules — Coverage moved into the lib 2026-07-28), renders the change-request banner + six blocks |
 | `JobHeader.svelte` | Header + status dropdown |
 | `lib/jobOverview.js` | Pure view-model — block rules, temperatures, clocks, copy (§9.1a) |
 | `components/jobs/overview/SummaryBlock.svelte` | The one dumb renderer for all six blocks (active/frozen/dormant markup) |

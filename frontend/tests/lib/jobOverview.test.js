@@ -362,7 +362,7 @@ describe('workBlock', () => {
 // ===========================================================================
 describe('materialsBlock', () => {
   it('dormant — nothing on order', () => {
-    const b = materialsBlock({ pos: [], coverage: null });
+    const b = materialsBlock({ pos: [], materials: [] });
     expect(b.state).toBe('dormant');
     expect(b.dormantText).toBe('nothing on order');
   });
@@ -373,7 +373,8 @@ describe('materialsBlock', () => {
         { po_number: 'PO-0031', status: 'issued', business_name: 'Plywood Supply Co', issued_date: '2025-06-28', requested_date: '2025-07-10' },
         { po_number: 'PO-0027', status: 'received_in_full', received_date: '2025-06-30' },
       ],
-      coverage: { label: 'OK', tone: 'good', sub: 'stock + this order' },
+      materials: [{ inventory_item: 7, cost_source: 'entered', consumption_state: 'pending',
+                    quantity: '4.00', qty_on_hand: '4.00' }],
     });
     expect(b.state).toBe('active');
     const on = stat(b, 'On order');
@@ -386,13 +387,14 @@ describe('materialsBlock', () => {
     const cov = stat(b, 'Coverage');
     expect(cov.value).toBe('OK');
     expect(cov.valueTone).toBe('good');
-    expect(cov.sub).toBe('stock + this order');
+    expect(cov.sub).toBeUndefined();
   });
 
   it('active — coverage short with no open PO', () => {
     const b = materialsBlock({
       pos: [{ po_number: 'PO-0027', status: 'received_in_full', received_date: '2025-06-30' }],
-      coverage: { label: 'SHORT', tone: 'bad', sub: 'need 4 more' },
+      materials: [{ inventory_item: 7, cost_source: 'entered', consumption_state: 'pending',
+                    quantity: '4.00', qty_on_hand: '0.00' }],
     });
     expect(b.state).toBe('active');
     expect(stat(b, 'Coverage').value).toBe('SHORT');
@@ -759,6 +761,103 @@ describe('deliveryBlock', () => {
     });
     expect(b.state).toBe('frozen');
     expect(b.frozenText).toBe('3 shipments picked up · last 7/18');
+  });
+});
+
+// ===========================================================================
+// 6b. MATERIALS COVERAGE — the three-tone signal (2026-07-28).
+//
+// Buckets by whether a human must act: needed/needs-pricing → "needs
+// ordering" (SHORT, red); ordered/awaiting-customer → "not yet arrived"
+// (WAITING, amber); everything on hand → OK (green).
+// ===========================================================================
+const MAT = {
+  inventory_item: 7, cost_source: 'entered', consumption_state: 'pending',
+  quantity: '4.00', qty_on_hand: '0.00', po_line_item_id: null, po_number: null,
+};
+const needed = { ...MAT };
+const needsPricing = { ...MAT, inventory_item: null, cost_source: null };
+const ordered = { ...MAT, po_line_item_id: 3, qty_on_order: '4.00', po_number: 'PO-9' };
+const awaitingCustomer = { ...MAT, cost_source: 'customer_supplied' };
+const onHand = { ...MAT, qty_on_hand: '4.00' };
+const consumed = { ...MAT, consumption_state: 'consumed' };
+
+const coverage = (b) => b.stats.find((s) => s.label === 'Coverage');
+
+describe('materialsBlock coverage', () => {
+  const args = (materials, pos = []) => ({ jobId: 1, pos, materials, now: '2025-07-09' });
+
+  it('no materials at all — the Coverage stat is omitted', () => {
+    const b = materialsBlock(args([], [{ status: 'issued', po_number: 'PO-1', business_name: 'A' }]));
+    expect(b.state).toBe('active');
+    expect(coverage(b)).toBeUndefined();
+  });
+
+  it('all on hand → OK, green, no sub', () => {
+    // OK only ever renders on an already-active block (an open PO here);
+    // all-on-hand with no POs is dormant, asserted separately below.
+    const b = materialsBlock(args([onHand, consumed], [{ status: 'issued', po_number: 'PO-1', business_name: 'A' }]));
+    const c = coverage(b);
+    expect(c.value).toBe('OK');
+    expect(c.valueTone).toBe('good');
+    expect(c.sub).toBeUndefined();
+  });
+
+  it('needed → SHORT with the needs-ordering count', () => {
+    const c = coverage(materialsBlock(args([needed, onHand])));
+    expect(c.value).toBe('SHORT');
+    expect(c.valueTone).toBe('bad');
+    expect(c.sub).toBe('1 needs ordering');
+  });
+
+  it('needs-pricing counts as needs-ordering, not as its own bucket', () => {
+    const c = coverage(materialsBlock(args([needsPricing, needed])));
+    expect(c.value).toBe('SHORT');
+    expect(c.sub).toBe('2 need ordering');
+  });
+
+  it('ordered alone → WAITING, amber, not-yet-arrived', () => {
+    const c = coverage(materialsBlock(args([ordered, onHand])));
+    expect(c.value).toBe('WAITING');
+    expect(c.valueTone).toBe('warn');
+    expect(c.sub).toBe('1 not yet arrived');
+  });
+
+  it('awaiting-customer alone → WAITING (no PO involved)', () => {
+    const c = coverage(materialsBlock(args([awaitingCustomer])));
+    expect(c.value).toBe('WAITING');
+    expect(c.sub).toBe('1 not yet arrived');
+  });
+
+  it('ordered + awaiting-customer share the not-yet-arrived bucket', () => {
+    const c = coverage(materialsBlock(args([ordered, awaitingCustomer])));
+    expect(c.value).toBe('WAITING');
+    expect(c.sub).toBe('2 not yet arrived');
+  });
+
+  it('SHORT wins over WAITING, and the sub reports both buckets', () => {
+    const c = coverage(materialsBlock(args([needed, ordered, awaitingCustomer, onHand])));
+    expect(c.value).toBe('SHORT');
+    expect(c.valueTone).toBe('bad');
+    expect(c.sub).toBe('1 needs ordering · 2 not yet arrived');
+  });
+
+  it('a coverage alert re-heats the block even with no POs at all', () => {
+    // Regression: awaiting-customer with no PO used to read dormant
+    // ("nothing on order"), hiding the signal entirely.
+    const b = materialsBlock(args([awaitingCustomer]));
+    expect(b.state).toBe('active');
+    expect(coverage(b).value).toBe('WAITING');
+  });
+
+  it('all-on-hand with no POs stays dormant — OK is not worth a card', () => {
+    const b = materialsBlock(args([onHand]));
+    expect(b.state).toBe('dormant');
+  });
+
+  it('frozen — received POs, nothing short', () => {
+    const b = materialsBlock(args([onHand], [{ status: 'received_in_full' }]));
+    expect(b.state).toBe('frozen');
   });
 });
 
