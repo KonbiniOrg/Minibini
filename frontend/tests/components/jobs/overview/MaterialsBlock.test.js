@@ -33,4 +33,15 @@ describe('MaterialsBlock', () => {
     expect(container.querySelector('.summary-block')).toHaveClass('dormant');
     expect(getByText(expected.dormantText)).toBeInTheDocument();
   });
+
+  it('threads jobId into the lib and links the card at the job POs section', () => {
+    const props = {
+      jobId: 42,
+      pos: [{ status: 'issued', po_id: 9, po_number: 'PO-0031', business_name: 'Plywood Supply Co' }],
+      coverage: null,
+      now: '2025-07-09',
+    };
+    const { container } = render(MaterialsBlock, { props });
+    expect(container.querySelector('.summary-block').getAttribute('href')).toBe('#/jobs/42/pos');
+  });
 });

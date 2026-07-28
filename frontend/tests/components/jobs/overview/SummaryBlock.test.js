@@ -51,10 +51,15 @@ const activeModel = {
     tone: 'bad',
     lines: ['No customer response in 12 days', 'second signal line'],
   },
+  href: '#/jobs/42/estimate/8',
 };
 
-const frozenModel = { state: 'frozen', frozenText: 'v2 accepted 6/30 · 3 deliverables' };
-const dormantModel = { state: 'dormant', dormantText: 'no estimate yet' };
+const frozenModel = {
+  state: 'frozen',
+  frozenText: 'v2 accepted 6/30 · 3 deliverables',
+  href: '#/jobs/42/estimate/8',
+};
+const dormantModel = { state: 'dormant', dormantText: 'no estimate yet', href: '#/jobs/42/estimate' };
 
 describe('SummaryBlock', () => {
   it('renders an active block with the .active temperature class and title', () => {
@@ -159,10 +164,26 @@ describe('SummaryBlock', () => {
     expect(getByText(dormantModel.dormantText)).toBeInTheDocument();
   });
 
-  it('never renders an anchor element, in any temperature', () => {
+  // 2026-07-28: the card itself IS the link (reversing the 2026-07-09
+  // "no block-level links" decision). See jobs-and-tasks.md §9.1a.
+  it('renders the card as an anchor carrying model.href, in every temperature', () => {
     for (const [title, model] of [['Scope', activeModel], ['Scope', frozenModel], ['Work', dormantModel]]) {
       const { container, unmount } = render(SummaryBlock, { props: { title, model } });
-      expect(container.querySelectorAll('.summary-block a').length).toBe(0);
+      const block = container.querySelector('.summary-block');
+      expect(block.tagName).toBe('A');
+      expect(block.getAttribute('href')).toBe(model.href);
+      unmount();
+    }
+  });
+
+  // The plain-anchor rendering is only valid HTML because the card has no
+  // interactive descendants. Adding one silently makes the markup invalid and
+  // forces the stretched-link overlay instead — this guards that boundary.
+  it('renders no interactive descendants inside the card', () => {
+    for (const [title, model] of [['Scope', activeModel], ['Scope', frozenModel], ['Work', dormantModel]]) {
+      const { container, unmount } = render(SummaryBlock, { props: { title, model } });
+      const block = container.querySelector('.summary-block');
+      expect(block.querySelectorAll('a, button, input, select, textarea').length).toBe(0);
       unmount();
     }
   });

@@ -216,6 +216,31 @@ dd {
      softened, its 1px ring. Set via an accent-<name> class; defaults to the
      original blue so accent-less consumers look unchanged. */
   --block-accent: #1d4ed8;
+  /* The card is an <a> (the whole block navigates — see jobs-and-tasks.md
+     §9.1a). Reset the anchor defaults so every temperature keeps its own
+     typography; .frozen/.dormant re-declare display/color below and win by
+     source order. */
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.12s, box-shadow 0.12s, background-color 0.12s;
+}
+
+/* Hover/focus affordance — the accent brightens rather than the card moving,
+   so a six-block column doesn't jitter as the pointer crosses it. */
+.summary-block:hover {
+  border-color: var(--block-accent);
+}
+.summary-block.active:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.summary-block.frozen:hover,
+.summary-block.dormant:hover {
+  background: #f1f5f9;
+}
+.summary-block:focus-visible {
+  outline: 2px solid var(--block-accent);
+  outline-offset: 2px;
 }
 
 /* Block accents — six distinguishable mid-saturation hues. Deliberately not

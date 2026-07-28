@@ -90,15 +90,16 @@
 
     <div class="summary-blocks">
       <ScopeBlock
+        jobId={job.job_id}
         estimates={estimateList}
         changeOrders={changeOrderList}
         {deliverableCount}
         {now}
       />
       <WorkBlock {job} {overview} {tasksPlanned} />
-      <MaterialsBlock pos={poList} {coverage} {now} />
+      <MaterialsBlock jobId={job.job_id} pos={poList} {coverage} {now} />
       <SpendBlock {job} {overview} {scopeTotal} />
-      <InvoicingBlock invoices={invoiceList} {scopeTotal} {invoicedTotal} {now} />
+      <InvoicingBlock jobId={job.job_id} invoices={invoiceList} {scopeTotal} {invoicedTotal} {now} />
       <DeliveryBlock shipments={shipmentList} {deliverableCount} {job} {now} />
     </div>
   </div>

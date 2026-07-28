@@ -5,9 +5,9 @@
   import SummaryBlock from './SummaryBlock.svelte';
   import { materialsBlock } from '../../../lib/jobOverview.js';
 
-  const { pos = [], coverage = null, now } = $props();
+  const { jobId, pos = [], coverage = null, now } = $props();
 
-  let model = $derived(materialsBlock({ pos, coverage, now }));
+  let model = $derived(materialsBlock({ jobId, pos, coverage, now }));
 </script>
 
 <SummaryBlock title="Materials" {model} accent="materials" />

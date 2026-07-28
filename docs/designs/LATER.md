@@ -211,15 +211,6 @@ blocks this pass (2026-07-09 redesign; durable reference
 `docs/designs/jobs-and-tasks.md` §9). Debt and open
 questions specific to that redesign:
 
-- **Block-internal specific-document links.** — _added 2026-07-12 (from the 2026-07-09 design's deferred list)_
-  The blocks deliberately shipped with no links or actions (the rail
-  sits directly above; Spend has no honest destination). Linking a
-  *specific document* mentioned inside a block — a PO number, an
-  invoice number, an estimate version — is a separate, plausible
-  refinement RM wants to feel out with the page live. _Done when:_ RM
-  decides which in-block document mentions (if any) become links, and
-  they're implemented — or the idea is dropped.
-
 - **Overview Coverage stat counts only `materialStatus` "Needed" as SHORT.** — _added 2026-07-09_
   The Materials block's Coverage signal (`JobDetail.svelte`'s `coverage`
   derivation, consumed by `materialsBlock()` in `lib/jobOverview.js`)
@@ -810,8 +801,19 @@ Cross-cutting UI/API conventions and shared components.
   (`SettingsPage.svelte`, six tabs) and the job history section
   (`JobHistorySection.svelte`, formerly `JobHistoryPage.svelte`) still use
   local `$state` tabs under a single URL.
+  **The history section has a caller waiting on it** (_2026-07-28_): the job
+  overview's Spend block links to `#/jobs/:id/history` as a *placeholder*,
+  because Spend's honest destination is a job-profitability analysis that
+  doesn't exist and there's no URL that means "Analysis" while the tabs are
+  local state. Three things land together when this entry is worked:
+  per-tab routes for the section, a third **Analysis** tab (a "not yet
+  implemented" placeholder until the profitability work is specced), and
+  retitling the page **History → "History and Analysis"** (page `<h2>` only —
+  the rail label stays "History"; the strip has no room). Then repoint Spend's
+  href in `spendBlock()` (`lib/jobOverview.js`) at the Analysis tab.
   _Done when:_ those pages' tabs are routes (or a deliberate exception is
-  recorded for them).
+  recorded for them), and Spend links to the Analysis tab rather than the
+  history index.
 
 - **Modal stacking on the schedule quick card — Escape closes both layers.** — _added 2026-07-04 (found during the Modal-shell sweep)_
   The one real modal-on-modal spot: `TaskQuickCard` (schedule bar click → popup

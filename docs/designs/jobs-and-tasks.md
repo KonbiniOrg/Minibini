@@ -1203,12 +1203,48 @@ you read a number:
 - **Dormant** (`.summary-block.dormant`) — not yet: one dashed ghost line.
 
 CSS vocabulary: `docs/designs/architecture-and-conventions.md` §5.5a
-(`.summary-block` / `.stat-spread` family). **No block-level links or
-actions this pass** (RM decision 2026-07-09): the rail sits directly
-above and corner links would duplicate it; Spend has no honest
-destination at all; clocks/signals are display-only pending a later
-pass. Blocks never list rows (tasks, line items, POs) — the section
-pages do that.
+(`.summary-block` / `.stat-spread` family). Blocks never list rows
+(tasks, line items, POs) — the section pages do that.
+
+**Each block is a link** (RM, 2026-07-28 — this *reverses* the
+2026-07-09 "no block-level links or actions" decision). The whole card
+is the target: `SummaryBlock.svelte` renders the card itself as an
+`<a href>` in all three temperatures, so a click anywhere on it
+navigates. Clocks, pills, and stat values remain inert display.
+
+The target is chosen by one rule — **one named document → link to it;
+none or several → the block's section index**:
+
+| Block | Target |
+|---|---|
+| Scope | the live draft/open change order (`/change-order/:coId`) if there is one — it's the lead stat and the reason the block is warm; else the current estimate (`/estimate/:estimateId`); else, with no estimate at all, `/estimate` |
+| Work | `/tasks` |
+| Materials | `/pos` — **always**, even when exactly one PO is named. The PO detail page (`#/purchase-orders/:id`) is outside the job workspace, and ejecting the user from it costs more than the extra click |
+| Spend | `/history` — a placeholder. Spend's honest destination is a job-profitability analysis that doesn't exist yet; see `LATER.md`'s per-tab-routes entry |
+| Invoicing | the sole live invoice (`/invoice/:invoiceId`) when exactly one is live (cancelled/superseded excluded); otherwise `/invoice`, which lands on the DocSubnav strip |
+| Delivery | `/shipments` |
+
+Two invariants hold everywhere: **every block links in every
+temperature** (a dormant Scope reads "no estimate yet" and lands on the
+Estimates section, where you'd make one — a card is never a dead end),
+and a document whose id is missing from the payload **degrades to the
+section index** rather than emitting a broken href.
+
+The choice is a block *rule*, so it lives in `lib/jobOverview.js`
+alongside the temperature and copy rules — each block model carries an
+`href`, decided in the same branch that decides what the block
+displays, and `SummaryBlock` never picks a target. The multi-document
+case deliberately does **not** guess the "most actionable" document
+(oldest unpaid invoice, earliest-due PO): a wrong guess on a target
+spanning the whole card is worse than a neutral landing one click away.
+
+**Constraint this places on the blocks:** the plain `<a>` wrapping the
+card is valid HTML only because the card renders no interactive
+descendants. Adding a button or link inside a block invalidates the
+markup and forces a stretched-link overlay instead (an absolutely
+positioned anchor covering the card, with inner links raised above it)
+— which also costs text selection inside the card. `SummaryBlock`'s
+tests guard this boundary.
 
 **Fixed order: Scope → Work → Materials → Spend → Invoicing → Delivery**
 (the two money blocks sit adjacent deliberately — spent vs. billed vs.

@@ -2,12 +2,19 @@
   // SummaryBlock — the one dumb renderer for every job-overview lifecycle
   // block. It draws `model` (a Task 4 lib block result: scopeBlock,
   // workBlock, materialsBlock, spendBlock, invoicingBlock, deliveryBlock) —
-  // no fetching, no business rules, no anchors. See frontend/src/lib/jobOverview.js
+  // no fetching, no business rules. See frontend/src/lib/jobOverview.js
   // for the return shape and frontend/src/css/app.css (grep "summary-block")
   // for the CSS vocabulary this renders into.
   // `accent` names the block's identity color (accent-<name> class in
   // app.css) — the active card's left edge + softened 1px ring. Optional;
   // without it the vocabulary's default blue applies.
+  //
+  // The card IS the link (2026-07-28, reversing the 2026-07-09 "no block-level
+  // links" decision — see jobs-and-tasks.md §9.1a). `model.href` is decided in
+  // jobOverview.js; this component never picks a target. A plain <a> wrapping
+  // the card is valid only because the card renders NO interactive
+  // descendants — adding a button or link inside would invalidate the markup
+  // and force the stretched-link overlay pattern instead.
   const { title, model, accent = null } = $props();
   const accentClass = $derived(accent ? `accent-${accent}` : '');
 
@@ -19,7 +26,7 @@
 </script>
 
 {#if model.state === 'active'}
-  <div class="summary-block active {accentClass}">
+  <a class="summary-block active {accentClass}" href={model.href}>
     <div class="summary-block-title">{title}</div>
     <div class="stat-spread">
       {#each model.stats as stat}
@@ -45,15 +52,15 @@
         {/each}
       </div>
     {/if}
-  </div>
+  </a>
 {:else if model.state === 'frozen'}
-  <div class="summary-block frozen {accentClass}">
+  <a class="summary-block frozen {accentClass}" href={model.href}>
     <span class="summary-block-title">{title}</span>
     <span>{model.frozenText}</span>
-  </div>
+  </a>
 {:else}
-  <div class="summary-block dormant {accentClass}">
+  <a class="summary-block dormant {accentClass}" href={model.href}>
     <span class="summary-block-title">{title}</span>
     <span>{model.dormantText}</span>
-  </div>
+  </a>
 {/if}
