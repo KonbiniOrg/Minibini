@@ -1895,15 +1895,13 @@ the server would accept the write (atom holder **or** the job's PM, and
 the list not yet locked by a sent/accepted estimate or open change
 order — see §12.2).
 
-`ShipmentsPillar.svelte` — the read-only shipments matrix that used to
-sit between the Invoices and Purchase Orders accordion pillars — is
-**orphaned** since the pillars were retired (2026-07-09): nothing
-imports it. Its job (a shipments summary reachable from the job's
-landing page) is not currently replaced anywhere — the overview's
-Delivery block (§9.1a) shows aggregate stats only, and the full matrix
-lives on the Shipments section page (`ShipmentsPanel.svelte`, reached
-via the rail). See `docs/designs/LATER.md` — delete the orphan once RM
-confirms nothing planned wants it.
+There is **no read-only shipments matrix on the job's landing page**.
+The overview's Delivery block (§9.1a) shows aggregate stats only; the
+full matrix lives on the Shipments section page
+(`ShipmentsPanel.svelte`, reached via the rail). The old
+`ShipmentsPillar.svelte` that sat between the Invoices and Purchase
+Orders accordion pillars was orphaned when the pillars were retired
+(2026-07-09) and deleted 2026-07-28.
 
 **Job Shipments page** at `#/jobs/:jobId/shipments`: the editable
 matrix. Adds + Discard (local for drafts, server for persisted),

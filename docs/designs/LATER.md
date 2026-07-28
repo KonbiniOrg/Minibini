@@ -220,21 +220,6 @@ questions specific to that redesign:
   decides which in-block document mentions (if any) become links, and
   they're implemented — or the idea is dropped.
 
-- **`ShipmentsPillar.svelte` and `Accordion.svelte` are orphaned.** — _added 2026-07-09_
-  `components/jobs/ShipmentsPillar.svelte` (the read-only shipments
-  matrix that used to sit in the accordion between Invoices and
-  Purchase Orders) has zero importers now that the accordion pillars
-  are gone — the overview's Delivery block shows aggregate stats only,
-  and the full matrix already lives on the Shipments section page
-  (`ShipmentsPanel.svelte`). Same story one layer down:
-  `components/Accordion.svelte` (+ its private `css/accordion.css`) had
-  exactly one consumer, `JobDetail.svelte`'s pillar expand/collapse,
-  which is also gone — nothing else in the app imports `Accordion.svelte`
-  today (only its own test, `tests/components/Accordion.test.js`, still
-  references it directly). _Done when:_ RM confirms nothing planned
-  wants either component, then both (`ShipmentsPillar.svelte`,
-  `Accordion.svelte` + `accordion.css` + their tests) are deleted — or a
-  future reuse is identified and they stay.
 - **Overview Coverage stat counts only `materialStatus` "Needed" as SHORT.** — _added 2026-07-09_
   The Materials block's Coverage signal (`JobDetail.svelte`'s `coverage`
   derivation, consumed by `materialsBlock()` in `lib/jobOverview.js`)

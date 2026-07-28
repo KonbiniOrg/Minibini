@@ -83,7 +83,7 @@ does — not in big retroactive sweeps.
 2. **Mock the `lib/api.js` seam, never `fetch`.** `vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }))`; `mockReset()` in `beforeEach`.
 3. **`await` every interaction** (`await fireEvent.…`) — Svelte 5 updates the DOM asynchronously after state changes. Skipping the await is the #1 cause of flaky tests.
 4. **Use `findBy*` / `waitFor` after anything async** (a mocked api call, a `$effect`), not synchronous `getBy*`.
-5. **`children` snippets need a harness.** A component using `{@render children()}` can't take a snippet from a plain `.js` test; wrap it in an underscore-prefixed `_<Name>Harness.svelte` (not collected by the `*.test.js` glob, just imported).
+5. **`children` snippets need a harness — or `createRawSnippet`.** A component using `{@render children()}` can't take an ordinary snippet from a plain `.js` test. For static children, build one inline with `createRawSnippet` (see `tests/components/Modal.test.js`). When the children need real markup or props, wrap the component in an underscore-prefixed `_<Name>Harness.svelte` (not collected by the `*.test.js` glob, just imported) — see `tests/components/time/_BlepLogTableHarness.svelte`.
 6. **Timers:** components that tick live durations use `vi.useFakeTimers()` / `vi.advanceTimersByTimeAsync(...)`; restore with `vi.useRealTimers()` in `afterEach`.
 7. **Drag-and-drop:** jsdom has no real DnD. Dispatch `dragstart`/`dragover`/`drop` events with a stub `dataTransfer`, and assert the store action / callback fired with the right args — not pixel movement.
 8. **Module-level mutable state:** for modules/stores holding state between calls (e.g. `stores/schedule.js`'s offset, `lib/paymentAccounts.js`'s cache), reset between tests — `vi.resetModules()` + dynamic `import`, or a purpose-built invalidate export.
@@ -98,7 +98,7 @@ Every test follows one of these; copy the matching committed example.
 |---|---|---|
 | **Pure JS module** | `lib/` functions, pure transforms | `tests/lib/linkify.test.js`, `tests/lib/format.test.js` |
 | **Store** | `stores/` state + actions | `tests/stores/viewMode.test.js`; api-backed: `tests/stores/auth.test.js`; module-reset: `tests/stores/schedule.test.js` |
-| **Interaction component** (no network) | toggles, local state, events | `tests/components/Accordion.test.js` (+ `_AccordionHarness.svelte`) |
+| **Interaction component** (no network) | toggles, local state, events | `tests/components/Modal.test.js` |
 | **Async / network component** | hits `api.js`, async rendering | `tests/components/ContactPicker.test.js` |
 
 ## Coverage status
