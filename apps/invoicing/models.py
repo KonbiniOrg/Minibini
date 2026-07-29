@@ -114,6 +114,17 @@ class Invoice(models.Model):
                 and self.status in (Invoice.STATUS_PAID, Invoice.STATUS_CANCELLED)):
             self._maybe_complete_job()
 
+        # A dead invoice releases its atom claims — see
+        # apps/invoicing/claims.py for which statuses and why. Placed here
+        # rather than in InvoiceService.cancel so every writer is covered,
+        # matching Estimate.save() / ChangeOrder.save() on the other lens.
+        if old_status and old_status != self.status:
+            from apps.invoicing.claims import (
+                DEAD_INVOICE_STATUSES, release_invoice_claims,
+            )
+            if self.status in DEAD_INVOICE_STATUSES:
+                release_invoice_claims(self)
+
     def _maybe_complete_job(self):
         """Delegate to JobService.maybe_complete_if_resolved.
 

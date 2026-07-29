@@ -288,7 +288,17 @@ Billing mechanics and money-record lifecycle.
   invoices (`canSeeRevise`), shipped as a placeholder — there is no invoice-revision backend
   (no `InvoiceService.revise`, no supersede/version chain like estimates have). Decide
   whether invoices need a revise flow at all (vs. cancel + new invoice) and, if so, build the
-  backend + wire the button. _Done when:_ either the placeholder is backed by a working
+  backend + wire the button.
+  **Groundwork already laid** (_2026-07-28_): `superseded` is in
+  `DEAD_INVOICE_STATUSES` (`apps/invoicing/claims.py`), so entering it already
+  releases the invoice's atom claims and `InvoiceClaimService._live_sources`
+  already excludes it — backend and the SPA's `INVOICE_DEAD_STATUSES` agree.
+  **The one thing a revise flow must get right:** move or re-point the
+  `InvoiceLineItemSource` rows onto the new revision *before* flipping the
+  parent to `superseded`, exactly as `EstimateService.revise_estimate` does.
+  The release fires on that transition and would otherwise delete rows the
+  revision still wanted.
+  _Done when:_ either the placeholder is backed by a working
   invoice-revise flow, or it's removed with a recorded decision that invoices don't revise.
 
 - **Voided-not-vanished for post-approval Expenses and BillPayments.** — _added 2026-07-04 (deferred from the deletion-doctrine pass)_

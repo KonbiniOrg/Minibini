@@ -1176,9 +1176,12 @@ being deducted; see `invoicing-and-expenses.md` §Deposits).
   For `deposit` rows this is the mechanism that makes a deposit credit
   **unsplittable**: a given deposit line can be claimed by at most one
   deduction line at a time.
-- **Cancellation releases the claim** (2026-07-28): `InvoiceService.cancel`
-  deletes the invoice's source rows in the same transaction as the status
-  write, so the atoms are genuinely re-claimable. Previously the rows
+- **Death releases the claim** (2026-07-28): entering `cancelled` **or**
+  `superseded` deletes the invoice's source rows (`Invoice.save()` →
+  `claims.release_invoice_claims`; the pair is `DEAD_INVOICE_STATUSES`), so
+  the atoms are genuinely re-claimable. `superseded` has no writer yet — it
+  is covered ahead of the invoice-revision flow, which must move its rows
+  *before* superseding the parent, as `revise_estimate` does. Previously the rows
   survived and only the readers skipped them, so the wizard pool offered an
   atom that this constraint then refused (409 `atoms_already_claimed`, with
   no way to see which dead invoice held it). The line items themselves are

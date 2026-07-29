@@ -111,6 +111,66 @@ class CancelReleasesClaimsTest(TestCase):
             source_pk=other_task.pk).exists())
 
 
+class DeadInvoiceStatusTest(CancelReleasesClaimsTest):
+    """The release lives in Invoice.save(), not InvoiceService.cancel, so it
+    covers every writer — and covers `superseded` ahead of the invoice-revision
+    flow that will start writing it."""
+
+    def test_release_fires_on_a_direct_save_not_just_the_service(self):
+        inv = self._open_invoice_claiming_task()
+        inv.status = Invoice.STATUS_CANCELLED
+        inv.save()
+        self.assertEqual(InvoiceLineItemSource.objects.filter(
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk).count(), 0)
+
+    def test_superseding_an_invoice_releases_its_claims(self):
+        # No writer sets superseded yet (there is no invoice-revision flow),
+        # but the invariant "a dead document holds no claims" should not wait
+        # for one. Whichever way a future revise works — moving rows like
+        # revise_estimate, or re-claiming fresh — the superseded invoice must
+        # end up holding none.
+        inv = self._open_invoice_claiming_task()
+        inv.status = Invoice.STATUS_SUPERSEDED
+        inv.save()
+        self.assertEqual(InvoiceLineItemSource.objects.filter(
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk).count(), 0)
+
+    def test_atom_is_reclaimable_after_supersede(self):
+        inv = self._open_invoice_claiming_task()
+        inv.status = Invoice.STATUS_SUPERSEDED
+        inv.save()
+        fresh = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceWizardService.add_atoms_to_new_line_item(
+            fresh, [{'type': 'task', 'id': self.task.pk}])
+        self.assertEqual(li.sources.count(), 1)
+
+    def test_a_live_status_change_keeps_claims(self):
+        # draft -> open -> paid must not release anything.
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceWizardService.add_atoms_to_new_line_item(
+            inv, [{'type': 'task', 'id': self.task.pk}])
+        inv.status = Invoice.STATUS_OPEN
+        inv.save()
+        inv.status = Invoice.STATUS_PAID
+        inv.save()
+        self.assertEqual(InvoiceLineItemSource.objects.filter(
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk).count(), 1)
+
+    def test_superseded_claims_are_excluded_from_the_live_lookup(self):
+        # Belt-and-braces for rows written before the release existed: the
+        # claim reader must agree with the SPA's INVOICE_DEAD_STATUSES, which
+        # has always counted superseded as dead.
+        from apps.invoicing.claims import InvoiceClaimService
+        inv = self._open_invoice_claiming_task()
+        Invoice.objects.filter(pk=inv.pk).update(
+            status=Invoice.STATUS_SUPERSEDED)   # bypasses save() on purpose
+        self.assertFalse(InvoiceClaimService.is_invoiced(
+            InvoiceLineItemSource.SOURCE_TASK, self.task.pk))
+
+
 class CancelDepositDiscriminatorTest(TestCase):
     """A deposit CREDIT line is told apart from a deposit CHARGE line by the
     presence of a SOURCE_DEPOSIT row. Releasing claims on cancel removes that

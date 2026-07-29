@@ -62,7 +62,7 @@ invoice row — see `docs/designs/LATER.md` for the N+1 note.
 |---|---|
 | `draft` | Editable. Wizard works against this state. Default on create. |
 | `open` | Sent to customer; awaiting payment. Set by the send-to-customer flow (`InvoiceEmailService.send_invoice` flips `draft → open` on send success, stamping `sent_date`). Payment polling treats `open` (and `partly-paid`) as its input states and promotes `open → paid` / `partly-paid` automatically. |
-| `cancelled` | Terminal. Frees its claimed atoms **physically**: `InvoiceService.cancel` deletes the invoice's `InvoiceLineItemSource` rows in the same transaction as the status write (2026-07-28), so a released atom can actually be re-claimed. Before that the rows survived and only the *readers* skipped them, so the pool offered an atom the `(source_type, source_pk)` unique constraint then refused. Line items stay put — the void invoice keeps its frozen snapshot, exactly like a superseded estimate. Set via `InvoiceService.cancel` (API: `InvoiceViewSet.cancel`), which loads the invoice and calls `.save()` so the completion gate fires — a cancelled invoice counts as resolved, so cancelling the last unresolved invoice on a `work_complete`, all-shipped job auto-completes it. |
+| `cancelled` | Terminal. Frees its claimed atoms **physically**: entering it deletes the invoice's `InvoiceLineItemSource` rows (`Invoice.save()` → `claims.release_invoice_claims`, 2026-07-28), so a released atom can actually be re-claimed. Before that the rows survived and only the *readers* skipped them, so the pool offered an atom the `(source_type, source_pk)` unique constraint then refused. Line items stay put — the void invoice keeps its frozen snapshot, exactly like a rejected estimate. Set via `InvoiceService.cancel` (API: `InvoiceViewSet.cancel`), which loads the invoice and calls `.save()` so the completion gate fires — a cancelled invoice counts as resolved, so cancelling the last unresolved invoice on a `work_complete`, all-shipped job auto-completes it. |
 | `superseded` | Defined in choices, no current transition. |
 | `partly-paid` | Set by `QBOPaymentPollingService.poll_all` when QBO reports a partial payment (some balance paid, some outstanding). |
 | `paid` | Set by the polling service when QBO reports the invoice fully paid (balance zero); also reachable by any other path that writes `STATUS_PAID`. When written, `Invoice.save()` stamps `closed_date` (if unset) and calls `_maybe_complete_job()` (also fired on entry to `cancelled`), which delegates to `JobService.maybe_complete_if_resolved(job)` — the single completion gate (see "All-shipped completion gate" below). The gate completes the job (via `JobService.update_job`) only if the job's **work is finished** (`work_complete`, or `approved`/`in_progress` with ≥1 task, all terminal — the loose-material-stranded case) **and** all of the job's invoices are resolved (paid or cancelled) **and** every Deliverable on the job is fully picked up. A job whose work is open (including a deposit-invoiced task-less job) is left untouched. Before the walk it releases any loose pending Materials on the job — `JobService.release_loose_materials`; claimed ones become `released` history, unclaimed delete — so the `work_complete` materials gate cannot strand the job on this unattended path. A `cancelled` job is never auto-completed (the state machine forbids `cancelled → completed`). |
@@ -104,18 +104,29 @@ InvoiceClaimService.claims_for_atoms(source_type, pks) → dict
     # Same shape, scoped to a specific list of PKs of one type.
 ```
 
-`_live_sources()` excludes sources whose invoice is `cancelled` — a
-cancelled invoice frees its claimed atoms back to the pool. Since
-2026-07-28 the exclusion is belt-and-braces: `InvoiceService.cancel`
-deletes those rows outright, so there are normally none left to exclude.
-(The filter still guards rows written before that change.)
+`_live_sources()` excludes sources whose invoice is in
+`DEAD_INVOICE_STATUSES` — `cancelled` **or** `superseded`. Since
+2026-07-28 that exclusion is belt-and-braces: entering either status
+deletes the rows outright (below), so there are normally none left to
+exclude. The filter still guards rows written before that change, and any
+written by a path that bypasses `save()` (`QuerySet.update`).
 
-**Not extended to `superseded`.** `Invoice.STATUS_SUPERSEDED` exists in
-the schema but nothing writes it — there is no invoice-revision flow (see
-`LATER.md`, "Invoice revisions"). If one is built, it must release or
-re-point claims the way `revise_estimate` does, *and* `_live_sources()`
-must exclude superseded — the SPA's `INVOICE_DEAD_STATUSES` already
-treats it as dead, so the two would otherwise disagree.
+**The release lives in `Invoice.save()`**, not in `InvoiceService.cancel`,
+so every writer is covered — matching `Estimate.save()` /
+`ChangeOrder.save()` on the other lens (`estimates-and-prices.md` §6.2).
+
+**`superseded` is included ahead of its writer.** Nothing sets it yet —
+there is no invoice-revision flow (see `LATER.md`, "Invoice revisions") —
+but the invariant "a dead document holds no claims" shouldn't wait for
+one, and the SPA's `INVOICE_DEAD_STATUSES` has always counted it dead, so
+including it keeps the two ends in agreement. **Note for whoever builds
+invoice revision:** move or re-point the source rows onto the new revision
+*before* flipping the parent to `superseded`, the way
+`EstimateService.revise_estimate` does — the release fires on that
+transition and would otherwise drop rows the revision still wanted.
+
+`paid` is emphatically not a dead status: a paid invoice's claims are what
+stop the same atom being billed twice.
 
 ---
 
