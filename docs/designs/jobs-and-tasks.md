@@ -811,8 +811,17 @@ viewset, `ValidationError` to HTTP 400.
 | Public method | Purpose |
 |---|---|
 | `create_historical(actor, task, start_time, end_time, target_user=None)` | Validated historical create; 30h window + `can_manage_time` rules |
-| `update(blep, actor, **fields)` | Update `start_time`, `end_time`, optionally `user`; validates ownership, window, and overlap |
-| `delete(blep, actor)` | Same authorization rules, **plus the invoiced-task freeze**: refused for every actor when the blep's task is on a live invoice — billed actuals never change basis after the fact. Estimate claims don't block (estimates bill `est_qty`). |
+| `update(blep, actor, **fields)` | Update `start_time`, `end_time`, optionally `user`; validates ownership, window, and overlap, **plus the invoiced-task freeze** (below) |
+| `delete(blep, actor)` | Same authorization rules, **plus the invoiced-task freeze** |
+
+**The invoiced-task freeze** applies to `update` *and* `delete` alike
+(update joined it 2026-07-28): both are refused for every actor — own-window
+or `can_manage_time` — when the blep's task is on a live invoice. Moving a
+blep's times changes an ELAPSED_TIME task's actuals exactly as deleting it
+does, so editing is not a lesser act than deleting here; billed actuals never
+change basis after the fact. The freeze keys on **invoiced**, not on
+task-complete, so a finished but unbilled task's time stays correctable.
+Estimate claims never block (estimates bill `est_qty`).
 
 Validation rules enforced inside `BlepService`:
 

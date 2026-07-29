@@ -773,11 +773,15 @@ Depends on: Task, User.
   §1.2a for the full invariant, the auto-clock-in / clock-out behaviour, and
   the backfill. Self-edit window for direct user blep edits is **30h** (matches
   the shift self-edit window — §1.2a).
-- **Deletion (invoiced-task freeze)**: `BlepService.delete` refuses — for
-  every actor, own-window or `can_manage_time` — when the blep's task is on a
-  live invoice: billed actuals are frozen (deleting a blep under an invoiced
-  ELAPSED_TIME task would change the basis of a charged number). Estimate
-  claims never block (estimates bill `est_qty`).
+- **Edit and deletion (invoiced-task freeze)**: `BlepService.update` and
+  `BlepService.delete` both refuse — for every actor, own-window or
+  `can_manage_time` — when the blep's task is on a live invoice: billed
+  actuals are frozen (editing or deleting a blep under an invoiced
+  ELAPSED_TIME task would change the basis of a charged number). `update`
+  joined the freeze 2026-07-28; it had been an oversight that only `delete`
+  carried it, though both move the same actuals. The freeze keys on
+  **invoiced**, not on task-complete — a complete but unbilled task's time
+  stays correctable. Estimate claims never block (estimates bill `est_qty`).
 
 ---
 

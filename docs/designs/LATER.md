@@ -283,17 +283,6 @@ The CO surface and its estimate-parallel code.
 
 Billing mechanics and money-record lifecycle.
 
-- **Re-billing Task actuals across multiple invoices.** — _added 2026-06-02_
-  Invoices can be raised before a job is finished (e.g. progress billing). If invoice #1 is
-  finalized and bills the actuals of Task A, then Task A gets more work logged, and later
-  invoice #2 is generated for the same job, it's unclear how Task A's actuals are handled on
-  the second invoice — does it re-bill the full actual (double-billing the earlier portion),
-  bill only the delta since invoice #1, or refuse the atom as already-claimed? The atom-claim
-  model (`InvoiceLineItemSource`) tracks which invoice claimed an atom, but a Task whose
-  actuals *grew* after being billed has no defined delta-billing behavior. Decide and enforce
-  the rule (likely: disallow billing anything on an incomplete Task).
-  _Done when:_ there is no conflict or confusion between items billed on an earlier vs on a later invoice.
-
 - **Invoice revisions — back the "Revise (coming soon)" placeholder.** — _added 2026-06-04_
   `InvoiceDetailPage.svelte` shows a **disabled** "Revise (coming soon)" button on sent
   invoices (`canSeeRevise`), shipped as a placeholder — there is no invoice-revision backend

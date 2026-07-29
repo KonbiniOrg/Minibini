@@ -159,6 +159,66 @@ class BlepDeletionGuardTests(DeletionGuardBase):
             BlepService.delete(blep, self.manager)
         self.assertTrue(Blep.objects.filter(pk=blep.pk).exists())
 
+    def _past_blep(self, task):
+        """A closed blep safely in the past, inside an enclosing shift.
+
+        Both matter for the edit tests: the future-end check and the
+        shift-enclosure check would otherwise raise first and mask whether the
+        invoiced-freeze is the thing doing the refusing.
+        """
+        from apps.core.models import Shift
+        now = timezone.now().replace(microsecond=0)
+        Shift.objects.create(
+            user=self.manager,
+            start_time=now - timezone.timedelta(hours=4),
+            end_time=now - timezone.timedelta(minutes=15))
+        return Blep.objects.create(
+            user=self.manager, task=task,
+            start_time=now - timezone.timedelta(hours=3),
+            end_time=now - timezone.timedelta(hours=2))
+
+    def test_blep_edit_on_invoiced_task_refuses_even_for_manager(self):
+        # Same reasoning as delete: widening or narrowing a blep under an
+        # invoiced task silently moves the actuals behind a number already
+        # charged. Editing is not a lesser act than deleting here.
+        task = self._task()
+        blep = self._past_blep(task)
+        self._invoice_claim(InvoiceLineItemSource.SOURCE_TASK, task.pk)
+        original_end = blep.end_time
+        with self.assertRaises(ValidationError) as ctx:
+            BlepService.update(
+                blep, self.manager,
+                end_time=original_end + timezone.timedelta(hours=1))
+        # Assert the REASON, not merely that something raised — the
+        # future-end and job-status checks would also raise here.
+        self.assertIn('frozen', str(ctx.exception))
+        blep.refresh_from_db()
+        self.assertEqual(blep.end_time, original_end)
+
+    def test_blep_edit_on_uninvoiced_complete_task_allowed(self):
+        # The freeze keys on INVOICED, not on complete: a finished but
+        # unbilled task's time stays correctable.
+        task = self._task()
+        task.status = Task.STATUS_COMPLETE
+        task.save()
+        blep = self._past_blep(task)
+        new_end = blep.end_time + timezone.timedelta(minutes=30)
+        BlepService.update(blep, self.manager, end_time=new_end)
+        blep.refresh_from_db()
+        self.assertEqual(blep.end_time, new_end)
+
+    def test_blep_edit_on_estimate_claimed_task_allowed(self):
+        # Estimate claims never freeze time — estimates bill est_qty.
+        task = self._task()
+        blep = self._past_blep(task)
+        self._claim(
+            self._estimate(status=Estimate.STATUS_OPEN),
+            EstimateLineItemSource.SOURCE_TASK, task.pk)
+        new_end = blep.end_time + timezone.timedelta(minutes=30)
+        BlepService.update(blep, self.manager, end_time=new_end)
+        blep.refresh_from_db()
+        self.assertEqual(blep.end_time, new_end)
+
     def test_blep_on_estimate_claimed_task_deletes(self):
         # Estimate claims don't freeze time — estimates bill est_qty.
         task = self._task()
