@@ -788,6 +788,23 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ each bespoke table either adopts the house style or carries
   a comment naming the reason.
 
+- **`ContactListPage.loadAll()` has no stale-response guard — suspected cause of a flaky e2e.** — _added 2026-07-28_
+  `e2e/specs/contacts/import-skip-report.spec.js` fails intermittently (~2 of 4
+  full-suite runs; always passes run alone or with only the contacts specs) at
+  the step after the letter-index click: `getByRole('link', {name: 'Zenith
+  Imports E2E'})` not found. Leading hypothesis, **not yet confirmed**: two
+  `loadAll()` fetches are in flight at once — `ContactsImportPanel`'s
+  `onCommitted={loadAll}` fires on Apply, then clicking "Z" sets `letterFilter`
+  and the `$effect` fires another — and nothing sequences them. The earlier
+  unfiltered response can land last and overwrite `allItems`, leaving the A-page
+  rendered while the filter says Z. Under load the suite is slow enough for the
+  responses to invert. If that's right it's a real (if narrow) user-facing bug,
+  not just test flake: any fast filter change during an in-flight load can show
+  the wrong list. Fix shape: a request epoch/token in `loadAll` that discards
+  responses older than the latest issued (or an abort on supersede).
+  _Done when:_ the race is confirmed or ruled out; if confirmed, `loadAll`
+  ignores superseded responses and the spec stops flaking in full-suite runs.
+
 - **Four schedule tests are midnight-flaky.** — _added 2026-07-08 (found running the full suite just after midnight)_
   `tests.test_api_schedule`: `test_lane_bar_carries_job_number_and_name`,
   `test_work_complete_task_present_in_worker_lane`,

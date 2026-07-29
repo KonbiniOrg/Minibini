@@ -171,9 +171,14 @@
           onclick={() => toggleTag(tag.tag_id)}
         >{tag.name}</button>
         {#if $canManageJobs}
+          <!-- aria-label, not title alone: the button's only content is the ×
+               glyph, which would otherwise BE its accessible name (a screen
+               reader announces "times"). `title` is a last-resort fallback in
+               the accname algorithm and never overrides content. -->
           <button
             type="button"
             class="tag-chip-delete"
+            aria-label={`Delete "${tag.name}" everywhere`}
             title={`Delete "${tag.name}" everywhere`}
             onclick={() => handleDeleteTag(tag)}
           >×</button>
