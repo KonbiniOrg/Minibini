@@ -1160,12 +1160,24 @@ being deducted; see `invoicing-and-expenses.md` §Deposits).
   **source_pk**: integer — for `deposit`, the claimed deposit
   `InvoiceLineItem`'s pk rather than a Job-atom pk.
 - `unique_together = [('source_type', 'source_pk')]` — global. An atom can
-  be billed by at most one Invoice line, ever. Prevents double-billing
-  across invoice revisions. For `deposit` rows this is the mechanism that
-  makes a deposit credit **unsplittable**: a given deposit line can be
-  claimed by at most one deduction line, ever (cancelling the claiming
-  invoice does not delete the row — see the cancelled-claims entry in
-  `docs/designs/LATER.md`).
+  be billed by at most one *live* Invoice line. Prevents double-billing.
+  For `deposit` rows this is the mechanism that makes a deposit credit
+  **unsplittable**: a given deposit line can be claimed by at most one
+  deduction line at a time.
+- **Cancellation releases the claim** (2026-07-28): `InvoiceService.cancel`
+  deletes the invoice's source rows in the same transaction as the status
+  write, so the atoms are genuinely re-claimable. Previously the rows
+  survived and only the readers skipped them, so the wizard pool offered an
+  atom that this constraint then refused (409 `atoms_already_claimed`, with
+  no way to see which dead invoice held it). The line items themselves are
+  kept — a cancelled invoice stays a frozen snapshot, the same shape a
+  superseded estimate takes after `revise_estimate` re-points its rows.
+- Because a released deposit claim leaves no row behind,
+  `InvoiceLineItem.is_deposit_line` cannot rest on row-absence alone to tell
+  a deposit **charge** from a **credit**; it also requires
+  `total_amount >= 0`. A charge is money taken (positive), a credit gives it
+  back (negative), so the sign identifies the line independently of its
+  claim's lifecycle.
 
 ---
 

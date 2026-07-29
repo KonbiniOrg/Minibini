@@ -177,10 +177,19 @@ class InvoiceLineItem(BaseLineItem):
         Invoice queryset actually serves this — `.filter()` on a related
         manager always issues a fresh query even when the manager was
         prefetched; only a bare `.all()` iteration consults the cache.
+
+        The amount test is not redundant with the source test. Cancelling an
+        invoice releases its claim rows (InvoiceService.cancel), so a
+        cancelled invoice's credit line has no SOURCE_DEPOSIT row left and
+        the source test alone would flip it to a *charge* — reporting
+        is_deposit on a void invoice that only ever credited one. A charge is
+        money taken (positive); a deduction gives it back (negative), so the
+        sign identifies the line independently of its claim's lifecycle.
         """
         return bool(
             self.accounting_category_id
             and self.accounting_category.is_deposit
+            and self.total_amount >= 0
             and not any(s.source_type == InvoiceLineItemSource.SOURCE_DEPOSIT
                         for s in self.sources.all())
         )

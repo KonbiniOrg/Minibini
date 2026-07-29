@@ -347,20 +347,6 @@ Billing mechanics and money-record lifecycle.
   expense is ready to bill as soon as it exists. Revisit only if a
   "not ready to bill" expense state is ever needed.
 
-- **Cancelled invoices keep their atom-claim rows.** — _added 2026-07-25_
-  `InvoiceService.cancel` only flips status; `InvoiceLineItemSource` rows
-  survive. The pool shows such atoms (incl. deposit credits) as available
-  — the claim exclusion is logical (`get_source_pool`'s claim lookup
-  excludes cancelled-invoice sources) — but re-pulling one hits the DB
-  unique constraint → 409 `atoms_already_claimed`. The 409 body carries
-  only `detail`/`code`/`atom_ids` — no `claiming_invoice_number` (that
-  field exists only in the pool's `claimed_by_other` state, and a
-  cancelled invoice's claim never reaches it, by the same exclusion) — so
-  the user sees a bare "already claimed" error with no way to see which
-  (cancelled) invoice actually still holds the row. Pre-existing for
-  task/material/fee atoms; deposits inherit it.
-  _Done when:_ cancel releases claims (or re-claim reuses the dead row).
-
 - **`AccountingCategory.adjustment_target_categories` M2M N+1 on invoice/estimate detail.** — _added 2026-07-25_
   Pre-existing, rediscovered twice during the deposits work: once via the
   `is_referenced()` freeze-check gap (fixed — see

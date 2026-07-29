@@ -183,12 +183,31 @@ class InvoiceService:
         StatusTransitionMixin, so it is accepted here but not persisted on
         the invoice itself.
         """
+        from django.db import transaction
+        from apps.invoicing.models import InvoiceLineItemSource
         try:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
             raise NotFoundError(f'Invoice {invoice_pk} not found')
-        invoice.status = Invoice.STATUS_CANCELLED
-        invoice.save()
+        with transaction.atomic():
+            invoice.status = Invoice.STATUS_CANCELLED
+            invoice.save()
+            # Release the atom claims. A cancelled invoice is void, so its
+            # atoms must be billable again. Every claim READER already treats
+            # a cancelled invoice's sources as dead (InvoiceClaimService.
+            # _live_sources, get_source_pool's claims query, the SPA's
+            # depositCredits.js), but the rows themselves used to survive, so
+            # the pool offered an atom that the (source_type, source_pk)
+            # unique constraint then refused — a 409 with no way to see which
+            # dead invoice still held it.
+            #
+            # Deleting the rows (rather than teaching every reader to skip
+            # them) mirrors the estimate side: revise_estimate re-points its
+            # source rows so a superseded estimate keeps its line items as a
+            # frozen snapshot but holds no claims. The cancelled invoice's
+            # line items likewise stay put — only the claims go.
+            InvoiceLineItemSource.objects.filter(
+                invoice_line_item__invoice=invoice).delete()
         return invoice
 
     @staticmethod
