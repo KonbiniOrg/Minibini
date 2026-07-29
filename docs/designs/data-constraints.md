@@ -886,9 +886,17 @@ Polymorphic row joining a line item to a Job atom (Task, Material, or Fee).
 - **source_type**: `task`, `material`, or `fee`
 - **source_pk**: integer pointing at the atom
 - `unique_together = [('source_type', 'source_pk')]` — an atom can be
-  referenced by at most one estimate line item, ever. On revision,
+  referenced by at most one estimate line item at a time. On revision,
   `revise_estimate` **moves** the source rows to the new revision (rather
   than duplicating), so the live estimate is the one lens over the atom.
+- **A dead document releases its claims** (2026-07-28): entering `rejected`
+  or `expired` deletes the estimate's source rows (`Estimate.save()` →
+  `claims.release_estimate_claims`). Both are *terminal*, so without this
+  the atoms were locked out of every future estimate on a still-live job.
+  `accepted` deliberately keeps its rows — they ARE the agreement record
+  (`compose_agreement`, `ChangeOrderService.struck_atom_keys` read them);
+  `superseded` already holds none. The line items stay either way, so a
+  rejected estimate remains a readable snapshot of what was offered.
 - The atom's `job` must match the line item's estimate's `job`
   (validator-enforced — `validate_data.check_estimate_source_job_consistency`;
   the invoice side has the parallel `check_invoice_source_job_consistency`).
@@ -958,6 +966,10 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - **source_type**: `task` | `material` | `fee`; **source_pk**: positive int
 - `unique_together (source_type, source_pk)` — an atom is claimed by at most one CO line
 - Rows exist only for add/replace lines of accepted COs; purged when the referenced atom is deleted by a later CO's remove/replace.
+- **A dead CO releases its claims** (2026-07-28): entering `rejected` or
+  `expired` deletes the CO's source rows (`ChangeOrder.save()` →
+  `claims.release_change_order_claims`) — the same rule and rationale as the
+  estimate lens above.
 
 See `docs/designs/estimates-and-prices.md`.
 

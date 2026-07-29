@@ -157,6 +157,15 @@ class Estimate(models.Model):
         # Check if status changed and handle updates. (Wizard editability is
         # derived from the live estimate's status at read time.)
         if old_status and old_status != self.status:
+            # A dead document releases its atom claims — see
+            # apps/estimates/claims.py for which statuses and why. Placed in
+            # save() so every writer is covered (portal decline, expiry
+            # sweep, status actions, admin).
+            from apps.estimates.claims import (
+                DEAD_DOCUMENT_STATUSES, release_estimate_claims,
+            )
+            if self.status in DEAD_DOCUMENT_STATUSES:
+                release_estimate_claims(self)
             self._maybe_update_job_status(old_status)
 
     def _maybe_update_job_status(self, old_status):
@@ -329,6 +338,13 @@ class ChangeOrder(models.Model):
             self.change_order_number = f'{self.estimate.estimate_number}-CO{n}'
         self.full_clean()
         super().save(*args, **kwargs)
+        # A dead CO releases its atom claims, same rule as Estimate above.
+        if old_status and old_status != self.status:
+            from apps.estimates.claims import (
+                DEAD_DOCUMENT_STATUSES, release_change_order_claims,
+            )
+            if self.status in DEAD_DOCUMENT_STATUSES:
+                release_change_order_claims(self)
 
     def __str__(self):
         return self.change_order_number or f'ChangeOrder {self.pk}'
