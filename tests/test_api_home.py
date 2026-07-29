@@ -127,13 +127,20 @@ class HomeEndpointTest(FixtureTestCase):
         response = self.client.get('/api/home/')
         self.assertEqual(response.status_code, 403)
 
+    def _blep(self, task, user, start, end=None):
+        return Blep.objects.create(user=user, task=task,
+                                   start_time=start, end_time=end)
+
     def test_home_returns_shape(self):
         response = self.client.get('/api/home/')
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertIn('assigned_tasks', data)
-        self.assertIn('recent_jobs', data)
+        self.assertIn('current_tasks', data)
+        self.assertIn('recent_tasks', data)
         self.assertIn('recent_days', data)
+        # Retired keys must be gone.
+        self.assertNotIn('assigned_tasks', data)
+        self.assertNotIn('recent_jobs', data)
 
     def test_recent_days_reads_activity_recent_days(self):
         """The home lists' look-back window comes from activity_recent_days
@@ -148,14 +155,16 @@ class HomeEndpointTest(FixtureTestCase):
         response = self.client.get('/api/home/')
         self.assertEqual(response.json()['recent_days'], 3)
 
-    def test_assigned_tasks_includes_job_tasks(self):
-        self._make_task('WO task', assignee=self.user, worker_queue=1)
+    # --- current_tasks -----------------------------------------------------
 
-        response = self.client.get('/api/home/')
-        names = [t['name'] for t in response.json()['assigned_tasks']]
-        self.assertIn('WO task', names)
+    def test_current_tasks_includes_my_assigned(self):
+        self._make_task('Mine', assignee=self.user, worker_queue=1)
+        data = self.client.get('/api/home/').json()['current_tasks']
+        by_name = {t['name']: t for t in data}
+        self.assertIn('Mine', by_name)
+        self.assertTrue(by_name['Mine']['assigned_to_me'])
 
-    def test_assigned_tasks_excludes_completed_and_cancelled(self):
+    def test_current_tasks_excludes_completed_and_cancelled(self):
         self._make_task('Pending task', status=Task.STATUS_PENDING,
                         assignee=self.user, worker_queue=1)
         self._make_task('Blocked task', status=Task.STATUS_BLOCKED,
@@ -165,104 +174,125 @@ class HomeEndpointTest(FixtureTestCase):
         self._make_task('Cancelled task', status=Task.STATUS_CANCELLED,
                         assignee=self.user, worker_queue=4)
 
-        response = self.client.get('/api/home/')
-        names = [t['name'] for t in response.json()['assigned_tasks']]
+        names = [t['name'] for t in self.client.get('/api/home/').json()['current_tasks']]
         self.assertIn('Pending task', names)
         self.assertIn('Blocked task', names)
         self.assertNotIn('Done task', names)
         self.assertNotIn('Cancelled task', names)
 
-    def test_assigned_tasks_excludes_other_users(self):
+    def test_current_tasks_excludes_unrelated_other_user_tasks(self):
+        """A task assigned to someone else that I have never worked stays out."""
         self._make_task('Mine', assignee=self.user, worker_queue=1)
         self._make_task('Theirs', assignee=self.other, worker_queue=1)
 
-        response = self.client.get('/api/home/')
-        names = [t['name'] for t in response.json()['assigned_tasks']]
+        names = [t['name'] for t in self.client.get('/api/home/').json()['current_tasks']]
         self.assertEqual(names, ['Mine'])
 
-    def test_assigned_tasks_ordered_by_worker_queue(self):
+    def test_current_tasks_mine_ordered_by_worker_queue(self):
         self._make_task('Third', assignee=self.user, worker_queue=3)
         self._make_task('First', assignee=self.user, worker_queue=1)
         self._make_task('Second', assignee=self.user, worker_queue=2)
 
-        response = self.client.get('/api/home/')
-        names = [t['name'] for t in response.json()['assigned_tasks']]
+        names = [t['name'] for t in self.client.get('/api/home/').json()['current_tasks']]
         self.assertEqual(names, ['First', 'Second', 'Third'])
 
-    def test_assigned_tasks_include_job_info(self):
+    def test_current_tasks_include_job_info_and_flag(self):
         self._make_task('T', assignee=self.user, worker_queue=1)
-        response = self.client.get('/api/home/')
-        task_data = response.json()['assigned_tasks'][0]
+        task_data = self.client.get('/api/home/').json()['current_tasks'][0]
         self.assertEqual(task_data['status'], Task.STATUS_PENDING)
-        self.assertIn('job', task_data)
+        self.assertTrue(task_data['assigned_to_me'])
         self.assertEqual(task_data['job']['id'], self.job.pk)
         self.assertEqual(task_data['job']['job_number'], 'JOB-HOME-A')
         self.assertEqual(task_data['job']['name'], 'Alpha Job')
         self.assertNotIn('work_order', task_data)
 
-    def test_recent_jobs_from_user_bleps(self):
-        task = self._make_task('T', assignee=self.user, worker_queue=1)
+    def test_current_tasks_includes_others_task_with_my_open_blep_at_bottom(self):
+        """A task assigned to another worker that I have an OPEN blep on shows
+        up flagged not-mine and sorted after my own tasks."""
+        self._make_task('Mine', assignee=self.user, worker_queue=1)
+        theirs = self._make_task('Theirs', assignee=self.other, worker_queue=1)
+        self._blep(theirs, self.user, timezone.now())  # open (no end)
+
+        data = self.client.get('/api/home/').json()['current_tasks']
+        names = [t['name'] for t in data]
+        self.assertEqual(names, ['Mine', 'Theirs'])  # others last
+        by_name = {t['name']: t for t in data}
+        self.assertFalse(by_name['Theirs']['assigned_to_me'])
+
+    def test_current_tasks_includes_others_task_with_recent_blep_windowed(self):
+        """A recent (but closed) blep on someone else's task pulls it in only
+        while it is inside the look-back window."""
+        theirs = self._make_task('Theirs', assignee=self.other, worker_queue=1)
         now = timezone.now()
-        Blep.objects.create(user=self.user, task=task,
-                            start_time=now - timedelta(hours=1),
-                            end_time=now - timedelta(minutes=30))
-
-        response = self.client.get('/api/home/')
-        jobs = response.json()['recent_jobs']
-        self.assertEqual(len(jobs), 1)
-        self.assertEqual(jobs[0]['id'], self.job.pk)
-        self.assertEqual(jobs[0]['job_number'], 'JOB-HOME-A')
-        self.assertIn('last_worked_at', jobs[0])
-
-    def test_recent_jobs_excludes_other_users(self):
-        task = self._make_task('T')
-        Blep.objects.create(user=self.other, task=task,
-                            start_time=timezone.now())
-        response = self.client.get('/api/home/')
-        self.assertEqual(response.json()['recent_jobs'], [])
-
-    def test_recent_jobs_distinct_and_ordered(self):
-        job_b = Job.objects.create(
-            job_number='JOB-HOME-B', name='Bravo', status='approved',
-            contact=self.contact,
-        )
-        task_a = self._make_task('A')
-        task_b = self._make_task('B', job=job_b)
-
-        now = timezone.now()
-        # Older blep on job A
-        Blep.objects.create(user=self.user, task=task_a,
-                            start_time=now - timedelta(hours=5))
-        # Two bleps on job B, one newer than job A's
-        Blep.objects.create(user=self.user, task=task_b,
-                            start_time=now - timedelta(hours=4))
-        Blep.objects.create(user=self.user, task=task_b,
-                            start_time=now - timedelta(minutes=10))
-
-        response = self.client.get('/api/home/')
-        jobs = response.json()['recent_jobs']
-        self.assertEqual(len(jobs), 2)  # distinct
-        self.assertEqual(jobs[0]['job_number'], 'JOB-HOME-B')  # most recent first
-        self.assertEqual(jobs[1]['job_number'], 'JOB-HOME-A')
-
-    def test_recent_jobs_windowed_by_activity_recent_days(self):
-        """Jobs whose last work by the user is older than the configured
-        look-back drop out; widening the window brings them back."""
-        task = self._make_task('T', assignee=self.user, worker_queue=1)
-        Blep.objects.create(user=self.user, task=task,
-                            start_time=timezone.now() - timedelta(days=10))
+        self._blep(theirs, self.user,
+                   now - timedelta(days=10), now - timedelta(days=10) + timedelta(hours=1))
 
         Configuration.objects.filter(key='activity_recent_days').delete()
-        response = self.client.get('/api/home/')
-        self.assertEqual(response.json()['recent_jobs'], [])  # default 5 days
+        names = [t['name'] for t in self.client.get('/api/home/').json()['current_tasks']]
+        self.assertNotIn('Theirs', names)  # default 5-day window
 
         Configuration.objects.update_or_create(
-            key='activity_recent_days', defaults={'value': '30'},
-        )
-        response = self.client.get('/api/home/')
-        jobs = response.json()['recent_jobs']
-        self.assertEqual(len(jobs), 1)
-        self.assertEqual(jobs[0]['id'], self.job.pk)
+            key='activity_recent_days', defaults={'value': '30'})
+        names = [t['name'] for t in self.client.get('/api/home/').json()['current_tasks']]
+        self.assertIn('Theirs', names)
+
+    # --- recent_tasks (completed) -----------------------------------------
+
+    def test_recent_tasks_completed_with_my_blep(self):
+        done = self._make_task('Done', status=Task.STATUS_COMPLETE, assignee=self.user)
+        now = timezone.now()
+        self._blep(done, self.user, now - timedelta(hours=1), now - timedelta(minutes=30))
+
+        data = self.client.get('/api/home/').json()['recent_tasks']
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['name'], 'Done')
+        self.assertEqual(data[0]['status'], Task.STATUS_COMPLETE)
+        self.assertIsNotNone(data[0]['last_worked_at'])
+
+    def test_recent_tasks_excludes_incomplete(self):
+        """A task I worked recently but have NOT completed belongs in
+        current_tasks, not recent_tasks."""
+        t = self._make_task('WIP', status=Task.STATUS_IN_PROGRESS, assignee=self.user)
+        self._blep(t, self.user, timezone.now() - timedelta(hours=1))
+        names = [x['name'] for x in self.client.get('/api/home/').json()['recent_tasks']]
+        self.assertEqual(names, [])
+
+    def test_recent_tasks_excludes_other_users(self):
+        done = self._make_task('Done', status=Task.STATUS_COMPLETE)
+        self._blep(done, self.other, timezone.now() - timedelta(hours=1))
+        self.assertEqual(self.client.get('/api/home/').json()['recent_tasks'], [])
+
+    def test_recent_tasks_ordered_by_last_worked_desc(self):
+        older = self._make_task('Older', status=Task.STATUS_COMPLETE, assignee=self.user)
+        newer = self._make_task('Newer', status=Task.STATUS_COMPLETE, assignee=self.user)
+        now = timezone.now()
+        self._blep(older, self.user, now - timedelta(hours=5), now - timedelta(hours=4))
+        self._blep(newer, self.user, now - timedelta(hours=2), now - timedelta(hours=1))
+        names = [t['name'] for t in self.client.get('/api/home/').json()['recent_tasks']]
+        self.assertEqual(names, ['Newer', 'Older'])
+
+    def test_recent_tasks_windowed(self):
+        done = self._make_task('Done', status=Task.STATUS_COMPLETE, assignee=self.user)
+        self._blep(done, self.user,
+                   timezone.now() - timedelta(days=10),
+                   timezone.now() - timedelta(days=10) + timedelta(hours=1))
+
+        Configuration.objects.filter(key='activity_recent_days').delete()
+        self.assertEqual(self.client.get('/api/home/').json()['recent_tasks'], [])
+
+        Configuration.objects.update_or_create(
+            key='activity_recent_days', defaults={'value': '30'})
+        names = [t['name'] for t in self.client.get('/api/home/').json()['recent_tasks']]
+        self.assertEqual(names, ['Done'])
+
+    def test_recent_tasks_limited_to_10(self):
+        now = timezone.now()
+        for i in range(12):
+            t = self._make_task(f'Done {i:02d}', status=Task.STATUS_COMPLETE,
+                                 assignee=self.user)
+            self._blep(t, self.user, now - timedelta(hours=i + 1),
+                       now - timedelta(hours=i))
+        self.assertEqual(len(self.client.get('/api/home/').json()['recent_tasks']), 10)
 
     def test_recent_logins_scoped_windowed_ordered(self):
         """recent_logins: own events only, inside activity_recent_days,
@@ -290,16 +320,3 @@ class HomeEndpointTest(FixtureTestCase):
         self.assertEqual(len(logins), 2)
         stamps = [l['timestamp'] for l in logins]
         self.assertEqual(stamps, sorted(stamps, reverse=True))
-
-    def test_recent_jobs_limited_to_10(self):
-        now = timezone.now()
-        for i in range(12):
-            j = Job.objects.create(
-                job_number=f'JOB-LIM-{i:02d}', name=f'Job {i}',
-                status='approved', contact=self.contact,
-            )
-            t = self._make_task(f'T{i}', job=j)
-            Blep.objects.create(user=self.user, task=t,
-                                start_time=now - timedelta(hours=i))
-        response = self.client.get('/api/home/')
-        self.assertEqual(len(response.json()['recent_jobs']), 10)

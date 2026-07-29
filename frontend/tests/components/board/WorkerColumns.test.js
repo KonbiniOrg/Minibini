@@ -16,6 +16,12 @@ describe('WorkerColumns', () => {
     expect(getByText('A')).toBeInTheDocument();
   });
 
+  it('links the worker name header to that user\'s PM-filtered job list', () => {
+    const { getByRole } = render(WorkerColumns, { props: { workers: workers() } });
+    const link = getByRole('link', { name: 'Sam' });
+    expect(link).toHaveAttribute('href', '#/jobs?pm=1');
+  });
+
   it('assigns a dropped task to the worker at the end index', async () => {
     const onAssign = vi.fn();
     const { container } = render(WorkerColumns, { props: { workers: workers(), canManage: true, onAssign } });

@@ -87,7 +87,7 @@
     <div class="worker-col">
       <div class="worker-header">
         <div class="worker-avatar">{worker.user.initials}</div>
-        <span class="worker-name">{worker.user.name}</span>
+        <a class="worker-name" href="#/jobs?pm={worker.user.id}">{worker.user.name}</a>
         <span class="worker-task-count">{worker.tasks.length}</span>
       </div>
       <!-- drag-and-drop drop zone: HTML5 DnD is mouse-only, no keyboard equivalent -->

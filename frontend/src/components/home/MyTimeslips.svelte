@@ -1,8 +1,9 @@
 <script>
   import WorkSessionsList from '../time/WorkSessionsList.svelte';
 
-  // Home "Work" tab: the current user's own sessions from the last
-  // `sinceDays` days (activity_recent_days via the home payload).
+  // Home "Shifts" tab: the current user's own timeslips (work sessions /
+  // bleps) from the last `sinceDays` days, with the Edit / Request-Edit
+  // affordances — this is the editing surface for recent time entries.
   // Thin wrapper over the shared WorkSessionsList (the Users page and the
   // user detail page reuse it); no pager here.
   let { sinceDays = 7 } = $props();
@@ -10,8 +11,8 @@
 
 <WorkSessionsList
   userId="me"
-  title="Ongoing and Completed Tasks"
+  title="My Timeslips"
   {sinceDays}
   paginate={false}
-  emptyText="No recent time entries."
+  emptyText="No recent timeslips."
 />

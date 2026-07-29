@@ -3,11 +3,13 @@
   import { location } from 'svelte-spa-router';
   import { api } from '../lib/api.js';
   import { blepActivityVersion } from '../stores/blepActivity.js';
-  import AssignedTaskList from '../components/home/AssignedTaskList.svelte';
-  import RecentJobsList from '../components/home/RecentJobsList.svelte';
+  import { user as currentUser } from '../stores/auth.js';
+  import PmJobList from '../components/jobs/PmJobList.svelte';
+  import CurrentTaskList from '../components/home/CurrentTaskList.svelte';
+  import RecentTaskList from '../components/home/RecentTaskList.svelte';
   import ExpensesList from '../components/home/ExpensesList.svelte';
   import RecentLoginsList from '../components/home/RecentLoginsList.svelte';
-  import RecentTimeList from '../components/home/RecentTimeList.svelte';
+  import MyTimeslips from '../components/home/MyTimeslips.svelte';
   import MyShiftsList from '../components/home/MyShiftsList.svelte';
   import MyChangeRequestsList from '../components/home/MyChangeRequestsList.svelte';
   import MyEnvelopeEditor from '../components/home/MyEnvelopeEditor.svelte';
@@ -16,8 +18,8 @@
 
   let loading = $state(true);
   let error = $state('');
-  let assignedTasks = $state([]);
-  let recentJobs = $state([]);
+  let currentTasks = $state([]);
+  let recentTasks = $state([]);
   let recentLogins = $state([]);
   let recentDays = $state(7);
 
@@ -42,8 +44,8 @@
   async function loadHome() {
     try {
       const data = await api.get('/api/home/');
-      assignedTasks = data.assigned_tasks || [];
-      recentJobs = data.recent_jobs || [];
+      currentTasks = data.current_tasks || [];
+      recentTasks = data.recent_tasks || [];
       recentLogins = data.recent_logins || [];
       recentDays = data.recent_days ?? 7;
     } catch (e) {
@@ -86,12 +88,16 @@
 {:else if error}
   <p>{error}</p>
 {:else if tab === 'work'}
-  <AssignedTaskList tasks={assignedTasks} />
-  <RecentTimeList sinceDays={recentDays} />
-  <RecentJobsList jobs={recentJobs} sinceDays={recentDays} />
+  <CurrentTaskList tasks={currentTasks} />
+  {#if $currentUser}
+    <h3>Jobs I manage</h3>
+    <PmJobList pmId={$currentUser.id} />
+  {/if}
+  <RecentTaskList tasks={recentTasks} sinceDays={recentDays} />
 {:else if tab === 'shifts'}
   <MyEnvelopeEditor />
   <MyShiftsList sinceDays={recentDays} />
+  <MyTimeslips sinceDays={recentDays} />
   <MyChangeRequestsList />
   <RecentLoginsList logins={recentLogins} sinceDays={recentDays} />
 {:else if tab === 'expenses'}

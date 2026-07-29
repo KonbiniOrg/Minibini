@@ -242,9 +242,19 @@ can render it. Where the PM surfaces:
   uppercased) top-right on the chip, in black opposite the grey job number.
 - **Job list** (`JobList.svelte`) — a PM column; the name links to the
   filtered list.
+- **Board worker-column header** (`WorkerColumns.svelte`) — the column's
+  worker name links to `#/jobs?pm=<worker id>`. Note the column groups tasks
+  by **assignee**, so this links to the jobs that person *manages* (which may
+  be none — an empty "Jobs managed by …" list is the expected result).
 - **Filtered list** — `#/jobs?pm=<id>` (`JobListPage` passes
   `?project_manager=<id>` to the jobs list endpoint and retitles to
   "Jobs managed by <Name>").
+- **Home page → Work tab** ("Jobs I manage") and **user-detail page**
+  ("Jobs managed") — both embed `PmJobList.svelte`, the reusable list
+  container (fetch + pagination + `JobList` table, no heading) extracted from
+  `JobListPage`. `JobListPage` now wraps `PmJobList` and owns only the
+  heading; the two embeds pass the relevant user id as `pmId` (current user on
+  home, the viewed user on user-detail).
 
 Deliberately **not** surfaced: cross-entity search, customer-facing /
 print / PDF, and job-as-reference displays on estimates / invoices / POs /
@@ -1081,8 +1091,9 @@ how long terminal jobs appear in the Closed column. Defined in
 
 Worker columns are derived from `Task.assignee`. A column appears for
 each user who has at least one active task, plus any user manually
-added via the "+" button. Tasks within a column are sorted by
-`worker_queue`. Drag-and-drop assigns / reorders / unassigns:
+added via the "+" button. The column header's worker name is a link to
+that user's PM-filtered job list (`#/jobs?pm=<id>`; see §2's PM-surfaces
+list). Tasks within a column are sorted by `worker_queue`. Drag-and-drop assigns / reorders / unassigns:
 
 - `POST /api/tasks/{id}/assign/` — set assignee + worker_queue, optionally
   `est_worker_time`. Assigning a Task that has no estimate (and none
@@ -1644,14 +1655,42 @@ sub-minimum session is converted to a cancel server-side. This blep-cancel
 is distinct from the task-level **Cancel** above (which kills the task,
 keeping its recorded time).
 
-### 10.3 Recent Time list (home page)
+### 10.3 Home page task lists and timeslips
 
-`components/home/RecentTimeList.svelte` (home **Time** tab) fetches
-`GET /api/bleps/?user=me&since=<7d ago>` — the signed-in user's own recent
-sessions. Each row offers **Edit** when the blep is editable (within the 30h
-rolling window, or any blep for a `can_manage_time` manager); otherwise a
-**Request Edit** button — currently a stub that alerts "Not yet implemented"
-(see Unfinished Work).
+The home page (`routes/Home.svelte`) is fed by one call, `GET /api/home/`
+(`apps/core/home_service.py` → `HomeService.get_home_data`), returning
+`current_tasks`, `recent_tasks`, `recent_logins`, and `recent_days` (the
+look-back window, from `activity_recent_days`; see `data-constraints.md`).
+
+**Work tab — task-centric (reorganized 2026-07-29).** Three sections in order:
+
+1. **Current Tasks** (`components/home/CurrentTaskList.svelte`, fed by
+   `current_tasks`) — the user's live work: tasks assigned to them **plus** any
+   task they have an *open or recently-worked* blep on, excluding
+   complete/cancelled. Each row carries an `assigned_to_me` flag. The user's own
+   tasks sort first in `worker_queue` order and carry **Up/Down** reorder
+   (`POST /api/tasks/reorder/` with **only the user's own** task ids); tasks that
+   appear solely because of a blep (assigned to another worker) sort to the
+   bottom with no reorder buttons. **Start Work** is offered on every row and
+   runs the settle-first prior-session flow (§5.5).
+2. **Jobs I manage** (`PmJobList`) — the PM-scoped job list (see §2's
+   PM-surfaces list).
+3. **Recent** (`components/home/RecentTaskList.svelte`, fed by `recent_tasks`) —
+   read-only tasks the user **completed** within the window, most-recently-worked
+   first, with a Last-worked column. (Task has no completion timestamp, so recency
+   is the user's latest blep on the task.)
+
+The old **Recent Jobs** list was dropped (it duplicated the jobs already shown by
+the task lists).
+
+**Shifts tab — My Timeslips.** `components/home/MyTimeslips.svelte` (moved here
+from the Work tab, 2026-07-29; sits between **My Shifts** and **My Change
+Requests**) fetches `GET /api/bleps/?user=me&since=<window>` — the signed-in
+user's own sessions — and is the surface for **editing** recent time entries.
+Each row offers **Edit** when the blep is editable (within the 30h rolling
+window, or any blep for a `can_manage_time` manager); otherwise a **Request
+Edit** button — currently a stub that alerts "Not yet implemented" (see
+Unfinished Work).
 
 It renders the shared **`components/time/BlepLogTable.svelte`**, which owns the
 session-row presentation: Task · Job · Start · End · Duration. Times show as a
@@ -1659,7 +1698,7 @@ weekday abbreviation + 12-hour clock rounded to the minute (`Mon 3:45 PM`);
 Duration is minute-granularity (`1h 25m`); open sessions show a green **active**
 tag and a duration that ticks up every 30s (client clock only — no refetch); the
 job name truncates at 20 chars. `BlepLogTable` props: `bleps`, `showWorker` (adds
-a Worker column), and an optional per-row `actions` snippet (RecentTimeList
+a Worker column), and an optional per-row `actions` snippet (MyTimeslips
 passes the Edit / Request-Edit buttons).
 
 ### 10.4 Activity page (all-users work log)

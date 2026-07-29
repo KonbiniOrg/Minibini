@@ -6,6 +6,7 @@
   import UserReimbursementPanel from '../../components/expenses/UserReimbursementPanel.svelte';
   import EnvelopeEditor from '../../components/schedule/EnvelopeEditor.svelte';
   import WorkSessionsList from '../../components/time/WorkSessionsList.svelte';
+  import PmJobList from '../../components/jobs/PmJobList.svelte';
 
   const { params = {} } = $props();
 
@@ -217,6 +218,9 @@
       <em>Deactivated</em>
     {/if}
   </p>
+
+  <h3>Jobs managed</h3>
+  <PmJobList pmId={user.id} />
 
   <h3>Profile</h3>
   <form onsubmit={saveProfile}>
