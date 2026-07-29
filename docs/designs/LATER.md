@@ -561,7 +561,20 @@ The atom-pull surfaces on estimates and invoices.
   guard stays for everyone), or (b) keep manager-only and hide the worker's
   Delete button (`TimeEditModal.svelte` shows it ungated). Deliberately not
   fixed on `feature/tasks`.
-  _Done when:_ the rule is decided and UI, service, docs, and tests agree.
+  **Same shape, second case — the invoiced-task freeze** (_added 2026-07-28_):
+  `BlepService.update` and `.delete` both refuse, for *every* actor, when the
+  blep's task is on a live invoice (`data-constraints.md` §1.12; `update`
+  joined the freeze 2026-07-28). The blep serializer exposes no
+  invoiced/frozen flag and the SPA does no gating on it, so `TimeEditModal`
+  offers Save and Delete on a billed task's time and the user only learns on
+  submit — the same UI-offers-what-the-server-refuses pattern, just driven by
+  document state rather than permissions. Fixing the affordance wants a
+  serializer flag (e.g. `actuals_frozen`) the modal can disable and explain
+  on; worth doing in one pass with the shift-delete decision above, since
+  both land in `TimeEditModal`.
+  _Done when:_ the shift rule is decided and UI, service, docs, and tests
+  agree — and the modal no longer offers edit/delete on a blep whose actuals
+  are frozen.
 
 All three want the same shared live-refresh/notification mechanism (see the general-repolling project note).
 
