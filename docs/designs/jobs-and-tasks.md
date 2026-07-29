@@ -242,9 +242,19 @@ can render it. Where the PM surfaces:
   uppercased) top-right on the chip, in black opposite the grey job number.
 - **Job list** (`JobList.svelte`) — a PM column; the name links to the
   filtered list.
+- **Board worker-column header** (`WorkerColumns.svelte`) — the column's
+  worker name links to `#/jobs?pm=<worker id>`. Note the column groups tasks
+  by **assignee**, so this links to the jobs that person *manages* (which may
+  be none — an empty "Jobs managed by …" list is the expected result).
 - **Filtered list** — `#/jobs?pm=<id>` (`JobListPage` passes
   `?project_manager=<id>` to the jobs list endpoint and retitles to
   "Jobs managed by <Name>").
+- **Home page → Work tab** ("Jobs I manage") and **user-detail page**
+  ("Jobs managed") — both embed `PmJobList.svelte`, the reusable list
+  container (fetch + pagination + `JobList` table, no heading) extracted from
+  `JobListPage`. `JobListPage` now wraps `PmJobList` and owns only the
+  heading; the two embeds pass the relevant user id as `pmId` (current user on
+  home, the viewed user on user-detail).
 
 Deliberately **not** surfaced: cross-entity search, customer-facing /
 print / PDF, and job-as-reference displays on estimates / invoices / POs /
@@ -1081,8 +1091,9 @@ how long terminal jobs appear in the Closed column. Defined in
 
 Worker columns are derived from `Task.assignee`. A column appears for
 each user who has at least one active task, plus any user manually
-added via the "+" button. Tasks within a column are sorted by
-`worker_queue`. Drag-and-drop assigns / reorders / unassigns:
+added via the "+" button. The column header's worker name is a link to
+that user's PM-filtered job list (`#/jobs?pm=<id>`; see §2's PM-surfaces
+list). Tasks within a column are sorted by `worker_queue`. Drag-and-drop assigns / reorders / unassigns:
 
 - `POST /api/tasks/{id}/assign/` — set assignee + worker_queue, optionally
   `est_worker_time`. Assigning a Task that has no estimate (and none

@@ -3,6 +3,8 @@
   import { location } from 'svelte-spa-router';
   import { api } from '../lib/api.js';
   import { blepActivityVersion } from '../stores/blepActivity.js';
+  import { user as currentUser } from '../stores/auth.js';
+  import PmJobList from '../components/jobs/PmJobList.svelte';
   import AssignedTaskList from '../components/home/AssignedTaskList.svelte';
   import RecentJobsList from '../components/home/RecentJobsList.svelte';
   import ExpensesList from '../components/home/ExpensesList.svelte';
@@ -89,6 +91,10 @@
   <AssignedTaskList tasks={assignedTasks} />
   <RecentTimeList sinceDays={recentDays} />
   <RecentJobsList jobs={recentJobs} sinceDays={recentDays} />
+  {#if $currentUser}
+    <h3>Jobs I manage</h3>
+    <PmJobList pmId={$currentUser.id} />
+  {/if}
 {:else if tab === 'shifts'}
   <MyEnvelopeEditor />
   <MyShiftsList sinceDays={recentDays} />
