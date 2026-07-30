@@ -715,6 +715,22 @@ IMAP-SMTP machinery and tend to be worked together.
 
 Cross-cutting UI/API conventions and shared components.
 
+- **Task Description is a single-line `<input>`; it should be a textarea like Job Description.** — _added 2026-07-30 (RM)_
+  `WorkItemForm.svelte` (the add/edit task modal, hosted by `TasksPanel` and
+  `TaskDetailPage`) renders Description as
+  `<input type="text" bind:value={description}>` (~L313), so a task
+  description can't hold line breaks and shows only one line's worth at a
+  time. `JobEditModal.svelte` uses `<textarea rows="6" cols="60">` (~L115) for
+  the same concept. Match the job field. Both write free text to a `TextField`
+  server-side, so this is presentation only — no API or model change.
+  Worth doing alongside: `Task.description` is slated to become the carrier of
+  per-job work specifics (see the `ServiceItem.description` removal entry),
+  which makes the cramped input worse. Check the display side too — long or
+  multi-line task descriptions need `preserve-breaks` wherever they render
+  (architecture-and-conventions.md §5.6).
+  _Done when:_ the task Description field is a textarea matching the job
+  field's shape, and multi-line values render with their breaks intact.
+
 - **Notes should come out of History as a first-class sub-object.** — _added 2026-07-08 (RM, during the job-workspace design)_
   Notes today are just history entries (`entry_type='note'`, write-only via
   `POST /{jobs,contacts,businesses}/{id}/notes/`, immutable, rendered inside
