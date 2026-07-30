@@ -2,17 +2,17 @@
 
 from datetime import timedelta
 
-from django.db.models import Max
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.activity.services import load_recent_days
-from apps.jobs.models import Blep, Job, Task
+from apps.jobs.models import Task
 
 
 class HomeService:
     """Assembles the data the Svelte home page needs in one call."""
 
-    RECENT_JOBS_LIMIT = 10
+    RECENT_TASKS_LIMIT = 10
     HIDDEN_TASK_STATUSES = (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
 
     @classmethod
@@ -21,23 +21,88 @@ class HomeService:
         # shared with the Activity page via activity_recent_days.
         recent_days = load_recent_days()
         return {
-            'assigned_tasks': cls._assigned_tasks(user),
-            'recent_jobs': cls._recent_jobs(user, recent_days),
+            'current_tasks': cls._current_tasks(user, recent_days),
+            'recent_tasks': cls._recent_tasks(user, recent_days),
             'recent_logins': cls._recent_logins(user, recent_days),
             'recent_days': recent_days,
         }
 
     @classmethod
-    def _assigned_tasks(cls, user):
+    def _current_tasks(cls, user, recent_days):
+        """The user's live work: tasks assigned to them, plus any task they
+        have an open or recently-worked blep on (even if assigned to someone
+        else). Completed/cancelled tasks are excluded (they surface in
+        recent_tasks). Own tasks sort first in worker-queue order; tasks that
+        only appear because of a blep sort to the bottom, most-recent first."""
+        cutoff = timezone.now() - timedelta(days=recent_days)
         tasks = (
             Task.objects
-            .filter(assignee=user)
             .exclude(status__in=cls.HIDDEN_TASK_STATUSES)
+            .filter(
+                Q(assignee=user)
+                | Q(blep__user=user, blep__end_time__isnull=True)
+                | Q(blep__user=user, blep__start_time__gte=cutoff)
+            )
             .select_related('job')
             .prefetch_related('blep_set')
-            .order_by('worker_queue', 'task_id')
+            .distinct()
         )
-        return [cls._serialize_task(t) for t in tasks]
+
+        mine, others = [], []
+        for task in tasks:
+            if task.assignee_id == user.pk:
+                mine.append(task)
+            else:
+                others.append(task)
+
+        mine.sort(key=lambda t: (t.worker_queue if t.worker_queue is not None else 0, t.task_id))
+        others.sort(key=lambda t: cls._last_worked_at(t, user), reverse=True)
+
+        result = []
+        for task in mine:
+            row = cls._serialize_task(task)
+            row['assigned_to_me'] = True
+            result.append(row)
+        for task in others:
+            row = cls._serialize_task(task)
+            row['assigned_to_me'] = False
+            result.append(row)
+        return result
+
+    @classmethod
+    def _recent_tasks(cls, user, recent_days):
+        """Tasks the user completed recently — status complete with a blep by
+        the user inside the look-back window — most-recently-worked first.
+        (Task has no completion timestamp of its own, so the user's latest
+        blep on the task is the recency signal, as the old recent-jobs list
+        used.)"""
+        cutoff = timezone.now() - timedelta(days=recent_days)
+        tasks = (
+            Task.objects
+            .filter(status=Task.STATUS_COMPLETE,
+                    blep__user=user, blep__start_time__gte=cutoff)
+            .select_related('job')
+            .prefetch_related('blep_set')
+            .distinct()
+        )
+        rows = sorted(
+            tasks, key=lambda t: cls._last_worked_at(t, user), reverse=True
+        )[:cls.RECENT_TASKS_LIMIT]
+
+        result = []
+        for task in rows:
+            row = cls._serialize_task(task)
+            last = cls._last_worked_at(task, user)
+            row['last_worked_at'] = last.isoformat() if last else None
+            result.append(row)
+        return result
+
+    @staticmethod
+    def _last_worked_at(task, user):
+        """Latest start_time among the user's bleps on the task (from the
+        prefetched blep_set), or None."""
+        stamps = [b.start_time for b in task.blep_set.all() if b.user_id == user.pk]
+        return max(stamps) if stamps else None
 
     @classmethod
     def _serialize_task(cls, task):
@@ -59,33 +124,6 @@ class HomeService:
                 'name': job.name,
             } if job else None,
         }
-
-    @classmethod
-    def _recent_jobs(cls, user, recent_days):
-        # Find distinct jobs the user has a Blep on within the look-back
-        # window, ordered by the user's most recent Blep start_time on that
-        # job, limited. Both conditions in ONE filter() call so they share
-        # the join — the Max annotation then ranges over exactly the
-        # user's in-window bleps.
-        cutoff = timezone.now() - timedelta(days=recent_days)
-        job_rows = (
-            Job.objects
-            .filter(tasks__blep__user=user,
-                    tasks__blep__start_time__gte=cutoff)
-            .annotate(last_worked_at=Max('tasks__blep__start_time'))
-            .order_by('-last_worked_at')
-            .distinct()
-        )[:cls.RECENT_JOBS_LIMIT]
-
-        return [
-            {
-                'id': j.pk,
-                'job_number': j.job_number,
-                'name': j.name,
-                'last_worked_at': j.last_worked_at.isoformat() if j.last_worked_at else None,
-            }
-            for j in job_rows
-        ]
 
     @classmethod
     def _recent_logins(cls, user, recent_days):

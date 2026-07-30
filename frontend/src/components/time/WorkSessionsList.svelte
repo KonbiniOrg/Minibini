@@ -9,8 +9,8 @@
   // Reusable list of work sessions (bleps), recent-first by start time.
   // Surfaces: the Users page "Work Sessions" tab (all users, worker column,
   // paged), a user's detail page (userId set, no worker column), and the
-  // home "Ongoing and Completed Tasks" list (own sessions via the
-  // RecentTimeList wrapper).
+  // home Shifts tab's "My Timeslips" list (own sessions via the
+  // MyTimeslips wrapper).
   //
   // "Work Sessions" is the UI term for bleps — same vocabulary as the task
   // detail page's session table and the "time entry" phrasing in API errors.

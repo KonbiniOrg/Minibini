@@ -10,23 +10,29 @@ vi.mock('@/stores/blepActivity.js', async () => {
 
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
-import RecentTimeList from '@/components/home/RecentTimeList.svelte';
+import MyTimeslips from '@/components/home/MyTimeslips.svelte';
 
 beforeEach(() => {
   api.get.mockReset();
   user.set({ id: 2, permissions: [] });
 });
 
-describe('RecentTimeList', () => {
+describe('MyTimeslips', () => {
+  it('renders under the "My Timeslips" heading', async () => {
+    api.get.mockResolvedValue({ results: [] });
+    const { findByRole } = render(MyTimeslips);
+    expect(await findByRole('heading', { name: 'My Timeslips' })).toBeInTheDocument();
+  });
+
   it('shows the empty state', async () => {
     api.get.mockResolvedValue({ results: [] });
-    const { findByText } = render(RecentTimeList);
-    expect(await findByText('No recent time entries.')).toBeInTheDocument();
+    const { findByText } = render(MyTimeslips);
+    expect(await findByText('No recent timeslips.')).toBeInTheDocument();
   });
 
   it('lists recent bleps', async () => {
     api.get.mockResolvedValue({ results: [{ blep_id: 1, task_name: 'Cut', start_time: '2026-03-01T14:00:00', end_time: '2026-03-01T15:00:00' }] });
-    const { findByText } = render(RecentTimeList);
+    const { findByText } = render(MyTimeslips);
     expect(await findByText('Cut')).toBeInTheDocument();
   });
 });

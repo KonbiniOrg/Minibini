@@ -55,6 +55,7 @@ def current_blep_view(request):
 def home_view(request):
     """Return the data needed to render the user's home page.
 
-    Shape: {"assigned_tasks": [...], "recent_jobs": [...]}
+    Shape: {"current_tasks": [...], "recent_tasks": [...],
+            "recent_logins": [...], "recent_days": int}
     """
     return Response(HomeService.get_home_data(request.user))

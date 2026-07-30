@@ -6,6 +6,11 @@
   import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
   import ActualQtyModal from '../tasks/ActualQtyModal.svelte';
 
+  // The home Work tab's "Current Tasks": tasks assigned to me plus any task I
+  // have an open/recent blep on. Backend orders mine first (worker-queue
+  // order), others last. Only my own tasks carry reorder controls — reordering
+  // writes my worker_queue, which is meaningless for a task in someone else's
+  // queue, so those rows omit the Up/Down buttons.
   let { tasks = [] } = $props();
 
   // Local copy so we can reorder optimistically.
@@ -18,17 +23,15 @@
     items = [...tasks];
   });
 
-  async function moveUp(index) {
-    if (index <= 0 || busy) return;
-    const snapshot = [...items];
-    const next = [...items];
-    [next[index - 1], next[index]] = [next[index], next[index - 1]];
-    items = next;
+  // My own tasks form the contiguous top block; only they reorder.
+  let mineCount = $derived(items.filter((t) => t.assigned_to_me).length);
+
+  async function persistOrder(snapshot) {
     try {
       busy = true;
       errorMessage = '';
       await api.post('/api/tasks/reorder/', {
-        task_ids: items.map((t) => t.id),
+        task_ids: items.filter((t) => t.assigned_to_me).map((t) => t.id),
       });
     } catch (e) {
       items = snapshot;
@@ -38,24 +41,22 @@
     }
   }
 
+  async function moveUp(index) {
+    if (index <= 0 || index >= mineCount || busy) return;
+    const snapshot = [...items];
+    const next = [...items];
+    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+    items = next;
+    await persistOrder(snapshot);
+  }
+
   async function moveDown(index) {
-    if (index >= items.length - 1 || busy) return;
+    if (index >= mineCount - 1 || busy) return;
     const snapshot = [...items];
     const next = [...items];
     [next[index + 1], next[index]] = [next[index], next[index + 1]];
     items = next;
-    try {
-      busy = true;
-      errorMessage = '';
-      await api.post('/api/tasks/reorder/', {
-        task_ids: items.map((t) => t.id),
-      });
-    } catch (e) {
-      items = snapshot;
-      errorMessage = e.message || 'Could not save order.';
-    } finally {
-      busy = false;
-    }
+    await persistOrder(snapshot);
   }
 
   // Settle-first: an open session on another entered-qty task comes back
@@ -100,9 +101,9 @@
 </script>
 
 <section>
-  <h3>Assigned Tasks</h3>
+  <h3>Current Tasks</h3>
   {#if items.length === 0}
-    <p>No assigned tasks.</p>
+    <p>No current tasks.</p>
   {:else}
     <table class="data-table">
       <thead>
@@ -140,10 +141,12 @@
               </button>
             </td>
             <td>
-              <button type="button" onclick={() => moveUp(i)}
-                      disabled={busy || i === 0}>Up</button>
-              <button type="button" onclick={() => moveDown(i)}
-                      disabled={busy || i === items.length - 1}>Down</button>
+              {#if task.assigned_to_me}
+                <button type="button" onclick={() => moveUp(i)}
+                        disabled={busy || i === 0}>Up</button>
+                <button type="button" onclick={() => moveDown(i)}
+                        disabled={busy || i === mineCount - 1}>Down</button>
+              {/if}
             </td>
           </tr>
         {/each}
