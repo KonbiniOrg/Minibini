@@ -69,11 +69,11 @@ jobs:
       # 8. ssh to tov & docker-compose pull
       - name: Deploy with SSH Action
         uses: appleboy/ssh-action@v1.0.0
+        secrets: inherit
         with:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          secrets: inherit
           script: |
             touch i-was-here.txt
             set > i-was-here.txt
@@ -85,6 +85,7 @@ jobs:
       # 9. send shannon email if the action fails
       - name: email shannon on failure
         uses: dawidd6/action-send-mail@v3.6.0
+        if: failure()
         with:
           # mail server settings
           server_address: smtp.gmail.com
