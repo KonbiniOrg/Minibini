@@ -6,6 +6,7 @@
   import { showError } from '../stores/messages.js';
   import FieldError from './FieldError.svelte';
   import FormMessage from './FormMessage.svelte';
+  import Modal from './Modal.svelte';
 
   let pullEpoch = $state(0);
 
@@ -196,6 +197,14 @@
     }
   }
 
+  // The add/edit/supersede form is one Modal in three modes — the
+  // conflict path (supersedeFromConflict) switches mode in place, so the
+  // shell stays open across it.
+  const formOpen = $derived(editingId !== null || supersedingId !== null);
+  const formTitle = $derived(
+    supersedingId ? 'New Version of Rate Scheme'
+      : editingId === 'new' ? 'New Rate Scheme' : 'Edit Rate Scheme');
+
   // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
   const isPercentage = $derived(form.algorithm === 'percentage');
 
@@ -267,9 +276,11 @@
   {/if}
 {/if}
 
-{#if editingId !== null || supersedingId !== null}
-  <fieldset>
-    <legend><strong>{supersedingId ? 'New Version of Rate Scheme' : (editingId === 'new' ? 'New Rate Scheme' : 'Edit Rate Scheme')}</strong></legend>
+<!-- Button-driven content (no native <form>), so the shell takes onSave and
+     owns Enter; `busy` suppresses a double-Enter mid-save. -->
+<Modal open={formOpen} onSave={save} onCancel={cancelEdit} busy={saving}
+       maxWidth="700px" label={formTitle}>
+    <h3 class="rs-modal-title">{formTitle}</h3>
     <p><label><strong>Name *</strong><br>
       <input type="text" bind:value={form.name} style="width:100%;box-sizing:border-box;">
     </label>
@@ -357,5 +368,9 @@
         <button type="button" onclick={supersedeFromConflict}>Create new version</button>
       {/if}
     </FormMessage>
-  </fieldset>
-{/if}
+</Modal>
+
+<style>
+  /* Matches JobEditModal's title treatment. */
+  .rs-modal-title { margin-top: 0; }
+</style>
