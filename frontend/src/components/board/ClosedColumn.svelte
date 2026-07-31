@@ -1,11 +1,13 @@
 <script>
   import ClosedCard from './ClosedCard.svelte';
+  import NewJobButton from './NewJobButton.svelte';
   let { jobs = [] } = $props();
 </script>
 
 <div class="column-header">
   <strong>Closed</strong>
   <span class="count">{jobs.length}</span>
+  <NewJobButton />
 </div>
 <div class="column-body">
   {#each jobs as job (job.job_id)}
@@ -19,7 +21,7 @@
 </div>
 
 <style>
-  .column-header { padding: 14px 16px 10px; display: flex; align-items: center; justify-content: center; gap: 10px; border-bottom: 3px solid #9ca3af; flex-shrink: 0; }
+  .column-header { position: relative; padding: 14px 16px 10px; display: flex; align-items: center; justify-content: center; gap: 10px; border-bottom: 3px solid #9ca3af; flex-shrink: 0; }
   .count { font-size: 12px; color: #999; }
   .column-body {
     flex: 1; overflow-y: auto; padding: 12px; background: #e8e8ea;

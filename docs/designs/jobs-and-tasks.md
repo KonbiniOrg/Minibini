@@ -1037,9 +1037,15 @@ kanban-style overview of all current and recently-closed jobs. All data
 comes from `BoardService` (`apps/jobs/services.py`).
 
 The board is the sidebar's "Jobs" destination, so it also carries the
-**New Job** entry point — a top-right link (gated on `can_manage_jobs`)
-to `#/jobs/new`, the from-scratch create form
-(`JobFormPage` → `components/jobs/JobForm.svelte` → `POST /api/jobs/`).
+**New Job** entry point — `components/board/NewJobButton.svelte`, a link
+(gated on `can_manage_jobs`) to `#/jobs/new`, the from-scratch create
+form (`JobFormPage` → `components/jobs/JobForm.svelte` →
+`POST /api/jobs/`). It sits top-right *inside each pillar's header*,
+absolutely positioned so it doesn't shift the header's centered title;
+the four headers just add `position: relative`. A page-level bar above
+the board was the first cut and was dropped — it cost a full-width strip
+of board height for one button. Since exactly one pillar is expanded at
+a time, exactly one button is on screen.
 Added 2026-07-31: before it, `/jobs/new` was reachable only from a
 contact/business detail page's "New Job" link, from the email→job flow,
 or by typing the URL — the `#/jobs` list page that carries the other
