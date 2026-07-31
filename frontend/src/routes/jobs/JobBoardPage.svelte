@@ -75,6 +75,8 @@
 </script>
 
 <div class="board-page">
+  <!-- New Job lives in each pillar's header (NewJobButton), not in a
+       page-level bar — a full-width strip cost that much board height. -->
   <div class="board">
     {#if activeCol === 'pipeline'}
       <div class="col-expanded">

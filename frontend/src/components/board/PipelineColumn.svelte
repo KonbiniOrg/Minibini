@@ -1,5 +1,6 @@
 <script>
   import JobCard from './JobCard.svelte';
+  import NewJobButton from './NewJobButton.svelte';
   let { jobs = [] } = $props();
 
   let preJobs = $derived(jobs.filter(j => j.status !== 'approved'));
@@ -36,6 +37,7 @@
 <div class="column-header">
   <strong>Pipeline</strong>
   <span class="count">{jobs.length}</span>
+  <NewJobButton />
 </div>
 <div class="column-body">
   {#each preJobs as job (job.job_id)}
@@ -59,7 +61,7 @@
 </div>
 
 <style>
-  .column-header { padding: 14px 16px 10px; display: flex; align-items: center; justify-content: center; gap: 10px; border-bottom: 3px solid #60a5fa; flex-shrink: 0; }
+  .column-header { position: relative; padding: 14px 16px 10px; display: flex; align-items: center; justify-content: center; gap: 10px; border-bottom: 3px solid #60a5fa; flex-shrink: 0; }
   .count { font-size: 12px; color: #999; }
   .column-body {
     flex: 1; overflow-y: auto; padding: 12px; background: #dde6f7;
