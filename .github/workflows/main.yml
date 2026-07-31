@@ -9,8 +9,6 @@ jobs:
   build-test-push:
     name: Build, Test and Push Docker Image
     runs-on: ubuntu-latest
-    secrets: inherit
-
     steps:
       # 1. Checkout source code
       - name: Checkout source code
@@ -82,6 +80,7 @@ jobs:
             docker compose run --rm minibini_django python manage.py loaddata fixtures/large_datasets/nealsmall.json
             docker compose up -d --pull always  minibini_django
             docker compose up -d --pull always  minibini_vite
+        secrets: inherit
       # 9. send shannon email if the action fails
       - name: email shannon on failure
         uses: dawidd6/action-send-mail@v3.6.0
