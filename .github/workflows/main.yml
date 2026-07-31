@@ -7,6 +7,7 @@ on:
 
 jobs:
   build-test-push:
+    secrets: inherit
     name: Build, Test and Push Docker Image
     runs-on: ubuntu-latest
 
@@ -69,7 +70,6 @@ jobs:
       # 8. ssh to tov & docker-compose pull
       - name: Deploy with SSH Action
         uses: appleboy/ssh-action@v1.0.0
-        secrets: inherit
         with:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
