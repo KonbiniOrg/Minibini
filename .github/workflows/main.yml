@@ -7,9 +7,9 @@ on:
 
 jobs:
   build-test-push:
-    secrets: inherit
     name: Build, Test and Push Docker Image
     runs-on: ubuntu-latest
+    secrets: inherit
 
     steps:
       # 1. Checkout source code
