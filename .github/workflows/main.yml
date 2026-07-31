@@ -82,7 +82,7 @@ jobs:
             docker compose up -d --pull always  minibini_vite
       # 9. send shannon email if the action fails
       - name: email shannon on failure
-        uses: dawidd6/action-send-mail
+        uses: dawidd6/action-send-mail@v3.6.0
         with:
           # mail server settings
           server_address: smtp.gmail.com
