@@ -19,58 +19,6 @@ proper issue.
 
 ---
 
-## Oversized route pages to componentize
-
-The `src/routes/**` page components were intentionally left out of the front-end
-test sweep — routes are integration glue (params → API load → pass to child
-components → navigate), and that glue belongs to a future E2E track, not unit
-tests (see `docs/designs/frontend-testing.md`). Most route pages are thin glue
-and fine as-is. But several have grown large by mixing that glue with significant
-**inline logic and sub-views** that were never extracted into components.
-
-When the UI-organization / clarity pass reaches each of these, break the inline
-logic and sub-views out into components (and lib helpers) — the same pattern that
-made the rest of the SPA testable — then unit-test the extracted pieces. Don't
-wrap a 1000-line page in heavy mocks; extract first.
-
-**Primary (≥ 400 lines, as of 2026-06-04):**
-
-- `jobs/TaskDetailPage.svelte` — 527
-- `Search.svelte` — 499
-- `purchaseorders/PurchaseOrderDetailPage.svelte` — 461
-- `worksheets/WorksheetDetailPage.svelte` — 407
-
-**Extracted by the 2026-07-08 job-workspace restructure** (no longer oversized — thin route
-glue now hosts a tested panel component through `JobShell`):
-`jobs/JobTaskListPage.svelte` (was 427 → `TasksPanel.svelte`),
-`jobs/JobShipmentsPage.svelte` (was 418 → `ShipmentsPanel.svelte`),
-`estimates/EstimateDetailPage.svelte` (was 344 → `EstimatePanel.svelte`, and the route file
-itself is now a 12-line redirect shim), `invoices/InvoiceDetailPage.svelte` (→
-`InvoicePanel.svelte`, also now a 12-line redirect shim).
-`change-orders/ChangeOrderDetailPage.svelte` (was **1132**, the largest page in the app)
-followed 2026-07-19: deleted in favor of `ChangeOrderPanel.svelte` hosted by
-`routes/jobs/JobChangeOrderPage.svelte`, with the diff derivations in unit-tested
-`lib/changeOrderDiff.js` and the two grids as `CODeliverablesSection.svelte` /
-`COLineItemsSection.svelte`.
-
-**Watch list (300–365 lines):** `schedule/SchedulePage.svelte` (365),
-`users/UserDetailPage.svelte` (306), `contacts/ContactListPage.svelte` (301).
-
-_Done when:_ each oversized route has had its UI pass with inline logic/sub-views
-extracted into (tested) components, or a deliberate note recorded for why a given
-page stays whole.
-
-> Resolved 2026-07-09: `components/jobs/JobDetail.svelte`'s deep
-> derivations (version timeline, CO delta layering, etc.) were the
-> accordion-pillar era's logic. The 2026-07-09 overview redesign
-> replaced the pillars with six summary blocks and extracted every rule
-> into `lib/jobOverview.js` (pure functions, unit-tested) + one dumb
-> renderer (`components/jobs/overview/SummaryBlock.svelte`) + six thin
-> wrapper components — `JobDetail.svelte` itself is now ~120 lines of
-> glue. No longer oversized; no longer carries untested deep logic.
-
----
-
 ## Job & estimate lifecycle (decisions)
 
 Status coupling, transitions, and what a job may do at each stage.
@@ -165,90 +113,6 @@ Status coupling, transitions, and what a job may do at each stage.
   _Done when:_ `ServiceItem.description` is removed (migration + code + fixtures) and specifics are
   sourced from the Task/line description everywhere.
 
-- **Terminology: rename worksheet / estimate / wizard for the consolidated flow.** — _added 2026-06-25_
-  Under the planning-consolidation direction (worksheet = the single authoring
-  surface; estimate = a frozen customer-facing projection), reconsider the
-  user-facing names: **Worksheet → "Estimate"** (it's where you build the estimate),
-  the current frozen **Estimate → "Customer View"**, and the **wizard →
-  "Consolidate Lines"** (its actual job is grouping atoms into lines). UI
-  labels/terminology only — internal model names can stay. Revisit with
-  the planning-billing consolidation design (2026-06-24 draft, since
-  deleted; its §11 already flagged the worksheet-naming question).
-  _Done when:_ the consolidation design settles on user-facing names and the UI is
-  relabeled (or the idea is explicitly dropped).
-
-- **`Fee.task` is a dormant field — decision record so nobody re-researches it.** — _added 2026-07-03_
-  RM decision: **leave it alone** (keep the field; don't wire it, don't drop it). The research, so it
-  never needs redoing:
-  - *Origin:* the job-owns-atoms lenses spec (`2026-06-29-job-owns-atoms-documents-as-lenses.md`,
-    commit `23345f83`; retired from the tree in `c85fac6c`) defined Fee with "an optional `task` link
-    (for 'the work behind it')". Motive: `flat_fee` was removed from RateScheme ("its job is now
-    Fee's"); "Task stays pure work; money never sits on it" — so the link was the designed home for
-    **fixed-price work**: Task carries the labor (bleps/schedule/completion), Fee carries the frozen
-    price. Successor to the May flat-fee-on-task design (`2026-05-17-flat-fee-pricing-design.md`).
-  - *Why it's dormant:* both planned hooks fell out during implementation. Acceptance was to "link a
-    task if one was named" but `EstimateLineItem` never grew a task-naming field; the impl plan's
-    Task 7.3 specced `FeeModal` with an "optional task link" but the modal shipped with only an unused
-    `taskId` prop. No production reader exists: the invoice wizard pool is task-grouped yet files every
-    fee under a flat "Fees" group (`task_id: None`); only `validate_data` reads it (job-consistency).
-    The API PATCH accepts `task` but no UI sends it.
-  - *The unsolved design hole (why not to wire it casually):* a fee-linked Task is still metered
-    (`rate_scheme` NOT NULL), so it would bill in the invoice pool *alongside* the Fee that is its
-    price — fixed-price work needs either a $0/internal-scheme convention or pool logic suppressing a
-    task's metered billing when a linked Fee covers it. Neither exists.
-  - *Hazards while it sleeps:* it's a **OneToOne** — any future Fee-retirement state must null the link
-    or a retired fee blocks a replacement fee on the same task (MySQL: no conditional uniqueness; the
-    2026-07-03 deletion doctrine deferred the Fee `retired` state to this same future pass).
-    `Task.delete()` SET_NULLs it.
-  _Done when:_ fixed-price work gets designed as its own feature (Fee↔Task pairing + the
-  pool-suppression rule, perhaps with the deferred `FeeItem` catalog) — or the field is dropped in
-  that design's place.
-
-## Job overview (2026-07-09 six-block redesign)
-
-The overview replaced its accordion pillars with six lifecycle summary
-blocks this pass (2026-07-09 redesign; durable reference
-`docs/designs/jobs-and-tasks.md` §9). Debt and open
-questions specific to that redesign:
-
-- **Block-internal specific-document links.** — _added 2026-07-12 (from the 2026-07-09 design's deferred list)_
-  The blocks deliberately shipped with no links or actions (the rail
-  sits directly above; Spend has no honest destination). Linking a
-  *specific document* mentioned inside a block — a PO number, an
-  invoice number, an estimate version — is a separate, plausible
-  refinement RM wants to feel out with the page live. _Done when:_ RM
-  decides which in-block document mentions (if any) become links, and
-  they're implemented — or the idea is dropped.
-
-- **`ShipmentsPillar.svelte` and `Accordion.svelte` are orphaned.** — _added 2026-07-09_
-  `components/jobs/ShipmentsPillar.svelte` (the read-only shipments
-  matrix that used to sit in the accordion between Invoices and
-  Purchase Orders) has zero importers now that the accordion pillars
-  are gone — the overview's Delivery block shows aggregate stats only,
-  and the full matrix already lives on the Shipments section page
-  (`ShipmentsPanel.svelte`). Same story one layer down:
-  `components/Accordion.svelte` (+ its private `css/accordion.css`) had
-  exactly one consumer, `JobDetail.svelte`'s pillar expand/collapse,
-  which is also gone — nothing else in the app imports `Accordion.svelte`
-  today (only its own test, `tests/components/Accordion.test.js`, still
-  references it directly). _Done when:_ RM confirms nothing planned
-  wants either component, then both (`ShipmentsPillar.svelte`,
-  `Accordion.svelte` + `accordion.css` + their tests) are deleted — or a
-  future reuse is identified and they stay.
-- **Overview Coverage stat counts only `materialStatus` "Needed" as SHORT.** — _added 2026-07-09_
-  The Materials block's Coverage signal (`JobDetail.svelte`'s `coverage`
-  derivation, consumed by `materialsBlock()` in `lib/jobOverview.js`)
-  flags `SHORT` only when a job material's status is exactly **Needed**
-  (established, stock short, no PO link). Materials in **Needs pricing**
-  or **Awaiting customer** are also short of stock with no incoming
-  supply lined up, but don't count toward `SHORT` — so a job stuck
-  waiting on pricing or a customer-supplied item can show a clean `OK`
-  Coverage stat while materials are, in practice, not covered. Revisit
-  if RM wants those statuses folded into the SHORT count (or a separate
-  signal for them) once the block has lived a while.
-  _Done when:_ RM has decided whether Needs-pricing/Awaiting-customer
-  materials should affect the Coverage stat, and the behavior matches.
-
 ## Change orders
 
 The CO surface and its estimate-parallel code.
@@ -328,23 +192,22 @@ The CO surface and its estimate-parallel code.
 
 Billing mechanics and money-record lifecycle.
 
-- **Re-billing Task actuals across multiple invoices.** — _added 2026-06-02_
-  Invoices can be raised before a job is finished (e.g. progress billing). If invoice #1 is
-  finalized and bills the actuals of Task A, then Task A gets more work logged, and later
-  invoice #2 is generated for the same job, it's unclear how Task A's actuals are handled on
-  the second invoice — does it re-bill the full actual (double-billing the earlier portion),
-  bill only the delta since invoice #1, or refuse the atom as already-claimed? The atom-claim
-  model (`InvoiceLineItemSource`) tracks which invoice claimed an atom, but a Task whose
-  actuals *grew* after being billed has no defined delta-billing behavior. Decide and enforce
-  the rule (likely: disallow billing anything on an incomplete Task).
-  _Done when:_ there is no conflict or confusion between items billed on an earlier vs on a later invoice.
-
 - **Invoice revisions — back the "Revise (coming soon)" placeholder.** — _added 2026-06-04_
   `InvoiceDetailPage.svelte` shows a **disabled** "Revise (coming soon)" button on sent
   invoices (`canSeeRevise`), shipped as a placeholder — there is no invoice-revision backend
   (no `InvoiceService.revise`, no supersede/version chain like estimates have). Decide
   whether invoices need a revise flow at all (vs. cancel + new invoice) and, if so, build the
-  backend + wire the button. _Done when:_ either the placeholder is backed by a working
+  backend + wire the button.
+  **Groundwork already laid** (_2026-07-28_): `superseded` is in
+  `DEAD_INVOICE_STATUSES` (`apps/invoicing/claims.py`), so entering it already
+  releases the invoice's atom claims and `InvoiceClaimService._live_sources`
+  already excludes it — backend and the SPA's `INVOICE_DEAD_STATUSES` agree.
+  **The one thing a revise flow must get right:** move or re-point the
+  `InvoiceLineItemSource` rows onto the new revision *before* flipping the
+  parent to `superseded`, exactly as `EstimateService.revise_estimate` does.
+  The release fires on that transition and would otherwise delete rows the
+  revision still wanted.
+  _Done when:_ either the placeholder is backed by a working
   invoice-revise flow, or it's removed with a recorded decision that invoices don't revise.
 
 - **Voided-not-vanished for post-approval Expenses and BillPayments.** — _added 2026-07-04 (deferred from the deletion-doctrine pass)_
@@ -403,20 +266,6 @@ Billing mechanics and money-record lifecycle.
   expense is ready to bill as soon as it exists. Revisit only if a
   "not ready to bill" expense state is ever needed.
 
-- **Cancelled invoices keep their atom-claim rows.** — _added 2026-07-25_
-  `InvoiceService.cancel` only flips status; `InvoiceLineItemSource` rows
-  survive. The pool shows such atoms (incl. deposit credits) as available
-  — the claim exclusion is logical (`get_source_pool`'s claim lookup
-  excludes cancelled-invoice sources) — but re-pulling one hits the DB
-  unique constraint → 409 `atoms_already_claimed`. The 409 body carries
-  only `detail`/`code`/`atom_ids` — no `claiming_invoice_number` (that
-  field exists only in the pool's `claimed_by_other` state, and a
-  cancelled invoice's claim never reaches it, by the same exclusion) — so
-  the user sees a bare "already claimed" error with no way to see which
-  (cancelled) invoice actually still holds the row. Pre-existing for
-  task/material/fee atoms; deposits inherit it.
-  _Done when:_ cancel releases claims (or re-claim reuses the dead row).
-
 - **`AccountingCategory.adjustment_target_categories` M2M N+1 on invoice/estimate detail.** — _added 2026-07-25_
   Pre-existing, rediscovered twice during the deposits work: once via the
   `is_referenced()` freeze-check gap (fixed — see
@@ -436,55 +285,10 @@ Billing mechanics and money-record lifecycle.
   `adjustment_target_categories` N+1, verified with `assertNumQueries` or
   equivalent.
 
-## Wizard & line-item UX
-
-The atom-pull surfaces on estimates and invoices.
-
-- **Stale SPA state after re-login on an old tab — the "works when I retry" bug family.** — _added 2026-07-18_
-  RM's observed pattern: odd bugs after returning to an old browser tab that
-  now shows Login and logging back in, often after a new dataset. The login
-  transition remounts components ({#if $user} swap) but **module-level caches
-  and long-lived stores survive** and can carry rows/ids from the previous
-  session/dataset — e.g. `lib/paymentAccounts.js`'s `_cache` is only cleared by
-  the settings-save path, never by login/logout. (The template-preset bug
-  originally filed here turned out to be cross-window list staleness — fixed
-  2026-07-19: the Add-Work pick now carries the full serviceItem object.) Fix
-  directions: hard-reload on login from an expired-session state, or a
-  registered "reset on login" hook for every module cache/store.
-  _Presumed members of this family (verified unreproducible in code,
-  2026-07-19 review):_ (a) the 2026-06-25 "Shift & Blep start times display
-  ~1 hour early" observation — the whole pipeline (server-side
-  `timezone.now()` storage, DRF ISO output, `new Date()` + local getters in
-  format.js) is timezone/DST-correct and the SPA has no fixed-offset or
-  string-sliced datetime math; (b) the 2026-07-13 "time manager can't edit
-  their own OPEN shift" observation — service, API PATCH (null and omitted
-  `end_time`), and the edit modal all handle open shifts correctly under
-  test. Reopen either as its own entry if it recurs with a repro.
-  _Done when:_ logging in from a stale tab provably starts from clean client
-  state (or the odd-bug-after-relogin pattern stops recurring and RM closes
-  this).
-
-- **Wizard's by-hand line item uses an inline editor, not the LineItemModal.** — _added 2026-06-03_
-  Adding a manual line item from the detail page uses the new `LineItemModal` (manual/catalog
-  toggle), but adding one inside the wizard uses a separate inline editor (likely the same one
-  used when grouping atoms). Two different entry surfaces for "add a line item by hand" is
-  confusing. Converge on one. _Done when:_ adding a manual line item uses the same component
-  whether on the detail page or in the wizard.
-
 ## Purchasing & inventory
 
 (The procurement-machinery items moved into the freeform-materials plan
 2026-07-04; the plan shipped 2026-07-05 and the still-open ones returned below.)
-
-- **PO line form needs an explicit "attach to existing material" picker.** — _added 2026-06-20; returned 2026-07-05 from the freeform-materials plan (not built)_
-  When adding a PO line for a job that already has materials, there's no way to
-  deterministically attach the line to a *specific* existing pending material — the
-  resolver only auto-claims on an exact single match, else silently creates a
-  duplicate. (The `material_id` explicit path exists on the API and is used by the
-  one-shot "order this material" prefill, but the manual add-line form never offers
-  it.) Fix: once a Job is selected on the PO line form, surface that job's pending
-  unlinked materials and let the user pick "attach to this one" (explicit
-  `material_id`) or "create new". _Done when:_ deterministic attach with tests.
 
 - **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14; returned 2026-07-05 from the freeform-materials plan (consciously punted)_
   An expense is single-mode (cost OR stock receipt). One trip buying both an
@@ -501,6 +305,35 @@ The atom-pull surfaces on estimates and invoices.
   (attach == receipt, establishes provisional materials), so the original repro
   context is gone. Re-test on the new flow; if it can't reproduce, delete this
   entry. _Done when:_ reproduced and fixed with a test, or shown obsolete.
+
+- **Expense-created materials are left provisional despite having a cost.** — _added 2026-07-28 (found tracing needs-pricing for the overview Coverage work)_
+  `ExpenseService.attach` handles the two branches of the same real-world event
+  inconsistently. With `material_id` (attach to an existing material) it
+  establishes a provisional target — minting the lot at the expense's unit cost
+  with `cost_source=EXPENSE` — and then calls `receive_ad_hoc_purchase`; the
+  docstring says it outright: *"attach == receipt."* The `new_material` branch
+  (`apps/expenses/services.py` ~L85), for a freeform material with no catalog
+  item, passes the same `cost_source=EXPENSE` and then does **neither** — no
+  `establish`, no receive. `create_on_job`'s mint gate deliberately excludes
+  document-sourced costs, so the material is born provisional with a real
+  recorded cost and zero stock.
+  Consequences: it reads **"Needs pricing"** on every material row though its
+  cost is known; the job overview's Coverage stat counts it as *needs ordering*
+  though it is physically in the shop; `InventoryService.consume` refuses it;
+  and **task completion blocks** on it (`apps/jobs/services.py` ~L1404,
+  "not yet priced/received") — RM: that gate should not fire for material
+  that's actually in hand. Fix the state, not the gate: once expense-created
+  materials establish, provisional means "no cost, not ordered, not received",
+  which is worth blocking on.
+  Parts already exist — `MaterialService.establish` mints the lot,
+  `InventoryService.receive_ad_hoc_purchase` books the stock, and
+  `_default_markup_percent` is there (`establish_reverse_markup` runs it
+  sell→cost; this needs cost→sell). Design question to settle in the pass: does
+  an expense-created material receive its full quantity, or only what the
+  expense paid for?
+  _Done when:_ a material created from an expense is established and stocked
+  like the attach branch, with a markup-derived sell price, and no longer reads
+  "Needs pricing".
 
 - **Decide whether "drops" (offcuts/scraps) get an unbacked-material lane or lightweight lots.** — _added 2026-07-05 (parked during the freeform-materials design)_
   The "no permanently-unbacked Material" rule (every Material establishes to a lot)
@@ -588,163 +421,24 @@ The atom-pull surfaces on estimates and invoices.
   guard stays for everyone), or (b) keep manager-only and hide the worker's
   Delete button (`TimeEditModal.svelte` shows it ungated). Deliberately not
   fixed on `feature/tasks`.
-  _Done when:_ the rule is decided and UI, service, docs, and tests agree.
-
-All three want the same shared live-refresh/notification mechanism (see the general-repolling project note).
-
-- **Notify the requester when an approval request is approved/denied.** — _added 2026-05-31_
-  Workers get no feedback when a manager acts on their request — they only find out by
-  re-checking the list. Applies to **time-change requests** (shift + blep, the
-  `ShiftChangeRequest`/`BlepChangeRequest` approve/deny actions) AND **expense
-  reimbursements** (the expense approve/reject flow). Want some notification channel
-  (in-app banner/badge, email, or a "what changed since you last looked" surface) so the
-  requester learns the outcome without polling. Ties into the broader cross-client
-  live-refresh idea ([[project_general_repolling]]).
-  _Done when:_ a requester is notified (by whatever agreed channel) of approve/deny
-  outcomes for both time-change requests and expense reimbursements.
-
-- **Stale-view error handling + live refresh after a concurrent change.** — _added 2026-06-03_
-  Two users with the same job open: one creates the estimate, the other's Create-Estimate
-  button is still present and clickable. The backend correctly rejects the second create with
-  a note, but the stale view doesn't refresh — the dead button stays. General pattern: a page
-  showing another client's mutable state should both (a) surface the rejection cleanly and
-  (b) re-fetch so the now-invalid affordance disappears. A small live-refresh system already
-  exists for bleps/shifts; the natural move is to generalize it into one shared cross-client
-  refresh mechanism (see the "general repolling" project note) rather than bolt on per-page
-  polling. Not for this round. _Done when:_ a view that loses an action to a concurrent change
-  refreshes to hide the stale affordance, and the rejection is shown without a raw error.
-
-- **Phantom blep in the UI after a sub-minimum auto-clock-in start.** — _added 2026-06-28_
-  _(Low priority — rarely if ever happens in practice.)_ Scenario: a user who is **not**
-  clocked in starts a blep (which auto-clocks them in **and** creates the open blep),
-  then clocks out **before** `blep_minimum_minutes` has elapsed. The backend is correct
-  — the clock-out close path (`BlepService._resolve_open_blep` → `_cancel_blep`, the
-  under-minimum full-undo in `apps/jobs/services.py`) **deletes** the open blep, so no
-  row is created. But the SPA still shows the blep as created: the UI optimistically
-  reflects the blep from the start call and never reconciles it against the server's
-  silent discard on clock-out. _Fix direction:_ have the clock-out / close response
-  report which open bleps were discarded as sub-minimum (or have the UI refetch
-  open/recent bleps after clock-out) so the front end drops the phantom. **Likely folds
-  into the planned push-notification / live-refresh work** — a shared mechanism so pages
-  affected by work elsewhere can refresh themselves (still future); this phantom blep is
-  one instance of UI state drifting from the server, so fix it as part of that effort
-  rather than as a one-off. _Done when:_ clocking out under the minimum after an
-  auto-clock-in start leaves no blep visible in the UI, matching the (already-correct)
-  DB state.
-
-## Email
-
-Outbound sending, inbound correlation, the reply/forward composer, threading, and the
-email-association pickers. Grouped here because they share the EmailRecord / TempEmail /
-IMAP-SMTP machinery and tend to be worked together.
-
-- **Email can be linked to a Job unrelated to its already-linked PO.** — _added 2026-06-21_
-  When an email is associated with a PO and also with a Job, nothing checks that the Job
-  matches any job referenced by the PO's line items — I was able to link an email to a Job
-  that appears on no line item of that email's existing linked PO. The email-association
-  actions (`linkToJob` / `linkToPo`, used by the email-association pages) validate each
-  link independently, with no cross-consistency guard. Open questions before fixing: a PO's
-  lines can legitimately span **multiple** jobs (per-line job via the linked material), so a
-  strict "must match" rule may be wrong — maybe it's a soft warning ("this job isn't on the
-  linked PO — link anyway?") rather than a block, and we need to decide what "related" means
-  when a PO touches several jobs. _Done when:_ we've decided whether/how to constrain or warn
-  on email↔job vs email↔PO consistency, and either added the guard or recorded why
-  independent links are intentional.
-
-- **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
-  Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer
-  intentionally have no draft state. SMTP failure with a page reload loses whatever the
-  user typed. Acceptable until real complaints surface — at which point the natural shape
-  is a `direction='outbound', sent_at=null, last_send_error=''` EmailRecord (the "in
-  flight" state currently never persists) plus a SPA list of "Drafts" on the inbox page.
-  Reply drafts probably want the most attention since freeform replies can be long.
-  _Done when:_ user can leave a send page mid-compose, come back later, and the form
-  pre-fills with what was there.
-
-- **Send outbound documents as a reply to the customer's most recent inbound thread.** — _added 2026-05-30_
-  When sending an Estimate / PO / Invoice, look up the latest `direction='inbound'`
-  EmailRecord linked to the document's Job (or PO / Bill), and set the outbound's
-  `In-Reply-To` + `References` headers so the customer sees the doc in the same Gmail
-  thread as their inquiry. Today we always send a fresh standalone email — works fine
-  but means customers see two separate threads. Probably a per-document Configuration
-  toggle ("thread document emails into recent customer threads by default") when this
-  lands. _Done when:_ outbound document emails optionally thread into the parent
-  conversation and customer mail clients see proper threading.
-
-- **Sent-folder upload via IMAP APPEND.** — _added 2026-05-30_
-  Outbound emails sent by Minibini don't appear in the user's Gmail web "Sent" folder
-  — they go out through SMTP and we keep our own EmailRecord, but the user's mail
-  client doesn't know about them. Append each successful outbound to the configured
-  Sent folder via IMAP so the user sees a consistent picture across our app and Gmail.
-  Off the critical path; nice-to-have. _Done when:_ sent emails from Minibini appear
-  in the user's Gmail Sent folder alongside emails they sent through Gmail directly.
-
-- **Forward action in the reply composer.** — _added 2026-05-30_
-  Standard mail-client Forward — different prefill from Reply (no recipient, `Fwd:`
-  subject, body becomes the quoted original, original attachments included). Not in
-  the inline composer today. _Done when:_ the action panel has a Forward button
-  alongside Reply / Reply All and the composer handles the Forward prefill shape.
-
-- **Subject-line parsing fallback for forwarded-rather-than-replied correlation.** — _added 2026-05-30_
-  Reply correlation uses In-Reply-To / References, which most replies preserve.
-  Forwards typically drop the threading headers, so a forwarded reply lands
-  unassociated. Could grep the subject for our outbound document numbers
-  (`EST-2026-0001`, `PO-…`, `INV-…`) as a fallback. Only worth doing if forwards
-  turn out to be a noticeable miss rate. _Done when:_ a measurable rate of
-  forwarded-replies-to-documents auto-associate to the right object.
-
-- **Multiple "our own" addresses for Reply-All filtering.** — _added 2026-05-30_
-  The Reply-All CC computation strips only the single `EMAIL_HOST_USER` address from
-  the list of original recipients. If the shop ever polls multiple accounts or
-  accepts mail at aliases, the user could see their own alias end up in CC. _Done
-  when:_ Reply-All strips any of the configured "our own" addresses (probably a
-  small list pulled from a new Configuration key).
-
-- **Thread view in the SPA.** — _added 2026-05-30_
-  Show all emails in a thread together (with their shared and individual
-  associations) instead of inbox rows that hide the structure. The
-  thread-association propagation feature ensures the data is now correctly
-  per-thread, so a thread view would just render what's already coherent. Real UX
-  improvement; out of scope when the propagation feature shipped. _Done when:_ the
-  email inbox has a thread-grouped view; clicking a thread shows the conversation
-  with the shared FK associations at the top and per-email details below.
-
-- **Bulk operations across a thread.** — _added 2026-05-30_
-  "Mark whole thread as read," "delete whole thread," "disassociate the whole
-  thread from Job X." Different from per-email actions (already present) — these
-  would operate over the thread membership set computed by
-  `collect_thread_member_ids`. Pair with the thread-view follow-up since the UI
-  surface for invoking these is the natural place. _Done when:_ the SPA has at
-  least one thread-level bulk action wired up.
-
-- **Email attachments aren't downloadable.** — _added 2026-05-28_
-  `EmailContent.svelte` renders attachments as
-  `<strong>{filename}</strong> ({content_type}, {size} bytes)` — no
-  download link. The IMAP service used to ship the raw `payload` bytes inside the JSON
-  response, which 500'd for any non-UTF-8 attachment (commit `<this-one>` strips
-  `payload` from the service contract); the SPA never used the bytes anyway. _Done
-  when:_ a streaming endpoint exists (e.g. `GET /api/emails/{id}/attachments/{index}/`)
-  that re-fetches by UID, returns the bytes with correct `Content-Type` and
-  `Content-Disposition: attachment; filename=…`, and the email detail page wraps the
-  filename in an `<a href>` to it. Decide at that time whether to cache attachment
-  bytes on `TempEmail` (avoids IMAP-per-click) or keep the streaming-from-IMAP shape.
+  **Same shape, second case — the invoiced-task freeze** (_added 2026-07-28_):
+  `BlepService.update` and `.delete` both refuse, for *every* actor, when the
+  blep's task is on a live invoice (`data-constraints.md` §1.12; `update`
+  joined the freeze 2026-07-28). The blep serializer exposes no
+  invoiced/frozen flag and the SPA does no gating on it, so `TimeEditModal`
+  offers Save and Delete on a billed task's time and the user only learns on
+  submit — the same UI-offers-what-the-server-refuses pattern, just driven by
+  document state rather than permissions. Fixing the affordance wants a
+  serializer flag (e.g. `actuals_frozen`) the modal can disable and explain
+  on; worth doing in one pass with the shift-delete decision above, since
+  both land in `TimeEditModal`.
+  _Done when:_ the shift rule is decided and UI, service, docs, and tests
+  agree — and the modal no longer offers edit/delete on a blep whose actuals
+  are frozen.
 
 ## Platform & conventions
 
 Cross-cutting UI/API conventions and shared components.
-
-- **Notes should come out of History as a first-class sub-object.** — _added 2026-07-08 (RM, during the job-workspace design)_
-  Notes today are just history entries (`entry_type='note'`, write-only via
-  `POST /{jobs,contacts,businesses}/{id}/notes/`, immutable, rendered inside
-  history feeds). But notes bridge two distinct uses: **live time-gapped
-  communication between workers during a job** and **after-the-fact review**
-  — bundling them inside History buries the live-communication half where
-  nobody looks until something goes wrong. Promote Notes to a first-class
-  sub-object with its own surface (likely its own panel or header-band slot
-  in the job workspace restructure; decide the model/API shape then).
-  _Done when:_ notes have their own UI surface (and whatever model/API
-  separation that requires), with the history feed still recording them (or
-  a recorded decision otherwise).
 
 - **JobCard's `.doc-pill-*` should join the global `.status-badge` family.** — _added 2026-07-08 (CSS review pass); narrowed 2026-07-09_
   Originally paired with `JobDetail.svelte`'s `.pill-*` palette, both
@@ -804,6 +498,23 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ each bespoke table either adopts the house style or carries
   a comment naming the reason.
 
+- **`ContactListPage.loadAll()` has no stale-response guard — suspected cause of a flaky e2e.** — _added 2026-07-28_
+  `e2e/specs/contacts/import-skip-report.spec.js` fails intermittently (~2 of 4
+  full-suite runs; always passes run alone or with only the contacts specs) at
+  the step after the letter-index click: `getByRole('link', {name: 'Zenith
+  Imports E2E'})` not found. Leading hypothesis, **not yet confirmed**: two
+  `loadAll()` fetches are in flight at once — `ContactsImportPanel`'s
+  `onCommitted={loadAll}` fires on Apply, then clicking "Z" sets `letterFilter`
+  and the `$effect` fires another — and nothing sequences them. The earlier
+  unfiltered response can land last and overwrite `allItems`, leaving the A-page
+  rendered while the filter says Z. Under load the suite is slow enough for the
+  responses to invert. If that's right it's a real (if narrow) user-facing bug,
+  not just test flake: any fast filter change during an in-flight load can show
+  the wrong list. Fix shape: a request epoch/token in `loadAll` that discards
+  responses older than the latest issued (or an abort on supersede).
+  _Done when:_ the race is confirmed or ruled out; if confirmed, `loadAll`
+  ignores superseded responses and the spec stops flaking in full-suite runs.
+
 - **Four schedule tests are midnight-flaky.** — _added 2026-07-08 (found running the full suite just after midnight)_
   `tests.test_api_schedule`: `test_lane_bar_carries_job_number_and_name`,
   `test_work_complete_task_present_in_worker_lane`,
@@ -819,14 +530,42 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the schedule suite passes at any time of day (spot-check by
   passing a just-past-midnight `now`).
 
+- **`deposit-creation.spec.js` is order-dependent — it picks the first
+  invoice-less job.** — _added 2026-07-30_
+  `findInvoicelessJob` (`e2e/specs/deposits/deposit-creation.spec.js` ~L31)
+  scans the backdrop for the *first* billable job with zero invoices. The
+  suite runs `workers: 1` against one shared `minibini_e2e` with no per-spec
+  reset, so any earlier spec that invoices a billable job changes which job
+  this one gets — or consumes the last candidate. Solo it always lands on the
+  same clean job and passes (verified 8/8 on fresh DBs); it failed once inside
+  a full-suite run. Deterministic under ordering, not timing noise, and the
+  spec does discard its own draft, so it's downstream of others rather than
+  self-poisoning. Same shape as the "filter-change + stale page race" family
+  of shared-state fragilities. Fix shape: have it create its own job (as
+  `rate-scheme-modal` and `coverage-signal` do for their shapes) instead of
+  hunting the seed for an unclaimed one.
+  _Done when:_ the spec's job is one it made, so full-suite ordering can't
+  reach it.
+
 - **Convert the remaining local-state tab pages to per-tab routes.** — _added 2026-07-05 (RM, during the Catalog-area design)_
   The Catalog area set the pattern: real routes per tab (bookmarks, refresh, and
   back-button land on the right tab; the tab strip is `<a use:link>`). Settings
   (`SettingsPage.svelte`, six tabs) and the job history section
   (`JobHistorySection.svelte`, formerly `JobHistoryPage.svelte`) still use
   local `$state` tabs under a single URL.
+  **The history section has a caller waiting on it** (_2026-07-28_): the job
+  overview's Spend block links to `#/jobs/:id/history` as a *placeholder*,
+  because Spend's honest destination is a job-profitability analysis that
+  doesn't exist and there's no URL that means "Analysis" while the tabs are
+  local state. Three things land together when this entry is worked:
+  per-tab routes for the section, a third **Analysis** tab (a "not yet
+  implemented" placeholder until the profitability work is specced), and
+  retitling the page **History → "History and Analysis"** (page `<h2>` only —
+  the rail label stays "History"; the strip has no room). Then repoint Spend's
+  href in `spendBlock()` (`lib/jobOverview.js`) at the Analysis tab.
   _Done when:_ those pages' tabs are routes (or a deliberate exception is
-  recorded for them).
+  recorded for them), and Spend links to the Analysis tab rather than the
+  history index.
 
 - **Modal stacking on the schedule quick card — Escape closes both layers.** — _added 2026-07-04 (found during the Modal-shell sweep)_
   The one real modal-on-modal spot: `TaskQuickCard` (schedule bar click → popup
@@ -843,15 +582,6 @@ Cross-cutting UI/API conventions and shared components.
   open" signal), and stacked modals take the nested tier.
   _Done when:_ Escape on a stacked modal closes only the modal, and the layers
   read clearly.
-
-- **RateScheme add/edit form should be a modal.** — _added 2026-07-18_
-  `RateSchemeManager.svelte` (Settings page) expands an inline `editingId` form
-  in the page flow instead of using the `Modal.svelte` shell that record
-  create/edit surfaces elsewhere use. Convert the add/edit form to a modal.
-  Related: `ServiceItemManager.svelte` uses the same inline pattern — decide
-  whether it converts in the same pass.
-  _Done when:_ adding/editing a rate scheme happens in a modal (and the
-  ServiceItemManager question is decided).
 
 - **Ctrl/Cmd-click should always open navigation in a new tab.** — _added 2026-07-19 (RM notes review)_
   Sometimes it works, sometimes it doesn't. Root causes found: (a)

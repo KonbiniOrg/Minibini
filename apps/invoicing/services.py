@@ -187,6 +187,8 @@ class InvoiceService:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
             raise NotFoundError(f'Invoice {invoice_pk} not found')
+        # Going through save() also releases the invoice's atom claims —
+        # cancelled is one of DEAD_INVOICE_STATUSES (apps/invoicing/claims.py).
         invoice.status = Invoice.STATUS_CANCELLED
         invoice.save()
         return invoice

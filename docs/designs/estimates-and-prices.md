@@ -743,7 +743,21 @@ invoice lens claims (via `InvoiceLineItemSource`, owned by the invoicing
 doc) — both documents are lenses over one set of atoms on the Job. The
 unique constraint on `(source_type, source_pk)` enforces **whole-atom
 claim at the database level**: an atom can be referenced by at most one
-estimate line item.
+estimate line item at a time.
+
+Because that constraint is *global* and `rejected`/`expired` are terminal,
+a dead document holding claims would lock its atoms out of every future
+estimate on the job — forever. So **entering `rejected` or `expired`
+releases the claims**: `Estimate.save()` deletes the document's source rows
+via `claims.release_estimate_claims` (2026-07-28), and `ChangeOrder.save()`
+does the same through `release_change_order_claims`. `accepted` keeps its
+rows — they are the agreement record — and `superseded` already holds none,
+since `revise_estimate` re-points them. The release lives in `save()`
+rather than a service so every writer is covered: the portal decline
+endpoints, the expiry sweep, the status-transition actions, and the admin.
+The line items themselves are untouched, so a rejected estimate stays a
+readable frozen snapshot of what was offered — the same shape a superseded
+one takes. This mirrors `InvoiceService.cancel` on the billing lens.
 
 `source.resolve()` returns the concrete atom instance (`Task`,
 `Material`, or `Fee`).

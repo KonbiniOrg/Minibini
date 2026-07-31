@@ -29,4 +29,17 @@ describe('ScopeBlock', () => {
     expect(container.querySelector('.summary-block')).toHaveClass('dormant');
     expect(getByText(expected.dormantText)).toBeInTheDocument();
   });
+
+  it('threads jobId into the lib and links the card at the current estimate', () => {
+    const props = {
+      jobId: 42,
+      estimates: [{ estimate_id: 8, version: 2, status: 'open', sent_date: '2025-06-27' }],
+      changeOrders: [],
+      deliverableCount: 0,
+      now: '2025-07-09',
+    };
+    const { container } = render(ScopeBlock, { props });
+    expect(container.querySelector('.summary-block').getAttribute('href'))
+      .toBe('#/jobs/42/estimate/8');
+  });
 });

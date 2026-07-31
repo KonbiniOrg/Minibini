@@ -107,8 +107,9 @@ describe('RateSchemeManager', () => {
     await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
     await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'percentage' } });
 
-    // Rate field is present
-    const rateInput = getByLabelText(/Rate/);
+    // Rate field is present. Anchored regex: the modal shell exposes an
+    // aria-label ("New Rate Scheme") that a bare /Rate/ also matches.
+    const rateInput = getByLabelText(/^Rate/);
     expect(rateInput).toBeInTheDocument();
     // Negative values allowed (min attribute not present or no constraint forcing positive)
     expect(rateInput.getAttribute('min')).toBeNull();
@@ -118,5 +119,60 @@ describe('RateSchemeManager', () => {
 
     // Modifier editor is NOT rendered
     expect(queryByText('Add modifier')).not.toBeInTheDocument();
+  });
+
+  // 2026-07-30: the add/edit form moved from an inline <fieldset> in the page
+  // flow into the shared Modal shell, like every other record create/edit
+  // surface. Behaviour is unchanged — this covers the shell wiring.
+  it('renders the add form inside the Modal shell, not inline in the page', async () => {
+    const { findByRole, container } = render(RateSchemeManager);
+    expect(container.querySelector('.modal')).toBeNull();   // closed by default
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    const modal = container.querySelector('.modal');
+    expect(modal).not.toBeNull();
+    // The form fields live inside the shell.
+    expect(modal.querySelector('input')).not.toBeNull();
+    expect(modal.querySelector('select')).not.toBeNull();
+    expect(await findByRole('button', { name: 'Save' })).toBeInTheDocument();
+  });
+
+  // Description was dropped from the form 2026-07-30; the model field is
+  // slated to go too. Nothing should send or render it.
+  it('has no Description field and never sends description', async () => {
+    const { findByRole, getByLabelText, getByRole, queryByLabelText } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    expect(queryByLabelText(/Description/)).toBeNull();
+
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'NoDesc' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const payload = api.post.mock.calls.find((c) => c[0] === '/api/rate-schemes/')[1];
+    expect(payload).not.toHaveProperty('description');
+  });
+
+  it('Escape closes the form (the shell keyboard contract)', async () => {
+    const { findByRole, container, queryByRole } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    expect(container.querySelector('.modal')).not.toBeNull();
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(container.querySelector('.modal')).toBeNull();
+    expect(queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+  });
+
+  it('Cancel closes the form and reopening starts clean', async () => {
+    const { findByRole, getByLabelText, getByRole, container } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Scratch' } });
+    await fireEvent.click(getByRole('button', { name: 'Cancel' }));
+    expect(container.querySelector('.modal')).toBeNull();
+
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    expect(getByLabelText(/Name/).value).toBe('');
+  });
+
+  it('the edit form opens in the modal too, prefilled', async () => {
+    const { findByRole, getByLabelText, container } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('button', { name: 'Edit' }));
+    expect(container.querySelector('.modal')).not.toBeNull();
+    expect(getByLabelText(/Name/).value).toBe('Hourly');
   });
 });

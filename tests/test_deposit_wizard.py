@@ -182,15 +182,11 @@ class DepositCreditPoolTest(TestCase):
     def test_cancelling_claiming_invoice_releases_deposit_credit(self):
         # Deposit claimed by draft A; promote A to open (queryset update,
         # mirroring the other status-jump tests in this file), then cancel
-        # it. The claim exclusion in get_source_pool is logical (cancelled
-        # invoices are excluded from the claims query), so a fresh draft
-        # should see the credit as available again.
-        #
-        # NOTE: physical re-claim still 409s on the DB unique constraint —
-        # InvoiceLineItemSource rows survive cancellation (documented in
-        # docs/designs/LATER.md, "Cancelled invoices keep their atom-claim
-        # rows"). That asymmetry is out of scope here; this test only
-        # covers the pool's logical "available" display.
+        # it. A fresh draft should see the credit as available again — and
+        # since 2026-07-28 the offer is honest: cancel deletes the claim rows,
+        # so re-pulling the credit no longer 409s on the (source_type,
+        # source_pk) unique constraint. The physical half is covered by
+        # tests/test_invoice_cancel_releases_claims.py.
         claiming_li = InvoiceWizardService.add_atoms_to_new_line_item(
             self.draft, [{'type': 'deposit', 'id': self.dep_line.pk}])
         self.assertTrue(claiming_li.is_deposit_deduction)

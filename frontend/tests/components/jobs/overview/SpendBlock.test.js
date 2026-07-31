@@ -25,4 +25,14 @@ describe('SpendBlock', () => {
     expect(container.querySelector('.summary-block')).toHaveClass('dormant');
     expect(getByText(expected.dormantText)).toBeInTheDocument();
   });
+
+  it('links the card at the history section (Analysis placeholder)', () => {
+    const props = {
+      job: { job_id: 42, status: 'in_progress' },
+      overview: { spend: { labor: 100, materials_bought: 50, total: 150, labor_hours: 2 } },
+      scopeTotal: 1000,
+    };
+    const { container } = render(SpendBlock, { props });
+    expect(container.querySelector('.summary-block').getAttribute('href')).toBe('#/jobs/42/history');
+  });
 });

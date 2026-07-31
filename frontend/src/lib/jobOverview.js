@@ -1,3 +1,5 @@
+import { materialStatus } from './materialStatus.js';
+
 // jobOverview.js — the pure view-model for the job overview page's six
 // lifecycle blocks (Scope → Work → Materials → Spend → Invoicing → Delivery).
 //
@@ -20,6 +22,7 @@
 //
 // Return shape (per block):
 //   { state: 'active' | 'frozen' | 'dormant',
+//     href:     string,             // ALWAYS — the whole card is a link
 //     stats?:   [ StatItem ],       // active blocks
 //     clock?:   { tone, lines: [string] },  // active blocks, optional
 //     frozenText?: string,          // frozen blocks
@@ -93,6 +96,25 @@ function fmtWeekday(iso) {
   return DOW[new Date(utcMs(p)).getUTCDay()];
 }
 
+// --- link targets -----------------------------------------------------------
+// Every block model carries `href`: the whole card is one link (2026-07-28;
+// see jobs-and-tasks.md §9.1a). The rule is "one named document → link to it;
+// none or several → the block's section index", so the choice is a block RULE
+// and lives here, not in the renderers. Deciding it in the same branch that
+// decides what the block displays keeps the two from drifting.
+//
+// Two invariants: the href is never empty (a card is never a dead end), and a
+// document whose id is missing from the payload degrades to the section index
+// rather than emitting a broken link.
+
+function section(jobId, name) {
+  return `#/jobs/${jobId}/${name}`;
+}
+
+function doc(jobId, name, id) {
+  return id == null ? section(jobId, name) : `${section(jobId, name)}/${id}`;
+}
+
 // --- number helpers ---------------------------------------------------------
 
 function num(v) {
@@ -118,12 +140,13 @@ function pct(part, whole) {
 // ===========================================================================
 // 1. SCOPE — estimate versions, change orders, deliverables.
 // ===========================================================================
-export function scopeBlock({ estimates = [], changeOrders = [], deliverableCount = 0, now }) {
-  // Dormant: no estimate exists at all.
+export function scopeBlock({ jobId, estimates = [], changeOrders = [], deliverableCount = 0, now }) {
+  // Dormant: no estimate exists at all. Links to the estimates section — the
+  // place you'd go to make one.
   if (!estimates.length) {
     let text = 'no estimate yet';
     if (deliverableCount > 0) text += ` · ${deliverableCount} deliverables defined`;
-    return { state: 'dormant', dormantText: text };
+    return { state: 'dormant', dormantText: text, href: section(jobId, 'estimate') };
   }
 
   const current = currentEstimate(estimates);
@@ -133,17 +156,24 @@ export function scopeBlock({ estimates = [], changeOrders = [], deliverableCount
   // Active — the current estimate is still draft/open (a revision re-heats
   // likewise, since a new draft is the current estimate).
   if (estActive) {
-    return scopeActiveEstimate(current, estimates, changeOrders, deliverableCount, now);
+    return scopeActiveEstimate(jobId, current, estimates, changeOrders, deliverableCount, now);
   }
 
   // Active — the estimate has settled but a draft/open change order re-heats
   // the block and runs the customer-response clock on the CO's sent date.
   if (openCO) {
-    return scopeActiveChangeOrder(current, openCO, deliverableCount, now);
+    return scopeActiveChangeOrder(jobId, current, openCO, deliverableCount, now);
   }
 
   // Frozen — estimate terminal, no live CO.
-  return scopeFrozen(current, changeOrders, deliverableCount);
+  return scopeFrozen(jobId, current, changeOrders, deliverableCount);
+}
+
+// The estimate this block points at. There is no `#/jobs/:id/change-order`
+// index route, so a CO missing its id degrades to the estimate target rather
+// than to a non-existent section page.
+function estimateHref(jobId, current) {
+  return doc(jobId, 'estimate', current && current.estimate_id);
 }
 
 function currentEstimate(estimates) {
@@ -152,7 +182,7 @@ function currentEstimate(estimates) {
   return pool.reduce((a, b) => (num(b.version) >= num(a.version) ? b : a));
 }
 
-function scopeActiveEstimate(current, estimates, changeOrders, deliverableCount, now) {
+function scopeActiveEstimate(jobId, current, estimates, changeOrders, deliverableCount, now) {
   const superseded = estimates
     .filter((e) => e.status === 'superseded')
     .sort((a, b) => num(a.version) - num(b.version));
@@ -171,13 +201,13 @@ function scopeActiveEstimate(current, estimates, changeOrders, deliverableCount,
     { label: 'Change orders', value: changeOrders.length ? String(changeOrders.length) : '—' },
     { label: 'Deliverables', value: String(deliverableCount) },
   ];
-  const block = { state: 'active', stats };
+  const block = { state: 'active', stats, href: estimateHref(jobId, current) };
   const clock = responseClock(current.sent_date, current.status, now);
   if (clock) block.clock = clock;
   return block;
 }
 
-function scopeActiveChangeOrder(current, co, deliverableCount, now) {
+function scopeActiveChangeOrder(jobId, current, co, deliverableCount, now) {
   const coStat = {
     label: 'Change order',
     value: co.change_order_number,
@@ -194,13 +224,18 @@ function scopeActiveChangeOrder(current, co, deliverableCount, now) {
     { label: 'Total', value: current.total != null ? fmtMoney(current.total) : '—' },
     { label: 'Deliverables', value: String(deliverableCount) },
   ];
-  const block = { state: 'active', stats };
+  // The live CO is the lead stat and the reason the block is warm, so it wins
+  // the link over the settled estimate behind it.
+  const href = co.change_order_id != null
+    ? `#/jobs/${jobId}/change-order/${co.change_order_id}`
+    : estimateHref(jobId, current);
+  const block = { state: 'active', stats, href };
   const clock = responseClock(co.sent_date, co.status, now);
   if (clock) block.clock = clock;
   return block;
 }
 
-function scopeFrozen(current, changeOrders, deliverableCount) {
+function scopeFrozen(jobId, current, changeOrders, deliverableCount) {
   const acceptedCOs = changeOrders.filter((c) => c.status === 'accepted');
   const parts = [];
   if (current.status === 'accepted') {
@@ -215,7 +250,7 @@ function scopeFrozen(current, changeOrders, deliverableCount) {
     parts.push(`${co.change_order_number} accepted ${fmtSlash(co.closed_date)}`);
   }
   if (deliverableCount > 0) parts.push(`${deliverableCount} deliverables`);
-  return { state: 'frozen', frozenText: parts.join(' · ') };
+  return { state: 'frozen', frozenText: parts.join(' · '), href: estimateHref(jobId, current) };
 }
 
 // Customer-response clock: quiet under RESPONSE_CLOCK_DAYS, red at/above it.
@@ -243,6 +278,8 @@ const WORK_FROZEN_JOB_STATUSES = [...WORK_DONE_JOB_STATUSES, 'cancelled', 'rejec
 export function workBlock({ job, overview, tasksPlanned = 0 }) {
   const work = (overview && overview.work) || {};
   const status = job && job.status;
+  // Work names no document — always the task list.
+  const href = section(job && job.job_id, 'tasks');
 
   // Dormant — job not yet approved.
   if (PRE_APPROVAL_JOB_STATUSES.includes(status)) {
@@ -250,13 +287,13 @@ export function workBlock({ job, overview, tasksPlanned = 0 }) {
     const text = planned > 0
       ? `${planned} tasks planned · starts when the scope is accepted`
       : 'starts when the scope is accepted';
-    return { state: 'dormant', dormantText: text };
+    return { state: 'dormant', dormantText: text, href };
   }
 
   // Frozen — work complete, or the job stopped for good.
   if (WORK_FROZEN_JOB_STATUSES.includes(status)) {
     const hours = fmtHours((overview.spend && overview.spend.labor_hours) || 0);
-    return { state: 'frozen', frozenText: `${num(work.tasks_total)} tasks · ${hours}h logged` };
+    return { state: 'frozen', frozenText: `${num(work.tasks_total)} tasks · ${hours}h logged`, href };
   }
 
   // Active — approved / in_progress.
@@ -275,7 +312,7 @@ export function workBlock({ job, overview, tasksPlanned = 0 }) {
   const dueStat = dueStatOf(overview.due);
   if (dueStat) stats.push(dueStat);
 
-  const block = { state: 'active', stats };
+  const block = { state: 'active', stats, href };
   const workingNow = work.working_now || [];
   if (workingNow.length) {
     block.clock = {
@@ -332,6 +369,51 @@ function dueStatOf(due) {
   return s;
 }
 
+// ---------------------------------------------------------------------------
+// Materials coverage — the three-tone signal behind the Materials block's
+// Coverage stat (2026-07-28; replaces the SHORT/OK pair that counted only
+// `needed`).
+//
+// Materials are bucketed by WHETHER A HUMAN MUST ACT, using the same
+// per-material source of truth the rest of the app renders as chips
+// (materialStatus.js):
+//
+//   needs ordering  — `needed` + `needs-pricing`. Not on hand, nothing
+//                     incoming. A provisional (unpriced) material is not in
+//                     stock and has no supply lined up either, so it belongs
+//                     here rather than in a bucket of its own.
+//   not yet arrived — `ordered` (a PO line still owes qty) + `awaiting-customer`.
+//                     Short, but handled: someone is waiting, not deciding.
+//
+// Terminal rows (released/consumed) and on-hand rows count toward neither.
+// SHORT outranks WAITING so the headline always answers "does this job need me
+// right now?"; the sub-line still reports the waiting count so the SHORT
+// headline never hides it.
+// ---------------------------------------------------------------------------
+const NEEDS_ORDERING_KEYS = ['needed', 'needs-pricing'];
+const NOT_ARRIVED_KEYS = ['ordered', 'awaiting-customer'];
+
+function materialsCoverage(materials) {
+  if (!materials.length) return null;   // no materials → omit the stat entirely
+  let needsOrdering = 0;
+  let notArrived = 0;
+  for (const m of materials) {
+    const key = materialStatus(m).key;
+    if (NEEDS_ORDERING_KEYS.includes(key)) needsOrdering += 1;
+    else if (NOT_ARRIVED_KEYS.includes(key)) notArrived += 1;
+  }
+  const ordering = `${needsOrdering} need${needsOrdering === 1 ? 's' : ''} ordering`;
+  const arriving = `${notArrived} not yet arrived`;
+
+  if (needsOrdering > 0) {
+    const parts = [ordering];
+    if (notArrived > 0) parts.push(arriving);
+    return { label: 'SHORT', tone: 'bad', sub: parts.join(' · ') };
+  }
+  if (notArrived > 0) return { label: 'WAITING', tone: 'warn', sub: arriving };
+  return { label: 'OK', tone: 'good' };
+}
+
 // ===========================================================================
 // 3. MATERIALS — POs touching the job + coverage signal.
 // materialsBlock takes `now` so each open PO's Due value can carry the same
@@ -342,24 +424,33 @@ function dueStatOf(due) {
 // ===========================================================================
 const OPEN_PO_STATUSES = ['draft', 'issued', 'partly_received'];
 
-export function materialsBlock({ pos = [], coverage = null, now }) {
+export function materialsBlock({ jobId, pos = [], materials = [], now }) {
   const openPOs = pos.filter((p) => OPEN_PO_STATUSES.includes(p.status));
   const receivedPOs = pos.filter((p) => p.status === 'received_in_full');
-  const coverageShort = coverage && coverage.tone === 'bad';
+  const coverage = materialsCoverage(materials);
+  // Anything but a clean OK re-heats the block. Keying on "not good" rather
+  // than "is bad" matters for the PO-less cases: a job waiting on a
+  // customer-supplied material has no PO to make the block active, and would
+  // otherwise read dormant "nothing on order" while hiding the signal.
+  const coverageAlert = coverage != null && coverage.tone !== 'good';
+  // Always the job's POs section, even when exactly one PO is named: the PO
+  // detail page (`#/purchase-orders/:id`) lives outside the job workspace, and
+  // ejecting the user from it is worse than one extra click (RM, 2026-07-28).
+  const href = section(jobId, 'pos');
 
   // Dormant — no open/received POs (e.g. none at all, or only cancelled ones)
-  // and no shortfall.
-  if (!openPOs.length && !receivedPOs.length && !coverageShort) {
-    return { state: 'dormant', dormantText: 'nothing on order' };
+  // and no coverage alert.
+  if (!openPOs.length && !receivedPOs.length && !coverageAlert) {
+    return { state: 'dormant', dormantText: 'nothing on order', href };
   }
 
-  // Frozen — at least one received PO, none open, coverage not short.
-  if (!openPOs.length && receivedPOs.length && !coverageShort) {
+  // Frozen — at least one received PO, none open, coverage clean.
+  if (!openPOs.length && receivedPOs.length && !coverageAlert) {
     const n = receivedPOs.length;
-    return { state: 'frozen', frozenText: `${n} ${n === 1 ? 'PO' : 'POs'}, all received` };
+    return { state: 'frozen', frozenText: `${n} ${n === 1 ? 'PO' : 'POs'}, all received`, href };
   }
 
-  // Active — any open PO or coverage short.
+  // Active — any open PO, or a coverage alert.
   const stats = [];
   for (const po of openPOs) {
     const sent = po.issued_date || po.created_date;
@@ -387,7 +478,7 @@ export function materialsBlock({ pos = [], coverage = null, now }) {
     if (coverage.sub) cov.sub = coverage.sub;
     stats.push(cov);
   }
-  return { state: 'active', stats };
+  return { state: 'active', stats, href };
 }
 
 // PO due-date pressure tone: red once past due, amber within the pressure
@@ -411,10 +502,14 @@ export function spendBlock({ job, overview, scopeTotal = 0 }) {
   const spend = (overview && overview.spend) || {};
   const total = num(spend.total);
   const status = job && job.status;
+  // Spend names no document. Its real destination is a job-profitability
+  // analysis that doesn't exist yet; the history section is the placeholder
+  // until the Analysis tab lands (see LATER.md, per-tab-routes entry).
+  const href = section(job && job.job_id, 'history');
 
   // Dormant — nothing spent.
   if (total <= 0) {
-    return { state: 'dormant', dormantText: 'nothing spent yet' };
+    return { state: 'dormant', dormantText: 'nothing spent yet', href };
   }
 
   const labor = fmtMoney(spend.labor);
@@ -426,6 +521,7 @@ export function spendBlock({ job, overview, scopeTotal = 0 }) {
     return {
       state: 'frozen',
       frozenText: `${labor} labor · ${materials} materials · ${totalStr} total`,
+      href,
     };
   }
 
@@ -438,6 +534,7 @@ export function spendBlock({ job, overview, scopeTotal = 0 }) {
   }
   return {
     state: 'active',
+    href,
     stats: [
       { label: 'Labor', value: labor, sub: `${fmtHours(spend.labor_hours)} hours` },
       { label: 'Materials', value: materials, sub: 'bought so far' },
@@ -451,12 +548,18 @@ export function spendBlock({ job, overview, scopeTotal = 0 }) {
 // ===========================================================================
 const INVOICE_DEAD_STATUSES = ['cancelled', 'superseded'];
 
-export function invoicingBlock({ invoices = [], scopeTotal = 0, invoicedTotal = 0, now }) {
+export function invoicingBlock({ jobId, invoices = [], scopeTotal = 0, invoicedTotal = 0, now }) {
   const live = invoices.filter((i) => !INVOICE_DEAD_STATUSES.includes(i.status));
+  // One live invoice → link straight to it; none or several → the section
+  // index, which lands on the remembered-or-latest invoice with the DocSubnav
+  // strip listing them all. Never guess which of several the user meant.
+  const href = live.length === 1
+    ? doc(jobId, 'invoice', live[0].invoice_id)
+    : section(jobId, 'invoice');
 
   // Dormant — no live invoices.
   if (!live.length) {
-    return { state: 'dormant', dormantText: 'none yet' };
+    return { state: 'dormant', dormantText: 'none yet', href };
   }
 
   // Billed/Remaining come from the server's authoritative figure — the same
@@ -474,6 +577,7 @@ export function invoicingBlock({ invoices = [], scopeTotal = 0, invoicedTotal = 
     return {
       state: 'frozen',
       frozenText: `${live.length} ${live.length === 1 ? 'invoice' : 'invoices'}, all paid · ${fmtMoney(billed)} billed`,
+      href,
     };
   }
 
@@ -511,7 +615,7 @@ export function invoicingBlock({ invoices = [], scopeTotal = 0, invoicedTotal = 
     sub: `of ${fmtMoney(scopeTotal)}`,
   });
 
-  return { state: 'active', stats };
+  return { state: 'active', stats, href };
 }
 
 function invoiceStat(inv, now) {
@@ -560,6 +664,8 @@ export function deliveryBlock({ shipments = [], deliverableCount = 0, job, now }
   const pickedUp = shipments.filter((s) => s.status === 'picked_up');
   const status = job && job.status;
   const workDone = WORK_DONE_JOB_STATUSES.includes(status);
+  // Delivery names no document — always the shipments matrix.
+  const href = section(job && job.job_id, 'shipments');
 
   // Frozen — everything picked up.
   if (shipments.length && !prepared.length) {
@@ -571,6 +677,7 @@ export function deliveryBlock({ shipments = [], deliverableCount = 0, job, now }
     return {
       state: 'frozen',
       frozenText: `${pickedUp.length} ${pickedUp.length === 1 ? 'shipment' : 'shipments'} picked up · last ${fmtSlash(last)}`,
+      href,
     };
   }
 
@@ -589,13 +696,14 @@ export function deliveryBlock({ shipments = [], deliverableCount = 0, job, now }
       if (days != null && days > PICKUP_CLOCK_WORKING_DAYS) tone = 'bad';
       lines.push(`ready since ${fmtWeekday(sh.prepared_date)}, not picked up`);
     }
-    return { state: 'active', stats, clock: { tone, lines } };
+    return { state: 'active', stats, clock: { tone, lines }, href };
   }
   if (workDone && !shipments.length) {
     return {
       state: 'active',
       stats: [{ label: 'Shipments', value: '0', unit: ` / ${deliverableCount}` }],
       clock: { tone: 'warn', lines: ['work complete, nothing shipped yet'] },
+      href,
     };
   }
 
@@ -603,5 +711,5 @@ export function deliveryBlock({ shipments = [], deliverableCount = 0, job, now }
   const text = deliverableCount > 0
     ? `${deliverableCount} deliverables defined · none ready yet`
     : 'none ready yet';
-  return { state: 'dormant', dormantText: text };
+  return { state: 'dormant', dormantText: text, href };
 }

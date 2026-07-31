@@ -821,8 +821,17 @@ viewset, `ValidationError` to HTTP 400.
 | Public method | Purpose |
 |---|---|
 | `create_historical(actor, task, start_time, end_time, target_user=None)` | Validated historical create; 30h window + `can_manage_time` rules |
-| `update(blep, actor, **fields)` | Update `start_time`, `end_time`, optionally `user`; validates ownership, window, and overlap |
-| `delete(blep, actor)` | Same authorization rules, **plus the invoiced-task freeze**: refused for every actor when the blep's task is on a live invoice — billed actuals never change basis after the fact. Estimate claims don't block (estimates bill `est_qty`). |
+| `update(blep, actor, **fields)` | Update `start_time`, `end_time`, optionally `user`; validates ownership, window, and overlap, **plus the invoiced-task freeze** (below) |
+| `delete(blep, actor)` | Same authorization rules, **plus the invoiced-task freeze** |
+
+**The invoiced-task freeze** applies to `update` *and* `delete` alike
+(update joined it 2026-07-28): both are refused for every actor — own-window
+or `can_manage_time` — when the blep's task is on a live invoice. Moving a
+blep's times changes an ELAPSED_TIME task's actuals exactly as deleting it
+does, so editing is not a lesser act than deleting here; billed actuals never
+change basis after the fact. The freeze keys on **invoiced**, not on
+task-complete, so a finished but unbilled task's time stays correctable.
+Estimate claims never block (estimates bill `est_qty`).
 
 Validation rules enforced inside `BlepService`:
 
@@ -1214,12 +1223,76 @@ you read a number:
 - **Dormant** (`.summary-block.dormant`) — not yet: one dashed ghost line.
 
 CSS vocabulary: `docs/designs/architecture-and-conventions.md` §5.5a
-(`.summary-block` / `.stat-spread` family). **No block-level links or
-actions this pass** (RM decision 2026-07-09): the rail sits directly
-above and corner links would duplicate it; Spend has no honest
-destination at all; clocks/signals are display-only pending a later
-pass. Blocks never list rows (tasks, line items, POs) — the section
-pages do that.
+(`.summary-block` / `.stat-spread` family). Blocks never list rows
+(tasks, line items, POs) — the section pages do that.
+
+**Each block is a link** (RM, 2026-07-28 — this *reverses* the
+2026-07-09 "no block-level links or actions" decision). The whole card
+is the target: `SummaryBlock.svelte` renders the card itself as an
+`<a href>` in all three temperatures, so a click anywhere on it
+navigates. Clocks, pills, and stat values remain inert display.
+
+The target is chosen by one rule — **one named document → link to it;
+none or several → the block's section index**:
+
+| Block | Target |
+|---|---|
+| Scope | the live draft/open change order (`/change-order/:coId`) if there is one — it's the lead stat and the reason the block is warm; else the current estimate (`/estimate/:estimateId`); else, with no estimate at all, `/estimate` |
+| Work | `/tasks` |
+| Materials | `/pos` — **always**, even when exactly one PO is named. The PO detail page (`#/purchase-orders/:id`) is outside the job workspace, and ejecting the user from it costs more than the extra click |
+| Spend | `/history` — a placeholder. Spend's honest destination is a job-profitability analysis that doesn't exist yet; see `LATER.md`'s per-tab-routes entry |
+| Invoicing | the sole live invoice (`/invoice/:invoiceId`) when exactly one is live (cancelled/superseded excluded); otherwise `/invoice`, which lands on the DocSubnav strip |
+| Delivery | `/shipments` |
+
+Two invariants hold everywhere: **every block links in every
+temperature** (a dormant Scope reads "no estimate yet" and lands on the
+Estimates section, where you'd make one — a card is never a dead end),
+and a document whose id is missing from the payload **degrades to the
+section index** rather than emitting a broken href.
+
+The choice is a block *rule*, so it lives in `lib/jobOverview.js`
+alongside the temperature and copy rules — each block model carries an
+`href`, decided in the same branch that decides what the block
+displays, and `SummaryBlock` never picks a target. The multi-document
+case deliberately does **not** guess the "most actionable" document
+(oldest unpaid invoice, earliest-due PO): a wrong guess on a target
+spanning the whole card is worse than a neutral landing one click away.
+
+**Constraint this places on the blocks:** the plain `<a>` wrapping the
+card is valid HTML only because the card renders no interactive
+descendants. Adding a button or link inside a block invalidates the
+markup and forces a stretched-link overlay instead (an absolutely
+positioned anchor covering the card, with inner links raised above it)
+— which also costs text selection inside the card. `SummaryBlock`'s
+tests guard this boundary.
+
+**The Materials Coverage signal is three-tone** (2026-07-28; replaces a
+SHORT/OK pair that counted only `materialStatus` **Needed** and so read a
+clean green `OK` on a job whose materials were all unpriced or all
+awaited). Materials are bucketed by **whether a human must act**, using
+the same per-material statuses the app renders as chips
+(`lib/materialStatus.js`; `materials-inventory-and-purchasing.md` §16):
+
+| Bucket | Statuses | Meaning |
+|---|---|---|
+| *needs ordering* | `needed`, `needs-pricing` | not on hand, nothing incoming. A provisional (unpriced) material has no stock **and** no supply lined up, so it belongs here rather than in a bucket of its own |
+| *not yet arrived* | `ordered` (a PO line still owes quantity), `awaiting-customer` | short, but handled — someone is waiting, not deciding |
+
+On-hand and terminal (released/consumed) rows count toward neither.
+The stat then reads **`SHORT`** (red) if anything needs ordering,
+**`WAITING`** (amber) if nothing does but something hasn't arrived, else
+**`OK`** (green); with no materials at all the stat is omitted. `SHORT`
+outranks `WAITING` so the headline always answers "does this job need me
+*right now*", and its sub-line reports both counts
+("1 needs ordering · 2 not yet arrived") so the red headline never hides
+the waiting work. Deliberately *not* one bucket for everything off the
+shelf: a headline that fires on every healthy job awaiting a normal
+delivery stops being read.
+
+Any non-`OK` coverage re-heats the block to active. Keying on "not OK"
+rather than "is SHORT" matters for the PO-less cases — a job waiting on a
+customer-supplied material has no PO to activate the block and would
+otherwise read dormant "nothing on order" while hiding the signal.
 
 **Fixed order: Scope → Work → Materials → Spend → Invoicing → Delivery**
 (the two money blocks sit adjacent deliberately — spent vs. billed vs.
@@ -1230,7 +1303,7 @@ health*, not documents (the rail names the surfaces).
 |---|---|---|---|
 | **Scope** | no estimate exists yet | current estimate is draft/open, **or** a draft/open change order re-activates a settled estimate (customer-response clock, 7 days) | estimate terminal and no live CO — total, version, accepted/CO dates, deliverable count |
 | **Work** | job not yet approved | approved/in_progress with non-terminal tasks — progress (by estimated worker time, falling back to task count), task counts + blocked pill, Due stat (working-day countdown, omitted with no due date), "working now" clock | all tasks terminal / job `work_complete`+ (or stopped for good: cancelled/rejected) — task count + hours logged |
-| **Materials** | no POs touch the job, no shortfall | any open PO (number/vendor/due, amber pressure within 5 working days) or coverage short — Coverage stat (`OK`/`SHORT`, counting only `materialStatus` **Needed**, not Needs-pricing/Awaiting-customer — see `materials-inventory-and-purchasing.md` §16, and LATER.md) | POs exist, all received |
+| **Materials** | no POs touch the job and Coverage is clean | any open PO (number/vendor/due, amber pressure within 5 working days), **or** any Coverage alert — see the three-tone signal below | POs exist, all received, Coverage clean |
 | **Spend** | nothing spent | anything spent, job not terminal — Labor ($ + hours), Materials ($ bought), Total spent (% of scope) | job terminal — same three figures as settled facts |
 | **Invoicing** | no invoices | anything unbilled/unpaid — one stat group per invoice (payment-latency clock: green "paid in N days" / red "sent N days ago, unpaid"), Remaining to bill, Billed % (collapses oldest paid invoices past 4 rows) | fully billed and paid |
 | **Delivery** | nothing prepared yet | a prepared shipment awaits pickup (red past 3 working days), or work is done with nothing shipped | everything picked up |
@@ -1275,7 +1348,7 @@ is the only place the `.summary-block`/`.stat-spread` markup lives.
 
 | Component | Role |
 |---|---|
-| `JobDetail.svelte` | Composes the page (~120 lines): mounts `JobShell`, derives the two inputs the lib can't take raw (materials Coverage signal, estimate/CO arrays), renders the change-request banner + six blocks |
+| `JobDetail.svelte` | Composes the page (~110 lines): mounts `JobShell`, shapes the fetched payloads into lists/numbers (it derives no rules — Coverage moved into the lib 2026-07-28), renders the change-request banner + six blocks |
 | `JobHeader.svelte` | Header + status dropdown |
 | `lib/jobOverview.js` | Pure view-model — block rules, temperatures, clocks, copy (§9.1a) |
 | `components/jobs/overview/SummaryBlock.svelte` | The one dumb renderer for all six blocks (active/frozen/dormant markup) |
@@ -1934,15 +2007,13 @@ the server would accept the write (atom holder **or** the job's PM, and
 the list not yet locked by a sent/accepted estimate or open change
 order — see §12.2).
 
-`ShipmentsPillar.svelte` — the read-only shipments matrix that used to
-sit between the Invoices and Purchase Orders accordion pillars — is
-**orphaned** since the pillars were retired (2026-07-09): nothing
-imports it. Its job (a shipments summary reachable from the job's
-landing page) is not currently replaced anywhere — the overview's
-Delivery block (§9.1a) shows aggregate stats only, and the full matrix
-lives on the Shipments section page (`ShipmentsPanel.svelte`, reached
-via the rail). See `docs/designs/LATER.md` — delete the orphan once RM
-confirms nothing planned wants it.
+There is **no read-only shipments matrix on the job's landing page**.
+The overview's Delivery block (§9.1a) shows aggregate stats only; the
+full matrix lives on the Shipments section page
+(`ShipmentsPanel.svelte`, reached via the rail). The old
+`ShipmentsPillar.svelte` that sat between the Invoices and Purchase
+Orders accordion pillars was orphaned when the pillars were retired
+(2026-07-09) and deleted 2026-07-28.
 
 **Job Shipments page** at `#/jobs/:jobId/shipments`: the editable
 matrix. Adds + Discard (local for drafts, server for persisted),

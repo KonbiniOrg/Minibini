@@ -5,9 +5,9 @@
   import SummaryBlock from './SummaryBlock.svelte';
   import { scopeBlock } from '../../../lib/jobOverview.js';
 
-  const { estimates = [], changeOrders = [], deliverableCount = 0, now } = $props();
+  const { jobId, estimates = [], changeOrders = [], deliverableCount = 0, now } = $props();
 
-  let model = $derived(scopeBlock({ estimates, changeOrders, deliverableCount, now }));
+  let model = $derived(scopeBlock({ jobId, estimates, changeOrders, deliverableCount, now }));
 </script>
 
 <SummaryBlock title="Scope" {model} accent="scope" />

@@ -144,6 +144,32 @@ describe('WorkItemForm', () => {
     const msg = await findByText('Job is closed.');
     expect(msg.closest('[role="alert"]')).not.toBeNull();
   });
+  // Task descriptions carry the per-job work specifics, so they need line
+  // breaks — the same shape as Job Description in JobEditModal.
+  it('renders Description as a textarea that round-trips a multi-line value', async () => {
+    const { findByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5 },
+    });
+    const field = await findByLabelText(/Description/);
+    expect(field.tagName).toBe('TEXTAREA');
+
+    const multiline = 'First pass: rough cut\nSecond pass: finish to 0.5mm';
+    await fireEvent.input(field, { target: { value: multiline } });
+    expect(field.value).toBe(multiline);
+  });
+
+  it('POSTs the description with its line breaks intact', async () => {
+    const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5 },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '1' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Polish' } });
+    await fireEvent.input(getByLabelText(/Description/),
+      { target: { value: 'line one\nline two' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const taskCall = api.post.mock.calls.find((c) => c[0] === '/api/jobs/5/tasks/');
+    expect(taskCall[1].description).toBe('line one\nline two');
+  });
 });
 
 const SERVICE_WITH_MODIFIER = {
@@ -173,4 +199,5 @@ describe('WorkItemForm with a pre-selected rateScheme', () => {
     // The modifier label should be visible
     expect(await screen.findByText(/Rush/)).toBeInTheDocument();
   });
+
 });

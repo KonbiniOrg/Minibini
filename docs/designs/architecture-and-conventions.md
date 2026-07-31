@@ -784,6 +784,13 @@ page-specific names or references:
   consumer: the job overview's six blocks (`jobs-and-tasks.md`
   §9) — generic on purpose, named for reuse by other lifecycle
   summaries.
+  **`.summary-block` is an `<a>`** (2026-07-28): the whole card is the
+  link, so the base rule resets `display`/`text-decoration`/`color`, and
+  hover, `:focus-visible`, and the accent ring are styled on the anchor.
+  A consumer must therefore render **no interactive descendants** inside
+  a block — a nested link or button makes the markup invalid and forces
+  a stretched-link overlay instead (which also kills text selection in
+  the card). Keep controls outside the family.
 
 ### 5.6 Preserving line breaks in free-text fields
 

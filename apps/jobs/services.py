@@ -338,6 +338,20 @@ class BlepService:
     @staticmethod
     def update(blep, actor, **fields):
         """Update a blep. Only `start_time` and `end_time` are editable here."""
+        from apps.invoicing.claims import InvoiceClaimService
+        from apps.invoicing.models import InvoiceLineItemSource
+        # Billed actuals are frozen for everyone — the same rule `delete`
+        # enforces, for the same reason: moving a blep's times under an
+        # invoiced task silently changes the basis of a number already
+        # charged. Editing is not a lesser act than deleting here.
+        # Keyed on INVOICED, not on task-complete: a finished but unbilled
+        # task's time stays correctable.
+        if InvoiceClaimService.is_invoiced(
+                InvoiceLineItemSource.SOURCE_TASK, blep.task_id):
+            raise ValidationError(
+                "This time entry's task is on an invoice; its actuals are "
+                "frozen. Remove the task from the invoice first."
+            )
         is_own = blep.user_id == actor.pk
         if is_own:
             if not _within_edit_window(blep.start_time) and not _has_manage_time(actor):

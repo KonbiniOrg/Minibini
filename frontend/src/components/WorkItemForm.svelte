@@ -309,8 +309,11 @@
           <FieldError errors={fieldErrs} field="name" />
         </p>
         <p>
+          <!-- Textarea, matching Job Description in JobEditModal: a task
+               description carries the per-job work specifics, which need
+               line breaks. TaskDetailPage renders it with preserve-breaks. -->
           <label><strong>Description</strong><br>
-            <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
+            <textarea rows="4" bind:value={description} style="width:100%;box-sizing:border-box;"></textarea>
           </label>
           <FieldError errors={fieldErrs} field="description" />
         </p>

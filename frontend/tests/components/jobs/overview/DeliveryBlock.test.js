@@ -25,4 +25,10 @@ describe('DeliveryBlock', () => {
     expect(container.querySelector('.summary-block')).toHaveClass('dormant');
     expect(getByText(expected.dormantText)).toBeInTheDocument();
   });
+
+  it('links the card at the shipments section', () => {
+    const props = { shipments: [], deliverableCount: 0, job: { job_id: 42, status: 'in_progress' }, now: '2025-07-09' };
+    const { container } = render(DeliveryBlock, { props });
+    expect(container.querySelector('.summary-block').getAttribute('href')).toBe('#/jobs/42/shipments');
+  });
 });

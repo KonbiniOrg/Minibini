@@ -100,3 +100,43 @@ class EstimateClaimService:
             cls._live_sources_for_job(job)
             .values_list('source_type', 'source_pk')
         )
+
+
+# ---------------------------------------------------------------------------
+# Dead-document claim release
+# ---------------------------------------------------------------------------
+# Both source models are globally unique on (source_type, source_pk), so a
+# document that dies holding claims locks those atoms out of every FUTURE
+# document on the job — permanently, since rejected/expired are terminal
+# states. Releasing on death is the estimate/CO counterpart of
+# InvoiceService.cancel deleting its rows (invoicing-and-expenses.md).
+#
+# Which statuses release:
+#   rejected / expired  — the document died; nothing was promised, so its
+#                         atoms return to the pool.
+#   accepted            — NO. The claims ARE the agreement record (what was
+#                         sold on which line); compose_agreement and
+#                         ChangeOrderService.struck_atom_keys read them.
+#   superseded          — already holds none: EstimateService.revise_estimate
+#                         re-points the rows onto the new revision.
+#
+# Called from Estimate.save() / ChangeOrder.save() rather than a service, so
+# every writer is covered — the portal decline endpoints, the expiry sweep,
+# the status-transition actions, and the admin all go through save().
+DEAD_DOCUMENT_STATUSES = ('rejected', 'expired')
+
+
+def release_estimate_claims(estimate):
+    """Drop every EstimateLineItemSource row under a dead estimate.
+
+    The line items themselves stay: a rejected estimate remains a readable
+    frozen snapshot of what was offered, exactly as a superseded one does.
+    """
+    EstimateLineItemSource.objects.filter(
+        estimate_line_item__estimate=estimate).delete()
+
+
+def release_change_order_claims(change_order):
+    """ChangeOrderLineItemSource counterpart of release_estimate_claims."""
+    ChangeOrderLineItemSource.objects.filter(
+        change_order_line_item__change_order=change_order).delete()

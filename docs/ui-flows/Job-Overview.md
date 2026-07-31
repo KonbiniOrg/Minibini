@@ -50,7 +50,11 @@ countdown, payment latency, pickup aging), and the page furniture around them
 - [ ] **Work active — progress:** progress bar proportioned by estimated time and a "N / M tasks" stat.
 - [ ] **Work due countdown:** Due stat shows "N working days left" — uncolored >5, amber ≤5, red when overdue.
 - [ ] **Working-now line:** clock a blep in on a task → green "● {worker} working now — {task}" line appears on Work.
-- [ ] **Materials coverage:** Coverage stat reads `OK` when nothing needs ordering; add a material that is short with no incoming supply → `SHORT` (red) with "N materials need ordering".
+- [ ] **Materials coverage — OK:** every material on hand → `OK` (green), no sub-line.
+- [ ] **Materials coverage — SHORT:** a material short with no incoming supply, or one left unpriced (provisional), → `SHORT` (red) with "N needs ordering".
+- [ ] **Materials coverage — WAITING:** the only short materials are on a live PO line or customer-supplied → `WAITING` (amber) with "N not yet arrived" — *not* SHORT; nobody has anything to order.
+- [ ] **Materials coverage — both buckets:** one needing ordering plus others incoming → `SHORT` with "1 needs ordering · 2 not yet arrived" (the red headline never hides the waiting count).
+- [ ] **Coverage alert alone re-heats the block:** a customer-supplied shortfall with no POs at all → Materials is *active* showing WAITING, not dormant "nothing on order".
 - [ ] **Materials vs POs temperature:** open POs → Materials active with per-PO stats; all POs received and nothing short → frozen "N POs, all received".
 - [ ] **Spend active:** Labor $ (with hours), Materials $, and Total with "% of the $X scope" — figures match the header P&L.
 
@@ -79,10 +83,37 @@ countdown, payment latency, pickup aging), and the page furniture around them
 
 - [ ] **Band collapse persists across nav:** collapse the context band, go to Tasks via the rail and back → still collapsed (and expand persists likewise).
 - [ ] **Band collapse persists across reload:** reload the page → collapse state kept.
-- [ ] **Guard — blocks have no links:** hover/click everywhere inside every block — no anchors or buttons; status pills and clock lines are inert text.
+- [ ] **Guard — no controls inside a block:** the card itself is the only interactive element (see §8) — no nested anchors or buttons; status pills and clock lines are inert text.
 - [ ] **Rail navigates:** all eight rail links work from the overview; Overview is underlined as current; empty sections land on their create-affordance pages.
 - [ ] **Change-request banner:** a `draft` job with a pending customer change request shows the orange "Customer requested changes: …" banner between the rail and the blocks; the banner contains no links.
 - [ ] **Guard — banner absent otherwise:** any job without a pending change request (or not draft) shows no banner.
+
+## 8. Block links
+
+Each block is one link covering the whole card (2026-07-28). Rule: one named
+document → link to it; none or several → the section index. Every block links
+in every temperature — a card is never a dead end.
+
+- [ ] **Whole card is the target:** clicking anywhere on a block — a stat
+      value, the title, whitespace — navigates; the card is a single `<a>`.
+- [ ] **Scope → the current estimate:** `#/jobs/{id}/estimate/{estimateId}`,
+      active or frozen.
+- [ ] **Scope → a live change order instead:** a job whose estimate has settled
+      but which has a draft/open CO links to `#/jobs/{id}/change-order/{coId}`.
+- [ ] **Scope dormant → the section:** a job with no estimate links to
+      `#/jobs/{id}/estimate`.
+- [ ] **Work → `#/jobs/{id}/tasks`** in every temperature.
+- [ ] **Materials → `#/jobs/{id}/pos`** always, *including* when exactly one PO
+      is named — never the out-of-workspace `#/purchase-orders/{id}`.
+- [ ] **Spend → `#/jobs/{id}/history`** (placeholder until the Analysis tab
+      exists — see `LATER.md`).
+- [ ] **Invoicing → one live invoice deep-links:** exactly one non-cancelled,
+      non-superseded invoice → `#/jobs/{id}/invoice/{invoiceId}`.
+- [ ] **Invoicing → several go to the section:** two or more live invoices →
+      `#/jobs/{id}/invoice`, landing on the DocSubnav strip.
+- [ ] **Delivery → `#/jobs/{id}/shipments`** in every temperature.
+- [ ] **Keyboard:** each block is a tab stop and Enter follows the link; the
+      focus ring uses the block's accent color.
 
 ## Coverage matrix
 
@@ -94,4 +125,5 @@ countdown, payment latency, pickup aging), and the page furniture around them
 | Billed math | drafts excluded · full-scope draft not frozen · collapse at >4 (§4) |
 | Job lifecycle | fresh draft → quoting → in production → completed (§1, 2, 3, 6) |
 | Furniture | band persistence (nav + reload) · rail · change-request banner present/absent (§7) |
-| Guards | no links in blocks · draft-alone never frozen · banner absence (§4, 7) |
+| Block links | deep-link (estimate / CO / single invoice) · section index (tasks, POs, history, shipments, multi-invoice, dormant scope) · every temperature links (§8) |
+| Guards | no controls nested inside a block · draft-alone never frozen · banner absence (§4, 7, 8) |

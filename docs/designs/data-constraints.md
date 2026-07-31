@@ -774,11 +774,15 @@ Depends on: Task, User.
   §1.2a for the full invariant, the auto-clock-in / clock-out behaviour, and
   the backfill. Self-edit window for direct user blep edits is **30h** (matches
   the shift self-edit window — §1.2a).
-- **Deletion (invoiced-task freeze)**: `BlepService.delete` refuses — for
-  every actor, own-window or `can_manage_time` — when the blep's task is on a
-  live invoice: billed actuals are frozen (deleting a blep under an invoiced
-  ELAPSED_TIME task would change the basis of a charged number). Estimate
-  claims never block (estimates bill `est_qty`).
+- **Edit and deletion (invoiced-task freeze)**: `BlepService.update` and
+  `BlepService.delete` both refuse — for every actor, own-window or
+  `can_manage_time` — when the blep's task is on a live invoice: billed
+  actuals are frozen (editing or deleting a blep under an invoiced
+  ELAPSED_TIME task would change the basis of a charged number). `update`
+  joined the freeze 2026-07-28; it had been an oversight that only `delete`
+  carried it, though both move the same actuals. The freeze keys on
+  **invoiced**, not on task-complete — a complete but unbilled task's time
+  stays correctable. Estimate claims never block (estimates bill `est_qty`).
 
 ---
 
@@ -883,9 +887,17 @@ Polymorphic row joining a line item to a Job atom (Task, Material, or Fee).
 - **source_type**: `task`, `material`, or `fee`
 - **source_pk**: integer pointing at the atom
 - `unique_together = [('source_type', 'source_pk')]` — an atom can be
-  referenced by at most one estimate line item, ever. On revision,
+  referenced by at most one estimate line item at a time. On revision,
   `revise_estimate` **moves** the source rows to the new revision (rather
   than duplicating), so the live estimate is the one lens over the atom.
+- **A dead document releases its claims** (2026-07-28): entering `rejected`
+  or `expired` deletes the estimate's source rows (`Estimate.save()` →
+  `claims.release_estimate_claims`). Both are *terminal*, so without this
+  the atoms were locked out of every future estimate on a still-live job.
+  `accepted` deliberately keeps its rows — they ARE the agreement record
+  (`compose_agreement`, `ChangeOrderService.struck_atom_keys` read them);
+  `superseded` already holds none. The line items stay either way, so a
+  rejected estimate remains a readable snapshot of what was offered.
 - The atom's `job` must match the line item's estimate's `job`
   (validator-enforced — `validate_data.check_estimate_source_job_consistency`;
   the invoice side has the parallel `check_invoice_source_job_consistency`).
@@ -955,6 +967,10 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - **source_type**: `task` | `material` | `fee`; **source_pk**: positive int
 - `unique_together (source_type, source_pk)` — an atom is claimed by at most one CO line
 - Rows exist only for add/replace lines of accepted COs; purged when the referenced atom is deleted by a later CO's remove/replace.
+- **A dead CO releases its claims** (2026-07-28): entering `rejected` or
+  `expired` deletes the CO's source rows (`ChangeOrder.save()` →
+  `claims.release_change_order_claims`) — the same rule and rationale as the
+  estimate lens above.
 
 See `docs/designs/estimates-and-prices.md`.
 
@@ -1157,12 +1173,27 @@ being deducted; see `invoicing-and-expenses.md` §Deposits).
   **source_pk**: integer — for `deposit`, the claimed deposit
   `InvoiceLineItem`'s pk rather than a Job-atom pk.
 - `unique_together = [('source_type', 'source_pk')]` — global. An atom can
-  be billed by at most one Invoice line, ever. Prevents double-billing
-  across invoice revisions. For `deposit` rows this is the mechanism that
-  makes a deposit credit **unsplittable**: a given deposit line can be
-  claimed by at most one deduction line, ever (cancelling the claiming
-  invoice does not delete the row — see the cancelled-claims entry in
-  `docs/designs/LATER.md`).
+  be billed by at most one *live* Invoice line. Prevents double-billing.
+  For `deposit` rows this is the mechanism that makes a deposit credit
+  **unsplittable**: a given deposit line can be claimed by at most one
+  deduction line at a time.
+- **Death releases the claim** (2026-07-28): entering `cancelled` **or**
+  `superseded` deletes the invoice's source rows (`Invoice.save()` →
+  `claims.release_invoice_claims`; the pair is `DEAD_INVOICE_STATUSES`), so
+  the atoms are genuinely re-claimable. `superseded` has no writer yet — it
+  is covered ahead of the invoice-revision flow, which must move its rows
+  *before* superseding the parent, as `revise_estimate` does. Previously the rows
+  survived and only the readers skipped them, so the wizard pool offered an
+  atom that this constraint then refused (409 `atoms_already_claimed`, with
+  no way to see which dead invoice held it). The line items themselves are
+  kept — a cancelled invoice stays a frozen snapshot, the same shape a
+  superseded estimate takes after `revise_estimate` re-points its rows.
+- Because a released deposit claim leaves no row behind,
+  `InvoiceLineItem.is_deposit_line` cannot rest on row-absence alone to tell
+  a deposit **charge** from a **credit**; it also requires
+  `total_amount >= 0`. A charge is money taken (positive), a credit gives it
+  back (negative), so the sign identifies the line independently of its
+  claim's lifecycle.
 
 ---
 

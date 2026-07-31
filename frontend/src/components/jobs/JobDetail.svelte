@@ -6,9 +6,9 @@
   //
   // The block rules/copy live in lib/jobOverview.js; the block components are
   // dumb renderers. This component is glue: it mounts JobShell (header + context
-  // band + rail, like every other job page), threads the page's fetched data
-  // into the blocks, and derives the two inputs the lib can't take raw
-  // (materials coverage signal; the estimate arrays/counts).
+  // band + rail, like every other job page) and threads the page's fetched data
+  // into the blocks. It derives only list/number shapes — every rule, the
+  // materials coverage signal included, lives in lib/jobOverview.js.
   import JobShell from './JobShell.svelte';
   import ScopeBlock from './overview/ScopeBlock.svelte';
   import WorkBlock from './overview/WorkBlock.svelte';
@@ -16,7 +16,6 @@
   import SpendBlock from './overview/SpendBlock.svelte';
   import InvoicingBlock from './overview/InvoicingBlock.svelte';
   import DeliveryBlock from './overview/DeliveryBlock.svelte';
-  import { materialStatus } from '../../lib/materialStatus.js';
 
   const {
     job,
@@ -57,25 +56,9 @@
   // endpoint counts tasks regardless of job status.
   let tasksPlanned = $derived(Number(overview?.work?.tasks_total) || 0);
 
-  // Materials coverage signal for the Materials block. Derived from the SAME
-  // per-material source of truth the rest of the app uses (materialStatus.js):
-  // a material whose status is 'needed' is short of stock with no incoming
-  // supply — the "order action" red state. Any such material short-circuits the
-  // job to SHORT; if materials exist and none are short, coverage reads OK; with
-  // no materials at all we pass null and the lib omits the Coverage stat.
-  let coverage = $derived.by(() => {
-    const materials = job?.materials || [];
-    if (!materials.length) return null;
-    const shortCount = materials.filter((m) => materialStatus(m).key === 'needed').length;
-    if (shortCount > 0) {
-      return {
-        label: 'SHORT',
-        tone: 'bad',
-        sub: `${shortCount} ${shortCount === 1 ? 'material needs' : 'materials need'} ordering`,
-      };
-    }
-    return { label: 'OK', tone: 'good' };
-  });
+  // The job payload embeds its materials; the lib buckets them into the
+  // three-tone Coverage signal (jobOverview.js -> materialsCoverage).
+  let materialList = $derived(job?.materials || []);
 </script>
 
 <JobShell {job} {contact} current="overview" onJobChange={onStatusChange}>
@@ -90,15 +73,16 @@
 
     <div class="summary-blocks">
       <ScopeBlock
+        jobId={job.job_id}
         estimates={estimateList}
         changeOrders={changeOrderList}
         {deliverableCount}
         {now}
       />
       <WorkBlock {job} {overview} {tasksPlanned} />
-      <MaterialsBlock pos={poList} {coverage} {now} />
+      <MaterialsBlock jobId={job.job_id} pos={poList} materials={materialList} {now} />
       <SpendBlock {job} {overview} {scopeTotal} />
-      <InvoicingBlock invoices={invoiceList} {scopeTotal} {invoicedTotal} {now} />
+      <InvoicingBlock jobId={job.job_id} invoices={invoiceList} {scopeTotal} {invoicedTotal} {now} />
       <DeliveryBlock shipments={shipmentList} {deliverableCount} {job} {now} />
     </div>
   </div>

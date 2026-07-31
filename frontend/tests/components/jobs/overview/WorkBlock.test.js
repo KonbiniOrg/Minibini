@@ -36,4 +36,10 @@ describe('WorkBlock', () => {
     expect(container.querySelector('.summary-block')).toHaveClass('dormant');
     expect(getByText(expected.dormantText)).toBeInTheDocument();
   });
+
+  it('links the card at the job task list', () => {
+    const props = { job: { job_id: 42, status: 'in_progress' }, overview: { work: {} }, tasksPlanned: 0 };
+    const { container } = render(WorkBlock, { props });
+    expect(container.querySelector('.summary-block').getAttribute('href')).toBe('#/jobs/42/tasks');
+  });
 });

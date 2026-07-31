@@ -362,7 +362,7 @@ describe('workBlock', () => {
 // ===========================================================================
 describe('materialsBlock', () => {
   it('dormant — nothing on order', () => {
-    const b = materialsBlock({ pos: [], coverage: null });
+    const b = materialsBlock({ pos: [], materials: [] });
     expect(b.state).toBe('dormant');
     expect(b.dormantText).toBe('nothing on order');
   });
@@ -373,7 +373,8 @@ describe('materialsBlock', () => {
         { po_number: 'PO-0031', status: 'issued', business_name: 'Plywood Supply Co', issued_date: '2025-06-28', requested_date: '2025-07-10' },
         { po_number: 'PO-0027', status: 'received_in_full', received_date: '2025-06-30' },
       ],
-      coverage: { label: 'OK', tone: 'good', sub: 'stock + this order' },
+      materials: [{ inventory_item: 7, cost_source: 'entered', consumption_state: 'pending',
+                    quantity: '4.00', qty_on_hand: '4.00' }],
     });
     expect(b.state).toBe('active');
     const on = stat(b, 'On order');
@@ -386,13 +387,14 @@ describe('materialsBlock', () => {
     const cov = stat(b, 'Coverage');
     expect(cov.value).toBe('OK');
     expect(cov.valueTone).toBe('good');
-    expect(cov.sub).toBe('stock + this order');
+    expect(cov.sub).toBeUndefined();
   });
 
   it('active — coverage short with no open PO', () => {
     const b = materialsBlock({
       pos: [{ po_number: 'PO-0027', status: 'received_in_full', received_date: '2025-06-30' }],
-      coverage: { label: 'SHORT', tone: 'bad', sub: 'need 4 more' },
+      materials: [{ inventory_item: 7, cost_source: 'entered', consumption_state: 'pending',
+                    quantity: '4.00', qty_on_hand: '0.00' }],
     });
     expect(b.state).toBe('active');
     expect(stat(b, 'Coverage').value).toBe('SHORT');
@@ -759,5 +761,292 @@ describe('deliveryBlock', () => {
     });
     expect(b.state).toBe('frozen');
     expect(b.frozenText).toBe('3 shipments picked up · last 7/18');
+  });
+});
+
+// ===========================================================================
+// 6b. MATERIALS COVERAGE — the three-tone signal (2026-07-28).
+//
+// Buckets by whether a human must act: needed/needs-pricing → "needs
+// ordering" (SHORT, red); ordered/awaiting-customer → "not yet arrived"
+// (WAITING, amber); everything on hand → OK (green).
+// ===========================================================================
+const MAT = {
+  inventory_item: 7, cost_source: 'entered', consumption_state: 'pending',
+  quantity: '4.00', qty_on_hand: '0.00', po_line_item_id: null, po_number: null,
+};
+const needed = { ...MAT };
+const needsPricing = { ...MAT, inventory_item: null, cost_source: null };
+const ordered = { ...MAT, po_line_item_id: 3, qty_on_order: '4.00', po_number: 'PO-9' };
+const awaitingCustomer = { ...MAT, cost_source: 'customer_supplied' };
+const onHand = { ...MAT, qty_on_hand: '4.00' };
+const consumed = { ...MAT, consumption_state: 'consumed' };
+
+const coverage = (b) => b.stats.find((s) => s.label === 'Coverage');
+
+describe('materialsBlock coverage', () => {
+  const args = (materials, pos = []) => ({ jobId: 1, pos, materials, now: '2025-07-09' });
+
+  it('no materials at all — the Coverage stat is omitted', () => {
+    const b = materialsBlock(args([], [{ status: 'issued', po_number: 'PO-1', business_name: 'A' }]));
+    expect(b.state).toBe('active');
+    expect(coverage(b)).toBeUndefined();
+  });
+
+  it('all on hand → OK, green, no sub', () => {
+    // OK only ever renders on an already-active block (an open PO here);
+    // all-on-hand with no POs is dormant, asserted separately below.
+    const b = materialsBlock(args([onHand, consumed], [{ status: 'issued', po_number: 'PO-1', business_name: 'A' }]));
+    const c = coverage(b);
+    expect(c.value).toBe('OK');
+    expect(c.valueTone).toBe('good');
+    expect(c.sub).toBeUndefined();
+  });
+
+  it('needed → SHORT with the needs-ordering count', () => {
+    const c = coverage(materialsBlock(args([needed, onHand])));
+    expect(c.value).toBe('SHORT');
+    expect(c.valueTone).toBe('bad');
+    expect(c.sub).toBe('1 needs ordering');
+  });
+
+  it('needs-pricing counts as needs-ordering, not as its own bucket', () => {
+    const c = coverage(materialsBlock(args([needsPricing, needed])));
+    expect(c.value).toBe('SHORT');
+    expect(c.sub).toBe('2 need ordering');
+  });
+
+  it('ordered alone → WAITING, amber, not-yet-arrived', () => {
+    const c = coverage(materialsBlock(args([ordered, onHand])));
+    expect(c.value).toBe('WAITING');
+    expect(c.valueTone).toBe('warn');
+    expect(c.sub).toBe('1 not yet arrived');
+  });
+
+  it('awaiting-customer alone → WAITING (no PO involved)', () => {
+    const c = coverage(materialsBlock(args([awaitingCustomer])));
+    expect(c.value).toBe('WAITING');
+    expect(c.sub).toBe('1 not yet arrived');
+  });
+
+  it('ordered + awaiting-customer share the not-yet-arrived bucket', () => {
+    const c = coverage(materialsBlock(args([ordered, awaitingCustomer])));
+    expect(c.value).toBe('WAITING');
+    expect(c.sub).toBe('2 not yet arrived');
+  });
+
+  it('SHORT wins over WAITING, and the sub reports both buckets', () => {
+    const c = coverage(materialsBlock(args([needed, ordered, awaitingCustomer, onHand])));
+    expect(c.value).toBe('SHORT');
+    expect(c.valueTone).toBe('bad');
+    expect(c.sub).toBe('1 needs ordering · 2 not yet arrived');
+  });
+
+  it('a coverage alert re-heats the block even with no POs at all', () => {
+    // Regression: awaiting-customer with no PO used to read dormant
+    // ("nothing on order"), hiding the signal entirely.
+    const b = materialsBlock(args([awaitingCustomer]));
+    expect(b.state).toBe('active');
+    expect(coverage(b).value).toBe('WAITING');
+  });
+
+  it('all-on-hand with no POs stays dormant — OK is not worth a card', () => {
+    const b = materialsBlock(args([onHand]));
+    expect(b.state).toBe('dormant');
+  });
+
+  it('frozen — received POs, nothing short', () => {
+    const b = materialsBlock(args([onHand], [{ status: 'received_in_full' }]));
+    expect(b.state).toBe('frozen');
+  });
+});
+
+// ===========================================================================
+// 7. BLOCK HREFS — the whole-card link target per block.
+//
+// Rule (2026-07-28 design): one named document → link to it; none or several
+// → the block's section index. Every block returns an href in all three
+// temperatures, so the card is never a dead end.
+// ===========================================================================
+const JOB_ID = 42;
+
+describe('block hrefs', () => {
+  describe('scopeBlock', () => {
+    it('dormant — no estimate yet → the estimates section', () => {
+      const b = scopeBlock({
+        jobId: JOB_ID, estimates: [], changeOrders: [], deliverableCount: 0, now: '2025-07-09',
+      });
+      expect(b.state).toBe('dormant');
+      expect(b.href).toBe('#/jobs/42/estimate');
+    });
+
+    it('active — targets the current estimate by id', () => {
+      const b = scopeBlock({
+        jobId: JOB_ID,
+        estimates: [
+          { estimate_id: 7, version: 1, status: 'superseded' },
+          { estimate_id: 8, version: 2, status: 'open', sent_date: '2025-06-27' },
+        ],
+        changeOrders: [],
+        deliverableCount: 0,
+        now: '2025-07-09',
+      });
+      expect(b.state).toBe('active');
+      expect(b.href).toBe('#/jobs/42/estimate/8');
+    });
+
+    it('active — a live change order wins over the estimate', () => {
+      const b = scopeBlock({
+        jobId: JOB_ID,
+        estimates: [{ estimate_id: 8, version: 2, status: 'accepted', closed_date: '2025-07-01' }],
+        changeOrders: [{ change_order_id: 3, change_order_number: 'CH-1', status: 'open', sent_date: '2025-07-05' }],
+        deliverableCount: 0,
+        now: '2025-07-09',
+      });
+      expect(b.state).toBe('active');
+      expect(b.href).toBe('#/jobs/42/change-order/3');
+    });
+
+    it('frozen — still targets the current estimate', () => {
+      const b = scopeBlock({
+        jobId: JOB_ID,
+        estimates: [{ estimate_id: 8, version: 2, status: 'accepted', closed_date: '2025-07-02', total: '100' }],
+        changeOrders: [],
+        deliverableCount: 0,
+        now: '2025-07-09',
+      });
+      expect(b.state).toBe('frozen');
+      expect(b.href).toBe('#/jobs/42/estimate/8');
+    });
+
+    it('falls back to the section index when the estimate carries no id', () => {
+      const b = scopeBlock({
+        jobId: JOB_ID,
+        estimates: [{ version: 2, status: 'open', sent_date: '2025-06-27' }],
+        changeOrders: [],
+        deliverableCount: 0,
+        now: '2025-07-09',
+      });
+      expect(b.href).toBe('#/jobs/42/estimate');
+    });
+  });
+
+  describe('workBlock', () => {
+    it('always the tasks section, whatever the temperature', () => {
+      const base = { job: { job_id: JOB_ID, status: 'draft' }, overview: { work: {} } };
+      expect(workBlock(base).href).toBe('#/jobs/42/tasks');
+      expect(workBlock({ ...base, job: { job_id: JOB_ID, status: 'in_progress' } }).href)
+        .toBe('#/jobs/42/tasks');
+      expect(workBlock({
+        job: { job_id: JOB_ID, status: 'completed' },
+        overview: { work: { tasks_total: 3 }, spend: { labor_hours: 4 } },
+      }).href).toBe('#/jobs/42/tasks');
+    });
+  });
+
+  describe('materialsBlock', () => {
+    it('always the job POs section — never the out-of-workspace PO detail page', () => {
+      const onePO = materialsBlock({
+        jobId: JOB_ID,
+        pos: [{ po_id: 9, po_number: 'PO-1', status: 'issued', business_name: 'Acme' }],
+        coverage: null,
+        now: '2025-07-09',
+      });
+      expect(onePO.state).toBe('active');
+      expect(onePO.href).toBe('#/jobs/42/pos');
+
+      const dormant = materialsBlock({ jobId: JOB_ID, pos: [], coverage: null, now: '2025-07-09' });
+      expect(dormant.state).toBe('dormant');
+      expect(dormant.href).toBe('#/jobs/42/pos');
+    });
+  });
+
+  describe('spendBlock', () => {
+    it('the history section in every temperature (placeholder for Analysis)', () => {
+      const dormant = spendBlock({ job: { job_id: JOB_ID, status: 'in_progress' }, overview: { spend: {} } });
+      expect(dormant.state).toBe('dormant');
+      expect(dormant.href).toBe('#/jobs/42/history');
+
+      const active = spendBlock({
+        job: { job_id: JOB_ID, status: 'in_progress' },
+        overview: { spend: { total: 500, labor: 300, materials_bought: 200, labor_hours: 4 } },
+      });
+      expect(active.state).toBe('active');
+      expect(active.href).toBe('#/jobs/42/history');
+    });
+  });
+
+  describe('invoicingBlock', () => {
+    const inv = (id, over = {}) => ({
+      invoice_id: id, display_number: `INV-${id}`, status: 'sent',
+      sent_date: '2025-07-01', total: '100', ...over,
+    });
+
+    it('exactly one live invoice → that invoice', () => {
+      const b = invoicingBlock({
+        jobId: JOB_ID, invoices: [inv(5)], scopeTotal: 1000, invoicedTotal: 100, now: '2025-07-09',
+      });
+      expect(b.href).toBe('#/jobs/42/invoice/5');
+    });
+
+    it('two or more live invoices → the section index', () => {
+      const b = invoicingBlock({
+        jobId: JOB_ID, invoices: [inv(5), inv(6)], scopeTotal: 1000, invoicedTotal: 200, now: '2025-07-09',
+      });
+      expect(b.href).toBe('#/jobs/42/invoice');
+    });
+
+    it('cancelled/superseded do not count toward the one-vs-many split', () => {
+      const b = invoicingBlock({
+        jobId: JOB_ID,
+        invoices: [inv(5), inv(6, { status: 'cancelled' }), inv(7, { status: 'superseded' })],
+        scopeTotal: 1000, invoicedTotal: 100, now: '2025-07-09',
+      });
+      expect(b.href).toBe('#/jobs/42/invoice/5');
+    });
+
+    it('dormant — no live invoices → the section index', () => {
+      const b = invoicingBlock({
+        jobId: JOB_ID, invoices: [], scopeTotal: 1000, invoicedTotal: 0, now: '2025-07-09',
+      });
+      expect(b.state).toBe('dormant');
+      expect(b.href).toBe('#/jobs/42/invoice');
+    });
+
+    it('frozen — a single paid invoice still deep-links', () => {
+      const b = invoicingBlock({
+        jobId: JOB_ID,
+        invoices: [inv(5, { status: 'paid', closed_date: '2025-07-05', total: '1000' })],
+        scopeTotal: 1000, invoicedTotal: 1000, now: '2025-07-09',
+      });
+      expect(b.state).toBe('frozen');
+      expect(b.href).toBe('#/jobs/42/invoice/5');
+    });
+
+    it('falls back to the section index when the lone invoice carries no id', () => {
+      const b = invoicingBlock({
+        jobId: JOB_ID,
+        invoices: [{ display_number: 'INV-5', status: 'sent', sent_date: '2025-07-01', total: '100' }],
+        scopeTotal: 1000, invoicedTotal: 100, now: '2025-07-09',
+      });
+      expect(b.href).toBe('#/jobs/42/invoice');
+    });
+  });
+
+  describe('deliveryBlock', () => {
+    it('always the shipments section', () => {
+      const dormant = deliveryBlock({
+        shipments: [], deliverableCount: 2, job: { job_id: JOB_ID, status: 'in_progress' }, now: '2025-07-09',
+      });
+      expect(dormant.state).toBe('dormant');
+      expect(dormant.href).toBe('#/jobs/42/shipments');
+
+      const frozen = deliveryBlock({
+        shipments: [{ status: 'picked_up', picked_up_date: '2025-07-05' }],
+        deliverableCount: 1, job: { job_id: JOB_ID, status: 'completed' }, now: '2025-07-09',
+      });
+      expect(frozen.state).toBe('frozen');
+      expect(frozen.href).toBe('#/jobs/42/shipments');
+    });
   });
 });
