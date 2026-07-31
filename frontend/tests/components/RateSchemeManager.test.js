@@ -131,8 +131,22 @@ describe('RateSchemeManager', () => {
     const modal = container.querySelector('.modal');
     expect(modal).not.toBeNull();
     // The form fields live inside the shell.
-    expect(modal.querySelector('textarea')).not.toBeNull();
+    expect(modal.querySelector('input')).not.toBeNull();
+    expect(modal.querySelector('select')).not.toBeNull();
     expect(await findByRole('button', { name: 'Save' })).toBeInTheDocument();
+  });
+
+  // Description was dropped from the form 2026-07-30; the model field is
+  // slated to go too. Nothing should send or render it.
+  it('has no Description field and never sends description', async () => {
+    const { findByRole, getByLabelText, getByRole, queryByLabelText } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    expect(queryByLabelText(/Description/)).toBeNull();
+
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'NoDesc' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const payload = api.post.mock.calls.find((c) => c[0] === '/api/rate-schemes/')[1];
+    expect(payload).not.toHaveProperty('description');
   });
 
   it('Escape closes the form (the shell keyboard contract)', async () => {

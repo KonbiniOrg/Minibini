@@ -34,7 +34,7 @@
 
   function emptyForm() {
     return {
-      name: '', description: '', algorithm: 'elapsed_time',
+      name: '', algorithm: 'elapsed_time',
       rate: '', unit_label: '',
       modifiers: [], accounting_category: '',
     };
@@ -88,7 +88,6 @@
   function startEdit(scheme) {
     form = {
       name: scheme.name,
-      description: scheme.description || '',
       algorithm: scheme.algorithm,
       rate: scheme.rate,
       unit_label: scheme.unit_label,
@@ -103,7 +102,6 @@
   function startSupersede(scheme) {
     form = {
       name: scheme.name,
-      description: scheme.description || '',
       algorithm: scheme.algorithm,
       rate: scheme.rate,
       unit_label: scheme.unit_label,
@@ -139,7 +137,6 @@
     try {
       const payload = {
         name: form.name,
-        description: form.description,
         algorithm: form.algorithm,
         rate: form.rate,
         unit_label: form.unit_label,
@@ -292,10 +289,6 @@
       </small>
     {/if}
     </p>
-    <p><label><strong>Description</strong><br>
-      <textarea bind:value={form.description} style="width:100%;box-sizing:border-box;"></textarea>
-    </label>
-    <FieldError errors={fieldErrs} field="description" /></p>
     <p><label><strong>Algorithm *</strong><br>
       <select bind:value={form.algorithm}>
         <option value="elapsed_time">Based on time worked</option>
