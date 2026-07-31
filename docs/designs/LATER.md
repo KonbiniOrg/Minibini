@@ -440,14 +440,13 @@ Billing mechanics and money-record lifecycle.
 
 Cross-cutting UI/API conventions and shared components.
 
-- **`#/jobs` (JobListPage) is an orphan route.** — _added 2026-07-31_
-  Nothing in the SPA links to it: the sidebar's "Jobs" goes to `#/jobs/board`,
-  and the board now carries its own New Job link, so the only remaining ways
-  onto `#/jobs` are the PM-filtered `#/jobs?pm=N` links and `JobFormPage`'s
-  Cancel (`push('/jobs')`), which drops you on a page with no nav path.
-  Either give the plain list a real destination or retire it and point Cancel
-  back at the board. _Done when:_ `#/jobs` is linked from the nav or the
-  unfiltered list is gone and Cancel lands somewhere reachable.
+- **`#/jobs` (JobListPage) has no nav link.** — _added 2026-07-31_
+  The tabular job list is a destination RM uses and wants kept (2026-07-31)
+  — `JobFormPage`'s Cancel lands there deliberately — but nothing in the SPA
+  navigates to it: the sidebar's "Jobs" goes to `#/jobs/board`, and the only
+  other links in are the PM-filtered `#/jobs?pm=N` ones. So it's reachable by
+  URL or by cancelling out of the new-job form, and not otherwise.
+  _Done when:_ the plain list is reachable from the nav (or from the board).
 
 - **JobCard's `.doc-pill-*` should join the global `.status-badge` family.** — _added 2026-07-08 (CSS review pass); narrowed 2026-07-09_
   Originally paired with `JobDetail.svelte`'s `.pill-*` palette, both
