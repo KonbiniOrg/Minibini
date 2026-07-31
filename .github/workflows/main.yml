@@ -5,6 +5,14 @@ on:
     branches: [main]
     types: [closed]
 
+env:
+  DATABASE_PASSWORD=${secrets.DATABASE_PASSWORD}
+  QBO_CLIENT_ID=${secrets.QBO_CLIENT_ID}
+  QBO_CLIENT_SECRET=${secrets.QBO_CLIENT_SECRET}
+  QBO_REDIRECT_URI=${secrets.QBO_REDIRECT_URI}
+  EMAIL_USERNAME=${secrets.EMAIL_USERNAME}
+  EMAIL_PASSWORD=${secrets.EMAIL_PASSWORD}
+
 jobs:
   build-test-push:
     name: Build, Test and Push Docker Image
@@ -80,8 +88,6 @@ jobs:
             docker compose run --rm minibini_django python manage.py loaddata fixtures/large_datasets/nealsmall.json
             docker compose up -d --pull always  minibini_django
             docker compose up -d --pull always  minibini_vite
-        secrets: 
-          inherit: true
       # 9. send shannon email if the action fails
       - name: email shannon on failure
         uses: dawidd6/action-send-mail@v3.6.0
