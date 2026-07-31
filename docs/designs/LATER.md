@@ -530,6 +530,23 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the schedule suite passes at any time of day (spot-check by
   passing a just-past-midnight `now`).
 
+- **`deposit-creation.spec.js` is order-dependent — it picks the first
+  invoice-less job.** — _added 2026-07-30_
+  `findInvoicelessJob` (`e2e/specs/deposits/deposit-creation.spec.js` ~L31)
+  scans the backdrop for the *first* billable job with zero invoices. The
+  suite runs `workers: 1` against one shared `minibini_e2e` with no per-spec
+  reset, so any earlier spec that invoices a billable job changes which job
+  this one gets — or consumes the last candidate. Solo it always lands on the
+  same clean job and passes (verified 8/8 on fresh DBs); it failed once inside
+  a full-suite run. Deterministic under ordering, not timing noise, and the
+  spec does discard its own draft, so it's downstream of others rather than
+  self-poisoning. Same shape as the "filter-change + stale page race" family
+  of shared-state fragilities. Fix shape: have it create its own job (as
+  `rate-scheme-modal` and `coverage-signal` do for their shapes) instead of
+  hunting the seed for an unclaimed one.
+  _Done when:_ the spec's job is one it made, so full-suite ordering can't
+  reach it.
+
 - **Convert the remaining local-state tab pages to per-tab routes.** — _added 2026-07-05 (RM, during the Catalog-area design)_
   The Catalog area set the pattern: real routes per tab (bookmarks, refresh, and
   back-button land on the right tab; the tab strip is `<a use:link>`). Settings
