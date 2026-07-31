@@ -75,6 +75,14 @@
 </script>
 
 <div class="board-page">
+  {#if canManageJobs}
+    <!-- Navigates to the create form, so it's an <a> dressed as a button.
+         RM 2026-07-31: the whole new-job flow moves into a Modal later. -->
+    <div class="board-header">
+      <a class="new-job-button" href="#/jobs/new">New Job</a>
+    </div>
+  {/if}
+
   <div class="board">
     {#if activeCol === 'pipeline'}
       <div class="col-expanded">
@@ -132,6 +140,26 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+  .board-header {
+    display: flex;
+    justify-content: flex-end;
+    padding: 8px 12px 4px;
+    flex: none;
+  }
+  .new-job-button {
+    display: inline-block;
+    padding: 4px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 3px;
+    background: #fff;
+    color: #2563eb;
+    text-decoration: none;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .new-job-button:hover {
+    background: #f3f4f6;
   }
   .board {
     display: flex;

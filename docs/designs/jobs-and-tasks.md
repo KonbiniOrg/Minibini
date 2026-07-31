@@ -1036,6 +1036,17 @@ fanout.
 kanban-style overview of all current and recently-closed jobs. All data
 comes from `BoardService` (`apps/jobs/services.py`).
 
+The board is the sidebar's "Jobs" destination, so it also carries the
+**New Job** entry point — a top-right link (gated on `can_manage_jobs`)
+to `#/jobs/new`, the from-scratch create form
+(`JobFormPage` → `components/jobs/JobForm.svelte` → `POST /api/jobs/`).
+Added 2026-07-31: before it, `/jobs/new` was reachable only from a
+contact/business detail page's "New Job" link, from the email→job flow,
+or by typing the URL — the `#/jobs` list page that carries the other
+link is not linked from anywhere. RM has flagged that the create form
+itself should become a Modal (the standard for data entry) in a later
+pass; only the entry point is wired now.
+
 ### 8.1 Columns
 
 | Column | Membership | Endpoint | Purpose |
