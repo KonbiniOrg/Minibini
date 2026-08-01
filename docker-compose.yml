@@ -4,10 +4,10 @@ services:
     container_name: minibini-vite
     image: ashannonlee/minibini
     environment:
-      - MYSQL_ROOT_PASSWORD=${DATABASE_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=Ru5UPhae
       - DATABASE_NAME=minibini_db
       - DATABASE_USER=minidb_user
-      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - DATABASE_PASSWORD=Ru5UPhae
       - DATABASE_HOST=mysql
     build:
       context: .
@@ -23,18 +23,18 @@ services:
     container_name: minibini-django
     image: ashannonlee/minibini
     environment:
-      - MYSQL_ROOT_PASSWORD=${DATABASE_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=Ru5UPhae
       - DATABASE_NAME=minibini_db
       - DATABASE_USER=minidb_user
-      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - DATABASE_PASSWORD=Ru5UPhae
       - DATABASE_HOST=mysql
-      - QBO_CLIENT_ID=${QBO_CLIENT_ID}
-      - QBO_CLIENT_SECRET=${QBO_CLIENT_SECRET}
-      - QBO_REDIRECT_URI=${QBO_REDIRECT_URI}
+      - QBO_CLIENT_ID=ABZGwDsviVlpwQmS5qemO2Edt3rSHpRzJyE9ooKkQhM6dq0wGV
+      - QBO_CLIENT_SECRET=HoBe9JobfydrPJVAQbJy6F25NUY3mZXHHXFxZ48u
+      - QBO_REDIRECT_URI=https://minibini.me/api/qbo/callback/
       - QBO_ENVIRONMENT=sandbox
       - SPA_BASE_URL=http://minibini.me/
-      - EMAIL_HOST_USER=${EMAIL_USERNAME}
-      - EMAIL_HOST_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_HOST_USER=minibini.test@gmail.com
+      - EMAIL_HOST_PASSWORD=ttsg buza hxik ibit
     build:
       context: .
       dockerfile: Dockerfile.django
@@ -53,18 +53,18 @@ services:
     container_name: ofelia_cron
     image: mcuadros/ofelia:latest
     environment:
-      - MYSQL_ROOT_PASSWORD=${DATABASE_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=Ru5UPhae
       - DATABASE_NAME=minibini_db
       - DATABASE_USER=minidb_user
-      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - DATABASE_PASSWORD=Ru5UPhae
       - DATABASE_HOST=mysql
-      - QBO_CLIENT_ID=${QBO_CLIENT_ID}
-      - QBO_CLIENT_SECRET=${QBO_CLIENT_SECRET}
-      - QBO_REDIRECT_URI=${QBO_REDIRECT_URI}
+      - QBO_CLIENT_ID=ABZGwDsviVlpwQmS5qemO2Edt3rSHpRzJyE9ooKkQhM6dq0wGV
+      - QBO_CLIENT_SECRET=HoBe9JobfydrPJVAQbJy6F25NUY3mZXHHXFxZ48u
+      - QBO_REDIRECT_URI=https://minibini.me/api/qbo/callback/
       - QBO_ENVIRONMENT=sandbox
       - SPA_BASE_URL=http://minibini.me/
-      - EMAIL_HOST_USER=${EMAIL_USERNAME}
-      - EMAIL_HOST_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_HOST_USER=minibini.test@gmail.com
+      - EMAIL_HOST_PASSWORD=ttsg buza hxik ibit
     # Point the daemon explicitly to the mounted config file
     command: daemon --config /etc/ofelia/config.ini
     volumes:
