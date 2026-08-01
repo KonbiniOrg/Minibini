@@ -24,6 +24,9 @@
 
   async function handleLogout() {
     await logout();
+    // Home, not the page they were on: the hash is what LoginPage reads to
+    // decide whether to put someone back where a session expiry dropped them.
+    push('/');
   }
 
   let showFinancials = $derived($canManageFinancials);

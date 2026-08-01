@@ -68,6 +68,14 @@ describe('Sidebar', () => {
     expect(api.post).toHaveBeenCalledWith('/api/auth/logout/');
   });
 
+  // Leaving deliberately must not look like being timed out: LoginPage
+  // restores whatever page the hash still names, so logout has to clear it.
+  it('sends the browser home on logout', async () => {
+    const { getByRole } = render(Sidebar);
+    await fireEvent.click(getByRole('button', { name: 'Logout' }));
+    await vi.waitFor(() => expect(push).toHaveBeenCalledWith('/'));
+  });
+
   it('shows the Financials section with Invoices and Expenses for financials users', () => {
     user.set({ username: 'fin', permissions: ['can_manage_financials'] });
     const { getByText, queryByText } = render(Sidebar);

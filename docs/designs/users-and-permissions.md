@@ -224,10 +224,29 @@ All live under `/api/auth/` (`apps/api/auth/`):
 
 ### Login flow (SPA)
 
-1. `frontend/src/components/LoginPage.svelte` is shown when `$user` is `null` after the initial `checkAuth()` mount probe.
+1. `frontend/src/routes/LoginPage.svelte` is shown when `$user` is `null` after the initial `checkAuth()` mount probe.
 2. The form posts to `/api/auth/login/` via `frontend/src/stores/auth.js`'s `login(username, password)`. Success sets the `user` store; the SPA re-renders into the authenticated tree.
 3. `checkAuth()` on subsequent loads calls `GET /api/auth/me/` to populate the store from the existing session.
-4. After login the SPA lands on **Home** (`#/`), where the Shifts tab lives (the Clock In / Out strip is now the global header) — the worker's first action on arrival is typically to clock in. A user's **first login ever** (`first_login` in the login response) lands on the Help tab (`#/help`, the tutorial) instead.
+
+#### Where a login lands (`LoginPage.handleSubmit`, in order)
+
+The login screen covers three different arrivals, and the **hash** is what distinguishes them — `App.svelte` swaps `LoginPage` in over the current page without touching the URL, so a non-root hash still names the page the user was on (or deep-linked to).
+
+| Condition | Lands on |
+|---|---|
+| `first_login` in the login response (user's first login ever) | Help tab (`#/help`, the tutorial) |
+| Hash names a route other than `/` — session expiry, or a deep link opened while logged out | **That page, via `reloadPage()`** (`frontend/src/lib/navigation.js` → `window.location.reload()`) |
+| Anything else | Home (`#/`), where the Shifts tab lives — the worker's first action on arrival is typically to clock in |
+
+The restore is a genuine document reload rather than an SPA re-render: every store and every page fetch rebuilds from scratch, so nothing survives from the dead session. Unsaved client-side state on the interrupted page (a half-filled form, wizard progress) is gone either way — it never left the browser. A querystring on the root hash (`#/?tab=shifts`) still counts as Home.
+
+`reloadPage()` exists only because `window.location.reload` is unforgeable — jsdom can neither spy on it nor perform it, so the indirection is what makes the branch testable. Hash navigation elsewhere stays inline (`push()` / assigning `window.location.hash`).
+
+#### Logout
+
+`Sidebar.handleLogout` awaits `logout()` (which POSTs `/api/auth/logout/`, closing any open bleps server-side) and then `push('/')`. Sending the hash home is not cosmetic: it is what keeps a deliberate logout from being read as an expiry by the table above and bouncing the user back into the page they just left.
+
+E2E coverage: `e2e/specs/auth/session-landing.spec.js`. Both specs log in through the form rather than using a persona's saved `storageState` — logging out deletes that session server-side and would leave `e2e/.auth/<persona>.json` pointing at a dead session for the rest of the run. The expiry spec drops only the `sessionid` cookie, since a real expiry leaves `csrftoken` (independent lifetime) in place and the login POST needs it.
 
 ## User admin
 
