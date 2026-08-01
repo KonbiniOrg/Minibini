@@ -54,7 +54,7 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 | Jobs — list, board, creation | `/jobs`, `/jobs/board` | Board columns/retention, accent colors, job create, hold/resume. |
 | Schedule | `/schedule` | Per-worker bars, forecast cascade, envelope config. |
 | Home & cards | `/`, `/profile`, `/help` | My-Expenses card (locked-to-self form), lists, first-login → Help. |
-| Login & session | login form, logout, expiry notice | Personas land here via auth.setup; guards + session-expired path. |
+| Login & session | login form, logout, expiry notice | Personas land here via auth.setup; guards + session-expired path. Post-login/logout landing is already covered by `e2e/specs/auth/session-landing.spec.js` (see users-and-permissions.md → Login flow); the rest of the surface is uncovered. |
 | Contacts | `/contacts`, `/contacts/new`, `:id`, `:id/edit` | CRUD, notes, delete impact counts. |
 | Businesses | `/businesses`, `/businesses/new`, `:id`, `:id/edit` | CRUD, payment terms, contact association. |
 | Purchase orders | `/purchase-orders/*`, `/jobs/:id/pos` | Create/edit/send/receive; Bills.md covers only the bill side of linking. |
