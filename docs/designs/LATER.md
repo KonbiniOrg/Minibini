@@ -522,6 +522,11 @@ Cross-cutting UI/API conventions and shared components.
   responses older than the latest issued (or an abort on supersede).
   _Done when:_ the race is confirmed or ruled out; if confirmed, `loadAll`
   ignores superseded responses and the spec stops flaking in full-suite runs.
+  _2026-07-31:_ failed on two consecutive full-suite runs (once with unrelated
+  login/logout work in the tree, once with that work stashed — identical
+  failure at the same assertion), and passed run alone in between. So on this
+  machine it currently reproduces every full-suite run, not ~2 of 4; the
+  ordering that provokes it is stable enough to debug against directly.
 
 - **Four schedule tests are midnight-flaky.** — _added 2026-07-08 (found running the full suite just after midnight)_
   `tests.test_api_schedule`: `test_lane_bar_carries_job_number_and_name`,
