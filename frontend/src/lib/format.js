@@ -27,13 +27,23 @@ export function parseDurationToISO(input) {
   return false;
 }
 
+// Convert an ISO-8601 "PT_H_M" duration as produced by parseDurationToISO
+// (always whole hours/minutes, never seconds — safe to round without the
+// double-rounding risk durationToHours has on seconds-bearing server strings)
+// to decimal hours (2dp). null in, null out.
+export function isoHoursFromDuration(iso) {
+  if (iso === null) return null;
+  const m = iso.match(/^PT(\d+)H(\d+)M$/);
+  if (!m) return null;
+  return Math.round(((parseInt(m[1], 10) * 60) + parseInt(m[2], 10)) / 60 * 100) / 100;
+}
+
 // Parse duration input ("HH:MM" or decimal hours) to decimal hours (2dp).
 // Same sentinels as parseDurationToISO: null for empty, false for unparseable.
 export function parseDurationToHours(input) {
   const iso = parseDurationToISO(input);
   if (iso === null || iso === false) return iso;
-  const m = iso.match(/^PT(\d+)H(\d+)M$/);
-  return Math.round(((parseInt(m[1], 10) * 60) + parseInt(m[2], 10)) / 60 * 100) / 100;
+  return isoHoursFromDuration(iso);
 }
 
 // Server duration string ("H:MM:SS", "D H:MM:SS", or ISO "PT1H30M") → decimal

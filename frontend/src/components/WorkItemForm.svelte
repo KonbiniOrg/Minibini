@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
-  import { parseDurationToISO, parseDurationToHours } from '../lib/format.js';
+  import { parseDurationToISO, isoHoursFromDuration } from '../lib/format.js';
   import { triageError } from '../lib/errorTriage.js';
   import { showError } from '../stores/messages.js';
   import FieldError from './FieldError.svelte';
@@ -120,6 +120,9 @@
     description = selectedTemplate.description || '';
     loadModifiers(selectedTemplate.default_active_modifiers);
     rateSchemeId = selectedTemplate.rate_scheme ?? '';
+    // If schemes hasn't loaded yet, isHourUnit reads false here and this default
+    // could wrongly apply to an hour-unit template — but it's inert: save()
+    // recomputes est_qty from live isHourUnit, ignoring this stale estQty.
     if (!isHourUnit) {
       estQty = '1'; // templates no longer carry a default qty; estimator sets the magnitude
     }
@@ -184,9 +187,10 @@
       return;
     }
     // Hour-unit schemes have one input (the worker-time field, relabeled
-    // "Estimated hours"); est_qty is derived from it so the two never diverge.
+    // "Estimated hours"); est_qty is derived from the already-parsed ISO
+    // value above so the two never diverge and we don't reparse the raw string.
     const estQtyValue = isHourUnit
-      ? parseDurationToHours(estWorkerTime)
+      ? isoHoursFromDuration(estWorkerTimeISO)
       : (estQty || null);
 
     busy = true;

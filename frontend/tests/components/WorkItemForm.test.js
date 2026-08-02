@@ -9,7 +9,7 @@ vi.mock('@/lib/api.js', () => ({
 import { api } from '@/lib/api.js';
 import WorkItemForm from '@/components/WorkItemForm.svelte';
 
-const HOURLY_SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [] };
+const HOURLY_SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hour', modifiers: [] };
 const FLAT_FEE_SCHEME = { rate_scheme_id: 2, name: 'Quick Fix', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [] };
 const HOUR_UNIT_SCHEME = { rate_scheme_id: 7, name: 'CNC Hourly', algorithm: 'elapsed_time', rate: '90', unit_label: 'hour', modifiers: [] };
 const EACH_SCHEME = { rate_scheme_id: 8, name: 'Widget', algorithm: 'entered_qty', rate: '10', unit_label: 'ea', modifiers: [] };
@@ -42,11 +42,16 @@ describe('WorkItemForm', () => {
   });
 
   it('does not show "Save to catalog" when editing', async () => {
-    const { queryByLabelText } = render(WorkItemForm, {
+    const { queryByLabelText, findByLabelText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
         item: { name: 'X', rate_scheme: 1, active_modifiers: [], est_qty: '1' } },
     });
     expect(queryByLabelText(/save to catalog/i)).not.toBeInTheDocument();
+    // HOURLY_SCHEME (the shop's most common scheme) is hour-unit: a single
+    // "Estimated hours" input, prefilled from est_qty since this legacy row
+    // has no est_worker_time, and no separate "Estimated qty" input.
+    expect(await findByLabelText(/Estimated hours/)).toHaveValue('1');
+    expect(queryByLabelText(/Estimated qty/)).not.toBeInTheDocument();
   });
 
   it('selects the preset template in the pulldown (template mode)', async () => {
@@ -118,8 +123,27 @@ describe('WorkItemForm', () => {
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Cut' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
+    // HOURLY_SCHEME is hour-unit; left untouched, both derived fields go null.
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
-      name: 'Cut', rate_scheme: 1, est_worker_time: null,
+      name: 'Cut', rate_scheme: 1, est_qty: null, est_worker_time: null,
+    }));
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('saves a manual task on the shop\'s common Hourly scheme with one duration input', async () => {
+    const onSaved = vi.fn();
+    const { findByLabelText, getByLabelText, getByRole, queryByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, onSaved },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '1' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Cut' } });
+    // No separate "Estimated qty" input for this (hour-unit) scheme.
+    expect(queryByLabelText(/Estimated qty/)).not.toBeInTheDocument();
+    await fireEvent.input(getByLabelText(/Estimated hours/), { target: { value: '2:15' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
+      name: 'Cut', rate_scheme: 1, est_qty: 2.25, est_worker_time: 'PT2H15M',
     }));
     expect(onSaved).toHaveBeenCalled();
   });
