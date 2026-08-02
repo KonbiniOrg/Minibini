@@ -180,14 +180,14 @@ describe('RateSchemeManager', () => {
     const { findByRole, getByLabelText, queryByRole } = render(RateSchemeManager);
     // Add starts on the default algorithm, elapsed_time.
     await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
-    const unitField = getByLabelText(/Unit label/);
+    const unitField = getByLabelText(/^Unit$/);
     expect(unitField.tagName).toBe('INPUT');
     expect(unitField).toBeDisabled();
     expect(unitField.value).toBe('hour');
-    expect(queryByRole('combobox', { name: /Unit label/ })).not.toBeInTheDocument();
+    expect(queryByRole('combobox', { name: /^Unit$/ })).not.toBeInTheDocument();
 
     await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'entered_qty' } });
-    const unitSelect = getByLabelText(/Unit label/);
+    const unitSelect = getByLabelText(/^Unit$/);
     expect(unitSelect.tagName).toBe('SELECT');
     expect(unitSelect).not.toBeDisabled();
   });
@@ -205,15 +205,15 @@ describe('RateSchemeManager', () => {
     });
     const { findByRole, getByLabelText } = render(RateSchemeManager);
     await fireEvent.click(await findByRole('button', { name: 'Edit' }));
-    expect(getByLabelText(/Unit label/).value).toBe('pc');
+    expect(getByLabelText(/^Unit$/).value).toBe('pc');
 
     await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'elapsed_time' } });
-    expect(getByLabelText(/Unit label/).value).toBe('hour'); // locked display
+    expect(getByLabelText(/^Unit$/).value).toBe('hour'); // locked display
 
     await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'entered_qty' } });
     // The real fix under test: no reactive effect ever wrote 'hour' back
     // into form.unit_label, so the original value survives the round trip.
-    expect(getByLabelText(/Unit label/).value).toBe('pc');
+    expect(getByLabelText(/^Unit$/).value).toBe('pc');
   });
 
   it('preview text is not naively pluralized ("hour", never "hours")', async () => {

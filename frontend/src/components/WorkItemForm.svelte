@@ -357,9 +357,7 @@
         <p>
           <label><strong>{isHourUnit ? 'Estimated hours' : 'Estimated worker time'}</strong><br>
             <input type="text" placeholder="e.g. 1:30 or 1.5" bind:value={estWorkerTime}>
-            <small>{isHourUnit
-              ? 'HH:MM or decimal hours — used for both billing and scheduling'
-              : 'HH:MM or decimal hours (1.5 = 1h30m)'}</small>
+            <small>'HH:MM or decimal hours (1.5 = 1h30m)'</small>
           </label>
           <FieldError errors={fieldErrs} field="est_worker_time" />
           {#if isHourUnit}<FieldError errors={fieldErrs} field="est_qty" />{/if}

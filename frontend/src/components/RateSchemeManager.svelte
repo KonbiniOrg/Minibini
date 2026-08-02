@@ -319,23 +319,26 @@
       </label>
       <FieldError errors={fieldErrs} field="rate" />
     {:else}
-      <label><strong>Rate *</strong><br>
-        <input type="number" step="0.01" bind:value={form.rate}>
-      </label>
-      <FieldError errors={fieldErrs} field="rate" />
-      <label><strong>Unit label *</strong><br>
+      <span class="rate-row">
+        <label><strong>Rate *</strong><br>
+          <input type="number" step="0.01" bind:value={form.rate}>
+        </label>
+        <span class="rate-per">per</span>
         {#if form.algorithm === 'elapsed_time'}
-          <input type="text" value="hour" disabled>
-          <small>Time-based schemes are billed in hours.</small>
+          <input type="text" value="hour" disabled aria-label="Unit">
         {:else}
-          <select bind:value={form.unit_label} required>
+          <select bind:value={form.unit_label} required aria-label="Unit">
             <option value="">-- select --</option>
             {#each unitsList as u}
               <option value={u}>{u}</option>
             {/each}
           </select>
         {/if}
-      </label>
+      </span>
+      {#if form.algorithm === 'elapsed_time'}
+        <br><small>Time-based schemes are billed in hours.</small>
+      {/if}
+      <FieldError errors={fieldErrs} field="rate" />
       <FieldError errors={fieldErrs} field="unit_label" />
     {/if}
     </p>
@@ -386,4 +389,7 @@
 <style>
   /* Matches JobEditModal's title treatment. */
   .rs-modal-title { margin-top: 0; }
+  /* "Rate [input] per [unit]" on one line, controls bottom-aligned. */
+  .rate-row { display: inline-flex; align-items: flex-end; gap: 8px; }
+  .rate-row .rate-per { padding-bottom: 3px; }
 </style>
