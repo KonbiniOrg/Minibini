@@ -192,6 +192,30 @@ describe('RateSchemeManager', () => {
     expect(unitSelect).not.toBeDisabled();
   });
 
+  it('editing an entered_qty scheme: flipping algorithm to elapsed_time and back restores the original unit (regression: display-only, must not clobber form state)', async () => {
+    const enteredScheme = {
+      rate_scheme_id: 9, name: 'Piecework', algorithm: 'entered_qty',
+      rate: '5', unit_label: 'pc', accounting_category: 1, modifiers: [], reference_counts: {},
+    };
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [enteredScheme] });
+      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour', 'pc']);
+      return Promise.resolve({ results: [] });
+    });
+    const { findByRole, getByLabelText } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('button', { name: 'Edit' }));
+    expect(getByLabelText(/Unit label/).value).toBe('pc');
+
+    await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'elapsed_time' } });
+    expect(getByLabelText(/Unit label/).value).toBe('hour'); // locked display
+
+    await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'entered_qty' } });
+    // The real fix under test: no reactive effect ever wrote 'hour' back
+    // into form.unit_label, so the original value survives the round trip.
+    expect(getByLabelText(/Unit label/).value).toBe('pc');
+  });
+
   it('preview text is not naively pluralized ("hour", never "hours")', async () => {
     const { findByRole, getByLabelText, getByText } = render(RateSchemeManager);
     await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));

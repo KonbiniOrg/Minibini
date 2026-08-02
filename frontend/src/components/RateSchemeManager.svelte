@@ -135,8 +135,9 @@
     saving = true;
     clearFormMessages();
     try {
-      // The backend force-sets this for elapsed_time regardless — this keeps
-      // the form state honest with what actually gets persisted.
+      // The backend force-sets this for elapsed_time regardless — this
+      // guarantees the payload matches what actually gets persisted, even
+      // though the control is locked and never lets the user set it wrong.
       if (form.algorithm === 'elapsed_time') form.unit_label = 'hour';
       const payload = {
         name: form.name,
@@ -208,12 +209,16 @@
   // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
   const isPercentage = $derived(form.algorithm === 'percentage');
 
-  // Keep form state honest live (not just at save time) — the unit control
-  // is locked/disabled for elapsed_time, so the preview line needs the real
-  // value to render correctly while the form is still open.
-  $effect(() => {
-    if (form.algorithm === 'elapsed_time') form.unit_label = 'hour';
-  });
+  // Display-only stand-in for the locked unit — NEVER write this back into
+  // form.unit_label from a reactive effect: doing so previously clobbered a
+  // real unit (e.g. edit an entered_qty scheme with unit 'pc', flip to
+  // elapsed_time and back — the effect overwrote unit_label to 'hour' and
+  // never restored it, so Save silently persisted the wrong unit). The
+  // preview reads this instead of form.unit_label so it renders correctly
+  // while elapsed_time is selected, without touching the underlying field;
+  // save() is the only place that force-sets form.unit_label, and only
+  // right before building the payload.
+  const displayUnitLabel = $derived(form.algorithm === 'elapsed_time' ? 'hour' : form.unit_label);
 
   const previewTotal = $derived.by(() => {
     if (!form.rate) return null;
@@ -361,7 +366,7 @@
 
     {#if previewTotal && !isPercentage}
       <p><strong>Preview:</strong>
-        {previewTotal.qty} {form.unit_label} @ ${previewTotal.effRate}/{form.unit_label} = ${previewTotal.total}
+        {previewTotal.qty} {displayUnitLabel} @ ${previewTotal.effRate}/{displayUnitLabel} = ${previewTotal.total}
       </p>
     {/if}
 
