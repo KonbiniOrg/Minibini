@@ -6,7 +6,7 @@ vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.f
 import { api } from '@/lib/api.js';
 import RateSchemeManager from '@/components/RateSchemeManager.svelte';
 
-const SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', accounting_category: 1, modifiers: [], reference_counts: {} };
+const SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hour', accounting_category: 1, modifiers: [], reference_counts: {} };
 
 beforeEach(() => {
   api.get.mockReset();
@@ -15,7 +15,7 @@ beforeEach(() => {
   api.get.mockImplementation((url) => {
     if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME] });
     if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
-    if (url === '/api/settings/units/') return Promise.resolve(['none', 'hr']);
+    if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
     return Promise.resolve({ results: [] });
   });
   api.post.mockResolvedValue({});
@@ -174,5 +174,42 @@ describe('RateSchemeManager', () => {
     await fireEvent.click(await findByRole('button', { name: 'Edit' }));
     expect(container.querySelector('.modal')).not.toBeNull();
     expect(getByLabelText(/Name/).value).toBe('Hourly');
+  });
+
+  it('locks the unit label to a disabled "hour" input while algorithm is elapsed_time, and restores the select on switch', async () => {
+    const { findByRole, getByLabelText, queryByRole } = render(RateSchemeManager);
+    // Add starts on the default algorithm, elapsed_time.
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    const unitField = getByLabelText(/Unit label/);
+    expect(unitField.tagName).toBe('INPUT');
+    expect(unitField).toBeDisabled();
+    expect(unitField.value).toBe('hour');
+    expect(queryByRole('combobox', { name: /Unit label/ })).not.toBeInTheDocument();
+
+    await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'entered_qty' } });
+    const unitSelect = getByLabelText(/Unit label/);
+    expect(unitSelect.tagName).toBe('SELECT');
+    expect(unitSelect).not.toBeDisabled();
+  });
+
+  it('preview text is not naively pluralized ("hour", never "hours")', async () => {
+    const { findByRole, getByLabelText, getByText } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    await fireEvent.input(getByLabelText(/^Rate/), { target: { value: '25' } });
+    const preview = getByText(/^Preview:/).closest('p');
+    expect(preview).toHaveTextContent('10 hour @ $25.00/hour = $250.00');
+    expect(preview).not.toHaveTextContent(/hours/);
+  });
+
+  it('forces unit_label to hour on save for an elapsed_time scheme even though the control is locked', async () => {
+    const { findByRole, getByLabelText, getByRole } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Milling' } });
+    await fireEvent.input(getByLabelText(/^Rate/), { target: { value: '25' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/rate-schemes/',
+      expect.objectContaining({ algorithm: 'elapsed_time', unit_label: 'hour' }),
+    );
   });
 });

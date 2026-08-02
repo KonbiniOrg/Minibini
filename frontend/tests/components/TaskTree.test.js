@@ -581,3 +581,32 @@ describe('TaskTree task rows are one shared fragment (TaskRow)', () => {
     expect(queryAllByText('▲').length).toBe(1);      // parent row only
   });
 });
+
+describe('TaskRow Est Qty duplicate suppression', () => {
+  // Same dedupe as TaskDetailPage's Est Qty chip: for an hour-unit scheme,
+  // est_qty restates est_worker_time (backend pair-fills them, Task 8) — the
+  // Scheduled Time column already shows the number, so the Est Qty cell
+  // becomes redundant and renders '-' instead.
+  function estQtyCell(container) {
+    const row = container.querySelector('tbody tr.task-row');
+    return row.querySelectorAll('td')[5];
+  }
+
+  it('renders "-" for Est Qty when it duplicates est_worker_time on an hour-unit scheme', () => {
+    const t = task({ est_worker_time: '2:00:00', est_qty: '2', scheme_unit_label: 'hour' });
+    const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(estQtyCell(container).textContent.trim()).toBe('-');
+  });
+
+  it('still shows Est Qty when it diverges from est_worker_time (legacy row)', () => {
+    const t = task({ est_worker_time: '2:00:00', est_qty: '3', scheme_unit_label: 'hour' });
+    const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(estQtyCell(container).textContent.trim()).toBe('3');
+  });
+
+  it('shows Est Qty normally for a non-hour-unit scheme', () => {
+    const t = task({ est_worker_time: null, est_qty: '5', scheme_unit_label: 'pcs' });
+    const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(estQtyCell(container).textContent.trim()).toBe('5');
+  });
+});

@@ -12,7 +12,7 @@ import ServiceItemManager from '@/components/ServiceItemManager.svelte';
 const TMPL = { template_id: 1, template_name: 'Welding', rate_scheme: 1, is_active: true, default_active_modifiers: ['rush'] };
 const FLAT_FEE_TMPL = { template_id: 2, template_name: 'Flat Weld', rate_scheme: 2, is_active: true, default_active_modifiers: [] };
 
-const HOURLY_SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [{ key: 'rush', label: 'Rush', percent: 50 }, { key: 'weekend', label: 'Weekend', percent: 25 }] };
+const HOURLY_SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hour', modifiers: [{ key: 'rush', label: 'Rush', percent: 50 }, { key: 'weekend', label: 'Weekend', percent: 25 }] };
 const FLAT_FEE_SCHEME = { rate_scheme_id: 2, name: 'Quick Fix', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [] };
 
 beforeEach(() => {

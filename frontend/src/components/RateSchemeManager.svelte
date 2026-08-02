@@ -135,6 +135,9 @@
     saving = true;
     clearFormMessages();
     try {
+      // The backend force-sets this for elapsed_time regardless — this keeps
+      // the form state honest with what actually gets persisted.
+      if (form.algorithm === 'elapsed_time') form.unit_label = 'hour';
       const payload = {
         name: form.name,
         algorithm: form.algorithm,
@@ -204,6 +207,13 @@
 
   // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
   const isPercentage = $derived(form.algorithm === 'percentage');
+
+  // Keep form state honest live (not just at save time) — the unit control
+  // is locked/disabled for elapsed_time, so the preview line needs the real
+  // value to render correctly while the form is still open.
+  $effect(() => {
+    if (form.algorithm === 'elapsed_time') form.unit_label = 'hour';
+  });
 
   const previewTotal = $derived.by(() => {
     if (!form.rate) return null;
@@ -309,12 +319,17 @@
       </label>
       <FieldError errors={fieldErrs} field="rate" />
       <label><strong>Unit label *</strong><br>
-        <select bind:value={form.unit_label} required>
-          <option value="">-- select --</option>
-          {#each unitsList as u}
-            <option value={u}>{u}</option>
-          {/each}
-        </select>
+        {#if form.algorithm === 'elapsed_time'}
+          <input type="text" value="hour" disabled>
+          <small>Time-based schemes are billed in hours.</small>
+        {:else}
+          <select bind:value={form.unit_label} required>
+            <option value="">-- select --</option>
+            {#each unitsList as u}
+              <option value={u}>{u}</option>
+            {/each}
+          </select>
+        {/if}
       </label>
       <FieldError errors={fieldErrs} field="unit_label" />
     {/if}
@@ -346,7 +361,7 @@
 
     {#if previewTotal && !isPercentage}
       <p><strong>Preview:</strong>
-        {previewTotal.qty} {form.unit_label}s @ ${previewTotal.effRate}/{form.unit_label} = ${previewTotal.total}
+        {previewTotal.qty} {form.unit_label} @ ${previewTotal.effRate}/{form.unit_label} = ${previewTotal.total}
       </p>
     {/if}
 

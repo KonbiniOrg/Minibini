@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn() },
@@ -64,5 +64,39 @@ describe('SchemesImportPanel required-category indication', () => {
     await findByText('CNC Cutting');
     expect(container.querySelector('select.missing')).toBeNull();
     expect(container.querySelector('.dep-note')).toBeNull();
+  });
+});
+
+describe('SchemesImportPanel elapsed_time unit pinning', () => {
+  it('pins and disables the row unit select to hour when its algorithm switches to elapsed time', async () => {
+    const { container, findByText } = renderPanel({
+      rows: [ROW], category_options: [{ pk: 5, name: 'Service' }],
+    });
+    await findByText('CNC Cutting');
+    const row = container.querySelector('tbody tr');
+    const [algoSelect, unitSelect] = row.querySelectorAll('select');
+
+    // Starting state: entered_qty default, unit select enabled.
+    expect(unitSelect).not.toBeDisabled();
+
+    await fireEvent.change(algoSelect, { target: { value: 'elapsed_time' } });
+
+    expect(unitSelect.value).toBe('hour');
+    expect(unitSelect).toBeDisabled();
+  });
+
+  it('re-enables the unit select when switched back off elapsed_time', async () => {
+    const { container, findByText } = renderPanel({
+      rows: [ROW], category_options: [{ pk: 5, name: 'Service' }],
+    });
+    await findByText('CNC Cutting');
+    const row = container.querySelector('tbody tr');
+    const [algoSelect, unitSelect] = row.querySelectorAll('select');
+
+    await fireEvent.change(algoSelect, { target: { value: 'elapsed_time' } });
+    expect(unitSelect).toBeDisabled();
+
+    await fireEvent.change(algoSelect, { target: { value: 'entered_qty' } });
+    expect(unitSelect).not.toBeDisabled();
   });
 });

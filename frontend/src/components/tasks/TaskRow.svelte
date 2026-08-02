@@ -9,6 +9,7 @@
   import {
     fmtMoney, fmtWorkerTime, taskTotalInfo, taskTotal, taskActual,
   } from '../../lib/taskTotals.js';
+  import { durationToHours } from '../../lib/format.js';
 
   let {
     task,
@@ -60,6 +61,17 @@
     task.status === 'in_progress'
     && (task.materials || []).some(isMaterialAwaitingStock)
   );
+
+  // Same dedupe as TaskDetailPage's Est Qty chip: for an hour-unit scheme,
+  // est_qty restates est_worker_time (backend pair-fills them) — the Est
+  // Time column already shows the number, so drop the redundant one here.
+  // Inputs are minute-grained in practice; do not reuse this comparison for
+  // blep-derived elapsed values (those carry seconds and would double-round).
+  const estQtyIsDuplicate = $derived(
+    task.scheme_unit_label === 'hour'
+    && task.est_worker_time
+    && Number(task.est_qty) === durationToHours(task.est_worker_time)
+  );
 </script>
 
 <tr class:task-row={!isSubtask} class:subtask-row={isSubtask}>
@@ -73,7 +85,7 @@
   {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
   <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
   {#if showStatus}<td>{#if task.invoice}<a class="badge-invoiced" href={`#/invoices/${task.invoice.id}`} title="Billed on this invoice">INVOICED</a>{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
-  <td class="text-right">{task.est_qty ?? '-'}</td>
+  <td class="text-right">{estQtyIsDuplicate ? '-' : (task.est_qty ?? '-')}</td>
   <td class="text-right">{taskActual(task) ?? '-'}</td>
   <td class="text-right">{task.scheme_unit_label || '-'}</td>
   <td class="text-right">-</td>
