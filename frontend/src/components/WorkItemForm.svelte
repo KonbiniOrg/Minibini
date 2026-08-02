@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { parseDurationToISO } from '../lib/format.js';
   import { triageError } from '../lib/errorTriage.js';
   import { showError } from '../stores/messages.js';
   import FieldError from './FieldError.svelte';
@@ -142,32 +143,6 @@
     return '';
   }
 
-  function durationToISO(input) {
-    // Accepts:
-    //   ""        → null
-    //   "HH:MM"   → "PT{H}H{M}M"
-    //   decimal   → interpret as hours, e.g. "1.5" → PT1H30M
-    // Returns null for empty input, false for unparseable input.
-    if (input === '' || input === null || input === undefined) return null;
-    const trimmed = String(input).trim();
-    if (trimmed === '') return null;
-    const colonMatch = trimmed.match(/^(\d+):(\d+)$/);
-    if (colonMatch) {
-      const h = parseInt(colonMatch[1], 10);
-      const m = parseInt(colonMatch[2], 10);
-      return `PT${h}H${m}M`;
-    }
-    const decimalMatch = trimmed.match(/^(\d+\.?\d*|\.\d+)$/);
-    if (decimalMatch) {
-      const total = parseFloat(decimalMatch[1]);
-      const totalMinutes = Math.round(total * 60);
-      const h = Math.floor(totalMinutes / 60);
-      const m = totalMinutes % 60;
-      return `PT${h}H${m}M`;
-    }
-    return false; // unparseable
-  }
-
   function toggleModifier(key, checked) {
     if (checked) {
       if (!activeModifiers.includes(key)) {
@@ -194,7 +169,7 @@
       return;
     }
 
-    const estWorkerTimeISO = durationToISO(estWorkerTime);
+    const estWorkerTimeISO = parseDurationToISO(estWorkerTime);
     if (estWorkerTimeISO === false) {
       formError = `Could not parse "${estWorkerTime}" as a duration. Use HH:MM (e.g. 1:30) or decimal hours (e.g. 1.5).`;
       return;

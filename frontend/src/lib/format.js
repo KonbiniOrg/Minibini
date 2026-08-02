@@ -27,6 +27,34 @@ export function parseDurationToISO(input) {
   return false;
 }
 
+// Parse duration input ("HH:MM" or decimal hours) to decimal hours (2dp).
+// Same sentinels as parseDurationToISO: null for empty, false for unparseable.
+export function parseDurationToHours(input) {
+  const iso = parseDurationToISO(input);
+  if (iso === null || iso === false) return iso;
+  const m = iso.match(/^PT(\d+)H(\d+)M$/);
+  return Math.round(((parseInt(m[1], 10) * 60) + parseInt(m[2], 10)) / 60 * 100) / 100;
+}
+
+// Server duration string ("H:MM:SS", "D H:MM:SS", or ISO "PT1H30M") → decimal
+// hours (2dp), or null. The one server→hours conversion for display math.
+export function durationToHours(raw) {
+  if (!raw) return null;
+  const str = String(raw);
+  const iso = str.match(/^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  let h = null, m = 0, d = 0, s = 0;
+  if (iso) {
+    d = parseInt(iso[1] || '0', 10); h = parseInt(iso[2] || '0', 10);
+    m = parseInt(iso[3] || '0', 10); s = parseInt(iso[4] || '0', 10);
+  } else {
+    const hms = str.match(/^(?:(\d+) )?(\d+):(\d+):(\d+)/);
+    if (!hms) return null;
+    d = parseInt(hms[1] || '0', 10); h = parseInt(hms[2], 10);
+    m = parseInt(hms[3], 10); s = parseInt(hms[4], 10);
+  }
+  return Math.round(((d * 24 + h) + m / 60 + s / 3600) * 100) / 100;
+}
+
 // Format a DRF DurationField string ("[D ]H:MM:SS[.ffffff]") as "1h 30m".
 export function formatDuration(raw) {
   if (!raw) return '-';

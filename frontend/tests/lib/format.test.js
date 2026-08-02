@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { formatQtyUnits, parseDurationToISO, formatDuration, formatSessionDateTime } from '@/lib/format.js';
+import {
+  formatQtyUnits, parseDurationToISO, formatDuration, formatSessionDateTime,
+  parseDurationToHours, durationToHours,
+} from '@/lib/format.js';
 
 describe('formatQtyUnits', () => {
   it('returns a dash for null/undefined/empty quantity', () => {
@@ -55,6 +58,27 @@ describe('formatDuration', () => {
 
   it('folds a leading day count into hours', () => {
     expect(formatDuration('2 03:00:00')).toBe('51h 0m');
+  });
+});
+
+describe('parseDurationToHours', () => {
+  it('parses decimal hours and HH:MM to 2dp hours', () => {
+    expect(parseDurationToHours('1.5')).toBe(1.5);
+    expect(parseDurationToHours('1:30')).toBe(1.5);
+    expect(parseDurationToHours('0:50')).toBe(0.83);
+  });
+  it('passes through null/false sentinels', () => {
+    expect(parseDurationToHours('')).toBeNull();
+    expect(parseDurationToHours('abc')).toBe(false);
+  });
+});
+
+describe('durationToHours', () => {
+  it('handles DRF HH:MM:SS, D HH:MM:SS and ISO', () => {
+    expect(durationToHours('01:30:00')).toBe(1.5);
+    expect(durationToHours('1 02:00:00')).toBe(26);
+    expect(durationToHours('PT1H30M')).toBe(1.5);
+    expect(durationToHours(null)).toBeNull();
   });
 });
 
