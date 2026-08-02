@@ -509,11 +509,10 @@ class RateScheme(models.Model):
                 })
 
     def save(self, *args, **kwargs):
-        # Normalize on create too — full_clean below only covers updates.
+        # Normalize on create too — full_clean below covers both create and update.
         self._normalize_modifiers()
         # Belt-and-braces: ensure clean() runs even on bare .save() calls.
-        if self.pk:
-            self.full_clean()
+        self.full_clean()
         super().save(*args, **kwargs)
 
 

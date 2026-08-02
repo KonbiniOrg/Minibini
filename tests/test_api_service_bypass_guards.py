@@ -91,7 +91,7 @@ class ShiftDeleteOrphanGuardTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='sbg', code='SBG')
         self.scheme = RateScheme.objects.create(
             name='S-sbg', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('10'), unit_label='hr', accounting_category=self.cat)
+            rate=Decimal('10'), unit_label='hour', accounting_category=self.cat)
         contact = Contact.objects.create(first_name='S', last_name='G')
         self.job = Job.objects.create(
             job_number='JOB-SBG-1', contact=contact,

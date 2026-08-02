@@ -16,9 +16,11 @@
 #
 # This link: 'expenses' before 'inventory' touches the PriceListItem rename.
 # expenses.0003 adds Expense.stock_pli as an FK to the pre-rename model
-# 'inventory.pricelistitem' but only declares a dependency on
-# ('core', '0002_initial'); nothing forces it to run before
-# inventory.0026 (RenameModel PriceListItem -> InventoryItem). See
+# 'inventory.pricelistitem' but its actual dependencies are
+# ('expenses', '0002_expense_job') and
+# ('inventory', '0025_pricelistitem_price_list_qty_on_hand_non_negative') —
+# the migration immediately BEFORE the rename; nothing forces it to run
+# before inventory.0026 (RenameModel PriceListItem -> InventoryItem). See
 # core/migrations/0024_anchor_expenses_before_inventory_rename.py, which
 # already anchors this for the *existing* graph's own leaf-vs-leaf race —
 # this link re-establishes the same ordering from within this new chain,

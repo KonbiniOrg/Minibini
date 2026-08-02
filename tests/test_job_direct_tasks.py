@@ -212,6 +212,34 @@ class DirectTaskCreateAPITest(TestCase):
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn('est_qty', response.data)
 
+    def test_post_raw_int_est_worker_time_on_hour_scheme_returns_400_not_500(self):
+        """Same endpoint, same no-serializer path: est_worker_time also
+        arrives straight from request.data. A raw JSON int (e.g. `5`, not a
+        duration string) is neither a timedelta nor a str.
+
+        Naively, once _coerce_duration stops calling timedelta_to_hours() on
+        it (which raised AttributeError), the raw int would just fall
+        through to Task.save()'s full_clean(). But DurationField.to_python()
+        only catches ValueError, not TypeError — parse_duration(5) raises
+        TypeError, which full_clean() does NOT convert into a field
+        ValidationError, so that path alone would still 500. TaskService
+        .create_direct now rejects a non-str/timedelta est_worker_time
+        explicitly (with a real ValidationError) before it ever reaches
+        Task.save(), which is what actually makes this a contract-shaped
+        400."""
+        hour_scheme = RateScheme.objects.create(
+            name='S-dt-hour-wt', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('50'), unit_label='hour',
+            accounting_category=self.scheme.accounting_category,
+        )
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/tasks/',
+            {'name': 'Bad Worker Time', 'rate_scheme': hour_scheme.pk,
+             'est_worker_time': 5},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('est_worker_time', response.data)
 
 
 

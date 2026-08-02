@@ -5,10 +5,11 @@
 # to 'jobs.ratescheme' at that point) — deliberately *not* estimates' full
 # leaf (0043), which would also drag in estimates.0026
 # (RenameField tasktemplate.rate_scheme -> service_price, which requires
-# jobs.0044 already applied). Resolving only up to 0018 here keeps this
-# link jobs-free, so the next link can safely apply jobs' whole chain
-# (including jobs.0044's RenameModel) with TaskTemplate.rate_scheme's FK
-# already in state.
+# jobs.0044 already applied). estimates.0018 itself already depends on
+# ('jobs', '0029_planTask_billing_required') — so this link is not
+# jobs-free, but it stops short of jobs.0044, so the next link can safely
+# apply jobs' whole chain (including jobs.0044's RenameModel) with
+# TaskTemplate.rate_scheme's FK already in state.
 from django.db import migrations
 
 

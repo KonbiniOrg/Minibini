@@ -356,7 +356,7 @@ class CORemoveCrystallizationTests(ChangeOrderAcceptanceBase):
     def test_remove_adjustment_line_is_document_only(self):
         adj_scheme = RateScheme.objects.create(
             name='Rush 10%', algorithm=RateScheme.PERCENTAGE,
-            rate=Decimal('10'), accounting_category=self.cat,
+            rate=Decimal('10'), unit_label='none', accounting_category=self.cat,
         )
         line = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=1, description='Rush surcharge',

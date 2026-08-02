@@ -38,7 +38,7 @@ class EstimateRevisionDetachesTest(TestCase):
         self.scheme = RateScheme.objects.create(
             name='Hourly-revdet',
             algorithm=RateScheme.ELAPSED_TIME,
-            unit_label='hr',
+            unit_label='hour',
             rate=Decimal('75.00'),
             accounting_category=self.cat,
         )

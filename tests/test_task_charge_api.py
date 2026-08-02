@@ -137,7 +137,7 @@ class TaskTimeFieldsTest(BaseTestCase):
         ac = AccountingCategory.objects.create(code='X-time', name='X-time')
         self.elapsed_scheme = RateScheme.objects.create(
             name='Hourly-time', algorithm='elapsed_time', rate=Decimal('60'),
-            unit_label='hr', accounting_category=ac,
+            unit_label='hour', accounting_category=ac,
         )
         self.flat_scheme = RateScheme.objects.create(
             name='Flat-time', algorithm='entered_qty', rate=Decimal('100'),

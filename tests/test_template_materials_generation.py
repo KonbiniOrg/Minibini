@@ -18,7 +18,8 @@ class _Setup(TestCase):
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
         cls.scheme = RateScheme.objects.create(
-            name='Hourly', rate=Decimal('100'), unit_label='hour',
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour',
             accounting_category=cls.cat,
         )
         cls.pli = InventoryItem.objects.create(

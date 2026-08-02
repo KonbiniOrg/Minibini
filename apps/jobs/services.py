@@ -28,10 +28,15 @@ from apps.core.units import HOUR_UNIT
 
 def _coerce_duration(value):
     """DurationField inputs arrive as timedelta (DRF) or ISO/HH:MM:SS string
-    (internal callers). Return a timedelta or None."""
+    (internal callers). Return a timedelta or None — any other type (e.g. a
+    raw JSON int from a direct POST) is not a duration we can coerce, so it
+    passes through as None rather than reaching timedelta_to_hours() and
+    raising AttributeError."""
+    if isinstance(value, timedelta):
+        return value
     if isinstance(value, str):
         return parse_duration(value)
-    return value
+    return None
 
 
 def hours_pair_fill(scheme, est_qty, est_worker_time):
@@ -1082,6 +1087,16 @@ class TaskService:
                     'Subtasks cannot have their own subtasks — '
                     'one level of subtasks only.']})
         est_qty, est_worker_time = hours_pair_fill(scheme, est_qty, est_worker_time)
+        # A type _coerce_duration can't parse (e.g. a raw JSON int from this
+        # endpoint's unserialized POST) would otherwise reach Task.save()'s
+        # full_clean() and hit DurationField.to_python(), which only catches
+        # ValueError — a non-str/timedelta input raises an uncaught
+        # TypeError there (a 500), not the ValidationError (400) the error
+        # contract requires. Reject it here instead, where a real
+        # ValidationError renders correctly.
+        if est_worker_time is not None and not isinstance(est_worker_time, (timedelta, str)):
+            raise ValidationError({'est_worker_time': [
+                'Must be a duration string (e.g. "01:30:00") or ISO 8601 duration.']})
         # Explicit assignment at create must be schedulable (the invariant
         # lives on the assign gestures, not Task.clean — see the model).
         if task_fields.get('assignee_id') and not est_worker_time:

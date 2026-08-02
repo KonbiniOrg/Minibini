@@ -488,7 +488,7 @@ class RateSchemeSearchFilterTest(TestCase):
         self.cnc = RateScheme.objects.create(
             name='CNC Routing', description='Router pass on CNC bed',
             algorithm=RateScheme.ELAPSED_TIME, rate=Decimal('75.00'),
-            unit_label='hr', accounting_category=self.ac,
+            unit_label='hour', accounting_category=self.ac,
         )
         self.design = RateScheme.objects.create(
             name='Design Fee', description='Graphic design work',

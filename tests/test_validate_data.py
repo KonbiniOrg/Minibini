@@ -71,10 +71,14 @@ class ValidateDataRateSchemeTest(TestCase):
 
     def test_negative_rate_non_percentage_is_flagged(self):
         """A non-percentage RateScheme with a negative rate is an error."""
-        RateScheme.objects.create(
+        # clean() forbids a negative rate on a non-percentage scheme, so a
+        # normal .create() can't plant this. Create valid, then bypass
+        # full_clean via QuerySet.update() to simulate legacy bad data.
+        scheme = RateScheme.objects.create(
             name='bad-elapsed', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('-5.00'), unit_label='hr', accounting_category=self.ac,
+            rate=Decimal('5.00'), unit_label='hour', accounting_category=self.ac,
         )
+        RateScheme.objects.filter(pk=scheme.pk).update(rate=Decimal('-5.00'))
         output = self._run()
         self.assertIn('bad-elapsed', output)
         self.assertIn('negative rate', output)

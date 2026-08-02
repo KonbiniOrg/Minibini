@@ -88,7 +88,8 @@ class TemplateMaterialAssociationApiTests(APITestCase):
         )
         cls.cat = AccountingCategory.objects.create(code='TMAAPI', name='Cat')
         cls.scheme = RateScheme.objects.create(
-            name='H', rate=Decimal('50'), unit_label='hour',
+            name='H', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50'), unit_label='hour',
             accounting_category=cls.cat,
         )
         cls.pli = InventoryItem.objects.create(
