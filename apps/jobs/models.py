@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from apps.core.models import AbstractWorkContainer, TimeChangeRequest
 from apps.core.history import history
 from apps.core.timeutils import floor_to_minute
+from apps.core.units import HOUR_UNIT
 
 
 # Palette used to auto-assign Job.accent_color. Order matters for tie-breaking
@@ -490,6 +491,11 @@ class RateScheme(models.Model):
             })
         if self.algorithm != self.PERCENTAGE and self.rate is not None and self.rate < 0:
             raise ValidationError({'rate': 'Only percentage services may have a negative rate.'})
+        if self.algorithm == self.ELAPSED_TIME and self.unit_label != HOUR_UNIT:
+            raise ValidationError({
+                'unit_label': 'Time-based schemes are billed in hours; '
+                              f'unit must be "{HOUR_UNIT}".',
+            })
         if self.pk and self.is_referenced():
             old = RateScheme.objects.get(pk=self.pk)
             changed = [

@@ -86,6 +86,15 @@ class CommitSchemesTest(TestCase):
         # persisted mapping resolves it.
         self.assertEqual(svc['rate_scheme_default'], mapping['11'])
 
+    def test_elapsed_row_normalizes_unit_to_hour(self):
+        mapping = QBOImportCommitService.commit_schemes([
+            {'name': 'Shop rate', 'rate': '95.0', 'algorithm': 'elapsed_time',
+             'unit_label': 'ea', 'accounting_category': self.cat.pk,
+             'qbo_item_id': '13', 'collapse_group': None},
+        ])
+        scheme = RateScheme.objects.get(pk=mapping['13'])
+        self.assertEqual(scheme.unit_label, 'hour')
+
     def test_collapse_group_shares_one_scheme(self):
         mapping = QBOImportCommitService.commit_schemes([
             {'name': 'Shop rate', 'rate': '95.0', 'algorithm': 'elapsed_time',
