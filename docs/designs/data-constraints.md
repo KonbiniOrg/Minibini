@@ -70,9 +70,14 @@ fixtures (2026-07-23; previously fixture-only, a fresh-tenant trap).
 **`units_list` canon.** Units are **singular** (`'hour'`, `'sheet'`, `'lb'`,
 never `'hours'`/`'sheets'`/`'lbs'`) — `apps/core/units.py`'s
 `DEFAULT_UNITS` is the singular seed list and singularized data migration
-`core/0029_singular_units` rewrote every stored `RateScheme`/`Task`/
-`ServiceItem`/`InventoryItem` row and the `units_list` Configuration value
-in place. Two units are special:
+`core/0029_singular_units` rewrote the `units_list` Configuration value and
+every stored unit string in place: `RateScheme.unit_label`,
+`InventoryItem.units`, `Material.units`, `Deliverable.units`,
+`DeliverableSnapshot.units`, and the line-item `units` field on
+`EstimateLineItem`, `ChangeOrderLineItem`, `PurchaseOrderLineItem`,
+`BillLineItem` (schema stub — rows may still exist), and `InvoiceLineItem`.
+(`Task` and `ServiceItem` have no `units` column of their own — see
+`materials-inventory-and-purchasing.md`.) Two units are special:
 
 - **`'none'`** — must be the first entry in the list (`PATCH
   /api/settings/units/` rejects a submission where it isn't); the settings
