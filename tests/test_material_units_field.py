@@ -19,10 +19,10 @@ class MaterialUnitsFieldTests(TestCase):
 class PopulateFromPliCopiesUnitsTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","ea","sheets","lbs","hours"]'})
+        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","ea","sheet","lb","hour"]'})
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.pli = InventoryItem.objects.create(
-            code='PLI-1', units='sheets', description='Steel Sheet',
+            code='PLI-1', units='sheet', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,
         )
@@ -35,16 +35,16 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
             quantity=Decimal('1'),
         )
         m.save()
-        self.assertEqual(m.units, 'sheets')
+        self.assertEqual(m.units, 'sheet')
 
     def test_material_keeps_explicit_units_when_set(self):
         # Override case: caller supplies a non-default 'units'; PLI does not overwrite.
         m = Material(
             job=self.job, inventory_item=self.pli,
-            quantity=Decimal('1'), units='lbs',
+            quantity=Decimal('1'), units='lb',
         )
         m.save()
-        self.assertEqual(m.units, 'lbs')
+        self.assertEqual(m.units, 'lb')
 
     def test_freeform_material_keeps_default_units(self):
         m = Material(
@@ -57,12 +57,12 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
 class MaterialSerializerUnitsTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","ea","sheets","lbs"]'})
+        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","ea","sheet","lb"]'})
         cls.user = User.objects.create_user(username='u', password='p')
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
         cls.pli = InventoryItem.objects.create(
-            code='PLI-1', units='sheets', description='Steel Sheet',
+            code='PLI-1', units='sheet', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,
         )
@@ -80,10 +80,10 @@ class MaterialSerializerUnitsTests(APITestCase):
         m = Material.objects.create(
             job=self.job, inventory_item=self.pli, quantity=Decimal('1'),
         )
-        Material.objects.filter(pk=m.pk).update(units='lbs')
+        Material.objects.filter(pk=m.pk).update(units='lb')
         resp = self.client.get(f'/api/materials/{m.pk}/')
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()['units'], 'lbs')
+        self.assertEqual(resp.json()['units'], 'lb')
 
     def test_freeform_material_get_returns_units_field(self):
         m = Material.objects.create(
@@ -98,7 +98,7 @@ class MaterialSerializerUnitsTests(APITestCase):
 class MaterialStrTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","sheets","ea"]'})
+        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","sheet","ea"]'})
         cls.cat = AccountingCategory.objects.create(code='MATSTR', name='MaterialsStr')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j2@d.com')
         cls.job = Job.objects.create(
@@ -107,10 +107,10 @@ class MaterialStrTests(TestCase):
 
     def test_material_str_includes_units_when_not_none(self):
         m = Material.objects.create(
-            job=self.job, description='Steel', quantity=Decimal('5'), units='sheets',
+            job=self.job, description='Steel', quantity=Decimal('5'), units='sheet',
             accounting_category=self.cat,
         )
-        self.assertEqual(str(m), 'Steel (qty: 5.00 sheets)')
+        self.assertEqual(str(m), 'Steel (qty: 5.00 sheet)')
 
     def test_material_str_omits_units_when_none(self):
         m = Material.objects.create(

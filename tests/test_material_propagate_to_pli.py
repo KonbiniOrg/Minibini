@@ -10,14 +10,14 @@ from apps.jobs.models import Job
 class _Setup(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","sheets","ea"]'})
+        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","sheet","ea"]'})
         cls.user = User.objects.create_user(username='u', password='p')
         perm = Permission.objects.get(codename='can_manage_jobs', content_type__app_label='core')
         cls.user.user_permissions.add(perm)
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
         cls.pli = InventoryItem.objects.create(
-            code='PLI-1', units='sheets', description='Steel Sheet',
+            code='PLI-1', units='sheet', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,
         )

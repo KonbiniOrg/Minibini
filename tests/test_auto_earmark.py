@@ -123,7 +123,7 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
         self.category = AccountingCategory.objects.create(name='Material', code='MAT2')
         self.plywood = InventoryItem.objects.create(
             code='PLY.99', description='Plywood',
-            units='sheets', qty_on_hand=Decimal('20.00'),
+            units='sheet', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
             accounting_category=self.category,
         )
@@ -133,7 +133,7 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
         # Material lives directly on the Job in the job-owns-atoms model.
         Material.objects.create(
             job=self.job, description='Plywood', inventory_item=self.plywood,
-            quantity=Decimal('5.00'), units='sheets',
+            quantity=Decimal('5.00'), units='sheet',
             accounting_category=self.category,
         )
 
@@ -170,7 +170,7 @@ class PreApprovalNoEarmarkTest(TestCase):
         )
         self.item = InventoryItem.objects.create(
             code='GATE.PLY', description='Gate Plywood',
-            units='sheets', qty_on_hand=Decimal('30.00'),
+            units='sheet', qty_on_hand=Decimal('30.00'),
             purchase_price=Decimal('50.00'), selling_price=Decimal('100.00'),
             accounting_category=self.category,
         )
@@ -186,7 +186,7 @@ class PreApprovalNoEarmarkTest(TestCase):
         self.assertEqual(job.status, Job.STATUS_DRAFT)
         MaterialService.create_on_job(
             job=job, inventory_item=self.item,
-            quantity=Decimal('3.00'), units='sheets',
+            quantity=Decimal('3.00'), units='sheet',
             accounting_category=self.category,
         )
         self.assertEqual(
@@ -201,7 +201,7 @@ class PreApprovalNoEarmarkTest(TestCase):
         job.save()
         MaterialService.create_on_job(
             job=job, inventory_item=self.item,
-            quantity=Decimal('2.00'), units='sheets',
+            quantity=Decimal('2.00'), units='sheet',
             accounting_category=self.category,
         )
         self.assertEqual(
@@ -217,7 +217,7 @@ class PreApprovalNoEarmarkTest(TestCase):
         )
         MaterialService.create_on_job(
             job=job, inventory_item=self.item,
-            quantity=Decimal('4.00'), units='sheets',
+            quantity=Decimal('4.00'), units='sheet',
             accounting_category=self.category,
         )
         earmark = Earmark.objects.get(job=job, inventory_item=self.item)
@@ -231,7 +231,7 @@ class PreApprovalNoEarmarkTest(TestCase):
         )
         MaterialService.create_on_job(
             job=job, inventory_item=self.item,
-            quantity=Decimal('1.00'), units='sheets',
+            quantity=Decimal('1.00'), units='sheet',
             accounting_category=self.category,
         )
         earmark = Earmark.objects.get(job=job, inventory_item=self.item)
@@ -250,7 +250,7 @@ class PreApprovalNoEarmarkTest(TestCase):
         # Create material via the service on the DRAFT job — should NOT earmark yet.
         MaterialService.create_on_job(
             job=job, inventory_item=self.item,
-            quantity=Decimal('6.00'), units='sheets',
+            quantity=Decimal('6.00'), units='sheet',
             accounting_category=self.category,
         )
         self.assertEqual(

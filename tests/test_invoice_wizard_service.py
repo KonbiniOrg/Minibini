@@ -434,7 +434,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         # qty 1 / price = total (48.40).
         entered_scheme = RateScheme.objects.create(
             name='Per-sheet', algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('22.00'), unit_label='sheets',
+            rate=Decimal('22.00'), unit_label='sheet',
             accounting_category=self.cat_labor,
         )
         entered_task = Task.objects.create(
@@ -445,7 +445,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
         self.assertEqual(line_item.qty, Decimal('2.2'))
         self.assertEqual(line_item.price, Decimal('22.00'))
-        self.assertEqual(line_item.units, 'sheets')
+        self.assertEqual(line_item.units, 'sheet')
 
     def test_multi_atom_line_qty_1_units_none(self):
         atoms = [

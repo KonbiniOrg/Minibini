@@ -31,7 +31,7 @@ class EarmarkReleaseOnWorkCompleteTest(TestCase):
         )[0]
         self.plywood = InventoryItem.objects.create(
             code='PLY.REL', description='Plywood',
-            units='sheets', qty_on_hand=Decimal('20.00'),
+            units='sheet', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
             accounting_category=self.category,
         )
@@ -144,7 +144,7 @@ class EarmarkReleaseOnTerminalStatusesTest(TestCase):
             code='SVC', defaults={'name': 'Service', 'taxable': False},
         )[0]
         self.pli = InventoryItem.objects.create(
-            code='PLY.T5', description='Plywood', units='sheets',
+            code='PLY.T5', description='Plywood', units='sheet',
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
             accounting_category=self.category,

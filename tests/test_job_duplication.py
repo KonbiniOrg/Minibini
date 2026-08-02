@@ -46,7 +46,7 @@ class DuplicateJobTestBase(BaseTestCase):
         self.category = AccountingCategory.objects.create(name='Material', code='DUPMAT')
         self.scheme = _make_scheme('a')
         self.plywood = InventoryItem.objects.create(
-            code='DUP.PLY', description='Plywood', units='sheets',
+            code='DUP.PLY', description='Plywood', units='sheet',
             qty_on_hand=Decimal('20.00'), purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             accounting_category=self.category,

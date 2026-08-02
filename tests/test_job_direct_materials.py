@@ -118,14 +118,14 @@ class DirectMaterialCreateServiceTest(TestCase):
             job=self.job,
             description='Freeform Widget',
             quantity=Decimal('2.00'),
-            units='lbs',
+            units='lb',
             accounting_category=self.cat,
         )
         self.assertIsNotNone(m.pk)
         self.assertEqual(m.job, self.job)
         self.assertIsNone(m.inventory_item)
         self.assertEqual(m.description, 'Freeform Widget')
-        self.assertEqual(m.units, 'lbs')
+        self.assertEqual(m.units, 'lb')
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
     def test_on_hold_job_is_rejected(self):
@@ -204,13 +204,13 @@ class DirectMaterialCreateAPITest(TestCase):
         resp = self.client.post(self._url(), {
             'description': 'Freeform via API',
             'quantity': '1.00',
-            'units': 'lbs',
+            'units': 'lb',
             'accounting_category': self.cat.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201, resp.data)
         m = Material.objects.get(job=self.job, description='Freeform via API')
         self.assertIsNone(m.inventory_item)
-        self.assertEqual(m.units, 'lbs')
+        self.assertEqual(m.units, 'lb')
 
     def test_post_material_unauthenticated_returns_403(self):
         """Unauthenticated POST is rejected with 403."""

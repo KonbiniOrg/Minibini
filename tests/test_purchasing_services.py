@@ -166,7 +166,7 @@ class PurchaseOrderServiceLineItemTest(PurchasingTestBase):
         """Add a line item from a InventoryItem."""
         from apps.inventory.models import InventoryItem
         pli = InventoryItem.objects.create(
-            code='STL-001', description='Steel plate', units='sheets',
+            code='STL-001', description='Steel plate', units='sheet',
             purchase_price=Decimal('50.00'), selling_price=Decimal('75.00'),
             accounting_category=self.lit,
         )
