@@ -71,12 +71,12 @@ class ParsingTest(unittest.TestCase):
         self.assertFalse(P.looks_like_person('Volley Automation 05896'))  # digits
 
     def test_resolve_li_units_and_qty(self):
-        # 'Days' → 'hours' with qty × 8 (one workday). 'Hours' stays. Anything
+        # 'Days' → 'hour' with qty × 8 (one workday). 'Hours' stays. Anything
         # else lands on the canon default 'none' without touching qty.
         self.assertEqual(P.resolve_li_units_and_qty('Days', Decimal('1.5')),
-                         ('hours', Decimal('12')))
+                         ('hour', Decimal('12')))
         self.assertEqual(P.resolve_li_units_and_qty('Hours', Decimal('2')),
-                         ('hours', Decimal('2')))
+                         ('hour', Decimal('2')))
         self.assertEqual(P.resolve_li_units_and_qty('Each', Decimal('5')),
                          ('none', Decimal('5')))
         self.assertEqual(P.resolve_li_units_and_qty('', Decimal('3')),
