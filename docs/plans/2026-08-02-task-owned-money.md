@@ -212,9 +212,12 @@ Estimate hand-line AC requirement unchanged.
   wizard translates to per-piece; heavy-material/intricate/flip surcharges
   are modifiers), untracked consumables (absorb, percentage adjustment, or
   flat task — policy choice), deposits (already built). Resolved: outsourced
-  work (§7). Still to walk: jigs & customer-funded tooling, credits
-  (atom-or-document-line rule needed — a negative hand-line must NOT
-  crystallize into a nonsense task), N-finished-items product bundles.
+  work (§7). Resolved: jigs & customer-funded tooling — billed via ordinary
+  flat/hourly tasks + materials; NO asset/reuse-tracking infrastructure (RM
+  decision 2026-08-02; revisit only if remade-jig incidents make it earn a
+  place). Still to walk: credits (atom-or-document-line rule needed — a
+  negative hand-line must NOT crystallize into a nonsense task),
+  N-finished-items product bundles.
 - "Add Fee" button in the work-area modal: dies with Fee, but may survive as
   a preset-filtered "add flat task" shortcut. Pure UI sugar; decide late.
 - Multi-Materials-per-PO-line plan (schema already permits; code assumes
