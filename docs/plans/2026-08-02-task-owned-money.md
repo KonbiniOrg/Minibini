@@ -143,6 +143,60 @@ field-level:
   (`CanManageJobOrPM`), or `can_manage_financials`. Enforced at the
   serializer layer; matches how the Fee modal is permissioned today.
 
+### 7. Outsourced work (service POs)
+
+Powder coating, waterjet, etc. Sell side is a job atom; cost side lives in
+purchasing; bills stay in QBO (no Bill resurrection — the retired schema
+stubs stay parked; their removal migrations stay unrun until this ships).
+
+**Flow:**
+
+1. **Estimate** — vendor quote informs an estimate line (hand-line or an
+   "outsourced X" ServiceItem preset). Sell price = quote × the default-
+   markup Configuration value, prefilled, human-confirmed.
+2. **Acceptance** — line crystallizes into a flat task (entered-qty, qty 1,
+   typed sell rate). NOT born complete: completion = vendor work
+   done/received, which is what gates billability. No bleps expected; no
+   `est_worker_time`, so no schedule bar.
+3. **Order** — PO line at vendor cost, linked to the task via the existing
+   reserved `PurchaseOrderLineItem.task` FK. Mirror of the materials
+   pattern (`Material.po_line_item`): job-side atom ↔ PO line, atom carries
+   sell, PO line carries cost; the FK just lives on opposite ends.
+4. **Receive** — existing PO receiving flow. A PO that is received but not
+   reconciled surfaces as **awaiting reconciliation** (purchasing-side
+   nudge; deliberately NOT tied to task completion — completion is a pure
+   work event and never asks about money).
+5. **Reconcile** (when the vendor's bill arrives, entered once in QBO by
+   whoever does payables; Minibini captures only the delta it needs):
+   - **PO-level, authoritative**: bill total, vendor invoice ref,
+     `reconciled` state. Always possible no matter how differently the
+     vendor billed vs. quoted.
+   - **Line-level, optional**: per-line `final_price` (null = as ordered);
+     appended invoice-only lines (freight, taxes) with optional attribution
+     to an existing line/task. Unattributed variance stays at PO
+     granularity — no proration; multi-job POs report variance per-PO.
+6. **Task-rate prompt** — only from a clean per-line final on a not-yet-
+   invoiced task: "final cost $X (was $Y) — update selling price to
+   $X × markup?" Accept updates the task's rate (a permissioned money-block
+   edit); decline leaves the quoted rate. Never silent, never live-read:
+   the invoice wizard stays dumb and prices qty × current task rate.
+7. **Invoice** — any time after task completion, at the task's current
+   rate: the quoted sell price if the bill hasn't arrived / prompt
+   declined, the updated one if accepted. Reconciliation never blocks
+   invoicing; a variance discovered after invoicing is recorded margin, and
+   passing it through later is a deliberate new line / CO.
+
+**Future (phase 2, only if variance entry annoys):** pull-only QBO Bill
+matcher — poll Bills, match by a PO-number-in-memo convention, prefill the
+reconciliation screen. Nothing pushes; QBO stays sole bill
+system-of-record; no bidirectional sync.
+
+**Rejected:** entering final price at task completion (completer usually
+doesn't know it yet; wrong actor/permissions; would need a second home for
+costs). Bill entry originating in Minibini with push-to-QBO (viable, bigger;
+revisit only if the PO-actuals rung proves insufficient). Pushing POs to QBO
+and pulling bill links back (most duplication, desync risk).
+
 ## Unchanged
 
 The document architecture — atoms, source rows, claims, estimates/invoices
@@ -152,8 +206,20 @@ Estimate hand-line AC requirement unchanged.
 
 ## Open / deferred
 
-- RM wants to work through concrete examples of hand-entered line → task
-  mappings before implementation (esp. subcontracted work).
+- Example walk-through (2026-08-02, in progress). Resolved as clean under
+  this design: resale materials, N-parts-from-material, setup/delivery/site-
+  visit fees, hourly CAD, cutting & engraving (presets in machining-minutes;
+  wizard translates to per-piece; heavy-material/intricate/flip surcharges
+  are modifiers), untracked consumables (absorb, percentage adjustment, or
+  flat task — policy choice), deposits (already built). Resolved: outsourced
+  work (§7). Still to walk: jigs & customer-funded tooling, credits
+  (atom-or-document-line rule needed — a negative hand-line must NOT
+  crystallize into a nonsense task), N-finished-items product bundles.
+- "Add Fee" button in the work-area modal: dies with Fee, but may survive as
+  a preset-filtered "add flat task" shortcut. Pure UI sugar; decide late.
+- Multi-Materials-per-PO-line plan (schema already permits; code assumes
+  one via `linked_material`'s `.first()`) — interacts with §7 only in that
+  multi-job POs keep variance at PO granularity.
 - Migration sequencing and phasing (task money block → Fee elimination →
   nullable AC + fallback → preset default/retirement) belongs to the
   implementation plan, not this spec.
