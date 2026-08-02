@@ -69,6 +69,12 @@ class UnitsUpdateEndpointTest(BaseTestCase):
         response = self.client.patch('/api/settings/units/', ['none', 'hour'], format='json')
         self.assertEqual(response.status_code, 403)
 
+    def test_patch_requires_hour_present(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.patch('/api/settings/units/', ['none', 'ea'], format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('hour', response.data['detail'])
+
 
 class UnitsCanonTest(BaseTestCase):
     def test_default_units_are_singular_and_contain_hour(self):

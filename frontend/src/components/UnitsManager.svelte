@@ -7,6 +7,8 @@
   let saving = $state(false);
   let loading = $state(true);
 
+  const SPECIAL_UNITS = ['none', 'hour'];  // undeletable; mirror of backend rule
+
   async function loadUnits() {
     try {
       units = await api.get('/api/settings/units/');
@@ -23,7 +25,7 @@
     try {
       units = await api.patch('/api/settings/units/', units);
     } catch (e) {
-      error = e.data?.error || e.message || 'Failed to save.';
+      error = e.data?.detail || e.message || 'Failed to save.';
     } finally {
       saving = false;
     }
@@ -43,7 +45,7 @@
   }
 
   function removeUnit(index) {
-    if (units[index] === 'none') return;
+    if (SPECIAL_UNITS.includes(units[index])) return;
     units = units.filter((_, i) => i !== index);
     saveUnits();
   }
@@ -68,7 +70,7 @@
 </script>
 
 <h3>Units</h3>
-<p>Manage the list of available units. Removing a unit does not update existing records — they keep their current value, but the unit won't be available for selection going forward unless re-added.</p>
+<p>Manage the list of available units. Removing a unit does not update existing records — they keep their current value, but the unit won't be available for selection going forward unless re-added. "none" and "hour" are built-in and can't be removed — "hour" is the unit time-based billing and scheduling use.</p>
 
 {#if error}
   <p><strong>Error:</strong> {error}</p>
@@ -98,7 +100,7 @@
             {/if}
           </td>
           <td>
-            {#if unit !== 'none'}
+            {#if !SPECIAL_UNITS.includes(unit)}
               <button onclick={() => removeUnit(i)} disabled={saving}>Remove</button>
             {/if}
           </td>
