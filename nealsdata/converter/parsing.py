@@ -158,16 +158,16 @@ def resolve_li_units_and_qty(item_type, qty):
     """Map a FreeAgent estimate/invoice line's Item Type to canonical
     (units, qty) per apps.core.units.DEFAULT_UNITS.
 
-    The canon list has 'hours' but no 'days', so 'Days' lines are converted
-    to 'hours' with qty *= 8 (one workday). 'Hours' passes through as-is.
+    The canon list has 'hour' but no 'days', so 'Days' lines are converted
+    to 'hour' with qty *= 8 (one workday). 'Hours' passes through as 'hour'.
     Everything else lands on 'none' (the BaseLineItem default) — FreeAgent
     line items carry no other unit signal we can trust.
     """
     it = (item_type or '').strip().lower()
     if it == 'days':
-        return ('hours', qty * 8)
+        return ('hour', qty * 8)
     if it == 'hours':
-        return ('hours', qty)
+        return ('hour', qty)
     return ('none', qty)
 
 

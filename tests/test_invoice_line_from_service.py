@@ -24,7 +24,7 @@ class InvoiceLineFromServiceTest(TestCase):
             code='SVC', name='Service', taxable=True)
         self.scheme = RateScheme.objects.create(
             name='CNC-hourly', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('90.00'), unit_label='hours',
+            rate=Decimal('90.00'), unit_label='hour',
             accounting_category=self.cat)
         self.svc = ServiceItem.objects.create(
             template_name='CNC Routing', rate_scheme=self.scheme)
@@ -58,7 +58,7 @@ class InvoiceLineFromServiceTest(TestCase):
         the bare scheme.rate — a pre-checked modifier must be folded in."""
         modifier_scheme = RateScheme.objects.create(
             name='CNC-hourly-messy', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('90.00'), unit_label='hours',
+            rate=Decimal('90.00'), unit_label='hour',
             modifiers=[{'key': 'messy', 'label': 'Messy', 'percent': 10}],
             accounting_category=self.cat)
         modifier_svc = ServiceItem.objects.create(

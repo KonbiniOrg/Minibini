@@ -34,7 +34,7 @@ class BlepStartSweepBase(TestCase):
         self.cat = AccountingCategory.objects.create(name='bss', code='BSS')
         self.scheme = RateScheme.objects.create(
             name='S-bss', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('50'), unit_label='hr', accounting_category=self.cat,
+            rate=Decimal('50'), unit_label='hour', accounting_category=self.cat,
         )
         self.contact = Contact.objects.create(
             first_name='Blep', last_name='Sweep', email='bss@test.com',

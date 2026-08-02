@@ -168,6 +168,43 @@ describe('TaskDetailPage stat chips', () => {
     expect(container.querySelectorAll('.stat-chip.money')).toHaveLength(2);
   });
 
+  it('suppresses the duplicate Est Qty chip when it restates the worker time (hour-unit scheme)', async () => {
+    mockApi({
+      status: 'pending', est_worker_time: '2:00:00', est_qty: '2',
+      scheme_name: 'Milling', scheme_algorithm: 'elapsed_time',
+      scheme_unit_label: 'hour', effective_rate: '25',
+    });
+    const { findByRole, getByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByText('Est Time')).toBeInTheDocument();
+    expect(getByText('2h 0m')).toBeInTheDocument();
+    expect(queryByText('Est Qty')).toBeNull();
+  });
+
+  it('shows both Est Time and Est Qty chips for a legacy row where they diverge', async () => {
+    mockApi({
+      status: 'pending', est_worker_time: '2:00:00', est_qty: '3',
+      scheme_name: 'Milling', scheme_algorithm: 'elapsed_time',
+      scheme_unit_label: 'hour', effective_rate: '25',
+    });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByText('Est Time')).toBeInTheDocument();
+    expect(getByText('Est Qty')).toBeInTheDocument();
+    expect(getByText(/3 hour/)).toBeInTheDocument();
+  });
+
+  it('the Actual chip shows the scheme unit label with no literal "hour" fallback', async () => {
+    mockApi({
+      status: 'in_progress', scheme_name: 'Milling', scheme_algorithm: 'elapsed_time',
+      scheme_unit_label: 'hour', actual_hours: '1.5', effective_rate: '25',
+    });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByText('Actual')).toBeInTheDocument();
+    expect(getByText(/1.5 hour/)).toBeInTheDocument();
+  });
+
   it('renders no money chips when the task has no rate scheme', async () => {
     mockApi({ scheme_name: null, scheme_algorithm: null, effective_rate: null, scheme_unit_label: null, est_qty: null });
     const { findByRole, queryByText, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });

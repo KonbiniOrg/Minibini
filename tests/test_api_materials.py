@@ -31,12 +31,12 @@ class MaterialApiTest(APITestCase):
         resp = self.client.post(url, {
             'description': 'custom item',
             'quantity': '1',
-            'units': 'lbs',
+            'units': 'lb',
             'accounting_category': self.cat.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201, resp.content)
         m = Material.objects.get(job=self.job, description='custom item')
-        self.assertEqual(m.units, 'lbs')
+        self.assertEqual(m.units, 'lb')
 
     def test_post_jobs_id_materials_creates_taskless_material(self):
         url = f'/api/jobs/{self.job.pk}/materials/'

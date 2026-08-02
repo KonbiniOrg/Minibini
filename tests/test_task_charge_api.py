@@ -137,7 +137,7 @@ class TaskTimeFieldsTest(BaseTestCase):
         ac = AccountingCategory.objects.create(code='X-time', name='X-time')
         self.elapsed_scheme = RateScheme.objects.create(
             name='Hourly-time', algorithm='elapsed_time', rate=Decimal('60'),
-            unit_label='hr', accounting_category=ac,
+            unit_label='hour', accounting_category=ac,
         )
         self.flat_scheme = RateScheme.objects.create(
             name='Flat-time', algorithm='entered_qty', rate=Decimal('100'),
@@ -188,6 +188,24 @@ class TaskTimeFieldsTest(BaseTestCase):
         # Phase B: estimated_hours is removed; flat tasks have no est_qty by default.
         self.assertNotIn('estimated_hours', flat)
         self.assertIsNone(flat['est_qty'])
+
+    def test_actual_hours_matches_billing_qty(self):
+        # 50 min of bleps: serializer hours must equal get_actual_qty exactly
+        # (they were two independent conversions before; now one).
+        from apps.jobs.models import Blep
+        from django.utils import timezone
+        from datetime import timedelta
+
+        now = timezone.now().replace(second=0, microsecond=0)
+        task = Task.objects.create(job=self.job, name='Drift', rate_scheme=self.elapsed_scheme)
+        Blep.objects.create(
+            task=task, user=self.user,
+            start_time=now - timedelta(minutes=50),
+            end_time=now,
+        )
+        from apps.api.tasks.serializers import TaskSerializer
+        ser_val = Decimal(str(TaskSerializer(task).data['actual_hours']))
+        self.assertEqual(ser_val, task.rate_scheme.get_actual_qty(task))
 
 
 class ServiceItemSerializerNoACTest(BaseTestCase):

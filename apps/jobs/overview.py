@@ -16,9 +16,9 @@ from django.utils import timezone
 
 from apps.jobs.financials import spend_breakdown
 from apps.schedule.calendar_arithmetic import is_working_day
+from apps.core.timeutils import timedelta_to_hours
 
 HOURS_QUANT = Decimal('0.1')
-SECONDS_PER_HOUR = Decimal('3600')
 
 
 def _hours_str(hours) -> str:
@@ -32,7 +32,7 @@ def _hours_str(hours) -> str:
 
 
 def _duration_hours(total: timedelta) -> Decimal:
-    return Decimal(str(total.total_seconds())) / SECONDS_PER_HOUR
+    return timedelta_to_hours(total)
 
 
 def _count_working_days_after(start_date, end_date, envelope) -> int:

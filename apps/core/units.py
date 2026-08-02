@@ -1,15 +1,19 @@
 # apps/core/units.py
 import json
-from django import forms
 from rest_framework import serializers as drf_serializers
 from django.core.exceptions import ValidationError
 from apps.core.models import Configuration
 
 
 DEFAULT_UNITS = [
-    "none", "ea", "hours", "min", "sheets", "sq ft", "ft", "yd", "m",
-    "lbs", "kg", "gal", "qt", "L", "bd ft", "ln ft",
+    "none", "ea", "hour", "min", "sheet", "sq ft", "ft", "yd", "m",
+    "lb", "kg", "gal", "qt", "L", "bd ft", "ln ft",
 ]
+
+# The unit time-based billing and scheduling are denominated in. Present in
+# every units_list (the settings endpoint refuses to remove it); elapsed_time
+# RateSchemes are pinned to it.
+HOUR_UNIT = "hour"
 
 
 def get_units_list():
@@ -60,17 +64,3 @@ class UnitsField(drf_serializers.ChoiceField):
     def run_validation(self, data=drf_serializers.empty):
         self._refresh_choices()
         return super().run_validation(data)
-
-
-class UnitsFieldMixin:
-    """Mixin for ModelForms that have a 'units' field.
-    Replaces the default CharField widget with a Select dropdown
-    populated from the configured units list.
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if 'units' in self.fields:
-            self.fields['units'] = forms.ChoiceField(
-                choices=units_choices(),
-                initial='none',
-            )

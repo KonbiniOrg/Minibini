@@ -19,7 +19,7 @@ class AtomUnitsFromMaterialTests(TestCase):
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
         )
         cls.pli = InventoryItem.objects.create(
-            code='PLI-1', units='sheets', description='Steel Sheet',
+            code='PLI-1', units='sheet', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,
         )
@@ -30,18 +30,18 @@ class AtomUnitsFromMaterialTests(TestCase):
     def test_atom_units_returns_material_field_freeform(self):
         mat = Material.objects.create(
             job=self.job, task=None,
-            description='loose', quantity=Decimal('5'), units='lbs',
+            description='loose', quantity=Decimal('5'), units='lb',
             unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'),
             accounting_category=self.cat,
         )
-        self.assertEqual(EstimateWizardService._atom_units(mat), 'lbs')
+        self.assertEqual(EstimateWizardService._atom_units(mat), 'lb')
 
     def test_atom_units_returns_material_field_pli_linked(self):
-        # Material linked to a PLI with units='sheets' inherits that on save
+        # Material linked to a PLI with units='sheet' inherits that on save
         # via _populate_from_pli, then _atom_units reads the field.
         mat = Material.objects.create(
             job=self.job, task=None,
             quantity=Decimal('1'), inventory_item=self.pli,
         )
-        self.assertEqual(mat.units, 'sheets')
-        self.assertEqual(EstimateWizardService._atom_units(mat), 'sheets')
+        self.assertEqual(mat.units, 'sheet')
+        self.assertEqual(EstimateWizardService._atom_units(mat), 'sheet')

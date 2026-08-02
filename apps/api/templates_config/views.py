@@ -12,6 +12,7 @@ from imap_tools import MailBox
 
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
+from apps.core.units import HOUR_UNIT
 from apps.api.permissions import CanManageConfig, CanManageJobsOrFinancialsOrConfig
 from apps.api.mixins import JSONDestroyMixin
 from apps.inventory.models import TemplateMaterialAssociation
@@ -316,6 +317,11 @@ def units_view(request):
         return Response({'detail': '"none" must be the first entry.'}, status=400)
     if len(units) != len(set(units)):
         return Response({'detail': 'Duplicate units are not allowed.'}, status=400)
+    if HOUR_UNIT not in units:
+        return Response(
+            {'detail': f'"{HOUR_UNIT}" must be included — time-based '
+                       'billing and scheduling depend on it.'},
+            status=400)
 
     ConfigurationService.set('units_list', json.dumps(units))
     return Response(units)

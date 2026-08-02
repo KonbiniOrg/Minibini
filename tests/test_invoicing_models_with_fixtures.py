@@ -123,7 +123,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
 
         estimate_item2 = EstimateLineItem.objects.get(line_number=2)
         self.assertEqual(estimate_item2.qty, Decimal('8.00'))
-        self.assertEqual(estimate_item2.units, "hours")
+        self.assertEqual(estimate_item2.units, "hour")
         self.assertEqual(estimate_item2.description, "Electrical rough-in labor")
         self.assertEqual(estimate_item2.price, Decimal('600.00'))
         # EstimateLineItem.task FK dropped
@@ -143,7 +143,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
 
         invoice_item2 = InvoiceLineItem.objects.get(line_number=2)
         self.assertEqual(invoice_item2.qty, Decimal('8.00'))
-        self.assertEqual(invoice_item2.units, "hours")
+        self.assertEqual(invoice_item2.units, "hour")
         self.assertEqual(invoice_item2.description, "Electrical rough-in labor")
         self.assertEqual(invoice_item2.price, Decimal('600.00'))
         self.assertEqual(invoice_item2.invoice.invoice_number, "INV-2024-0001")
@@ -246,7 +246,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
             inventory_item=None,
             line_number=5,
             qty=Decimal('2.00'),
-            units="hours",
+            units="hour",
             description="Cleanup labor estimate",
             price=Decimal('150.00')
         )
@@ -256,7 +256,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
             inventory_item=None,
             line_number=6,
             qty=Decimal('2.00'),
-            units="hours",
+            units="hour",
             description="Cleanup labor invoice",
             price=Decimal('150.00')
         )

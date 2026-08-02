@@ -11,12 +11,12 @@ from apps.jobs.models import Job, Task, RateScheme
 class _Setup(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","ea","sheets","lbs","hours"]'})
+        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","ea","sheet","lb","hour"]'})
         cls.user = User.objects.create_user(username='u', password='p')
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
         cls.pli = InventoryItem.objects.create(
-            code='PLI-1', units='sheets', description='Steel Sheet',
+            code='PLI-1', units='sheet', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,
         )
@@ -52,7 +52,7 @@ class MaterialImmutabilityTests(_Setup):
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
-            {'units': 'lbs'},
+            {'units': 'lb'},
             format='json',
         )
         self.assertEqual(resp.status_code, 400)
@@ -106,12 +106,12 @@ class MaterialImmutabilityTests(_Setup):
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
-            {'units': 'lbs'},
+            {'units': 'lb'},
             format='json',
         )
         self.assertEqual(resp.status_code, 200)
         m.refresh_from_db()
-        self.assertEqual(m.units, 'lbs')
+        self.assertEqual(m.units, 'lb')
 
 
 class PropagateFlagOnFreeformAndPostPathsTests(_Setup):

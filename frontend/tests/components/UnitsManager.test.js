@@ -61,4 +61,14 @@ describe('UnitsManager', () => {
     await fireEvent.click(getByRole('button', { name: '↑' }));
     expect(api.patch).toHaveBeenCalledWith('/api/settings/units/', ['none', 'lb', 'kg']);
   });
+
+  it('offers no Remove button for none or hour', async () => {
+    api.get.mockResolvedValue(['none', 'ea', 'hour']);
+    const { findByText, getAllByRole } = render(UnitsManager);
+    await findByText('ea');
+
+    // Remove button exists for 'ea' only (not 'none' or 'hour').
+    const removeButtons = getAllByRole('button', { name: 'Remove' });
+    expect(removeButtons).toHaveLength(1);
+  });
 });

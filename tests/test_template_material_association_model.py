@@ -23,7 +23,7 @@ class TemplateMaterialAssociationModelTests(TestCase):
             accounting_category=cls.cat,
         )
         cls.pli = InventoryItem.objects.create(
-            code='PLI-A', units='sheets', description='X',
+            code='PLI-A', units='sheet', description='X',
             purchase_price=Decimal('10'), selling_price=Decimal('20'),
             accounting_category=cls.cat,
         )
@@ -88,11 +88,12 @@ class TemplateMaterialAssociationApiTests(APITestCase):
         )
         cls.cat = AccountingCategory.objects.create(code='TMAAPI', name='Cat')
         cls.scheme = RateScheme.objects.create(
-            name='H', rate=Decimal('50'), unit_label='hour',
+            name='H', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50'), unit_label='hour',
             accounting_category=cls.cat,
         )
         cls.pli = InventoryItem.objects.create(
-            code='PLITMA', units='sheets', description='X',
+            code='PLITMA', units='sheet', description='X',
             purchase_price=Decimal('10'), selling_price=Decimal('20'),
             accounting_category=cls.cat,
         )
@@ -168,7 +169,7 @@ class TemplateMaterialAssociationApiPermissionTests(APITestCase):
     def setUpTestData(cls):
         cls.cat = AccountingCategory.objects.create(code='CP', name='CatP')
         cls.pli = InventoryItem.objects.create(
-            code='PLIP', units='sheets', description='X',
+            code='PLIP', units='sheet', description='X',
             purchase_price=Decimal('10'), selling_price=Decimal('20'),
             accounting_category=cls.cat,
         )
@@ -238,7 +239,7 @@ class CrossTemplateValidationTests(APITestCase):
             accounting_category=cls.cat,
         )
         cls.pli = InventoryItem.objects.create(
-            code='X-PLI', units='sheets', description='X',
+            code='X-PLI', units='sheet', description='X',
             purchase_price=Decimal('1'), selling_price=Decimal('2'),
             accounting_category=cls.cat,
         )

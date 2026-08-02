@@ -2,6 +2,8 @@
 // MaterialRow) and TaskTree's grand-total footer — one source of truth so
 // a row's displayed total and the table's sum can't diverge.
 
+import { durationToHours } from './format.js';
+
 export function fmtMoney(n) {
   return n ? `$${Number(n).toFixed(2)}` : '-';
 }
@@ -9,29 +11,14 @@ export function fmtMoney(n) {
 export function fmtWorkerTime(value) {
   // Server returns DurationField as either "HH:MM:SS" / "DD HH:MM:SS"
   // or ISO 8601 ("PT1H30M"). Render as "Hh Mm" or "Mm" for compactness.
-  if (!value) return '-';
-  const str = String(value);
-  const iso = str.match(/^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
-  if (iso) {
-    const days = parseInt(iso[1] || '0', 10);
-    const h = parseInt(iso[2] || '0', 10) + days * 24;
-    const m = parseInt(iso[3] || '0', 10);
-    if (h && m) return `${h}h ${m}m`;
-    if (h) return `${h}h`;
-    if (m) return `${m}m`;
-    return '-';
-  }
-  const hms = str.match(/^(?:(\d+) )?(\d+):(\d+):(\d+)/);
-  if (hms) {
-    const days = parseInt(hms[1] || '0', 10);
-    const h = parseInt(hms[2], 10) + days * 24;
-    const m = parseInt(hms[3], 10);
-    if (h && m) return `${h}h ${m}m`;
-    if (h) return `${h}h`;
-    if (m) return `${m}m`;
-    return '-';
-  }
-  return str;
+  const hours = durationToHours(value);
+  if (hours === null) return '-';
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  if (m) return `${m}m`;
+  return '-';
 }
 
 export function taskTotalInfo(task) {

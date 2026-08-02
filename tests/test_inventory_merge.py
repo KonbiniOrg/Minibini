@@ -154,7 +154,7 @@ class MergeEndpointTest(TestCase):
 
 class MergeNoneUnitTest(TestCase):
     """'none' means *unknown*, not a real unit — merging across it is allowed
-    and the known unit wins. A real-unit mismatch (sheets vs lbs) still
+    and the known unit wins. A real-unit mismatch (sheet vs lb) still
     hard-blocks (the QOH addition would be nonsense)."""
 
     def setUp(self):
@@ -184,7 +184,7 @@ class MergeNoneUnitTest(TestCase):
         self.assertEqual(keep.qty_on_hand, Decimal('5.00'))
 
     def test_real_unit_mismatch_still_blocks(self):
-        keep = self._item('K-LBS', 'lbs')
+        keep = self._item('K-LBS', 'lb')
         discard = self._item('D-SHEET2', 'sheet')
         with self.assertRaises(ValidationError):
             InventoryService.merge(keep.pk, discard.pk)

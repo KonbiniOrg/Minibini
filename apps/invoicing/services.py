@@ -1136,12 +1136,12 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _task_qty_and_price(cls, task, total_price):
-        from apps.jobs.models import RateScheme
-        # An ENTERED_QTY task has a real per-unit qty × rate, so the line
-        # carries them and the total derives. ELAPSED_TIME rolls up bleps —
-        # no single qty/price is meaningful, so that line uses qty=1.
-        scheme = task.rate_scheme
-        if scheme and scheme.algorithm == RateScheme.ENTERED_QTY:
+        # Both algorithms carry a real per-unit qty × rate: entered_qty from
+        # the worker-entered quantity, elapsed_time from blep hours. Either
+        # way qty × effective_rate == the computed amount exactly, and it
+        # matches what _uniform_scheme_bundle produces for the same task.
+        if task.rate_scheme_id:
+            scheme = task.rate_scheme
             return scheme.get_actual_qty(task), task.effective_rate()
         return Decimal('1'), total_price
 

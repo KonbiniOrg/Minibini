@@ -17,7 +17,7 @@ class RateSchemeAPITest(TestCase):
         self.ac = AccountingCategory.objects.create(code='LAB', name='Labor')
         self.scheme = RateScheme.objects.create(
             name='Hourly Labor', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('45.00'), unit_label='hours',
+            rate=Decimal('45.00'), unit_label='hour',
             accounting_category=self.ac,
         )
 
@@ -354,6 +354,25 @@ class RateSchemeSerializerExtraFieldsTest(BaseTestCase):
         self.assertIn('unit_label', body)
 
 
+class RateSchemeSerializerElapsedUnitTest(TestCase):
+    """Time-based (elapsed_time) schemes are always billed in hours; the
+    serializer overrides any submitted unit_label rather than validating it."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+        self.category = AccountingCategory.objects.create(
+            code='EL-sef', name='Elapsed')
+
+    def test_serializer_forces_hour_on_elapsed(self):
+        from apps.api.rate_schemes.serializers import RateSchemeSerializer
+        data = {'name': 'Shop time', 'algorithm': 'elapsed_time',
+                'rate': '90.00', 'unit_label': 'gal',
+                'accounting_category': self.category.pk}
+        ser = RateSchemeSerializer(data=data)
+        self.assertTrue(ser.is_valid(), ser.errors)
+        self.assertEqual(ser.validated_data['unit_label'], 'hour')
+
+
 class RateSchemeSupersedeSameNameTest(BaseTestCase):
     """
     The SPA always sends a `name` (it's a pre-populated form field).
@@ -469,7 +488,7 @@ class RateSchemeSearchFilterTest(TestCase):
         self.cnc = RateScheme.objects.create(
             name='CNC Routing', description='Router pass on CNC bed',
             algorithm=RateScheme.ELAPSED_TIME, rate=Decimal('75.00'),
-            unit_label='hr', accounting_category=self.ac,
+            unit_label='hour', accounting_category=self.ac,
         )
         self.design = RateScheme.objects.create(
             name='Design Fee', description='Graphic design work',

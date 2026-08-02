@@ -42,7 +42,7 @@ def _make_adjustment_fixture(test_case):
     # one normal line + one adjustment line
     base_line = EstimateLineItem.objects.create(
         estimate=estimate, line_number=1,
-        qty=Decimal('1'), units='hours',
+        qty=Decimal('1'), units='hour',
         description='Labor', price=Decimal('100.00'),
         accounting_category=cat,
     )
@@ -91,7 +91,7 @@ class InvoiceAPITest(BaseTestCase):
         )
         response = self.client.post(f'/api/invoices/{invoice.pk}/line-items/', {
             'qty': '1.00',
-            'units': 'hours',
+            'units': 'hour',
             'description': 'Consulting',
             'price': '150.00',
         }, format='json')
@@ -109,7 +109,7 @@ class InvoiceAPITest(BaseTestCase):
         )
         InvoiceLineItem.objects.create(
             invoice=invoice, line_number=1, qty=Decimal('2'),
-            units='hours', description='Labor', price=Decimal('100.00'),
+            units='hour', description='Labor', price=Decimal('100.00'),
         )
         InvoiceLineItem.objects.create(
             invoice=invoice, line_number=2, qty=Decimal('1'),
@@ -340,7 +340,7 @@ class BillabilityGateTest(BaseTestCase):
         self.cat = AccountingCategory.objects.create(name='BillCat', code='BCAT')
         self.scheme = RateScheme.objects.create(
             name='Hourly-bill', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('50.00'), unit_label='hours',
+            rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
         self.job = Job.objects.create(
@@ -585,7 +585,7 @@ class InvoiceAdjustmentServiceTest(BaseTestCase):
         # seed a base line so recompute has something to sum
         InvoiceLineItem.objects.create(
             invoice=self.invoice, line_number=1,
-            qty=Decimal('1'), units='hours',
+            qty=Decimal('1'), units='hour',
             description='Labor', price=Decimal('200.00'),
             accounting_category=self.adj_cat,
         )
@@ -657,7 +657,7 @@ class InvoiceAdjustmentAPITest(BaseTestCase):
         # seed a base line for adjustment to sum
         self.base_li = InvoiceLineItem.objects.create(
             invoice=self.invoice, line_number=1,
-            qty=Decimal('1'), units='hours',
+            qty=Decimal('1'), units='hour',
             description='Labor', price=Decimal('200.00'),
             accounting_category=self.adj_cat,
         )

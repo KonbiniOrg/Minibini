@@ -93,15 +93,14 @@ class BaseBuildersTest(unittest.TestCase):
         cfg = next(f for f in self._models('core.configuration')
                    if f['pk'] == 'units_list')
         value = json.loads(cfg['fields']['value'])
-        canon = ['none', 'ea', 'hours', 'min', 'sheets', 'sq ft', 'ft', 'yd',
-                 'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft']
+        canon = ['none', 'ea', 'hour', 'min', 'sheet', 'sq ft', 'ft', 'yd',
+                 'm', 'lb', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft']
         self.assertEqual(value, canon)
 
     def test_ratescheme_unit_labels_within_canon(self):
         # Every emitted RateScheme.unit_label must be a value in the
-        # converter's units_list. The seed historically used the singular
-        # 'hour', which is not in DEFAULT_UNITS ('hours') — a mismatch that
-        # makes the seeded schemes fail unit validation in the running app.
+        # converter's units_list. DEFAULT_UNITS uses singular 'hour', and the
+        # seed's RateScheme unit_label matches — this guards that pairing.
         build.build_seed(self.c)
         build.build_configuration(self.c)
         cfg = next(f for f in self._models('core.configuration')
@@ -373,10 +372,10 @@ class EstimateBuilderTest(unittest.TestCase):
     def test_emitted_units_are_within_canon(self):
         # No emitted line-item / material / deliverable row may carry units
         # like 'days' or 'each' — those are off-canon. Materials/Deliverables
-        # default to 'ea'; Days lines convert to hours via resolve helper.
+        # default to 'ea'; Days lines convert to hour via resolve helper.
         build.build_estimates(self.c)
-        canon = {'none', 'ea', 'hours', 'min', 'sheets', 'sq ft', 'ft', 'yd',
-                 'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'}
+        canon = {'none', 'ea', 'hour', 'min', 'sheet', 'sq ft', 'ft', 'yd',
+                 'm', 'lb', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'}
         for li in self._models('estimates.estimatelineitem'):
             self.assertIn(li['fields']['units'], canon,
                           f"line item {li['pk']} has off-canon units "
@@ -464,8 +463,8 @@ class AtomDerivationTest(unittest.TestCase):
         # Materials and Deliverables must use canonical units (no 'each' /
         # 'days') so they validate against the running app's units_list.
         build.derive_atoms(self.c)
-        canon = {'none', 'ea', 'hours', 'min', 'sheets', 'sq ft', 'ft', 'yd',
-                 'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'}
+        canon = {'none', 'ea', 'hour', 'min', 'sheet', 'sq ft', 'ft', 'yd',
+                 'm', 'lb', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'}
         for m in self._models('inventory.material'):
             self.assertIn(m['fields']['units'], canon,
                           f"material {m['pk']} units={m['fields']['units']!r}")

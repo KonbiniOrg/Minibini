@@ -238,6 +238,20 @@ class OnAcceptCrystallizesServiceTest(DeferredServiceBase):
         self.assertEqual(src.source_type, EstimateLineItemSource.SOURCE_TASK)
         self.assertEqual(src.source_pk, task.pk)
 
+    def test_service_line_crystallizes_a_schedulable_task(self):
+        """Task 8: the ServiceItem's scheme is unit_label='hour' (setUp) and
+        the line only carries qty — generate_task's pair-fill must derive
+        est_worker_time so acceptance produces a schedulable task."""
+        from datetime import timedelta
+        from apps.jobs.models import Task
+        EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('3'),
+        )
+        EstimateAcceptanceService.on_accept(self.estimate)
+        task = Task.objects.get(job=self.job)
+        self.assertEqual(task.est_qty, Decimal('3'))
+        self.assertEqual(task.est_worker_time, timedelta(hours=3))
+
     def test_superseded_scheme_does_not_abort_acceptance(self):
         from apps.jobs.models import Task
         line = EstimateService.add_line_item_from_service(

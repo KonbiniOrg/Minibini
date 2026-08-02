@@ -39,6 +39,10 @@ test('creating a scheme through the modal round-trips to the list', async ({ pag
   const modal = page.getByLabel('New Rate Scheme');
   await modal.getByRole('textbox', { name: 'Name' }).fill(stamp);
   await modal.getByRole('spinbutton', { name: 'Rate' }).fill('42');
+  // Default algorithm is elapsed_time, whose unit is locked to 'hour' (see
+  // the unit-lock test below) — pick entered_qty here so Unit label is a
+  // free <select> this generic create test can exercise.
+  await modal.getByLabel('Algorithm *').selectOption('entered_qty');
   await modal.getByLabel('Unit label').selectOption({ index: 1 });
   await modal.getByLabel('Accounting Category').selectOption({ index: 1 });
   await modal.getByRole('button', { name: 'Save' }).click();
@@ -69,4 +73,39 @@ test('editing an existing scheme opens the modal prefilled', async ({ page }) =>
   const modal = page.getByLabel('Edit Rate Scheme');
   await expect(modal).toBeVisible();
   await expect(modal.getByRole('textbox', { name: 'Name' })).toHaveValue(name);
+});
+
+test('elapsed-time schemes lock the unit to hour; switching algorithm frees it again', async ({ page }) => {
+  // Time-based billing/scheduling is denominated in 'hour' (apps/core/units.py
+  // HOUR_UNIT) — elapsed_time schemes are pinned to it everywhere, including
+  // this form.
+  await openPricingTab(page);
+  await page.getByRole('button', { name: 'Add Rate Scheme' }).click();
+  const modal = page.getByLabel('New Rate Scheme');
+
+  await modal.getByLabel('Algorithm *').selectOption('elapsed_time');
+  const unitControl = modal.getByLabel('Unit label');
+  await expect(unitControl).toBeVisible();
+  await expect(unitControl).toBeDisabled();
+  await expect(unitControl).toHaveValue('hour');
+
+  await modal.getByLabel('Algorithm *').selectOption('entered_qty');
+  const unitSelect = modal.getByLabel('Unit label');
+  await expect(unitSelect).toBeVisible();
+  await expect(unitSelect).toBeEnabled();
+  // A real, empty-by-default <select> — not the locked stand-in.
+  await expect(unitSelect).toHaveValue('');
+});
+
+test('Settings → Setup → Units: hour and none carry no Remove button', async ({ page }) => {
+  await page.goto('/#/settings');
+  await page.getByRole('button', { name: 'Setup' }).click();
+  await expect(page.getByRole('heading', { name: 'Units' })).toBeVisible();
+
+  const hourRow = page.locator('tr', { hasText: 'hour' });
+  const noneRow = page.locator('tr', { hasText: 'none' });
+  await expect(hourRow).toBeVisible();
+  await expect(noneRow).toBeVisible();
+  await expect(hourRow.getByRole('button', { name: 'Remove' })).toHaveCount(0);
+  await expect(noneRow.getByRole('button', { name: 'Remove' })).toHaveCount(0);
 });

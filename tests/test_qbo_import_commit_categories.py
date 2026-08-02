@@ -60,7 +60,7 @@ class CommitSchemesTest(TestCase):
              'unit_label': 'ea', 'accounting_category': self.cat.pk,
              'qbo_item_id': '11', 'collapse_group': None},
             {'name': 'Finishing', 'rate': '80.0', 'algorithm': 'elapsed_time',
-             'unit_label': 'hours', 'accounting_category': self.cat.pk,
+             'unit_label': 'hour', 'accounting_category': self.cat.pk,
              'qbo_item_id': '12', 'collapse_group': None},
         ])
         self.assertEqual(RateScheme.objects.count(), 2)
@@ -77,7 +77,7 @@ class CommitSchemesTest(TestCase):
         store_snapshot()
         mapping = QBOImportCommitService.commit_schemes([
             {'name': 'Shop rate', 'rate': '95.0', 'algorithm': 'elapsed_time',
-             'unit_label': 'hours', 'accounting_category': self.cat.pk,
+             'unit_label': 'hour', 'accounting_category': self.cat.pk,
              'qbo_item_id': '11', 'collapse_group': 'shop'},
         ])
         rows = QBOSuggestionService.suggestions('services')['rows']
@@ -86,13 +86,22 @@ class CommitSchemesTest(TestCase):
         # persisted mapping resolves it.
         self.assertEqual(svc['rate_scheme_default'], mapping['11'])
 
+    def test_elapsed_row_normalizes_unit_to_hour(self):
+        mapping = QBOImportCommitService.commit_schemes([
+            {'name': 'Shop rate', 'rate': '95.0', 'algorithm': 'elapsed_time',
+             'unit_label': 'ea', 'accounting_category': self.cat.pk,
+             'qbo_item_id': '13', 'collapse_group': None},
+        ])
+        scheme = RateScheme.objects.get(pk=mapping['13'])
+        self.assertEqual(scheme.unit_label, 'hour')
+
     def test_collapse_group_shares_one_scheme(self):
         mapping = QBOImportCommitService.commit_schemes([
             {'name': 'Shop rate', 'rate': '95.0', 'algorithm': 'elapsed_time',
-             'unit_label': 'hours', 'accounting_category': self.cat.pk,
+             'unit_label': 'hour', 'accounting_category': self.cat.pk,
              'qbo_item_id': '11', 'collapse_group': 'shop'},
             {'name': 'CNC hourly', 'rate': '95.0', 'algorithm': 'elapsed_time',
-             'unit_label': 'hours', 'accounting_category': self.cat.pk,
+             'unit_label': 'hour', 'accounting_category': self.cat.pk,
              'qbo_item_id': '12', 'collapse_group': 'shop'},
         ])
         self.assertEqual(RateScheme.objects.count(), 1)
@@ -137,12 +146,12 @@ class CommitSchemesUpsertTest(TestCase):
         QBOImportCommitService.commit_schemes([self._row()])
         mapping = QBOImportCommitService.commit_schemes([
             self._row(rate='95.0', algorithm='elapsed_time',
-                      unit_label='hours')])
+                      unit_label='hour')])
         self.assertEqual(RateScheme.objects.count(), 1)
         scheme = RateScheme.objects.get()
         self.assertEqual(scheme.rate, Decimal('95.0'))
         self.assertEqual(scheme.algorithm, RateScheme.ELAPSED_TIME)
-        self.assertEqual(scheme.unit_label, 'hours')
+        self.assertEqual(scheme.unit_label, 'hour')
         self.assertEqual(mapping['11'], scheme.pk)
 
     def test_recommit_referenced_scheme_supersedes_and_repoints(self):

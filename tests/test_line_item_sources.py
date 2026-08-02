@@ -38,7 +38,7 @@ class EstimateLineItemSourceAtomTest(TestCase):
         )
         self.scheme = RateScheme.objects.create(
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('90'), unit_label='hr', accounting_category=self.cat,
+            rate=Decimal('90'), unit_label='hour', accounting_category=self.cat,
         )
         self.task = Task.objects.create(
             job=self.job, name='Weld', rate_scheme=self.scheme,

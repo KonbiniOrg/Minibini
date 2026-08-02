@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { parseDurationToISO, isoHoursFromDuration } from '../lib/format.js';
   import { triageError } from '../lib/errorTriage.js';
   import { showError } from '../stores/messages.js';
   import FieldError from './FieldError.svelte';
@@ -69,7 +70,9 @@
       rateSchemeId = item.rate_scheme ?? '';
       loadModifiers(item.active_modifiers);
       estQty = item.est_qty ?? '';
-      estWorkerTime = formatDuration(item.est_worker_time);
+      estWorkerTime = item.est_worker_time
+        ? formatDuration(item.est_worker_time)
+        : (isHourUnit ? (item.est_qty ?? '') : '');
       templateId = '';
     } else {
       name = (mode === 'manual' ? (presetName || '') : ''); description = '';
@@ -116,8 +119,13 @@
     name = selectedTemplate.template_name || '';
     description = selectedTemplate.description || '';
     loadModifiers(selectedTemplate.default_active_modifiers);
-    estQty = '1'; // templates no longer carry a default qty; estimator sets the magnitude
     rateSchemeId = selectedTemplate.rate_scheme ?? '';
+    // If schemes hasn't loaded yet, isHourUnit reads false here and this default
+    // could wrongly apply to an hour-unit template — but it's inert: save()
+    // recomputes est_qty from live isHourUnit, ignoring this stale estQty.
+    if (!isHourUnit) {
+      estQty = '1'; // templates no longer carry a default qty; estimator sets the magnitude
+    }
   });
 
   const selectedScheme = $derived(
@@ -125,6 +133,11 @@
       ? rateScheme
       : (schemes.find(s => s.rate_scheme_id === Number(rateSchemeId)) || null)
   );
+
+  // Keys on unit_label, not algorithm: hour-unit schemes (elapsed, and any
+  // entered-qty scheme priced per hour) collapse to a single input whose
+  // value drives both est_qty and est_worker_time.
+  const isHourUnit = $derived(selectedScheme?.unit_label === 'hour');
 
   function formatDuration(value) {
     // Server returns ISO 8601 like "PT1H30M" or HH:MM:SS — accept either, render HH:MM
@@ -140,32 +153,6 @@
       if (hmsMatch) return `${hmsMatch[1].padStart(2, '0')}:${hmsMatch[2]}`;
     }
     return '';
-  }
-
-  function durationToISO(input) {
-    // Accepts:
-    //   ""        → null
-    //   "HH:MM"   → "PT{H}H{M}M"
-    //   decimal   → interpret as hours, e.g. "1.5" → PT1H30M
-    // Returns null for empty input, false for unparseable input.
-    if (input === '' || input === null || input === undefined) return null;
-    const trimmed = String(input).trim();
-    if (trimmed === '') return null;
-    const colonMatch = trimmed.match(/^(\d+):(\d+)$/);
-    if (colonMatch) {
-      const h = parseInt(colonMatch[1], 10);
-      const m = parseInt(colonMatch[2], 10);
-      return `PT${h}H${m}M`;
-    }
-    const decimalMatch = trimmed.match(/^(\d+\.?\d*|\.\d+)$/);
-    if (decimalMatch) {
-      const total = parseFloat(decimalMatch[1]);
-      const totalMinutes = Math.round(total * 60);
-      const h = Math.floor(totalMinutes / 60);
-      const m = totalMinutes % 60;
-      return `PT${h}H${m}M`;
-    }
-    return false; // unparseable
   }
 
   function toggleModifier(key, checked) {
@@ -194,11 +181,17 @@
       return;
     }
 
-    const estWorkerTimeISO = durationToISO(estWorkerTime);
+    const estWorkerTimeISO = parseDurationToISO(estWorkerTime);
     if (estWorkerTimeISO === false) {
       formError = `Could not parse "${estWorkerTime}" as a duration. Use HH:MM (e.g. 1:30) or decimal hours (e.g. 1.5).`;
       return;
     }
+    // Hour-unit schemes have one input (the worker-time field, relabeled
+    // "Estimated hours"); est_qty is derived from the already-parsed ISO
+    // value above so the two never diverge and we don't reparse the raw string.
+    const estQtyValue = isHourUnit
+      ? isoHoursFromDuration(estWorkerTimeISO)
+      : (estQty || null);
 
     busy = true;
     try {
@@ -207,7 +200,7 @@
         description,
         rate_scheme: rateSchemeId,
         active_modifiers: activeModifiers,
-        est_qty: estQty || null,
+        est_qty: estQtyValue,
         est_worker_time: estWorkerTimeISO,
       };
 
@@ -220,7 +213,7 @@
           service_item_id: Number(templateId),
           name,
           description,
-          est_qty: estQty || null,
+          est_qty: estQtyValue,
           active_modifiers: activeModifiers,
           est_worker_time: estWorkerTimeISO,
         });
@@ -350,21 +343,24 @@
             </fieldset>
           {/if}
 
-          <p>
-            <label><strong>Estimated qty</strong><br>
-              <input type="number" step="0.01" bind:value={estQty}>
-              <small>{selectedScheme.unit_label}</small>
-            </label>
-            <FieldError errors={fieldErrs} field="est_qty" />
-          </p>
+          {#if !isHourUnit}
+            <p>
+              <label><strong>Estimated qty</strong><br>
+                <input type="number" step="0.01" bind:value={estQty}>
+                <small>{selectedScheme.unit_label}</small>
+              </label>
+              <FieldError errors={fieldErrs} field="est_qty" />
+            </p>
+          {/if}
         {/if}
 
         <p>
-          <label><strong>Estimated worker time</strong><br>
+          <label><strong>{isHourUnit ? 'Estimated hours' : 'Estimated worker time'}</strong><br>
             <input type="text" placeholder="e.g. 1:30 or 1.5" bind:value={estWorkerTime}>
-            <small>HH:MM or decimal hours (1.5 = 1h30m)</small>
+            <small>'HH:MM or decimal hours (1.5 = 1h30m)'</small>
           </label>
           <FieldError errors={fieldErrs} field="est_worker_time" />
+          {#if isHourUnit}<FieldError errors={fieldErrs} field="est_qty" />{/if}
         </p>
 
         {#if mode === 'manual' && !isEdit}

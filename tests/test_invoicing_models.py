@@ -160,7 +160,7 @@ class InvoiceLineItemModelTest(TestCase):
             inventory_item=None,
             line_number=1,
             qty=Decimal('5.00'),
-            units="hours",
+            units="hour",
             description="Test line item",
             price=Decimal('50.00')
         )
@@ -168,7 +168,7 @@ class InvoiceLineItemModelTest(TestCase):
         self.assertIsNone(line_item.inventory_item)
         self.assertEqual(line_item.line_number, 1)
         self.assertEqual(line_item.qty, Decimal('5.00'))
-        self.assertEqual(line_item.units, "hours")
+        self.assertEqual(line_item.units, "hour")
         self.assertEqual(line_item.description, "Test line item")
         self.assertEqual(line_item.price, Decimal('50.00'))
 

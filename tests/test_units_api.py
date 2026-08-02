@@ -42,7 +42,7 @@ class UnitsUpdateEndpointTest(BaseTestCase):
 
     def test_patch_units_list(self):
         self.client.force_authenticate(user=self.admin)
-        new_list = ['none', 'hours', 'ea', 'custom_unit']
+        new_list = ['none', 'hour', 'ea', 'custom_unit']
         response = self.client.patch('/api/settings/units/', new_list, format='json')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, new_list)
@@ -51,7 +51,7 @@ class UnitsUpdateEndpointTest(BaseTestCase):
 
     def test_patch_requires_none_first(self):
         self.client.force_authenticate(user=self.admin)
-        response = self.client.patch('/api/settings/units/', ['hours', 'ea'], format='json')
+        response = self.client.patch('/api/settings/units/', ['hour', 'ea'], format='json')
         self.assertEqual(response.status_code, 400)
 
     def test_patch_rejects_empty_list(self):
@@ -61,10 +61,25 @@ class UnitsUpdateEndpointTest(BaseTestCase):
 
     def test_patch_rejects_duplicates(self):
         self.client.force_authenticate(user=self.admin)
-        response = self.client.patch('/api/settings/units/', ['none', 'hours', 'hours'], format='json')
+        response = self.client.patch('/api/settings/units/', ['none', 'hour', 'hour'], format='json')
         self.assertEqual(response.status_code, 400)
 
     def test_patch_requires_can_manage_config(self):
         self.client.force_authenticate(user=self.worker)
-        response = self.client.patch('/api/settings/units/', ['none', 'hours'], format='json')
+        response = self.client.patch('/api/settings/units/', ['none', 'hour'], format='json')
         self.assertEqual(response.status_code, 403)
+
+    def test_patch_requires_hour_present(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.patch('/api/settings/units/', ['none', 'ea'], format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('hour', response.data['detail'])
+
+
+class UnitsCanonTest(BaseTestCase):
+    def test_default_units_are_singular_and_contain_hour(self):
+        from apps.core.units import DEFAULT_UNITS, HOUR_UNIT
+        self.assertEqual(HOUR_UNIT, 'hour')
+        self.assertIn(HOUR_UNIT, DEFAULT_UNITS)
+        for legacy in ('hours', 'sheets', 'lbs'):
+            self.assertNotIn(legacy, DEFAULT_UNITS)

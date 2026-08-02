@@ -1126,7 +1126,12 @@ list). Tasks within a column are sorted by `worker_queue`. Drag-and-drop assigns
   supplied) returns `{needs_worker_time: true}` instead of assigning, so
   the UI can prompt: the board drag-and-drop pops an interrupting duration
   modal (`WorkerTimePromptModal`), and the Assign modal shows a required
-  duration field. Unassigning never requires a duration.
+  duration field. Unassigning never requires a duration. A task whose
+  rate scheme is an hour-unit scheme already carries `est_worker_time` by
+  the time it reaches assign — crystallized from `est_qty` via
+  `ServiceItem.generate_task` (estimate/CO acceptance, add-from-template)
+  or paired by `hours_pair_fill` on direct creation
+  (estimates-and-prices.md §4.3) — so the prompt never fires for it.
 - `POST /api/tasks/reorder/` — bulk update worker_queue from a list
 
 (Job-task-list reordering — `POST /api/jobs/{id}/reorder-tasks/` — is a
@@ -1464,6 +1469,18 @@ affordances:
     → `POST /api/jobs/{id}/fees/`
 - **"Add Expense"** — opens `ExpenseModal`; open to any authenticated user.
 
+**`WorkItemForm`'s est_qty / est_worker_time input.** The form keys off
+the selected `RateScheme`'s `unit_label`, not its algorithm (an
+`entered_qty` scheme priced per hour gets the same treatment as
+`elapsed_time`): for an hour-unit scheme it shows a single "Estimated
+hours" field (HH:MM or decimal, e.g. `1.5`) that drives both `est_qty`
+and `est_worker_time` on save, and suppresses the template's default
+`est_qty` of `'1'` (which would otherwise misleadingly pre-fill the
+combined field). Any other unit shows the two-field layout — "Estimated
+worker time" (scheduling) plus a separate quantity input labeled with
+the scheme's unit. See `estimates-and-prices.md` §4.3 for the backend
+pairing (`hours_pair_fill`) this mirrors.
+
 `defaultMaterialCategoryId` is loaded from
 `GET /api/settings/` (`default_material_accounting_category` key) at page
 mount and passed to `MaterialModal` so freeform material lines default to the
@@ -1690,7 +1707,12 @@ Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
    "Unassigned"; the name itself opens `AssignModal` when
    `can_manage`), Est Time (`est_worker_time`), Est Qty, Actual, and
    the money pair Rate + Charge (green-tinted headers; only when the
-   task has a rate scheme). On ENTERED_QTY tasks the Actual chip
+   task has a rate scheme). The Est Qty chip is suppressed when the
+   scheme's unit is `'hour'` and `est_qty` equals `est_worker_time` in
+   hours — a hand-edited mismatch still shows both, but the normal
+   pair-filled case (§9.5) would otherwise restate the same number
+   twice; `TaskRow`'s Est Qty column does the same dedupe (shows `-`).
+   On ENTERED_QTY tasks the Actual chip
    embeds the signed **+/− Add** input (add-only; Enter or Add commits,
    never blur; hidden when terminal **or blocked**; success briefly
    swaps the chip's header label to "added ✓", errors render on a line

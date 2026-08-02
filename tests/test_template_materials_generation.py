@@ -14,15 +14,16 @@ from apps.jobs.models import Job, RateScheme, Task
 class _Setup(TestCase):
     @classmethod
     def setUpTestData(cls):
-        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","sheets","ea"]'})
+        Configuration.objects.update_or_create(key='units_list', defaults={'value': '["none","sheet","ea"]'})
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
         cls.scheme = RateScheme.objects.create(
-            name='Hourly', rate=Decimal('100'), unit_label='hour',
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour',
             accounting_category=cls.cat,
         )
         cls.pli = InventoryItem.objects.create(
-            code='PLI-1', units='sheets', description='Steel Sheet',
+            code='PLI-1', units='sheet', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,
         )
@@ -52,7 +53,7 @@ class JobGenerationTests(_Setup):
         ms = list(Material.objects.filter(job=self.job, task__isnull=True))
         self.assertEqual(len(ms), 1)
         self.assertEqual(ms[0].inventory_item_id, self.pli.pk)
-        self.assertEqual(ms[0].units, 'sheets')
+        self.assertEqual(ms[0].units, 'sheet')
 
     def test_task_paired_association_attaches_to_matching_task(self):
         TemplateMaterialAssociation.objects.create(

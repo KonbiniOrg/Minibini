@@ -79,7 +79,7 @@ atom — see §4.5 — not a RateScheme.)
 | `description` | TextField, blank | longer admin explanation |
 | `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `percentage` |
 | `rate` | Decimal(10,2) | the per-unit price for `elapsed_time`/`entered_qty`; holds the percent value for `percentage` (negative = discount) |
-| `unit_label` | CharField(50) | the customer-facing unit (e.g. `hour`, `minute`, `piece`, `job`); validated against the configured units list (`apps/core/units.py`) |
+| `unit_label` | CharField(50) | the customer-facing unit; validated against the configured units list (`apps/core/units.py`). `elapsed_time` schemes are pinned to `'hour'` — `RateScheme.clean()` raises a `unit_label` `ValidationError` for any other value, and the rate-scheme serializer force-sets `unit_label='hour'` for `elapsed_time` (so the field is redundant, not user-chosen, once that algorithm is picked). `percentage` still defaults `unit_label='none'`. |
 | `modifiers` | JSONField | list of `{key, label, percent}` dicts |
 | `accounting_category` | FK → `AccountingCategory` (PROTECT) | required, NOT NULL |
 | `replaced_by` | FK self (PROTECT, nullable) | supersession pointer |
@@ -92,7 +92,7 @@ atom — see §4.5 — not a RateScheme.)
 
 | Algorithm | Constant | Quantity source | Typical use |
 |---|---|---|---|
-| `elapsed_time` | `RateScheme.ELAPSED_TIME` | sum of `Blep` durations on the task in hours | hourly labor (assembly, bench work) |
+| `elapsed_time` | `RateScheme.ELAPSED_TIME` | sum of `Blep` durations on the task in hours | hourly labor (assembly, bench work); unit is always `'hour'` (pinned — see §2.1) |
 | `entered_qty` | `RateScheme.ENTERED_QTY` | `Task.actual_qty` | machine-minutes, piece work; worker enters the count |
 | `percentage` | `RateScheme.PERCENTAGE` | n/a — document-layer computation only | surcharges and discounts (rush fee, volume discount) |
 
@@ -389,6 +389,9 @@ the algorithm to resolve qty:
 | `elapsed_time` | sum of Blep durations in hours |
 | `entered_qty` | `task.actual_qty or 0` |
 
+An `elapsed_time` task's unit is always `'hour'` — the scheme is pinned
+(§2.1) — so this qty is always a count of hours.
+
 `effective_rate()` returns `rate_scheme.effective_rate(self.active_modifiers)`.
 
 `RateScheme.effective_rate()` for `elapsed_time` / `entered_qty`
@@ -462,13 +465,32 @@ the backstop, so the billed number is always one a human confirmed.
 
 | Algorithm | `est_qty` meaning |
 |---|---|
-| `elapsed_time` | estimated billable hours (often equals `est_worker_time` but doesn't have to) |
+| `elapsed_time` | estimated billable hours — kept in step with `est_worker_time` by pair-fill (below) |
 | `entered_qty` | estimated piece / minute count |
 
 `est_qty` is **never** modified by work activity. It stays as the
 estimate (and drives `compute_estimate_amount`). `actual_qty` and Bleps
 capture what happened (and drive `compute_amount`). This separation
 enables estimate-vs-actuals reporting (not yet built; see §16).
+
+**Hour-unit pair-fill (`hours_pair_fill`, `apps/jobs/services.py`).** For
+any Task whose rate scheme has `unit_label == 'hour'` — keyed on the
+scheme's *unit*, not on the `elapsed_time` algorithm, so an `entered_qty`
+scheme labeled in hours gets the same treatment — `est_qty` (billable
+hours) and `est_worker_time` (schedulable duration) are one number in two
+encodings. `TaskService.create_direct`, `update_task`, and `assign` all
+call `hours_pair_fill(scheme, est_qty, est_worker_time)`: when exactly one
+of the pair is supplied, it derives the other; when both are supplied it
+passes them through untouched. This is a **convenience, not an
+invariant** — an unconvertible or out-of-range `est_qty` passes through
+unchanged rather than being rejected here, so `Task.full_clean()` still
+renders the normal contract-shaped 400. Separately,
+`ServiceItem.generate_task` fills `est_worker_time` from `est_qty` when
+the caller doesn't supply one, so estimate acceptance, change-order
+acceptance, and add-from-template all produce schedulable tasks without an
+assign-time worker-time prompt for hour-unit schemes. The SPA's
+`WorkItemForm` shows a single "Estimated hours" input for hour-unit
+schemes and writes both fields (jobs-and-tasks.md §9.5).
 
 ### 4.4 Material as a billable atom
 
@@ -789,7 +811,13 @@ the consistency backstop, not the guard.
 | N | Wizard-grouped from multiple atoms |
 
 A single-atom line item copies the atom's description, units, qty,
-and price across. Multi-atom line items: when every atom is a task
+and price across. For a solo Task atom this is `est_qty` × effective
+rate on the estimate side, and actual qty (§2.2 `get_actual_qty`) ×
+effective rate on the invoice side — including `elapsed_time` tasks,
+which carry hours × rate rather than collapsing to `qty=1`/price=total.
+This makes a solo elapsed-time line's shape match what a same-scheme
+multi-task bundle produces for the identical work
+(`InvoiceWizardService._task_qty_and_price`). Multi-atom line items: when every atom is a task
 sharing one `RateScheme` and identical `active_modifiers`, the line is
 **summarized** — `units` from the service price, `qty` = summed
 quantities (`est_qty` on the estimate side, actuals on the invoice side),
@@ -2087,11 +2115,11 @@ transitions the CO `draft → open`.
   "How accurate are estimates for this template?" are both unblocked
   by data but not yet built.
 
-- **Auto-fill `est_worker_time` when scheme units are hours** —
-  when the chosen scheme's `unit_label` represents hours, `est_qty`
-  and `est_worker_time` are typically the same number. The form
-  could pre-fill, with override. Needs a way to mark which configured
-  unit means "hour".
+- **Auto-fill `est_worker_time` when scheme units are hours —
+  RESOLVED.** `apps/core/units.py` defines a canonical `HOUR_UNIT`
+  ("hour"); `hours_pair_fill` (§4.3) derives whichever of
+  `est_qty` / `est_worker_time` is missing for any hour-unit scheme, and
+  `WorkItemForm` presents one "Estimated hours" input.
 
 - **`@history` decorator on `Task`** — billing-config changes on a Task
   (service-price reassignment, modifier toggles) are a normal

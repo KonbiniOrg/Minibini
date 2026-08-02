@@ -805,6 +805,27 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ a used AC's semantic fields are immutable behind a
   retire-and-replace flow, per a dedicated spec.
 
+- **Generic `PATCH /api/settings/` bypasses the units endpoint's validation.** — _added 2026-08-01 (found during the hour-unit research)_
+  `settings_view` PATCH (`apps/api/templates_config/views.py`) has per-key
+  validators for the blep/schedule/labor keys but falls through to
+  `ConfigurationService.set(key, str(value))` for anything else — including
+  `units_list`. A `PATCH /api/settings/ {"units_list": ["none","ea"]}` writes
+  the Python repr `['none', 'ea']` (not JSON) and skips the
+  non-empty/`none`-first/no-dup/`hour`-present checks that
+  `/api/settings/units/` enforces. Either route `units_list` through the same
+  validation or reject it on the generic endpoint ("use /settings/units/").
+  _Done when:_ the generic endpoint can no longer write an invalid or
+  non-JSON `units_list`.
+
+- **`get_units_list()` doesn't survive a malformed `units_list` row.** — _added 2026-08-01 (found during the hour-unit research)_
+  `apps/core/units.py` catches only `Configuration.DoesNotExist`; a
+  non-JSON value (e.g. written via the generic-settings bypass above) raises
+  `json.JSONDecodeError` out of every unit dropdown, every line-item save,
+  and the settings page — one bad config row bricks most forms in the app.
+  Catch decode errors and fall back to `DEFAULT_UNITS` (arguably log too).
+  _Done when:_ a garbage `units_list` value degrades to the default list
+  instead of 500ing across the SPA.
+
 - **Email settings fields attract browser password autofill.** — _added 2026-07-26_
   `EmailAccountSettings.svelte` uses a bare `type="email"` input next to a
   `type="password"` input with no `autocomplete` attributes, so browsers

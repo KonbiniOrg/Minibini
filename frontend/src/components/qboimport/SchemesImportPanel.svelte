@@ -82,13 +82,17 @@
           <td>${row.rate}</td>
           <td>
             <select value={edit(row).algorithm}
-                    onchange={(e) => set(row, 'algorithm', e.target.value)}>
+                    onchange={(e) => {
+                      set(row, 'algorithm', e.target.value);
+                      if (e.target.value === 'elapsed_time') set(row, 'unit_label', 'hour');
+                    }}>
               <option value="entered_qty">entered qty</option>
               <option value="elapsed_time">elapsed time (hourly)</option>
             </select>
           </td>
           <td>
             <select class="unit" value={edit(row).unit_label}
+                    disabled={edit(row).algorithm === 'elapsed_time'}
                     onchange={(e) => set(row, 'unit_label', e.target.value)}>
               {#each unitsList as u}
                 <option value={u}>{u}</option>

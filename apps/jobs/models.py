@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from apps.core.models import AbstractWorkContainer, TimeChangeRequest
 from apps.core.history import history
 from apps.core.timeutils import floor_to_minute
+from apps.core.units import HOUR_UNIT
 
 
 # Palette used to auto-assign Job.accent_color. Order matters for tie-breaking
@@ -490,6 +491,11 @@ class RateScheme(models.Model):
             })
         if self.algorithm != self.PERCENTAGE and self.rate is not None and self.rate < 0:
             raise ValidationError({'rate': 'Only percentage services may have a negative rate.'})
+        if self.algorithm == self.ELAPSED_TIME and self.unit_label != HOUR_UNIT:
+            raise ValidationError({
+                'unit_label': 'Time-based schemes are billed in hours; '
+                              f'unit must be "{HOUR_UNIT}".',
+            })
         if self.pk and self.is_referenced():
             old = RateScheme.objects.get(pk=self.pk)
             changed = [
@@ -503,11 +509,10 @@ class RateScheme(models.Model):
                 })
 
     def save(self, *args, **kwargs):
-        # Normalize on create too — full_clean below only covers updates.
+        # Normalize on create too — full_clean below covers both create and update.
         self._normalize_modifiers()
         # Belt-and-braces: ensure clean() runs even on bare .save() calls.
-        if self.pk:
-            self.full_clean()
+        self.full_clean()
         super().save(*args, **kwargs)
 
 
@@ -538,13 +543,16 @@ class RateScheme(models.Model):
         if self.algorithm == self.PERCENTAGE:
             raise ValueError('percentage services are document adjustments, not task billing')
         if self.algorithm == self.ELAPSED_TIME:
-            total_seconds = sum(
-                b.elapsed.total_seconds() for b in task.blep_set.all() if b.elapsed is not None
+            from datetime import timedelta
+            from apps.core.timeutils import timedelta_to_hours
+            total = sum(
+                (b.elapsed for b in task.blep_set.all() if b.elapsed is not None),
+                timedelta(),
             )
             # Quantize to 2 places: a raw seconds/3600 division is
             # non-terminating (~28 digits) and overflows the line item qty
             # field (max_digits=10) when carried into the invoice wizard.
-            return (Decimal(str(total_seconds)) / 3600).quantize(Decimal('0.01'))
+            return timedelta_to_hours(total).quantize(Decimal('0.01'))
         elif self.algorithm == self.ENTERED_QTY:
             return task.actual_qty or Decimal('0')
         else:

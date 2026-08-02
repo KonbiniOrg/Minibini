@@ -165,11 +165,15 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         return None
 
     def get_actual_hours(self, obj):
-        total_seconds = sum(
-            b.elapsed.total_seconds()
-            for b in obj.blep_set.all() if b.elapsed is not None
+        from datetime import timedelta
+        from decimal import Decimal
+        from apps.core.timeutils import timedelta_to_hours
+        total = sum(
+            (b.elapsed for b in obj.blep_set.all() if b.elapsed is not None),
+            timedelta(),
         )
-        return round(total_seconds / 3600.0, 2)
+        # float at the JSON boundary; the arithmetic is the shared Decimal path
+        return float(timedelta_to_hours(total).quantize(Decimal('0.01')))
 
     def get_effective_rate(self, obj):
         rate = obj.effective_rate()

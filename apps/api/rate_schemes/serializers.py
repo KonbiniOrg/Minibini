@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from apps.jobs.models import RateScheme
-from apps.core.units import get_units_list
+from apps.core.units import get_units_list, HOUR_UNIT
 
 
 class RateSchemeSerializer(serializers.ModelSerializer):
@@ -42,7 +42,11 @@ class RateSchemeSerializer(serializers.ModelSerializer):
         if unit is None and self.instance is not None:
             unit = self.instance.unit_label
 
-        if algorithm == RateScheme.PERCENTAGE:
+        if algorithm == RateScheme.ELAPSED_TIME:
+            # Time-based schemes are always denominated in hours; the UI
+            # hides the picker and any submitted value is overridden.
+            attrs['unit_label'] = HOUR_UNIT
+        elif algorithm == RateScheme.PERCENTAGE:
             # A percentage service carries no unit; default to 'none' (and skip
             # the configured-unit check — the unit is cosmetic here).
             attrs['unit_label'] = unit or 'none'

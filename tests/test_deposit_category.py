@@ -30,7 +30,7 @@ class DepositCategoryInvariantTest(TestCase):
             code='SVC2', name='Service2', taxable=True)
         RateScheme.objects.create(
             name='Hourly-dep', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=cat)
         self.assertTrue(cat.is_referenced())
 
@@ -72,7 +72,7 @@ class DepositCategoryFreezeTest(TestCase):
             code='SVC3', name='Service3', taxable=True)
         RateScheme.objects.create(
             name='Hourly-frz', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.cat)
 
     def test_taxable_frozen_once_referenced(self):

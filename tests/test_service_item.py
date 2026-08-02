@@ -53,8 +53,14 @@ class RateSchemeModelTest(BaseTestCase):
             unit_label='job',
             accounting_category=self.ac,
         )
-        from django.db import IntegrityError
-        with self.assertRaises(IntegrityError):
+        # save() now runs full_clean() on create too, and full_clean()
+        # includes validate_unique() — the duplicate name is now caught
+        # there (ValidationError) before the INSERT ever reaches the DB's
+        # unique constraint (IntegrityError). The earlier catch is the
+        # better contract: it's what the API's error-response layer
+        # actually renders as a field-keyed 400.
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError) as ctx:
             RateScheme.objects.create(
                 name='Unique Scheme',
                 algorithm=RateScheme.ENTERED_QTY,
@@ -62,6 +68,7 @@ class RateSchemeModelTest(BaseTestCase):
                 unit_label='job',
                 accounting_category=self.ac,
             )
+        self.assertIn('name', ctx.exception.message_dict)
 
 
 class RateSchemeComputeTest(BaseTestCase):

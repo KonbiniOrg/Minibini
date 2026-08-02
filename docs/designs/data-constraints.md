@@ -67,6 +67,31 @@ by data migration** (`core/0027_seed_setup_defaults`, idempotent, never
 overwrites) — a migrate-only fresh database can create Jobs/POs without
 fixtures (2026-07-23; previously fixture-only, a fresh-tenant trap).
 
+**`units_list` canon.** Units are **singular** (`'hour'`, `'sheet'`, `'lb'`,
+never `'hours'`/`'sheets'`/`'lbs'`) — `apps/core/units.py`'s
+`DEFAULT_UNITS` is the singular seed list and singularized data migration
+`core/0029_singular_units` rewrote the `units_list` Configuration value and
+every stored unit string in place: `RateScheme.unit_label`,
+`InventoryItem.units`, `Material.units`, `Deliverable.units`,
+`DeliverableSnapshot.units`, and the line-item `units` field on
+`EstimateLineItem`, `ChangeOrderLineItem`, `PurchaseOrderLineItem`,
+`BillLineItem` (schema stub — rows may still exist), and `InvoiceLineItem`.
+(`Task` and `ServiceItem` have no `units` column of their own — see
+`materials-inventory-and-purchasing.md`.) Two units are special:
+
+- **`'none'`** — must be the first entry in the list (`PATCH
+  /api/settings/units/` rejects a submission where it isn't); the settings
+  UI (`UnitsManager`) refuses to let a user remove it.
+- **`'hour'`** (`apps.core.units.HOUR_UNIT`) — must always be present;
+  `PATCH /api/settings/units/` returns 400 if it's missing from the
+  submitted list, and `UnitsManager` refuses to let a user remove it.
+  `elapsed_time` `RateScheme`s are pinned to this unit (§1.7).
+
+`core/0029_singular_units` also carries seven forward-only
+ordering-anchor migrations, `purchasing/0018` through `0024` (same idiom
+as `core/0024`) — no schema/data change, just Django migration-graph
+sequencing.
+
 Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
 `{day:02d}`, `{counter:04d}`. Counter values are string-encoded integers.
 Estimates are **not** numbered via `NumberGenerationService` — they derive
@@ -434,7 +459,13 @@ See `docs/designs/estimates-and-prices.md` for algorithm/modifier semantics.
     is the sole exception to the non-negative rate invariant.
     `validate_data.py` raises an error if a non-`percentage`
     service has a negative rate.
-- **unit_label**: max 50 chars
+- **unit_label**: max 50 chars, drawn from `Configuration['units_list']`
+  (§1.1). `elapsed_time` schemes are **pinned to `'hour'`** —
+  `RateScheme.clean()` raises a `unit_label` `ValidationError` for any
+  other value, and the rate-scheme serializer force-sets
+  `unit_label='hour'` on `elapsed_time` submissions so the field is never
+  actually chosen by the caller for that algorithm. `percentage` defaults
+  `unit_label='none'`.
 - **modifiers**: JSON list of `{key, label, percent}` dicts (default `[]`).
   `percentage` services have no modifiers (their `modifiers` list is `[]`).
 - **accounting_category** (required FK → AccountingCategory): `clean()`

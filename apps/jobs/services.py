@@ -4,7 +4,7 @@ Service classes for handling complex creation workflows between Jobs and Tasks.
 
 from datetime import timedelta
 from apps.core.history import record_history
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from collections import defaultdict
 from typing import List, Dict, Optional, Tuple
 
@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
+from django.utils.dateparse import parse_duration
 
 from apps.jobs.models import Job, Task, Blep, Fee, RateScheme, copy_active_modifiers
 from apps.estimates.models import (
@@ -21,6 +22,43 @@ from apps.estimates.models import (
 from apps.inventory.models import InventoryItem
 from apps.core.models import Configuration
 from apps.core.services import NumberGenerationService, NotFoundError, SELF_EDIT_WINDOW_HOURS
+from apps.core.timeutils import timedelta_to_hours
+from apps.core.units import HOUR_UNIT
+
+
+def _coerce_duration(value):
+    """DurationField inputs arrive as timedelta (DRF) or ISO/HH:MM:SS string
+    (internal callers). Return a timedelta or None — any other type (e.g. a
+    raw JSON int from a direct POST) is not a duration we can coerce, so it
+    passes through as None rather than reaching timedelta_to_hours() and
+    raising AttributeError."""
+    if isinstance(value, timedelta):
+        return value
+    if isinstance(value, str):
+        return parse_duration(value)
+    return None
+
+
+def hours_pair_fill(scheme, est_qty, est_worker_time):
+    """For hour-denominated schemes, est_qty (billable hours) and
+    est_worker_time (schedulable duration) are one number in two encodings.
+    When exactly one is provided, derive the other. Convenience, not an
+    invariant — both-provided passes through untouched."""
+    if scheme is None or scheme.unit_label != HOUR_UNIT:
+        return est_qty, est_worker_time
+    if est_qty is not None and not est_worker_time:
+        try:
+            return est_qty, timedelta(hours=float(est_qty))
+        except (TypeError, ValueError, OverflowError, InvalidOperation):
+            # Unconvertible/out-of-range input passes through unchanged so
+            # Task.full_clean() renders the contract-shaped 400 — this
+            # helper is a convenience, not a validator.
+            return est_qty, est_worker_time
+    if est_worker_time and est_qty is None:
+        td = _coerce_duration(est_worker_time)
+        if td is not None:
+            return timedelta_to_hours(td).quantize(Decimal('0.01')), est_worker_time
+    return est_qty, est_worker_time
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1048,6 +1086,17 @@ class TaskService:
                 raise ValidationError({'parent_task': [
                     'Subtasks cannot have their own subtasks — '
                     'one level of subtasks only.']})
+        est_qty, est_worker_time = hours_pair_fill(scheme, est_qty, est_worker_time)
+        # A type _coerce_duration can't parse (e.g. a raw JSON int from this
+        # endpoint's unserialized POST) would otherwise reach Task.save()'s
+        # full_clean() and hit DurationField.to_python(), which only catches
+        # ValueError — a non-str/timedelta input raises an uncaught
+        # TypeError there (a 500), not the ValidationError (400) the error
+        # contract requires. Reject it here instead, where a real
+        # ValidationError renders correctly.
+        if est_worker_time is not None and not isinstance(est_worker_time, (timedelta, str)):
+            raise ValidationError({'est_worker_time': [
+                'Must be a duration string (e.g. "01:30:00") or ISO 8601 duration.']})
         # Explicit assignment at create must be schedulable (the invariant
         # lives on the assign gestures, not Task.clean — see the model).
         if task_fields.get('assignee_id') and not est_worker_time:
@@ -1099,6 +1148,16 @@ class TaskService:
                 'Only a manager, the project manager, or the assignee may '
                 'edit a task that is in progress or blocked.'
             )
+        scheme = kwargs.get('rate_scheme') or task.rate_scheme
+        if scheme is not None and scheme.unit_label == HOUR_UNIT:
+            if ('est_qty' in kwargs and 'est_worker_time' not in kwargs
+                    and kwargs['est_qty'] is not None):
+                _, kwargs['est_worker_time'] = hours_pair_fill(
+                    scheme, kwargs['est_qty'], None)
+            elif ('est_worker_time' in kwargs and 'est_qty' not in kwargs
+                    and kwargs['est_worker_time']):
+                kwargs['est_qty'], _ = hours_pair_fill(
+                    scheme, None, kwargs['est_worker_time'])
         # Explicit assignment must be schedulable (invariant lives here and
         # on assign/create_direct, not Task.clean — auto-assign is exempt).
         if kwargs.get('assignee'):
@@ -1213,6 +1272,9 @@ class TaskService:
         task.worker_queue = worker_queue
         if est_worker_time is not None:
             task.est_worker_time = est_worker_time
+            if task.rate_scheme_id and task.est_qty is None:
+                task.est_qty, _ = hours_pair_fill(
+                    task.rate_scheme, None, est_worker_time)
         task.save()
         return task
 

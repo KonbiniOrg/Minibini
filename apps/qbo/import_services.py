@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.models import Configuration
+from apps.core.units import HOUR_UNIT
 
 _PAGE = 1000
 
@@ -687,6 +688,8 @@ class QBOImportCommitService:
         handled = {}                # original pk → scheme updated this call
         with transaction.atomic():
             for row in rows:
+                if row['algorithm'] == RateScheme.ELAPSED_TIME:
+                    row['unit_label'] = HOUR_UNIT
                 group = row.get('collapse_group') or None
                 target = targets[row['qbo_item_id']]
                 if target is not None:

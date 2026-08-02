@@ -71,8 +71,8 @@ class AcceptanceCrystallizesFeesTest(TestCase):
 
         # 3) Adjustment line — document-only, must NOT become a Fee.
         self.adj_scheme = RateScheme.objects.create(
-            name='Rush 10%', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('10'), unit_label='%', accounting_category=self.cat,
+            name='Rush 10%', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10'), unit_label='none', accounting_category=self.cat,
         )
         self.adj_line = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=3, description='Rush surcharge',

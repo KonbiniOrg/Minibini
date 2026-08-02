@@ -45,7 +45,7 @@ class ServiceItemAPITest(BaseTestCase):
         response = self.client.post('/api/service-items/', {
             'template_name': 'API Test Template',
             'description': 'Created via API',
-            'units': 'hours',
+            'units': 'hour',
             'rate_scheme': scheme.pk,
         }, format='json')
         self.assertEqual(response.status_code, 201)
@@ -61,7 +61,7 @@ class ServiceItemAPITest(BaseTestCase):
         client.force_authenticate(user=User.objects.get(pk=u.pk))
         scheme = RateScheme.objects.get(pk=1)
         resp = client.post('/api/service-items/', {
-            'template_name': 'Inline Saved', 'description': '', 'units': 'hours',
+            'template_name': 'Inline Saved', 'description': '', 'units': 'hour',
             'rate_scheme': scheme.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201)
@@ -71,7 +71,7 @@ class ServiceItemAPITest(BaseTestCase):
         scheme = RateScheme.objects.get(pk=1)
         for name, desc in [('CNC Routing', 'router pass'), ('Hand Sanding', 'finish work')]:
             self.client.post('/api/service-items/', {
-                'template_name': name, 'description': desc, 'units': 'hours',
+                'template_name': name, 'description': desc, 'units': 'hour',
                 'rate_scheme': scheme.pk,
             }, format='json')
         resp = self.client.get('/api/service-items/?search=cnc')

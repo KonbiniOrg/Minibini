@@ -34,7 +34,7 @@ class ItemRefResolutionTests(TestCase):
         )
         self.scheme = RateScheme.objects.create(
             name='Hourly-res', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         self.svc_a = ServiceItem.objects.create(

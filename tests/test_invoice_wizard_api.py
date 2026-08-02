@@ -33,7 +33,7 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
             name='Hourly-ils', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -114,7 +114,7 @@ class SourcePoolEndpointTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
             name='Hourly-spe', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -179,7 +179,7 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
             name='Hourly-lifa', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -202,9 +202,10 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         data = response.json()
-        # Single task-atom copy-over: qty=1, price=total ($50), units track scheme.
-        self.assertEqual(data['qty'], '1.00')
-        self.assertEqual(data['price'], '50.00')
+        # Solo elapsed-time task: qty=actual blep hours (2), price=effective
+        # rate ($25/hour), units track scheme. qty * price == the $50 total.
+        self.assertEqual(data['qty'], '2.00')
+        self.assertEqual(data['price'], '25.00')
         self.assertEqual(len(data['sources']), 1)
 
     def test_returns_409_on_claim_conflict(self):
@@ -266,7 +267,7 @@ class AddAtomsEndpointTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
             name='Hourly-aae', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         # task1 with a 2h blep — task atom = $50
@@ -352,7 +353,7 @@ class RemoveAtomsEndpointTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
             name='Hourly-rae', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         # task1 with a 2h blep — task atom = $50

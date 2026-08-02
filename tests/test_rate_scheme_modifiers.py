@@ -63,3 +63,33 @@ class RateSchemeModifierNormalizationTest(TestCase):
         ], name='S-mod-real')
         s.refresh_from_db()
         self.assertEqual(len(s.modifiers), 2)
+
+
+class RateSchemeElapsedUnitTest(TestCase):
+    """Time-based (elapsed_time) schemes are always billed in hours."""
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(name='elapsed', code='ELP')
+
+    def test_elapsed_scheme_rejects_non_hour_unit(self):
+        scheme = RateScheme.objects.create(
+            name='S-elapsed', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        scheme.unit_label = 'ea'
+        with self.assertRaises(ValidationError) as ctx:
+            scheme.full_clean()
+        self.assertIn('unit_label', ctx.exception.message_dict)
+
+    def test_elapsed_scheme_rejects_non_hour_unit_on_create(self):
+        """save() runs full_clean() on create too, not just on update — a
+        bare .objects.create() with a non-hour unit must fail immediately
+        rather than silently persisting a violating row."""
+        with self.assertRaises(ValidationError) as ctx:
+            RateScheme.objects.create(
+                name='S-elapsed-create', algorithm=RateScheme.ELAPSED_TIME,
+                rate=Decimal('50'), unit_label='ea',
+                accounting_category=self.cat,
+            )
+        self.assertIn('unit_label', ctx.exception.message_dict)

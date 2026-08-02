@@ -135,6 +135,10 @@
     saving = true;
     clearFormMessages();
     try {
+      // The backend force-sets this for elapsed_time regardless — this
+      // guarantees the payload matches what actually gets persisted, even
+      // though the control is locked and never lets the user set it wrong.
+      if (form.algorithm === 'elapsed_time') form.unit_label = 'hour';
       const payload = {
         name: form.name,
         algorithm: form.algorithm,
@@ -204,6 +208,17 @@
 
   // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
   const isPercentage = $derived(form.algorithm === 'percentage');
+
+  // Display-only stand-in for the locked unit — NEVER write this back into
+  // form.unit_label from a reactive effect: doing so previously clobbered a
+  // real unit (e.g. edit an entered_qty scheme with unit 'pc', flip to
+  // elapsed_time and back — the effect overwrote unit_label to 'hour' and
+  // never restored it, so Save silently persisted the wrong unit). The
+  // preview reads this instead of form.unit_label so it renders correctly
+  // while elapsed_time is selected, without touching the underlying field;
+  // save() is the only place that force-sets form.unit_label, and only
+  // right before building the payload.
+  const displayUnitLabel = $derived(form.algorithm === 'elapsed_time' ? 'hour' : form.unit_label);
 
   const previewTotal = $derived.by(() => {
     if (!form.rate) return null;
@@ -304,18 +319,26 @@
       </label>
       <FieldError errors={fieldErrs} field="rate" />
     {:else}
-      <label><strong>Rate *</strong><br>
-        <input type="number" step="0.01" bind:value={form.rate}>
-      </label>
+      <span class="rate-row">
+        <label><strong>Rate *</strong><br>
+          <input type="number" step="0.01" bind:value={form.rate}>
+        </label>
+        <span class="rate-per">per</span>
+        {#if form.algorithm === 'elapsed_time'}
+          <input type="text" value="hour" disabled aria-label="Unit">
+        {:else}
+          <select bind:value={form.unit_label} required aria-label="Unit">
+            <option value="">-- select --</option>
+            {#each unitsList as u}
+              <option value={u}>{u}</option>
+            {/each}
+          </select>
+        {/if}
+      </span>
+      {#if form.algorithm === 'elapsed_time'}
+        <br><small>Time-based schemes are billed in hours.</small>
+      {/if}
       <FieldError errors={fieldErrs} field="rate" />
-      <label><strong>Unit label *</strong><br>
-        <select bind:value={form.unit_label} required>
-          <option value="">-- select --</option>
-          {#each unitsList as u}
-            <option value={u}>{u}</option>
-          {/each}
-        </select>
-      </label>
       <FieldError errors={fieldErrs} field="unit_label" />
     {/if}
     </p>
@@ -346,7 +369,7 @@
 
     {#if previewTotal && !isPercentage}
       <p><strong>Preview:</strong>
-        {previewTotal.qty} {form.unit_label}s @ ${previewTotal.effRate}/{form.unit_label} = ${previewTotal.total}
+        {previewTotal.qty} {displayUnitLabel} @ ${previewTotal.effRate}/{displayUnitLabel} = ${previewTotal.total}
       </p>
     {/if}
 
@@ -366,4 +389,7 @@
 <style>
   /* Matches JobEditModal's title treatment. */
   .rs-modal-title { margin-top: 0; }
+  /* "Rate [input] per [unit]" on one line, controls bottom-aligned. */
+  .rate-row { display: inline-flex; align-items: flex-end; gap: 8px; }
+  .rate-row .rate-per { padding-bottom: 3px; }
 </style>

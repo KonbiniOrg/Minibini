@@ -681,14 +681,17 @@ Configuration value: JSON array of strings
 | `validate_unit(value)` | Raises `ValidationError` if value not in list |
 | `units_choices()` | Django form `(value, label)` tuples |
 | `UnitsField` | DRF `ChoiceField` subclass; refreshes choices from DB on each validation call |
-| `UnitsFieldMixin` | ModelForm mixin that swaps the `units` field for a `Select` widget |
+| `HOUR_UNIT` | The canonical `'hour'` unit string; present in every `units_list` (undeletable, PATCH-required); `elapsed_time` `RateScheme`s are pinned to it — see `estimates-and-prices.md` §2.1, `data-constraints.md` §1.1/§1.7 |
 
 ### Models with a `units` field
 
 - `InventoryItem.units`
 - `MaterialBase.units` (on `Material`)
 - `BaseLineItem.units` (on every line item subclass)
-- `Task.units`, `ServiceItem.units`
+
+`Task` and `ServiceItem` do **not** carry their own `units` field — a
+Task/ServiceItem's unit is always `rate_scheme.unit_label`, read through
+the FK rather than duplicated onto the row.
 
 `MaterialBase._populate_from_pli` copies `units` from the linked PLI
 when the value is `'none'` or empty.
@@ -700,14 +703,15 @@ when the value is `'none'` or empty.
 | Method | Path | Permission | Purpose |
 |---|---|---|---|
 | `GET` | `/api/settings/units/` | `IsAuthenticated` | Returns the units list |
-| `PATCH` | `/api/settings/units/` | `can_manage_config` | Replace the list (must include `'none'` first; rejects duplicates) |
+| `PATCH` | `/api/settings/units/` | `can_manage_config` | Replace the list (must include `'none'` first, `'hour'` present anywhere — 400 otherwise; rejects duplicates) |
 
 ### Frontend
 
 - `frontend/src/components/UnitsSelect.svelte` — dropdown component used
   in every form that accepts a unit
 - `frontend/src/components/UnitsManager.svelte` — settings UI for
-  adding/removing/reordering units
+  adding/removing/reordering units; refuses to remove `'none'` or
+  `'hour'` client-side (the API rejects both anyway)
 
 ---
 

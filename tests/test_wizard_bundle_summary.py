@@ -88,7 +88,7 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         # so a non-zero summed qty can only come from the Bleps.
         scheme_hourly = RateScheme.objects.create(
             name='Bench', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('50.00'), unit_label='hours',
+            rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
         a = Task.objects.create(job=self.job, name='T', rate_scheme=scheme_hourly)
@@ -102,7 +102,7 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         b.status = Task.STATUS_COMPLETE
         b.save()
         li = self._bundle(a, b)
-        self.assertEqual(li.units, 'hours')
+        self.assertEqual(li.units, 'hour')
         self.assertEqual(li.qty, Decimal('5.00'))  # 2h + 3h from Bleps, not 1
         self.assertEqual(li.price, Decimal('50.00'))
 

@@ -11,16 +11,42 @@ from apps.jobs.flat_fee_reframe import reframe_flat_fee_prices
 # pass Task in that slot — it's empty here, so the helper just re-scans Task.
 
 
+class _BareCreateProxy:
+    """Stand-in for the `ServicePrice` arg reframe_flat_fee_prices actually
+    gets from the real migration: a bare historical model (Django's
+    migration state auto-generates one with only fields/Meta, no custom
+    methods), where 'flat_fee' was still a valid ALGORITHM_CHOICES entry at
+    that point in schema history. Finding-1 made RateScheme.save() run
+    full_clean() on create, which correctly rejects 'flat_fee' on the LIVE
+    model now — but the real migration never hits that path, since its
+    ServicePrice class has no full_clean-calling save() at all. Mirror that
+    exactly via save_base(raw=True) (the same bypass Model.save_base uses
+    for fixture loading) rather than weakening the live model's real
+    invariant just to keep this live-model stand-in test passing."""
+    class objects:
+        @staticmethod
+        def create(**kwargs):
+            obj = RateScheme(**kwargs)
+            obj.save_base(raw=True, force_insert=True)
+            return obj
+
+
 class FlatFeeReframeTest(TestCase):
     def setUp(self):
         self.ac = AccountingCategory.objects.create(name='Svc', code='SVC')
         # Literal 'flat_fee' (not RateScheme.FLAT_FEE — that constant is gone):
         # this exercises the historical migration helper, which still queries the
-        # raw 'flat_fee' string. .create() skips full_clean so the value persists.
+        # raw 'flat_fee' string. 'flat_fee' is no longer a valid choice in
+        # ALGORITHM_CHOICES, and save() now runs full_clean() on create too,
+        # so a plain .create() can't plant it directly. Create with a valid
+        # algorithm, then bypass full_clean via QuerySet.update() to
+        # simulate the pre-migration legacy row this helper cleans up.
         self.shared = RateScheme.objects.create(
-            name='Flat Fee', algorithm='flat_fee',
+            name='Flat Fee', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('0.00'), unit_label='each', accounting_category=self.ac,
         )
+        RateScheme.objects.filter(pk=self.shared.pk).update(algorithm='flat_fee')
+        self.shared.refresh_from_db()
 
     def _template(self, price):
         return ServiceItem.objects.create(
@@ -32,7 +58,7 @@ class FlatFeeReframeTest(TestCase):
         t1 = self._template('1.00')
         t2 = self._template('30.00')
         t3 = self._template('1.00')  # same price as t1 -> shares minted service
-        worklist = reframe_flat_fee_prices(RateScheme, Task, Task, ServiceItem, fk_field='rate_scheme')
+        worklist = reframe_flat_fee_prices(_BareCreateProxy, Task, Task, ServiceItem, fk_field='rate_scheme')
         t1.refresh_from_db(); t2.refresh_from_db(); t3.refresh_from_db()
         self.assertEqual(t1.rate_scheme.rate, Decimal('1.00'))
         self.assertEqual(t2.rate_scheme.rate, Decimal('30.00'))
@@ -43,5 +69,5 @@ class FlatFeeReframeTest(TestCase):
 
     def test_logs_unresolved_zero_price(self):
         bad = self._template('0')
-        worklist = reframe_flat_fee_prices(RateScheme, Task, Task, ServiceItem, fk_field='rate_scheme')
+        worklist = reframe_flat_fee_prices(_BareCreateProxy, Task, Task, ServiceItem, fk_field='rate_scheme')
         self.assertTrue(any(r[0] == 'ServiceItem' and r[1] == bad.pk for r in worklist))

@@ -1,4 +1,5 @@
 """Tests for jobs app service methods (service-mediated saves)."""
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 from django.test import TestCase
@@ -12,7 +13,7 @@ from apps.estimates.models import (
 from apps.inventory.models import Material, InventoryItem
 from apps.inventory.services import InventoryService
 from apps.core.services import NotFoundError
-from apps.core.models import AccountingCategory
+from apps.core.models import AccountingCategory, User
 from apps.contacts.models import Contact, Business
 
 
@@ -160,6 +161,162 @@ class TaskServiceUpdateTest(JobsTestBase):
             TaskService.update_task(99999, name='Nope')
 
 
+class HourPairFillTest(JobsTestBase):
+    """Task 8: est_qty <-> est_worker_time pair-fill for hour-unit schemes.
+
+    Pair-fill is a convenience, not an invariant: it only fires when exactly
+    one of the pair is provided, keys on scheme.unit_label == HOUR_UNIT (not
+    algorithm), and never overwrites a value the caller already supplied.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.job = JobService.create_job(name='Test', contact=self.contact)
+        self.hour_scheme = RateScheme.objects.create(
+            name='HPF hour scheme', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('50.00'), unit_label='hour',
+            accounting_category=self.lit,
+        )
+        self.ea_scheme = RateScheme.objects.create(
+            name='HPF ea scheme', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('50.00'), unit_label='ea',
+            accounting_category=self.lit,
+        )
+
+    # --- create_direct ---
+
+    def test_hour_scheme_create_derives_worker_time_from_qty(self):
+        task = TaskService.create_direct(
+            self.job, 'Cutting', rate_scheme_id=self.hour_scheme.pk,
+            est_qty=Decimal('2.5'))
+        self.assertEqual(task.est_worker_time, timedelta(hours=2.5))
+
+    def test_hour_scheme_create_derives_qty_from_worker_time(self):
+        task = TaskService.create_direct(
+            self.job, 'Cutting', rate_scheme_id=self.hour_scheme.pk,
+            est_worker_time=timedelta(minutes=90))
+        self.assertEqual(task.est_qty, Decimal('1.50'))
+
+    def test_non_hour_scheme_never_pair_fills(self):
+        task = TaskService.create_direct(
+            self.job, 'Sheets', rate_scheme_id=self.ea_scheme.pk,
+            est_qty=Decimal('4'))
+        self.assertIsNone(task.est_worker_time)
+
+    def test_hour_scheme_both_provided_passes_through(self):
+        task = TaskService.create_direct(
+            self.job, 'Cutting', rate_scheme_id=self.hour_scheme.pk,
+            est_qty=Decimal('10'), est_worker_time=timedelta(hours=12))
+        self.assertEqual(task.est_qty, Decimal('10'))
+        self.assertEqual(task.est_worker_time, timedelta(hours=12))
+
+    def test_hour_scheme_derived_worker_time_satisfies_assignee_guard(self):
+        """Assigning at create only requires est_worker_time on the fields
+        dict — a bare est_qty must derive one BEFORE that guard runs, or an
+        hour-scheme task with only a quantity could never be assigned at
+        create time."""
+        worker = User.objects.create_user(username='hpf_w1', password='x')
+        task = TaskService.create_direct(
+            self.job, 'Cutting', rate_scheme_id=self.hour_scheme.pk,
+            est_qty=Decimal('3'), assignee_id=worker.pk)
+        self.assertEqual(task.assignee_id, worker.pk)
+        self.assertEqual(task.est_worker_time, timedelta(hours=3))
+
+    # --- update_task ---
+
+    def test_update_qty_alone_resyncs_worker_time(self):
+        task = TaskService.create_direct(
+            self.job, 'Cutting', rate_scheme_id=self.hour_scheme.pk,
+            est_qty=Decimal('2'))
+        TaskService.update_task(task.pk, est_qty=Decimal('3'))
+        task.refresh_from_db()
+        self.assertEqual(task.est_worker_time, timedelta(hours=3))
+
+    def test_update_worker_time_alone_resyncs_qty(self):
+        task = TaskService.create_direct(
+            self.job, 'Cutting', rate_scheme_id=self.hour_scheme.pk,
+            est_qty=Decimal('2'))
+        TaskService.update_task(task.pk, est_worker_time=timedelta(hours=5))
+        task.refresh_from_db()
+        self.assertEqual(task.est_qty, Decimal('5.00'))
+
+    def test_update_clearing_qty_does_not_clear_worker_time(self):
+        """Clearing est_qty (setting it to None) must not null out an
+        already-set est_worker_time — the fill only runs when exactly one
+        of the pair is present in kwargs, and it never writes None."""
+        task = TaskService.create_direct(
+            self.job, 'Cutting', rate_scheme_id=self.hour_scheme.pk,
+            est_qty=Decimal('2'))
+        self.assertEqual(task.est_worker_time, timedelta(hours=2))
+        TaskService.update_task(task.pk, est_qty=None)
+        task.refresh_from_db()
+        self.assertIsNone(task.est_qty)
+        self.assertEqual(task.est_worker_time, timedelta(hours=2))
+
+    def test_update_both_provided_passes_through(self):
+        task = TaskService.create_direct(
+            self.job, 'Cutting', rate_scheme_id=self.hour_scheme.pk,
+            est_qty=Decimal('2'))
+        TaskService.update_task(
+            task.pk, est_qty=Decimal('9'), est_worker_time=timedelta(hours=1))
+        task.refresh_from_db()
+        self.assertEqual(task.est_qty, Decimal('9'))
+        self.assertEqual(task.est_worker_time, timedelta(hours=1))
+
+    def test_update_non_hour_scheme_never_pair_fills(self):
+        """A non-hour-scheme task's est_worker_time must survive an
+        est_qty-alone update completely unchanged — set it to a value that
+        would NOT match a (wrongly) derived one, so this test only passes
+        if the unit_label == HOUR_UNIT guard is actually gating the fill,
+        not merely because est_worker_time started out None."""
+        task = TaskService.create_direct(
+            self.job, 'Sheets', rate_scheme_id=self.ea_scheme.pk,
+            est_qty=Decimal('4'), est_worker_time=timedelta(hours=99))
+        TaskService.update_task(task.pk, est_qty=Decimal('6'))
+        task.refresh_from_db()
+        self.assertEqual(task.est_qty, Decimal('6'))
+        self.assertEqual(task.est_worker_time, timedelta(hours=99))
+
+    def test_update_rate_scheme_change_uses_new_scheme_for_fill(self):
+        """update_task resolves the scheme as kwargs['rate_scheme'] or
+        task.rate_scheme — switching schemes in the same update must key
+        pair-fill on the NEW scheme, not the task's stale one."""
+        task = TaskService.create_direct(
+            self.job, 'Sheets', rate_scheme_id=self.ea_scheme.pk,
+            est_qty=Decimal('4'))
+        TaskService.update_task(
+            task.pk, rate_scheme=self.hour_scheme, est_qty=Decimal('4'))
+        task.refresh_from_db()
+        self.assertEqual(task.est_worker_time, timedelta(hours=4))
+
+    # --- assign ---
+
+    def test_assign_backfills_qty_when_none(self):
+        task = TaskService.create_direct(
+            self.job, 'Cutting', rate_scheme_id=self.hour_scheme.pk,
+            est_worker_time=timedelta(hours=4))
+        # est_qty should already be derived at create, so blank it out to
+        # exercise assign()'s own back-fill independent of create_direct's.
+        task.est_qty = None
+        task.save()
+        worker = User.objects.create_user(username='hpf_w2', password='x')
+        TaskService.assign(task, assignee_id=worker.pk,
+                            est_worker_time=timedelta(hours=6))
+        task.refresh_from_db()
+        self.assertEqual(task.est_qty, Decimal('6.00'))
+
+    def test_assign_does_not_overwrite_existing_qty(self):
+        task = TaskService.create_direct(
+            self.job, 'Cutting', rate_scheme_id=self.hour_scheme.pk,
+            est_qty=Decimal('2'), est_worker_time=timedelta(hours=2))
+        worker = User.objects.create_user(username='hpf_w3', password='x')
+        TaskService.assign(task, assignee_id=worker.pk,
+                            est_worker_time=timedelta(hours=9))
+        task.refresh_from_db()
+        self.assertEqual(task.est_qty, Decimal('2'))
+        self.assertEqual(task.est_worker_time, timedelta(hours=9))
+
+
 class TaskServiceReorderTest(JobsTestBase):
     """Tests for TaskService.reorder_tasks."""
 
@@ -256,3 +413,11 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)
         self.assertGreater(Task.objects.filter(job=self.job).count(), 0)
+
+    def test_template_task_derives_worker_time_for_hour_scheme(self):
+        """Task 8: the fixture scheme (pk=1) is unit_label='hour' — template
+        associations only carry est_qty, so generate_task's pair-fill is what
+        makes template-generated tasks schedulable."""
+        JobService.populate_from_template(self.job, self.template)
+        cut_task = Task.objects.get(job=self.job, name='Cut')
+        self.assertEqual(cut_task.est_worker_time, timedelta(hours=2))

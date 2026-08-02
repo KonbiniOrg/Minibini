@@ -16,13 +16,13 @@ class InventoryServiceTest(TestCase):
     def test_create_item(self):
         """Create a new InventoryItem via service."""
         pli = InventoryService.create_item(
-            code='MAT-001', description='Steel plate', units='sheets',
+            code='MAT-001', description='Steel plate', units='sheet',
             purchase_price=Decimal('50.00'), selling_price=Decimal('75.00'),
             accounting_category=self.category,
         )
         self.assertEqual(pli.code, 'MAT-001')
         self.assertEqual(pli.description, 'Steel plate')
-        self.assertEqual(pli.units, 'sheets')
+        self.assertEqual(pli.units, 'sheet')
         self.assertEqual(pli.purchase_price, Decimal('50.00'))
         self.assertEqual(pli.selling_price, Decimal('75.00'))
         self.assertIsNotNone(pli.pk)
@@ -47,7 +47,7 @@ class InventoryServiceTest(TestCase):
     def test_update_item(self):
         """Update an existing InventoryItem by PK."""
         pli = InventoryItem.objects.create(
-            code='MAT-001', description='Steel', units='sheets',
+            code='MAT-001', description='Steel', units='sheet',
             accounting_category=self.category,
         )
         updated = InventoryService.update_item(
