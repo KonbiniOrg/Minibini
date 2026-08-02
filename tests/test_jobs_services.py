@@ -264,13 +264,18 @@ class HourPairFillTest(JobsTestBase):
         self.assertEqual(task.est_worker_time, timedelta(hours=1))
 
     def test_update_non_hour_scheme_never_pair_fills(self):
+        """A non-hour-scheme task's est_worker_time must survive an
+        est_qty-alone update completely unchanged — set it to a value that
+        would NOT match a (wrongly) derived one, so this test only passes
+        if the unit_label == HOUR_UNIT guard is actually gating the fill,
+        not merely because est_worker_time started out None."""
         task = TaskService.create_direct(
             self.job, 'Sheets', rate_scheme_id=self.ea_scheme.pk,
-            est_qty=Decimal('4'))
+            est_qty=Decimal('4'), est_worker_time=timedelta(hours=99))
         TaskService.update_task(task.pk, est_qty=Decimal('6'))
         task.refresh_from_db()
         self.assertEqual(task.est_qty, Decimal('6'))
-        self.assertIsNone(task.est_worker_time)
+        self.assertEqual(task.est_worker_time, timedelta(hours=99))
 
     def test_update_rate_scheme_change_uses_new_scheme_for_fill(self):
         """update_task resolves the scheme as kwargs['rate_scheme'] or
@@ -407,6 +412,7 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         JobService.populate_from_template(self.job, self.template)
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)
+        self.assertGreater(Task.objects.filter(job=self.job).count(), 0)
 
     def test_template_task_derives_worker_time_for_hour_scheme(self):
         """Task 8: the fixture scheme (pk=1) is unit_label='hour' — template
@@ -415,4 +421,3 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         JobService.populate_from_template(self.job, self.template)
         cut_task = Task.objects.get(job=self.job, name='Cut')
         self.assertEqual(cut_task.est_worker_time, timedelta(hours=2))
-        self.assertGreater(Task.objects.filter(job=self.job).count(), 0)

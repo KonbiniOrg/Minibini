@@ -193,6 +193,25 @@ class DirectTaskCreateAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, [])
 
+    def test_post_garbage_est_qty_on_hour_scheme_returns_400_not_500(self):
+        """This endpoint passes est_qty straight from request.data with no
+        serializer (Task 8 review finding) — hours_pair_fill's qty->duration
+        conversion must swallow unconvertible input and fall through
+        unchanged so Task.full_clean() renders the usual contract-shaped
+        400, instead of an uncaught ValueError/OverflowError becoming a 500."""
+        hour_scheme = RateScheme.objects.create(
+            name='S-dt-hour', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('50'), unit_label='hour',
+            accounting_category=self.scheme.accounting_category,
+        )
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/tasks/',
+            {'name': 'Bad Qty', 'rate_scheme': hour_scheme.pk, 'est_qty': 'abc'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('est_qty', response.data)
+
 
 
 

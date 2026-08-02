@@ -4,7 +4,7 @@ Service classes for handling complex creation workflows between Jobs and Tasks.
 
 from datetime import timedelta
 from apps.core.history import record_history
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from collections import defaultdict
 from typing import List, Dict, Optional, Tuple
 
@@ -42,7 +42,13 @@ def hours_pair_fill(scheme, est_qty, est_worker_time):
     if scheme is None or scheme.unit_label != HOUR_UNIT:
         return est_qty, est_worker_time
     if est_qty is not None and not est_worker_time:
-        return est_qty, timedelta(hours=float(est_qty))
+        try:
+            return est_qty, timedelta(hours=float(est_qty))
+        except (TypeError, ValueError, OverflowError, InvalidOperation):
+            # Unconvertible/out-of-range input passes through unchanged so
+            # Task.full_clean() renders the contract-shaped 400 — this
+            # helper is a convenience, not a validator.
+            return est_qty, est_worker_time
     if est_worker_time and est_qty is None:
         td = _coerce_duration(est_worker_time)
         if td is not None:
