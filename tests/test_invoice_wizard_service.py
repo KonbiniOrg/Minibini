@@ -388,12 +388,12 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.assertEqual(line_item.price, Decimal('100.00'))
 
     def test_single_task_atom_copy_over(self):
-        # task1 has bleps totalling 3h at $25/hr.  Task atom: qty=1, price=total,
-        # units track the scheme.
+        # task1 has bleps totalling 3h at $25/hr. Task atom: qty=hours,
+        # price=rate, units track the scheme.
         atoms = [{'type': 'task', 'id': self.task.pk}]
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
-        self.assertEqual(line_item.qty, Decimal('1'))
-        self.assertEqual(line_item.price, Decimal('75.00'))
+        self.assertEqual(line_item.qty, Decimal('3.00'))
+        self.assertEqual(line_item.price, Decimal('25.00'))
         self.assertEqual(line_item.units, 'hour')
 
     def test_single_material_atom_copy_over(self):
@@ -423,10 +423,48 @@ class AddAtomsToNewLineItemTest(TestCase):
     def test_single_task_atom_units_pulled_from_scheme(self):
         atoms = [{'type': 'task', 'id': self.task.pk}]
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
-        # Task atom: qty/price decomposition isn't generally clean across rate
-        # algorithms, so qty stays at 1 and price=total. Units track the scheme.
+        # Task atom: qty=actual hours, price=rate. Units track the scheme.
         self.assertEqual(line_item.units, 'hour')
-        self.assertEqual(line_item.qty, Decimal('1'))
+        self.assertEqual(line_item.qty, Decimal('3.00'))
+
+    def test_solo_elapsed_line_matches_bundle_shape(self):
+        # A solo elapsed-time task line and a same-scheme multi-task bundle
+        # line produce the same units/price shape (units from the scheme,
+        # price = the common effective rate); qty is each's own hours.
+        solo = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice, [{'type': 'task', 'id': self.task.pk}],
+        )
+        start = timezone.now() - timezone.timedelta(hours=10)
+        bundle_task1 = Task.objects.create(
+            job=self.job, name='Bundle 1', rate_scheme=self.scheme,
+        )
+        Blep.objects.create(
+            task=bundle_task1, user=self.user, start_time=start,
+            end_time=start + timezone.timedelta(hours=4),
+        )
+        bundle_task2 = Task.objects.create(
+            job=self.job, name='Bundle 2', rate_scheme=self.scheme,
+        )
+        Blep.objects.create(
+            task=bundle_task2, user=self.user,
+            start_time=start + timezone.timedelta(hours=5),
+            end_time=start + timezone.timedelta(hours=7),
+        )
+        bundle_task1.status = Task.STATUS_COMPLETE
+        bundle_task1.save()
+        bundle_task2.status = Task.STATUS_COMPLETE
+        bundle_task2.save()
+        bundle = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice,
+            [
+                {'type': 'task', 'id': bundle_task1.pk},
+                {'type': 'task', 'id': bundle_task2.pk},
+            ],
+        )
+        self.assertEqual(bundle.units, solo.units)
+        self.assertEqual(bundle.price, solo.price)
+        self.assertEqual(solo.qty, Decimal('3.00'))
+        self.assertEqual(bundle.qty, Decimal('6.00'))  # 4h + 2h summed
 
     def test_single_entered_qty_task_keeps_qty_and_rate(self):
         # An ENTERED_QTY scheme has a real per-unit qty × rate — the line
@@ -588,7 +626,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
         # Start with one atom on the line item — task atom for task1.
-        # Single-atom copy-over: qty=1, price=$50, units='hour'.
+        # Single-atom copy-over: qty=2h, price=$25/hr, units='hour'.
         self.line_item = InvoiceWizardService.add_atoms_to_new_line_item(
             self.invoice,
             [{'type': 'task', 'id': self.task.pk}],
@@ -603,7 +641,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         self.assertEqual(self.line_item.sources.count(), 2)
 
     def test_add_makes_uniform_bundle_resummarized(self):
-        # Line item starts as a single-atom task copy-over (qty=1, price=$50).
+        # Line item starts as a single-atom task copy-over (qty=2h, price=$25/hr).
         # Adding task2 makes {task, task2} a uniform same-scheme bundle, so the
         # line item is re-summarized: qty = summed hours, price = scheme rate.
         InvoiceWizardService.add_atoms_to_line_item(
