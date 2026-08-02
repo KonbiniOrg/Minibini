@@ -11,6 +11,8 @@ import WorkItemForm from '@/components/WorkItemForm.svelte';
 
 const HOURLY_SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [] };
 const FLAT_FEE_SCHEME = { rate_scheme_id: 2, name: 'Quick Fix', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [] };
+const HOUR_UNIT_SCHEME = { rate_scheme_id: 7, name: 'CNC Hourly', algorithm: 'elapsed_time', rate: '90', unit_label: 'hour', modifiers: [] };
+const EACH_SCHEME = { rate_scheme_id: 8, name: 'Widget', algorithm: 'entered_qty', rate: '10', unit_label: 'ea', modifiers: [] };
 
 beforeEach(() => {
   api.get.mockReset();
@@ -169,6 +171,44 @@ describe('WorkItemForm', () => {
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     const taskCall = api.post.mock.calls.find((c) => c[0] === '/api/jobs/5/tasks/');
     expect(taskCall[1].description).toBe('line one\nline two');
+  });
+
+  it('shows one Estimated hours input for an hour-unit scheme and submits both fields', async () => {
+    api.get.mockResolvedValue({ results: [HOUR_UNIT_SCHEME] });
+    const onSaved = vi.fn();
+    const { findByLabelText, getByLabelText, getByRole, queryByLabelText, queryByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, onSaved },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '7' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Route Panel' } });
+    await fireEvent.input(await findByLabelText(/Estimated hours/), { target: { value: '1:30' } });
+    // No separate "Estimated qty" spinbutton for hour-unit schemes.
+    expect(queryByLabelText(/Estimated qty/)).not.toBeInTheDocument();
+    expect(queryByRole('spinbutton')).not.toBeInTheDocument();
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
+      est_qty: 1.5, est_worker_time: 'PT1H30M',
+    }));
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('keeps two inputs for a non-hour scheme', async () => {
+    api.get.mockResolvedValue({ results: [EACH_SCHEME] });
+    const onSaved = vi.fn();
+    const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, onSaved },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '8' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Widget Batch' } });
+    expect(getByLabelText(/Estimated qty/)).toBeInTheDocument();
+    expect(getByLabelText(/Estimated worker time/)).toBeInTheDocument();
+    await fireEvent.input(getByLabelText(/Estimated qty/), { target: { value: '3' } });
+    await fireEvent.input(getByLabelText(/Estimated worker time/), { target: { value: '2:00' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
+      est_qty: 3, est_worker_time: 'PT2H0M',
+    }));
+    expect(onSaved).toHaveBeenCalled();
   });
 });
 
