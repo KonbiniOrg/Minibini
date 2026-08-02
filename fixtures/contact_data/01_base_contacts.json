@@ -52,7 +52,7 @@
         "model": "core.configuration",
         "pk": "units_list",
         "fields": {
-            "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+            "value": "[\"none\", \"hour\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheet\", \"pc\", \"lb\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
         }
     },
     {

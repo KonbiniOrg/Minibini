@@ -802,7 +802,7 @@ class UnpaidDataTest(FixtureTestCase):
         cat = AccountingCategory.objects.create(code='LBR-bs', name='lbr-bs')
         scheme = RateScheme.objects.create(
             name='Hourly-bs', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('50.00'), unit_label='hours', accounting_category=cat,
+            rate=Decimal('50.00'), unit_label='hour', accounting_category=cat,
         )
         task = Task.objects.create(
             job=job, name='Labor task', status='in_progress',

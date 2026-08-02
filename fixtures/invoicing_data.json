@@ -3,7 +3,7 @@
         "model": "core.configuration",
         "pk": "units_list",
         "fields": {
-            "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+            "value": "[\"none\", \"hour\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheet\", \"pc\", \"lb\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
         }
     },
     {
@@ -52,7 +52,7 @@
         "pk": 2,
         "fields": {
             "code": "LABOR001",
-            "units": "hours",
+            "units": "hour",
             "description": "Skilled labor hourly rate",
             "purchase_price": "0.00",
             "selling_price": "75.00",
@@ -101,7 +101,7 @@
             "inventory_item": null,
             "line_number": 2,
             "qty": "8.00",
-            "units": "hours",
+            "units": "hour",
             "description": "Electrical rough-in labor",
             "price": "600.00"
         }
@@ -127,7 +127,7 @@
             "inventory_item": null,
             "line_number": 2,
             "qty": "8.00",
-            "units": "hours",
+            "units": "hour",
             "description": "Electrical rough-in labor",
             "price": "600.00"
         }

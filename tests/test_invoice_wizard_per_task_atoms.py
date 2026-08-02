@@ -20,7 +20,7 @@ class WizardPerTaskAtomsTest(BaseTestCase):
         self.ac = AccountingCategory.objects.create(code='X-pta', name='X-pta')
         self.scheme = RateScheme.objects.create(
             name='Hourly-pta', algorithm='elapsed_time', rate=Decimal('60'),
-            unit_label='hours', accounting_category=self.ac,
+            unit_label='hour', accounting_category=self.ac,
         )
         contact = Contact.objects.create(
             first_name='F', last_name='L', email='f-pta@l.test',
@@ -59,7 +59,7 @@ class WizardPerTaskAtomsTest(BaseTestCase):
         # qty x rate = total breakdown (0.5 hours x $60.00 = $30.00)
         self.assertEqual(atom['qty'], Decimal('0.5'))
         self.assertEqual(atom['rate'], Decimal('60.00'))
-        self.assertEqual(atom['units'], 'hours')
+        self.assertEqual(atom['units'], 'hour')
 
 class WizardTaskAtomHelpersTest(WizardPerTaskAtomsTest):
     def test_resolve_task_atom(self):

@@ -33,7 +33,7 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
             name='Hourly-ils', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -114,7 +114,7 @@ class SourcePoolEndpointTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
             name='Hourly-spe', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -179,7 +179,7 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
             name='Hourly-lifa', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -266,7 +266,7 @@ class AddAtomsEndpointTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
             name='Hourly-aae', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         # task1 with a 2h blep — task atom = $50
@@ -352,7 +352,7 @@ class RemoveAtomsEndpointTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
             name='Hourly-rae', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         # task1 with a 2h blep — task atom = $50

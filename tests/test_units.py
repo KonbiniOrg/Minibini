@@ -17,13 +17,13 @@ class GetUnitsListTest(BaseTestCase):
         result = get_units_list()
         self.assertIsInstance(result, list)
         self.assertEqual(result[0], 'none')
-        self.assertIn('hours', result)
+        self.assertIn('hour', result)
 
 
 class ValidateUnitTest(BaseTestCase):
 
     def test_valid_unit_passes(self):
-        validate_unit('hours')  # should not raise
+        validate_unit('hour')  # should not raise
 
     def test_invalid_unit_raises(self):
         from django.core.exceptions import ValidationError

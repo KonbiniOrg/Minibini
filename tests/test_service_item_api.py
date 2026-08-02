@@ -17,7 +17,7 @@ class RateSchemeAPITest(TestCase):
         self.ac = AccountingCategory.objects.create(code='LAB', name='Labor')
         self.scheme = RateScheme.objects.create(
             name='Hourly Labor', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('45.00'), unit_label='hours',
+            rate=Decimal('45.00'), unit_label='hour',
             accounting_category=self.ac,
         )
 

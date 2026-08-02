@@ -120,7 +120,7 @@ class GetSourcePoolTest(TestCase):
 
         self.scheme = RateScheme.objects.create(
             name='Hourly-gsp', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
 
@@ -319,7 +319,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
             name='Hourly-aatn', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.cat_labor,
         )
         self.task = Task.objects.create(
@@ -394,7 +394,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
         self.assertEqual(line_item.qty, Decimal('1'))
         self.assertEqual(line_item.price, Decimal('75.00'))
-        self.assertEqual(line_item.units, 'hours')
+        self.assertEqual(line_item.units, 'hour')
 
     def test_single_material_atom_copy_over(self):
         # material has quantity=1.00, sell_price=25.00, linked to a InventoryItem
@@ -425,7 +425,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
         # Task atom: qty/price decomposition isn't generally clean across rate
         # algorithms, so qty stays at 1 and price=total. Units track the scheme.
-        self.assertEqual(line_item.units, 'hours')
+        self.assertEqual(line_item.units, 'hour')
         self.assertEqual(line_item.qty, Decimal('1'))
 
     def test_single_entered_qty_task_keeps_qty_and_rate(self):
@@ -558,7 +558,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         self.user = User.objects.create_user(username='aate_user', password='pw')
         self.scheme = RateScheme.objects.create(
             name='Hourly-aate', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         # task1 with a 2h blep — task atom rolls up to $50
@@ -588,7 +588,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
         # Start with one atom on the line item — task atom for task1.
-        # Single-atom copy-over: qty=1, price=$50, units='hours'.
+        # Single-atom copy-over: qty=1, price=$50, units='hour'.
         self.line_item = InvoiceWizardService.add_atoms_to_new_line_item(
             self.invoice,
             [{'type': 'task', 'id': self.task.pk}],
@@ -613,7 +613,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         self.line_item.refresh_from_db()
         self.assertEqual(self.line_item.qty, Decimal('3'))
         self.assertEqual(self.line_item.price, Decimal('25.00'))
-        self.assertEqual(self.line_item.units, 'hours')
+        self.assertEqual(self.line_item.units, 'hour')
 
     def test_preserves_price_when_overridden(self):
         # Override the price
@@ -682,7 +682,7 @@ class RemoveAtomsFromLineItemTest(TestCase):
         self.user = User.objects.create_user(username='rafl_user', password='pw')
         self.scheme = RateScheme.objects.create(
             name='Hourly-rafl', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         # Three tasks, each with one blep, producing task atoms of $50/$25/$37.50
@@ -895,7 +895,7 @@ class DiscardDraftTest(TestCase):
         self.user = User.objects.create_user(username='dd_user', password='pw')
         self.scheme = RateScheme.objects.create(
             name='Hourly-dd', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -1063,7 +1063,7 @@ class TaskAttachedPartialRestockTest(TestCase):
         )
         scheme = RateScheme.objects.create(
             name='Hourly-tapr', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.cat,
         )
         task = Task.objects.create(job=job, name='work', rate_scheme=scheme)

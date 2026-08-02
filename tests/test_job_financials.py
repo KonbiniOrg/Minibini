@@ -194,7 +194,7 @@ class SpentTests(FixtureTestCase):
             key='average_labor_cost', defaults={'value': '30'})
         scheme = RateScheme.objects.create(
             name='Hr-fin', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('50'), unit_label='hours', accounting_category=self.cat)
+            rate=Decimal('50'), unit_label='hour', accounting_category=self.cat)
         task = Task.objects.create(
             job=self.job, name='t', status=Task.STATUS_IN_PROGRESS,
             rate_scheme=scheme)
@@ -210,7 +210,7 @@ class SpentTests(FixtureTestCase):
         Configuration.objects.filter(key='average_labor_cost').delete()
         scheme = RateScheme.objects.create(
             name='Hr-fin2', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('50'), unit_label='hours', accounting_category=self.cat)
+            rate=Decimal('50'), unit_label='hour', accounting_category=self.cat)
         task = Task.objects.create(
             job=self.job, name='t', status=Task.STATUS_IN_PROGRESS,
             rate_scheme=scheme)

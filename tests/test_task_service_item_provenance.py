@@ -27,7 +27,7 @@ class TaskServiceItemProvenanceTests(TestCase):
         )
         self.scheme = RateScheme.objects.create(
             name='Hourly-prov', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('25.00'), unit_label='hours',
+            rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
         self.service_item = ServiceItem.objects.create(

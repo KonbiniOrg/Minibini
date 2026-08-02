@@ -61,7 +61,7 @@ class SeedAllAtomsIncludesFeesTest(TestCase):
         # --- Task atom (needs to be COMPLETE to be billable) ---
         self.scheme = RateScheme.objects.create(
             name='Hourly-SAF', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('100.00'), unit_label='hours', accounting_category=self.cat,
+            rate=Decimal('100.00'), unit_label='hour', accounting_category=self.cat,
         )
         self.task = Task.objects.create(job=self.job, name='SAF Labor', rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)

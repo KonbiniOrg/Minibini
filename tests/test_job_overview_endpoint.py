@@ -49,7 +49,7 @@ class SpendBreakdownTests(FixtureTestCase):
     def _blep(self, hours):
         scheme = RateScheme.objects.create(
             name=f'Hr-ov-{hours}', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('50'), unit_label='hours', accounting_category=self.cat)
+            rate=Decimal('50'), unit_label='hour', accounting_category=self.cat)
         task = Task.objects.create(
             job=self.job, name='t', status=Task.STATUS_IN_PROGRESS,
             rate_scheme=scheme)
@@ -143,7 +143,7 @@ class SpendBreakdownTests(FixtureTestCase):
         # 0.5 * $60.01/h = $30.005 → quantizes to $30.00
         scheme = RateScheme.objects.create(
             name='Hr-fractional', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('50'), unit_label='hours', accounting_category=self.cat)
+            rate=Decimal('50'), unit_label='hour', accounting_category=self.cat)
         task = Task.objects.create(
             job=self.job, name='t', status=Task.STATUS_IN_PROGRESS,
             rate_scheme=scheme)
@@ -249,7 +249,7 @@ class WorkAggregatesTests(FixtureTestCase):
         self.cat = AccountingCategory.objects.create(code='OV-W', name='ov-w')
         self.scheme = RateScheme.objects.create(
             name='Hr-ov-work', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('50'), unit_label='hours', accounting_category=self.cat)
+            rate=Decimal('50'), unit_label='hour', accounting_category=self.cat)
         self.worker = User.objects.create_user(
             username='ov-worker', password='x', first_name='Dana', last_name='')
         self.job = _job(self.contact)
