@@ -516,6 +516,10 @@ class ServiceItem(models.Model):
             raise ValueError(
                 'generate_task only supports a Job container (job-owns-atoms refactor).'
             )
+        if est_worker_time is None and est_qty is not None and self.rate_scheme_id:
+            from apps.jobs.services import hours_pair_fill
+            est_qty, est_worker_time = hours_pair_fill(
+                self.rate_scheme, est_qty, None)
         with transaction.atomic():
             task = Task.objects.create(
                 job=container,

@@ -13,6 +13,7 @@ Mirrors EstimateAcceptanceService.on_accept (tests/test_acceptance_fees.py):
            atom's type), then retire the old atom.
 Then earmark the job's inventoried materials, exactly like estimate acceptance.
 """
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -158,6 +159,19 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
         self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_TASK)
         self.assertEqual(src.source_pk, task.pk)
+
+    def test_service_add_line_crystallizes_a_schedulable_task(self):
+        """Task 8: self.scheme is unit_label='hour' (setUp) and the CO line
+        only carries qty — generate_task's pair-fill must derive
+        est_worker_time so CO-accepted tasks are schedulable too."""
+        co = self._make_co()
+        ChangeOrderService.add_line_item_from_service(
+            co.pk, self.service_item.pk, Decimal('4'))
+        self._accept(co)
+
+        task = Task.objects.get(job=self.job, name='CNC cutting')
+        self.assertEqual(task.est_qty, Decimal('4'))
+        self.assertEqual(task.est_worker_time, timedelta(hours=4))
 
     def test_inventory_add_line_crystallizes_material_and_earmarks(self):
         co = self._make_co()
