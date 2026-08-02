@@ -538,13 +538,16 @@ class RateScheme(models.Model):
         if self.algorithm == self.PERCENTAGE:
             raise ValueError('percentage services are document adjustments, not task billing')
         if self.algorithm == self.ELAPSED_TIME:
-            total_seconds = sum(
-                b.elapsed.total_seconds() for b in task.blep_set.all() if b.elapsed is not None
+            from datetime import timedelta
+            from apps.core.timeutils import timedelta_to_hours
+            total = sum(
+                (b.elapsed for b in task.blep_set.all() if b.elapsed is not None),
+                timedelta(),
             )
             # Quantize to 2 places: a raw seconds/3600 division is
             # non-terminating (~28 digits) and overflows the line item qty
             # field (max_digits=10) when carried into the invoice wizard.
-            return (Decimal(str(total_seconds)) / 3600).quantize(Decimal('0.01'))
+            return timedelta_to_hours(total).quantize(Decimal('0.01'))
         elif self.algorithm == self.ENTERED_QTY:
             return task.actual_qty or Decimal('0')
         else:

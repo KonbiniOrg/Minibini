@@ -14,9 +14,9 @@ from decimal import Decimal, InvalidOperation
 from django.db import models
 
 from apps.estimates.agreement import compose_agreement
+from apps.core.timeutils import timedelta_to_hours
 
 CENTS = Decimal('0.01')
-SECONDS_PER_HOUR = Decimal('3600')
 
 
 def _estimated(job):
@@ -83,7 +83,7 @@ def _blep_hours(job):
         elapsed = blep.elapsed
         if elapsed is None:
             continue
-        total_hours += Decimal(str(elapsed.total_seconds())) / SECONDS_PER_HOUR
+        total_hours += timedelta_to_hours(elapsed)
     return total_hours
 
 
