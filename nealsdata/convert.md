@@ -506,8 +506,8 @@ Pickup-marker checklist lines never become Tasks.
 Deliverable row validates against the running app's canonical list.
 `parsing.resolve_li_units_and_qty` converts FreeAgent `Item Type` values:
 
-- `Hours` → `units='hours'`, qty unchanged
-- `Days`  → `units='hours'`, qty multiplied by 8 (one workday)
+- `Hours` → `units='hour'`, qty unchanged
+- `Days`  → `units='hour'`, qty multiplied by 8 (one workday)
 - anything else → `units='none'`, qty unchanged
 
 Deliverables default to `units='ea'` (canon form of `each`).

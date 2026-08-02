@@ -159,9 +159,9 @@ def build_configuration(c):
         ('default_material_accounting_category', str(c.ac_mat_pk)),
         # Mirror apps.core.units.DEFAULT_UNITS so every emitted line-item /
         # material / deliverable row validates against the running app's
-        # canonical list. ('Days' inputs convert to 'hours' × 8 at emit time;
+        # canonical list. ('Days' inputs convert to 'hour' × 8 at emit time;
         # see parsing.resolve_li_units_and_qty.)
-        ('units_list',               json.dumps(['none', 'ea', 'hours', 'min', 'sheets', 'sq ft', 'ft', 'yd', 'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'])),
+        ('units_list',               json.dumps(['none', 'ea', 'hour', 'min', 'sheet', 'sq ft', 'ft', 'yd', 'm', 'lb', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'])),
         # The shop's weekly schedule envelope, matching the generator's
         # synthetic workday (_WORKDAY_START/_WORKDAY_END: Mon–Fri 09–17).
         ('schedule_week_envelope', json.dumps({
@@ -738,14 +738,14 @@ _UNIT_PATTERNS = [
     (r'\bsq(?:uare)?\.?\s*(?:ft|ft\.|feet|foot)\b|\bsqft\b', 'sq ft'),
     (r'\b(?:b(?:oar)?d)\.?\s*(?:ft|feet|foot)\b', 'bd ft'),
     (r'\b(?:lin(?:ear)?|ln)\.?\s*(?:ft|feet|foot)\b', 'ln ft'),
-    (r'\bsheets?\b', 'sheets'),
+    (r'\bsheets?\b', 'sheet'),
     (r'\b(?:ft|feet|foot)\b', 'ft'),
     (r'\b(?:yards?|yds?)\b', 'yd'),
     (r'\b(?:gallons?|gal)\b', 'gal'),
     (r'\b(?:quarts?|qt)\b', 'qt'),
-    (r'\b(?:pounds?|lbs?)\b', 'lbs'),
+    (r'\b(?:pounds?|lbs?)\b', 'lb'),
     (r'\b(?:kg|kilograms?)\b', 'kg'),
-    (r'\b(?:hours?|hrs?)\b', 'hours'),
+    (r'\b(?:hours?|hrs?)\b', 'hour'),
     (r'\bmin(?:ute)?s?\b', 'min'),
 ]
 
@@ -981,7 +981,7 @@ def build_estimates(c):
                 price = P.parse_decimal(li_row.get('Price'))
 
                 # Map Item Type → canonical (units, qty). 'Days' lines convert
-                # to 'hours' by multiplying qty by 8 (one workday).
+                # to 'hour' by multiplying qty by 8 (one workday).
                 units, qty = P.resolve_li_units_and_qty(item_type, qty)
 
                 li_pk = c.next_pk('estimates.estimatelineitem')
