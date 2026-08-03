@@ -452,7 +452,23 @@ class Command(BaseCommand):
         (EstimateService._reject_freeform_kind_on_non_bare_line, shared with
         ChangeOrderService), not by a model clean() guard, so data written
         via QuerySet.update(), fixtures, or other bypass paths can violate
-        it undetected."""
+        it undetected.
+
+        The inverse — a bare line with freeform_kind NULL — is also checked.
+        This is not paranoia: it's reachable in production via at least two
+        known gaps in the InventoryItem deletion/merge paths that neither
+        one is this task's job to fix (flagged separately for the phase
+        final review): (1) a plain InventoryItem delete, whose deletability
+        guard (assert_item_deletable / has_document_line_refs) never checks
+        ChangeOrderLineItem references, combined with inventory_item being
+        SET_NULL — deleting an item referenced only by a CO line silently
+        turns that line bare while leaving freeform_kind NULL; (2)
+        POST /api/inventory-items/merge, which repoints Earmark, Material,
+        EstimateLineItem, InvoiceLineItem, PurchaseOrderLineItem,
+        BillLineItem, TemplateMaterialAssociation, and Expense.stock_pli off
+        the discarded item before deleting it, but omits
+        ChangeOrderLineItem — the same SET_NULL corruption via a different
+        door."""
         from apps.estimates.models import EstimateLineItem, ChangeOrderLineItem
 
         line_models = [
@@ -479,6 +495,15 @@ class Command(BaseCommand):
                         f'service_item={li.service_item_id}'
                         + (f', adjustment_service={adjustment_service_id}' if has_adjustment_service else '')
                         + ') — freeform_kind must be null on a catalog/service/adjustment line'
+                    )
+                elif is_bare and li.freeform_kind is None:
+                    self.errors.append(
+                        f'{name} {li.pk}: freeform_kind is null on a bare line '
+                        f'(no inventory_item, service_item'
+                        + (', adjustment_service' if has_adjustment_service else '')
+                        + ') — a bare line must carry a freeform_kind (likely cause: '
+                        'an inventory_item delete or merge SET_NULL\'d this line\'s '
+                        'reference without repointing it first)'
                     )
 
     # ── Purchase Orders ───────────────────────────────────────

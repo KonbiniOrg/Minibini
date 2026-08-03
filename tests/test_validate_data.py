@@ -743,6 +743,31 @@ class ValidateDataFreeformKindConsistencyTest(TestCase):
         output = self._run()
         self.assertNotIn('not bare', output)
 
+    def test_estimate_line_bare_with_null_freeform_kind_is_error(self):
+        """The inverse: a bare line (no inventory_item/service_item/
+        adjustment_service) whose freeform_kind is NULL. Reachable via an
+        InventoryItem delete or merge that SET_NULLs a CO line's
+        inventory_item without repointing/rejecting it first — planted here
+        via QuerySet.update() since a normal .create() already lands here by
+        default (no service-layer guard runs on it), matching the file's
+        established bypass pattern for the other branch."""
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, inventory_item=self.pli,
+        )
+        EstimateLineItem.objects.filter(pk=li.pk).update(inventory_item=None)
+        output = self._run()
+        self.assertIn(f'EstimateLineItem {li.pk}', output)
+        self.assertIn('freeform_kind', output)
+        self.assertIn('null on a bare line', output)
+
+    def test_estimate_line_bare_with_kind_set_not_flagged_as_null(self):
+        li = EstimateLineItem.objects.create(estimate=self.estimate)
+        EstimateLineItem.objects.filter(pk=li.pk).update(
+            freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+        output = self._run()
+        self.assertNotIn('null on a bare line', output)
+
     # ── ChangeOrderLineItem ───────────────────────────────────────
 
     def _make_co(self):
@@ -786,3 +811,32 @@ class ValidateDataFreeformKindConsistencyTest(TestCase):
         )
         output = self._run()
         self.assertNotIn('not bare', output)
+
+    def test_co_line_bare_with_null_freeform_kind_is_error(self):
+        """The inverse on the CO side — this is the exact shape of the
+        gap named in the check's docstring: InventoryItem delete
+        (assert_item_deletable never checks ChangeOrderLineItem refs) or
+        merge (repoints every other FK-holder but not ChangeOrderLineItem)
+        SET_NULLs inventory_item, leaving a bare line with freeform_kind
+        still NULL."""
+        co = self._make_co()
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            inventory_item=self.pli,
+        )
+        ChangeOrderLineItem.objects.filter(pk=li.pk).update(inventory_item=None)
+        output = self._run()
+        self.assertIn(f'ChangeOrderLineItem {li.pk}', output)
+        self.assertIn('freeform_kind', output)
+        self.assertIn('null on a bare line', output)
+
+    def test_co_line_bare_with_kind_set_not_flagged_as_null(self):
+        co = self._make_co()
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+        )
+        ChangeOrderLineItem.objects.filter(pk=li.pk).update(
+            freeform_kind=ChangeOrderLineItem.KIND_MATERIAL,
+        )
+        output = self._run()
+        self.assertNotIn('null on a bare line', output)
