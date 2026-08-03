@@ -1,14 +1,16 @@
 # Estimates and Billing
 
-Reference for the estimating side of Minibini: `RateScheme` as the
-unit of billing identity, supersession, the billable-atom abstraction,
-the estimate wizard, the job-atom projection (documents-as-lenses),
-acceptance crystallizing hand-lines into atoms (Materials or Fees), and AC pass-through.
+Reference for the estimating side of Minibini: `RateScheme` as an
+editable service-price preset, task-owned money (a `Task` stamps a
+permanent copy of a preset's pricing at creation time), the
+billable-atom abstraction, the estimate wizard, the job-atom projection
+(documents-as-lenses), acceptance crystallizing hand-lines into atoms
+(Materials or Fees), and AC pass-through.
 Read alongside:
 
 - `docs/designs/architecture-and-conventions.md` — service-layer
   pattern, `LineItemMixin`, exception hierarchy
-  (`ServiceError` / `NotFoundError` / `SchemeSupersededError`).
+  (`ServiceError` / `NotFoundError` / `SchemeInactiveError`).
 - `docs/designs/jobs-and-tasks.md` — `Task`, `Material`,
   `Fee` (the Job's work atoms), the Work surface, populate paths, signal
   receivers (`estimate_accepted`, `estimate_status_changed_for_job`).
@@ -33,9 +35,11 @@ Read alongside:
 
 This doc owns:
 
-- `RateScheme` model, modifier algebra, supersession lineage.
-- Billing identity on `Task` / `ServiceItem` (the FK to `RateScheme` and
-  the `active_modifiers` / `est_qty` / `actual_qty` semantics).
+- `RateScheme` model, modifier algebra, `is_active` retirement.
+- Task-owned money: the task's own `qty_source` / `rate` / `unit_label` /
+  `accounting_category` / `active_modifiers` block, `stamp_from_scheme`,
+  and `source_scheme` provenance. Billing identity on `ServiceItem` (the
+  live FK to `RateScheme`) and the `est_qty` / `actual_qty` semantics.
 - `Estimate`, `EstimateLineItem`, `EstimateLineItemSource`.
 - `ChangeOrder`, `ChangeOrderLineItem`, the agreement-of-record
   composition over (Estimate + accepted COs).
@@ -64,10 +68,15 @@ It does **not** own:
 `RateScheme` (`apps/jobs/models.py`, `db_table = 'rate_schemes'`,
 FK field `rate_scheme`, API `/api/rate-schemes/`) is the **service
 price list** — the catalog of named, priced services the shop performs.
-It owns the math (rate, algorithm, modifiers), the `AccountingCategory`
-(and therefore taxability / QBO income mapping), and its own version
-lineage. Every `Task` and `ServiceItem` references exactly one
-`RateScheme` and inherits the rest. (Fixed one-off charges are the `Fee`
+It owns the math (rate, algorithm, modifiers) and the `AccountingCategory`
+(and therefore taxability / QBO income mapping). A `RateScheme` is a
+**freely editable preset** (task-owned-money Phase 1): a `Task` copies
+its pricing fields onto itself at creation time
+(`Task.stamp_from_scheme`, §3) and that copy — not a live FK — is the
+task's price of record from then on, so editing a preset never reprices
+an already-stamped task. `ServiceItem` still holds a **live** FK to
+exactly one `RateScheme` and reads its rate directly (no stamping) until
+it in turn generates a Task. (Fixed one-off charges are the `Fee`
 atom — see §4.5 — not a RateScheme.)
 
 ### 2.1 Identity fields
@@ -82,8 +91,7 @@ atom — see §4.5 — not a RateScheme.)
 | `unit_label` | CharField(50) | the customer-facing unit; validated against the configured units list (`apps/core/units.py`). `elapsed_time` schemes are pinned to `'hour'` — `RateScheme.clean()` raises a `unit_label` `ValidationError` for any other value, and the rate-scheme serializer force-sets `unit_label='hour'` for `elapsed_time` (so the field is redundant, not user-chosen, once that algorithm is picked). `percentage` still defaults `unit_label='none'`. |
 | `modifiers` | JSONField | list of `{key, label, percent}` dicts |
 | `accounting_category` | FK → `AccountingCategory` (PROTECT) | required, NOT NULL |
-| `replaced_by` | FK self (PROTECT, nullable) | supersession pointer |
-| `replaced_at` | DateTimeField, nullable | when supersession happened |
+| `is_active` | BooleanField, default `True` | retirement flag — hides the preset from *new* task stampings only (§3.1); does not affect tasks already stamped from it |
 
 `accounting_category_id` is enforced at the application layer in
 `RateScheme.clean()` (raises `ValidationError`).
@@ -126,15 +134,16 @@ that resolves a percentage line's dollar amount at the document layer:
 compute_adjustment_amount(adjustment_line, sibling_lines) → Decimal
 ```
 
-1. Reads `service.rate` (the percent) and the line's
-   `adjustment_target_categories` M2M set.
+1. Reads the line's own `adjustment_percent` snapshot (§10.3) — **never**
+   the live `adjustment_service.rate`, which is provenance only — and the
+   line's `adjustment_target_categories` M2M set.
 2. Sums `total_amount` (`qty × price`) of every **non-adjustment** sibling
    line whose `accounting_category_id` is in the target set. An **empty**
    target set matches **all** non-adjustment siblings.
 3. Adjustment lines are explicitly skipped — no stacking: an adjustment
    never sums other adjustments.
-4. Result: `(rate / 100) × base_total`, quantized to `Decimal('0.01')`
-   (nearest cent).
+4. Result: `(adjustment_percent / 100) × base_total`, quantized to
+   `Decimal('0.01')` (nearest cent).
 
 `RateScheme.get_actual_qty(task)` resolves the right quantity per
 algorithm:
@@ -160,22 +169,32 @@ Each modifier in the scheme's `modifiers` JSON list is a dict:
 {"key": "messy", "label": "Messy materials", "percent": 10}
 ```
 
-- `key`: stable identifier; recorded in `Task.active_modifiers` (and
-  `ServiceItem.default_active_modifiers`).
+- `key`: stable identifier. Selected on `ServiceItem.default_active_modifiers`
+  (a list of keys) and, at task-stamping time, resolved by
+  `Task.stamp_from_scheme` into full `{key, label, percent}` snapshot
+  dicts on `Task.active_modifiers` (§3) — not live keys.
 - `label`: display string shown in checkboxes and on the line item.
 - `percent`: additive percent surcharge over the base rate.
 
 Active modifiers stack additively: messy (+10%) + doublestick (+5%)
-= +15% on `rate`. Validation that `active_modifiers` keys are a subset
-of the scheme's modifier keys is up to the form/serializer layer.
+= +15% on `rate`. Validation that a `modifier_keys` argument to
+`stamp_from_scheme` is a subset of the scheme's modifier keys is up to
+the form/serializer layer — unknown keys are silently dropped (`dict(m)
+for m in scheme.modifiers if m.get('key') in keys`).
 
-**`active_modifiers` is always a list.** `active_modifiers` on `Task`,
-and `default_active_modifiers` on `ServiceItem`, are always a **list** of
-modifier keys — never a dict. The `copy_active_modifiers()` helper
-(`apps/jobs/models.py`) returns a list copy; legacy dict values (e.g. an
-old `{'flat_fee_price': …}` encoding) collapse to `[]`.
+**`active_modifiers` shape differs by model.**
+`ServiceItem.default_active_modifiers` is a **list of modifier-key
+strings**. `Task.active_modifiers` is a **list of `{key, label,
+percent}` snapshot dicts** — the resolved modifiers as they stood at
+stamp time, not scheme-relative keys, so a later edit to the scheme's
+`modifiers` list never reaches an already-stamped task. The
+`copy_active_modifiers()` helper (`apps/jobs/models.py`, used by
+`Task.copy_fields()` when cloning a task) deep-copies each snapshot
+dict; legacy shapes it can't resolve without a scheme — a bare dict (the
+old `{'flat_fee_price': …}` encoding) or a list of bare modifier-key
+strings (the pre-Phase-1 snapshot shape) — collapse to `[]`.
 
-### 2.4 Effective rate and compute
+### 2.4 Effective rate and compute (preset preview)
 
 ```python
 RateScheme.effective_rate(active_modifiers)
@@ -188,165 +207,168 @@ RateScheme.compute_charge(qty, active_modifiers)
     → qty * effective_rate(active_modifiers)
 ```
 
+**Preset preview only.** `RateScheme.effective_rate()` /
+`compute_charge()` / `get_actual_qty(task)` are never called against a
+stamped Task's own money math — `Task.effective_rate()` /
+`compute_amount()` / `compute_estimate_amount()` (§4.1) read the task's
+own fields instead. These RateScheme methods back the
+`RateSchemeManager` preview and the rate-scheme serializer's detail
+view, and are still what `ServiceItem`'s deferred service line uses
+(§6.4) before a Task exists.
+
 There is no minimum-charge floor on RateScheme — that field was
 removed.
 
 ### 2.5 Reference checks
 
-`RateScheme.is_referenced()` returns `True` if any `Task` or
-`ServiceItem` points at this service price.
+`RateScheme.is_referenced()` returns `True` if any `Task` has ever
+stamped from this preset (`self.stamped_tasks.exists()`), or any
+`ServiceItem` points at it. **Display only** (the outdated-schemes UI,
+reference counts) — it no longer gates edits or deletes; a stamped task
+owns a permanent copy of its money fields, so editing or deleting a
+referenced preset can't reprice or orphan anything (§3).
 
 `RateScheme.reference_counts()` returns:
 
 ```python
 {
-    'task_count':          Task.objects.filter(rate_scheme=self).count(),
+    'task_count':          self.stamped_tasks.count(),
     'service_item_count': ServiceItem.objects.filter(rate_scheme=self).count(),
 }
 ```
 
-Used by both the edit-in-use guard and the outdated-schemes UI.
+Display only — the outdated-schemes UI and the serializer's
+`reference_counts` field.
 
 ---
 
-## 3. Supersession
+## 3. Task-owned money: stamping and preset retirement
 
-Once any work item references a `RateScheme`, the service price is
-**frozen** in place. To change rate / modifiers / AC after that, the user
-**supersedes** the entry — creates a new row, leaves the old one
-intact, and links them via `replaced_by` / `replaced_at`. Existing
-work items keep pointing at the old entry; future picks pull from
-active (non-superseded) entries.
+**Supersession is gone (task-owned-money Phase 1).** A `RateScheme` is
+no longer frozen once referenced, and there is no `replaced_by` /
+`replaced_at` / `FROZEN_FIELDS` / `supersede()` machinery — all
+retired. In its place: a `Task` copies a preset's pricing fields onto
+itself at creation time and that copy becomes the price of record, so
+the preset itself stays a plain, freely editable row.
 
-### 3.1 Frozen fields
+### 3.1 stamp_from_scheme
 
-`RateScheme.FROZEN_FIELDS`:
+`Task.stamp_from_scheme(scheme, modifier_keys=None)`
+(`apps/jobs/models.py`) runs before a task's first save, on **every**
+creation path (`TaskService.create_direct`, `TaskService.create_from_template`,
+`ServiceItem.generate_task`). It sets, on the task itself:
 
-```python
-('name', 'description', 'algorithm', 'rate', 'unit_label',
- 'modifiers', 'accounting_category')
-```
+- `qty_source` — copied from `scheme.algorithm` (`elapsed_time` /
+  `entered_qty`; a `percentage` scheme raises `ValueError` — percentage
+  services are document adjustments and can never stamp a task).
+- `rate`, `unit_label`, `accounting_category` — copied straight from
+  the scheme.
+- `active_modifiers` — `modifier_keys` (a list of `scheme.modifiers`
+  `key` strings; `None` activates none) resolved into full `{key,
+  label, percent}` snapshot dicts (§2.3).
+- `source_scheme` — the scheme FK itself, kept **only as provenance**.
+  It is never read by any compute path (`Task.effective_rate()` /
+  `get_actual_qty()` / `compute_amount()` / `compute_estimate_amount()`
+  all read the task's own fields, §4.1) — deleting the scheme later
+  (`on_delete=SET_NULL`) can never disturb an already-stamped task's
+  billing.
 
-`RateScheme.clean()` rejects any change to these fields when
-`is_referenced()` is true. The only allowed mutations on a frozen
-entry are `replaced_by` and `replaced_at` (and the `name` rename
-that `supersede()` itself performs — see below).
+Because the copy is permanent, editing (or even deleting) a `RateScheme`
+after tasks have stamped from it never reprices or orphans them — the
+frozen-fields rule this section used to describe no longer applies to
+anything.
 
-The freeze is full, not split into "math vs metadata". Shops catch
-typos quickly, and a single rule is easier to reason about.
+### 3.2 is_active retirement
 
-### 3.2 supersede()
+`RateScheme.is_active` (default `True`) replaces the old
+`replaced_by`/`replaced_at` pair. Retiring a preset only hides it from
+*new* stampings:
 
-```python
-RateScheme.supersede(**overrides) → new RateScheme
-```
+- The creation-time guard lives in the calling service, not
+  `stamp_from_scheme` itself: `TaskService.create_direct`,
+  `TaskService.create_from_template`, and `ServiceItem.generate_task`
+  each check `scheme.is_active` and raise `SchemeInactiveError`
+  (`apps/jobs/models.py`) when it's `False` and the caller didn't pass
+  `allow_inactive_scheme=True`. The API translates `SchemeInactiveError`
+  to **HTTP 409 Conflict**, e.g.:
 
-In one transaction:
+  > Template "Hourly Labor — assembly" references an inactive
+  > RateScheme. Update the template before adding tasks from it.
 
-1. Renames `self` in place to `<orig_name> (vN)` where `N` counts
-   predecessors in the chain. This frees the unique-name slot for the
-   new row without needing a partial-unique index.
-2. Creates a new `RateScheme` row with all of `self`'s field values,
-   then applies `**overrides`.
-3. Sets `self.replaced_by = new` and `self.replaced_at = now()`.
-
-The chain is preserved without auto-collapse:
-`A.replaced_by → B.replaced_by → C` stays navigable. Existing
-`Task` / `ServiceItem` rows always keep their FK to the entry they were
-created with — no migration of historical references on supersede, ever.
-That's how billing history is preserved.
-
-`supersede()` raises `ValueError` if the entry is already superseded.
+- `allow_inactive_scheme=True` bypasses the rejection. The intended
+  callers are acceptance-time crystallization
+  (`generate_task(allow_inactive_scheme=True)`, §9.1/§14.11) — a hand-line
+  whose scheme was retired after the estimate was authored can still
+  crystallize into a Task — and any path that must faithfully replay a
+  historical stamping.
+- Retiring (or reactivating) a preset never touches tasks that already
+  stamped from it — `is_active` is read only at stamp time.
 
 ### 3.3 API
 
 | Verb + path | Behavior |
 |---|---|
-| `GET /api/rate-schemes/` | List active entries (`replaced_by IS NULL`) |
-| `GET /api/rate-schemes/?include_superseded=true` | List all entries |
-| `GET /api/rate-schemes/?only_superseded=true` | List just superseded |
-| `GET /api/rate-schemes/{id}/` | Retrieve any entry (active or superseded) |
+| `GET /api/rate-schemes/` | List active entries by default (`is_active=True`) |
+| `GET /api/rate-schemes/?include_inactive=true` | List all entries |
+| `GET /api/rate-schemes/?task_applicable=true` | Active, non-percentage entries — the task-creation picker's feed (always active regardless of `include_inactive`) |
+| `GET /api/rate-schemes/{id}/` | Retrieve any entry |
 | `POST /api/rate-schemes/` | Create — `CanManageConfig` |
-| `PUT/PATCH /api/rate-schemes/{id}/` | Edit — **HTTP 409** if referenced (see below) |
-| `POST /api/rate-schemes/{id}/supersede/` | Create new version, set `replaced_by`/`replaced_at` on the old row — `CanManageConfig` |
-| `DELETE /api/rate-schemes/{id}/` | Delete — possible only for never-referenced entries (PROTECT cascade) |
+| `PUT/PATCH /api/rate-schemes/{id}/` | Edit any field directly — `CanManageConfig`. No 409, no frozen-fields rejection, referenced or not. |
+| `POST /api/rate-schemes/{id}/retire/` | Flip `is_active` to `False` — `CanManageConfig`. Clears the `default_rate_scheme` Configuration key if this was it (§3.4). |
+| `POST /api/rate-schemes/{id}/reactivate/` | Flip `is_active` back to `True` — `CanManageConfig` |
+| `DELETE /api/rate-schemes/{id}/` | Delete — allowed even with stamped tasks (`Task.source_scheme` is `SET_NULL`); blocked (409 via `ProtectedError`) only while a `ServiceItem` still references it (`ServiceItem.rate_scheme` is `PROTECT`) |
 
 Permissions: read is `IsAuthenticated`; all write actions require
 `CanManageConfig`.
 
-Create/update/delete/supersede route through
-`ConfigurationService.{create,update,delete,supersede}_rate_scheme`
-(`apps/core/services.py`) — the referenced-freeze decision lives in the
-service (raised as a `ValidationError` with `code='referenced'`); the
-viewset only shapes the 409 payload below.
-
-The serializer exposes `superseded` (computed bool:
-`replaced_by_id is not None`) and `reference_counts` for the
-outdated-schemes UI. `unit_label` is validated against the configured
+Create/update/delete/retire/reactivate route through
+`ConfigurationService.{create,update,delete,retire,reactivate}_rate_scheme`
+(`apps/core/services.py`). The serializer exposes `reference_counts`
+(display only, §2.5) and validates `unit_label` against the configured
 units list (`apps/core/units.get_units_list`).
 
-### 3.4 Edit-in-use block
+### 3.4 Default preset
 
-`PUT/PATCH` against a referenced entry returns **HTTP 409 Conflict**:
+The `default_rate_scheme` Configuration key (string-encoded `RateScheme`
+pk, or `''` — see `data-constraints.md` §1.1) preselects the CREATE
+dropdown on the manual task-creation form (`WorkItemForm`) for every
+user, manager or worker alike. Set via the RateSchemeManager's default
+preset picker (`PATCH /api/settings/` with `default_rate_scheme`,
+explicit Save — not auto-committed on change).
 
-```json
-{
-    "detail": "Scheme is referenced; create a new version instead of editing.",
-    "supersede_url": "https://.../api/rate-schemes/{id}/supersede/",
-    "reference_counts": {
-        "task_count":          12,
-        "service_item_count": 1
-    }
-}
-```
+- `PATCH /api/settings/` rejects a value that isn't blank or an
+  **active** RateScheme id.
+- `ConfigurationService._clear_default_rate_scheme_if_matches` is the
+  single gate that clears the key to `''` whenever the current default
+  preset transitions `is_active: True → False` — called from both
+  `retire_rate_scheme` and the general `update_rate_scheme` path (a
+  plain field-level `PATCH {"is_active": false}` can't strand the
+  default pointing at an inactive preset either).
 
-The frontend uses this to surface "Create new version" affordances
-and explain *why* an edit was blocked.
+### 3.5 Picker filtering
 
-### 3.5 Template guard
-
-When `ServiceItem.generate_task(container, est_qty, ...)` runs, it
-checks `template.rate_scheme.replaced_by_id is None`. If the template
-points at a superseded entry, it raises `SchemeSupersededError`
-(`apps/core/services.py`), which the API translates to **HTTP 409
-Conflict** with a message identifying the template:
-
-> Template "Hourly Labor — assembly" references a superseded
-> RateScheme. Update the template before adding tasks from it.
-
-The same guard fires on `TaskService.create_from_template`.
-
-The shop owner is forced to deliberately decide whether the template
-should adopt a new entry or pick a different one. Silent retroactive
-change to template behavior is never acceptable.
-
-### 3.6 Picker filtering
-
-All service-price pickers default to active entries only. The
-frontend gets this for free from the `GET /api/rate-schemes/`
-default filter; passing `?include_superseded=true` reveals the full
-set for the outdated-schemes view.
-
-### 3.7 PROTECT cascade
-
-`replaced_by`, `Task.rate_scheme`, and `ServiceItem.rate_scheme` all use
-`on_delete=PROTECT`. An entry that
-has entered the lineage is effectively un-deletable — orphaning a
-work item or breaking the supersession chain is structurally
-impossible.
+Task-creation pickers request `?task_applicable=true` (active,
+non-percentage only). The RateSchemeManager (outdated-schemes /
+retirement UI) defaults to active-only and reveals the full set via
+`?include_inactive=true`.
 
 ---
 
 ## 4. Task billing (and the Fee atom)
 
-`Task` carries billing identity directly via `TaskBase` (the abstract
-base in `apps/jobs/models.py`). The full field shape lives in
-`docs/designs/jobs-and-tasks.md`. Recap of the billing fields:
+**Task-owned money (Phase 1).** `Task` carries its own permanent money
+block directly — not a live FK to `RateScheme` — stamped once at
+creation by `Task.stamp_from_scheme` (§3.1). The full field shape lives
+in `docs/designs/jobs-and-tasks.md` §4.4. Recap of the billing fields:
 
-| Field | On TaskBase / Task | Notes |
+| Field | On Task | Notes |
 |---|---|---|
-| `rate_scheme` | declared on Task | FK to `RateScheme` (PROTECT). NOT NULL at the DB level. |
-| `active_modifiers` | declared on Task | JSON list of modifier keys (always a list, never a dict — see §2.3) |
+| `qty_source` | own field | `'elapsed_time'` / `'entered_qty'` (`Task.QTY_ELAPSED` / `QTY_ENTERED`); copied from `scheme.algorithm` at stamp time. Never `'percentage'` — percentage schemes can't stamp a task. |
+| `rate` | own field | Decimal, nullable. `effective_rate()` returns `0.00` when `None` (e.g. a task cloned or built without a scheme). |
+| `unit_label` | own field | CharField, default `'none'` |
+| `accounting_category` | own field | FK → `AccountingCategory` (PROTECT), nullable at the DB level but required by the API serializer (§10) |
+| `active_modifiers` | own field | JSON list of `{key, label, percent}` **snapshot** dicts — resolved at stamp time, not live scheme keys (§2.3) |
+| `source_scheme` | own field | FK → `RateScheme` (`SET_NULL`, `related_name='stamped_tasks'`) — **provenance only**, never read for money math |
 | `est_qty` | inherited from `TaskBase` | nullable on Task |
 | `est_worker_time` | inherited from `TaskBase` | DurationField for scheduling |
 | `actual_qty` | declared on Task only | Decimal nullable; worker-entered for `entered_qty` schemes |
@@ -356,53 +378,60 @@ base in `apps/jobs/models.py`). The full field shape lives in
 `Task` implements the uniform atom interface
 `compute_amount(active_modifiers=None) → Decimal` (the **invoice** view —
 bills actuals) plus a parallel `compute_estimate_amount()` (the
-**estimate** view — bills `est_qty`):
+**estimate** view — bills `est_qty`). Both compute entirely from the
+task's own fields — **no RateScheme lookup**:
 
 ```python
 class Task:
+    def effective_rate(self):
+        # Own rate + own active_modifiers surcharges.
+        if self.rate is None:
+            return Decimal('0.00')
+        pct = sum(Decimal(str(m.get('percent', 0))) for m in (self.active_modifiers or []))
+        return (self.rate * (1 + pct / 100)).quantize(Decimal('0.01'))
+
+    def get_actual_qty(self):
+        # Own qty_source — no RateScheme lookup.
+        if self.qty_source == self.QTY_ELAPSED:
+            return timedelta_to_hours(sum(blep elapsed)).quantize(Decimal('0.01'))
+        return self.actual_qty or Decimal('0')
+
     def compute_amount(self, active_modifiers=None):
         # Invoice side: qty from actuals (bleps / actual_qty).
-        qty = self.rate_scheme.get_actual_qty(self)  # algorithm-aware
-        charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
-        return charge.quantize(Decimal('0.01'))
+        return (self.get_actual_qty() * self.effective_rate()).quantize(Decimal('0.01'))
 
     def compute_estimate_amount(self, active_modifiers=None):
         # Estimate side: qty is est_qty (what the job is *expected* to cost).
-        charge = self.rate_scheme.compute_charge(
-            self.est_qty or Decimal('0'), self.active_modifiers,
-        )
-        return charge.quantize(Decimal('0.01'))
+        return ((self.est_qty or Decimal('0')) * self.effective_rate()).quantize(Decimal('0.01'))
 ```
 
 This is the crux of **documents-as-lenses** (§7): the *estimate* projects
 `est_qty` via `compute_estimate_amount`; the *invoice* bills the locked
 `actual_qty` of a complete task via `compute_amount`. Both are quantized
-to cents: `compute_charge` is `qty * effective_rate`, and a
-modifier-adjusted rate can carry more than 2 decimals.
+to cents — a modifier-adjusted rate can carry more than 2 decimals.
 
-The `active_modifiers` parameter is accepted to match the atom interface
-but is ignored — both use `self.active_modifiers`. `compute_amount` uses
-the algorithm to resolve qty:
+The `active_modifiers` parameter on both methods is accepted only to
+match the shared `BillableAtom` interface (the same signature `Material`
+uses) — both **ignore** it and read `self.active_modifiers`.
+`get_actual_qty()` resolves the qty source:
 
-| Algorithm | Task.compute_amount qty source |
+| `qty_source` | `Task.get_actual_qty()` source |
 |---|---|
 | `elapsed_time` | sum of Blep durations in hours |
 | `entered_qty` | `task.actual_qty or 0` |
 
-An `elapsed_time` task's unit is always `'hour'` — the scheme is pinned
-(§2.1) — so this qty is always a count of hours.
+An `elapsed_time` task's `unit_label` is always `'hour'` (copied from
+the `elapsed_time`-pinned scheme it stamped from — §2.1) — so this qty
+is always a count of hours.
 
-`effective_rate()` returns `rate_scheme.effective_rate(self.active_modifiers)`.
-
-`RateScheme.effective_rate()` for `elapsed_time` / `entered_qty`
-quantizes to 2 decimal places (cents): a percentage modifier divides by
-100, so `rate × (1 + percent/100)` can carry more than 2 places (e.g.
-`99.99 × 1.05 = 104.9895`). The per-unit rate is a money value that is
-copied straight onto a line item's `price` field (a 2-decimal
-`DecimalField`), so it must be trimmed at the source — every caller that
-uses it as a price (the estimate wizard's single-atom and "send all
-atoms" paths, the bundle summary, the source-pool detail) is then safe
-without having to remember its own `.quantize()`.
+`effective_rate()` quantizes to 2 decimal places (cents): a percentage
+modifier divides by 100, so `rate × (1 + percent/100)` can carry more
+than 2 places (e.g. `99.99 × 1.05 = 104.9895`). The per-unit rate is a
+money value that is copied straight onto a line item's `price` field (a
+2-decimal `DecimalField`), so it must be trimmed at the source — every
+caller that uses it as a price (the estimate wizard's single-atom and
+"send all atoms" paths, the bundle summary, the source-pool detail) is
+then safe without having to remember its own `.quantize()`.
 
 ### 4.2 actual_qty semantics
 
@@ -624,8 +653,9 @@ keeps revisions distinct.
 ### 5.3a Adjustment lines and `revise_estimate`
 
 `revise_estimate` preserves adjustment lines exactly like normal lines:
-`adjustment_service_id` and the `adjustment_target_categories` M2M set are
-both copied onto the new revision's line items. The revision's adjustment line
+`adjustment_service_id`, `adjustment_percent` (the price-of-record
+snapshot — §10.3), and the `adjustment_target_categories` M2M set are
+all copied onto the new revision's line items. The revision's adjustment line
 amounts are frozen at the inherited values until a line-item change triggers
 auto-recompute (see §5.3b). Source atom rows (`EstimateLineItemSource`) are
 moved onto the new line items as usual (see §5.3).
@@ -657,8 +687,10 @@ price is frozen automatically.
 | `POST /api/estimates/{id}/adjustment-lines/` | Body: `{adjustment_service: <PK>, target_category_ids: [<AC PKs>]}`. Returns 201 with the serialized line item (price already computed). Returns 400 if not draft or service is not PERCENTAGE. Permission: `CanManageJobs` (or the job's PM). |
 
 **`compose_agreement` surfacing.** `compose_agreement(job)` line dicts carry
-`is_adjustment` (bool), `adjustment_service_id`, `percent` (the rate, or
-`None` for non-adjustment lines), and `target_category_ids` for
+`is_adjustment` (bool), `adjustment_service_id`, `percent` (the line's own
+`adjustment_percent` snapshot — never the live `adjustment_service.rate`,
+which is provenance only — or `None` for non-adjustment lines), and
+`target_category_ids` for
 estimate-origin lines. CO-origin lines always have falsey adjustment fields
 (adjustments are estimate-only).
 
@@ -716,7 +748,13 @@ taxability reads `accounting_category.taxable` directly). Declared in
 - `adjustment_service` — nullable FK to `RateScheme` (PROTECT). Set
   when this line is a percentage adjustment. A line with
   `adjustment_service_id` set is an **adjustment line**; one without is
-  a normal line.
+  a normal line. **Provenance/identity only** since task-owned-money
+  Phase 1 — still what *selects* a line as an adjustment, but never read
+  for the dollar computation (see `adjustment_percent` below).
+- `adjustment_percent` — nullable Decimal(6,2). Snapshot of
+  `adjustment_service.rate` taken at line-creation time; the **price of
+  record** — `compute_adjustment_amount` (§2.2) reads this field, never
+  the live scheme (§10.3).
 - `adjustment_target_categories` — M2M to `AccountingCategory`. The
   categories whose lines this adjustment applies to. Empty = all
   non-adjustment lines.
@@ -839,7 +877,7 @@ falls back to blank description, `units = 'none'`, `qty = 1`,
 | `accounting_category` | `service_item.effective_accounting_category` (from the rate scheme) |
 | `service_item` | FK pointer; crystallizes to a `Task` at acceptance |
 
-No `Task` is created at authoring time. The Task is created at acceptance by `on_accept` (§9.1, discriminator step 1), with `description=li.description` (the edited line description) and `allow_superseded_scheme=True` so a line whose scheme was superseded after authoring can still crystallize.
+No `Task` is created at authoring time. The Task is created at acceptance by `on_accept` (§9.1, discriminator step 1), with `description=li.description` (the edited line description) and `allow_inactive_scheme=True` so a line whose scheme was retired after authoring can still crystallize.
 
 **`_apply_material_ac_default`.** `is_material=True` bare lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. Fee (non-`is_material`) hand-lines still require an explicit AC. The key is editable via a "Default material category" picker (`DefaultMaterialCategorySetting.svelte`, extracted out of `AccountingCategories.svelte`), rendered in both Settings' Accounting and Pricing tabs; `PATCH /api/settings/` validates it as blank-or-active-category-id (`data-constraints.md` §1.1).
 
@@ -1045,7 +1083,7 @@ In one `transaction.atomic()` block:
 
    - **Service-item line** (`service_item_id is not None`) →
      call `service_item.generate_task(job, est_qty=li.qty or 1,
-     description=li.description or '', allow_superseded_scheme=True)`.
+     description=li.description or '', allow_inactive_scheme=True)`.
      `Task.name` comes from the `ServiceItem.template_name`; `Task.description`
      comes from the estimate line's (user-edited) `description`. Record an
      `EstimateLineItemSource` with `source_type='task'`.
@@ -1131,17 +1169,19 @@ receiver-by-receiver behavior.
 ## 10. AccountingCategory pass-through
 
 `AccountingCategory` (`apps/core/models.py`) is required on
-`RateScheme` (NOT NULL). Every billable concept either references a
-`RateScheme` (and inherits AC) or carries AC directly (Materials with
-no PLI; Expenses).
+`RateScheme` (NOT NULL). `Task` carries its **own** `accounting_category`
+(stamped from the preset at creation, then permanent — nullable at the
+DB level, but required by the API serializer, §4). `ServiceItem` still
+reads AC live off its `RateScheme` FK. Every other billable concept
+carries AC directly (Materials with no PLI; Expenses).
 
 ### 10.1 Where AC comes from
 
 | Object | AC source |
 |---|---|
 | `RateScheme` | own field, required |
-| `Task` | `task.rate_scheme.accounting_category` (via `Task.effective_accounting_category`) |
-| `ServiceItem` | `template.rate_scheme.accounting_category` (via `ServiceItem.effective_accounting_category`) |
+| `Task` | own field — stamped from `scheme.accounting_category` by `Task.stamp_from_scheme` at creation (§3.1); `Task.effective_accounting_category` returns it directly, no FK traversal. Nullable at the DB level; the API's `TaskSerializer` makes it `required=True`, pre-filled from the picked preset for stamp-only creation. |
+| `ServiceItem` | `template.rate_scheme.accounting_category` (via `ServiceItem.effective_accounting_category`) — still a live FK read; ServiceItem doesn't stamp |
 | `Material` (PLI-linked) | `material.inventory_item.accounting_category` (copy/derivation; materials doc owns this) |
 | `Material` (freeform) | direct on the material |
 | `Fee` | own field, required (NOT NULL) |
@@ -1150,22 +1190,36 @@ no PLI; Expenses).
 | `EstimateLineItem` `is_material` hand-line | `Configuration['default_material_accounting_category']` if no explicit AC supplied (see §6.4); required if the key is absent |
 | `EstimateLineItem` bare hand-line (Fee path) | user-entered; required before send; carried onto the crystallized `Fee` at acceptance |
 
-Each model that has an `effective_accounting_category` property
-exposes it for serializers and the wizard's pool building. Wizard
-single-atom line-item creation pulls `category` from the atom's
-effective AC; multi-atom creation only sets `category` if all atoms
-share one.
+`ServiceItem.effective_accounting_category` exposes AC for serializers
+and the wizard's pool building. Wizard single-atom line-item creation
+pulls `category` from the atom's effective AC (for a Task, its own
+field); multi-atom creation only sets `category` if all atoms share one.
 
 ### 10.2 What changes when AC moves
 
-`RateScheme.accounting_category` is in `FROZEN_FIELDS`. Once the
-entry is referenced, AC change requires supersession. Existing tasks
-that referenced the old entry keep the old AC; future tasks pick the
-new entry and get the new AC.
+Editing `RateScheme.accounting_category` is unrestricted — presets are
+freely editable (§3) — but it only affects *future* stampings: a task's
+own `accounting_category` was copied at creation time and never
+re-reads the preset, so editing (or retiring) the preset never changes
+an already-stamped task's AC.
 
 For line items, AC is **snapshotted** at line-item creation time —
 it's a field on `BaseLineItem`, not derived live. Once the estimate
 is sent (out of draft), the snapshot is permanent.
+
+### 10.3 Adjustment-line percent snapshot
+
+Percentage adjustment lines (rush/discount) snapshot the same way:
+`EstimateLineItem.adjustment_percent` / `InvoiceLineItem.adjustment_percent`
+(Decimal(6,2), nullable) copy `adjustment_service.rate` (the percent
+value) at line-creation time. `compute_adjustment_amount` (§2.2) reads
+`adjustment_percent`, never the live scheme — so editing an adjustment
+`RateScheme`'s percent after a line was created never moves an
+already-created line's charge. `adjustment_service` itself is kept as
+**provenance/identity only** — it's still what *selects* a line as an
+adjustment (`adjustment_service_id is not None`), but the dollar amount
+never reads its live `rate`. `ChangeOrderLineItem` has no adjustment
+fields at all — CO deltas don't carry percentage-adjustment lines.
 
 ---
 
@@ -1816,7 +1870,7 @@ transiently empties the live work set and trips the auto-advance to
 
 - **add** — crystallize via the same four-way discriminator as estimate
   acceptance (§9.1): `service_item` → Task
-  (`generate_task(allow_superseded_scheme=True)`; name from the
+  (`generate_task(allow_inactive_scheme=True)`; name from the
   ServiceItem, description from the line), `inventory_item` → Material
   (line price = sell price), `is_material` bare → established Material
   via `MaterialService.establish_reverse_markup` (parity with §9.1 —
@@ -2079,12 +2133,11 @@ transitions the CO `draft → open`.
 
 ## 16. Unfinished work
 
-- **Default service price for worker quick-add** — the worker-side
-  `WorkItemForm` flow currently still requires the worker to pick a
-  service price. A `default_worker_rate_scheme` Configuration key
-  that the form would silently default to when the user lacks
-  `can_manage_jobs` has been designed but not shipped. Pairs with the
-  broader worker-friendly mid-job task creation work.
+> **Default service price for worker quick-add — RESOLVED (task-owned-money
+> Phase 1, §3.4).** The `default_rate_scheme` Configuration key now
+> preselects the CREATE dropdown on `WorkItemForm` for every user
+> (worker or manager), set via the RateSchemeManager's default-preset
+> picker.
 
 - **Per-blep entered-qty provenance (deferred extension)** — per-session
   quantities are BUILT (see §4.2) as a single accumulator on Task; if
