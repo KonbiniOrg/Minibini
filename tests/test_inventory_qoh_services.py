@@ -29,9 +29,11 @@ class ConsumeMaterialTest(TestCase):
             name='S-qohs1', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job, name='Cut steel',
-            sort_order=1, rate_scheme=self.scheme)
+            sort_order=1)
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
     def test_decreases_qoh_and_increases_qty_sold(self):
         """Consuming material decreases QOH and increases qty_sold."""
@@ -140,8 +142,10 @@ class ConsumeMaterialTest(TestCase):
 
     def test_consume_via_job_task(self):
         """Consuming material on a job task reduces earmark for the task's job."""
-        wo_task = Task.objects.create(
-            job=self.job, name='Assemble', sort_order=1, rate_scheme=self.scheme)
+        wo_task = Task(
+            job=self.job, name='Assemble', sort_order=1)
+        wo_task.stamp_from_scheme(self.scheme)
+        wo_task.save()
 
         Earmark.objects.create(
             inventory_item=self.pli, job=self.job,
@@ -178,9 +182,11 @@ class CompleteTaskAdjustmentTest(TestCase):
             name='S-qohs2', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job, name='Cut steel',
-            sort_order=1, rate_scheme=self.scheme)
+            sort_order=1)
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
         self.material = Material(
             job=self.job,

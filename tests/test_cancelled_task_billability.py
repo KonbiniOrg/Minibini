@@ -39,10 +39,12 @@ class CancelledTaskBillabilityTest(TestCase):
         )
 
     def _cancelled_task(self, scheme, hours=None, actual_qty=None):
-        task = Task.objects.create(
-            job=self.job, name='Killed', rate_scheme=scheme,
+        task = Task(
+            job=self.job, name='Killed',
             actual_qty=actual_qty,
         )
+        task.stamp_from_scheme(scheme)
+        task.save()
         if hours:
             now = timezone.now()
             Blep.objects.create(
@@ -78,9 +80,11 @@ class CancelledTaskBillabilityTest(TestCase):
         self.assertTrue(atom.get('task_cancelled'))
 
     def test_complete_pool_entry_is_not_flagged(self):
-        task = Task.objects.create(
-            job=self.job, name='Done', rate_scheme=self.hourly,
+        task = Task(
+            job=self.job, name='Done',
         )
+        task.stamp_from_scheme(self.hourly)
+        task.save()
         now = timezone.now()
         Blep.objects.create(
             task=task, user=self.user,
@@ -92,9 +96,11 @@ class CancelledTaskBillabilityTest(TestCase):
         self.assertFalse(atom.get('task_cancelled'))
 
     def test_in_progress_task_stays_not_billable(self):
-        task = Task.objects.create(
-            job=self.job, name='Working', rate_scheme=self.hourly,
+        task = Task(
+            job=self.job, name='Working',
         )
+        task.stamp_from_scheme(self.hourly)
+        task.save()
         Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
         atom = self._invoice_pool_entry(task)
         self.assertEqual(atom['state'], 'not_billable')

@@ -126,7 +126,9 @@ class FreeformMaterialCostApiTest(TestCase):
         scheme = RateScheme.objects.create(
             name='ff-scheme', algorithm=RateScheme.ENTERED_QTY, rate=1,
             unit_label='ea', accounting_category=self.cat)
-        task = Task.objects.create(job=self.job, name='t', rate_scheme=scheme)
+        task = Task(job=self.job, name='t')
+        task.stamp_from_scheme(scheme)
+        task.save()
         r = self.client_http.post(
             f'/api/tasks/{task.pk}/materials/',
             data={'description': 'glue', 'quantity': '1.00',

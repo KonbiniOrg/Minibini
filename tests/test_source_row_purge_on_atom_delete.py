@@ -164,10 +164,12 @@ class TaskDeletePurgesSourceRowsTest(AtomDeletePurgeBase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        task = Task.objects.create(
-            job=self.job, name='Cutting', rate_scheme=scheme,
+        task = Task(
+            job=self.job, name='Cutting',
             est_qty=Decimal('2'),
         )
+        task.stamp_from_scheme(scheme)
+        task.save()
         self._claim(EstimateLineItemSource.SOURCE_TASK, task.pk)
         task.delete()
         self.assertFalse(self.line.sources.exists())

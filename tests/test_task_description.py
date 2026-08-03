@@ -41,24 +41,26 @@ class TaskDescriptionModelTests(TestCase):
 
     def test_task_can_have_description(self):
         """Task should have a description field that can be set directly."""
-        task = Task.objects.create(
+        task = Task(
             name='Described Task',
             description='This is a task description',
             job=self.job,
-            rate_scheme=self.scheme,
             est_qty=Decimal('1'),
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         task.refresh_from_db()
         self.assertEqual(task.description, 'This is a task description')
 
     def test_task_description_defaults_to_blank(self):
         """Task description should default to empty string."""
-        task = Task.objects.create(
+        task = Task(
             name='No Description Task',
             job=self.job,
-            rate_scheme=self.scheme,
             est_qty=Decimal('1'),
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         task.refresh_from_db()
         self.assertEqual(task.description, '')
 

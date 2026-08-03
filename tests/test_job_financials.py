@@ -195,9 +195,10 @@ class SpentTests(FixtureTestCase):
         scheme = RateScheme.objects.create(
             name='Hr-fin', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hour', accounting_category=self.cat)
-        task = Task.objects.create(
-            job=self.job, name='t', status=Task.STATUS_IN_PROGRESS,
-            rate_scheme=scheme)
+        task = Task(
+            job=self.job, name='t', status=Task.STATUS_IN_PROGRESS)
+        task.stamp_from_scheme(scheme)
+        task.save()
         start = timezone.now() - timedelta(hours=2)
         Blep.objects.create(task=task, user=self.user,
                             start_time=start, end_time=start + timedelta(hours=2))
@@ -211,9 +212,10 @@ class SpentTests(FixtureTestCase):
         scheme = RateScheme.objects.create(
             name='Hr-fin2', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hour', accounting_category=self.cat)
-        task = Task.objects.create(
-            job=self.job, name='t', status=Task.STATUS_IN_PROGRESS,
-            rate_scheme=scheme)
+        task = Task(
+            job=self.job, name='t', status=Task.STATUS_IN_PROGRESS)
+        task.stamp_from_scheme(scheme)
+        task.save()
         start = timezone.now() - timedelta(hours=2)
         Blep.objects.create(task=task, user=self.user,
                             start_time=start, end_time=start + timedelta(hours=2))

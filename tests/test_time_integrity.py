@@ -2,7 +2,7 @@ from django.utils import timezone
 from datetime import timedelta
 from tests.base import BaseTestCase
 from apps.core.models import User, Shift
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.core.time_integrity import unenclosed_bleps_for_shift, enclosing_shift_for_blep
 
 
@@ -11,7 +11,9 @@ class TimeIntegrityTest(BaseTestCase):
         super().setUp()
         self.user = User.objects.create_user(username='integ_u', password='x')
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         self.t0 = timezone.now().replace(microsecond=0) - timedelta(hours=10)
 
     def _blep(self, start_h, end_h):

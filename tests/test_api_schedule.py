@@ -4,7 +4,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.core.models import User
-from apps.jobs.models import Blep, Job, Task
+from apps.jobs.models import Blep, Job, Task, RateScheme
 from apps.schedule.services import ScheduleService
 from tests.base import BaseTestCase
 
@@ -83,14 +83,15 @@ class ScheduleOnHoldExclusionTest(BaseTestCase):
         )
         JobService.hold_job(job.pk, 'paused')
         job.refresh_from_db()
-        Task.objects.create(
+        task = Task(
             name='Hold task',
             job=job,
             assignee=worker,
             status=Task.STATUS_PENDING,
-            rate_scheme_id=1,
             est_worker_time=timedelta(hours=1),
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         result = ScheduleService.get_schedule(now=timezone.now())
         worker_ids = [w['user']['id'] for w in result['workers']]
         self.assertNotIn(worker.pk, worker_ids)
@@ -110,14 +111,15 @@ class ScheduleOnHoldExclusionTest(BaseTestCase):
             Job.STATUS_APPROVED,
             Job.STATUS_IN_PROGRESS,
         )
-        Task.objects.create(
+        task = Task(
             name='Active task',
             job=job,
             assignee=worker2,
             status=Task.STATUS_PENDING,
-            rate_scheme_id=1,
             est_worker_time=timedelta(hours=1),
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         result = ScheduleService.get_schedule(now=timezone.now())
         worker_ids = [w['user']['id'] for w in result['workers']]
         self.assertIn(worker2.pk, worker_ids)
@@ -149,14 +151,15 @@ class ScheduleWorkCompleteHistoryTest(BaseTestCase):
                   Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(
+        self.task = Task(
             name='Finished task',
             job=self.job,
             assignee=self.worker,
             status=Task.STATUS_COMPLETE,
-            rate_scheme_id=1,
             est_worker_time=timedelta(hours=1),
         )
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         now = timezone.now()
         Blep.objects.create(
             user=self.worker,
@@ -220,15 +223,17 @@ class ScheduleForecastScopeTest(BaseTestCase):
         )
 
     def _task(self, job, worker, status, **extra):
-        return Task.objects.create(
+        task = Task(
             name=f'{status} task',
             job=job,
             assignee=worker,
             status=status,
-            rate_scheme_id=1,
             est_worker_time=timedelta(hours=1),
             **extra,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
+        return task
 
     def _forecast_bars(self, result, worker, task):
         lane = next(
@@ -332,11 +337,13 @@ class ScheduleAllInProgressChipsTest(BaseTestCase):
 
     def test_in_progress_job_with_only_unassigned_task_appears(self):
         job = self._in_progress_job()
-        Task.objects.create(
+        task = Task(
             name='Unassigned', job=job, assignee=None,
-            status=Task.STATUS_PENDING, rate_scheme_id=1,
+            status=Task.STATUS_PENDING,
             est_worker_time=timedelta(hours=1),
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         result = ScheduleService.get_schedule(now=timezone.now())
         job_ids = [j['job_id'] for j in result['jobs']]
         self.assertIn(job.pk, job_ids)
@@ -367,11 +374,13 @@ class ScheduleChipOrderTest(BaseTestCase):
                   Job.STATUS_IN_PROGRESS):
             job.status = s
             job.save()
-        Task.objects.create(
+        task = Task(
             name='Order task', job=job, assignee=self.worker,
-            status=Task.STATUS_PENDING, rate_scheme_id=1,
+            status=Task.STATUS_PENDING,
             est_worker_time=timedelta(hours=1),
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         return job
 
     def test_jobs_payload_ordered_by_due_date(self):
@@ -408,14 +417,15 @@ class ScheduleJobsPMNameTest(BaseTestCase):
         for status in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
             self.job.status = status
             self.job.save()
-        Task.objects.create(
+        task = Task(
             name='PM test task',
             job=self.job,
             assignee=self.worker,
             status=Task.STATUS_PENDING,
-            rate_scheme_id=1,
             est_worker_time=timedelta(hours=1),
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
 
     def test_schedule_jobs_include_pm_name(self):
         pm = User.objects.create_user(
@@ -471,10 +481,13 @@ class ScheduleWorkDrivenScopeTest(BaseTestCase):
         )
 
     def _task(self, job, worker, status=Task.STATUS_PENDING, **extra):
-        return Task.objects.create(
+        task = Task(
             name='WD task', job=job, assignee=worker, status=status,
-            rate_scheme_id=1, est_worker_time=timedelta(hours=1), **extra,
+            est_worker_time=timedelta(hours=1), **extra,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
+        return task
 
     def _lane(self, result, worker):
         return next(
@@ -512,10 +525,11 @@ class ScheduleWorkDrivenScopeTest(BaseTestCase):
     def test_unassigned_pre_approval_task_emits_nothing(self):
         worker = self._worker('wd_unassigned')
         job = self._job()
-        Task.objects.create(
+        task = Task(
             name='Unassigned quote task', job=job, status=Task.STATUS_PENDING,
-            rate_scheme_id=1,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         result = ScheduleService.get_schedule(now=timezone.now())
         self.assertIsNone(self._lane(result, worker))
         self.assertNotIn(job.pk, [j['job_id'] for j in result['jobs']])

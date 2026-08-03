@@ -2,7 +2,7 @@ from django.utils import timezone
 from datetime import timedelta
 from tests.base import BaseTestCase
 from apps.core.models import User, Shift, ShiftChangeRequest
-from apps.jobs.models import Job, Task, Blep, BlepChangeRequest
+from apps.jobs.models import Job, Task, Blep, BlepChangeRequest, RateScheme
 
 
 class ChangeRequestModelTest(BaseTestCase):
@@ -22,7 +22,9 @@ class ChangeRequestModelTest(BaseTestCase):
 
     def test_blep_change_request_carries_task(self):
         job = Job.objects.first()
-        task = Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        task = Task(name='T', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         r = BlepChangeRequest.objects.create(
             requester=self.user, requested_start=self.now, requested_end=self.now,
             reason='wrong end time', task=task,

@@ -11,7 +11,7 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 
 from tests.base import BaseTestCase
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.jobs.services import TaskLifecycleService
 from apps.core.models import User, AccountingCategory
 from apps.inventory.models import Material, InventoryItem
@@ -30,7 +30,9 @@ class CancelWorkFirstActivityTest(BaseTestCase):
         super().setUp()
         self.job = Job.objects.first()
         _approve_job(self.job)
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         self.user = User.objects.get(username='admin')
 
     def test_cancel_reverts_task_to_pending(self):
@@ -86,7 +88,9 @@ class CancelWorkGuardTest(BaseTestCase):
         super().setUp()
         self.job = Job.objects.first()
         _approve_job(self.job)
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         self.user = User.objects.get(username='admin')
         self.other = User.objects.create_user(username='cw_other', password='x')

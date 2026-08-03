@@ -449,19 +449,21 @@ class TaskModelTest(TestCase):
         self.scheme = _make_scheme('tm')
 
     def test_task_creation(self):
-        parent_task = Task.objects.create(
+        parent_task = Task(
             job=self.job,
             name="Parent Task",
-            rate_scheme=self.scheme,
         )
-        task = Task.objects.create(
+        parent_task.stamp_from_scheme(self.scheme)
+        parent_task.save()
+        task = Task(
             parent_task=parent_task,
             assignee=self.user,
             est_worker_time=timedelta(hours=1),
             job=self.job,
             name="Installation Task",
-            rate_scheme=self.scheme,
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         self.assertEqual(task.parent_task, parent_task)
         self.assertEqual(task.assignee, self.user)
         self.assertEqual(task.job, self.job)
@@ -473,40 +475,48 @@ class TaskModelTest(TestCase):
         see tests/test_task_lifecycle_history.py), not Task.clean():
         auto-assign on a worker's first blep deliberately skips it, so the
         model must accept this state."""
-        task = Task.objects.create(
+        task = Task(
             job=self.job, name="Assigned, no estimate",
-            rate_scheme=self.scheme, assignee=self.user,
+            assignee=self.user,
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         self.assertIsNone(task.est_worker_time)
 
     def test_assigned_task_with_est_worker_time_allowed(self):
-        task = Task.objects.create(
+        task = Task(
             job=self.job, name="Assigned, estimated",
-            rate_scheme=self.scheme, assignee=self.user,
+            assignee=self.user,
             est_worker_time=timedelta(hours=2),
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         self.assertEqual(task.assignee, self.user)
 
     def test_unassigned_task_needs_no_est_worker_time(self):
-        task = Task.objects.create(
-            job=self.job, name="Unassigned", rate_scheme=self.scheme,
+        task = Task(
+            job=self.job, name="Unassigned",
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         self.assertIsNone(task.est_worker_time)
 
     def test_task_str_method(self):
-        task = Task.objects.create(
+        task = Task(
             job=self.job,
             name="Test Task",
-            rate_scheme=self.scheme,
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         self.assertEqual(str(task), "Test Task")
 
     def test_task_optional_fields(self):
-        task = Task.objects.create(
+        task = Task(
             job=self.job,
             name="Basic Task",
-            rate_scheme=self.scheme,
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         self.assertIsNone(task.parent_task)
         self.assertIsNone(task.assignee)
 
@@ -514,11 +524,17 @@ class TaskModelTest(TestCase):
         """Task.job is non-nullable. Creating without job raises."""
         with self.assertRaises(Exception):  # ValidationError (full_clean in save) or IntegrityError
             with transaction.atomic():
-                Task.objects.create(name="No Job Task", rate_scheme=self.scheme)
+                task = Task(name="No Job Task")
+                task.stamp_from_scheme(self.scheme)
+                task.save()
 
     def test_deleting_job_cascades_to_tasks(self):
-        Task.objects.create(job=self.job, name="T1", rate_scheme=self.scheme)
-        Task.objects.create(job=self.job, name="T2", rate_scheme=self.scheme)
+        t1 = Task(job=self.job, name="T1")
+        t1.stamp_from_scheme(self.scheme)
+        t1.save()
+        t2 = Task(job=self.job, name="T2")
+        t2.stamp_from_scheme(self.scheme)
+        t2.save()
         self.assertEqual(Task.objects.filter(job=self.job).count(), 2)
         job_pk = self.job.pk
         self.job.delete()
@@ -527,10 +543,18 @@ class TaskModelTest(TestCase):
     def test_task_sort_order_scoped_to_job(self):
         """Auto sort_order is per-job, not global."""
         other_job = Job.objects.create(job_number="JOB_OTHER", contact=self.contact)
-        t1 = Task.objects.create(job=self.job, name="T1", rate_scheme=self.scheme)
-        t2 = Task.objects.create(job=self.job, name="T2", rate_scheme=self.scheme)
-        t3 = Task.objects.create(job=other_job, name="T3", rate_scheme=self.scheme)
-        t4 = Task.objects.create(job=other_job, name="T4", rate_scheme=self.scheme)
+        t1 = Task(job=self.job, name="T1")
+        t1.stamp_from_scheme(self.scheme)
+        t1.save()
+        t2 = Task(job=self.job, name="T2")
+        t2.stamp_from_scheme(self.scheme)
+        t2.save()
+        t3 = Task(job=other_job, name="T3")
+        t3.stamp_from_scheme(self.scheme)
+        t3.save()
+        t4 = Task(job=other_job, name="T4")
+        t4.stamp_from_scheme(self.scheme)
+        t4.save()
         self.assertEqual(t1.sort_order, 1)
         self.assertEqual(t2.sort_order, 2)
         # Other job's tasks start counting from 1 independently
@@ -547,11 +571,12 @@ class BlepModelTest(TestCase):
         )
         self.user = User.objects.create_user(username="testuser")
         self.scheme = _make_scheme('blep')
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job,
             name="Test Task",
-            rate_scheme=self.scheme,
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
     def test_blep_creation(self):
         start_time = timezone.now().replace(second=0, microsecond=0)
@@ -604,11 +629,12 @@ class ServiceItemModelTest(TestCase):
             contact=self.contact
         )
         self.scheme = _make_scheme('tmt')
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job,
             name="Test Task",
-            rate_scheme=self.scheme,
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         self.work_template = WorkTemplate.objects.create(
             template_name="Test WO Template"
         )

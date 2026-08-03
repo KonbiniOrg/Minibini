@@ -40,9 +40,11 @@ class EstimateLineItemSourceAtomTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('90'), unit_label='hour', accounting_category=self.cat,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Weld', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Weld',
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         inv_item = InventoryItem.objects.create(
             code='STL-001', description='Steel bar',
             purchase_price=Decimal('10'), selling_price=Decimal('20'),

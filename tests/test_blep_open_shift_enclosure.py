@@ -13,7 +13,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, Shift
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.core.time_integrity import enclosing_shift_for_blep
 
 
@@ -27,7 +27,9 @@ class OpenShiftEnclosesBlepTest(BaseTestCase):
         self.user = User.objects.get(pk=self.user.pk)
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def test_open_shift_encloses_blep_pure(self):
         now = timezone.now()

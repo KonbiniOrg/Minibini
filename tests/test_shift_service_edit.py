@@ -4,7 +4,7 @@ from datetime import timedelta
 from tests.base import BaseTestCase
 from apps.core.models import User, Shift
 from apps.core.services import ShiftService
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 
 
 class ShiftEditTest(BaseTestCase):
@@ -15,7 +15,9 @@ class ShiftEditTest(BaseTestCase):
         self.mgr = grant_atoms(
             User.objects.create_user(username='edit_mgr', password='x'), 'can_manage_time')
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         # Floor to the whole minute: Shift/Blep save() now stores minute-granular
         # times, so test expectations derived from self.now must land on a minute
         # boundary to compare equal to the stored values.

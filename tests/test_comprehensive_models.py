@@ -61,13 +61,14 @@ class ComprehensiveModelIntegrationTest(TestCase):
             status=Estimate.STATUS_OPEN
         )
 
-        task = Task.objects.create(
+        task = Task(
             assignee=self.user,
             est_worker_time=timedelta(hours=1),
             job=job,
             name="Test Task",
-            rate_scheme=self.scheme,
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
 
         blep = Blep.objects.create(
             user=self.user,
@@ -201,11 +202,12 @@ class ComprehensiveModelIntegrationTest(TestCase):
             name='S-cmtw', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
-        task = Task.objects.create(
+        task = Task(
             job=job,
             name="Planning Task",
-            rate_scheme=scheme,
         )
+        task.stamp_from_scheme(scheme)
+        task.save()
         service_item = ServiceItem.objects.create(
             template_name="Planning Task Template",
             rate_scheme=scheme,
@@ -238,7 +240,9 @@ class ComprehensiveModelIntegrationTest(TestCase):
             contact=self.contact
         )
 
-        task = Task.objects.create(job=job, name="Test Task", rate_scheme=self.scheme)
+        task = Task(job=job, name="Test Task")
+        task.stamp_from_scheme(self.scheme)
+        task.save()
 
         initial_task_count = Task.objects.count()
 
@@ -363,11 +367,12 @@ class LineItemValidationTest(TestCase):
             rate=Decimal('1'), unit_label='ea',
             accounting_category=self.cm_ac,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job,
             name="Test Task",
-            rate_scheme=self.cm_scheme,
         )
+        self.task.stamp_from_scheme(self.cm_scheme)
+        self.task.save()
 
         # Create price list item
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]

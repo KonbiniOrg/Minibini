@@ -73,10 +73,12 @@ class InvoiceCompletionConsolidationTest(TestCase):
             algorithm=RateScheme.ELAPSED_TIME, rate=Decimal('100'),
             unit_label='hour', accounting_category=self.cat,
         )
-        Task.objects.create(
-            job=job, name='Done', rate_scheme=scheme,
+        task = Task(
+            job=job, name='Done',
             status=Task.STATUS_COMPLETE,
         )
+        task.stamp_from_scheme(scheme)
+        task.save()
         if status != Job.STATUS_APPROVED:
             for s in (Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE):
                 job.status = s

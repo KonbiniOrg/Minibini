@@ -4,7 +4,7 @@ from tests.base import BaseTestCase
 from apps.core.models import User, Shift
 from apps.core.services import ShiftService
 from apps.core.timeutils import floor_to_minute
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 
 
 class MinuteGranularityTest(BaseTestCase):
@@ -12,7 +12,9 @@ class MinuteGranularityTest(BaseTestCase):
         super().setUp()
         self.user = User.objects.create_user(username='mg_u', password='x')
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def test_floor_helper(self):
         d = datetime(2026, 5, 31, 16, 30, 45, 123456, tzinfo=tz.utc)

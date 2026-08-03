@@ -4,7 +4,7 @@ from datetime import timedelta
 from tests.base import BaseTestCase
 from apps.core.models import User, Shift
 from apps.core.services import ShiftService
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 
 
 class ShiftClockTest(BaseTestCase):
@@ -12,7 +12,9 @@ class ShiftClockTest(BaseTestCase):
         super().setUp()
         self.user = User.objects.create_user(username='clock_u', password='x')
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def test_clock_in_opens_shift(self):
         s = ShiftService.clock_in(self.user)

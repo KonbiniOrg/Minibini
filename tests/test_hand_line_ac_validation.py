@@ -38,9 +38,11 @@ class HandLineACValidationSetup(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Setup', rate_scheme=self.scheme, est_qty=Decimal('2'),
+        self.task = Task(
+            job=self.job, name='Setup', est_qty=Decimal('2'),
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-2026-0001',
             status=Estimate.STATUS_DRAFT,

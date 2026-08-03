@@ -50,9 +50,10 @@ class SpendBreakdownTests(FixtureTestCase):
         scheme = RateScheme.objects.create(
             name=f'Hr-ov-{hours}', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hour', accounting_category=self.cat)
-        task = Task.objects.create(
-            job=self.job, name='t', status=Task.STATUS_IN_PROGRESS,
-            rate_scheme=scheme)
+        task = Task(
+            job=self.job, name='t', status=Task.STATUS_IN_PROGRESS)
+        task.stamp_from_scheme(scheme)
+        task.save()
         start = _aware(2026, 1, 15, 9, 0)
         end = _aware(2026, 1, 15, 9 + int(hours), 0)
         return Blep.objects.create(
@@ -144,9 +145,10 @@ class SpendBreakdownTests(FixtureTestCase):
         scheme = RateScheme.objects.create(
             name='Hr-fractional', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hour', accounting_category=self.cat)
-        task = Task.objects.create(
-            job=self.job, name='t', status=Task.STATUS_IN_PROGRESS,
-            rate_scheme=scheme)
+        task = Task(
+            job=self.job, name='t', status=Task.STATUS_IN_PROGRESS)
+        task.stamp_from_scheme(scheme)
+        task.save()
         start = _aware(2026, 1, 15, 9, 0)
         end = _aware(2026, 1, 15, 9, 30)  # 30 minutes
         Blep.objects.create(
@@ -256,10 +258,13 @@ class WorkAggregatesTests(FixtureTestCase):
 
     def _task(self, status, hours=None, name='t'):
         from datetime import timedelta
-        return Task.objects.create(
-            job=self.job, name=name, status=status, rate_scheme=self.scheme,
+        t = Task(
+            job=self.job, name=name, status=status,
             est_worker_time=timedelta(hours=hours) if hours is not None else None,
         )
+        t.stamp_from_scheme(self.scheme)
+        t.save()
+        return t
 
     def test_progress_and_working_now_aggregates(self):
         from apps.jobs.overview import JobOverviewService

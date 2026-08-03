@@ -43,9 +43,11 @@ class DeadDocumentBase(TestCase):
         self.scheme = RateScheme.objects.create(
             name='Hourly', algorithm=RateScheme.ENTERED_QTY, rate=Decimal('100'),
             unit_label='hour', accounting_category=self.cat)
-        self.task = Task.objects.create(
-            job=self.job, name='Cut', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Cut',
             est_qty=Decimal('2'))
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
     def _estimate_claiming_task(self, number='EST-1', status=Estimate.STATUS_OPEN):
         est = Estimate.objects.create(
@@ -124,9 +126,11 @@ class EstimateReleasesClaimsTest(DeadDocumentBase):
         self.assertEqual(self._task_claims(), 1)
 
     def test_rejecting_one_estimate_leaves_another_documents_claims(self):
-        other_task = Task.objects.create(
-            job=self.job, name='Sand', rate_scheme=self.scheme,
+        other_task = Task(
+            job=self.job, name='Sand',
             est_qty=Decimal('1'))
+        other_task.stamp_from_scheme(self.scheme)
+        other_task.save()
         keeper = Estimate.objects.create(
             job=self.job, estimate_number='EST-K', status=Estimate.STATUS_DRAFT)
         EstimateWizardService.add_atoms_to_new_line_item(
@@ -155,9 +159,11 @@ class ChangeOrderReleasesClaimsTest(DeadDocumentBase):
             change_order=co, description='extra', qty=Decimal('1'),
             price=Decimal('50.00'), accounting_category=self.cat,
             action=ChangeOrderLineItem.ACTION_ADD)
-        co_task = Task.objects.create(
-            job=self.job, name='Extra', rate_scheme=self.scheme,
+        co_task = Task(
+            job=self.job, name='Extra',
             est_qty=Decimal('1'))
+        co_task.stamp_from_scheme(self.scheme)
+        co_task.save()
         ChangeOrderLineItemSource.objects.create(
             change_order_line_item=li,
             source_type=ChangeOrderLineItemSource.SOURCE_TASK,
