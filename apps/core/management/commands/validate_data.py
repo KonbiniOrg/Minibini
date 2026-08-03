@@ -446,19 +446,28 @@ class Command(BaseCommand):
     def check_freeform_kind_consistency(self):
         """freeform_kind is a real writable field (task-owned-money Phase 2,
         Task 4): non-null IFF the line is "bare" — no inventory_item, no
-        service_item, and (EstimateLineItem only — ChangeOrderLineItem has
-        no adjustment_service field) no adjustment_service. The invariant is
-        enforced only at the service layer
-        (EstimateService._reject_freeform_kind_on_non_bare_line, shared with
-        ChangeOrderService), not by a model clean() guard, so data written
-        via QuerySet.update(), fixtures, or other bypass paths can violate
-        it undetected.
+        service_item, (EstimateLineItem only — ChangeOrderLineItem has no
+        adjustment_service field) no adjustment_service, AND no
+        EstimateLineItemSource/ChangeOrderLineItemSource row. That last
+        condition matters: the wizard's add_atoms_to_new_line_item path
+        composes a line purely from existing Task/Material/Fee atoms via
+        the polymorphic source join table — such a line legitimately has
+        none of the three FKs and a NULL freeform_kind (it isn't a
+        freeform entry at all, so freeform_kind never applies), and this
+        shape is common on real data. Omitting the source check would
+        make every atom-sourced line look "bare" and wrongly trip the
+        inverse branch below. The invariant is enforced only at the
+        service layer (EstimateService._reject_freeform_kind_on_non_bare_line,
+        shared with ChangeOrderService), not by a model clean() guard, so
+        data written via QuerySet.update(), fixtures, or other bypass
+        paths can violate it undetected.
 
-        The inverse — a bare line with freeform_kind NULL — is also checked.
-        This is not paranoia: it's reachable in production via at least two
-        known gaps in the InventoryItem deletion/merge paths that neither
-        one is this task's job to fix (flagged separately for the phase
-        final review): (1) a plain InventoryItem delete, whose deletability
+        The inverse — a bare (including source-checked) line with
+        freeform_kind NULL — is also checked. This is not paranoia: it's
+        reachable in production via at least two known gaps in the
+        InventoryItem deletion/merge paths that neither one is this
+        task's job to fix (flagged separately for the phase final
+        review): (1) a plain InventoryItem delete, whose deletability
         guard (assert_item_deletable / has_document_line_refs) never checks
         ChangeOrderLineItem references, combined with inventory_item being
         SET_NULL — deleting an item referenced only by a CO line silently
@@ -469,15 +478,27 @@ class Command(BaseCommand):
         the discarded item before deleting it, but omits
         ChangeOrderLineItem — the same SET_NULL corruption via a different
         door."""
-        from apps.estimates.models import EstimateLineItem, ChangeOrderLineItem
+        from django.db.models import Exists, OuterRef
+        from apps.estimates.models import (
+            EstimateLineItem, ChangeOrderLineItem,
+            EstimateLineItemSource, ChangeOrderLineItemSource,
+        )
 
         line_models = [
-            ('EstimateLineItem', EstimateLineItem, True),
-            ('ChangeOrderLineItem', ChangeOrderLineItem, False),
+            ('EstimateLineItem', EstimateLineItem, True,
+             EstimateLineItemSource, 'estimate_line_item'),
+            ('ChangeOrderLineItem', ChangeOrderLineItem, False,
+             ChangeOrderLineItemSource, 'change_order_line_item'),
         ]
 
-        for name, model, has_adjustment_service in line_models:
-            qs = model.objects.select_related('inventory_item', 'service_item')
+        for name, model, has_adjustment_service, source_model, source_fk in line_models:
+            # Exists() annotation, not a per-row query, so this stays a
+            # single extra join across the whole table scan (no N+1).
+            qs = model.objects.select_related('inventory_item', 'service_item').annotate(
+                has_source=Exists(
+                    source_model.objects.filter(**{source_fk: OuterRef('pk')})
+                )
+            )
             for li in qs:
                 if has_adjustment_service:
                     adjustment_service_id = li.adjustment_service_id
@@ -487,6 +508,7 @@ class Command(BaseCommand):
                     li.inventory_item_id is None
                     and li.service_item_id is None
                     and adjustment_service_id is None
+                    and not li.has_source
                 )
                 if not is_bare and li.freeform_kind is not None:
                     self.errors.append(

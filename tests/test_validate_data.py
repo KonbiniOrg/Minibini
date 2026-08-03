@@ -7,7 +7,7 @@ from apps.jobs.models import RateScheme, Job, Task, Fee
 from apps.contacts.models import Contact
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstimateLineItemSource,
-    ChangeOrder, ChangeOrderLineItem, ServiceItem,
+    ChangeOrder, ChangeOrderLineItem, ChangeOrderLineItemSource, ServiceItem,
 )
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.inventory.models import Material, InventoryItem
@@ -768,6 +768,28 @@ class ValidateDataFreeformKindConsistencyTest(TestCase):
         output = self._run()
         self.assertNotIn('null on a bare line', output)
 
+    def test_estimate_line_wizard_sourced_bare_null_kind_not_flagged(self):
+        """A wizard-composed line (add_atoms_to_new_line_item): no
+        inventory_item/service_item/adjustment_service AND freeform_kind is
+        NULL — looks identical to the corruption state above by FK/kind
+        alone, but it claims an atom via EstimateLineItemSource, so it is
+        not freeform at all and must never be flagged by either direction
+        of the check. This is real, common shape on live data (Critical
+        review finding), not a corner case."""
+        fee = Fee.objects.create(
+            job=self.job, description='Sourced Fee',
+            unit_rate=Decimal('50.00'), accounting_category=self.ac,
+        )
+        li = EstimateLineItem.objects.create(estimate=self.estimate)
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_FEE,
+            source_pk=fee.pk,
+        )
+        output = self._run()
+        self.assertNotIn('null on a bare line', output)
+        self.assertNotIn('not bare', output)
+
     # ── ChangeOrderLineItem ───────────────────────────────────────
 
     def _make_co(self):
@@ -840,3 +862,26 @@ class ValidateDataFreeformKindConsistencyTest(TestCase):
         )
         output = self._run()
         self.assertNotIn('null on a bare line', output)
+
+    def test_co_line_wizard_sourced_bare_null_kind_not_flagged(self):
+        """CO-side analog of the wizard-sourced EstimateLineItem test: a
+        line with no FKs and NULL freeform_kind, but claiming an atom via
+        ChangeOrderLineItemSource (created at CO acceptance for each
+        add/replace line) — not freeform, must not be flagged by either
+        direction."""
+        co = self._make_co()
+        fee = Fee.objects.create(
+            job=self.job, description='CO Sourced Fee',
+            unit_rate=Decimal('75.00'), accounting_category=self.ac,
+        )
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+        )
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=li,
+            source_type=ChangeOrderLineItemSource.SOURCE_FEE,
+            source_pk=fee.pk,
+        )
+        output = self._run()
+        self.assertNotIn('null on a bare line', output)
+        self.assertNotIn('not bare', output)
