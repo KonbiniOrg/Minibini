@@ -13,7 +13,10 @@ effects, permissions, or invariants:
    cancel action / QBO polling / send flow).
 5. Change requests are editable only by their requester, only while pending.
 6. Reimbursement batches take no PATCH/PUT at all.
-7. Deleting a referenced RateScheme is a friendly 409, not a ProtectedError.
+7. Deleting a RateScheme still referenced by a ServiceItem (PROTECT) is a
+   friendly 409, not a raw ProtectedError 500 (task-owned-money Phase 1,
+   Task 4: a scheme referenced only by stamped Tasks now deletes cleanly —
+   Task.source_scheme is SET_NULL — so this guard is ServiceItem-only).
 """
 from datetime import timedelta
 from decimal import Decimal
@@ -97,7 +100,7 @@ class ShiftDeleteOrphanGuardTest(TestCase):
             job_number='JOB-SBG-1', contact=contact,
             status=Job.STATUS_IN_PROGRESS)
         self.task = Task.objects.create(
-            job=self.job, name='t', rate_scheme=self.scheme,
+            job=self.job, name='t', source_scheme=self.scheme,
             status=Task.STATUS_IN_PROGRESS)
         now = timezone.now().replace(second=0, microsecond=0)
         self.shift = Shift.objects.create(
@@ -257,6 +260,7 @@ class ReimbursementNoPatchTest(TestCase):
 
 class RateSchemeReferencedDeleteTest(TestCase):
     def test_referenced_delete_is_409_not_500(self):
+        from apps.estimates.models import ServiceItem
         admin = grant_atoms(
             User.objects.create_user(username='sbg_rs', password='x'),
             'can_manage_config')
@@ -264,9 +268,24 @@ class RateSchemeReferencedDeleteTest(TestCase):
         scheme = RateScheme.objects.create(
             name='S-sbr', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10'), unit_label='ea', accounting_category=cat)
-        contact = Contact.objects.create(first_name='R', last_name='S')
-        job = Job.objects.create(job_number='JOB-SBR-1', contact=contact)
-        Task.objects.create(job=job, name='t', rate_scheme=scheme)
+        # A stamped Task no longer blocks delete (Task.source_scheme is
+        # SET_NULL) — only a ServiceItem's PROTECT FK does.
+        ServiceItem.objects.create(template_name='SI-sbr', rate_scheme=scheme)
         resp = _client(admin).delete(f'/api/rate-schemes/{scheme.pk}/')
         self.assertEqual(resp.status_code, 409, getattr(resp, 'data', None))
         self.assertTrue(RateScheme.objects.filter(pk=scheme.pk).exists())
+
+    def test_delete_scheme_referenced_only_by_stamped_task_succeeds(self):
+        admin = grant_atoms(
+            User.objects.create_user(username='sbg_rs2', password='x'),
+            'can_manage_config')
+        cat = AccountingCategory.objects.create(name='sbr2', code='SBR2')
+        scheme = RateScheme.objects.create(
+            name='S-sbr2', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10'), unit_label='ea', accounting_category=cat)
+        contact = Contact.objects.create(first_name='R', last_name='S')
+        job = Job.objects.create(job_number='JOB-SBR-2', contact=contact)
+        Task.objects.create(job=job, name='t', source_scheme=scheme)
+        resp = _client(admin).delete(f'/api/rate-schemes/{scheme.pk}/')
+        self.assertEqual(resp.status_code, 200, getattr(resp, 'data', None))
+        self.assertFalse(RateScheme.objects.filter(pk=scheme.pk).exists())

@@ -1230,7 +1230,12 @@ class ConfigurationService:
     def retire_rate_scheme(pk):
         """Flip is_active off. Retiring only hides the preset from *new*
         task-creation paths (SchemeInactiveError) — stamped tasks and their
-        money fields are untouched."""
+        money fields are untouched.
+
+        If this scheme is the current `default_rate_scheme` Configuration
+        key (the Settings-page default preset for task creation), clear the
+        key to '' — an inactive preset must never linger as the default
+        offered on new work."""
         from apps.jobs.models import RateScheme
         try:
             scheme = RateScheme.objects.get(pk=pk)
@@ -1238,6 +1243,9 @@ class ConfigurationService:
             raise NotFoundError(f'RateScheme {pk} not found')
         scheme.is_active = False
         scheme.save()
+        default = Configuration.objects.filter(key='default_rate_scheme').first()
+        if default is not None and default.value == str(pk):
+            ConfigurationService.set('default_rate_scheme', '')
         return scheme
 
     @staticmethod

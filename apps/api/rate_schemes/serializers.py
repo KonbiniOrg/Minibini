@@ -4,7 +4,9 @@ from apps.core.units import get_units_list, HOUR_UNIT
 
 
 class RateSchemeSerializer(serializers.ModelSerializer):
-    superseded = serializers.SerializerMethodField()
+    # Display-only counts for the outdated-schemes UI (RateScheme.is_referenced()
+    # / reference_counts() no longer gate edits/deletes — task-owned-money
+    # Phase 1, Task 4).
     reference_counts = serializers.SerializerMethodField()
     # unit_label is required + must be a configured unit for the task-billing
     # algorithms, but a `percentage` adjustment has no meaningful unit. Allow it
@@ -19,15 +21,11 @@ class RateSchemeSerializer(serializers.ModelSerializer):
             'rate_scheme_id', 'name', 'description', 'algorithm',
             'rate', 'unit_label',
             'modifiers', 'accounting_category',
-            'replaced_by', 'replaced_at', 'superseded', 'reference_counts',
+            'is_active', 'reference_counts',
         ]
         read_only_fields = [
-            'rate_scheme_id', 'replaced_by', 'replaced_at',
-            'superseded', 'reference_counts',
+            'rate_scheme_id', 'reference_counts',
         ]
-
-    def get_superseded(self, obj):
-        return obj.replaced_by_id is not None
 
     def get_reference_counts(self, obj):
         return obj.reference_counts()
