@@ -434,6 +434,25 @@ class InvoiceEmailService:
             )
 
     @staticmethod
+    def _assert_total_non_negative(invoice):
+        """Raise if the invoice's grand total is negative (I3 review
+        finding). QuickBooks Online rejects a negative-total invoice
+        outright, so this must be caught here — before the QBO push, PDF
+        generation, or email send — with a clear, contract-shaped error
+        instead of letting the push fail opaquely against the QBO API.
+        Same total computation InvoiceSerializer.get_total uses."""
+        total = sum(
+            (li.qty * li.price for li in invoice.invoicelineitem_set.all()),
+            Decimal('0.00'),
+        )
+        if total < 0:
+            raise ValidationError(
+                'QuickBooks cannot accept a negative-total invoice. '
+                'Adjust the line items so the total is zero or positive '
+                'before sending.'
+            )
+
+    @staticmethod
     def send_invoice(invoice, *, to, subject, body, cc=None, bcc=None,
                      extra_attachments=None):
         """Send an Invoice. Pushes to QBO if needed, attaches the QBO
@@ -447,6 +466,7 @@ class InvoiceEmailService:
         )
 
         InvoiceEmailService._assert_all_lines_categorized(invoice)
+        InvoiceEmailService._assert_total_non_negative(invoice)
 
         if not to:
             raise ValidationError('Recipient email address is required.')
