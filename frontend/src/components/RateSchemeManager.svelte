@@ -16,15 +16,19 @@
   let loading = $state(true);
   let error = $state('');
   let editingId = $state(null);
-  let supersedingId = $state(null);
-  let showSuperseded = $state(false);
+  let showInactive = $state(false);
   let form = $state(emptyForm());
   let saving = $state(false);
   let formError = $state('');
   let fieldErrs = $state({});
-  // Set when a save bounced off the referenced-scheme 409 — the footer
-  // message then offers "Create new version" (the conflict's next step).
-  let conflictSchemeId = $state(null);
+
+  // Default preset picker (Configuration key `default_rate_scheme`,
+  // read/written via /api/settings/) — the scheme offered by default on new
+  // task creation. Loaded alongside the scheme list so it's always fresh.
+  let defaultSchemeId = $state('');
+  let defaultSaving = $state(false);
+  let defaultError = $state('');
+  let defaultSuccess = $state('');
 
   const ALGORITHM_LABELS = {
     elapsed_time: 'Based on time worked',
@@ -44,17 +48,19 @@
     loading = true;
     error = '';
     try {
-      const url = showSuperseded
-        ? '/api/rate-schemes/?include_superseded=true'
+      const url = showInactive
+        ? '/api/rate-schemes/?include_inactive=true'
         : '/api/rate-schemes/';
-      const [schemeResp, catResp, unitsResp] = await Promise.all([
+      const [schemeResp, catResp, unitsResp, settingsResp] = await Promise.all([
         api.get(url),
         api.get('/api/accounting-categories/'),
         api.get('/api/settings/units/'),
+        api.get('/api/settings/'),
       ]);
       schemes = schemeResp.results || schemeResp;
       categories = catResp.results || catResp;
       unitsList = unitsResp;
+      defaultSchemeId = settingsResp.default_rate_scheme || '';
     } catch (e) {
       error = e.message || 'Could not load services.';
     } finally {
@@ -67,21 +73,14 @@
     return cat ? `${cat.code} — ${cat.name}` : '';
   }
 
-  function isReferenced(s) {
-    const c = s.reference_counts || {};
-    return ((c.task_count || 0) + (c.service_item_count || 0)) > 0;
-  }
-
   function clearFormMessages() {
     formError = '';
     fieldErrs = {};
-    conflictSchemeId = null;
   }
 
   function startCreate() {
     form = emptyForm();
     editingId = 'new';
-    supersedingId = null;
     clearFormMessages();
   }
 
@@ -95,27 +94,11 @@
       accounting_category: scheme.accounting_category || '',
     };
     editingId = scheme.rate_scheme_id;
-    supersedingId = null;
-    clearFormMessages();
-  }
-
-  function startSupersede(scheme) {
-    form = {
-      name: scheme.name,
-      algorithm: scheme.algorithm,
-      rate: scheme.rate,
-      unit_label: scheme.unit_label,
-      modifiers: [...(scheme.modifiers || [])],
-      accounting_category: scheme.accounting_category || '',
-    };
-    supersedingId = scheme.rate_scheme_id;
-    editingId = null;
     clearFormMessages();
   }
 
   function cancelEdit() {
     editingId = null;
-    supersedingId = null;
     clearFormMessages();
   }
 
@@ -156,15 +139,12 @@
         accounting_category: form.accounting_category,
       };
 
-      if (supersedingId) {
-        await api.post(`/api/rate-schemes/${supersedingId}/supersede/`, payload);
-      } else if (editingId === 'new') {
+      if (editingId === 'new') {
         await api.post('/api/rate-schemes/', payload);
       } else {
         await api.patch(`/api/rate-schemes/${editingId}/`, payload);
       }
       editingId = null;
-      supersedingId = null;
       await load();
     } catch (e) {
       const t = triageError(e);
@@ -173,18 +153,10 @@
       } else {
         formError = t.message;
         fieldErrs = t.fields;
-        if (e.data?.code === 'referenced' && editingId && editingId !== 'new') {
-          conflictSchemeId = editingId;
-        }
       }
     } finally {
       saving = false;
     }
-  }
-
-  function supersedeFromConflict() {
-    const scheme = schemes.find((s) => s.rate_scheme_id === conflictSchemeId);
-    if (scheme) startSupersede(scheme);
   }
 
   async function remove(scheme) {
@@ -198,13 +170,49 @@
     }
   }
 
-  // The add/edit/supersede form is one Modal in three modes — the
-  // conflict path (supersedeFromConflict) switches mode in place, so the
-  // shell stays open across it.
-  const formOpen = $derived(editingId !== null || supersedingId !== null);
-  const formTitle = $derived(
-    supersedingId ? 'New Version of Rate Scheme'
-      : editingId === 'new' ? 'New Rate Scheme' : 'Edit Rate Scheme');
+  // Retire/reactivate are reversible toggles (buttons act, no confirm — see
+  // UI conventions). Both are non-form actions, so an error goes straight to
+  // the global overlay, same as delete above.
+  async function retire(scheme) {
+    try {
+      await api.post(`/api/rate-schemes/${scheme.rate_scheme_id}/retire/`);
+      await load();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not retire.'));
+    }
+  }
+
+  async function reactivate(scheme) {
+    try {
+      await api.post(`/api/rate-schemes/${scheme.rate_scheme_id}/reactivate/`);
+      await load();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not reactivate.'));
+    }
+  }
+
+  async function saveDefaultScheme() {
+    defaultSaving = true;
+    defaultError = '';
+    defaultSuccess = '';
+    try {
+      await api.patch('/api/settings/', { default_rate_scheme: defaultSchemeId });
+      defaultSuccess = 'Default preset saved.';
+      setTimeout(() => defaultSuccess = '', 3000);
+    } catch (e) {
+      const t = triageError(e);
+      defaultError = t.fields.default_rate_scheme || t.message || t.overlay || 'Failed to save';
+    } finally {
+      defaultSaving = false;
+    }
+  }
+
+  const formOpen = $derived(editingId !== null);
+  const formTitle = $derived(editingId === 'new' ? 'New Rate Scheme' : 'Edit Rate Scheme');
+
+  // Only active schemes are ever offered as the default preset — an
+  // inactive one must never linger there (server also enforces this).
+  const activeSchemes = $derived(schemes.filter((s) => s.is_active));
 
   // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
   const isPercentage = $derived(form.algorithm === 'percentage');
@@ -244,15 +252,28 @@
 {#if !loading}
   <p>
     <label>
-      <input type="checkbox" bind:checked={showSuperseded} onchange={load} />
-      Show superseded rates
+      <input type="checkbox" bind:checked={showInactive} onchange={load} />
+      Show inactive rate schemes
     </label>
+  </p>
+  <p>
+    <label for="default-rate-scheme"><strong>Default preset</strong></label><br>
+    <select id="default-rate-scheme" bind:value={defaultSchemeId}
+            onchange={saveDefaultScheme} disabled={defaultSaving}>
+      <option value="">-- None --</option>
+      {#each activeSchemes as s (s.rate_scheme_id)}
+        <option value={String(s.rate_scheme_id)}>{s.name}</option>
+      {/each}
+    </select>
+    {#if defaultError}<strong>Error:</strong> {defaultError}{/if}
+    {#if defaultSuccess}<em>{defaultSuccess}</em>{/if}
+    <br><small>The rate scheme offered by default when creating a new task.</small>
   </p>
   <table class="data-table">
     <thead>
       <tr>
         <th>Name</th><th>Type</th><th>Rate</th><th>Unit</th>
-        <th>Category</th><th>Modifiers</th><th></th>
+        <th>Category</th><th>Modifiers</th><th>Active</th><th></th>
       </tr>
     </thead>
     <tbody>
@@ -264,26 +285,21 @@
           <td>{s.unit_label}</td>
           <td>{categoryLabel(s.accounting_category)}</td>
           <td>{(s.modifiers || []).length}</td>
+          <td>{s.is_active ? 'Yes' : 'No'}</td>
           <td>
-            {#if s.superseded}
-              <small>
-                Replaced by: scheme {s.replaced_by}
-                {#if s.replaced_at}| Replaced at: {new Date(s.replaced_at).toLocaleString()}{/if}
-                | References: {s.reference_counts?.task_count || 0} tasks,
-                {s.reference_counts?.service_item_count || 0} templates
-              </small>
-            {:else if isReferenced(s)}
-              <button type="button" onclick={() => startSupersede(s)}>Create new version</button>
+            <button type="button" onclick={() => startEdit(s)}>Edit</button>
+            <button type="button" onclick={() => remove(s)}>Delete</button>
+            {#if s.is_active}
+              <button type="button" onclick={() => retire(s)}>Retire</button>
             {:else}
-              <button type="button" onclick={() => startEdit(s)}>Edit</button>
-              <button type="button" onclick={() => remove(s)}>Delete</button>
+              <button type="button" onclick={() => reactivate(s)}>Reactivate</button>
             {/if}
           </td>
         </tr>
       {/each}
     </tbody>
   </table>
-  {#if !showSuperseded && editingId === null && supersedingId === null}
+  {#if editingId === null}
     <p><button type="button" onclick={startCreate}>Add Rate Scheme</button></p>
   {/if}
 {/if}
@@ -297,12 +313,6 @@
       <input type="text" bind:value={form.name} style="width:100%;box-sizing:border-box;">
     </label>
     <FieldError errors={fieldErrs} field="name" />
-    {#if supersedingId}
-      <small>
-        You can keep this name. The retired version will be renamed
-        automatically (e.g. "(v1)").
-      </small>
-    {/if}
     </p>
     <p><label><strong>Algorithm *</strong><br>
       <select bind:value={form.algorithm}>
@@ -379,11 +389,7 @@
       </button>
       <button type="button" onclick={cancelEdit} disabled={saving}>Cancel</button>
     </p>
-    <FormMessage error={formError}>
-      {#if conflictSchemeId}
-        <button type="button" onclick={supersedeFromConflict}>Create new version</button>
-      {/if}
-    </FormMessage>
+    <FormMessage error={formError} />
 </Modal>
 
 <style>
