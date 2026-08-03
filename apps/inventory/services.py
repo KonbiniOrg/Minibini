@@ -132,17 +132,23 @@ class InventoryService:
 
         Moves the discard's on-hand onto keep, repoints EVERY reference
         (earmarks — sum-collapsed on the (item, job) unique constraint —
-        materials, plan materials, all four line-item tables, template-material
-        associations, and expense stock links), folds the quantity aggregates,
-        applies the caller's retained-field choices to keep, then deletes the
+        materials, plan materials, all five line-item tables (estimate,
+        change order, invoice, PO, bill), template-material associations, and
+        expense stock links), folds the quantity aggregates, applies the
+        caller's retained-field choices to keep, then deletes the
         now-reference-free discard. `overrides` is a dict of final values for
         keep (the frontend resolves which side's value to keep).
 
         Hard-blocks on a unit mismatch (the QOH addition would be nonsense).
         Accepts any discard item — the catalog discard-guard is retired; an
-        explicit confirm lives in the UI."""
+        explicit confirm lives in the UI.
+
+        T9 review finding: ChangeOrderLineItem was omitted from the repoint
+        list — a merge would leave a discard-referencing CO line's
+        inventory_item SET_NULL'd (dangling FK deleted out from under it)
+        instead of repointed onto keep."""
         from django.core.exceptions import ValidationError
-        from apps.estimates.models import EstimateLineItem
+        from apps.estimates.models import ChangeOrderLineItem, EstimateLineItem
         from apps.invoicing.models import InvoiceLineItem
         from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
         from apps.inventory.models import TemplateMaterialAssociation
@@ -183,6 +189,7 @@ class InventoryService:
             # Repoint every remaining reference (pure FK swaps).
             Material.objects.filter(inventory_item=discard).update(inventory_item=keep)
             EstimateLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
+            ChangeOrderLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
             InvoiceLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
             PurchaseOrderLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
             BillLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)

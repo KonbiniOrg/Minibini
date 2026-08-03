@@ -86,15 +86,22 @@ class InventoryItem(models.Model):
 
     @property
     def has_document_line_refs(self):
-        """True if any document line item (estimate/invoice/PO/bill) references
-        this item. Split out of can_be_deleted so unwind paths can test document
-        references separately from earmarks."""
-        from apps.estimates.models import EstimateLineItem
+        """True if any document line item (estimate/change-order/invoice/PO/
+        bill) references this item. Split out of can_be_deleted so unwind
+        paths can test document references separately from earmarks.
+
+        T9 review finding: ChangeOrderLineItem.inventory_item is SET_NULL,
+        same as the other four — omitting it here let a plain delete pass
+        this guard while silently orphaning a CO line (freeform_kind stays
+        NULL, tripping validate_data.check_freeform_kind_consistency's
+        inverse branch)."""
+        from apps.estimates.models import ChangeOrderLineItem, EstimateLineItem
         from apps.invoicing.models import InvoiceLineItem
         from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 
         return (
             EstimateLineItem.objects.filter(inventory_item=self).exists() or
+            ChangeOrderLineItem.objects.filter(inventory_item=self).exists() or
             InvoiceLineItem.objects.filter(inventory_item=self).exists() or
             PurchaseOrderLineItem.objects.filter(inventory_item=self).exists() or
             BillLineItem.objects.filter(inventory_item=self).exists()
