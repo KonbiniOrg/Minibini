@@ -34,9 +34,11 @@ class AcceptanceCrystallizesFeesTest(TestCase):
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         # An atom that already lives on the Job (work created directly).
-        self.task = Task.objects.create(
-            job=self.job, name='Setup', rate_scheme=self.scheme, est_qty=Decimal('2'),
+        self.task = Task(
+            job=self.job, name='Setup', est_qty=Decimal('2'),
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         # An inventoried material on the job so earmarking has something to do.
         self.pli = InventoryItem.objects.create(
             code='STEEL', accounting_category=self.cat,

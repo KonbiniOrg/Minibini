@@ -19,7 +19,7 @@ from django.utils import timezone
 
 from tests.base import BaseTestCase
 from apps.core.models import JobHistory, User
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.jobs.services import (
     TaskLifecycleService, TaskService, TaskWorkerTimeRequired,
 )
@@ -62,9 +62,11 @@ class TaskLifecycleHistoryTest(BaseTestCase):
         self.job = Job.objects.first()
         _approve_job(self.job)
         self.worker = User.objects.get(username='johnq')
-        self.task = Task.objects.create(
-            name='History task', job=self.job, rate_scheme_id=1,
+        self.task = Task(
+            name='History task', job=self.job,
         )
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def _diffs(self):
         """Merge all audit diffs for the task into {field: (old, new)}."""
@@ -148,16 +150,20 @@ class AssignedWorkerTimeInvariantTest(BaseTestCase):
 
     def test_model_accepts_assignee_without_est_worker_time(self):
         # The state auto-assign creates must be a legal model state.
-        task = Task.objects.create(
-            name='Auto-assigned shape', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='Auto-assigned shape', job=self.job,
             assignee=self.worker,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         self.assertIsNone(task.est_worker_time)
 
     def test_auto_assigned_task_without_est_time_completes(self):
-        task = Task.objects.create(
-            name='No estimate', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='No estimate', job=self.job,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         # start_work auto-assigns the first worker with no est time.
         TaskLifecycleService.start_work(task.pk, self.worker)
         task.refresh_from_db()
@@ -170,9 +176,11 @@ class AssignedWorkerTimeInvariantTest(BaseTestCase):
         self.assertEqual(task.status, Task.STATUS_COMPLETE)
 
     def test_auto_assigned_task_without_est_time_blocks(self):
-        task = Task.objects.create(
-            name='No estimate blocks', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='No estimate blocks', job=self.job,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         TaskLifecycleService.start_work(task.pk, self.worker)
         result = TaskLifecycleService.block_task(
             task.pk, reason='hm', user=self.worker)
@@ -181,9 +189,11 @@ class AssignedWorkerTimeInvariantTest(BaseTestCase):
         self.assertEqual(task.status, Task.STATUS_BLOCKED)
 
     def test_assign_service_requires_worker_time(self):
-        task = Task.objects.create(
-            name='Explicit assign', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='Explicit assign', job=self.job,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         with self.assertRaises(TaskWorkerTimeRequired):
             TaskService.assign(task, self.worker.pk)
 
@@ -195,16 +205,20 @@ class AssignedWorkerTimeInvariantTest(BaseTestCase):
             )
 
     def test_update_task_assigning_requires_worker_time(self):
-        task = Task.objects.create(
-            name='Patch assign', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='Patch assign', job=self.job,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         with self.assertRaises(ValidationError):
             TaskService.update_task(task.pk, assignee=self.worker)
 
     def test_update_task_assigning_with_worker_time_succeeds(self):
-        task = Task.objects.create(
-            name='Patch assign ok', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='Patch assign ok', job=self.job,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         updated = TaskService.update_task(
             task.pk, assignee=self.worker,
             est_worker_time=timedelta(hours=2),

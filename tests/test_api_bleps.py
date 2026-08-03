@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from tests.base import BaseTestCase
 from apps.core.models import User, Shift
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 
 
 class BlepListAndRetrieveTest(BaseTestCase):
@@ -15,7 +15,9 @@ class BlepListAndRetrieveTest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         self.blep = Blep.objects.create(
             task=self.task, user=self.user, start_time=timezone.now(),
         )
@@ -54,8 +56,12 @@ class BlepListFiltersTest(BaseTestCase):
         self.worker = User.objects.create_user(username='worker', password='x')
         self.client.force_authenticate(user=self.admin)
         self.job = Job.objects.first()
-        self.task_a = Task.objects.create(name='A', job=self.job, rate_scheme_id=1)
-        self.task_b = Task.objects.create(name='B', job=self.job, rate_scheme_id=1)
+        self.task_a = Task(name='A', job=self.job)
+        self.task_a.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task_a.save()
+        self.task_b = Task(name='B', job=self.job)
+        self.task_b.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task_b.save()
         now = timezone.now()
         self.old = Blep.objects.create(
             task=self.task_a, user=self.admin,
@@ -119,7 +125,9 @@ class BlepCreateAPITest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         # Wide closed shift so historical bleps have an enclosing shift.
         now = timezone.now()
         Shift.objects.create(user=self.user, start_time=now - timedelta(days=3),
@@ -186,7 +194,9 @@ class BlepCreateHistoricalCompleteTaskTest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(name='T_hist', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T_hist', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         # Wide closed shift so historical bleps have an enclosing shift.
         now = timezone.now()
         Shift.objects.create(
@@ -221,7 +231,9 @@ class BlepUpdateAPITest(BaseTestCase):
         self.manager.user_permissions.add(perm)
         self.manager = User.objects.get(pk=self.manager.pk)
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         # Wide closed shift so edited bleps stay enclosed by a shift.
         now = timezone.now()
         Shift.objects.create(user=self.user, start_time=now - timedelta(days=3),
@@ -273,7 +285,9 @@ class BlepDeleteAPITest(BaseTestCase):
         self.client = APIClient()
         self.user = User.objects.create_user(username='worker1_delete_api', password='x')
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def test_delete_own_recent_blep(self):
         now = timezone.now()
@@ -306,9 +320,11 @@ class TaskRetrieveAPITest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
-        self.task = Task.objects.create(
-            name='T', description='desc', job=self.job, rate_scheme_id=1,
+        self.task = Task(
+            name='T', description='desc', job=self.job,
         )
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def test_retrieve_task(self):
         resp = self.client.get(f'/api/tasks/{self.task.pk}/')

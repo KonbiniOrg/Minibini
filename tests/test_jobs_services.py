@@ -147,10 +147,11 @@ class TaskServiceUpdateTest(JobsTestBase):
             rate=Decimal('1.00'), unit_label='ea',
             accounting_category=self.lit,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job, name='Task 1', sort_order=1,
-            rate_scheme=scheme,
         )
+        self.task.stamp_from_scheme(scheme)
+        self.task.save()
 
     def test_update_task(self):
         updated = TaskService.update_task(self.task.pk, name='Updated Task')
@@ -332,14 +333,16 @@ class TaskServiceReorderTest(JobsTestBase):
             rate=Decimal('1.00'), unit_label='ea',
             accounting_category=self.lit,
         )
-        self.t1 = Task.objects.create(
+        self.t1 = Task(
             job=self.job, name='Task 1', sort_order=1,
-            rate_scheme=scheme,
         )
-        self.t2 = Task.objects.create(
+        self.t1.stamp_from_scheme(scheme)
+        self.t1.save()
+        self.t2 = Task(
             job=self.job, name='Task 2', sort_order=2,
-            rate_scheme=scheme,
         )
+        self.t2.stamp_from_scheme(scheme)
+        self.t2.save()
 
     def test_reorder_down(self):
         TaskService.reorder_tasks(self.t1.pk, 'down')
@@ -388,11 +391,11 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
 
         cut_task = tasks[0]
         self.assertEqual(cut_task.name, 'Cut')
-        self.assertEqual(cut_task.rate_scheme, self.scheme)
+        self.assertEqual(cut_task.source_scheme, self.scheme)
 
         weld_task = tasks[1]
         self.assertEqual(weld_task.name, 'Weld')
-        self.assertEqual(weld_task.rate_scheme, self.scheme)
+        self.assertEqual(weld_task.source_scheme, self.scheme)
 
     def test_skips_inactive_service_items(self):
         self.task_tmpl_2.is_active = False

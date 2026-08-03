@@ -18,7 +18,7 @@ from django.utils import timezone
 
 from tests.base import BaseTestCase
 from apps.core.models import User, AccountingCategory
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.jobs.services import TaskLifecycleService
 from apps.inventory.models import Material, Earmark, InventoryItem
 from apps.inventory.services import InventoryService, MaterialService
@@ -49,7 +49,9 @@ class PreApprovalWorkMaterialTest(BaseTestCase):
     def test_start_preapproval_consumes_instock_pli_draws_qoh_no_earmark(self):
         job = self._draft_job()
         pli = self._pli('STEEL-IN', '10')
-        task = Task.objects.create(name='Cut', job=job, rate_scheme_id=1)
+        task = Task(name='Cut', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         mat = MaterialService.create_on_job(
             job=job, task=task, description='steel',
             quantity=Decimal('3'), inventory_item=pli,
@@ -69,7 +71,9 @@ class PreApprovalWorkMaterialTest(BaseTestCase):
     def test_start_preapproval_outofstock_pli_blocks_and_rolls_back(self):
         job = self._draft_job()
         pli = self._pli('STEEL-SHORT', '2')
-        task = Task.objects.create(name='Cut', job=job, rate_scheme_id=1)
+        task = Task(name='Cut', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         mat = MaterialService.create_on_job(
             job=job, task=task, description='steel',
             quantity=Decimal('5'), inventory_item=pli,

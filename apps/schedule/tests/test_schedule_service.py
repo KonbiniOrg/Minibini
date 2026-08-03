@@ -53,11 +53,13 @@ def _seed_user_with_pending_task(est_minutes=120, name='J-101 fab',
         job.status = s
         job.save()
     rs = RateScheme.objects.first()
-    task = Task.objects.create(
-        job=job, assignee=user, rate_scheme=rs,
+    task = Task(
+        job=job, assignee=user,
         name=name, est_worker_time=timedelta(minutes=est_minutes),
         worker_queue=1, status=Task.STATUS_PENDING,
     )
+    task.stamp_from_scheme(rs)
+    task.save()
     return user, task
 
 
@@ -175,11 +177,13 @@ class OffHoursInProgressTest(BaseTestCase):
             est_minutes=120, name='Early', username='early_user',
         )
         rs = RateScheme.objects.first()
-        pending = Task.objects.create(
-            job=active.job, assignee=user, rate_scheme=rs,
+        pending = Task(
+            job=active.job, assignee=user,
             name='Later', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
+        pending.stamp_from_scheme(rs)
+        pending.save()
         d = date_at_weekday(2)
         # Worker started at 07:00 — before the configured 08:00 start.
         start = local_dt(d, 7, 0)
@@ -321,11 +325,13 @@ class OverrunCascadeTest(BaseTestCase):
         task1.status = Task.STATUS_IN_PROGRESS
         task1.save()
         rs = RateScheme.objects.first()
-        task2 = Task.objects.create(
-            job=task1.job, assignee=user, rate_scheme=rs,
+        task2 = Task(
+            job=task1.job, assignee=user,
             name='T2', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
+        task2.stamp_from_scheme(rs)
+        task2.save()
         d = date_at_weekday(2)
         t1_start = local_dt(d, 9, 0)
         Blep.objects.create(user=user, task=task1, start_time=t1_start, end_time=None)
@@ -349,11 +355,13 @@ class CompletedEarlyTest(BaseTestCase):
         # completed end + buffer, which is in the past).
         user, task1 = _seed_user_with_pending_task(est_minutes=120, name='T1')
         rs = RateScheme.objects.first()
-        task2 = Task.objects.create(
-            job=task1.job, assignee=user, rate_scheme=rs,
+        task2 = Task(
+            job=task1.job, assignee=user,
             name='T2', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
+        task2.stamp_from_scheme(rs)
+        task2.save()
         d = date_at_weekday(2)
         t1_start = local_dt(d, 9, 0)
         t1_end = t1_start + timedelta(minutes=60)  # took 1h, est was 2h
@@ -378,11 +386,13 @@ class CompletedEarlyTest(BaseTestCase):
         # render behind the now line.
         user, task1 = _seed_user_with_pending_task(est_minutes=60, name='Early1')
         rs = RateScheme.objects.first()
-        task2 = Task.objects.create(
-            job=task1.job, assignee=user, rate_scheme=rs,
+        task2 = Task(
+            job=task1.job, assignee=user,
             name='Early2', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
+        task2.stamp_from_scheme(rs)
+        task2.save()
         d = date_at_weekday(2)
         t1_start = local_dt(d, 7, 0)
         t1_end = local_dt(d, 7, 30)
@@ -411,11 +421,13 @@ class BlockedTaskTest(BaseTestCase):
         blocked.status = Task.STATUS_IN_PROGRESS; blocked.save()
         blocked.status = Task.STATUS_BLOCKED; blocked.save()
         rs = RateScheme.objects.first()
-        after = Task.objects.create(
-            job=blocked.job, assignee=user, rate_scheme=rs,
+        after = Task(
+            job=blocked.job, assignee=user,
             name='After', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
+        after.stamp_from_scheme(rs)
+        after.save()
         now = local_dt(date_at_weekday(2), 9, 0)
 
         data = ScheduleService.get_schedule(now=now)
@@ -531,21 +543,27 @@ class FourTaskWorkerWithActiveBlepTest(BaseTestCase):
         )
         job = t_active.job
         rs = RateScheme.objects.first()
-        t_done = Task.objects.create(
-            job=job, assignee=worker, rate_scheme=rs, name='Done',
+        t_done = Task(
+            job=job, assignee=worker, name='Done',
             est_worker_time=timedelta(minutes=60), worker_queue=2,
             status=Task.STATUS_COMPLETE,
         )
-        t_p1 = Task.objects.create(
-            job=job, assignee=worker, rate_scheme=rs, name='P1',
+        t_done.stamp_from_scheme(rs)
+        t_done.save()
+        t_p1 = Task(
+            job=job, assignee=worker, name='P1',
             est_worker_time=timedelta(minutes=60), worker_queue=3,
             status=Task.STATUS_PENDING,
         )
-        t_p2 = Task.objects.create(
-            job=job, assignee=worker, rate_scheme=rs, name='P2',
+        t_p1.stamp_from_scheme(rs)
+        t_p1.save()
+        t_p2 = Task(
+            job=job, assignee=worker, name='P2',
             est_worker_time=timedelta(minutes=60), worker_queue=4,
             status=Task.STATUS_PENDING,
         )
+        t_p2.stamp_from_scheme(rs)
+        t_p2.save()
 
         d = date_at_weekday(2)
         # Active task: in_progress, open blep started 15 min before "now".
@@ -584,11 +602,13 @@ class PausedInProgressTaskTest(BaseTestCase):
         )
         job = t_active.job
         rs = RateScheme.objects.first()
-        t_paused = Task.objects.create(
-            job=job, assignee=worker, rate_scheme=rs, name='Paused',
+        t_paused = Task(
+            job=job, assignee=worker, name='Paused',
             est_worker_time=timedelta(minutes=60), worker_queue=2,
             status=Task.STATUS_IN_PROGRESS,
         )
+        t_paused.stamp_from_scheme(rs)
+        t_paused.save()
         Task.objects.filter(pk=t_active.pk).update(status=Task.STATUS_IN_PROGRESS)
 
         d = date_at_weekday(2)
@@ -769,16 +789,20 @@ class CompletedPlusActiveOrderingTest(BaseTestCase):
         )
         rs = RateScheme.objects.first()
         # Build out the queue
-        active = Task.objects.create(
-            job=completed.job, assignee=user, rate_scheme=rs,
+        active = Task(
+            job=completed.job, assignee=user,
             name='Active', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
-        next_pending = Task.objects.create(
-            job=completed.job, assignee=user, rate_scheme=rs,
+        active.stamp_from_scheme(rs)
+        active.save()
+        next_pending = Task(
+            job=completed.job, assignee=user,
             name='Next', est_worker_time=timedelta(minutes=60),
             worker_queue=3, status=Task.STATUS_PENDING,
         )
+        next_pending.stamp_from_scheme(rs)
+        next_pending.save()
 
         # Drive completed → done with a blep, and active → in_progress with
         # a running blep.
@@ -954,11 +978,13 @@ class FloatingOrderMatchesQueueTest(BaseTestCase):
             est_minutes=60, name='PendFirst', username='order_user',
         )  # _seed sets worker_queue=1, status pending
         rs = RateScheme.objects.first()
-        in_prog = Task.objects.create(
-            job=pending.job, assignee=user, rate_scheme=rs,
+        in_prog = Task(
+            job=pending.job, assignee=user,
             name='InProgSecond', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_IN_PROGRESS,
         )  # in_progress but NO bleps → a floating forecast bar
+        in_prog.stamp_from_scheme(rs)
+        in_prog.save()
         now = local_dt(date_at_weekday(2), 9, 0)
 
         data = ScheduleService.get_schedule(now=now)
@@ -1098,11 +1124,13 @@ class PerWorkerEnvelopeTest(BaseTestCase):
                 job.status = s
                 job.save()
         rs = RateScheme.objects.first()
-        task = Task.objects.create(
-            job=job, assignee=user, rate_scheme=rs,
+        task = Task(
+            job=job, assignee=user,
             name=f'{username} task', est_worker_time=timedelta(minutes=est_minutes),
             worker_queue=queue, status=Task.STATUS_PENDING,
         )
+        task.stamp_from_scheme(rs)
+        task.save()
         return user, task
 
     def test_two_workers_cascade_on_their_own_envelopes(self):

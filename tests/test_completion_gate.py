@@ -353,9 +353,11 @@ class WorkFinishedButStrandedInProgress(CompletionGateSetUp):
         scheme = RateScheme.objects.create(
             name='Gate hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=cat)
-        self.task = Task.objects.create(
-            job=self.job, name='Done work', rate_scheme=scheme,
+        self.task = Task(
+            job=self.job, name='Done work',
             status=Task.STATUS_COMPLETE)
+        self.task.stamp_from_scheme(scheme)
+        self.task.save()
         # The loose pending material that stranded the job in in_progress.
         from apps.inventory.services import MaterialService
         self.material = MaterialService.create_on_job(
@@ -397,9 +399,10 @@ class WorkFinishedButStrandedInProgress(CompletionGateSetUp):
 
     def test_open_task_still_blocks_even_with_material_resolved(self):
         from apps.jobs.models import RateScheme, Task
-        Task.objects.create(
-            job=self.job, name='Still open',
-            rate_scheme=self.task.rate_scheme, status=Task.STATUS_PENDING)
+        t = Task(
+            job=self.job, name='Still open', status=Task.STATUS_PENDING)
+        t.stamp_from_scheme(self.task.source_scheme)
+        t.save()
         _pay_invoice(self.job)
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)

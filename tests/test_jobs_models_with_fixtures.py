@@ -1,7 +1,7 @@
 from django.test import TestCase
 from django.utils import timezone
 from datetime import timedelta
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, RateScheme, Task, Blep
 from apps.estimates.models import Estimate, ServiceItem
 from apps.contacts.models import Contact
 from apps.core.models import User
@@ -109,13 +109,14 @@ class TaskModelFixtureTest(FixtureTestCase):
         job = Job.objects.get(job_number="JOB-2024-0001")
         user = User.objects.get(username="manager1")
 
-        new_task = Task.objects.create(
+        new_task = Task(
             assignee=user,
             est_worker_time=timedelta(hours=1),
             job=job,
             name="Cabinet installation",
-            rate_scheme_id=1,
         )
+        new_task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        new_task.save()
         self.assertEqual(new_task.job, job)
         self.assertEqual(Task.objects.count(), 3)  # 2 from fixture + 1 new
 

@@ -40,12 +40,16 @@ class StruckAtomKeysTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-SB-1', contact=contact,
             status=Job.STATUS_IN_PROGRESS)
-        self.task = Task.objects.create(
-            job=self.job, name='Struck work', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Struck work',
             status=Task.STATUS_COMPLETE, actual_qty=Decimal('2'))
-        self.other_task = Task.objects.create(
-            job=self.job, name='Untouched work', rate_scheme=self.scheme,
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
+        self.other_task = Task(
+            job=self.job, name='Untouched work',
             status=Task.STATUS_COMPLETE, actual_qty=Decimal('1'))
+        self.other_task.stamp_from_scheme(self.scheme)
+        self.other_task.save()
         est = Estimate.objects.create(
             job=self.job, estimate_number='EST-SB-1', version=1,
             status=Estimate.STATUS_ACCEPTED)

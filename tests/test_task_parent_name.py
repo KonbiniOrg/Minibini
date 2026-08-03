@@ -2,7 +2,7 @@
 render its "subtask of <parent>" crumb link without an extra fetch.
 """
 from tests.base import BaseTestCase
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.api.tasks.serializers import TaskSerializer
 
 
@@ -10,11 +10,15 @@ class TaskParentNameSerializerTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.parent = Task.objects.create(
-            name='Build shelving unit', job=self.job, rate_scheme_id=1)
-        self.child = Task.objects.create(
+        self.parent = Task(
+            name='Build shelving unit', job=self.job)
+        self.parent.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.parent.save()
+        self.child = Task(
             name='CNC cut shelving parts', job=self.job,
-            rate_scheme_id=1, parent_task=self.parent)
+            parent_task=self.parent)
+        self.child.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.child.save()
 
     def test_subtask_carries_parent_name(self):
         d = TaskSerializer(self.child).data

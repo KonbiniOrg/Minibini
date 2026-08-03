@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 
 from tests.base import BaseTestCase
 from apps.core.models import User
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 
 
 class BlepUserRequiredTest(BaseTestCase):
@@ -11,7 +11,9 @@ class BlepUserRequiredTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Task', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='Task', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         self.user = User.objects.get(username='admin')
 
     def test_blep_without_user_fails_validation(self):

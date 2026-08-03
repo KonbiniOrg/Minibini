@@ -164,9 +164,11 @@ class JobHistoryCollationTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
 
     def test_collates_new_object_types_and_labels(self):
-        from apps.jobs.models import Job, Task
+        from apps.jobs.models import Job, Task, RateScheme
         job = Job.objects.first()
-        task = Task.objects.create(job=job, name='History test task', rate_scheme_id=1)
+        task = Task(job=job, name='History test task')
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         record_history(
             entry_type='audit', object_type='task', object_id=task.pk,
             changes={'status': {'old': 'pending', 'new': 'complete'}},

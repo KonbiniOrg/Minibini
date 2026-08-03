@@ -37,9 +37,11 @@ class CancelReleasesClaimsTest(TestCase):
         self.scheme = RateScheme.objects.create(
             name='Hourly', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat)
-        self.task = Task.objects.create(
-            job=self.job, name='Cut', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Cut',
             status=Task.STATUS_COMPLETE, actual_qty=Decimal('2'))
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
     def _open_invoice_claiming_task(self):
         inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
@@ -95,9 +97,11 @@ class CancelReleasesClaimsTest(TestCase):
 
     def test_live_invoice_claims_are_untouched(self):
         # Cancelling one invoice must not release another's claims.
-        other_task = Task.objects.create(
-            job=self.job, name='Sand', rate_scheme=self.scheme,
+        other_task = Task(
+            job=self.job, name='Sand',
             status=Task.STATUS_COMPLETE, actual_qty=Decimal('1'))
+        other_task.stamp_from_scheme(self.scheme)
+        other_task.save()
         keeper = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         InvoiceWizardService.add_atoms_to_new_line_item(
             keeper, [{'type': 'task', 'id': other_task.pk}])

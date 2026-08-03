@@ -33,10 +33,12 @@ class EstimateWizardAPITest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt = Task.objects.create(
+        self.pt = Task(
             job=self.job, name='Setup',
-            rate_scheme=self.scheme, est_qty=Decimal('2'),
+            est_qty=Decimal('2'),
         )
+        self.pt.stamp_from_scheme(self.scheme)
+        self.pt.save()
         self.pm = Material.objects.create(
             job=self.job, description='steel', quantity=Decimal('3'),
             sell_price=Decimal('5'), accounting_category=self.cat,

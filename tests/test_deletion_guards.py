@@ -86,10 +86,13 @@ class DeletionGuardBase(TestCase):
         )
 
     def _task(self):
-        return Task.objects.create(
-            job=self.job, name='Cutting', rate_scheme=self.scheme,
+        t = Task(
+            job=self.job, name='Cutting',
             est_qty=Decimal('2'),
         )
+        t.stamp_from_scheme(self.scheme)
+        t.save()
+        return t
 
 
 class FeeDeletionGuardTests(DeletionGuardBase):

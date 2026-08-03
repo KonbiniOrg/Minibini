@@ -29,13 +29,16 @@ class PeerScopedReorderTest(TestCase):
         # Flat creation order interleaves the subtask between the two
         # top-level tasks in the per-job sort_order sequence:
         #   t1(1), sub(2, child of t1), t2(3)
-        self.t1 = Task.objects.create(
-            job=self.job, name='T1', rate_scheme=self.scheme)
-        self.sub = Task.objects.create(
-            job=self.job, name='T1 sub', rate_scheme=self.scheme,
-            parent_task=self.t1)
-        self.t2 = Task.objects.create(
-            job=self.job, name='T2', rate_scheme=self.scheme)
+        self.t1 = Task(job=self.job, name='T1')
+        self.t1.stamp_from_scheme(self.scheme)
+        self.t1.save()
+        self.sub = Task(
+            job=self.job, name='T1 sub', parent_task=self.t1)
+        self.sub.stamp_from_scheme(self.scheme)
+        self.sub.save()
+        self.t2 = Task(job=self.job, name='T2')
+        self.t2.stamp_from_scheme(self.scheme)
+        self.t2.save()
 
     def _top_level_order(self):
         return list(
@@ -53,9 +56,10 @@ class PeerScopedReorderTest(TestCase):
         self.assertEqual(Task.objects.get(pk=self.sub.pk).sort_order, before)
 
     def test_subtask_swaps_within_siblings_only(self):
-        sub2 = Task.objects.create(
-            job=self.job, name='T1 sub2', rate_scheme=self.scheme,
-            parent_task=self.t1)
+        sub2 = Task(
+            job=self.job, name='T1 sub2', parent_task=self.t1)
+        sub2.stamp_from_scheme(self.scheme)
+        sub2.save()
         top_before = self._top_level_order()
         TaskService.reorder_tasks(sub2.pk, 'up')
         siblings = list(

@@ -42,12 +42,13 @@ class EstimateRevisionDetachesTest(TestCase):
             rate=Decimal('75.00'),
             accounting_category=self.cat,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job,
             name='Design work',
-            rate_scheme=self.scheme,
             est_qty=Decimal('4'),
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
         # An estimate with one line item that has an atom claim on the task.
         self.est = EstimateService.create_for_job(self.job.pk)

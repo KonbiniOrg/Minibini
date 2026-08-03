@@ -20,14 +20,16 @@ class BlepStartPromotesQueueTest(BaseTestCase):
         contact = Contact.objects.first()
         self.job = JobService.create_job(contact=contact, description='Test job')
         rs = RateScheme.objects.first()
-        self.tasks = [
-            Task.objects.create(
-                job=self.job, assignee=self.user, rate_scheme=rs,
+        self.tasks = []
+        for i in range(1, 6):  # five tasks, queue 1..5
+            task = Task(
+                job=self.job, assignee=self.user,
                 name=f'T{i}', est_worker_time=timedelta(minutes=60),
                 worker_queue=i, status=Task.STATUS_PENDING,
             )
-            for i in range(1, 6)  # five tasks, queue 1..5
-        ]
+            task.stamp_from_scheme(rs)
+            task.save()
+            self.tasks.append(task)
         from apps.jobs.models import Job
         self.job.status = Job.STATUS_SUBMITTED; self.job.save()
         self.job.status = Job.STATUS_APPROVED; self.job.save()

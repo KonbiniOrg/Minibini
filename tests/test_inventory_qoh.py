@@ -37,13 +37,14 @@ class ConsumeMaterialTest(TestCase):
             name='S-qoh2', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job,
             name='Install plywood',
             description='Install plywood',
             sort_order=1,
-            rate_scheme=self.scheme,
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -168,13 +169,14 @@ class CompleteTaskAdjustmentTest(TestCase):
             name='S-qoh3', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job,
             name='Install plywood',
             description='Install plywood',
             sort_order=1,
-            rate_scheme=self.scheme,
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',

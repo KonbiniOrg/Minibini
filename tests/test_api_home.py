@@ -3,7 +3,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 from tests.base import FixtureTestCase
-from apps.jobs.models import Blep, Job, Task
+from apps.jobs.models import Blep, Job, Task, RateScheme
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
 
@@ -26,11 +26,13 @@ class CurrentBlepEndpointTest(FixtureTestCase):
             status='approved',
             contact=self.contact,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             name='Task A', job=self.job, assignee=self.user,
             est_worker_time=timedelta(hours=1),
-            status=Task.STATUS_IN_PROGRESS, rate_scheme_id=1,
+            status=Task.STATUS_IN_PROGRESS,
         )
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def test_returns_null_when_no_open_blep(self):
         response = self.client.get('/api/bleps/current/')
@@ -77,11 +79,13 @@ class CurrentBlepEndpointTest(FixtureTestCase):
             user=self.user, task=self.task,
             start_time=now - timedelta(hours=3),
         )
-        newer_task = Task.objects.create(
+        newer_task = Task(
             name='Task B', job=self.job, assignee=self.user,
             est_worker_time=timedelta(hours=1),
-            status=Task.STATUS_IN_PROGRESS, rate_scheme_id=1,
+            status=Task.STATUS_IN_PROGRESS,
         )
+        newer_task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        newer_task.save()
         Blep.objects.create(
             user=self.user, task=newer_task,
             start_time=now - timedelta(minutes=5),
@@ -114,13 +118,16 @@ class HomeEndpointTest(FixtureTestCase):
 
     def _make_task(self, name, status=Task.STATUS_PENDING, assignee=None,
                    worker_queue=None, job=None):
-        kwargs = {'name': name, 'status': status, 'job': job or self.job, 'rate_scheme_id': 1}
+        kwargs = {'name': name, 'status': status, 'job': job or self.job}
         if assignee is not None:
             kwargs['assignee'] = assignee
             kwargs['est_worker_time'] = timedelta(hours=1)
         if worker_queue is not None:
             kwargs['worker_queue'] = worker_queue
-        return Task.objects.create(**kwargs)
+        task = Task(**kwargs)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
+        return task
 
     def test_home_requires_authentication(self):
         self.client.logout()

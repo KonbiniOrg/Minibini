@@ -124,23 +124,29 @@ class GetSourcePoolTest(TestCase):
             accounting_category=self.category,
         )
 
-        self.task_billable = Task.objects.create(
-            job=self.job, name='Site demo', rate_scheme=self.scheme,
+        self.task_billable = Task(
+            job=self.job, name='Site demo',
         )
+        self.task_billable.stamp_from_scheme(self.scheme)
+        self.task_billable.save()
         # Complete the task so it is billable (Task 5: only complete tasks are billable).
         self.task_billable.status = Task.STATUS_COMPLETE
         self.task_billable.save()
 
-        self.task_empty = Task.objects.create(
-            job=self.job, name='Inspection', rate_scheme=self.scheme,
+        self.task_empty = Task(
+            job=self.job, name='Inspection',
         )
+        self.task_empty.stamp_from_scheme(self.scheme)
+        self.task_empty.save()
         # Complete the task so it is billable.
         self.task_empty.status = Task.STATUS_COMPLETE
         self.task_empty.save()
 
-        self.task_cancelled = Task.objects.create(
-            job=self.job, name='Cancelled work', rate_scheme=self.scheme,
+        self.task_cancelled = Task(
+            job=self.job, name='Cancelled work',
         )
+        self.task_cancelled.stamp_from_scheme(self.scheme)
+        self.task_cancelled.save()
         self.task_cancelled.status = Task.STATUS_CANCELLED
         self.task_cancelled.save()
 
@@ -322,9 +328,11 @@ class AddAtomsToNewLineItemTest(TestCase):
             rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.cat_labor,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Labor', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Labor',
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         start = timezone.now() - timezone.timedelta(hours=2)
         # Two bleps on self.task — task atom rolls up to 3h * $25 = $75
         self.blep1 = Blep.objects.create(
@@ -337,9 +345,11 @@ class AddAtomsToNewLineItemTest(TestCase):
             end_time=start + timezone.timedelta(hours=4),
         )
         # Second task with its own bleps — task atom rolls up to 1h * $25 = $25
-        self.task2 = Task.objects.create(
-            job=self.job, name='Cleanup', rate_scheme=self.scheme,
+        self.task2 = Task(
+            job=self.job, name='Cleanup',
         )
+        self.task2.stamp_from_scheme(self.scheme)
+        self.task2.save()
         Blep.objects.create(
             task=self.task2,
             user=self.user,
@@ -435,16 +445,20 @@ class AddAtomsToNewLineItemTest(TestCase):
             self.invoice, [{'type': 'task', 'id': self.task.pk}],
         )
         start = timezone.now() - timezone.timedelta(hours=10)
-        bundle_task1 = Task.objects.create(
-            job=self.job, name='Bundle 1', rate_scheme=self.scheme,
+        bundle_task1 = Task(
+            job=self.job, name='Bundle 1',
         )
+        bundle_task1.stamp_from_scheme(self.scheme)
+        bundle_task1.save()
         Blep.objects.create(
             task=bundle_task1, user=self.user, start_time=start,
             end_time=start + timezone.timedelta(hours=4),
         )
-        bundle_task2 = Task.objects.create(
-            job=self.job, name='Bundle 2', rate_scheme=self.scheme,
+        bundle_task2 = Task(
+            job=self.job, name='Bundle 2',
         )
+        bundle_task2.stamp_from_scheme(self.scheme)
+        bundle_task2.save()
         Blep.objects.create(
             task=bundle_task2, user=self.user,
             start_time=start + timezone.timedelta(hours=5),
@@ -475,10 +489,12 @@ class AddAtomsToNewLineItemTest(TestCase):
             rate=Decimal('22.00'), unit_label='sheet',
             accounting_category=self.cat_labor,
         )
-        entered_task = Task.objects.create(
-            job=self.job, name='Cutting', rate_scheme=entered_scheme,
+        entered_task = Task(
+            job=self.job, name='Cutting',
             actual_qty=Decimal('2.2'), status=Task.STATUS_COMPLETE,
         )
+        entered_task.stamp_from_scheme(entered_scheme)
+        entered_task.save()
         atoms = [{'type': 'task', 'id': entered_task.pk}]
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
         self.assertEqual(line_item.qty, Decimal('2.2'))
@@ -600,17 +616,21 @@ class AddAtomsToExistingLineItemTest(TestCase):
             accounting_category=self.category,
         )
         # task1 with a 2h blep — task atom rolls up to $50
-        self.task = Task.objects.create(
-            job=self.job, name='Labor', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Labor',
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         start = timezone.now() - timezone.timedelta(hours=4)
         Blep.objects.create(
             task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         # task2 with a 1h blep — task atom rolls up to $25
-        self.task2 = Task.objects.create(
-            job=self.job, name='Cleanup', rate_scheme=self.scheme,
+        self.task2 = Task(
+            job=self.job, name='Cleanup',
         )
+        self.task2.stamp_from_scheme(self.scheme)
+        self.task2.save()
         Blep.objects.create(
             task=self.task2,
             user=self.user,
@@ -725,18 +745,24 @@ class RemoveAtomsFromLineItemTest(TestCase):
         )
         # Three tasks, each with one blep, producing task atoms of $50/$25/$37.50
         start = timezone.now() - timezone.timedelta(hours=6)
-        self.task1 = Task.objects.create(job=self.job, name='Labor 1', rate_scheme=self.scheme)
+        self.task1 = Task(job=self.job, name='Labor 1')
+        self.task1.stamp_from_scheme(self.scheme)
+        self.task1.save()
         Blep.objects.create(
             task=self.task1, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
-        self.task2 = Task.objects.create(job=self.job, name='Labor 2', rate_scheme=self.scheme)
+        self.task2 = Task(job=self.job, name='Labor 2')
+        self.task2.stamp_from_scheme(self.scheme)
+        self.task2.save()
         Blep.objects.create(
             task=self.task2,
             user=self.user,
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )
-        self.task3 = Task.objects.create(job=self.job, name='Labor 3', rate_scheme=self.scheme)
+        self.task3 = Task(job=self.job, name='Labor 3')
+        self.task3.stamp_from_scheme(self.scheme)
+        self.task3.save()
         Blep.objects.create(
             task=self.task3,
             user=self.user,
@@ -878,11 +904,15 @@ class RemoveAtomsFromLineItemTest(TestCase):
         # self.line_item is line 1 (from setUp). Add two more line items, each
         # backed by a fresh task atom.
         start = timezone.now() - timezone.timedelta(hours=12)
-        task4 = Task.objects.create(job=self.job, name='Labor 4', rate_scheme=self.scheme)
+        task4 = Task(job=self.job, name='Labor 4')
+        task4.stamp_from_scheme(self.scheme)
+        task4.save()
         Blep.objects.create(
             task=task4, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=1),
         )
-        task5 = Task.objects.create(job=self.job, name='Labor 5', rate_scheme=self.scheme)
+        task5 = Task(job=self.job, name='Labor 5')
+        task5.stamp_from_scheme(self.scheme)
+        task5.save()
         Blep.objects.create(
             task=task5,
             user=self.user,
@@ -936,9 +966,11 @@ class DiscardDraftTest(TestCase):
             rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Labor', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Labor',
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
             task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -1104,7 +1136,9 @@ class TaskAttachedPartialRestockTest(TestCase):
             rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.cat,
         )
-        task = Task.objects.create(job=job, name='work', rate_scheme=scheme)
+        task = Task(job=job, name='work')
+        task.stamp_from_scheme(scheme)
+        task.save()
         pli = InventoryItem.objects.create(
             code='I-TAPR', accounting_category=self.cat,
             selling_price=Decimal('3.00'),
@@ -1154,9 +1188,11 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         )
         self.job = Job.objects.create(job_number='J-id', contact=contact)
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
-        self.task = Task.objects.create(
-            job=self.job, name='Setup', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Setup',
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         now = timezone.now()
         self.blep = Blep.objects.create(
             task=self.task,

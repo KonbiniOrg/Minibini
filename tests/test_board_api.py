@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 
 from tests.base import FixtureTestCase
-from apps.jobs.models import Task, Job
+from apps.jobs.models import Task, Job, RateScheme
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
 
@@ -30,8 +30,8 @@ class TaskWorkerQueueTest(FixtureTestCase):
             name='Test task',
             job=self.job,
             worker_queue=5,
-            rate_scheme_id=1,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
         task.save()
         task.refresh_from_db()
         self.assertEqual(task.worker_queue, 5)
@@ -41,8 +41,8 @@ class TaskWorkerQueueTest(FixtureTestCase):
             name='Test task',
             job=self.job,
             worker_queue=None,
-            rate_scheme_id=1,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
         task.save()
         task.refresh_from_db()
         self.assertIsNone(task.worker_queue)
@@ -94,18 +94,24 @@ class TaskReorderEndpointTest(FixtureTestCase):
             job_number='JOB-TEST-0001', name='Test Job',
             status='approved', contact=self.contact,
         )
-        self.task1 = Task.objects.create(
+        self.task1 = Task(
             name='Task 1', job=self.job, assignee=self.user, worker_queue=1,
-            rate_scheme_id=1, est_worker_time=timedelta(hours=1),
+            est_worker_time=timedelta(hours=1),
         )
-        self.task2 = Task.objects.create(
+        self.task1.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task1.save()
+        self.task2 = Task(
             name='Task 2', job=self.job, assignee=self.user, worker_queue=2,
-            rate_scheme_id=1, est_worker_time=timedelta(hours=1),
+            est_worker_time=timedelta(hours=1),
         )
-        self.task3 = Task.objects.create(
+        self.task2.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task2.save()
+        self.task3 = Task(
             name='Task 3', job=self.job, assignee=self.user, worker_queue=3,
-            rate_scheme_id=1, est_worker_time=timedelta(hours=1),
+            est_worker_time=timedelta(hours=1),
         )
+        self.task3.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task3.save()
 
     def test_reorder_updates_worker_queue(self):
         response = self.client.post(
@@ -147,10 +153,12 @@ class TaskReorderEndpointTest(FixtureTestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_assign_task_via_patch(self):
-        unassigned_task = Task.objects.create(
-            name='Unassigned', job=self.job, rate_scheme_id=1,
+        unassigned_task = Task(
+            name='Unassigned', job=self.job,
             est_worker_time=timedelta(hours=1),
         )
+        unassigned_task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        unassigned_task.save()
         response = self.client.post(
             f'/api/tasks/{unassigned_task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 4},
@@ -192,10 +200,12 @@ class TaskAssignEndpointTest(FixtureTestCase):
             status='approved', contact=self.contact,
         )
     def test_assign_task_to_worker(self):
-        task = Task.objects.create(
-            name='Unassigned', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='Unassigned', job=self.job,
             est_worker_time=timedelta(hours=1),
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 1},
@@ -209,9 +219,11 @@ class TaskAssignEndpointTest(FixtureTestCase):
     def test_assign_without_worker_time_prompts(self):
         """A task with no estimated worker time cannot be scheduled, so the
         assign endpoint signals the UI to prompt instead of assigning."""
-        task = Task.objects.create(
-            name='No estimate', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='No estimate', job=self.job,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 1},
@@ -225,9 +237,11 @@ class TaskAssignEndpointTest(FixtureTestCase):
     def test_assign_with_worker_time_provided(self):
         """Supplying est_worker_time alongside the assignee both schedules
         the duration and completes the assignment."""
-        task = Task.objects.create(
-            name='No estimate', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='No estimate', job=self.job,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={
@@ -243,10 +257,12 @@ class TaskAssignEndpointTest(FixtureTestCase):
 
     def test_assign_task_that_already_has_worker_time(self):
         """No prompt when the task already carries an estimate."""
-        task = Task.objects.create(
-            name='Has estimate', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='Has estimate', job=self.job,
             est_worker_time=timedelta(hours=2),
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 1},
@@ -257,9 +273,11 @@ class TaskAssignEndpointTest(FixtureTestCase):
         self.assertEqual(task.assignee_id, self.user.pk)
 
     def test_assign_with_zero_duration_rejected(self):
-        task = Task.objects.create(
-            name='No estimate', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='No estimate', job=self.job,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={
@@ -273,9 +291,11 @@ class TaskAssignEndpointTest(FixtureTestCase):
         self.assertIsNone(task.assignee_id)
 
     def test_assign_with_unparseable_duration_rejected(self):
-        task = Task.objects.create(
-            name='No estimate', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='No estimate', job=self.job,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={
@@ -290,9 +310,11 @@ class TaskAssignEndpointTest(FixtureTestCase):
         """Unassigning carries no duration requirement, even for a task that
         somehow holds an assignee without an estimate. The model invariant
         blocks creating one, so force the legacy state via .update()."""
-        task = Task.objects.create(
-            name='Assigned, no estimate', job=self.job, rate_scheme_id=1,
+        task = Task(
+            name='Assigned, no estimate', job=self.job,
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         Task.objects.filter(pk=task.pk).update(
             assignee=self.user, worker_queue=1,
         )
@@ -306,11 +328,13 @@ class TaskAssignEndpointTest(FixtureTestCase):
         self.assertIsNone(task.assignee_id)
 
     def test_unassign_task(self):
-        task = Task.objects.create(
+        task = Task(
             name='Assigned', job=self.job,
-            assignee=self.user, worker_queue=1, rate_scheme_id=1,
+            assignee=self.user, worker_queue=1,
             est_worker_time=timedelta(hours=1),
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={'assignee': None, 'worker_queue': None},
@@ -324,7 +348,9 @@ class TaskAssignEndpointTest(FixtureTestCase):
     def test_assign_requires_permission(self):
         viewer = User.objects.create_user(username='viewer', password='testpass')
         self.client.login(username='viewer', password='testpass')
-        task = Task.objects.create(name='Task', job=self.job, rate_scheme_id=1)
+        task = Task(name='Task', job=self.job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 1},

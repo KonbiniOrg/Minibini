@@ -37,10 +37,12 @@ class GetSourcePoolTest(TestCase):
         )
 
         # Task atom with billing fields (no separate PlanCharge needed)
-        self.pt = Task.objects.create(
+        self.pt = Task(
             job=self.job, name='Setup',
-            rate_scheme=self.scheme, est_qty=Decimal('2'),
+            est_qty=Decimal('2'),
         )
+        self.pt.stamp_from_scheme(self.scheme)
+        self.pt.save()
 
         # Material atom (task-less)
         self.pm = Material.objects.create(
@@ -104,10 +106,12 @@ class GetSourcePoolTest(TestCase):
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
-        pt = Task.objects.create(
+        pt = Task(
             job=self.job, name='Inline Task',
-            rate_scheme=scheme, est_qty=Decimal('3.0'),
+            est_qty=Decimal('3.0'),
         )
+        pt.stamp_from_scheme(scheme)
+        pt.save()
 
         pool = EstimateWizardService.get_source_pool(self.estimate)
 
@@ -134,10 +138,12 @@ class AddAtomsToNewLineItemTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt = Task.objects.create(
+        self.pt = Task(
             job=self.job, name='Setup',
-            rate_scheme=self.scheme, est_qty=Decimal('2'),
+            est_qty=Decimal('2'),
         )
+        self.pt.stamp_from_scheme(self.scheme)
+        self.pt.save()
         self.pm = Material.objects.create(
             job=self.job, description='steel', quantity=Decimal('3'),
             sell_price=Decimal('5'), accounting_category=self.cat2,
@@ -238,14 +244,18 @@ class AddAtomsToExistingLineItemTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt1 = Task.objects.create(
+        self.pt1 = Task(
             job=self.job, name='A',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
-        self.pt2 = Task.objects.create(
+        self.pt1.stamp_from_scheme(self.scheme)
+        self.pt1.save()
+        self.pt2 = Task(
             job=self.job, name='B',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
+        self.pt2.stamp_from_scheme(self.scheme)
+        self.pt2.save()
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number=self.job.job_number, version=1,
             status=Estimate.STATUS_DRAFT,
@@ -303,14 +313,18 @@ class RemoveAtomsFromLineItemTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt1 = Task.objects.create(
+        self.pt1 = Task(
             job=self.job, name='A',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
-        self.pt2 = Task.objects.create(
+        self.pt1.stamp_from_scheme(self.scheme)
+        self.pt1.save()
+        self.pt2 = Task(
             job=self.job, name='B',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
+        self.pt2.stamp_from_scheme(self.scheme)
+        self.pt2.save()
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number=self.job.job_number, version=1,
             status=Estimate.STATUS_DRAFT,
@@ -397,14 +411,18 @@ class RemoveAtomsFromLineItemTest(TestCase):
         """When all atoms are removed and the line item auto-deletes, the
         remaining siblings must be renumbered to close the gap."""
         # self.li is line 1 (from setUp). Add two more line items so we have 1, 2, 3.
-        pt3 = Task.objects.create(
+        pt3 = Task(
             job=self.job, name='C',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
-        pt4 = Task.objects.create(
+        pt3.stamp_from_scheme(self.scheme)
+        pt3.save()
+        pt4 = Task(
             job=self.job, name='D',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
+        pt4.stamp_from_scheme(self.scheme)
+        pt4.save()
         li2 = EstimateWizardService.add_atoms_to_new_line_item(
             self.estimate, [{'type': 'task', 'id': pt3.pk}],
         )
@@ -452,10 +470,12 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
             name='Hourly-d', algorithm='entered_qty', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.cat,
         )
-        self.pt = Task.objects.create(
+        self.pt = Task(
             job=self.job, name='Cut sign blank',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
+        self.pt.stamp_from_scheme(self.scheme)
+        self.pt.save()
         self.pm = Material.objects.create(
             job=self.job, description='3/4" plywood',
             quantity=Decimal('2'), unit_cost=Decimal('5'),

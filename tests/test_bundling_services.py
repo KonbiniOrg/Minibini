@@ -44,18 +44,21 @@ class ReorderServiceTest(BundlingTestBase):
 
     def test_unbundled_only_swap(self):
         """Simple swap with no bundles present."""
-        a = Task.objects.create(
-            job=self.job, name='A', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        a = Task(
+            job=self.job, name='A', sort_order=1, est_qty=Decimal('1'),
         )
-        b = Task.objects.create(
-            job=self.job, name='B', sort_order=2,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        a.stamp_from_scheme(self.scheme)
+        a.save()
+        b = Task(
+            job=self.job, name='B', sort_order=2, est_qty=Decimal('1'),
         )
-        c = Task.objects.create(
-            job=self.job, name='C', sort_order=3,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        b.stamp_from_scheme(self.scheme)
+        b.save()
+        c = Task(
+            job=self.job, name='C', sort_order=3, est_qty=Decimal('1'),
         )
+        c.stamp_from_scheme(self.scheme)
+        c.save()
 
         items_qs = Task.objects.filter(job=self.job)
         BundlingService.reorder_container_items(
@@ -70,10 +73,11 @@ class ReorderServiceTest(BundlingTestBase):
 
     def test_cannot_move_past_boundary(self):
         """Moving beyond boundaries raises ValidationError."""
-        t1 = Task.objects.create(
-            job=self.job, name='Only', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        t1 = Task(
+            job=self.job, name='Only', sort_order=1, est_qty=Decimal('1'),
         )
+        t1.stamp_from_scheme(self.scheme)
+        t1.save()
         items_qs = Task.objects.filter(job=self.job)
         with self.assertRaises(ValidationError):
             BundlingService.reorder_container_items(

@@ -97,10 +97,12 @@ class LastInvoicePaidJobCompletedTest(TestCase):
             name='Sig hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=cat,
         )
-        Task.objects.create(
-            job=self.job, name='Done', rate_scheme=scheme,
+        t = Task(
+            job=self.job, name='Done',
             status=Task.STATUS_COMPLETE,
         )
+        t.stamp_from_scheme(scheme)
+        t.save()
 
     def test_job_completed_when_single_invoice_paid(self):
         inv = Invoice.objects.create(job=self.job, invoice_number='INV-TEST-0001', status=Invoice.STATUS_OPEN)

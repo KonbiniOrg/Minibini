@@ -188,11 +188,19 @@ class MaterialAssignTaskApiTest(APITestCase):
         contact.business = biz; contact.save()
         self.job = Job.objects.create(job_number='JOB-ASGN-1', contact=contact)
         from apps.jobs.models import Task
-        self.task_a = Task.objects.create(name='A', job=self.job, rate_scheme=self.scheme)
-        self.task_b = Task.objects.create(name='B', job=self.job, rate_scheme=self.scheme)
-        self.task_done = Task.objects.create(name='Done', job=self.job, status='complete', rate_scheme=self.scheme)
+        self.task_a = Task(name='A', job=self.job)
+        self.task_a.stamp_from_scheme(self.scheme)
+        self.task_a.save()
+        self.task_b = Task(name='B', job=self.job)
+        self.task_b.stamp_from_scheme(self.scheme)
+        self.task_b.save()
+        self.task_done = Task(name='Done', job=self.job, status='complete')
+        self.task_done.stamp_from_scheme(self.scheme)
+        self.task_done.save()
         self.other_job = Job.objects.create(job_number='JOB-ASGN-2', contact=contact)
-        self.other_task = Task.objects.create(name='Other', job=self.other_job, rate_scheme=self.scheme)
+        self.other_task = Task(name='Other', job=self.other_job)
+        self.other_task.stamp_from_scheme(self.scheme)
+        self.other_task.save()
 
     def _make(self, task=None):
         from apps.inventory.services import MaterialService

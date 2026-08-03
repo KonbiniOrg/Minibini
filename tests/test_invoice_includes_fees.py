@@ -63,7 +63,9 @@ class SeedAllAtomsIncludesFeesTest(TestCase):
             name='Hourly-SAF', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100.00'), unit_label='hour', accounting_category=self.cat,
         )
-        self.task = Task.objects.create(job=self.job, name='SAF Labor', rate_scheme=self.scheme)
+        self.task = Task(job=self.job, name='SAF Labor')
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         start = timezone.now() - timezone.timedelta(hours=2)
         Blep.objects.create(
             task=self.task, user=self.user,
@@ -130,9 +132,11 @@ class SeedAllAtomsIncludesFeesTest(TestCase):
     def test_incomplete_task_not_seeded(self):
         """A pending task produces a 'not_billable' atom — seed skips it."""
         # Add a second incomplete task
-        pending_task = Task.objects.create(
-            job=self.job, name='Pending', rate_scheme=self.scheme,
-        )  # status = pending by default
+        pending_task = Task(
+            job=self.job, name='Pending',
+        )
+        pending_task.stamp_from_scheme(self.scheme)
+        pending_task.save()  # status = pending by default
 
         count = InvoiceWizardService.seed_all_atoms(self.invoice)
         # Still 3: the pending task is not_billable and is skipped

@@ -139,11 +139,12 @@ class InvoiceLineItemModelTest(TestCase):
             name='S-inv', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job,
             name="Test Task",
-            rate_scheme=self.scheme,
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,
             po_number="PO001",

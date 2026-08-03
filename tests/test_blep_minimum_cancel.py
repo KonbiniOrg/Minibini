@@ -15,7 +15,7 @@ from tests.base import BaseTestCase
 from apps.api.users.services import UserAdminService
 from apps.core.models import User, Shift
 from apps.core.services import ShiftService
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.jobs.services import BlepService, TaskLifecycleService
 
 
@@ -26,7 +26,9 @@ class BlepMinimumCancelTest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         self.user = User.objects.create_user(username='min_cancel_worker', password='x')
         self.now = timezone.now()
         # Open shift starting well in the past: clock_out will close it at `now`,
@@ -131,9 +133,11 @@ class CloseOpenAutocommitTest(TransactionTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(
-            name='T', job=self.job, rate_scheme_id=1
+        self.task = Task(
+            name='T', job=self.job
         )
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def _open_sub_minute_blep(self, user):
         """An OPEN sub-minute blep on the in_progress task (first activity)."""

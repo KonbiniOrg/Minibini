@@ -4,7 +4,7 @@ from datetime import timedelta
 from tests.base import BaseTestCase
 from apps.core.models import User, Shift
 from apps.core.services import ShiftService
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.jobs.services import BlepService, TaskLifecycleService
 
 
@@ -17,7 +17,9 @@ class BlepShiftIntegrationTest(BaseTestCase):
         # active job; the workflow path to get there is irrelevant to this test.
         Job.objects.filter(pk=self.job.pk).update(status=Job.STATUS_IN_PROGRESS)
         self.job.refresh_from_db()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def test_live_start_auto_clocks_in(self):
         self.assertIsNone(ShiftService.open_shift_for(self.user))

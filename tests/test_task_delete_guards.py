@@ -26,9 +26,11 @@ class TaskDeleteGuardsTest(TestCase):
             name='S-del', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('45'), unit_label='hour', accounting_category=self.ac,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Doomed', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Doomed',
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
     def test_consumed_material_blocks_delete(self):
         Material.objects.create(

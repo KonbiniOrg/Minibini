@@ -59,10 +59,13 @@ class ItemRefResolutionTests(TestCase):
         return InvoiceLineItem.objects.create(**defaults)
 
     def _task(self, service_item=None, name='T'):
-        return Task.objects.create(
-            job=self.job, name=name, rate_scheme=self.scheme,
+        task = Task(
+            job=self.job, name=name,
             service_item=service_item,
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        return task
 
     def _source(self, line, atom):
         if isinstance(atom, Task):

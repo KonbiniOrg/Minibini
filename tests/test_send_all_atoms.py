@@ -39,16 +39,20 @@ class SendAllAtomsBase(TestCase):
             job_number='JOB-SAA-1', contact=self.contact,
             status=Job.STATUS_IN_PROGRESS,
         )
-        self.task_a = Task.objects.create(
-            job=self.job, name='A', rate_scheme=self.scheme,
+        self.task_a = Task(
+            job=self.job, name='A',
             est_qty=Decimal('2'), actual_qty=Decimal('2'),
             status=Task.STATUS_COMPLETE,
         )
-        self.task_b = Task.objects.create(
-            job=self.job, name='B', rate_scheme=self.scheme,
+        self.task_a.stamp_from_scheme(self.scheme)
+        self.task_a.save()
+        self.task_b = Task(
+            job=self.job, name='B',
             est_qty=Decimal('3'), actual_qty=Decimal('3'),
             status=Task.STATUS_COMPLETE,
         )
+        self.task_b.stamp_from_scheme(self.scheme)
+        self.task_b.save()
         self.material = Material.objects.create(
             job=self.job, description='loose sheet',
             quantity=Decimal('1'), sell_price=Decimal('20.00'),

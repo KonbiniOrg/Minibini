@@ -41,9 +41,9 @@ class SubtaskGuardTestBase(TestCase):
             job_number='GRD-001', name='Guard Job', contact=self.contact,
         )
         self.scheme = _scheme('a')
-        self.parent = Task.objects.create(
-            job=self.job, name='Parent', source_scheme=self.scheme,
-        )
+        self.parent = Task(job=self.job, name='Parent')
+        self.parent.stamp_from_scheme(self.scheme)
+        self.parent.save()
 
     def _post_subtask(self, parent, name='Sub', scheme=None):
         return self.client.post(
@@ -73,7 +73,8 @@ class SubtaskCreateGuardsTest(SubtaskGuardTestBase):
         old.is_active = False
         old.save()
         response = self._post_subtask(self.parent, scheme=old)
-        self.assertEqual(response.status_code, 400)
+        # SchemeInactiveError renders as 409 (Task 3/7), not 400.
+        self.assertEqual(response.status_code, 409)
         self.assertFalse(Task.objects.filter(parent_task=self.parent).exists())
 
     def test_percentage_scheme_rejects_subtask_create(self):
@@ -103,9 +104,9 @@ class SubtaskCreateGuardsTest(SubtaskGuardTestBase):
 
         # A parent task that's complete refuses subtasks; use a fresh
         # sibling parent to host the new subtask.
-        sibling = Task.objects.create(
-            job=self.job, name='Sibling parent', source_scheme=self.scheme,
-        )
+        sibling = Task(job=self.job, name='Sibling parent')
+        sibling.stamp_from_scheme(self.scheme)
+        sibling.save()
         # Creating the sibling itself already reopens; force the job back
         # to work_complete so the SUBTASK create is what reopens it.
         Task.objects.filter(pk=sibling.pk).update(status=Task.STATUS_COMPLETE)
@@ -123,10 +124,11 @@ class SubtaskDepthGuardTest(SubtaskGuardTestBase):
 
     def setUp(self):
         super().setUp()
-        self.subtask = Task.objects.create(
-            job=self.job, name='Child', source_scheme=self.scheme,
-            parent_task=self.parent,
+        self.subtask = Task(
+            job=self.job, name='Child', parent_task=self.parent,
         )
+        self.subtask.stamp_from_scheme(self.scheme)
+        self.subtask.save()
 
     def test_subtasks_endpoint_rejects_grandchild(self):
         response = self._post_subtask(self.subtask, name='Grandchild')

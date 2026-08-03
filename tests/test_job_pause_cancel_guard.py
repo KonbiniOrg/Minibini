@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from tests.base import BaseTestCase
 from apps.core.models import User
-from apps.jobs.models import Blep, Job, Task
+from apps.jobs.models import Blep, Job, RateScheme, Task
 from apps.jobs.services import JobService
 
 
@@ -25,7 +25,10 @@ def _make_job(contact, *statuses):
 
 
 def _make_task(job):
-    return Task.objects.create(name='Guard-Test Task', job=job, rate_scheme_id=1)
+    t = Task(name='Guard-Test Task', job=job)
+    t.stamp_from_scheme(RateScheme.objects.get(pk=1))
+    t.save()
+    return t
 
 
 class OpenBlepBlocksHoldTest(BaseTestCase):

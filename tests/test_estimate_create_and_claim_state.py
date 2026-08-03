@@ -134,11 +134,12 @@ class AtomClaimStateTest(TestCase):
             unit_label='hour',
             accounting_category=self.cat,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job,
             name='ACS Task',
-            rate_scheme=self.scheme,
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         self.material = Material.objects.create(
             job=self.job,
             description='ACS Material',

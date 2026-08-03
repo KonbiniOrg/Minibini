@@ -4,7 +4,7 @@ under-the-minimum cancel path. See docs/plans/2026-05-24-blep-handling-changes.m
 from rest_framework.test import APIClient
 
 from tests.base import BaseTestCase
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.core.models import User
 
 
@@ -18,7 +18,9 @@ class CancelWorkAPITest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(job=self.job, name='T', rate_scheme_id=1)
+        self.task = Task(job=self.job, name='T')
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def test_cancel_work_deletes_blep_and_reverts_task(self):
         self.client.post(f'/api/tasks/{self.task.pk}/start-work/')
