@@ -199,6 +199,56 @@ class EstimatePriceSignTest(LineEntryKindsSetup):
         )
         self.assertEqual(li.price, Decimal('0.00'))
 
+    # ── I1 review finding: update-path sign rules ──────────────────
+    # A bare hand-line still enforces the sign rules on PATCH; a
+    # wizard-composed (source-bearing) line is exempt — its price derives
+    # from the atoms it claims, not a freeform_kind the caller chose.
+
+    def test_update_bare_work_line_to_negative_price_rejected(self):
+        li = EstimateService.add_line_item(
+            self.estimate.pk, description='Cutting', qty=Decimal('1'),
+            price=Decimal('50.00'), accounting_category=self.cat.pk,
+            freeform_kind=EstimateLineItem.KIND_WORK,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.update_line_item(li.pk, price=Decimal('-5.00'))
+        self.assertIn('price', ctx.exception.message_dict)
+
+    def test_update_bare_fee_line_to_zero_price_rejected(self):
+        li = EstimateService.add_line_item(
+            self.estimate.pk, description='Credit', qty=Decimal('1'),
+            price=Decimal('-10.00'), accounting_category=self.cat.pk,
+            freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.update_line_item(li.pk, price=Decimal('0.00'))
+        self.assertIn('price', ctx.exception.message_dict)
+
+    def test_update_sourced_negative_line_description_succeeds(self):
+        """A wizard-composed line built from atoms (e.g. a bundle including
+        a negative Fee atom) carries a negative price with no freeform_kind
+        at all — editing its description must not 400 on the sign rules
+        meant for hand-authored lines."""
+        from apps.estimates.models import EstimateLineItemSource
+        from apps.jobs.models import Fee
+
+        fee = Fee.objects.create(
+            job=self.job, description='Bundled credit',
+            unit_rate=Decimal('-15.00'), accounting_category=self.cat,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, description='Bundle', qty=Decimal('1'),
+            price=Decimal('-15.00'), accounting_category=self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_FEE,
+            source_pk=fee.pk,
+        )
+        updated = EstimateService.update_line_item(li.pk, description='Bundle (renamed)')
+        self.assertEqual(updated.description, 'Bundle (renamed)')
+        self.assertEqual(updated.price, Decimal('-15.00'))
+
 
 class EstimateFeeWorkACRequiredTest(LineEntryKindsSetup):
 

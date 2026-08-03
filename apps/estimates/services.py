@@ -280,8 +280,20 @@ class EstimateService:
         assignment), so this coerces defensively via `Decimal(str(...))`
         (the same idiom as `_decimal_or_invalid`) rather than assuming a
         Decimal. An unparseable value is left for `full_clean()` to reject
-        with its own message."""
+        with its own message.
+
+        A line with existing source rows (wizard-composed from atoms — e.g.
+        a bundle that includes a negative Fee atom) is exempt from these
+        sign/zero rules entirely: its price derives from the atoms it
+        claims, not from a freeform_kind the caller chose, so the same
+        negative/zero shape that would be illegal on a hand-authored line is
+        legitimate here. Mirrors the sourced-line AC exemption in
+        update_line_item (`has_source` there). Only reachable on an update
+        (an add-time line is always new — `li.pk` is None — and add paths
+        never carry a source row yet)."""
         if getattr(li, 'adjustment_service_id', None) is not None:
+            return
+        if li.pk is not None and li.sources.exists():
             return
         if li.price is None:
             return
