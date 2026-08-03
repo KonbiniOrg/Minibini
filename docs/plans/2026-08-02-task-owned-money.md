@@ -314,6 +314,28 @@ that. Rules:
   elapsed-billed parent decomposed mid-flight, actual hours roll up:
   pre-decomposition own bleps + children's.
 
+**Deliverables bridge** (a §9 parent's headline and a Deliverable are the
+same three fields — `description + qty + units` — so kill the double
+entry, nothing more):
+
+- **Task → Deliverable**: "Add as deliverable" on a quantity-bearing
+  parent task copies the three fields into a new Deliverable.
+- **Deliverable → Task**: "Create work structure" on a Deliverable mints
+  a top-level task with the same three fields, ready to receive subtasks
+  (product-first estimators list what the customer buys, then hang work
+  off each).
+- **`Deliverable.source_task`** — nullable `SET_NULL` provenance FK, same
+  pattern and invariant as `source_scheme` (nothing computes through it).
+  Powers a "deliverable ✓" chip on the task, a back-link on the
+  deliverable, and lets the copy actions hide once linked.
+- **No sync.** CO changes qty 10 → 12: a human updates the deliverable;
+  at most a passive mismatch badge (task **est** qty vs `qty_ordered` —
+  deliberately not actuals: 9-of-10 made changes billing via parent
+  completion, but the customer still ordered 10; partial fulfillment is
+  already `ShipmentItem.qty`'s job). Rejected: live sync, auto-generation
+  at acceptance, deliverables driving task structure — coupling
+  fulfillment to billing for no gain.
+
 **Wizard facts recorded** (code-verified 2026-08-02, to avoid
 re-derivation): presentation qty/units on bundled lines **already
 exists** — in-sync is defined as `price == round(Σ atoms / qty, 2)`
@@ -354,8 +376,9 @@ Estimate hand-line AC requirement unchanged.
 - Multi-Materials-per-PO-line plan (schema already permits; code assumes
   one via `linked_material`'s `.first()`) — interacts with §7 only in that
   multi-job POs keep variance at PO granularity.
-- Deliverables/shipment linkage for §9 structures (10 widgets →
-  Deliverable records) untouched by this design; existing machinery.
+- Deliverables bridge resolved in §9 (two copy actions + `source_task`
+  provenance + passive mismatch badge; no sync). Shipment machinery
+  untouched.
 - Migration sequencing and phasing (task money block → Fee re-scope →
   nullable AC + fallback → preset default/retirement) belongs to the
   implementation plan, not this spec.
