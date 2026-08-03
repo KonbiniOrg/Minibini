@@ -151,6 +151,10 @@ class ChangeOrderWorkLineTestBase(TestCase):
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001',
         )
+        self.scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
+        )
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-2026-0001',
             status=Estimate.STATUS_ACCEPTED,
@@ -186,6 +190,34 @@ class ChangeOrderWorkLineTestBase(TestCase):
             estimate=self.estimate, line_number=line_number, description='Custom fitting',
             qty=est_qty, price=price, units='ea', accounting_category=self.cat,
             freeform_kind=EstimateLineItem.KIND_WORK,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=line,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+        return line, task
+
+    def _adhoc_task_backed_line(self, line_number=1, est_qty=Decimal('4')):
+        """A genuinely ad-hoc Task — created directly via
+        TaskService.create_direct (not from a ServiceItem, not from a bare
+        freeform_kind='work' hand-line), then wholesale-claimed onto a fresh
+        estimate line the way EstimateWizardService.add_atoms_to_new_line_item
+        does (a line with NO freeform_kind and NO service_item — the wizard
+        never sets either). This is the population the CRITICAL review
+        finding identified: like a flat work Task, this Task's own
+        service_item_id is None too, so retirement must NOT use any atom
+        field to tell them apart — only the CLAIMING line's freeform_kind
+        (None here, vs. 'work' for a real bare work hand-line) is reliable.
+        """
+        from apps.jobs.services import TaskService
+        task = TaskService.create_direct(
+            job=self.job, name='Site cleanup', rate_scheme_id=self.scheme.pk,
+            est_qty=est_qty,
+        )
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=line_number, description='Site cleanup',
+            qty=est_qty, price=Decimal('100.00'), units='hour', accounting_category=self.cat,
         )
         EstimateLineItemSource.objects.create(
             estimate_line_item=line,
@@ -361,3 +393,62 @@ class CORemoveWorkLineTest(ChangeOrderWorkLineTestBase):
         self._accept(co)
 
         self.assertTrue(Task.objects.filter(pk=task.pk).exists())
+
+
+class COAdHocTaskRetirementTest(ChangeOrderWorkLineTestBase):
+    """CRITICAL review finding: a Task's own fields (service_item_id,
+    source_scheme) cannot distinguish a flat work Task from an ordinary
+    ad-hoc Task (TaskService.create_direct, no ServiceItem) that was
+    wholesale-claimed onto an estimate line via the wizard's
+    add_atoms_to_new_line_item — both end up with service_item_id=None. The
+    CO retirement discriminator must key off the CLAIMING line's
+    freeform_kind instead ('work' → delete-if-pristine; anything else,
+    including NULL, → cancel exactly as before Task 3). Covers both retire
+    routes (remove and replace)."""
+
+    def _remove_line(self, co, target):
+        return ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REMOVE,
+            target_line_item=target.pk,
+        )
+
+    def test_remove_adhoc_task_cancels_not_deletes(self):
+        line, task = self._adhoc_task_backed_line()
+        co = self._make_co()
+        self._remove_line(co, line)
+        self._accept(co)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, Task.STATUS_CANCELLED)
+        self.assertTrue(Task.objects.filter(pk=task.pk).exists())
+
+    def test_remove_adhoc_task_with_bleps_cancels_and_preserves_bleps(self):
+        line, task = self._adhoc_task_backed_line()
+        worker = User.objects.create(username='worker')
+        now = timezone.now()
+        blep = Blep.objects.create(user=worker, task=task, start_time=now, end_time=now)
+        co = self._make_co()
+        self._remove_line(co, line)
+        self._accept(co)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, Task.STATUS_CANCELLED)
+        self.assertTrue(Blep.objects.filter(pk=blep.pk).exists())
+
+    def test_replace_adhoc_task_cancels_old_not_deletes(self):
+        line, old_task = self._adhoc_task_backed_line(est_qty=Decimal('4'))
+        co = self._make_co()
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REPLACE, target_line_item=line.pk,
+            description='Site cleanup (more)', qty=Decimal('6'), price=Decimal('100.00'),
+            units='hour',
+        )
+        self._accept(co)
+
+        old_task.refresh_from_db()
+        self.assertEqual(old_task.status, Task.STATUS_CANCELLED)
+        self.assertTrue(Task.objects.filter(pk=old_task.pk).exists())
+        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
+        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_TASK)
+        new_task = Task.objects.get(pk=src.source_pk)
+        self.assertEqual(new_task.est_qty, Decimal('6'))

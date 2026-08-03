@@ -103,12 +103,12 @@ class ChangeOrderAcceptanceService:
                               or li.freeform_kind in (li.KIND_MATERIAL, li.KIND_WORK))
             if mirror is not None or has_descriptor:
                 ChangeOrderAcceptanceService._crystallize(job, li, mirror=mirror, counts=counts)
-            for source_type, atom in atoms:
-                ChangeOrderAcceptanceService._retire(job, source_type, atom, counts)
+            for source_type, atom, claiming_kind in atoms:
+                ChangeOrderAcceptanceService._retire(job, source_type, atom, claiming_kind, counts)
 
         for li in removes:
-            for source_type, atom in ChangeOrderAcceptanceService._current_atoms(li.target_line_item):
-                ChangeOrderAcceptanceService._retire(job, source_type, atom, counts)
+            for source_type, atom, claiming_kind in ChangeOrderAcceptanceService._current_atoms(li.target_line_item):
+                ChangeOrderAcceptanceService._retire(job, source_type, atom, claiming_kind, counts)
 
         InventoryService.create_earmarks_for_job(job)
         return counts
@@ -119,12 +119,28 @@ class ChangeOrderAcceptanceService:
 
     @staticmethod
     def _current_atoms(target_line_item):
-        """Resolve an estimate line to its *current* atoms as [(type, atom), …].
+        """Resolve an estimate line to its *current* atoms as
+        [(type, atom, claiming_kind), …].
 
         The current atom is the one crystallized by the latest accepted-CO
         replace line targeting this estimate line (multi-CO chain), falling
         back to the estimate line's own source rows. Sources whose atom no
         longer exists (already retired) are skipped.
+
+        ``claiming_kind`` is the CLAIMING line's own ``freeform_kind`` (the
+        EstimateLineItem or ChangeOrderLineItem whose source row currently
+        resolves to this atom) — 'work' iff that line crystallized a bare
+        freeform_kind='work' hand-line; NULL for every other line shape
+        (service_item lines, inventory_item lines, and atom-backed lines
+        whose atom was claimed onto them wholesale — e.g. the wizard's
+        add_atoms_to_new_line_item, which never sets freeform_kind). _retire
+        uses this, NOT any field on the atom itself, to tell a flat work Task
+        apart from every other Task — a Task's own fields (service_item_id,
+        source_scheme) can't: a plain ad-hoc Task made via
+        TaskService.create_direct also has service_item_id=None, and a bare
+        CO replace's mirrored Task also ends up with source_scheme=None
+        (copy_fields() excludes it as pure provenance) regardless of what it
+        mirrors.
         """
         from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
 
@@ -150,9 +166,16 @@ class ChangeOrderAcceptanceService:
         atoms = []
         for src in source_rows:
             try:
-                atoms.append((src.source_type, src.resolve()))
+                atom = src.resolve()
             except Exception:
                 continue  # dangling row — atom already retired
+            # EstimateLineItemSource carries `estimate_line_item`;
+            # ChangeOrderLineItemSource carries `change_order_line_item`.
+            # Exactly one of the two attributes exists on any given `src`.
+            claiming_line = (getattr(src, 'estimate_line_item', None)
+                              or getattr(src, 'change_order_line_item', None))
+            claiming_kind = claiming_line.freeform_kind if claiming_line is not None else None
+            atoms.append((src.source_type, atom, claiming_kind))
         return atoms
 
     @staticmethod
@@ -160,7 +183,7 @@ class ChangeOrderAcceptanceService:
         """Snapshot of the primary current atom, used to type a bare replace."""
         if not atoms:
             return None
-        source_type, atom = atoms[0]
+        source_type, atom, claiming_kind = atoms[0]
         if source_type == 'task':
             return {
                 'type': 'task',
@@ -334,28 +357,35 @@ class ChangeOrderAcceptanceService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _retire(job, source_type, atom, counts):
+    def _retire(job, source_type, atom, claiming_kind, counts):
         from apps.invoicing.claims import InvoiceClaimService
         from apps.invoicing.models import InvoiceLineItemSource
         from apps.inventory.models import Material
         from apps.jobs.models import Blep, Task
         from apps.jobs.services import TaskLifecycleService
+        from apps.estimates.models import EstimateLineItem
 
         if source_type == 'task':
-            if atom.service_item_id is None:
-                # Flat work task (task-owned money Phase 2, Task 3): it was
-                # crystallized straight from a bare hand-line, never carried
-                # a catalog/scheduling promise, and has (normally) no bleps
-                # yet — retire it like a Fee (delete), not like a
-                # service-backed Task (cancel, bleps preserved). Re-apply the
-                # guards TaskService.delete_task enforces (bleps, in-progress/
-                # complete) so the same failure surfaces as a ValidationError;
-                # the "claimed by a non-draft document" guard from
-                # delete_task is deliberately NOT re-applied here — retiring
-                # THIS claim (the CO/estimate source row that resolved this
-                # atom) is exactly what this call is doing, mirroring how the
-                # Fee branch below skips atom_is_claimed and only checks
-                # is_invoiced.
+            if claiming_kind == EstimateLineItem.KIND_WORK:
+                # Flat work task (task-owned money Phase 2, Task 3): its
+                # CLAIMING line (the EstimateLineItem or ChangeOrderLineItem
+                # whose source row currently resolves to this atom) is a bare
+                # freeform_kind='work' hand-line — it was crystallized
+                # straight from that hand-line, never carried a
+                # catalog/scheduling promise, and has (normally) no bleps yet
+                # — retire it like a Fee (delete), not like a service-backed
+                # or ad-hoc/wizard-claimed Task (cancel, bleps preserved).
+                # Do NOT discriminate on any field of the atom itself
+                # (service_item_id, source_scheme) — see _current_atoms'
+                # docstring for why neither reliably identifies this
+                # population. Re-apply the guards TaskService.delete_task
+                # enforces (bleps, in-progress/complete) so the same failure
+                # surfaces as a ValidationError; the "claimed by a non-draft
+                # document" guard from delete_task is deliberately NOT
+                # re-applied here — retiring THIS claim (the CO/estimate
+                # source row that resolved this atom) is exactly what this
+                # call is doing, mirroring how the Fee branch below skips
+                # atom_is_claimed and only checks is_invoiced.
                 if InvoiceClaimService.is_invoiced(
                         InvoiceLineItemSource.SOURCE_TASK, atom.pk):
                     return  # billed money: leave it alone
