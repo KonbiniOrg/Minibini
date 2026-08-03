@@ -92,6 +92,8 @@ def build_seed(c):
     assigns them on load). Indexes the seed data for downstream builders:
       - c.ac_by_code / c.ac_svc_pk / c.ac_mat_pk
       - c.scheme_by_name
+      - c.scheme_fields_by_pk (full RateScheme fields, for task money-block
+        stamping — see _stamp_money_block)
     Also advances the jobs.ratescheme pk counter past the seeded schemes so
     any derived (cloned) scheme gets a fresh pk.
     """
@@ -120,7 +122,7 @@ def build_seed(c):
             c.ac_by_code[fields['code']] = rec.get('pk')
         elif model == 'jobs.ratescheme':
             c.scheme_by_name[fields['name']] = rec.get('pk')
-            c.scheme_algorithm_by_pk[rec.get('pk')] = fields.get('algorithm')
+            c.scheme_fields_by_pk[rec.get('pk')] = fields
             if isinstance(rec.get('pk'), int):
                 max_rs_pk = max(max_rs_pk, rec['pk'])
 
@@ -1028,6 +1030,30 @@ def _scheme_pk(c, scheme_name):
             or c.scheme_by_name.get(_CHECKLIST_DEFAULT_SCHEME))
 
 
+def _stamp_money_block(c, scheme_pk, modifier_keys=None):
+    """Copy a seed RateScheme's money fields onto a jobs.task fixture dict
+    (task-owned money Phase 1). Mirrors Task.stamp_from_scheme /
+    apps.jobs.task_money_backfill.backfill_task_money exactly: qty_source
+    from scheme.algorithm, plus rate/unit_label/accounting_category
+    verbatim, source_scheme as provenance only (never read for money math),
+    and active_modifiers resolved from modifier_keys (a list of
+    scheme.modifiers 'key' strings) into full {key, label, percent}
+    snapshot dicts — modifier_keys=None (the default) activates none.
+    """
+    scheme = c.scheme_fields_by_pk[scheme_pk]
+    keys = modifier_keys or []
+    return {
+        'source_scheme':      scheme_pk,
+        'qty_source':          scheme['algorithm'],
+        'rate':                scheme['rate'],
+        'unit_label':          scheme['unit_label'],
+        'accounting_category': scheme['accounting_category'],
+        'active_modifiers':    [
+            dict(m) for m in (scheme.get('modifiers') or []) if m.get('key') in keys
+        ],
+    }
+
+
 def _match_seed_scheme(c, algorithm, rate):
     """Match a time/qty line's (algorithm, rate) to a seed RateScheme.
 
@@ -1191,22 +1217,22 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
         scheme_pk = _scheme_pk(c, P.checklist_scheme_name(name))
         parent_pk = last_toplevel_pk if item['is_subtask'] else None
         task_pk = c.next_pk('jobs.task')
-        c.add_fixture('jobs.task', task_pk, {
+        fields = {
             'job':              job_pk,
-            'rate_scheme':      scheme_pk,
             'name':             name,
             'description':      item['text'] or '',
             'est_qty':          None,
             'est_worker_time':  None,
             'actual_qty':       None,
-            'active_modifiers': [],
             'status':           'complete' if item['completed'] else 'pending',
             'blocked_reason':   '',
             'worker_queue':     None,
             'assignee':         None,
             'parent_task':      parent_pk,
             'sort_order':       sort_order,
-        })
+        }
+        fields.update(_stamp_money_block(c, scheme_pk))
+        c.add_fixture('jobs.task', task_pk, fields)
         if not item['is_subtask']:
             last_toplevel_pk = task_pk
         if base_ref not in c.cut_task and 'cut' in name.lower():
@@ -1261,22 +1287,22 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
             continue
         name = (li['description'] or 'Task')[:255] or 'Task'
         task_pk = c.next_pk('jobs.task')
-        c.add_fixture('jobs.task', task_pk, {
+        fields = {
             'job':              job_pk,
-            'rate_scheme':      scheme_pk,
             'name':             name,
             'description':      li['description'] or '',
             'est_qty':          f"{li['qty']:.2f}",
             'est_worker_time':  None,
             'actual_qty':       None,
-            'active_modifiers': active_modifiers,
             'status':           'pending',
             'blocked_reason':   '',
             'worker_queue':     None,
             'assignee':         None,
             'parent_task':      None,
             'sort_order':       sort_order,
-        })
+        }
+        fields.update(_stamp_money_block(c, scheme_pk, active_modifiers))
+        c.add_fixture('jobs.task', task_pk, fields)
         if base_ref not in c.cut_task and 'cut' in name.lower():
             c.cut_task[base_ref] = task_pk
     return sort_order
@@ -1348,7 +1374,7 @@ def assign_est_quantities(c):
         if f['model'] != 'jobs.task':
             continue
         fields = f['fields']
-        algo = c.scheme_algorithm_by_pk.get(fields.get('rate_scheme'))
+        algo = fields.get('qty_source')
         if algo == 'elapsed_time':
             fields['est_qty'] = f'{_duration_hours(fields.get("est_worker_time")):.2f}'
         elif algo == 'entered_qty':
@@ -2197,7 +2223,7 @@ def build_bleps_and_shifts(c):
         # invent one with the thirds rule vs est_qty (fallback base 1). Set for
         # EVERY complete task — even an old finished one too old to get a blep
         # (the horizon skip below) — so nothing can invoice at zero.
-        if c.scheme_algorithm_by_pk.get(fields.get('rate_scheme')) == 'entered_qty':
+        if fields.get('qty_source') == 'entered_qty':
             base = (Decimal(fields['est_qty'])
                     if fields.get('est_qty') not in (None, '') else Decimal('1'))
             actual = (base * P.thirds_factor(counter)).quantize(Decimal('0.01'))

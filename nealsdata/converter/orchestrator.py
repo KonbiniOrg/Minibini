@@ -55,7 +55,7 @@ class NealsDataConverter:
         self.discarded_cards = []
         self.line_items = {}
         self.estimates = {}
-        self.scheme_algorithm_by_pk = {}  # ratescheme pk -> algorithm (for actuals)
+        self.scheme_fields_by_pk = {}   # ratescheme pk -> fields dict (task money-block stamping)
         self.user_by_username = {}      # username -> pk (build_seed assigns user pks)
         self.rotation_user_pks = []     # ordered blep-rotation pool (excludes system)
         self._mint_template = None      # a seed worker's fields, cloned when minting
