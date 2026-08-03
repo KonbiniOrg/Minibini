@@ -494,6 +494,80 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         # AC inherited from the old fee (the bare CO line supplied none).
         self.assertEqual(new_fee.accounting_category, self.cat)
 
+    def test_replace_task_line_with_explicit_fee_kind_crystallizes_fee_not_task(self):
+        """I4 review finding: an explicit freeform_kind='fee' REPLACE line
+        targeting a task atom must crystallize a Fee at the line's own
+        price (here a -$300 credit) — the old on_accept's has_descriptor
+        gate omitted KIND_FEE, and _crystallize's mirror-task branch had no
+        guard against an explicit fee kind, so this used to silently mirror
+        the task instead. The old task still retires per the normal matrix
+        (cancelled, since it's service-backed)."""
+        line, old_task = self._task_backed_line(est_qty=Decimal('10'))
+        co = self._make_co()
+        li = self._replace_line(
+            co, line, description='Cutting labor cancelled (credit)',
+            qty=Decimal('1'), price=Decimal('-300.00'),
+            accounting_category=self.cat, freeform_kind=ChangeOrderLineItem.KIND_FEE,
+        )
+        self._accept(co)
+
+        old_task.refresh_from_db()
+        self.assertEqual(old_task.status, Task.STATUS_CANCELLED)
+        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
+        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_FEE)
+        fee = Fee.objects.get(pk=src.source_pk)
+        self.assertEqual(fee.unit_rate, Decimal('-300.00'))
+        self.assertFalse(
+            Task.objects.filter(
+                job=self.job, description='Cutting labor cancelled (credit)',
+            ).exists()
+        )
+
+    def test_replace_of_document_only_target_with_explicit_fee_kind_crystallizes(self):
+        """I4 companion: an explicit freeform_kind='fee' REPLACE line must
+        also crystallize when the target has no current atom to mirror
+        (mirror is None) — the has_descriptor gate must count KIND_FEE like
+        KIND_MATERIAL/KIND_WORK already are, not treat it as "nothing to
+        do"."""
+        adj_scheme = RateScheme.objects.create(
+            name='Rush 10%', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10'), unit_label='none', accounting_category=self.cat,
+        )
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Rush surcharge',
+            qty=Decimal('1'), price=Decimal('50.00'), accounting_category=self.cat,
+            adjustment_service=adj_scheme,
+        )
+        co = self._make_co()
+        li = self._replace_line(
+            co, line, description='Flat rush fee', qty=Decimal('1'),
+            price=Decimal('40.00'), accounting_category=self.cat,
+            freeform_kind=ChangeOrderLineItem.KIND_FEE,
+        )
+        self._accept(co)
+
+        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
+        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_FEE)
+        fee = Fee.objects.get(pk=src.source_pk)
+        self.assertEqual(fee.unit_rate, Decimal('40.00'))
+
+    def test_bare_replace_of_fee_line_with_zero_price_raises(self):
+        """M1 review finding: a bare (freeform_kind=None) CO replace line
+        with no price set (defaults to 0.00) mirroring a Fee target must
+        not mint a zero-rate Fee — Fee.unit_rate=0 is forbidden everywhere
+        else (FeeService._reject_zero_unit_rate); acceptance's direct
+        Fee.objects.create() call needs its own guard since it bypasses
+        that service."""
+        line, old_fee = self._fee_backed_line()
+        co = self._make_co()
+        self._replace_line(co, line, description='Rush handling (no price)')
+
+        with self.assertRaises(ValidationError):
+            self._accept(co)
+
+        # Refused: the old fee survives untouched, nothing new minted.
+        self.assertTrue(Fee.objects.filter(pk=old_fee.pk).exists())
+
     def test_second_co_replace_resolves_through_first_replacement(self):
         line, original_task = self._task_backed_line(est_qty=Decimal('10'))
         co1 = self._make_co()

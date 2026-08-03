@@ -93,14 +93,20 @@ class ChangeOrderAcceptanceService:
             mirror = ChangeOrderAcceptanceService._mirror_of(atoms)
             # Document-only target (adjustment line / already-retired atom) and
             # no descriptor on the CO line: the delta stays document-only.
-            # freeform_kind='work' is a real descriptor (task-owned money
-            # Phase 2, Task 3) and forces crystallization here exactly like
-            # 'material' already does — a bare/fee-default line (freeform_kind
-            # unset or 'fee') is the only case that stays document-only when
-            # there's nothing to mirror.
+            # freeform_kind='work'/'fee' are real descriptors (task-owned
+            # money Phase 2, Task 3 and the I4 review finding) and force
+            # crystallization here exactly like 'material' already does — an
+            # explicit KIND_FEE must not be treated as "no descriptor" just
+            # because Fee is also the fallback default below: a REPLACE line
+            # explicitly marked 'fee' targeting a document-only/no-mirror
+            # atom (e.g. a task atom whose mirror this line intentionally
+            # overrides) still needs to crystallize a Fee at THIS line's
+            # price. Only a truly bare line (freeform_kind unset, no
+            # explicit choice at all) is the case that stays document-only
+            # when there's nothing to mirror.
             has_descriptor = (li.service_item_id is not None
                               or li.inventory_item_id is not None
-                              or li.freeform_kind in (li.KIND_MATERIAL, li.KIND_WORK))
+                              or li.freeform_kind in (li.KIND_MATERIAL, li.KIND_WORK, li.KIND_FEE))
             if mirror is not None or has_descriptor:
                 ChangeOrderAcceptanceService._crystallize(job, li, mirror=mirror, counts=counts)
             for source_type, atom, claiming_kind in atoms:
@@ -288,7 +294,14 @@ class ChangeOrderAcceptanceService:
             counts['work_tasks_created'] += 1
             return
 
-        if mirror is not None and mirror['type'] == 'task':
+        # Mirror-the-old-atom's-type only applies to a truly BARE replace
+        # line (freeform_kind is None — MATERIAL/WORK already returned
+        # above). An explicit freeform_kind='fee' (I4 review finding) must
+        # NEVER fall into a mirror branch just because the target's current
+        # atom happens to be a Task/Material — it crystallizes a Fee at
+        # THIS line's price via the fallback section below, same as when
+        # there's no mirror at all.
+        if mirror is not None and mirror['type'] == 'task' and li.freeform_kind is None:
             fields = mirror['copy_fields']
             fields['est_qty'] = qty
             if li.description:
@@ -303,7 +316,7 @@ class ChangeOrderAcceptanceService:
             counts['tasks_created'] += 1
             return
 
-        if mirror is not None and mirror['type'] == 'material':
+        if mirror is not None and mirror['type'] == 'material' and li.freeform_kind is None:
             material = MaterialService.create_on_job(
                 job=job, task=None,
                 description=li.description or mirror['description'],
@@ -332,11 +345,24 @@ class ChangeOrderAcceptanceService:
                 f'has no accounting category. All added line items must have '
                 f'an accounting category before the change order can be accepted.'
             )
+        # M1 review finding: a bare replace line (freeform_kind=None, no
+        # price set) mirroring a Fee target falls through to here with
+        # `li.price or Decimal('0')` — same defensive zero-rate guard Fee's
+        # own service layer enforces (FeeService._reject_zero_unit_rate),
+        # needed here because this branch calls Fee.objects.create()
+        # directly, bypassing that service guard exactly like the
+        # AC-required guard above it already does.
+        unit_rate = li.price or Decimal('0')
+        if unit_rate == Decimal('0'):
+            raise ValidationError(
+                f'Change order line "{li.description or "(no description)"}" '
+                f'would crystallize a Fee with a zero rate. Set a non-zero price.'
+            )
         fee = Fee.objects.create(
             job=job,
             description=li.description or '',
             quantity=qty,
-            unit_rate=li.price or Decimal('0'),
+            unit_rate=unit_rate,
             accounting_category=accounting_category,
             sort_order=li.line_number or 0,
         )
