@@ -277,15 +277,19 @@ class HourPairFillTest(JobsTestBase):
         self.assertEqual(task.est_qty, Decimal('6'))
         self.assertEqual(task.est_worker_time, timedelta(hours=99))
 
-    def test_update_rate_scheme_change_uses_new_scheme_for_fill(self):
-        """update_task resolves the scheme as kwargs['rate_scheme'] or
-        task.rate_scheme — switching schemes in the same update must key
-        pair-fill on the NEW scheme, not the task's stale one."""
+    def test_update_unit_label_change_uses_new_unit_for_fill(self):
+        """Task-owned money (Phase 1): update_task's pair-fill keys off the
+        task's own unit_label — via the `unit_label` kwarg when it's part
+        of the same update, else the task's current value — never a
+        RateScheme lookup. There is no re-stamp-via-rate_scheme mechanism
+        on update_task; `rate_scheme` is a create-only stamp trigger
+        (TaskSerializer/TaskService.create_direct), and switching a task's
+        billing unit post-creation is a direct unit_label edit."""
         task = TaskService.create_direct(
             self.job, 'Sheets', rate_scheme_id=self.ea_scheme.pk,
             est_qty=Decimal('4'))
         TaskService.update_task(
-            task.pk, rate_scheme=self.hour_scheme, est_qty=Decimal('4'))
+            task.pk, unit_label=self.hour_scheme.unit_label, est_qty=Decimal('4'))
         task.refresh_from_db()
         self.assertEqual(task.est_worker_time, timedelta(hours=4))
 

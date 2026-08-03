@@ -67,7 +67,10 @@ class DirectTaskCreateServiceTest(TestCase):
         self.assertEqual(task.job, job)
         self.assertEqual(task.name, 'CAD')
         self.assertEqual(task.est_qty, Decimal('2'))
-        self.assertEqual(task.rate_scheme, self.scheme)
+        # Task-owned money (Phase 1): source_scheme is the provenance
+        # pointer stamp_from_scheme leaves behind; rate_scheme is a
+        # create-time trigger only, never a persisted field.
+        self.assertEqual(task.source_scheme, self.scheme)
 
     def test_create_direct_on_submitted_job(self):
         """TaskService.create_direct succeeds on a SUBMITTED job."""
@@ -213,20 +216,17 @@ class DirectTaskCreateAPITest(TestCase):
         self.assertIn('est_qty', response.data)
 
     def test_post_raw_int_est_worker_time_on_hour_scheme_returns_400_not_500(self):
-        """Same endpoint, same no-serializer path: est_worker_time also
-        arrives straight from request.data. A raw JSON int (e.g. `5`, not a
-        duration string) is neither a timedelta nor a str.
-
-        Naively, once _coerce_duration stops calling timedelta_to_hours() on
-        it (which raised AttributeError), the raw int would just fall
-        through to Task.save()'s full_clean(). But DurationField.to_python()
-        only catches ValueError, not TypeError — parse_duration(5) raises
-        TypeError, which full_clean() does NOT convert into a field
-        ValidationError, so that path alone would still 500. TaskService
-        .create_direct now rejects a non-str/timedelta est_worker_time
-        explicitly (with a real ValidationError) before it ever reaches
-        Task.save(), which is what actually makes this a contract-shaped
-        400."""
+        """Task-owned money (Phase 1, Task 8): POST /api/jobs/{id}/tasks/
+        now validates through TaskSerializer before TaskService.create_direct
+        ever sees the data (money-field permission gating and the
+        required accounting_category live there) — a raw JSON int for
+        est_worker_time is no longer hand-extracted from request.data; it
+        goes through DRF's own DurationField, which parses a bare number as
+        whole seconds (Django's parse_duration matches a lone integer as the
+        seconds group) rather than raising. So `5` is valid input — 5
+        seconds — not a 400. The old _coerce_duration/create_direct
+        TypeError-avoidance guard this test exercised is moot now that the
+        value is a real timedelta by the time create_direct runs."""
         hour_scheme = RateScheme.objects.create(
             name='S-dt-hour-wt', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('50'), unit_label='hour',
@@ -238,8 +238,8 @@ class DirectTaskCreateAPITest(TestCase):
              'est_worker_time': 5},
             format='json',
         )
-        self.assertEqual(response.status_code, 400, response.data)
-        self.assertIn('est_worker_time', response.data)
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['est_worker_time'], '00:00:05')
 
 
 

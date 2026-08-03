@@ -26,7 +26,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             Prefetch(
                 'tasks',
                 queryset=Task.objects.select_related(
-                    'assignee', 'rate_scheme',
+                    'assignee', 'source_scheme', 'accounting_category',
                 ).prefetch_related('blep_set').order_by('sort_order'),
             ),
             Prefetch(

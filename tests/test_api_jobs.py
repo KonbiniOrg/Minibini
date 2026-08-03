@@ -22,6 +22,17 @@ def _make_admin(username='admin_jobapi'):
     return User.objects.get(pk=user.pk)
 
 
+def _stamp_task(job, scheme, name, **extra):
+    """Create+stamp a Task from a RateScheme preset (task-owned-money
+    Phase 1) — Task.objects.create(rate_scheme=...) no longer works since
+    Task has no such field; stamp_from_scheme copies the preset's money
+    fields on before first save."""
+    task = Task(job=job, name=name, **extra)
+    task.stamp_from_scheme(scheme)
+    task.save()
+    return task
+
+
 class WorkOrderRoutesGoneTest(BaseTestCase):
     """Phase C1: /api/work-orders/ routes are gone."""
 
@@ -237,7 +248,7 @@ class JobTaskSubResourceTest(TestCase):
         )
 
     def test_list_tasks_on_job(self):
-        Task.objects.create(job=self.job, name='First task', rate_scheme=self.scheme)
+        _stamp_task(self.job, self.scheme, 'First task')
         response = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
@@ -253,11 +264,13 @@ class JobTaskSubResourceTest(TestCase):
         self.assertEqual(response.data['name'], 'New task')
         t = Task.objects.get(pk=response.data['task_id'])
         self.assertEqual(t.job_id, self.job.pk)
-        # rate_scheme set directly on Task (no TaskCharge)
-        self.assertEqual(t.rate_scheme_id, self.scheme.pk)
+        # Task-owned money (Phase 1): rate_scheme is a create-time stamp
+        # trigger, not a persisted field — source_scheme is the resulting
+        # provenance pointer.
+        self.assertEqual(t.source_scheme_id, self.scheme.pk)
 
     def test_update_task_on_job(self):
-        task = Task.objects.create(job=self.job, name='Original', rate_scheme=self.scheme)
+        task = _stamp_task(self.job, self.scheme, 'Original')
         response = self.client.patch(
             f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
             {'name': 'Renamed'},
@@ -268,7 +281,7 @@ class JobTaskSubResourceTest(TestCase):
         self.assertEqual(task.name, 'Renamed')
 
     def test_delete_task_on_job(self):
-        task = Task.objects.create(job=self.job, name='Goner', rate_scheme=self.scheme)
+        task = _stamp_task(self.job, self.scheme, 'Goner')
         response = self.client.delete(f'/api/jobs/{self.job.pk}/tasks/{task.pk}/')
         self.assertEqual(response.status_code, 200)
         self.assertIn('message', response.data)
@@ -278,7 +291,7 @@ class JobTaskSubResourceTest(TestCase):
         other_job = Job.objects.create(
             job_number='C2-T-002', name='Other', contact=self.contact,
         )
-        task = Task.objects.create(job=other_job, name='Theirs', rate_scheme=self.scheme)
+        task = _stamp_task(other_job, self.scheme, 'Theirs')
         response = self.client.patch(
             f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
             {'name': 'nope'},
@@ -298,7 +311,7 @@ class JobTaskSubResourceTest(TestCase):
 
     def test_update_task_allowed_for_worker(self):
         # Editing a task is open to any authenticated user.
-        task = Task.objects.create(job=self.job, name='Original', rate_scheme=self.scheme)
+        task = _stamp_task(self.job, self.scheme, 'Original')
         worker = User.objects.create_user(username='jt_worker_edit', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.patch(
@@ -312,7 +325,7 @@ class JobTaskSubResourceTest(TestCase):
 
     def test_delete_task_allowed_for_worker_without_bleps(self):
         # Deleting a blep-less, not-started task is open to any authenticated user.
-        task = Task.objects.create(job=self.job, name='Goner', rate_scheme=self.scheme)
+        task = _stamp_task(self.job, self.scheme, 'Goner')
         worker = User.objects.create_user(username='jt_worker_del', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.delete(f'/api/jobs/{self.job.pk}/tasks/{task.pk}/')
@@ -324,7 +337,7 @@ class JobTaskSubResourceTest(TestCase):
         # a worker deleting a task that has time entries gets a 400.
         from apps.jobs.models import Blep
         from django.utils import timezone
-        task = Task.objects.create(job=self.job, name='Worked', rate_scheme=self.scheme)
+        task = _stamp_task(self.job, self.scheme, 'Worked')
         Blep.objects.create(task=task, user=self.user, start_time=timezone.now())
         worker = User.objects.create_user(username='jt_worker_blep', password='pass')
         self.client.force_authenticate(user=worker)
@@ -333,7 +346,7 @@ class JobTaskSubResourceTest(TestCase):
         self.assertTrue(Task.objects.filter(pk=task.pk).exists())
 
     def test_list_tasks_any_authenticated(self):
-        Task.objects.create(job=self.job, name='Read me', rate_scheme=self.scheme)
+        _stamp_task(self.job, self.scheme, 'Read me')
         worker = User.objects.create_user(username='jt_reader', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
@@ -348,7 +361,7 @@ class JobTaskSubResourceTest(TestCase):
 
     def test_reorder_tasks_still_denied_for_worker(self):
         # reorder-tasks also stays manager-or-PM via the fall-through.
-        task = Task.objects.create(job=self.job, name='Reorder me', rate_scheme=self.scheme)
+        task = _stamp_task(self.job, self.scheme, 'Reorder me')
         worker = User.objects.create_user(username='jt_worker_ro', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.post(
@@ -375,8 +388,8 @@ class JobSerializerNestingTest(TestCase):
             name='S-nest', algorithm='entered_qty',
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
-        Task.objects.create(job=self.job, name='A task', rate_scheme=self.scheme)
-        Task.objects.create(job=self.job, name='B task', rate_scheme=self.scheme)
+        _stamp_task(self.job, self.scheme, 'A task')
+        _stamp_task(self.job, self.scheme, 'B task')
 
     def test_retrieve_nests_tasks(self):
         response = self.client.get(f'/api/jobs/{self.job.pk}/')
@@ -411,8 +424,8 @@ class JobListQueryCountTest(TestCase):
                 name=f'QC Job {i}',
                 contact=self.contact,
             )
-            Task.objects.create(job=job, name=f'Task A {i}', rate_scheme=self.scheme)
-            Task.objects.create(job=job, name=f'Task B {i}', rate_scheme=self.scheme)
+            _stamp_task(job, self.scheme, f'Task A {i}')
+            _stamp_task(job, self.scheme, f'Task B {i}')
 
     def _list_query_count(self):
         from django.test.utils import CaptureQueriesContext
@@ -548,9 +561,9 @@ class JobReorderTasksTest(TestCase):
             name='S-reord', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
-        self.a = Task.objects.create(job=self.job, name='A', sort_order=0, rate_scheme=self.scheme)
-        self.b = Task.objects.create(job=self.job, name='B', sort_order=1, rate_scheme=self.scheme)
-        self.c = Task.objects.create(job=self.job, name='C', sort_order=2, rate_scheme=self.scheme)
+        self.a = _stamp_task(self.job, self.scheme, 'A', sort_order=0)
+        self.b = _stamp_task(self.job, self.scheme, 'B', sort_order=1)
+        self.c = _stamp_task(self.job, self.scheme, 'C', sort_order=2)
 
     def test_reorder_down(self):
         response = self.client.post(
@@ -624,7 +637,7 @@ class JobPatchValidationErrorTest(TestCase):
         from django.utils import timezone
 
         job = self._in_progress_job()
-        task = Task.objects.create(job=job, name='Active task', rate_scheme=self.scheme)
+        task = _stamp_task(job, self.scheme, 'Active task')
         # Create an open blep (no end_time)
         Blep.objects.create(task=task, user=self.user, start_time=timezone.now())
 
@@ -767,9 +780,7 @@ class JobDetailInvoiceFieldTest(TestCase):
             name='S-invf', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='ea', accounting_category=ac,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Invoiceable Task', rate_scheme=self.scheme,
-        )
+        self.task = _stamp_task(self.job, self.scheme, 'Invoiceable Task')
         self.material = Material.objects.create(
             job=self.job,
             description='Test Material',

@@ -322,26 +322,41 @@ class JobTaskMixin:
 
         from apps.jobs.services import TaskService
         from apps.jobs.models import RateScheme
-        data = request.data
+        # Gate money-field writes on what the client actually sent — capture
+        # BEFORE prefill_accounting_category may inject a key of its own
+        # (task-owned-money Phase 1: stamp-only creation shouldn't need to
+        # name accounting_category to pass the serializer's required=True).
+        raw_keys = set(request.data.keys())
+        data = self.task_serializer_class.prefill_accounting_category(request.data)
+        serializer = self.task_serializer_class(
+            data=data,
+            context={**self.get_serializer_context(), 'job': job, 'raw_input_keys': raw_keys},
+        )
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        scheme = validated.get('rate_scheme')
+        assignee = validated.get('assignee')
+        parent_task = validated.get('parent_task')
         try:
             task = TaskService.create_direct(
                 job,
-                name=data.get('name', ''),
-                rate_scheme_id=data.get('rate_scheme'),
-                active_modifiers=data.get('active_modifiers') or [],
-                est_qty=data.get('est_qty'),
-                est_worker_time=data.get('est_worker_time'),
-                actual_qty=data.get('actual_qty'),
-                description=data.get('description', ''),
-                parent_task_id=data.get('parent_task'),
-                assignee_id=data.get('assignee'),
+                name=validated.get('name', ''),
+                rate_scheme_id=scheme.pk if scheme else None,
+                active_modifiers=validated.get('active_modifiers') or [],
+                est_qty=validated.get('est_qty'),
+                est_worker_time=validated.get('est_worker_time'),
+                actual_qty=validated.get('actual_qty'),
+                description=validated.get('description', ''),
+                parent_task_id=parent_task.pk if parent_task else None,
+                assignee_id=assignee.pk if assignee else None,
             )
         except RateScheme.DoesNotExist:
             return Response(
                 {'rate_scheme': ['RateScheme not found.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        serializer = self.task_serializer_class(task)
+        serializer = self.task_serializer_class(
+            task, context=self.get_serializer_context())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get', 'patch', 'delete'],
@@ -351,7 +366,8 @@ class JobTaskMixin:
         task = self._get_task_or_404(job, task_pk)
 
         if request.method == 'GET':
-            serializer = self.task_serializer_class(task)
+            serializer = self.task_serializer_class(
+                task, context=self.get_serializer_context())
             return Response(serializer.data)
 
         if request.method == 'DELETE':
@@ -359,16 +375,27 @@ class JobTaskMixin:
             _TaskService.delete_task(task.pk)
             return Response({'message': 'Task deleted.'})
 
-        # Validate request data via the serializer, then delegate the actual
-        # write to TaskService.update_task so the on_hold guard and the C1
-        # editability matrix (manager/PM/assignee on in_progress/blocked)
-        # fire. TaskPermissionError is an authorization refusal → 403.
-        serializer = self.task_serializer_class(task, data=request.data, partial=True)
+        # Validate request data via the serializer (money-field writes are
+        # gated there — CanManageJobOrPM or can_manage_financials), then
+        # delegate the actual write to TaskService.update_task so the
+        # on_hold guard and the C1 editability matrix (manager/PM/assignee
+        # on in_progress/blocked) fire. TaskPermissionError is a *separate*
+        # authorization refusal (status-based, not money-field-based) → 403.
+        serializer = self.task_serializer_class(
+            task, data=request.data, partial=True,
+            context=self.get_serializer_context(),
+        )
         serializer.is_valid(raise_exception=True)
+        # `rate_scheme` is a create-only stamping trigger — update_task has
+        # no re-stamp mechanism, and blindly setattr-ing it onto the task
+        # would silently create a stray, unsaved-until-next-save attribute
+        # (Task has no such field). Never forward it to an edit.
+        update_fields = dict(serializer.validated_data)
+        update_fields.pop('rate_scheme', None)
         from apps.jobs.services import TaskService, TaskPermissionError
         try:
             task = TaskService.update_task(
-                task.pk, user=request.user, **serializer.validated_data)
+                task.pk, user=request.user, **update_fields)
         except TaskPermissionError as e:
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
         serializer = self.task_serializer_class(

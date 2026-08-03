@@ -39,12 +39,16 @@ def _coerce_duration(value):
     return None
 
 
-def hours_pair_fill(scheme, est_qty, est_worker_time):
-    """For hour-denominated schemes, est_qty (billable hours) and
+def hours_pair_fill(unit_label, est_qty, est_worker_time):
+    """For hour-denominated units, est_qty (billable hours) and
     est_worker_time (schedulable duration) are one number in two encodings.
     When exactly one is provided, derive the other. Convenience, not an
-    invariant — both-provided passes through untouched."""
-    if scheme is None or scheme.unit_label != HOUR_UNIT:
+    invariant — both-provided passes through untouched.
+
+    Takes a bare ``unit_label`` string (not a RateScheme) — task-owned
+    money (Phase 1) means the unit of record lives on the Task itself, not
+    on a scheme lookup."""
+    if unit_label != HOUR_UNIT:
         return est_qty, est_worker_time
     if est_qty is not None and not est_worker_time:
         try:
@@ -1093,7 +1097,7 @@ class TaskService:
                 raise ValidationError({'parent_task': [
                     'Subtasks cannot have their own subtasks — '
                     'one level of subtasks only.']})
-        est_qty, est_worker_time = hours_pair_fill(scheme, est_qty, est_worker_time)
+        est_qty, est_worker_time = hours_pair_fill(scheme.unit_label, est_qty, est_worker_time)
         # A type _coerce_duration can't parse (e.g. a raw JSON int from this
         # endpoint's unserialized POST) would otherwise reach Task.save()'s
         # full_clean() and hit DurationField.to_python(), which only catches
@@ -1155,16 +1159,20 @@ class TaskService:
                 'Only a manager, the project manager, or the assignee may '
                 'edit a task that is in progress or blocked.'
             )
-        scheme = kwargs.get('rate_scheme') or task.rate_scheme
-        if scheme is not None and scheme.unit_label == HOUR_UNIT:
+        # Task-owned money (Phase 1): the unit of record is the task's own
+        # unit_label, not a RateScheme lookup — an in-flight unit_label
+        # edit (money-permission-gated at the serializer layer) wins over
+        # the task's current value for this same-request qty/time sync.
+        effective_unit_label = kwargs.get('unit_label', task.unit_label)
+        if effective_unit_label == HOUR_UNIT:
             if ('est_qty' in kwargs and 'est_worker_time' not in kwargs
                     and kwargs['est_qty'] is not None):
                 _, kwargs['est_worker_time'] = hours_pair_fill(
-                    scheme, kwargs['est_qty'], None)
+                    effective_unit_label, kwargs['est_qty'], None)
             elif ('est_worker_time' in kwargs and 'est_qty' not in kwargs
                     and kwargs['est_worker_time']):
                 kwargs['est_qty'], _ = hours_pair_fill(
-                    scheme, None, kwargs['est_worker_time'])
+                    effective_unit_label, None, kwargs['est_worker_time'])
         # Explicit assignment must be schedulable (invariant lives here and
         # on assign/create_direct, not Task.clean — auto-assign is exempt).
         if kwargs.get('assignee'):
@@ -1279,9 +1287,12 @@ class TaskService:
         task.worker_queue = worker_queue
         if est_worker_time is not None:
             task.est_worker_time = est_worker_time
-            if task.rate_scheme_id and task.est_qty is None:
+            # Task-owned money (Phase 1): sync from the task's own
+            # unit_label, not a RateScheme lookup (hours_pair_fill no-ops
+            # when the unit isn't hours).
+            if task.est_qty is None:
                 task.est_qty, _ = hours_pair_fill(
-                    task.rate_scheme, None, est_worker_time)
+                    task.unit_label, None, est_worker_time)
         task.save()
         return task
 
