@@ -286,11 +286,28 @@ that. Rules:
   bars (`est_worker_time` through the same multiplier), expected-vs-logged
   displays, and estimate composition read subtask est values. Nothing may
   compare 15 to 147 raw.
-- **`qty_scales_with_parent`** (boolean, default true) lives on Task like
-  any state-dependent field (cf. `actual_qty`): functional only when a
-  parent exists, inert on top-level rows, rendered only on subtask forms.
+- **`qty_scales_with_parent`** (boolean) lives on Task like any
+  state-dependent field (cf. `actual_qty`): functional only when a parent
+  exists, inert on top-level rows, rendered only on subtask forms.
   Per-batch work (laser setup, first-article inspection) sets it false —
   expected = est × 1 regardless of N.
+- **The multiplier is unit-agnostic — no `ea` requirement on the
+  parent.** "Per unit" means per unit of the parent's quantity, whatever
+  the unit: "0.5 min per board foot" is the same structure as "15 min per
+  widget," and scaling genuinely occurs on bulk units (sanding/finishing
+  per bf). A bulk-unit parent decomposed into ordinary steps just sets
+  the flag false on every child (multiplier degenerates to 1 — plain
+  lump decomposition). Footgun guards, both required:
+  1. The subtask form ALWAYS shows the derived expectation inline
+     ("20 min/bf × 500 bf = **10,000 min expected**") — a wrong flag is
+     visible at entry, not at schedule time.
+  2. The flag's **default keys off the parent's unit**: true when the
+     parent's units are `ea` (countables decompose per-piece), false
+     otherwise (bulk/time quantities decompose into batch steps).
+     Freely overridable; upgrades to "is the unit countable" if the
+     units-divisibility flag ever lands. Moot on qty-1 parents.
+  (RM 2026-08-02: accepted on a we'll-let-users-complain basis — expect
+  confusion reports; revisit the defaults if they come.)
 - **Parent completion** is offered (not automatic) when children finish,
   and keeps the entered-qty gate: "quantity made?" — that answer (9 good
   widgets, not the estimated 10) is what the invoice wizard bills. For an
