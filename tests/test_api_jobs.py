@@ -850,6 +850,44 @@ class AddFromTemplateModifierPermissionTest(TestCase):
             self.manager, {'service_item_id': self.template.pk, 'active_modifiers': ['rush']})
         self.assertEqual(response.status_code, 201, response.data)
 
+    def test_manager_with_dict_shaped_active_modifiers_rejected(self):
+        """Parked Phase-1 item (Phase 2 Task 6): a dict-shaped payload (the
+        UPDATE snapshot shape) previously silently no-opped instead of
+        erroring, because stamp_from_scheme matches modifier key strings
+        against the dict's keys and a full snapshot dict never matches. Must
+        400 with a field error, not 201 with an empty active_modifiers."""
+        response = self._post(
+            self.manager,
+            {'service_item_id': self.template.pk,
+             'active_modifiers': {'rush': {'key': 'rush', 'percent': 50}}},
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('active_modifiers', response.data)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
+
+    def test_manager_with_list_of_dicts_active_modifiers_rejected(self):
+        """List-of-snapshot-dicts (the UPDATE shape) is also invalid on this
+        create-only endpoint."""
+        response = self._post(
+            self.manager,
+            {'service_item_id': self.template.pk,
+             'active_modifiers': [{'key': 'rush', 'label': 'Rush', 'percent': 50}]},
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('active_modifiers', response.data)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
+
+    def test_manager_with_list_of_strings_active_modifiers_resolves_snapshot(self):
+        """List-of-key-strings (the correct create shape) resolves into full
+        {key, label, percent} snapshots on the created task."""
+        response = self._post(
+            self.manager, {'service_item_id': self.template.pk, 'active_modifiers': ['rush']})
+        self.assertEqual(response.status_code, 201, response.data)
+        task = Task.objects.get(pk=response.data['task_id'])
+        self.assertEqual(task.active_modifiers, [
+            {'key': 'rush', 'label': 'Rush', 'percent': 50},
+        ])
+
 
 class JobDetailInvoiceFieldTest(TestCase):
     """Task/material atoms nested in GET /api/jobs/{id}/ carry an 'invoice' field."""

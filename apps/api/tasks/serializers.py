@@ -9,6 +9,15 @@ from apps.inventory.models import Material
 from apps.core.models import AccountingCategory
 from apps.core.units import UnitsField
 
+# Shared with JobViewSet.add_from_template (apps/api/jobs/views.py), which
+# performs the equivalent create-shape check on the raw active_modifiers
+# payload before handing it to ServiceItem.generate_task — that path never
+# goes through this serializer, so the message text is centralized here
+# rather than duplicated.
+ACTIVE_MODIFIERS_CREATE_ERROR = (
+    'On create, active_modifiers must be a list of modifier key strings.'
+)
+
 
 class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     invoice_source_type = 'material'
@@ -219,10 +228,7 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         if self.instance is None:
             for item in value:
                 if not isinstance(item, str):
-                    raise serializers.ValidationError(
-                        'On create, active_modifiers must be a list of '
-                        'modifier key strings.'
-                    )
+                    raise serializers.ValidationError(ACTIVE_MODIFIERS_CREATE_ERROR)
             return value
         for item in value:
             if not isinstance(item, dict):

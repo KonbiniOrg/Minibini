@@ -15,7 +15,7 @@ from apps.estimates.models import WorkTemplate, Estimate, ServiceItem
 from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin, JobScopedPermissionMixin
 from apps.api.permissions import CanManageJobs, CanManageJobOrPM
 from apps.api.history.serializers import HistoryEntrySerializer
-from apps.api.tasks.serializers import TaskSerializer
+from apps.api.tasks.serializers import TaskSerializer, ACTIVE_MODIFIERS_CREATE_ERROR
 from .serializers import JobSerializer
 
 
@@ -480,6 +480,20 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 raise PermissionDenied(
                     'Only a manager, the project manager, or financials may '
                     'set active_modifiers.'
+                )
+            # Parked Phase-1 item (Phase 2 Task 6): this is the create
+            # contract (ServiceItem.generate_task -> Task.stamp_from_scheme
+            # matches modifier KEY STRINGS against the scheme's presets), the
+            # same shape TaskSerializer.validate_active_modifiers enforces on
+            # direct task create. A dict/snapshot-shaped payload (the UPDATE
+            # shape) never matches by key and previously silently no-opped
+            # instead of erroring.
+            if not isinstance(active_modifiers, list) or not all(
+                isinstance(item, str) for item in active_modifiers
+            ):
+                return Response(
+                    {'active_modifiers': [ACTIVE_MODIFIERS_CREATE_ERROR]},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
         if not service_item_id:

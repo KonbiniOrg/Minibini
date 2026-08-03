@@ -147,6 +147,22 @@ class ChangeOrderWorkflowAPITest(FixtureTestCase):
         )
         self.assertEqual(resp.status_code, 201, resp.data)
         self.assertEqual(resp.data['description'], 'Extra scope')
+        # Task 2/4 established freeform_kind as the real writable field
+        # (is_material is retired at the model level); the create response
+        # must round-trip it.
+        self.assertEqual(resp.data['freeform_kind'], ChangeOrderLineItem.KIND_FEE)
+
+    def test_freeform_kind_visible_in_detail_get(self):
+        """The nested line_items payload on GET /api/change-orders/{id}/
+        exposes freeform_kind (Phase 2 Task 6 API-surfaces cleanup)."""
+        created = self._add_line_item()
+        resp = self.client.get(f'/api/change-orders/{self.co_id}/')
+        self.assertEqual(resp.status_code, 200)
+        line = next(
+            li for li in resp.data['line_items']
+            if li['line_item_id'] == created['line_item_id']
+        )
+        self.assertEqual(line['freeform_kind'], ChangeOrderLineItem.KIND_FEE)
 
     def test_mark_open(self):
         # Add a line item first (required to transition from draft).

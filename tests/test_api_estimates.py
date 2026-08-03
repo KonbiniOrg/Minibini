@@ -95,6 +95,34 @@ class EstimateAPITest(BaseTestCase):
         }, format='json')
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['description'], 'API test item')
+        # Task 2/4 established freeform_kind as the real writable field
+        # (is_material is retired at the model level); the create response
+        # must round-trip it, not silently drop it.
+        self.assertEqual(response.data['freeform_kind'], 'fee')
+
+    def test_freeform_kind_visible_in_detail_get(self):
+        """The nested line_items payload on GET /api/estimates/{id}/ exposes
+        freeform_kind (Phase 2 Task 6 API-surfaces cleanup) — the SPA reads
+        it off the detail response, not just the line-item create response."""
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.first() or AccountingCategory.objects.create(name='c')
+        estimate = self._draft_estimate()
+        create = self.client.post(f'/api/estimates/{estimate.pk}/line-items/', {
+            'qty': '1.00',
+            'units': 'ea',
+            'description': 'Detail-visible kind',
+            'price': '10.00',
+            'accounting_category': cat.pk,
+            'freeform_kind': 'material',
+        }, format='json')
+        self.assertEqual(create.status_code, 201, create.data)
+        response = self.client.get(f'/api/estimates/{estimate.pk}/')
+        self.assertEqual(response.status_code, 200)
+        line = next(
+            li for li in response.data['line_items']
+            if li['line_item_id'] == create.data['line_item_id']
+        )
+        self.assertEqual(line['freeform_kind'], 'material')
 
     def test_manual_line_item_create_requires_accounting_category(self):
         # Hand-line AC rule (Decision 1): a line with no atom source needs an AC.
