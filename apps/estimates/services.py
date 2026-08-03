@@ -210,6 +210,36 @@ class EstimateService:
         li.freeform_kind = EstimateLineItem.KIND_MATERIAL if is_material else EstimateLineItem.KIND_FEE
 
     @staticmethod
+    def _reject_freeform_kind_on_non_bare_line(li):
+        """`freeform_kind` is a real writable model field now (both line-item
+        serializers expose it, and the generic `LineItemMixin` passes raw
+        `request.data` straight through to add_line_item/update_line_item) —
+        a caller could set it directly on a catalog/service/adjustment line,
+        bypassing `_apply_is_material_alias` above entirely and violating the
+        mapping invariant this task establishes (freeform_kind non-null IFF
+        the line is bare — no model-level `clean()` guard enforces this).
+        Reject explicitly rather than silently clearing it (house style: an
+        explicit field error over a silent strip). A bare line's
+        freeform_kind — whether set by the alias or sent directly by the
+        caller — is left untouched; Task 4 formalizes fuller kind validation
+        (required on bare lines, no silent default) on top of this narrower
+        write-time guard.
+
+        Shared with ChangeOrderService (called with a ChangeOrderLineItem
+        too) — that model has no adjustment_service field, so getattr
+        defaults to None there."""
+        is_bare = (
+            li.inventory_item_id is None
+            and li.service_item_id is None
+            and getattr(li, 'adjustment_service_id', None) is None
+        )
+        if not is_bare and li.freeform_kind is not None:
+            raise ValidationError({'freeform_kind': (
+                'freeform_kind only applies to a bare freeform line (no '
+                'inventory_item, service_item, or adjustment_service).'
+            )})
+
+    @staticmethod
     def assert_all_hand_lines_have_ac(estimate):
         """Raise if any hand-line (no atom source, not a percentage adjustment)
         lacks an accounting category. Enforced at send-time (mark_open / email)
@@ -383,6 +413,9 @@ class EstimateService:
         is_material = kwargs.pop('is_material', False)
         li = EstimateLineItem(estimate=estimate, **kwargs)
         EstimateService._apply_is_material_alias(li, is_material)
+        # Guards against a caller sending freeform_kind directly on a
+        # catalog/service/adjustment line (bypassing the alias above).
+        EstimateService._reject_freeform_kind_on_non_bare_line(li)
         # Material lines (freeform_kind='material') get their AC from config if not supplied.
         EstimateService._apply_material_ac_default(li)
         # A freshly-added line has no sources; if it isn't an adjustment it needs an AC.
@@ -481,6 +514,9 @@ class EstimateService:
             setattr(li, field, value)
         if is_material_provided:
             EstimateService._apply_is_material_alias(li, is_material)
+        # Guards against a caller sending freeform_kind directly on a
+        # catalog/service/adjustment line (bypassing the alias above).
+        EstimateService._reject_freeform_kind_on_non_bare_line(li)
         # Hand-lines (no atom source, not an adjustment) must have an accounting category.
         # Atom-backed lines (sources exist) and adjustment lines are exempt.
         is_adjustment = li.adjustment_service_id is not None

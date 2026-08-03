@@ -424,6 +424,9 @@ class ChangeOrderService:
         is_material = kwargs.pop('is_material', False)
         li = ChangeOrderLineItem(change_order=co, **kwargs)
         ChangeOrderService._apply_is_material_alias(li, is_material)
+        # Guards against a caller sending freeform_kind directly on a
+        # catalog/service line (bypassing the alias above).
+        EstimateService._reject_freeform_kind_on_non_bare_line(li)
         # Material lines (freeform_kind='material') get their AC from config
         # if not supplied — same default the estimate side applies at authoring.
         EstimateService._apply_material_ac_default(li)
@@ -527,6 +530,9 @@ class ChangeOrderService:
             setattr(li, field, value)
         if is_material_provided:
             ChangeOrderService._apply_is_material_alias(li, is_material)
+        # Guards against a caller sending freeform_kind directly on a
+        # catalog/service line (bypassing the alias above).
+        EstimateService._reject_freeform_kind_on_non_bare_line(li)
         EstimateService._apply_material_ac_default(li)
         li.full_clean()
         li.save()
