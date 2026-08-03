@@ -5,8 +5,20 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from apps.core.models import AbstractWorkContainer, TimeChangeRequest
 from apps.core.history import history
+from apps.core.services import ServiceError
 from apps.core.timeutils import floor_to_minute, timedelta_to_hours
 from apps.core.units import HOUR_UNIT
+
+
+class SchemeInactiveError(ServiceError):
+    """Raised when a task-creation path stamps from an inactive RateScheme
+    preset (``is_active=False``) without ``allow_inactive_scheme=True``.
+
+    Replaces the old supersession-based ``SchemeSupersededError`` — Task 4
+    retires ``RateScheme.replaced_by``/``supersede()`` in favor of a plain
+    ``is_active`` flag; this is the guard's new (and permanent) name.
+    """
+    pass
 
 
 # Palette used to auto-assign Job.accent_color. Order matters for tie-breaking
@@ -396,6 +408,42 @@ class Task(TaskBase):
     @property
     def effective_accounting_category(self):
         return self.accounting_category
+
+    def stamp_from_scheme(self, scheme, modifier_keys=None):
+        """Copy a RateScheme preset's money fields onto this task (task-owned
+        money Phase 1). Every creation path calls this BEFORE the task's
+        first save, so the task gets its own permanent copy of the preset's
+        pricing — later edits to the preset (or its supersession/retirement)
+        never reprice an already-stamped task.
+
+        Sets: ``qty_source`` (from ``scheme.algorithm``), ``rate``,
+        ``unit_label``, ``accounting_category``, ``source_scheme`` (provenance
+        only — never read for money math, see the field's docstring), and
+        ``active_modifiers`` — resolved from ``modifier_keys`` (a list of
+        ``scheme.modifiers`` ``key`` strings, the same convention as
+        ``RateScheme.effective_rate``'s ``active_modifiers`` arg) into full
+        ``{key, label, percent}`` snapshot dicts. ``modifier_keys=None``
+        (the default) activates no modifiers — callers that want a
+        ServiceItem's predefined defaults pass
+        ``modifier_keys=service_item.default_active_modifiers`` explicitly.
+
+        Raises ``ValueError`` for percentage schemes: those are document-level
+        adjustments (rush/discount lines), not task-billing presets.
+        """
+        if scheme.algorithm == RateScheme.PERCENTAGE:
+            raise ValueError(
+                'Percentage services are document adjustments and cannot '
+                'stamp a task.'
+            )
+        keys = modifier_keys or []
+        self.qty_source = scheme.algorithm
+        self.rate = scheme.rate
+        self.unit_label = scheme.unit_label
+        self.accounting_category = scheme.accounting_category
+        self.source_scheme = scheme
+        self.active_modifiers = [
+            dict(m) for m in scheme.modifiers if m.get('key') in keys
+        ]
 
     def effective_rate(self):
         """Per-unit rate: own ``rate`` plus own ``active_modifiers``

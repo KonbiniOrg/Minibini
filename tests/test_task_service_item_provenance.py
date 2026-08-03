@@ -50,7 +50,7 @@ class TaskServiceItemProvenanceTests(TestCase):
         self.assertEqual(task.service_item_id, self.service_item.pk)
 
     def test_hand_created_task_has_no_service_item(self):
-        task = Task.objects.create(
-            job=self.job, name='Ad hoc', rate_scheme=self.scheme,
-        )
+        task = Task(job=self.job, name='Ad hoc')
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         self.assertIsNone(task.service_item_id)

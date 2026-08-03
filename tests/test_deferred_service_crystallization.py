@@ -117,33 +117,57 @@ class ServiceItemFieldTest(DeferredServiceBase):
         self.assertEqual(line.service_item_id, self.service_item.pk)
 
 
-from apps.core.services import SchemeSupersededError
+from unittest import skipUnless
+
+from apps.jobs.models import SchemeInactiveError
 
 
 class GenerateTaskSupersededBypassTest(DeferredServiceBase):
+    """Task 3 moved the creation-time gate from RateScheme supersession
+    (``replaced_by``) to ``is_active`` (Task 4 adds the field; Task 4's
+    docstring: "RateScheme slimming — supersession out, is_active in").
+    Merely superseding a scheme no longer blocks generate_task — only
+    is_active=False does, and that guard is inert until Task 4 lands.
+    """
+
     def _supersede(self):
-        # Point the scheme at a replacement so replaced_by_id is set.
+        # Point the scheme at a replacement so replaced_by_id is set. Uses
+        # .update() rather than assign+save(): RateScheme.clean()'s
+        # is_referenced() still queries the pre-Task-1 Task.rate_scheme
+        # field — a known, out-of-scope bug (leave alone, later tasks) that
+        # would make any save() of a referenced scheme 500.
         new = RateScheme.objects.create(
             name='Hourly v2', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('45'), unit_label='hour', accounting_category=self.cat,
         )
-        self.scheme.replaced_by = new
-        self.scheme.save()
+        RateScheme.objects.filter(pk=self.scheme.pk).update(replaced_by=new)
+        self.scheme.refresh_from_db()
 
-    def test_superseded_scheme_aborts_by_default(self):
-        self._supersede()
-        with self.assertRaises(SchemeSupersededError):
-            self.service_item.generate_task(self.job, est_qty=Decimal('1'))
-
-    def test_allow_superseded_scheme_bypasses_and_builds_task(self):
+    def test_superseded_scheme_does_not_abort_by_default(self):
         self._supersede()
         task = self.service_item.generate_task(
-            self.job, est_qty=Decimal('1'),
-            description='desc from line', allow_superseded_scheme=True,
+            self.job, est_qty=Decimal('1'), description='desc from line',
         )
         self.assertEqual(task.name, 'CAM coding')          # from template_name
         self.assertEqual(task.description, 'desc from line')
-        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(task.source_scheme_id, self.scheme.pk)
+
+    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
+    def test_inactive_scheme_aborts_by_default(self):
+        RateScheme.objects.filter(pk=self.scheme.pk).update(is_active=False)
+        with self.assertRaises(SchemeInactiveError):
+            self.service_item.generate_task(self.job, est_qty=Decimal('1'))
+
+    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
+    def test_allow_inactive_scheme_bypasses_and_builds_task(self):
+        RateScheme.objects.filter(pk=self.scheme.pk).update(is_active=False)
+        task = self.service_item.generate_task(
+            self.job, est_qty=Decimal('1'),
+            description='desc from line', allow_inactive_scheme=True,
+        )
+        self.assertEqual(task.name, 'CAM coding')          # from template_name
+        self.assertEqual(task.description, 'desc from line')
+        self.assertEqual(task.source_scheme_id, self.scheme.pk)
 
 
 from rest_framework.test import APIClient
@@ -228,7 +252,7 @@ class OnAcceptCrystallizesServiceTest(DeferredServiceBase):
         task = Task.objects.get(job=self.job)
         self.assertEqual(task.name, 'CAM coding')                  # ServiceItem name
         self.assertEqual(task.description, 'CAM coding for panel A')  # line description
-        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(task.source_scheme_id, self.scheme.pk)
         self.assertEqual(task.est_qty, Decimal('2'))
         self.assertEqual(result['tasks_created'], 1)
         # It did NOT become a Fee.
@@ -261,10 +285,13 @@ class OnAcceptCrystallizesServiceTest(DeferredServiceBase):
             name='Hourly v2', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('45'), unit_label='hour', accounting_category=self.cat,
         )
-        self.scheme.replaced_by = new
-        self.scheme.save()
+        # .update() (not assign+save()): RateScheme.clean()'s is_referenced()
+        # still queries the pre-Task-1 Task.rate_scheme field — a known,
+        # out-of-scope bug (leave alone, later tasks) that would make any
+        # save() of a referenced scheme 500.
+        RateScheme.objects.filter(pk=self.scheme.pk).update(replaced_by=new)
 
-        # Does NOT raise SchemeSupersededError.
+        # Does NOT raise SchemeInactiveError.
         EstimateAcceptanceService.on_accept(self.estimate)
         self.assertTrue(Task.objects.filter(job=self.job).exists())
 

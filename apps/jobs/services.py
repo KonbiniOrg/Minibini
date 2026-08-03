@@ -14,7 +14,7 @@ from django.db.models import Q, Prefetch
 from django.utils import timezone
 from django.utils.dateparse import parse_duration
 
-from apps.jobs.models import Job, Task, Blep, Fee, RateScheme, copy_active_modifiers
+from apps.jobs.models import Job, Task, Blep, Fee, RateScheme
 from apps.estimates.models import (
     Estimate, WorkTemplate, ServiceItem,
     EstimateLineItem,
@@ -1017,58 +1017,67 @@ class TaskService:
     @staticmethod
     def create_from_template(template, job, assignee=None, est_qty=None):
         """
-        Create Task from ServiceItem. Writes billing fields directly on Task.
+        Create Task from ServiceItem. Stamps billing fields from the
+        template's RateScheme onto the Task (task-owned money Phase 1) via
+        ``Task.stamp_from_scheme`` before first save.
         """
-        from apps.core.services import SchemeSupersededError
+        from apps.jobs.models import SchemeInactiveError
 
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
-        if template.rate_scheme_id and template.rate_scheme.replaced_by_id is not None:
-            raise SchemeSupersededError(
-                f'Template "{template.template_name}" references a superseded RateScheme.'
-            )
         if not template.rate_scheme_id:
             raise ValidationError(
                 f'Template "{template.template_name}" has no rate_scheme.'
             )
+        scheme = template.rate_scheme
+        # Task 4 adds RateScheme.is_active; until then this guard is inert.
+        if not getattr(scheme, 'is_active', True):
+            raise SchemeInactiveError(
+                f'Template "{template.template_name}" references an inactive RateScheme.'
+            )
         with transaction.atomic():
-            task = Task.objects.create(
+            task = Task(
                 job=job,
                 name=template.template_name,
                 assignee=assignee,
                 service_item=template,
-                rate_scheme=template.rate_scheme,
-                active_modifiers=copy_active_modifiers(template.default_active_modifiers),
                 est_qty=est_qty if est_qty is not None else Decimal('1'),
             )
+            task.stamp_from_scheme(scheme, modifier_keys=template.default_active_modifiers)
+            task.save()
             JobService.mark_work_reopened(job)
         return task
 
     @staticmethod
     def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
                       est_qty=None, est_worker_time=None, actual_qty=None,
-                      allow_superseded_scheme=False, parent_task_id=None,
+                      allow_inactive_scheme=False, parent_task_id=None,
                       **task_fields):
-        """Create Task directly. Requires rate_scheme_id.
+        """Create Task directly. Requires rate_scheme_id — stamps its billing
+        fields onto the Task (task-owned money Phase 1) via
+        ``Task.stamp_from_scheme`` before first save.
 
-        ``allow_superseded_scheme`` bypasses the superseded-scheme rejection.
+        ``allow_inactive_scheme`` bypasses the inactive-preset rejection.
         The only intended caller is the worksheet→job copy/carry-over core,
         which must clone a worksheet faithfully even when its rate scheme has
-        since been superseded.
+        since been retired.
 
         This is the single creation gate for direct tasks AND subtasks (the
         /api/tasks/{id}/subtasks/ endpoint routes here too) — the on-hold,
-        superseded-scheme, depth, and assignee guards can't be skipped by
+        inactive-scheme, depth, and assignee guards can't be skipped by
         picking a different endpoint.
         """
+        from apps.jobs.models import SchemeInactiveError
+
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not rate_scheme_id:
             raise ValidationError({'rate_scheme': 'Required.'})
         scheme = RateScheme.objects.get(pk=rate_scheme_id)
-        if scheme.replaced_by_id is not None and not allow_superseded_scheme:
-            raise ValidationError(
-                {'rate_scheme': 'Selected RateScheme is superseded.'}
+        # Task 4 adds RateScheme.is_active; until then this guard is inert.
+        if not getattr(scheme, 'is_active', True) and not allow_inactive_scheme:
+            raise SchemeInactiveError(
+                'Selected RateScheme is inactive.'
             )
         if scheme.algorithm == RateScheme.PERCENTAGE:
             raise ValidationError(
@@ -1103,16 +1112,16 @@ class TaskService:
             raise ValidationError({'est_worker_time': [
                 'An assigned task must have an estimated worker time.']})
         with transaction.atomic():
-            task = Task.objects.create(
+            task = Task(
                 job=job, name=name,
-                rate_scheme=scheme,
-                active_modifiers=copy_active_modifiers(active_modifiers),
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
                 actual_qty=actual_qty,
                 parent_task_id=parent_task_id,
                 **task_fields,
             )
+            task.stamp_from_scheme(scheme, modifier_keys=active_modifiers)
+            task.save()
             if task.status not in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
                 JobService.mark_work_reopened(job)
         return task

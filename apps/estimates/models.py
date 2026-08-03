@@ -482,32 +482,36 @@ class ServiceItem(models.Model):
                        assignee=None, sort_order=None,
                        name=None, description=None,
                        active_modifiers=None, est_worker_time=None,
-                       allow_superseded_scheme=False):
+                       allow_inactive_scheme=False):
         """Generate a Task on a Job from this template with specified quantity.
+
+        Stamps the template's RateScheme onto the Task (task-owned money
+        Phase 1) via ``Task.stamp_from_scheme`` before first save.
 
         Optional overrides:
           name            – if truthy, replaces template_name; empty string falls back to template default.
           description     – if not None, replaces template description (empty string is kept as-is).
-          active_modifiers – list of modifier keys; falls back to template defaults when None.
+          active_modifiers – list of modifier keys; falls back to
+                              ``self.default_active_modifiers`` when None.
           est_worker_time – ISO 8601 duration string or None.
-          allow_superseded_scheme – if True, bypasses SchemeSupersededError so acceptance can
-                                    crystallize a line whose scheme was superseded after the estimate
-                                    was created. Default False preserves current behavior.
+          allow_inactive_scheme – if True, bypasses SchemeInactiveError so acceptance can
+                                  crystallize a line whose scheme was deactivated after the estimate
+                                  was created. Default False preserves current behavior.
         """
-        from apps.jobs.models import Job, Task, copy_active_modifiers
-        from apps.core.services import SchemeSupersededError
+        from apps.jobs.models import Job, Task, SchemeInactiveError
         from django.db import transaction
 
-        if (self.rate_scheme_id and self.rate_scheme.replaced_by_id is not None
-                and not allow_superseded_scheme):
-            raise SchemeSupersededError(
-                f'Template "{self.template_name}" references a superseded '
+        scheme = self.rate_scheme
+        # Task 4 adds RateScheme.is_active; until then this guard is inert.
+        if not getattr(scheme, 'is_active', True) and not allow_inactive_scheme:
+            raise SchemeInactiveError(
+                f'Template "{self.template_name}" references an inactive '
                 f'RateScheme. Update the template before adding tasks from it.'
             )
 
         resolved_name = name if name else self.template_name
         resolved_description = description if description is not None else self.description
-        resolved_modifiers = copy_active_modifiers(
+        resolved_modifier_keys = (
             active_modifiers if active_modifiers is not None
             else self.default_active_modifiers
         )
@@ -516,23 +520,23 @@ class ServiceItem(models.Model):
             raise ValueError(
                 'generate_task only supports a Job container (job-owns-atoms refactor).'
             )
-        if est_worker_time is None and est_qty is not None and self.rate_scheme_id:
+        if est_worker_time is None and est_qty is not None:
             from apps.jobs.services import hours_pair_fill
             est_qty, est_worker_time = hours_pair_fill(
-                self.rate_scheme, est_qty, None)
+                scheme, est_qty, None)
         with transaction.atomic():
-            task = Task.objects.create(
+            task = Task(
                 job=container,
                 name=resolved_name,
                 description=resolved_description,
                 assignee=assignee,
                 sort_order=sort_order,
                 service_item=self,
-                rate_scheme=self.rate_scheme,
-                active_modifiers=resolved_modifiers,
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
             )
+            task.stamp_from_scheme(scheme, modifier_keys=resolved_modifier_keys)
+            task.save()
             from apps.jobs.services import JobService
             JobService.mark_work_reopened(container)
         return task

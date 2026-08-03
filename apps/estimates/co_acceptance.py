@@ -190,7 +190,7 @@ class ChangeOrderAcceptanceService:
             task = li.service_item.generate_task(
                 job, est_qty=qty,
                 description=li.description or '',
-                allow_superseded_scheme=True,
+                allow_inactive_scheme=True,
             )
             ChangeOrderAcceptanceService._link(li, ChangeOrderLineItemSource.SOURCE_TASK, task.pk)
             counts['tasks_created'] += 1

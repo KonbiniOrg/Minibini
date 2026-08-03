@@ -3,8 +3,9 @@
 1. RateScheme.supersede() does NOT repoint catalog users — a ServiceItem (or
    Task) keeps pointing at the old, renamed scheme. Confirmed behavior, now
    pinned: the deferred-service crystallization tolerates this via
-   generate_task(allow_superseded_scheme=True), and template-based creation
-   rejects superseded-scheme templates loudly.
+   generate_task(allow_inactive_scheme=True), and template-based creation
+   rejects inactive-scheme templates loudly (Task 3: the creation-time gate
+   moved from supersession to RateScheme.is_active, added in Task 4).
 
 2. One-live-estimate-tree-per-job is a service-level invariant, not just an
    API-layer check: EstimateService.create_for_job refuses a second
