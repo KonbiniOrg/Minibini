@@ -89,10 +89,12 @@ class ChangeOrderAcceptanceBase(TestCase):
     # --- estimate-side atom-backed lines (as estimate acceptance leaves them) ---
 
     def _task_backed_line(self, line_number=1, est_qty=Decimal('10')):
-        task = Task.objects.create(
-            job=self.job, name='Cutting', rate_scheme=self.scheme,
+        task = Task(
+            job=self.job, name='Cutting',
             est_qty=est_qty,
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         line = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=line_number,
             description='Cutting labor', qty=est_qty, price=Decimal('100.00'),
@@ -154,7 +156,7 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
 
         task = Task.objects.get(job=self.job, name='CNC cutting')
         self.assertEqual(task.est_qty, Decimal('4'))
-        self.assertEqual(task.rate_scheme, self.scheme)
+        self.assertEqual(task.source_scheme, self.scheme)
         self.assertEqual(task.status, Task.STATUS_PENDING)
         src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
         self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_TASK)
@@ -398,7 +400,16 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_TASK)
         new_task = Task.objects.get(pk=src.source_pk)
         self.assertEqual(new_task.est_qty, Decimal('15'))
-        self.assertEqual(new_task.rate_scheme, self.scheme)
+        # A bare replace line mirrors the old task's money via copy_fields()
+        # (task-owned-money Phase 1): rate/qty_source/unit_label/AC/modifiers
+        # carry over, but source_scheme is document provenance and is NOT
+        # copied — the mirrored task is a fresh document occurrence (same as
+        # JobService.duplicate_job's _copy_work_to_job; see test_copy_fields.py).
+        self.assertIsNone(new_task.source_scheme)
+        self.assertEqual(new_task.rate, old_task.rate)
+        self.assertEqual(new_task.qty_source, old_task.qty_source)
+        self.assertEqual(new_task.unit_label, old_task.unit_label)
+        self.assertEqual(new_task.accounting_category_id, old_task.accounting_category_id)
         self.assertEqual(new_task.name, old_task.name)
         self.assertEqual(new_task.description, 'Cutting labor (more)')
         self.assertEqual(new_task.status, Task.STATUS_PENDING)

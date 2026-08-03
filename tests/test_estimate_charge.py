@@ -20,6 +20,7 @@ class GenerateTaskForJobChargeTest(BaseTestCase):
         self.scheme = RateScheme.objects.create(
             name='S-gtw', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
+            modifiers=[{'key': 'm1', 'label': 'Modifier 1', 'percent': 10}],
         )
         self.template = ServiceItem.objects.create(
             template_name='T-gtw', rate_scheme=self.scheme,
@@ -37,8 +38,13 @@ class GenerateTaskForJobChargeTest(BaseTestCase):
 
     def test_generate_task_for_job_propagates_scheme(self):
         task = self.template.generate_task(self.job, est_qty=Decimal('5'))
-        self.assertEqual(task.rate_scheme, self.scheme)
-        self.assertEqual(task.active_modifiers, ['m1'])
+        self.assertEqual(task.source_scheme, self.scheme)
+        # active_modifiers is a snapshot of {key,label,percent} dicts
+        # (task-owned-money Phase 1), not the raw key list passed in.
+        self.assertEqual(
+            task.active_modifiers,
+            [{'key': 'm1', 'label': 'Modifier 1', 'percent': 10}],
+        )
         self.assertEqual(task.est_qty, Decimal('5'))
 
 
@@ -71,7 +77,9 @@ class EffectiveACPropertyTest(BaseTestCase):
     def test_task_effective_ac_comes_from_rate_scheme(self):
         from apps.jobs.models import Task
         job = self._make_job()
-        t = Task.objects.create(job=job, name='t', rate_scheme=self.scheme)
+        t = Task(job=job, name='t')
+        t.stamp_from_scheme(self.scheme)
+        t.save()
         self.assertEqual(t.effective_accounting_category, self.scheme_ac)
 
     def test_taskTemplate_effective_ac_comes_from_scheme(self):
@@ -121,4 +129,4 @@ class TaskCreateRequiresSchemeTest(BaseTestCase):
             rate_scheme_id=self.scheme.pk,
             est_qty=Decimal('1'),
         )
-        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(task.source_scheme_id, self.scheme.pk)

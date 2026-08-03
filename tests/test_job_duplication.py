@@ -63,17 +63,21 @@ class DuplicateJobTestBase(BaseTestCase):
             contact=self.contact, customer_po_number='CUST-PO-9',
             due_date=None,
         )
-        self.task_a = Task.objects.create(
+        self.task_a = Task(
             job=self.source, name='Build', description='Build the boxes',
             sort_order=1, est_worker_time=timedelta(hours=4),
-            est_qty=Decimal('6'), rate_scheme=self.scheme,
+            est_qty=Decimal('6'),
         )
-        self.task_b = Task.objects.create(
+        self.task_a.stamp_from_scheme(self.scheme)
+        self.task_a.save()
+        self.task_b = Task(
             job=self.source, name='Finish', description='Sand + seal',
             sort_order=2, est_worker_time=timedelta(hours=2),
-            est_qty=Decimal('6'), rate_scheme=self.scheme,
+            est_qty=Decimal('6'),
             parent_task=self.task_a,
         )
+        self.task_b.stamp_from_scheme(self.scheme)
+        self.task_b.save()
         self.material_attached = Material.objects.create(
             job=self.source, task=self.task_a, inventory_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
@@ -129,7 +133,14 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         self.assertIsNone(finish.actual_qty)
         # carried fields
         self.assertEqual(finish.est_qty, Decimal('6'))
-        self.assertEqual(finish.rate_scheme_id, self.scheme.pk)
+        # copy_fields() carries the task's own money block (rate/qty_source/
+        # unit_label/AC) directly, but source_scheme is document provenance
+        # and is deliberately NOT copied (task-owned-money Phase 1; see
+        # TaskBase.copy_fields's docstring and test_copy_fields.py).
+        self.assertIsNone(finish.source_scheme_id)
+        self.assertEqual(finish.rate, self.scheme.rate)
+        self.assertEqual(finish.qty_source, self.scheme.algorithm)
+        self.assertEqual(finish.unit_label, self.scheme.unit_label)
         # hierarchy remapped to the NEW build task (not the source's)
         self.assertEqual(finish.parent_task_id, build.task_id)
 
@@ -236,7 +247,11 @@ class DuplicateEstimateTest(DuplicateJobTestBase):
         self.assertEqual(names, {'Build', 'Finish'})
         build = Task.objects.get(job=new_job, name='Build')
         self.assertEqual(build.est_qty, Decimal('6'))
-        self.assertEqual(build.rate_scheme_id, self.scheme.pk)
+        # source_scheme is document provenance, deliberately not copied by
+        # copy_fields(); the task's own rate/qty_source/unit_label carry over.
+        self.assertIsNone(build.source_scheme_id)
+        self.assertEqual(build.rate, self.scheme.rate)
+        self.assertEqual(build.qty_source, self.scheme.algorithm)
         self.assertEqual(build.est_worker_time, timedelta(hours=4))  # carried over
         # Hierarchy is preserved on the copied tasks.
         finish = Task.objects.get(job=new_job, name='Finish')
