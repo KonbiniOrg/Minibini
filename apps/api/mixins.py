@@ -321,7 +321,7 @@ class JobTaskMixin:
             return Response(serializer.data)
 
         from apps.jobs.services import TaskService
-        from apps.jobs.models import RateScheme
+        from apps.jobs.models import RateScheme, SchemeInactiveError
         # Gate money-field writes on what the client actually sent — capture
         # BEFORE prefill_accounting_category may inject a key of its own
         # (task-owned-money Phase 1: stamp-only creation shouldn't need to
@@ -355,6 +355,8 @@ class JobTaskMixin:
                 {'rate_scheme': ['RateScheme not found.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        except SchemeInactiveError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         serializer = self.task_serializer_class(
             task, context=self.get_serializer_context())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
