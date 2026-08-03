@@ -1,5 +1,4 @@
 from decimal import Decimal
-from unittest import skipUnless
 from django.core.exceptions import ValidationError
 from tests.base import BaseTestCase
 from apps.jobs.models import RateScheme
@@ -49,17 +48,6 @@ class TaskCreationProducesChargeTest(BaseTestCase):
         )
         self.assertEqual(task.source_scheme_id, self.scheme.pk)
 
-    def test_template_with_superseded_scheme_does_not_raise(self):
-        """Task 3 moved the creation-time gate from supersession
-        (``replaced_by``) to ``is_active`` (Task 4 adds the field). Merely
-        superseding a scheme no longer blocks create_from_template."""
-        from apps.jobs.services import TaskService
-        # Supersede the scheme so the template now points at a superseded one.
-        self.scheme.supersede(name='S-tcr v2')
-        task = TaskService.create_from_template(self.template, self.job)
-        self.assertEqual(task.source_scheme_id, self.scheme.pk)
-
-    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
     def test_create_direct_with_inactive_scheme_raises_by_default(self):
         from apps.jobs.models import SchemeInactiveError
         from apps.jobs.services import TaskService
@@ -69,7 +57,6 @@ class TaskCreationProducesChargeTest(BaseTestCase):
                 self.job, name='x', rate_scheme_id=self.scheme.pk,
             )
 
-    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
     def test_create_direct_allow_inactive_scheme_bypasses_check(self):
         from apps.jobs.services import TaskService
         RateScheme.objects.filter(pk=self.scheme.pk).update(is_active=False)

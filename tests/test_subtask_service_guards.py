@@ -42,7 +42,7 @@ class SubtaskGuardTestBase(TestCase):
         )
         self.scheme = _scheme('a')
         self.parent = Task.objects.create(
-            job=self.job, name='Parent', rate_scheme=self.scheme,
+            job=self.job, name='Parent', source_scheme=self.scheme,
         )
 
     def _post_subtask(self, parent, name='Sub', scheme=None):
@@ -68,9 +68,10 @@ class SubtaskCreateGuardsTest(SubtaskGuardTestBase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(Task.objects.filter(parent_task=self.parent).exists())
 
-    def test_superseded_scheme_rejects_subtask_create(self):
+    def test_inactive_scheme_rejects_subtask_create(self):
         old = _scheme('old')
-        old.supersede()
+        old.is_active = False
+        old.save()
         response = self._post_subtask(self.parent, scheme=old)
         self.assertEqual(response.status_code, 400)
         self.assertFalse(Task.objects.filter(parent_task=self.parent).exists())
@@ -103,7 +104,7 @@ class SubtaskCreateGuardsTest(SubtaskGuardTestBase):
         # A parent task that's complete refuses subtasks; use a fresh
         # sibling parent to host the new subtask.
         sibling = Task.objects.create(
-            job=self.job, name='Sibling parent', rate_scheme=self.scheme,
+            job=self.job, name='Sibling parent', source_scheme=self.scheme,
         )
         # Creating the sibling itself already reopens; force the job back
         # to work_complete so the SUBTASK create is what reopens it.
@@ -123,7 +124,7 @@ class SubtaskDepthGuardTest(SubtaskGuardTestBase):
     def setUp(self):
         super().setUp()
         self.subtask = Task.objects.create(
-            job=self.job, name='Child', rate_scheme=self.scheme,
+            job=self.job, name='Child', source_scheme=self.scheme,
             parent_task=self.parent,
         )
 

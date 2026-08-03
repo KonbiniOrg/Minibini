@@ -117,50 +117,30 @@ class ServiceItemFieldTest(DeferredServiceBase):
         self.assertEqual(line.service_item_id, self.service_item.pk)
 
 
-from unittest import skipUnless
-
 from apps.jobs.models import SchemeInactiveError
 
 
-class GenerateTaskSupersededBypassTest(DeferredServiceBase):
+class GenerateTaskInactiveSchemeTest(DeferredServiceBase):
     """Task 3 moved the creation-time gate from RateScheme supersession
-    (``replaced_by``) to ``is_active`` (Task 4 adds the field; Task 4's
-    docstring: "RateScheme slimming — supersession out, is_active in").
-    Merely superseding a scheme no longer blocks generate_task — only
-    is_active=False does, and that guard is inert until Task 4 lands.
+    (``replaced_by``) to ``is_active``; Task 4 deletes supersession
+    entirely, so ``is_active`` is now the sole retirement signal.
     """
 
-    def _supersede(self):
-        # Point the scheme at a replacement so replaced_by_id is set. Uses
-        # .update() rather than assign+save(): RateScheme.clean()'s
-        # is_referenced() still queries the pre-Task-1 Task.rate_scheme
-        # field — a known, out-of-scope bug (leave alone, later tasks) that
-        # would make any save() of a referenced scheme 500.
-        new = RateScheme.objects.create(
-            name='Hourly v2', algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('45'), unit_label='hour', accounting_category=self.cat,
-        )
-        RateScheme.objects.filter(pk=self.scheme.pk).update(replaced_by=new)
-        self.scheme.refresh_from_db()
+    def _retire(self):
+        # Direct assign+save (not .update()): editing/retiring a referenced
+        # scheme is freely allowed post-Task-4, and this also keeps
+        # self.service_item's cached rate_scheme FK in sync (same in-memory
+        # instance as self.scheme).
+        self.scheme.is_active = False
+        self.scheme.save()
 
-    def test_superseded_scheme_does_not_abort_by_default(self):
-        self._supersede()
-        task = self.service_item.generate_task(
-            self.job, est_qty=Decimal('1'), description='desc from line',
-        )
-        self.assertEqual(task.name, 'CAM coding')          # from template_name
-        self.assertEqual(task.description, 'desc from line')
-        self.assertEqual(task.source_scheme_id, self.scheme.pk)
-
-    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
     def test_inactive_scheme_aborts_by_default(self):
-        RateScheme.objects.filter(pk=self.scheme.pk).update(is_active=False)
+        self._retire()
         with self.assertRaises(SchemeInactiveError):
             self.service_item.generate_task(self.job, est_qty=Decimal('1'))
 
-    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
     def test_allow_inactive_scheme_bypasses_and_builds_task(self):
-        RateScheme.objects.filter(pk=self.scheme.pk).update(is_active=False)
+        self._retire()
         task = self.service_item.generate_task(
             self.job, est_qty=Decimal('1'),
             description='desc from line', allow_inactive_scheme=True,
@@ -276,20 +256,16 @@ class OnAcceptCrystallizesServiceTest(DeferredServiceBase):
         self.assertEqual(task.est_qty, Decimal('3'))
         self.assertEqual(task.est_worker_time, timedelta(hours=3))
 
-    def test_superseded_scheme_does_not_abort_acceptance(self):
+    def test_edited_scheme_does_not_abort_acceptance(self):
+        """Editing the preset after the line was added (freely allowed,
+        Task 4 — no frozen fields) does not touch the already-queued
+        acceptance; only is_active=False raises SchemeInactiveError."""
         from apps.jobs.models import Task
         line = EstimateService.add_line_item_from_service(
             self.estimate.pk, self.service_item.pk, Decimal('1'),
         )
-        new = RateScheme.objects.create(
-            name='Hourly v2', algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('45'), unit_label='hour', accounting_category=self.cat,
-        )
-        # .update() (not assign+save()): RateScheme.clean()'s is_referenced()
-        # still queries the pre-Task-1 Task.rate_scheme field — a known,
-        # out-of-scope bug (leave alone, later tasks) that would make any
-        # save() of a referenced scheme 500.
-        RateScheme.objects.filter(pk=self.scheme.pk).update(replaced_by=new)
+        self.scheme.rate = Decimal('45')
+        self.scheme.save()
 
         # Does NOT raise SchemeInactiveError.
         EstimateAcceptanceService.on_accept(self.estimate)

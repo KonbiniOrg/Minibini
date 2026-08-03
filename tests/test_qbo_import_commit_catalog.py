@@ -1,5 +1,6 @@
-"""commit_catalog: inventory field-overwrites; service price updates go
-through RateScheme supersession and repoint the ServiceItem."""
+"""commit_catalog: inventory field-overwrites; service price updates edit
+the RateScheme in place (Task 4: presets are freely editable, no
+supersession — the ServiceItem's FK never needs repointing)."""
 from decimal import Decimal
 
 from django.test import TestCase
@@ -72,11 +73,11 @@ class CommitCatalogTest(TestCase):
              'name': 'CNC Routing', 'description': '', 'rate': '0'}])
         svc.refresh_from_db()
         self.scheme.refresh_from_db()
-        self.assertIsNone(self.scheme.replaced_by_id)   # untouched
+        self.assertEqual(self.scheme.rate, Decimal('95.0'))  # untouched
         self.assertEqual(svc.rate_scheme_id, self.scheme.pk)
         self.assertEqual(svc.template_name, 'CNC Routing')
 
-    def test_service_price_update_supersedes_scheme(self):
+    def test_service_price_update_edits_scheme_in_place(self):
         svc = ServiceItem.objects.create(
             template_name='CNC Cutting', rate_scheme=self.scheme, qbo_id='11')
         QBOImportCommitService.commit_catalog([
@@ -86,6 +87,6 @@ class CommitCatalogTest(TestCase):
         ])
         svc.refresh_from_db()
         self.scheme.refresh_from_db()
-        self.assertIsNotNone(self.scheme.replaced_by_id)   # superseded
-        self.assertEqual(svc.rate_scheme_id, self.scheme.replaced_by_id)
+        self.assertEqual(self.scheme.rate, Decimal('110.0'))
+        self.assertEqual(svc.rate_scheme_id, self.scheme.pk)  # same row, edited in place
         self.assertEqual(svc.rate_scheme.rate, Decimal('110.0'))

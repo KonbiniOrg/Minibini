@@ -1,56 +1,22 @@
-"""Pinning tests for two LATER verifications (2026-07-04).
+"""Pinning test for a LATER verification (2026-07-04).
 
-1. RateScheme.supersede() does NOT repoint catalog users — a ServiceItem (or
-   Task) keeps pointing at the old, renamed scheme. Confirmed behavior, now
-   pinned: the deferred-service crystallization tolerates this via
-   generate_task(allow_inactive_scheme=True), and template-based creation
-   rejects inactive-scheme templates loudly (Task 3: the creation-time gate
-   moved from supersession to RateScheme.is_active, added in Task 4).
+One-live-estimate-tree-per-job is a service-level invariant, not just an
+API-layer check: EstimateService.create_for_job refuses a second
+non-superseded estimate. revise_estimate remains the versioning path.
 
-2. One-live-estimate-tree-per-job is a service-level invariant, not just an
-   API-layer check: EstimateService.create_for_job refuses a second
-   non-superseded estimate. revise_estimate remains the versioning path.
+(A second pinning class used to live here — RateScheme.supersede() not
+repointing catalog users. Task 4 deletes supersede() entirely: presets are
+freely editable in place now, so there's no "old scheme" to keep pointing
+at and nothing left to pin. See tests/test_rate_scheme_retire.py for the
+Task 4 replacement coverage.)
 """
-from decimal import Decimal
-
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from apps.contacts.models import Contact
-from apps.core.models import AccountingCategory
-from apps.estimates.models import Estimate, ServiceItem
+from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateService
-from apps.jobs.models import Job, RateScheme, Task
-
-
-class SupersedeDoesNotRepointTest(TestCase):
-    def setUp(self):
-        self.cat = AccountingCategory.objects.create(name='sup', code='SUP')
-        self.scheme = RateScheme.objects.create(
-            name='Bench rate', algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('50'), unit_label='hr', accounting_category=self.cat,
-        )
-
-    def test_service_item_keeps_old_scheme(self):
-        si = ServiceItem.objects.create(
-            template_name='Bench work', rate_scheme=self.scheme,
-        )
-        new = self.scheme.supersede(rate=Decimal('60'))
-        si.refresh_from_db()
-        self.assertEqual(si.rate_scheme_id, self.scheme.pk)
-        self.assertNotEqual(si.rate_scheme_id, new.pk)
-        self.scheme.refresh_from_db()
-        self.assertEqual(self.scheme.replaced_by_id, new.pk)
-        self.assertIn('(v1)', self.scheme.name)
-
-    def test_task_keeps_old_scheme(self):
-        contact = Contact.objects.create(first_name='S', last_name='D')
-        job = Job.objects.create(job_number='JOB-SUP-1', contact=contact)
-        task = Task.objects.create(job=job, name='T', rate_scheme=self.scheme)
-        new = self.scheme.supersede(rate=Decimal('60'))
-        task.refresh_from_db()
-        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
-        self.assertNotEqual(task.rate_scheme_id, new.pk)
+from apps.jobs.models import Job
 
 
 class OneLiveEstimateTreeServiceGuardTest(TestCase):

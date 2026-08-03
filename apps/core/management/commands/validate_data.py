@@ -24,7 +24,6 @@ Per-model field checks:
                    W  non-terminal: stray completed_date
   RateScheme       E  valid algorithm value
                    E  missing accounting_category
-                   E  replaced_by/replaced_at must be set together
   Estimate         E  valid status value
                    E  max one accepted estimate per job
                    E  max one draft estimate per job
@@ -440,12 +439,6 @@ class Command(BaseCommand):
             if not rs.accounting_category_id:
                 self.errors.append(
                     f'RateScheme {rs.pk} ({rs.name}): missing accounting_category'
-                )
-            # replaced_by and replaced_at are set together by supersede()
-            if bool(rs.replaced_by_id) != bool(rs.replaced_at):
-                self.errors.append(
-                    f'RateScheme {rs.pk} ({rs.name}): replaced_by and replaced_at '
-                    f'must both be set or both be null'
                 )
             if rs.algorithm != RateScheme.PERCENTAGE and rs.rate is not None and rs.rate < 0:
                 self.errors.append(
