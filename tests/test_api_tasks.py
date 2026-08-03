@@ -339,7 +339,9 @@ class TaskMoneyPermissionTest(TestCase):
             'unit_label': 'hour',
             'qty_source': Task.QTY_ELAPSED,
             'accounting_category': self.ac2.pk,
-            'active_modifiers': [{'key': 'rush', 'label': 'Rush', 'percent': 10}],
+            # CREATE shape is a list of modifier key strings (resolved by
+            # stamp_from_scheme) — the dict/snapshot shape is UPDATE-only.
+            'active_modifiers': ['rush'],
         }
         self.client.force_login(self.worker)
         for field, value in money_payloads.items():
@@ -449,6 +451,159 @@ class TaskMoneyPermissionTest(TestCase):
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 403, resp.content)
+
+
+class TaskMoneyFieldShapeValidationTest(TestCase):
+    """Review finding (code review, task-owned-money Phase 1 final wave):
+    the active_modifiers contract is asymmetric by design — CREATE takes a
+    list of modifier KEY STRINGS (resolved server-side by
+    stamp_from_scheme); UPDATE takes the full [{key, label, percent}]
+    snapshot list, applied by setattr in TaskService.update_task. Without
+    TaskSerializer.validate_active_modifiers, a manager PATCHing the
+    create-shape (key strings) onto an existing task would persist a
+    malformed row that later crashes Task.effective_rate() on every
+    list/detail GET. Also covers the rate >= 0 guard (same finding)."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+
+        self.ac = AccountingCategory.objects.create(code='SHP1', name='Shape1')
+        self.scheme = RateScheme.objects.create(
+            name='Shape Scheme',
+            algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('20.00'),
+            unit_label='piece',
+            accounting_category=self.ac,
+            modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 10}],
+        )
+        contact = Contact.objects.create(
+            first_name='Shape', last_name='Job', email='shape-job@test.example')
+        self.job = Job.objects.create(
+            name='Shape Job', contact=contact, job_number='JOB-SHAPE-001',
+        )
+        # can_manage_jobs atom holder — money-write gate is not what's under
+        # test here, shape validation is, so use a principal that always
+        # clears the permission gate.
+        self.manager = User.objects.create_user(
+            username='shape_mgr', password='testpass')
+        self.manager.user_permissions.add(
+            Permission.objects.get(codename='can_manage_jobs'))
+        self.manager = User.objects.get(pk=self.manager.pk)
+        self.task = _stamp_task(self.job, self.scheme, 'Shape task')
+
+    def _tasks_url(self):
+        return f'/api/jobs/{self.job.pk}/tasks/'
+
+    def _task_detail_url(self, task=None):
+        t = task or self.task
+        return f'/api/jobs/{self.job.pk}/tasks/{t.pk}/'
+
+    # --- active_modifiers shape: CREATE wants key strings ---
+
+    def test_create_with_dict_shape_active_modifiers_returns_400(self):
+        """The UPDATE shape (snapshot dicts) sent on CREATE must 400, not
+        persist a malformed row."""
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Bad Create', 'rate_scheme': self.scheme.pk,
+            'active_modifiers': [{'key': 'rush', 'label': 'Rush', 'percent': 10}],
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('active_modifiers', resp.json())
+
+    def test_create_with_key_string_shape_active_modifiers_returns_201(self):
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Good Create', 'rate_scheme': self.scheme.pk,
+            'active_modifiers': ['rush'],
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(len(body['active_modifiers']), 1)
+        self.assertEqual(body['active_modifiers'][0]['key'], 'rush')
+
+    # --- active_modifiers shape: UPDATE wants {key, label, percent} dicts ---
+
+    def test_patch_with_key_string_shape_active_modifiers_returns_400(self):
+        """This is the exact bug the finding describes: the CREATE shape
+        (bare key strings) sent on PATCH must 400 instead of being setattr'd
+        straight onto the model, which would later blow up
+        Task.effective_rate() on read."""
+        self.client.force_login(self.manager)
+        resp = self.client.patch(
+            self._task_detail_url(), data={'active_modifiers': ['rush']},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('active_modifiers', resp.json())
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.active_modifiers, [])
+
+    def test_patch_with_snapshot_dict_shape_active_modifiers_returns_200(self):
+        self.client.force_login(self.manager)
+        resp = self.client.patch(
+            self._task_detail_url(),
+            data={'active_modifiers': [
+                {'key': 'rush', 'label': 'Rush', 'percent': 10},
+            ]},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.active_modifiers,
+                         [{'key': 'rush', 'label': 'Rush', 'percent': 10}])
+
+    def test_patch_with_non_dict_entry_returns_400(self):
+        self.client.force_login(self.manager)
+        resp = self.client.patch(
+            self._task_detail_url(), data={'active_modifiers': [None]},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+    def test_patch_with_bool_percent_returns_400(self):
+        """bool is a subclass of int — a naive isinstance(x, (int, float))
+        check would wrongly accept it. Mirrors validate_data's
+        Decimal(str(...)) idiom, which correctly rejects it."""
+        self.client.force_login(self.manager)
+        resp = self.client.patch(
+            self._task_detail_url(),
+            data={'active_modifiers': [
+                {'key': 'rush', 'label': 'Rush', 'percent': True},
+            ]},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+    def test_patch_with_missing_key_returns_400(self):
+        self.client.force_login(self.manager)
+        resp = self.client.patch(
+            self._task_detail_url(),
+            data={'active_modifiers': [{'label': 'Rush', 'percent': 10}]},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+    # --- rate: min 0 ---
+
+    def test_patch_negative_rate_returns_400(self):
+        self.client.force_login(self.manager)
+        resp = self.client.patch(
+            self._task_detail_url(), data={'rate': '-5.00'},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('rate', resp.json())
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.rate, Decimal('20.00'))
+
+    def test_patch_zero_rate_returns_200(self):
+        self.client.force_login(self.manager)
+        resp = self.client.patch(
+            self._task_detail_url(), data={'rate': '0.00'},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
 
 
 class InactiveSchemeTaskCreateTest(TestCase):

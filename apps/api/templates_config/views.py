@@ -291,9 +291,12 @@ def settings_view(request):
                 return Response(
                     {'default_rate_scheme': 'must be a rate scheme id'},
                     status=400)
-            if not RateScheme.objects.filter(pk=pk, is_active=True).exists():
+            if not RateScheme.objects.filter(
+                    pk=pk, is_active=True
+            ).exclude(algorithm=RateScheme.PERCENTAGE).exists():
                 return Response(
-                    {'default_rate_scheme': 'unknown or inactive rate scheme'},
+                    {'default_rate_scheme':
+                     'unknown, inactive, or a percentage rate scheme'},
                     status=400)
     for key, value in request.data.items():
         # The envelope is stored as canonical JSON; a dict payload must be

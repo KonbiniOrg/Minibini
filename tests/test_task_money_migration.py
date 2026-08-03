@@ -35,3 +35,29 @@ class TaskMoneyBackfillTest(TestCase):
         self.assertEqual(t.accounting_category_id, self.ac.pk)
         self.assertEqual(t.active_modifiers,
                          [{'key': 'rush', 'label': 'Rush', 'percent': 50}])
+
+    def test_backfill_skips_percentage_scheme_task_and_reports_count(self):
+        """A task pointing at a percentage-algorithm scheme is a historical
+        anomaly the current guards (stamp_from_scheme/RateScheme.clean)
+        forbid going forward — Task.qty_source has no 'percentage' choice,
+        so blindly copying scheme.algorithm would persist an out-of-choices
+        value. QuerySet.update bypasses Task.full_clean/save to construct
+        that anomaly (stamp_from_scheme itself raises ValueError for a
+        percentage scheme, so it can't be reached the normal way)."""
+        pct_scheme = RateScheme.objects.create(
+            name='Rush pct', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10'), unit_label='%',
+            accounting_category=self.ac)
+        Task.objects.filter(pk=self.task.pk).update(
+            source_scheme=pct_scheme, rate=Decimal('95.00'),
+            unit_label='hour', qty_source=Task.QTY_ELAPSED,
+            accounting_category=self.ac, active_modifiers=[])
+        before = Task.objects.get(pk=self.task.pk)
+        skipped = backfill_task_money(Task, RateScheme)
+        self.assertEqual(skipped, 1)
+        after = Task.objects.get(pk=self.task.pk)
+        self.assertEqual(after.rate, before.rate)
+        self.assertEqual(after.unit_label, before.unit_label)
+        self.assertEqual(after.qty_source, before.qty_source)
+        self.assertEqual(after.accounting_category_id, before.accounting_category_id)
+        self.assertEqual(after.active_modifiers, before.active_modifiers)

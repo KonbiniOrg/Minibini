@@ -246,8 +246,8 @@ class TaskBase(models.Model):
         max_digits=10, decimal_places=2,
         null=True, blank=True,
         help_text=(
-            "Estimated billable quantity in the rate scheme's units. "
-            "Optional on Task."
+            "Estimated billable quantity in the task's own units "
+            "(unit_label). Optional on Task."
         ),
     )
 
@@ -384,7 +384,11 @@ class Task(TaskBase):
         # / update_task), NOT here: auto-assign on start_work deliberately
         # claims a task for its first worker without demanding a duration
         # mid-clock-in, so assignee-without-est-time is a legal model state.
-        # charge guard removed in B4. rate_scheme is NOT NULL at DB level (B8).
+        # charge guard removed in B4. Task-owned money (Phase 1): the task
+        # owns its money fields (qty_source/rate/unit_label/
+        # accounting_category/active_modifiers) directly; source_scheme is
+        # nullable (SET_NULL on preset deletion) and provenance-only — no
+        # NOT-NULL invariant to enforce here anymore.
 
     def save(self, *args, **kwargs):
         from django.db import transaction
@@ -450,10 +454,14 @@ class Task(TaskBase):
         surcharges (task-owned-money Phase 1 — no RateScheme lookup)."""
         if self.rate is None:
             return Decimal('0.00')
-        pct = sum(
-            (Decimal(str(m.get('percent', 0))) for m in (self.active_modifiers or [])),
-            Decimal('0'),
-        )
+        pct = Decimal('0')
+        for m in (self.active_modifiers or []):
+            # The real gate is TaskSerializer.validate_active_modifiers; this
+            # is belt-and-braces so one bad legacy/migrated row degrades the
+            # price instead of 500ing every list/detail read.
+            if not isinstance(m, dict):
+                continue
+            pct += Decimal(str(m.get('percent', 0)))
         return (self.rate * (1 + pct / 100)).quantize(Decimal('0.01'))
 
     def get_actual_qty(self):
