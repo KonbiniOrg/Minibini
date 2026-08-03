@@ -1063,7 +1063,8 @@ class EstimateWizardService(BaseWizardService):
     def _atom_units(atom_instance):
         """Return the units label for an atom.
 
-        Task: from rate_scheme.unit_label (rate_scheme is NOT NULL on Task).
+        Task: from the task's own unit_label (task-owned-money Phase 1 —
+              no RateScheme lookup; defaults to 'none' if never stamped).
         Material: from the atom's own units field (which is populated from the
                   linked PLI at create time via _populate_from_pli, so PLI-linked
                   materials reflect the PLI's units; freeform materials carry
@@ -1072,9 +1073,7 @@ class EstimateWizardService(BaseWizardService):
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if isinstance(atom_instance, Task):
-            if atom_instance.rate_scheme_id:
-                return atom_instance.rate_scheme.unit_label
-            return 'none'
+            return atom_instance.unit_label or 'none'
         if isinstance(atom_instance, Material):
             return atom_instance.units or 'none'
         return 'none'
@@ -1144,7 +1143,7 @@ class EstimateWizardService(BaseWizardService):
         for task in Task.objects.filter(job=job).exclude(
             status=Task.STATUS_CANCELLED,
         ).select_related(
-            'rate_scheme', 'rate_scheme__accounting_category',
+            'accounting_category',
         ):
             key = (EstimateLineItemSource.SOURCE_TASK, task.pk)
             state_info = claims.get(key, default_state)
@@ -1235,7 +1234,7 @@ class EstimateWizardService(BaseWizardService):
 
     @classmethod
     def _task_qty_and_price(cls, task, total_price):
-        if task.rate_scheme_id and task.est_qty is not None:
+        if task.rate is not None and task.est_qty is not None:
             return task.est_qty, task.effective_rate()
         return Decimal('1'), total_price
 

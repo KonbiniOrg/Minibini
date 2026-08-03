@@ -554,16 +554,16 @@ class WizardAtomLabels:
 
     @staticmethod
     def qty_source_label(task):
-        """Describe where the billable quantity came from for a Task atom."""
-        from apps.jobs.models import RateScheme
-        scheme = task.rate_scheme
-        if scheme.algorithm == RateScheme.ELAPSED_TIME:
-            qty = scheme.get_actual_qty(task)
-            return f'{qty:.2f} {scheme.unit_label} from timeslips'
-        if scheme.algorithm == RateScheme.ENTERED_QTY:
-            qty = scheme.get_actual_qty(task)
-            return f'{qty} {scheme.unit_label} entered'
-        return 'flat fee'
+        """Describe where the billable quantity came from for a Task atom
+        (task-owned-money Phase 1 — branches on the task's own qty_source,
+        no RateScheme lookup)."""
+        if task.qty_source == task.QTY_ELAPSED:
+            qty = task.get_actual_qty()
+            return f'{qty:.2f} {task.unit_label} from timeslips'
+        if task.qty_source == task.QTY_ENTERED:
+            qty = task.get_actual_qty()
+            return f'{qty} {task.unit_label} entered'
+        raise ValueError(f'Unknown qty_source: {task.qty_source!r}')
 
 
 class InvoiceWizardService(BaseWizardService):
@@ -686,7 +686,6 @@ class InvoiceWizardService(BaseWizardService):
 
         tasks = (
             Task.objects.filter(job=job)
-            .select_related('rate_scheme')
             .order_by('sort_order', 'pk')
         )
         task_list = []
@@ -699,7 +698,7 @@ class InvoiceWizardService(BaseWizardService):
             atoms.append({
                 'type': 'task',
                 'id': task.pk,
-                'description': f'{task.name} ({task.rate_scheme.name})',
+                'description': task.name,
                 'sub_info': WizardAtomLabels.qty_source_label(task),
                 'qty': detail['qty'],
                 'rate': detail['rate'],
@@ -1056,11 +1055,12 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _atom_units(cls, atom_instance):
-        """Units label for an atom — rate scheme unit, PLI units, or 'none'."""
+        """Units label for an atom — the task's own unit_label
+        (task-owned-money Phase 1), PLI units, or 'none'."""
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if isinstance(atom_instance, Task):
-            return atom_instance.rate_scheme.unit_label
+            return atom_instance.unit_label or 'none'
         if isinstance(atom_instance, Material):
             if atom_instance.inventory_item_id:
                 return atom_instance.inventory_item.units
@@ -1140,15 +1140,15 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _task_qty_and_price(cls, task, total_price):
-        # Both algorithms carry a real per-unit qty × rate: entered_qty from
-        # the worker-entered quantity, elapsed_time from blep hours. Either
-        # way qty × effective_rate == the computed amount exactly, and it
-        # matches what _uniform_scheme_bundle produces for the same task.
-        if task.rate_scheme_id:
-            scheme = task.rate_scheme
-            return scheme.get_actual_qty(task), task.effective_rate()
+        # Both qty_source values carry a real per-unit qty × rate: entered_qty
+        # from the worker-entered quantity, elapsed_time from blep hours.
+        # Either way qty × effective_rate == the computed amount exactly, and
+        # it matches what _uniform_money_bundle produces for the same task
+        # (task-owned-money Phase 1 — no RateScheme lookup).
+        if task.rate is not None:
+            return task.get_actual_qty(), task.effective_rate()
         return Decimal('1'), total_price
 
     @classmethod
     def _task_actual_qty(cls, task):
-        return task.rate_scheme.get_actual_qty(task)
+        return task.get_actual_qty()

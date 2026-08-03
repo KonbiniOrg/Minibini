@@ -350,15 +350,15 @@ class BillabilityGateTest(BaseTestCase):
         )
 
         # An incomplete (pending) task — must appear as not_billable
-        self.incomplete_task = Task.objects.create(
-            job=self.job, name='Pending Work', rate_scheme=self.scheme,
-        )
+        self.incomplete_task = Task(job=self.job, name='Pending Work')
+        self.incomplete_task.stamp_from_scheme(self.scheme)
+        self.incomplete_task.save()
         # Status is STATUS_PENDING by default — don't change it.
 
         # A complete task — for contrast
-        self.complete_task = Task.objects.create(
-            job=self.job, name='Done Work', rate_scheme=self.scheme,
-        )
+        self.complete_task = Task(job=self.job, name='Done Work')
+        self.complete_task.stamp_from_scheme(self.scheme)
+        self.complete_task.save()
         self.complete_task.status = Task.STATUS_COMPLETE
         self.complete_task.save()
 
