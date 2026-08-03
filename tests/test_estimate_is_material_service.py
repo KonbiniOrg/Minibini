@@ -31,15 +31,29 @@ class EstimateServiceIsMaterialTest(TestCase):
             is_material=True,
         )
         li.refresh_from_db()
-        self.assertTrue(li.is_material)
+        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_MATERIAL)
 
-    def test_add_defaults_is_material_false(self):
+    def test_add_without_kind_or_alias_raises(self):
+        # Task 4: the old silent bare->fee default at ENTRY is gone — a bare
+        # add with neither is_material nor a direct freeform_kind is now a
+        # 400, not an implicit is_material=False/'fee'.
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.add_line_item(
+                self.estimate.pk, description='Rush', qty=Decimal('1'),
+                price=Decimal('25'), accounting_category=self.cat.pk,
+            )
+        self.assertIn('freeform_kind', ctx.exception.message_dict)
+
+    def test_add_is_material_false_still_maps_to_fee(self):
+        # The is_material alias's own False->'fee' mapping is unchanged —
+        # only the *implicit* default (neither key sent at all) was removed.
         li = EstimateService.add_line_item(
             self.estimate.pk, description='Rush', qty=Decimal('1'),
             price=Decimal('25'), accounting_category=self.cat.pk,
+            is_material=False,
         )
         li.refresh_from_db()
-        self.assertFalse(li.is_material)
+        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_FEE)
 
     def test_add_rejects_is_material_with_inventory_item(self):
         pli = InventoryItem.objects.create(
@@ -64,14 +78,20 @@ class EstimateServiceIsMaterialTest(TestCase):
                 adjustment_service=adj.pk, is_material=True,
             )
 
-    def test_update_toggles_is_material(self):
+    def test_update_is_material_to_change_kind_is_rejected(self):
+        # Task 4: freeform_kind (whether set via is_material or directly) is
+        # immutable after creation — an update can no longer "toggle" a
+        # line from fee to material (or vice versa).
         li = EstimateService.add_line_item(
             self.estimate.pk, description='ABS', qty=Decimal('1'),
             price=Decimal('400'), accounting_category=self.cat.pk,
+            is_material=False,
         )
-        EstimateService.update_line_item(li.pk, is_material=True)
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.update_line_item(li.pk, is_material=True)
+        self.assertIn('freeform_kind', ctx.exception.message_dict)
         li.refresh_from_db()
-        self.assertTrue(li.is_material)
+        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_FEE)
 
     def test_update_rejects_is_material_on_inventory_line(self):
         pli = InventoryItem.objects.create(

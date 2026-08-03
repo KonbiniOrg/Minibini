@@ -90,15 +90,36 @@ class EstimateFreeformKindWriteGuardTest(FreeformKindWriteGuardSetup):
         li.refresh_from_db()
         self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_FEE)
 
-    def test_update_bare_line_with_direct_freeform_kind_honored(self):
+    def test_update_bare_line_kind_is_immutable(self):
+        # Task 4: freeform_kind is immutable after creation — supersedes the
+        # earlier "update honors a direct freeform_kind" expectation this
+        # test previously asserted (that also required a bare add with no
+        # kind at all, which Task 4's kind-required-on-add rule now 400s
+        # before this even reaches update).
         li = EstimateService.add_line_item(
             self.estimate.pk, description='Rush handling', qty=Decimal('1'),
             price=Decimal('25'), accounting_category=self.cat.pk,
+            freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.update_line_item(
+                li.pk, freeform_kind=EstimateLineItem.KIND_MATERIAL,
+            )
+        self.assertIn('freeform_kind', ctx.exception.message_dict)
+        li.refresh_from_db()
+        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_FEE)
+
+    def test_update_bare_line_resending_same_kind_succeeds(self):
+        li = EstimateService.add_line_item(
+            self.estimate.pk, description='Rush handling', qty=Decimal('1'),
+            price=Decimal('25'), accounting_category=self.cat.pk,
+            freeform_kind=EstimateLineItem.KIND_FEE,
         )
         updated = EstimateService.update_line_item(
-            li.pk, freeform_kind=EstimateLineItem.KIND_MATERIAL,
+            li.pk, freeform_kind=EstimateLineItem.KIND_FEE, description='Rush (edited)',
         )
-        self.assertEqual(updated.freeform_kind, EstimateLineItem.KIND_MATERIAL)
+        self.assertEqual(updated.freeform_kind, EstimateLineItem.KIND_FEE)
+        self.assertEqual(updated.description, 'Rush (edited)')
 
     # -- is_material alias paths still green (unaffected by the new guard) --
 

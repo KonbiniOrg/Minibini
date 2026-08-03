@@ -191,9 +191,19 @@ class EstimateService:
         boundary: meaningful only on a bare line (mirrors the retired
         `is_material` field's own validation — a line with an inventory_item
         is already a catalog material, an adjustment line is document-only,
-        either conflicts with the marker); a bare line always gets a
-        determinate kind, preserving the historical default (an unmarked
-        bare line -> Fee)."""
+        either conflicts with the marker).
+
+        Task 4: a direct freeform_kind wins over an absent/False is_material
+        — this method no longer clobbers a caller-supplied kind (e.g.
+        'work') with the old unconditional bare->fee mapping. is_material
+        =True conflicting with a *different* already-set kind is a 400;
+        =True with no kind set (or already 'material') sets/keeps
+        'material'; =False leaves an already-set kind alone and only
+        defaults to 'fee' when nothing else set the kind — preserving the
+        alias's historical True/False -> material/fee mapping the SPA
+        relies on. Caller decides whether "no kind at all" is an error
+        (add's `_require_kind_on_bare_add` — Task 4) or a legal no-op
+        (update, where an untouched kind must survive unchanged)."""
         if li.inventory_item_id is not None:
             if is_material:
                 raise ValidationError({'is_material': (
@@ -207,7 +217,88 @@ class EstimateService:
                     'An adjustment line cannot be marked as a material.'
                 )})
             return
-        li.freeform_kind = EstimateLineItem.KIND_MATERIAL if is_material else EstimateLineItem.KIND_FEE
+        if is_material:
+            if (li.freeform_kind is not None
+                    and li.freeform_kind != EstimateLineItem.KIND_MATERIAL):
+                raise ValidationError({'freeform_kind': (
+                    f'is_material=True conflicts with freeform_kind='
+                    f'{li.freeform_kind!r}; send only one.'
+                )})
+            li.freeform_kind = EstimateLineItem.KIND_MATERIAL
+        elif li.freeform_kind is None:
+            li.freeform_kind = EstimateLineItem.KIND_FEE
+
+    @staticmethod
+    def _require_kind_on_bare_add(li, is_material_provided):
+        """Task 4: the old silent bare-line->fee default at ADD entry is
+        gone. A bare freeform line (no inventory_item, service_item, or
+        adjustment_service) must end up with a determinate freeform_kind —
+        either via the is_material alias (handled by
+        `_apply_is_material_alias`, called first whenever it was provided)
+        or a direct freeform_kind in the payload. Only reachable when
+        is_material was NOT provided at all — the alias branch above
+        already guarantees a kind otherwise. Shared by both add_line_item
+        methods (Estimate directly; ChangeOrderService gates the call to
+        action=ADD only — REPLACE/REMOVE lines mirror the old atom or
+        retire it and carry no kind requirement of their own)."""
+        if is_material_provided:
+            return
+        is_bare = (
+            li.inventory_item_id is None
+            and li.service_item_id is None
+            and getattr(li, 'adjustment_service_id', None) is None
+        )
+        if is_bare and li.freeform_kind is None:
+            raise ValidationError({'freeform_kind': [
+                'Required for freeform lines (no inventory item, service '
+                'item, or adjustment). Set freeform_kind to "work", '
+                '"material", or "fee".'
+            ]})
+
+    @staticmethod
+    def _validate_price(li):
+        """Sign/zero rules for a line's price (Task 4). Percentage
+        adjustment lines are untouched — their percent lives on
+        adjustment_percent (a scheme snapshot), not price.
+
+        - Negative price is allowed ONLY on a fee/credit line
+          (freeform_kind == KIND_FEE) — work/material/catalog/service lines
+          can't bill a negative rate or cost.
+        - A fee/credit line's price must not be zero: acceptance maps it
+          straight onto Fee.unit_rate (apps/estimates/acceptance.py,
+          apps/estimates/co_acceptance.py — no qty/price division), and a
+          zero-rate Fee is forbidden (FeeService._reject_zero_unit_rate) —
+          but acceptance calls `Fee.objects.create()` directly, bypassing
+          that service guard, so entry is where a zero-price fee line must
+          be caught instead.
+
+        Called before `li.full_clean()` (so this error takes precedence over
+        generic field-shape errors, matching the AC-required check above it)
+        — at that point a freshly-constructed instance's price may still be
+        the raw string the API client sent (Django only coerces field values
+        during `clean_fields()`/`full_clean()`, not on plain attribute
+        assignment), so this coerces defensively via `Decimal(str(...))`
+        (the same idiom as `_decimal_or_invalid`) rather than assuming a
+        Decimal. An unparseable value is left for `full_clean()` to reject
+        with its own message."""
+        if getattr(li, 'adjustment_service_id', None) is not None:
+            return
+        if li.price is None:
+            return
+        from decimal import Decimal, InvalidOperation
+        try:
+            price = Decimal(str(li.price))
+        except (InvalidOperation, TypeError, ValueError):
+            return
+        is_fee = li.freeform_kind == li.KIND_FEE
+        if price < 0 and not is_fee:
+            raise ValidationError({'price': [
+                'Negative price is only allowed on a Fee/Credit line.'
+            ]})
+        if is_fee and price == 0:
+            raise ValidationError({'price': [
+                'A Fee/Credit line must not have a zero price.'
+            ]})
 
     @staticmethod
     def _reject_freeform_kind_on_non_bare_line(li):
@@ -408,14 +499,23 @@ class EstimateService:
         from apps.core.services import LineItemService
         kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
         # `is_material` input alias (Task 7 removes this alias): pop it before
-        # constructing the model (freeform_kind replaced it as a real field) —
-        # default False mirrors the retired field's own model-level default.
+        # constructing the model (freeform_kind replaced it as a real field).
+        # Track whether the caller sent it at all — Task 4 needs that
+        # distinction (an explicit False still maps to 'fee'; an absent key
+        # falls through to the kind-required check below instead of
+        # silently defaulting).
+        is_material_provided = 'is_material' in kwargs
         is_material = kwargs.pop('is_material', False)
         li = EstimateLineItem(estimate=estimate, **kwargs)
-        EstimateService._apply_is_material_alias(li, is_material)
+        if is_material_provided:
+            EstimateService._apply_is_material_alias(li, is_material)
         # Guards against a caller sending freeform_kind directly on a
         # catalog/service/adjustment line (bypassing the alias above).
         EstimateService._reject_freeform_kind_on_non_bare_line(li)
+        # Task 4: a bare line must have a determinate kind at entry — the
+        # old silent bare->fee default is gone. No-op when is_material was
+        # provided (already resolved above).
+        EstimateService._require_kind_on_bare_add(li, is_material_provided)
         # Material lines (freeform_kind='material') get their AC from config if not supplied.
         EstimateService._apply_material_ac_default(li)
         # A freshly-added line has no sources; if it isn't an adjustment it needs an AC.
@@ -426,6 +526,7 @@ class EstimateService:
                     '(lines with no atom source).'
                 )}
             )
+        EstimateService._validate_price(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li
@@ -453,6 +554,7 @@ class EstimateService:
             price=pli.selling_price,
             accounting_category=pli.accounting_category,
         )
+        EstimateService._validate_price(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li
@@ -488,6 +590,7 @@ class EstimateService:
             price=scheme.effective_rate(service_item.default_active_modifiers),
             accounting_category=service_item.effective_accounting_category,
         )
+        EstimateService._validate_price(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li
@@ -510,13 +613,37 @@ class EstimateService:
         # field would have.
         is_material_provided = 'is_material' in kwargs
         is_material = kwargs.pop('is_material', None)
+        kind_provided = 'freeform_kind' in kwargs
+        original_kind = li.freeform_kind
         for field, value in kwargs.items():
             setattr(li, field, value)
-        if is_material_provided:
-            EstimateService._apply_is_material_alias(li, is_material)
         # Guards against a caller sending freeform_kind directly on a
-        # catalog/service/adjustment line (bypassing the alias above).
+        # catalog/service/adjustment line (bypassing the alias below) —
+        # checked first so that case gets its own diagnostic rather than
+        # the immutability message below.
         EstimateService._reject_freeform_kind_on_non_bare_line(li)
+        if is_material_provided or kind_provided:
+            # Task 4: freeform_kind is immutable after creation. Resolve
+            # what THIS write is asking for using only what this call
+            # actually supplied — reset the direct-kind slot to None first
+            # so the alias's "leave an already-set kind alone" branch reads
+            # this request's own intent, not the persisted value the
+            # setattr loop above just carried over (which would otherwise
+            # look like a same-request direct kind and defeat the check
+            # below). Restored to the persisted value afterward regardless
+            # of outcome — this block only ever *validates*, it never
+            # itself commits a kind change.
+            if not kind_provided:
+                li.freeform_kind = None
+            if is_material_provided:
+                EstimateService._apply_is_material_alias(li, is_material)
+            requested_kind = li.freeform_kind
+            if requested_kind is not None and requested_kind != original_kind:
+                raise ValidationError({'freeform_kind': [
+                    'freeform_kind is immutable after creation; it cannot '
+                    'be changed once set.'
+                ]})
+            li.freeform_kind = original_kind
         # Hand-lines (no atom source, not an adjustment) must have an accounting category.
         # Atom-backed lines (sources exist) and adjustment lines are exempt.
         is_adjustment = li.adjustment_service_id is not None
@@ -530,6 +657,7 @@ class EstimateService:
                     '(lines with no atom source).'
                 )}
             )
+        EstimateService._validate_price(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li

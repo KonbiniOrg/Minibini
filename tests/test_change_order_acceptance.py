@@ -227,7 +227,7 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra scope', qty=Decimal('3'), price=Decimal('25.00'),
-            accounting_category=self.cat.pk,
+            accounting_category=self.cat.pk, freeform_kind=ChangeOrderLineItem.KIND_FEE,
         )
         self._accept(co)
 
@@ -255,7 +255,7 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra scope', qty=Decimal('1'), price=Decimal('10.00'),
-            accounting_category=self.cat.pk,
+            accounting_category=self.cat.pk, freeform_kind=ChangeOrderLineItem.KIND_FEE,
         )
         self._accept(co)
         # Re-running acceptance must not duplicate atoms: crystallized lines
@@ -609,7 +609,7 @@ class COAgreementBillingTests(ChangeOrderAcceptanceBase):
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra scope', qty=Decimal('1'), price=Decimal('10.00'),
-            accounting_category=self.cat.pk,
+            accounting_category=self.cat.pk, freeform_kind=ChangeOrderLineItem.KIND_FEE,
         )
         self._accept(co)
 
@@ -629,7 +629,7 @@ class COAgreementBillingTests(ChangeOrderAcceptanceBase):
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra scope', qty=Decimal('1'), price=Decimal('10.00'),
-            accounting_category=self.cat.pk,
+            accounting_category=self.cat.pk, freeform_kind=ChangeOrderLineItem.KIND_FEE,
         )
         self._accept(co)
         co_fee_pk = ChangeOrderLineItemSource.objects.get(

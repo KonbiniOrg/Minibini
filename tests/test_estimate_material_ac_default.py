@@ -4,7 +4,7 @@ from django.test import TestCase
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration
-from apps.estimates.models import Estimate
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import EstimateService
 from apps.jobs.models import Job
 
@@ -59,23 +59,41 @@ class EstimateMaterialAcDefaultTest(TestCase):
                 price=Decimal('400'), units='ea', is_material=True,
             )
 
-    def test_fee_without_ac_still_raises(self):
-        # is_material=False (a fee) is unchanged: AC is still required.
-        with self.assertRaises(ValidationError):
+    def test_bare_add_without_kind_raises_kind_required_not_ac(self):
+        # Task 4: the old silent bare->fee default at ENTRY is gone — a bare
+        # add with no kind at all now fails on the *kind* requirement before
+        # ever reaching the AC check (this line has no AC either, but that's
+        # no longer the reason it 400s).
+        with self.assertRaises(ValidationError) as ctx:
             EstimateService.add_line_item(
                 self.estimate.pk, description='Rush', qty=Decimal('1'),
                 price=Decimal('25'),
             )
+        self.assertIn('freeform_kind', ctx.exception.message_dict)
 
-    def test_update_to_material_without_ac_defaults_from_config(self):
+    def test_fee_without_ac_still_raises(self):
+        # is_material=False (a fee) is unchanged: AC is still required.
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.add_line_item(
+                self.estimate.pk, description='Rush', qty=Decimal('1'),
+                price=Decimal('25'), is_material=False,
+            )
+        self.assertIn('accounting_category', ctx.exception.message_dict)
+
+    def test_update_cannot_change_kind_even_to_apply_material_default(self):
+        # Task 4: freeform_kind is immutable after creation — a fee line
+        # can no longer be turned into a material (with its AC default) via
+        # update. The line must be created as a material from the start.
         li = EstimateService.add_line_item(
             self.estimate.pk, description='ABS', qty=Decimal('1'),
             price=Decimal('400'), accounting_category=self.other_cat.pk,
+            is_material=False,
         )
-        # Clear the AC and mark it a material in one update.
-        EstimateService.update_line_item(
-            li.pk, is_material=True, accounting_category=None,
-        )
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.update_line_item(
+                li.pk, is_material=True, accounting_category=None,
+            )
+        self.assertIn('freeform_kind', ctx.exception.message_dict)
         li.refresh_from_db()
-        self.assertTrue(li.is_material)
-        self.assertEqual(li.accounting_category, self.default_cat)
+        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_FEE)
+        self.assertEqual(li.accounting_category, self.other_cat)

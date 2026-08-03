@@ -758,14 +758,40 @@ taxability reads `accounting_category.taxable` directly). Declared in
 - `adjustment_target_categories` — M2M to `AccountingCategory`. The
   categories whose lines this adjustment applies to. Empty = all
   non-adjustment lines.
-- `is_material` — BooleanField, default `False`. Marks a bare
-  (no `inventory_item`, non-adjustment) freeform line as a
-  **material**: at acceptance it crystallizes into a `Material`
-  (established with a reverse-markup placeholder cost — §9.1)
-  instead of a `Fee`. Invalid on a line that already has an
-  `inventory_item` (already a catalog material) or that has an
-  `adjustment_service` (document-only adjustments can't be materials) —
-  enforced by `EstimateService._assert_is_material_only_on_bare_line`.
+- `freeform_kind` — nullable CharField, choices `work` | `material` |
+  `fee` (task-owned-money Phase 2 Task 2; replaced the retired
+  `is_material` boolean). Set **iff** the line is bare (no
+  `inventory_item`, `service_item`, or `adjustment_service`) —
+  `EstimateService._reject_freeform_kind_on_non_bare_line` rejects a
+  direct write on any other line shape. At acceptance it discriminates
+  the crystallization target (§9.1): `material` → an established
+  `Material` (reverse-markup placeholder cost), `work` → a flat `Task`
+  (entered-qty, no `RateScheme`), `fee` (or `NULL`, for pre-migration
+  rows) → a `Fee`. **Required at entry on a bare `add_line_item` call**
+  (Task 4) — the old silent bare-line default of `Fee` no longer applies
+  to new writes; only legacy rows may carry `NULL`. **Immutable after
+  creation** — `update_line_item` rejects any attempt to change an
+  already-set kind (`ValidationError` on `freeform_kind`), whether sent
+  directly or via the `is_material` alias below; re-sending the same
+  value is a no-op.
+  The retired `is_material` boolean survives only as a **write-side
+  input alias** on `EstimateService`/`ChangeOrderService` (`Task 7`
+  removes it once the frontend forms send `freeform_kind` directly):
+  `is_material=True` → `freeform_kind='material'`, `=False` →
+  `'fee'` — but a directly-supplied `freeform_kind` in the same call
+  wins over an absent/`False` alias value (only an explicit
+  `is_material=True` conflicting with a *different* direct kind 400s).
+  Invalid (with either spelling) on a line that already has an
+  `inventory_item`/`service_item` (already knows its type) or an
+  `adjustment_service` (document-only adjustments can't carry a kind).
+  A hand-line's **sign/zero rules** (Task 4, enforced by
+  `EstimateService._validate_price`, shared with `ChangeOrderService`):
+  negative `price` is allowed only when `freeform_kind='fee'` (a
+  credit) — `work`/`material` lines (and catalog/service lines, which
+  never carry `freeform_kind`) reject a negative price; a `fee` line's
+  `price` must not be `0` (it maps straight onto `Fee.unit_rate` at
+  acceptance, and a zero-rate `Fee` is forbidden). Percentage adjustment
+  lines are exempt from both rules.
 - `service_item` — nullable FK to `estimates.ServiceItem` (PROTECT,
   `related_name='+'`). Deferred service descriptor: the line carries the
   `ServiceItem`'s snapshotted price at authoring time, and the FK is the
@@ -844,7 +870,7 @@ the consistency backstop, not the guard.
 
 | Source rows on a line item | What it represents |
 |---|---|
-| 0 | A **hand-line** — manually authored, no atom backs it. Crystallizes at acceptance via the four-way discriminator (§9.1): `service_item` → Task, `inventory_item` → Material, `is_material` bare → established Material (reverse-markup cost), else → Fee. |
+| 0 | A **hand-line** — manually authored, no atom backs it. Crystallizes at acceptance via the four-way discriminator (§9.1): `service_item` → Task, `inventory_item` → Material, bare `freeform_kind='material'` → established Material (reverse-markup cost), bare `freeform_kind='work'` → flat Task, bare `freeform_kind='fee'`/`NULL` → Fee. |
 | 1 | Single-atom conversion (bulk send-all or a wizard pick of one atom) |
 | N | Wizard-grouped from multiple atoms |
 
@@ -879,7 +905,9 @@ falls back to blank description, `units = 'none'`, `qty = 1`,
 
 No `Task` is created at authoring time. The Task is created at acceptance by `on_accept` (§9.1, discriminator step 1), with `description=li.description` (the edited line description) and `allow_inactive_scheme=True` so a line whose scheme was retired after authoring can still crystallize.
 
-**`_apply_material_ac_default`.** `is_material=True` bare lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. Fee (non-`is_material`) hand-lines still require an explicit AC. The key is editable via a "Default material category" picker (`DefaultMaterialCategorySetting.svelte`, extracted out of `AccountingCategories.svelte`), rendered in both Settings' Accounting and Pricing tabs; `PATCH /api/settings/` validates it as blank-or-active-category-id (`data-constraints.md` §1.1).
+**`_apply_material_ac_default`.** Bare `freeform_kind='material'` lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. `work` and `fee` hand-lines get no default — both still require an explicit AC at entry (the generic hand-line AC-required check, unconditional on kind — no atom source and not an adjustment means an AC is mandatory). The key is editable via a "Default material category" picker (`DefaultMaterialCategorySetting.svelte`, extracted out of `AccountingCategories.svelte`), rendered in both Settings' Accounting and Pricing tabs; `PATCH /api/settings/` validates it as blank-or-active-category-id (`data-constraints.md` §1.1).
+
+**Kind required at entry (Task 4).** A bare `add_line_item` payload (Estimate, or a CO line with `action='add'` — REPLACE/REMOVE carry no kind requirement of their own, since REPLACE mirrors the target's current atom type) must resolve to a determinate `freeform_kind` — via the `is_material` alias or a direct `freeform_kind` — or the call 400s with `{'freeform_kind': [...]}`. `update_line_item` never re-requires a kind (an untouched line keeps its persisted one); it only rejects an attempt to *change* an already-set kind.
 
 **API endpoint:**
 
@@ -1068,9 +1096,10 @@ from a worksheet** — the old `AtomCarryOverService` /
 **crystallizes the estimate's hand-lines into job atoms** so the agreed
 price of a hand-authored line becomes a real, billable job atom. Each
 sourceless hand-line (no `EstimateLineItemSource`, not a percentage
-adjustment) goes through a **four-way discriminator** in order:
-`service_item` → Task, `inventory_item` → Material, `is_material` bare →
-established Material (reverse-markup cost), else → Fee.
+adjustment) goes through a **discriminator** in order: `service_item` →
+Task, `inventory_item` → Material, bare `freeform_kind='material'` →
+established Material (reverse-markup cost), bare `freeform_kind='work'` →
+flat Task, bare `freeform_kind='fee'`/`NULL` → Fee.
 
 ### 9.1 What `on_accept` does
 

@@ -91,6 +91,7 @@ class EstimateAPITest(BaseTestCase):
             'description': 'API test item',
             'price': '100.00',
             'accounting_category': cat.pk,
+            'freeform_kind': 'fee',
         }, format='json')
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['description'], 'API test item')

@@ -69,7 +69,8 @@ class LineItemErrorContractTest(BaseTestCase):
 
         response = self.client.post(
             f'/api/estimates/{estimate.pk}/line-items/',
-            {'description': 'Rush handling', 'qty': '1', 'price': '25.00'},
+            {'description': 'Rush handling', 'qty': '1', 'price': '25.00',
+             'freeform_kind': 'fee'},
             format='json',
         )
 

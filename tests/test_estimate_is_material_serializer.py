@@ -1,3 +1,8 @@
+"""freeform_kind replaced the retired is_material boolean (task-owned-money
+Phase 2 Task 2). This test originally checked that the serializer exposed
+'is_material' — inherited red once the serializer switched to exposing the
+real field. Rewritten to confirm freeform_kind is what's serialized
+(Task 4: readable everywhere the line is serialized)."""
 from decimal import Decimal
 from django.test import TestCase
 
@@ -8,7 +13,7 @@ from apps.estimates.models import Estimate, EstimateLineItem
 from apps.jobs.models import Job
 
 
-class EstimateLineItemSerializerIsMaterialTest(TestCase):
+class EstimateLineItemSerializerFreeformKindTest(TestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(name='Mat', is_active=True, code='MAT')
         self.contact = Contact.objects.create(
@@ -21,12 +26,12 @@ class EstimateLineItemSerializerIsMaterialTest(TestCase):
             job=self.job, estimate_number='EST-2026-0001', status=Estimate.STATUS_DRAFT,
         )
 
-    def test_is_material_serialized(self):
+    def test_freeform_kind_serialized(self):
         li = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=1, description='ply',
             qty=Decimal('1'), price=Decimal('1'), accounting_category=self.cat,
-            is_material=True,
+            freeform_kind=EstimateLineItem.KIND_MATERIAL,
         )
         data = EstimateLineItemSerializer(li).data
-        self.assertIn('is_material', data)
-        self.assertIs(data['is_material'], True)
+        self.assertIn('freeform_kind', data)
+        self.assertEqual(data['freeform_kind'], EstimateLineItem.KIND_MATERIAL)

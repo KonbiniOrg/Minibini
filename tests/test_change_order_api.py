@@ -141,6 +141,7 @@ class ChangeOrderWorkflowAPITest(FixtureTestCase):
                 'qty': '2.00',
                 'price': '150.00',
                 'accounting_category': 901,
+                'freeform_kind': ChangeOrderLineItem.KIND_FEE,
             },
             format='json',
         )
@@ -180,6 +181,7 @@ class ChangeOrderWorkflowAPITest(FixtureTestCase):
                 'qty': '1.00',
                 'price': '250.00',
                 'accounting_category': 901,
+                'freeform_kind': ChangeOrderLineItem.KIND_FEE,
             },
             format='json',
         )
@@ -306,7 +308,8 @@ class ChangeOrderDeleteAPITest(FixtureTestCase):
         self.client.post(
             f'/api/change-orders/{self.co_id}/line-items/',
             {'action': ChangeOrderLineItem.ACTION_ADD, 'description': 'Item',
-             'qty': '1', 'price': '100', 'accounting_category': 901},
+             'qty': '1', 'price': '100', 'accounting_category': 901,
+             'freeform_kind': ChangeOrderLineItem.KIND_FEE},
             format='json',
         )
         self.client.post(f'/api/change-orders/{self.co_id}/mark-open/')
@@ -379,7 +382,8 @@ class ChangeOrderSeedNewAPITest(FixtureTestCase):
         self.client.post(
             f'/api/change-orders/{self.co_id}/line-items/',
             {'action': ChangeOrderLineItem.ACTION_ADD, 'description': 'Scope',
-             'qty': '1', 'price': '100', 'accounting_category': 901},
+             'qty': '1', 'price': '100', 'accounting_category': 901,
+             'freeform_kind': ChangeOrderLineItem.KIND_FEE},
             format='json',
         )
         self.client.post(f'/api/change-orders/{self.co_id}/mark-open/')

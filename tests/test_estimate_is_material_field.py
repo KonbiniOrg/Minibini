@@ -1,3 +1,8 @@
+"""freeform_kind replaced the retired is_material boolean field (task-owned-
+money Phase 2 Task 2). These tests originally exercised the is_material
+model field directly — inherited red once that field was removed (no
+model-level alias exists; only the service-layer `is_material` kwarg does).
+Rewritten to exercise freeform_kind itself."""
 from decimal import Decimal
 from django.test import TestCase
 
@@ -7,7 +12,7 @@ from apps.estimates.models import Estimate, EstimateLineItem
 from apps.jobs.models import Job
 
 
-class EstimateLineItemIsMaterialFieldTest(TestCase):
+class EstimateLineItemFreeformKindFieldTest(TestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(name='Mat', is_active=True, code='MAT')
         self.contact = Contact.objects.create(
@@ -20,19 +25,19 @@ class EstimateLineItemIsMaterialFieldTest(TestCase):
             job=self.job, estimate_number='EST-2026-0001', status=Estimate.STATUS_DRAFT,
         )
 
-    def test_defaults_false(self):
+    def test_defaults_null(self):
         li = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=1, description='x',
             qty=Decimal('1'), price=Decimal('1'), accounting_category=self.cat,
         )
         li.refresh_from_db()
-        self.assertFalse(li.is_material)
+        self.assertIsNone(li.freeform_kind)
 
-    def test_persists_true(self):
+    def test_persists_material(self):
         li = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=1, description='ply',
             qty=Decimal('1'), price=Decimal('1'), accounting_category=self.cat,
-            is_material=True,
+            freeform_kind=EstimateLineItem.KIND_MATERIAL,
         )
         li.refresh_from_db()
-        self.assertTrue(li.is_material)
+        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_MATERIAL)

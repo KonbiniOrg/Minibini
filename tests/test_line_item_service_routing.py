@@ -216,7 +216,7 @@ class EstimateLineItemStatusCheckTest(BaseTestCase):
         response = self.client.post(
             f'/api/estimates/{est.pk}/line-items/',
             {'description': 'New item', 'qty': 1, 'price': 10,
-             'accounting_category': cat.pk},
+             'accounting_category': cat.pk, 'freeform_kind': 'fee'},
             format='json',
         )
         self.assertEqual(response.status_code, 201)

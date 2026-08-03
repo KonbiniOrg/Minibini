@@ -389,8 +389,13 @@ class ChangeOrderService:
         """`is_material` input alias — Task 7 removes this alias. Mirrors
         EstimateService._apply_is_material_alias: meaningful only on a bare
         line (a line with an inventory_item or service_item already knows
-        its crystallization type); a bare line always gets a determinate
-        kind, preserving the historical default (unmarked bare line -> Fee)."""
+        its crystallization type).
+
+        Task 4: a direct freeform_kind wins over an absent/False
+        is_material — no longer clobbers a caller-supplied kind (e.g.
+        'work') with the old unconditional bare->fee mapping. See
+        EstimateService._apply_is_material_alias for the full mapping
+        rationale."""
         if li.inventory_item_id is not None:
             if is_material:
                 raise ValidationError({'is_material': (
@@ -404,11 +409,26 @@ class ChangeOrderService:
                     'A service line cannot be marked as a material.'
                 )})
             return
-        li.freeform_kind = ChangeOrderLineItem.KIND_MATERIAL if is_material else ChangeOrderLineItem.KIND_FEE
+        if is_material:
+            if (li.freeform_kind is not None
+                    and li.freeform_kind != ChangeOrderLineItem.KIND_MATERIAL):
+                raise ValidationError({'freeform_kind': (
+                    f'is_material=True conflicts with freeform_kind='
+                    f'{li.freeform_kind!r}; send only one.'
+                )})
+            li.freeform_kind = ChangeOrderLineItem.KIND_MATERIAL
+        elif li.freeform_kind is None:
+            li.freeform_kind = ChangeOrderLineItem.KIND_FEE
 
     @staticmethod
     def add_line_item(co_pk, **kwargs):
-        """Add a manual line item to a draft change order."""
+        """Add a manual line item to a draft change order.
+
+        Task 4: a bare freeform line requires a determinate kind at entry —
+        but only for action=ADD. REPLACE mirrors the target's current atom
+        (or crystallizes per its own descriptor) and REMOVE never
+        crystallizes anything, so neither carries a kind requirement of its
+        own (see EstimateService._require_kind_on_bare_add)."""
         try:
             co = ChangeOrder.objects.get(pk=co_pk)
         except ChangeOrder.DoesNotExist:
@@ -419,17 +439,24 @@ class ChangeOrderService:
         from apps.estimates.services import EstimateService
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
         # `is_material` input alias (Task 7 removes this alias): pop it
-        # before constructing the model — default False mirrors the retired
-        # field's own model-level default.
+        # before constructing the model. Track whether the caller sent it
+        # at all — an explicit False still maps to 'fee'; an absent key
+        # falls through to the kind-required check below instead of
+        # silently defaulting (Task 4).
+        is_material_provided = 'is_material' in kwargs
         is_material = kwargs.pop('is_material', False)
         li = ChangeOrderLineItem(change_order=co, **kwargs)
-        ChangeOrderService._apply_is_material_alias(li, is_material)
+        if is_material_provided:
+            ChangeOrderService._apply_is_material_alias(li, is_material)
         # Guards against a caller sending freeform_kind directly on a
         # catalog/service line (bypassing the alias above).
         EstimateService._reject_freeform_kind_on_non_bare_line(li)
+        if li.action == ChangeOrderLineItem.ACTION_ADD:
+            EstimateService._require_kind_on_bare_add(li, is_material_provided)
         # Material lines (freeform_kind='material') get their AC from config
         # if not supplied — same default the estimate side applies at authoring.
         EstimateService._apply_material_ac_default(li)
+        EstimateService._validate_price(li)
         li.full_clean()
         li.save()
         return li
@@ -449,7 +476,8 @@ class ChangeOrderService:
         except InventoryItem.DoesNotExist:
             raise NotFoundError(f'InventoryItem {pli_pk} not found')
 
-        li = ChangeOrderLineItem.objects.create(
+        from apps.estimates.services import EstimateService
+        li = ChangeOrderLineItem(
             change_order=co,
             action=ChangeOrderLineItem.ACTION_ADD,
             inventory_item=pli,
@@ -459,6 +487,8 @@ class ChangeOrderService:
             price=pli.selling_price,
             accounting_category=pli.accounting_category,
         )
+        EstimateService._validate_price(li)
+        li.save()
         return li
 
     @staticmethod
@@ -504,6 +534,8 @@ class ChangeOrderService:
             price=scheme.effective_rate(service_item.default_active_modifiers),
             accounting_category=service_item.effective_accounting_category,
         )
+        from apps.estimates.services import EstimateService
+        EstimateService._validate_price(li)
         li.full_clean()
         li.save()
         return li
@@ -526,14 +558,32 @@ class ChangeOrderService:
         # persisted kind untouched, same as the retired field would have.
         is_material_provided = 'is_material' in kwargs
         is_material = kwargs.pop('is_material', None)
+        kind_provided = 'freeform_kind' in kwargs
+        original_kind = li.freeform_kind
         for field, value in kwargs.items():
             setattr(li, field, value)
-        if is_material_provided:
-            ChangeOrderService._apply_is_material_alias(li, is_material)
         # Guards against a caller sending freeform_kind directly on a
-        # catalog/service line (bypassing the alias above).
+        # catalog/service line (bypassing the alias below) — checked first
+        # so that case gets its own diagnostic rather than the immutability
+        # message below.
         EstimateService._reject_freeform_kind_on_non_bare_line(li)
+        if is_material_provided or kind_provided:
+            # Task 4: freeform_kind is immutable after creation. See
+            # EstimateService.update_line_item for the full rationale of
+            # this reset-then-resolve-then-restore shape.
+            if not kind_provided:
+                li.freeform_kind = None
+            if is_material_provided:
+                ChangeOrderService._apply_is_material_alias(li, is_material)
+            requested_kind = li.freeform_kind
+            if requested_kind is not None and requested_kind != original_kind:
+                raise ValidationError({'freeform_kind': [
+                    'freeform_kind is immutable after creation; it cannot '
+                    'be changed once set.'
+                ]})
+            li.freeform_kind = original_kind
         EstimateService._apply_material_ac_default(li)
+        EstimateService._validate_price(li)
         li.full_clean()
         li.save()
         return li

@@ -579,11 +579,12 @@ class EstimateLineItem(BaseLineItem):
         max_length=10, choices=FREEFORM_KIND_CHOICES, null=True, blank=True,
         help_text=(
             'Set IFF this is a bare (no inventory_item, service_item, or '
-            'adjustment_service) freeform line. "material" crystallizes at '
-            'acceptance into a provisional Material (sell price only, no lot); '
-            'anything else on a bare line (including unset) crystallizes into '
-            'a Fee — acceptance does not yet branch on "work" (task-owned-money '
-            'Phase 2, Task 3).'
+            'adjustment_service) freeform line — and, since Task 4, required '
+            'on a bare line at ADD entry (no more silent default). '
+            '"material" crystallizes at acceptance into an established '
+            'Material (reverse-markup placeholder cost, QOH-0 lot); "work" '
+            'into a flat Task (entered-qty, no RateScheme); "fee" (or unset, '
+            'for pre-migration rows) into a Fee.'
         ),
     )
     service_item = models.ForeignKey(
@@ -691,11 +692,12 @@ class ChangeOrderLineItem(BaseLineItem):
         max_length=10, choices=FREEFORM_KIND_CHOICES, null=True, blank=True,
         help_text=(
             'Set IFF this is a bare (no inventory_item, service_item) freeform '
-            'line. "material" crystallizes at CO acceptance into a provisional '
-            'Material (sell price only, no lot); anything else on a bare line '
-            '(including unset) crystallizes into a Fee — CO acceptance does not '
-            'yet branch on "work" (task-owned-money Phase 2, Task 3). Mirrors '
-            'EstimateLineItem.freeform_kind.'
+            'line — required on an action=ADD line at entry (Task 4; not on '
+            'REPLACE/REMOVE, which mirror the target atom or retire it). '
+            '"material" crystallizes at CO acceptance into an established '
+            'Material (reverse-markup placeholder cost); "work" into a flat '
+            'Task; "fee" (or unset, for pre-migration rows) into a Fee. '
+            'Mirrors EstimateLineItem.freeform_kind.'
         ),
     )
     service_item = models.ForeignKey(
