@@ -1031,8 +1031,7 @@ class TaskService:
                 f'Template "{template.template_name}" has no rate_scheme.'
             )
         scheme = template.rate_scheme
-        # Task 4 adds RateScheme.is_active; until then this guard is inert.
-        if not getattr(scheme, 'is_active', True):
+        if not scheme.is_active:
             raise SchemeInactiveError(
                 f'Template "{template.template_name}" references an inactive RateScheme.'
             )
@@ -1074,8 +1073,7 @@ class TaskService:
         if not rate_scheme_id:
             raise ValidationError({'rate_scheme': 'Required.'})
         scheme = RateScheme.objects.get(pk=rate_scheme_id)
-        # Task 4 adds RateScheme.is_active; until then this guard is inert.
-        if not getattr(scheme, 'is_active', True) and not allow_inactive_scheme:
+        if not scheme.is_active and not allow_inactive_scheme:
             raise SchemeInactiveError(
                 'Selected RateScheme is inactive.'
             )

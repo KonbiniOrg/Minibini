@@ -552,19 +552,15 @@ class RateScheme(models.Model):
     accounting_category = models.ForeignKey(
         'core.AccountingCategory', on_delete=models.PROTECT,
     )
-    replaced_by = models.ForeignKey(
-        'self', on_delete=models.PROTECT,
-        null=True, blank=True,
-        related_name='replaces',
-    )
-    replaced_at = models.DateTimeField(null=True, blank=True)
-
-    # Fields that, once any reference exists, may not be changed
-    # (replaced_by and replaced_at are the only allowed mutations).
-    FROZEN_FIELDS = (
-        'name', 'description', 'algorithm', 'rate', 'unit_label',
-        'modifiers', 'accounting_category',
-    )
+    # Retirement flag (task-owned-money Phase 1, Task 4) — replaces the old
+    # replaced_by/replaced_at supersession mechanism. RateSchemes are freely
+    # editable presets now: a Task stamps its own permanent copy of the
+    # preset's money fields at creation time (Task.stamp_from_scheme), so
+    # editing (or retiring, or deleting) a preset never reprices or orphans
+    # a task that already stamped from it. is_active is read only by the
+    # creation-time guard (SchemeInactiveError) — it hides the preset from
+    # *new* stampings, nothing else.
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         db_table = 'rate_schemes'
@@ -597,17 +593,6 @@ class RateScheme(models.Model):
                 'unit_label': 'Time-based schemes are billed in hours; '
                               f'unit must be "{HOUR_UNIT}".',
             })
-        if self.pk and self.is_referenced():
-            old = RateScheme.objects.get(pk=self.pk)
-            changed = [
-                f for f in self.FROZEN_FIELDS
-                if getattr(self, f) != getattr(old, f)
-            ]
-            if changed:
-                    raise ValidationError({
-                    f: 'Scheme is referenced; create a new version instead of editing.'
-                    for f in changed
-                })
 
     def save(self, *args, **kwargs):
         # Normalize on create too — full_clean below covers both create and update.
@@ -679,9 +664,13 @@ class RateScheme(models.Model):
         return list(self.modifiers)
 
     def is_referenced(self):
-        """True if any Task or ServiceItem points at this scheme."""
+        """True if any Task has stamped from this scheme, or any ServiceItem
+        points at it. Display only (outdated-schemes UI, reference counts) —
+        no longer gates edits or deletes (task-owned-money Phase 1, Task 4):
+        stamped tasks own a permanent copy of their money fields, and
+        ServiceItem's FK is still PROTECT at the DB level."""
         from apps.estimates.models import ServiceItem
-        if Task.objects.filter(rate_scheme=self).exists():
+        if self.stamped_tasks.exists():
             return True
         if ServiceItem.objects.filter(rate_scheme=self).exists():
             return True
@@ -691,59 +680,9 @@ class RateScheme(models.Model):
         """Return reference counts for the outdated-schemes UI."""
         from apps.estimates.models import ServiceItem
         return {
-            'task_count': Task.objects.filter(rate_scheme=self).count(),
+            'task_count': self.stamped_tasks.count(),
             'service_item_count': ServiceItem.objects.filter(rate_scheme=self).count(),
         }
-
-    def supersede(self, **overrides):
-        """Create a new RateScheme inheriting this one's fields, set replaced_by/at.
-
-        The old row is renamed in place to "<orig> (v{N})" where N is the count
-        of pre-existing predecessors + 1. The new row takes the original name
-        (or whatever the caller overrides). This preserves the DB-level unique
-        constraint on `name` without needing a partial-unique index.
-        """
-        from django.db import transaction
-        from django.utils import timezone
-
-        if self.replaced_by is not None:
-            raise ValueError('Cannot supersede an already-superseded scheme.')
-
-        # Count predecessors (the chain leading to self). Each scheme has at
-        # most one direct replacement, so the chain is linear.
-        version = 1
-        pred = self.replaces.first()
-        while pred is not None:
-            version += 1
-            pred = pred.replaces.first()
-        retired_name = f'{self.name} (v{version})'
-
-        defaults = {
-            'name': self.name,
-            'description': self.description,
-            'algorithm': self.algorithm,
-            'rate': self.rate,
-            'unit_label': self.unit_label,
-            'modifiers': list(self.modifiers),
-            'accounting_category': self.accounting_category,
-        }
-        defaults.update(overrides)
-
-        with transaction.atomic():
-            # Rename old first to free the unique name slot for the new row.
-            # update() bypasses full_clean(), which is what we want — `name`
-            # is in FROZEN_FIELDS, but renaming during supersede is the one
-            # exception, alongside replaced_by/replaced_at.
-            RateScheme.objects.filter(pk=self.pk).update(name=retired_name)
-            self.name = retired_name  # keep the in-memory instance in sync
-            new = RateScheme.objects.create(**defaults)
-            replaced_at = timezone.now()
-            RateScheme.objects.filter(pk=self.pk).update(
-                replaced_by=new, replaced_at=replaced_at,
-            )
-            self.replaced_by = new
-            self.replaced_at = replaced_at
-        return new
 
     def __str__(self):
         return self.name

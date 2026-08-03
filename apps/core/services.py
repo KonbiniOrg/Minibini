@@ -1208,13 +1208,10 @@ class ConfigurationService:
 
     @staticmethod
     def update_rate_scheme(scheme, **fields):
-        """Update an unreferenced scheme. Referenced schemes are frozen —
-        every edit path is refused; new pricing means a new version
-        (supersede)."""
-        if scheme.is_referenced():
-            raise ValidationError(
-                'Scheme is referenced; create a new version instead of '
-                'editing.', code='referenced')
+        """Presets are freely editable (task-owned-money Phase 1, Task 4) —
+        a stamped Task owns a permanent copy of its money fields, so editing
+        a referenced preset never reprices anything already stamped from
+        it. No frozen fields, no referenced-freeze refusal."""
         for field, value in fields.items():
             setattr(scheme, field, value)
         scheme.full_clean()
@@ -1223,20 +1220,37 @@ class ConfigurationService:
 
     @staticmethod
     def delete_rate_scheme(scheme):
-        if scheme.is_referenced():
-            raise ValidationError(
-                'Scheme is referenced; create a new version instead of '
-                'deleting.', code='referenced')
+        """Deleting a scheme with stamped tasks is allowed — Task.source_scheme
+        is SET_NULL, and the task's own money fields are unaffected. A scheme
+        still referenced by a ServiceItem can't be deleted: ServiceItem.rate_scheme
+        is PROTECT at the DB level, so that raises ProtectedError uncaught."""
         scheme.delete()
 
     @staticmethod
-    def supersede_rate_scheme(scheme, **overrides):
-        """Thin wrapper so the viewset never writes models directly; the
-        chain logic lives on RateScheme.supersede."""
-        if scheme.replaced_by_id is not None:
-            raise ValidationError('Scheme is already superseded.',
-                                  code='superseded')
-        return scheme.supersede(**overrides)
+    def retire_rate_scheme(pk):
+        """Flip is_active off. Retiring only hides the preset from *new*
+        task-creation paths (SchemeInactiveError) — stamped tasks and their
+        money fields are untouched."""
+        from apps.jobs.models import RateScheme
+        try:
+            scheme = RateScheme.objects.get(pk=pk)
+        except RateScheme.DoesNotExist:
+            raise NotFoundError(f'RateScheme {pk} not found')
+        scheme.is_active = False
+        scheme.save()
+        return scheme
+
+    @staticmethod
+    def reactivate_rate_scheme(pk):
+        """Flip is_active back on."""
+        from apps.jobs.models import RateScheme
+        try:
+            scheme = RateScheme.objects.get(pk=pk)
+        except RateScheme.DoesNotExist:
+            raise NotFoundError(f'RateScheme {pk} not found')
+        scheme.is_active = True
+        scheme.save()
+        return scheme
 
 
 def _outbound_from_email():

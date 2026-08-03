@@ -8,7 +8,6 @@ task's own fields are the price of record — later edits to the preset must
 never reprice an already-stamped task.
 """
 from decimal import Decimal
-from unittest import skipUnless
 
 from django.test import TestCase
 
@@ -81,13 +80,11 @@ class StampFromSchemeTest(TaskStampingTestBase):
         task = Task.objects.create(job=self.job, name='X', accounting_category=self.ac)
         task.stamp_from_scheme(self.scheme, modifier_keys=['rush'])
         task.save()
-        # RateScheme.clean()'s is_referenced() still queries Task.rate_scheme
-        # (removed in Task 1/2) — a known, out-of-scope bug (leave alone,
-        # later tasks) that would make self.scheme.save() 500. Force the
-        # mutation via .update() to simulate "the preset was edited later"
-        # without going through the broken FROZEN_FIELDS gate — test-setup
-        # only, not production code.
-        RateScheme.objects.filter(pk=self.scheme.pk).update(rate=Decimal('500.00'))
+        # Editing a referenced scheme is freely allowed (Task 4 — no frozen
+        # fields, no supersession); a real save() proves the task-owned-money
+        # invariant end to end, not just the DB row.
+        self.scheme.rate = Decimal('500.00')
+        self.scheme.save()
         task.refresh_from_db()
         self.assertEqual(task.rate, Decimal('95.00'))
 
@@ -122,7 +119,6 @@ class TaskServiceCreateDirectStampingTest(TaskStampingTestBase):
                 self.job, name='x', rate_scheme_id=pct_scheme.pk,
             )
 
-    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
     def test_create_direct_inactive_scheme_raises_scheme_inactive_error(self):
         from apps.jobs.models import SchemeInactiveError
         from apps.jobs.services import TaskService
@@ -133,7 +129,6 @@ class TaskServiceCreateDirectStampingTest(TaskStampingTestBase):
                 self.job, name='x', rate_scheme_id=self.scheme.pk,
             )
 
-    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
     def test_create_direct_allow_inactive_scheme_bypasses(self):
         from apps.jobs.services import TaskService
         self.scheme.is_active = False
@@ -165,7 +160,6 @@ class TaskServiceCreateFromTemplateStampingTest(TaskStampingTestBase):
             [{'key': 'weekend', 'label': 'Weekend', 'percent': 10}],
         )
 
-    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
     def test_create_from_template_inactive_scheme_raises(self):
         from apps.jobs.models import SchemeInactiveError
         from apps.jobs.services import TaskService
@@ -203,7 +197,6 @@ class ServiceItemGenerateTaskStampingTest(TaskStampingTestBase):
             [{'key': 'weekend', 'label': 'Weekend', 'percent': 10}],
         )
 
-    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
     def test_generate_task_inactive_scheme_raises(self):
         from apps.jobs.models import SchemeInactiveError
         self.scheme.is_active = False
@@ -211,7 +204,6 @@ class ServiceItemGenerateTaskStampingTest(TaskStampingTestBase):
         with self.assertRaises(SchemeInactiveError):
             self.template.generate_task(self.job, est_qty=Decimal('1'))
 
-    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
     def test_generate_task_allow_inactive_scheme_bypasses(self):
         self.scheme.is_active = False
         self.scheme.save()

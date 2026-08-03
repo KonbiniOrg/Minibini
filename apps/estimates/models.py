@@ -502,8 +502,7 @@ class ServiceItem(models.Model):
         from django.db import transaction
 
         scheme = self.rate_scheme
-        # Task 4 adds RateScheme.is_active; until then this guard is inert.
-        if not getattr(scheme, 'is_active', True) and not allow_inactive_scheme:
+        if not scheme.is_active and not allow_inactive_scheme:
             raise SchemeInactiveError(
                 f'Template "{self.template_name}" references an inactive '
                 f'RateScheme. Update the template before adding tasks from it.'

@@ -154,7 +154,10 @@ class CommitSchemesUpsertTest(TestCase):
         self.assertEqual(scheme.unit_label, 'hour')
         self.assertEqual(mapping['11'], scheme.pk)
 
-    def test_recommit_referenced_scheme_supersedes_and_repoints(self):
+    def test_recommit_referenced_scheme_updates_in_place(self):
+        """Task 4: presets are freely editable — a recommit with a changed
+        price updates the existing scheme row (same pk), it does not create
+        a new version. The ServiceItem's FK never needs repointing."""
         from apps.estimates.models import ServiceItem
         mapping = QBOImportCommitService.commit_schemes([
             self._row(rate='95.0')])
@@ -165,10 +168,10 @@ class CommitSchemesUpsertTest(TestCase):
             self._row(rate='110.0')])
         old.refresh_from_db()
         svc.refresh_from_db()
-        self.assertIsNotNone(old.replaced_by_id)
-        self.assertEqual(mapping2['11'], old.replaced_by_id)
-        self.assertEqual(svc.rate_scheme_id, old.replaced_by_id)
+        self.assertEqual(mapping2['11'], old.pk)
+        self.assertEqual(svc.rate_scheme_id, old.pk)
         self.assertEqual(svc.rate_scheme.rate, Decimal('110.0'))
+        self.assertEqual(RateScheme.objects.count(), 1)
 
     def test_recommit_referenced_scheme_unchanged_is_noop(self):
         from apps.estimates.models import ServiceItem
@@ -177,9 +180,9 @@ class CommitSchemesUpsertTest(TestCase):
         old = RateScheme.objects.get(pk=mapping['11'])
         ServiceItem.objects.create(
             template_name='Concrete', rate_scheme=old, qbo_id='11')
-        QBOImportCommitService.commit_schemes([self._row(rate='95.0')])
+        mapping2 = QBOImportCommitService.commit_schemes([self._row(rate='95.0')])
         old.refresh_from_db()
-        self.assertIsNone(old.replaced_by_id)     # no version churn
+        self.assertEqual(mapping2['11'], old.pk)
         self.assertEqual(RateScheme.objects.count(), 1)
 
     def test_create_name_collision_is_contract_400_not_500(self):
