@@ -100,6 +100,16 @@ describe('WizardLineItemCard', () => {
     expect(await findByText('A valid number is required.')).toBeInTheDocument();
   });
 
+  it('renders a negative line total with the sign before the dollar sign (I2)', () => {
+    const { getByText } = render(WizardLineItemCard, {
+      props: {
+        lineItem: lineItem({ qty: '2', price: '-10' }),
+        apiBase: '/api/estimates/3',
+      },
+    });
+    expect(getByText('= -$20.00')).toBeInTheDocument();
+  });
+
   it('flags a bundled price that is out of sync with its atoms', () => {
     // sources sum 10 over qty 2 → expected $5/unit, but saved price is $10 → out of sync
     const { getByText } = render(WizardLineItemCard, {

@@ -799,7 +799,7 @@ describe('InvoicePanel unapplied deposit credit notice', () => {
     });
     mockApi(draft, { invoices: [draft, paidDeposit] });
     const { findByText, findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    expect(await findByText('Unapplied deposit credit — $5000.00 from INV-1042')).toBeInTheDocument();
+    expect(await findByText('Unapplied deposit credit — $5,000.00 from INV-1042')).toBeInTheDocument();
     expect(await findByRole('button', { name: /apply deposit credit/i })).toBeInTheDocument();
   });
 
@@ -816,7 +816,7 @@ describe('InvoicePanel unapplied deposit credit notice', () => {
     });
     mockApi(draft, { invoices: [draft, paidA, paidB] });
     const { findByText, findAllByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    expect(await findByText('Unapplied deposit credit — $5000.00 from INV-1042')).toBeInTheDocument();
+    expect(await findByText('Unapplied deposit credit — $5,000.00 from INV-1042')).toBeInTheDocument();
     expect(await findByText('Unapplied deposit credit — $750.00 from INV-1043')).toBeInTheDocument();
     expect(await findAllByRole('button', { name: /apply deposit credit/i })).toHaveLength(2);
   });
@@ -851,7 +851,7 @@ describe('InvoicePanel unapplied deposit credit notice', () => {
     });
     mockApi(draft, { invoices: [draft, paidDeposit, cancelledClaim] });
     const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    expect(await findByText('Unapplied deposit credit — $5000.00 from INV-1042')).toBeInTheDocument();
+    expect(await findByText('Unapplied deposit credit — $5,000.00 from INV-1042')).toBeInTheDocument();
   });
 
   it('is absent on a non-draft invoice view even though an unapplied credit exists on the job', async () => {
@@ -885,7 +885,7 @@ describe('InvoicePanel unapplied deposit credit notice', () => {
     });
     mockApi(draft, { invoices: [draft, paidDeposit] });
     const { findByText, queryByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    expect(await findByText('Unapplied deposit credit — $5000.00 from INV-1042')).toBeInTheDocument();
+    expect(await findByText('Unapplied deposit credit — $5,000.00 from INV-1042')).toBeInTheDocument();
     expect(queryByRole('button', { name: /apply deposit credit/i })).not.toBeInTheDocument();
   });
 

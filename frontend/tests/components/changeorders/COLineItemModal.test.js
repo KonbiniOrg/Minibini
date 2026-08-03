@@ -68,6 +68,17 @@ describe('COLineItemModal', () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  it('renders a negative-price target line with the sign before the dollar sign (I2)', () => {
+    const { getByText } = render(COLineItemModal, {
+      props: {
+        open: true, mode: 'create', coId: 3, categories: cats,
+        estimateLines: [{ line_item_id: 7, line_number: 1, description: 'Credit', price: -300, qty: 1, units: 'ea' }],
+        initialAction: 'replace',
+      },
+    });
+    expect(getByText(/-\$300\.00/)).toBeInTheDocument();
+  });
+
   it('prefills the accounting category when editing an add line', async () => {
     const item = {
       line_item_id: 9, action: 'add', target_line_item: null,

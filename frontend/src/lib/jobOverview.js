@@ -216,7 +216,12 @@ function scopeActiveChangeOrder(jobId, current, co, deliverableCount, now) {
     value: co.change_order_number,
     pill: { text: String(co.status).toUpperCase(), tone: co.status },
   };
-  if (co.total != null) coStat.sub = `+${fmtMoney(co.total)}`;
+  // fmtMoney already carries the sign for a negative total ("-$500") via
+  // formatMoney's currency style — hardcoding a leading '+' unconditionally
+  // used to double up into the nonsensical "+-$500" (T8 review finding).
+  if (co.total != null) {
+    coStat.sub = co.total > 0 ? `+${fmtMoney(co.total)}` : fmtMoney(co.total);
+  }
   const stats = [
     coStat,
     {

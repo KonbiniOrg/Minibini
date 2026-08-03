@@ -11,6 +11,7 @@
   import Modal from '../Modal.svelte';
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
+  import { formatMoney } from '../../lib/format.js';
 
   let {
     open = false,
@@ -143,7 +144,7 @@
               <option value="">-- Select estimate line --</option>
               {#each estimateLines as li}
                 <option value={String(li.line_item_id)}>
-                  #{li.line_number} — {li.description || '(no description)'} (${Number(li.price ?? 0).toFixed(2)} × {li.qty ?? 0} {li.units || ''})
+                  #{li.line_number} — {li.description || '(no description)'} ({formatMoney(Number(li.price ?? 0))} × {li.qty ?? 0} {li.units || ''})
                 </option>
               {/each}
             </select>

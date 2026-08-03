@@ -13,6 +13,7 @@
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import ReconcileMode from '../wizards/ReconcileMode.svelte';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
+  import { formatMoney } from '../../lib/format.js';
 
   let { job, invoiceId, onJobChange = () => {} } = $props();
 
@@ -436,7 +437,7 @@
     <div class="deposit-credit-notice">
       {#each unappliedCredits as credit (credit.lineItem.line_item_id)}
         <div class="deposit-credit-row">
-          <span>Unapplied deposit credit — ${creditAmount(credit.lineItem).toFixed(2)} from {credit.invoice.display_number}</span>
+          <span>Unapplied deposit credit — {formatMoney(creditAmount(credit.lineItem))} from {credit.invoice.display_number}</span>
           {#if canEditLineItems}
             <button type="button" onclick={() => applyDepositCredit(credit)}
               disabled={applyingCreditId === credit.lineItem.line_item_id}>

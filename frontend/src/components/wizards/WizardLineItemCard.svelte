@@ -5,6 +5,7 @@
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
+  import { formatMoney } from '../../lib/format.js';
 
   let { lineItem, apiBase, canAddHere = false, onAddHere, onchange, registerFlush } = $props();
 
@@ -214,12 +215,12 @@
     <label>Qty <input bind:value={qtyValue} oninput={onQtyInput} style="width: 5em;"></label>
     <label>Units <UnitsSelect bind:value={unitsValue} /></label>
     <label>Price $<input bind:value={priceValue} oninput={onPriceInput} style="width: 6em;"></label>
-    <span style="color: #555;">= ${liveTotal.toFixed(2)}</span>
+    <span style="color: #555;">= {formatMoney(liveTotal)}</span>
     <button type="submit" disabled={!isDirty || saving}>
       {saving ? 'Saving…' : 'Save'}
     </button>
     {#if isBundled && isOverridden}
-      <span style="color: #a55;">⚠ out of sync with atoms (computed ${computedSum.toFixed(2)})</span>
+      <span style="color: #a55;">⚠ out of sync with atoms (computed {formatMoney(computedSum)})</span>
       <button type="button" onclick={resetToComputed}>reset to computed</button>
     {:else if !isBundled}
       <span style="color: #888;"><em>(manual)</em></span>

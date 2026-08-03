@@ -136,6 +136,19 @@ describe('scopeBlock', () => {
     expect(b.clock).toEqual({ tone: 'bad', lines: ['No customer response in 8 days'] });
   });
 
+  it('a negative-total CO renders its own sign, not a "+-" double sign (T8)', () => {
+    const b = scopeBlock({
+      estimates: [{ version: 3, status: 'accepted', closed_date: '2025-06-12', total: '12000.00' }],
+      changeOrders: [
+        { change_order_number: 'CO-2', status: 'open', sent_date: '2025-07-01', total: '-500.00' },
+      ],
+      deliverableCount: 3,
+      now: '2025-07-09',
+    });
+    const co = stat(b, 'Change order');
+    expect(co.sub).toBe('-$500');
+  });
+
   it('CO response clock quiet at 6 days', () => {
     const b = scopeBlock({
       estimates: [{ version: 1, status: 'accepted', closed_date: '2025-06-01', total: '100.00' }],
