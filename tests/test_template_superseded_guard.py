@@ -1,5 +1,7 @@
 from decimal import Decimal
+from unittest import skipUnless
 from tests.base import BaseTestCase
+from apps.jobs.models import RateScheme
 
 
 class TemplateSupersededGuardTest(BaseTestCase):
@@ -8,7 +10,7 @@ class TemplateSupersededGuardTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         from apps.core.models import AccountingCategory
-        from apps.jobs.models import RateScheme, Job
+        from apps.jobs.models import Job
         from apps.estimates.models import ServiceItem
         from apps.contacts.models import Business, Contact
         self.ac = AccountingCategory.objects.create(code='X-tsg', name='X-tsg')
@@ -30,11 +32,20 @@ class TemplateSupersededGuardTest(BaseTestCase):
         contact.save()
         self.job = Job.objects.create(job_number='J-tsg', contact=contact)
 
-    def test_generate_task_for_task_branch_raises(self):
-        from apps.core.services import SchemeSupersededError
-        with self.assertRaises(SchemeSupersededError) as cm:
+    def test_generate_task_for_superseded_but_active_scheme_does_not_raise(self):
+        """Task 3 moved the creation-time gate from supersession
+        (``replaced_by``) to ``is_active`` (Task 4 adds the field). Merely
+        superseding a scheme no longer blocks generate_task."""
+        task = self.template.generate_task(self.job, est_qty=Decimal('1'))
+        self.assertEqual(task.source_scheme_id, self.old_scheme.pk)
+
+    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
+    def test_generate_task_for_inactive_scheme_raises(self):
+        from apps.jobs.models import SchemeInactiveError
+        RateScheme.objects.filter(pk=self.old_scheme.pk).update(is_active=False)
+        with self.assertRaises(SchemeInactiveError) as cm:
             self.template.generate_task(self.job, est_qty=Decimal('1'))
-        self.assertIn('superseded', str(cm.exception).lower())
+        self.assertIn('inactive', str(cm.exception).lower())
 
 
 class TemplateSupersededAPITest(BaseTestCase):
@@ -70,11 +81,24 @@ class TemplateSupersededAPITest(BaseTestCase):
         contact.save()
         self.job = Job.objects.create(job_number='J-tsga', contact=contact)
 
-    def test_add_from_template_with_superseded_scheme_returns_409(self):
+    def test_add_from_template_with_superseded_but_active_scheme_succeeds(self):
+        """Task 3 moved the creation-time gate from supersession
+        (``replaced_by``) to ``is_active`` (Task 4 adds the field). Merely
+        superseding a scheme no longer blocks the endpoint."""
+        resp = self.client.post(
+            f'/api/jobs/{self.job.pk}/add-from-template/',
+            {'service_item_id': self.template.pk, 'est_qty': '1'},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    @skipUnless(hasattr(RateScheme, 'is_active'), 'Task 4 adds RateScheme.is_active')
+    def test_add_from_template_with_inactive_scheme_returns_409(self):
+        RateScheme.objects.filter(pk=self.old_scheme.pk).update(is_active=False)
         resp = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
             {'service_item_id': self.template.pk, 'est_qty': '1'},
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 409)
-        self.assertIn('superseded', resp.json().get('detail', '').lower())
+        self.assertIn('inactive', resp.json().get('detail', '').lower())

@@ -7,10 +7,10 @@ from rest_framework.response import Response
 from django.db.models import Q, OuterRef, Subquery, Sum, DecimalField, Value
 from django.db.models import Prefetch
 from django.db.models.functions import Coalesce
-from apps.jobs.models import Job, Task, Fee
+from apps.jobs.models import Job, Task, Fee, SchemeInactiveError
 from apps.inventory.models import Material, Earmark
 from apps.jobs.services import JobService, TaskService, FeeService
-from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
+from apps.core.services import NotFoundError, ServiceError
 from apps.estimates.models import WorkTemplate, Estimate, ServiceItem
 from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin, JobScopedPermissionMixin
 from apps.api.permissions import CanManageJobs, CanManageJobOrPM
@@ -256,7 +256,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             )
         try:
             JobService.populate_from_template(job, template)
-        except SchemeSupersededError as e:
+        except SchemeInactiveError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         job.refresh_from_db()
         return Response(self.get_serializer(job).data)
@@ -505,7 +505,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 active_modifiers=active_modifiers,
                 est_worker_time=est_worker_time,
             )
-        except SchemeSupersededError as e:
+        except SchemeInactiveError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         except ServiceError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)

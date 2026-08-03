@@ -58,11 +58,6 @@ class NotFoundError(ServiceError):
     pass
 
 
-class SchemeSupersededError(ServiceError):
-    """Raised when a template referencing a superseded RateScheme is used."""
-    pass
-
-
 class NumberGenerationService:
     """
     Service for generating sequential document numbers using Configuration key-value pairs.

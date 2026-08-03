@@ -59,7 +59,7 @@ class EstimateAcceptanceService:
                 task = li.service_item.generate_task(
                     job, est_qty=li.qty or Decimal('1'),
                     description=li.description or '',
-                    allow_superseded_scheme=True,
+                    allow_inactive_scheme=True,
                 )
                 EstimateLineItemSource.objects.create(
                     estimate_line_item=li,
