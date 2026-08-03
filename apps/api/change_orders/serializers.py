@@ -16,7 +16,7 @@ class ChangeOrderLineItemSerializer(serializers.ModelSerializer):
             'action', 'target_line_item',
             'description', 'qty', 'units', 'price',
             'accounting_category',
-            'inventory_item', 'service_item', 'service_item_detail', 'is_material',
+            'inventory_item', 'service_item', 'service_item_detail', 'freeform_kind',
         ]
         read_only_fields = ['line_item_id', 'service_item_detail']
 

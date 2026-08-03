@@ -153,8 +153,8 @@ def build_configuration(c):
         # item's selling_price from purchase_price × (1 + this/100). 20 => a
         # 20% markup over cost.
         ('default_material_markup_percent', '20'),
-        # Default AC for a material line that supplies none — bare is_material
-        # estimate lines and freeform materials. Read by
+        # Default AC for a material line that supplies none — bare
+        # freeform_kind='material' estimate lines and freeform materials. Read by
         # EstimateService._apply_material_ac_default (which RAISES if this key is
         # absent) and the SPA material forms. Points at MTL (the materials AC);
         # build_seed runs before this, so c.ac_mat_pk is set.

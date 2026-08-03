@@ -8,7 +8,7 @@ directly), so there is nothing to copy from a worksheet. Instead, acceptance:
      not a percentage adjustment, crystallizes it onto the job:
        - a hand-line with an `inventory_item` (added via "From Inventory") is a
          catalog material → becomes a **Material** atom;
-       - a bare hand-line marked `is_material=True` → becomes an **established
+       - a bare hand-line with `freeform_kind='material'` → becomes an **established
          Material** (QOH-0 lot minted at a reverse-markup placeholder cost,
          cost_source='estimated');
        - any other hand-line → becomes a **Fee** (the frozen fixed charge).
@@ -32,7 +32,7 @@ class EstimateAcceptanceService:
         """Crystallize the estimate's hand-lines into atoms, then earmark the job.
 
         Discriminator order: service_item → Task, inventory_item → Material,
-        is_material (bare) → established Material (reverse-markup), else → Fee.
+        freeform_kind='material' (bare) → established Material (reverse-markup), else → Fee.
         Returns: {'fees_created': int, 'materials_created': int, 'tasks_created': int}
         """
         from apps.jobs.models import Fee
@@ -95,8 +95,8 @@ class EstimateAcceptanceService:
             # MaterialService.establish_reverse_markup — shared with CO
             # acceptance so both documents crystallize identically).
             # (pinned discriminator): the service_item branch sits above inventory_item;
-            # this is_material branch stays here, between inventory_item and Fee.
-            if li.is_material:
+            # this freeform_kind branch stays here, between inventory_item and Fee.
+            if li.freeform_kind == li.KIND_MATERIAL:
                 material = MaterialService.create_on_job(
                     job=job,
                     task=None,

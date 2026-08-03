@@ -357,7 +357,7 @@ class ChangeOrderService:
                 line_number=li.line_number,
                 inventory_item=li.inventory_item,
                 service_item=li.service_item,
-                is_material=li.is_material,
+                freeform_kind=li.freeform_kind,
                 accounting_category=li.accounting_category,
             )
 
@@ -385,21 +385,26 @@ class ChangeOrderService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _assert_is_material_only_on_bare_line(li):
-        """`is_material` is meaningful only on a bare line — a line with an
-        inventory_item or service_item already knows its crystallization type.
-        Mirrors EstimateService._assert_is_material_only_on_bare_line."""
-        if not li.is_material:
-            return
+    def _apply_is_material_alias(li, is_material):
+        """`is_material` input alias — Task 7 removes this alias. Mirrors
+        EstimateService._apply_is_material_alias: meaningful only on a bare
+        line (a line with an inventory_item or service_item already knows
+        its crystallization type); a bare line always gets a determinate
+        kind, preserving the historical default (unmarked bare line -> Fee)."""
         if li.inventory_item_id is not None:
-            raise ValidationError({'is_material': (
-                'A line with an inventory item is already a material; '
-                'the "is material" marker only applies to a bare line.'
-            )})
+            if is_material:
+                raise ValidationError({'is_material': (
+                    'A line with an inventory item is already a material; '
+                    'the "is material" marker only applies to a bare line.'
+                )})
+            return
         if li.service_item_id is not None:
-            raise ValidationError({'is_material': (
-                'A service line cannot be marked as a material.'
-            )})
+            if is_material:
+                raise ValidationError({'is_material': (
+                    'A service line cannot be marked as a material.'
+                )})
+            return
+        li.freeform_kind = ChangeOrderLineItem.KIND_MATERIAL if is_material else ChangeOrderLineItem.KIND_FEE
 
     @staticmethod
     def add_line_item(co_pk, **kwargs):
@@ -413,11 +418,15 @@ class ChangeOrderService:
         from apps.core.services import LineItemService
         from apps.estimates.services import EstimateService
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
+        # `is_material` input alias (Task 7 removes this alias): pop it
+        # before constructing the model — default False mirrors the retired
+        # field's own model-level default.
+        is_material = kwargs.pop('is_material', False)
         li = ChangeOrderLineItem(change_order=co, **kwargs)
-        # Material lines (is_material=True) get their AC from config if not
-        # supplied — same default the estimate side applies at authoring.
+        ChangeOrderService._apply_is_material_alias(li, is_material)
+        # Material lines (freeform_kind='material') get their AC from config
+        # if not supplied — same default the estimate side applies at authoring.
         EstimateService._apply_material_ac_default(li)
-        ChangeOrderService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
         li.save()
         return li
@@ -508,10 +517,17 @@ class ChangeOrderService:
         from apps.core.services import LineItemService
         from apps.estimates.services import EstimateService
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
+        # `is_material` input alias (Task 7 removes this alias): pop it
+        # before the generic setattr loop and only touch freeform_kind when
+        # the caller actually sent it — an omitted key leaves the line's
+        # persisted kind untouched, same as the retired field would have.
+        is_material_provided = 'is_material' in kwargs
+        is_material = kwargs.pop('is_material', None)
         for field, value in kwargs.items():
             setattr(li, field, value)
+        if is_material_provided:
+            ChangeOrderService._apply_is_material_alias(li, is_material)
         EstimateService._apply_material_ac_default(li)
-        ChangeOrderService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
         li.save()
         return li

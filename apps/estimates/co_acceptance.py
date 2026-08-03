@@ -8,7 +8,7 @@ held, so crystallization runs against the released job.
 Mirrors EstimateAcceptanceService.on_accept (apps/estimates/acceptance.py):
 
 - **add** — crystallize a new atom via the same four-way discriminator
-  (service_item → Task, inventory_item → Material, is_material bare →
+  (service_item → Task, inventory_item → Material, freeform_kind='material' bare →
   established Material at a reverse-markup placeholder cost, else → Fee) and
   link it back to the CO line with a ChangeOrderLineItemSource row.
 - **remove** — resolve the target estimate line to its *current* atom (through
@@ -23,7 +23,7 @@ Mirrors EstimateAcceptanceService.on_accept (apps/estimates/acceptance.py):
   A bare replace line mirrors the old atom's type: a Task target yields a new
   Task on the same rate scheme/modifiers at the CO line's qty; a Material
   target a new Material on the same inventory item; a Fee target a new Fee.
-  A CO line carrying its own descriptor (service/inventory/is_material)
+  A CO line carrying its own descriptor (service/inventory/freeform_kind)
   crystallizes per that descriptor instead. A document-only target (adjustment
   line, or an atom already retired) stays document-only.
 
@@ -86,7 +86,7 @@ class ChangeOrderAcceptanceService:
             # no descriptor on the CO line: the delta stays document-only.
             has_descriptor = (li.service_item_id is not None
                               or li.inventory_item_id is not None
-                              or li.is_material)
+                              or li.freeform_kind == li.KIND_MATERIAL)
             if mirror is not None or has_descriptor:
                 ChangeOrderAcceptanceService._crystallize(job, li, mirror=mirror, counts=counts)
             for source_type, atom in atoms:
@@ -177,7 +177,7 @@ class ChangeOrderAcceptanceService:
         """Create the atom a CO add/replace line describes and source-link it.
 
         Same discriminator order as estimate acceptance (service_item →
-        inventory_item → is_material → Fee); a bare replace line falls through
+        inventory_item → freeform_kind='material' → Fee); a bare replace line falls through
         to mirroring the retired atom's type instead.
         """
         from apps.estimates.models import ChangeOrderLineItemSource
@@ -210,7 +210,7 @@ class ChangeOrderAcceptanceService:
             counts['materials_created'] += 1
             return
 
-        if li.is_material:
+        if li.freeform_kind == li.KIND_MATERIAL:
             material = MaterialService.create_on_job(
                 job=job, task=None,
                 description=li.description or '',

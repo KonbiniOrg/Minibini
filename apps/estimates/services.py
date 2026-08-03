@@ -151,13 +151,17 @@ class EstimateService:
 
     @staticmethod
     def _apply_material_ac_default(li):
-        """A material line (is_material=True) with no AC defaults to the
-        `default_material_accounting_category` Configuration value (a string
-        AccountingCategory pk). An explicitly-supplied AC is respected. Raises
-        if the marker is set, no AC was supplied, and no default is configured.
-        Fees (is_material=False) are untouched — they still hit the hand-line
-        AC-required rule downstream."""
-        if not li.is_material or li.accounting_category_id is not None:
+        """A material line (freeform_kind='material') with no AC defaults to
+        the `default_material_accounting_category` Configuration value (a
+        string AccountingCategory pk). An explicitly-supplied AC is
+        respected. Raises if the marker is set, no AC was supplied, and no
+        default is configured. Fee (freeform_kind='fee' or unset) lines are
+        untouched — they still hit the hand-line AC-required rule downstream.
+
+        Shared with ChangeOrderService (called with a ChangeOrderLineItem
+        too) — compares via `li.KIND_MATERIAL` so it works against either
+        model's own constant."""
+        if li.freeform_kind != li.KIND_MATERIAL or li.accounting_category_id is not None:
             return
         from apps.core.models import AccountingCategory, Configuration
         cfg = Configuration.objects.filter(
@@ -179,21 +183,31 @@ class EstimateService:
             )})
 
     @staticmethod
-    def _assert_is_material_only_on_bare_line(li):
-        """`is_material` is meaningful only on a bare line. A line with an
-        inventory_item is already a (catalog) material; an adjustment line is
-        document-only — the marker must not conflict with either."""
-        if not li.is_material:
-            return
+    def _apply_is_material_alias(li, is_material):
+        """`is_material` input alias — Task 7 removes this alias, once the
+        frontend forms (PriceListPicker/EstimateAddLineForm) send
+        freeform_kind directly instead of the retired boolean. Until then,
+        translate the boolean into freeform_kind here at the service
+        boundary: meaningful only on a bare line (mirrors the retired
+        `is_material` field's own validation — a line with an inventory_item
+        is already a catalog material, an adjustment line is document-only,
+        either conflicts with the marker); a bare line always gets a
+        determinate kind, preserving the historical default (an unmarked
+        bare line -> Fee)."""
         if li.inventory_item_id is not None:
-            raise ValidationError({'is_material': (
-                'A line with an inventory item is already a material; '
-                'the "is material" marker only applies to a bare line.'
-            )})
+            if is_material:
+                raise ValidationError({'is_material': (
+                    'A line with an inventory item is already a material; '
+                    'the "is material" marker only applies to a bare line.'
+                )})
+            return
         if li.adjustment_service_id is not None:
-            raise ValidationError({'is_material': (
-                'An adjustment line cannot be marked as a material.'
-            )})
+            if is_material:
+                raise ValidationError({'is_material': (
+                    'An adjustment line cannot be marked as a material.'
+                )})
+            return
+        li.freeform_kind = EstimateLineItem.KIND_MATERIAL if is_material else EstimateLineItem.KIND_FEE
 
     @staticmethod
     def assert_all_hand_lines_have_ac(estimate):
@@ -281,7 +295,7 @@ class EstimateService:
                 adjustment_service_id=li.adjustment_service_id,
                 adjustment_percent=li.adjustment_percent,
                 service_item=li.service_item,
-                is_material=li.is_material,
+                freeform_kind=li.freeform_kind,
             )
             # Copy M2M adjustment target categories (empty set is fine — means "all lines")
             cats = li.adjustment_target_categories.all()
@@ -363,8 +377,13 @@ class EstimateService:
             raise ValidationError('Can only add line items to draft estimates.')
         from apps.core.services import LineItemService
         kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
+        # `is_material` input alias (Task 7 removes this alias): pop it before
+        # constructing the model (freeform_kind replaced it as a real field) —
+        # default False mirrors the retired field's own model-level default.
+        is_material = kwargs.pop('is_material', False)
         li = EstimateLineItem(estimate=estimate, **kwargs)
-        # Material lines (is_material=True) get their AC from config if not supplied.
+        EstimateService._apply_is_material_alias(li, is_material)
+        # Material lines (freeform_kind='material') get their AC from config if not supplied.
         EstimateService._apply_material_ac_default(li)
         # A freshly-added line has no sources; if it isn't an adjustment it needs an AC.
         if li.adjustment_service_id is None and li.accounting_category_id is None:
@@ -374,7 +393,6 @@ class EstimateService:
                     '(lines with no atom source).'
                 )}
             )
-        EstimateService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li
@@ -452,13 +470,22 @@ class EstimateService:
             raise ValidationError('Can only modify line items on draft estimates.')
         from apps.core.services import LineItemService
         kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
+        # `is_material` input alias (Task 7 removes this alias): pop it before
+        # the generic setattr loop (it's no longer a real field) and only
+        # touch freeform_kind when the caller actually sent it — an omitted
+        # key leaves the line's persisted kind untouched, same as the retired
+        # field would have.
+        is_material_provided = 'is_material' in kwargs
+        is_material = kwargs.pop('is_material', None)
         for field, value in kwargs.items():
             setattr(li, field, value)
+        if is_material_provided:
+            EstimateService._apply_is_material_alias(li, is_material)
         # Hand-lines (no atom source, not an adjustment) must have an accounting category.
         # Atom-backed lines (sources exist) and adjustment lines are exempt.
         is_adjustment = li.adjustment_service_id is not None
         has_source = li.sources.exists()
-        # Material lines (is_material=True) get their AC from config if not supplied.
+        # Material lines (freeform_kind='material') get their AC from config if not supplied.
         EstimateService._apply_material_ac_default(li)
         if not has_source and not is_adjustment and li.accounting_category_id is None:
             raise ValidationError(
@@ -467,7 +494,6 @@ class EstimateService:
                     '(lines with no atom source).'
                 )}
             )
-        EstimateService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li

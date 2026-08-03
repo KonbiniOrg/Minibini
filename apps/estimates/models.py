@@ -544,6 +544,15 @@ class ServiceItem(models.Model):
 class EstimateLineItem(BaseLineItem):
     """Line item for estimates - inherits shared functionality from BaseLineItem."""
 
+    KIND_WORK = 'work'
+    KIND_MATERIAL = 'material'
+    KIND_FEE = 'fee'
+    FREEFORM_KIND_CHOICES = [
+        (KIND_WORK, 'Work'),
+        (KIND_MATERIAL, 'Material'),
+        (KIND_FEE, 'Fee / credit'),
+    ]
+
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
     # adjustment_service: provenance ONLY (task-owned-money Phase 1, Task 5) —
     # which preset this adjustment line was created from. Still what SELECTS a
@@ -566,12 +575,15 @@ class EstimateLineItem(BaseLineItem):
         'core.AccountingCategory', blank=True, related_name='+',
         help_text='Categories the adjustment applies to; empty = all non-adjustment lines.',
     )
-    is_material = models.BooleanField(
-        default=False,
+    freeform_kind = models.CharField(
+        max_length=10, choices=FREEFORM_KIND_CHOICES, null=True, blank=True,
         help_text=(
-            'Marks a bare (no inventory_item, non-adjustment) freeform line as a '
-            'material: at acceptance it crystallizes into a provisional Material '
-            '(sell price only, no lot) instead of a Fee.'
+            'Set IFF this is a bare (no inventory_item, service_item, or '
+            'adjustment_service) freeform line. "material" crystallizes at '
+            'acceptance into a provisional Material (sell price only, no lot); '
+            'anything else on a bare line (including unset) crystallizes into '
+            'a Fee — acceptance does not yet branch on "work" (task-owned-money '
+            'Phase 2, Task 3).'
         ),
     )
     service_item = models.ForeignKey(
@@ -653,6 +665,15 @@ class ChangeOrderLineItem(BaseLineItem):
         (ACTION_REPLACE, 'Replace'),
     ]
 
+    KIND_WORK = 'work'
+    KIND_MATERIAL = 'material'
+    KIND_FEE = 'fee'
+    FREEFORM_KIND_CHOICES = [
+        (KIND_WORK, 'Work'),
+        (KIND_MATERIAL, 'Material'),
+        (KIND_FEE, 'Fee / credit'),
+    ]
+
     change_order = models.ForeignKey(ChangeOrder, on_delete=models.CASCADE)
     action = models.CharField(max_length=10, choices=CO_ACTION_CHOICES)
     target_line_item = models.ForeignKey(
@@ -666,13 +687,15 @@ class ChangeOrderLineItem(BaseLineItem):
         on_delete=models.SET_NULL,
         null=True, blank=True,
     )
-    is_material = models.BooleanField(
-        default=False,
+    freeform_kind = models.CharField(
+        max_length=10, choices=FREEFORM_KIND_CHOICES, null=True, blank=True,
         help_text=(
-            'Marks a bare (no inventory_item) freeform line as a material: at '
-            'CO acceptance it crystallizes into a provisional Material '
-            '(sell price only, no lot) instead of a Fee. Mirrors '
-            'EstimateLineItem.is_material.'
+            'Set IFF this is a bare (no inventory_item, service_item) freeform '
+            'line. "material" crystallizes at CO acceptance into a provisional '
+            'Material (sell price only, no lot); anything else on a bare line '
+            '(including unset) crystallizes into a Fee — CO acceptance does not '
+            'yet branch on "work" (task-owned-money Phase 2, Task 3). Mirrors '
+            'EstimateLineItem.freeform_kind.'
         ),
     )
     service_item = models.ForeignKey(
@@ -709,7 +732,7 @@ class ChangeOrderLineItem(BaseLineItem):
         if self.action == self.ACTION_REMOVE:
             # A remove line's own fields are display-only; it never crystallizes
             # a new atom, so crystallization descriptors are meaningless on it.
-            if self.service_item_id is not None or self.is_material:
+            if self.service_item_id is not None or self.freeform_kind == self.KIND_MATERIAL:
                 raise ValidationError(
                     'action="remove" cannot carry a service item or material marker.'
                 )
