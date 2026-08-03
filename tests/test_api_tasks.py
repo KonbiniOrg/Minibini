@@ -449,3 +449,50 @@ class TaskMoneyPermissionTest(TestCase):
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 403, resp.content)
+
+
+class InactiveSchemeTaskCreateTest(TestCase):
+    """POSTing a `rate_scheme` whose preset has been retired (is_active=
+    False) must render a clean 409 (SchemeInactiveError), not an uncaught
+    500. TaskService.create_direct raises SchemeInactiveError for an
+    inactive preset; JobTaskMixin.tasks() (apps/api/mixins.py) and
+    TaskViewSet.subtasks() (apps/api/tasks/views.py) both call it directly
+    and must catch it exactly like the sibling endpoints
+    (JobViewSet.populate_from_template / add_from_template) already do."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+
+        ac = AccountingCategory.objects.create(code='INACT', name='Inactive AC')
+        self.inactive_scheme = RateScheme.objects.create(
+            name='Retired Scheme', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.00'), unit_label='ea', accounting_category=ac,
+            is_active=False,
+        )
+        active_scheme = RateScheme.objects.create(
+            name='Active Parent Scheme', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.00'), unit_label='ea', accounting_category=ac,
+        )
+        contact = Contact.objects.create(
+            first_name='Inact', last_name='Job', email='inact-job@test.example')
+        self.job = Job.objects.create(
+            name='Inactive Scheme Job', contact=contact, job_number='JOB-INACT-001')
+        self.parent_task = _stamp_task(self.job, active_scheme, 'Parent')
+        # Any authenticated user (stamp-only creation is worker-accessible).
+        self.worker = User.objects.create_user(username='inact_worker', password='testpass')
+
+    def test_job_task_post_with_inactive_scheme_returns_409(self):
+        self.client.force_login(self.worker)
+        resp = self.client.post(f'/api/jobs/{self.job.pk}/tasks/', {
+            'name': 'x', 'rate_scheme': self.inactive_scheme.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertIn('detail', resp.json())
+
+    def test_subtask_post_with_inactive_scheme_returns_409(self):
+        self.client.force_login(self.worker)
+        resp = self.client.post(f'/api/tasks/{self.parent_task.pk}/subtasks/', {
+            'name': 'x', 'rate_scheme': self.inactive_scheme.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertIn('detail', resp.json())
