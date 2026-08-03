@@ -122,6 +122,7 @@ class Command(BaseCommand):
         self.check_bleps_and_shifts()
         self.check_materials()
         self.check_line_items()
+        self.check_freeform_kind_consistency()
         self.check_purchase_orders()
         self.check_invoices()
         self.check_deliverables()
@@ -439,6 +440,46 @@ class Command(BaseCommand):
                 # Negative price
                 if li.price < 0:
                     self.warnings.append(f'{name} {li.pk}: negative price {li.price}')
+
+    # ── freeform_kind consistency (EstimateLineItem / ChangeOrderLineItem) ──
+
+    def check_freeform_kind_consistency(self):
+        """freeform_kind is a real writable field (task-owned-money Phase 2,
+        Task 4): non-null IFF the line is "bare" — no inventory_item, no
+        service_item, and (EstimateLineItem only — ChangeOrderLineItem has
+        no adjustment_service field) no adjustment_service. The invariant is
+        enforced only at the service layer
+        (EstimateService._reject_freeform_kind_on_non_bare_line, shared with
+        ChangeOrderService), not by a model clean() guard, so data written
+        via QuerySet.update(), fixtures, or other bypass paths can violate
+        it undetected."""
+        from apps.estimates.models import EstimateLineItem, ChangeOrderLineItem
+
+        line_models = [
+            ('EstimateLineItem', EstimateLineItem, True),
+            ('ChangeOrderLineItem', ChangeOrderLineItem, False),
+        ]
+
+        for name, model, has_adjustment_service in line_models:
+            qs = model.objects.select_related('inventory_item', 'service_item')
+            for li in qs:
+                if has_adjustment_service:
+                    adjustment_service_id = li.adjustment_service_id
+                else:
+                    adjustment_service_id = None
+                is_bare = (
+                    li.inventory_item_id is None
+                    and li.service_item_id is None
+                    and adjustment_service_id is None
+                )
+                if not is_bare and li.freeform_kind is not None:
+                    self.errors.append(
+                        f'{name} {li.pk}: freeform_kind="{li.freeform_kind}" is set but '
+                        f'line is not bare (inventory_item={li.inventory_item_id}, '
+                        f'service_item={li.service_item_id}'
+                        + (f', adjustment_service={adjustment_service_id}' if has_adjustment_service else '')
+                        + ') — freeform_kind must be null on a catalog/service/adjustment line'
+                    )
 
     # ── Purchase Orders ───────────────────────────────────────
 

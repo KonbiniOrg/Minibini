@@ -5,9 +5,12 @@ from django.core.management import call_command
 from apps.core.models import AccountingCategory
 from apps.jobs.models import RateScheme, Job, Task, Fee
 from apps.contacts.models import Contact
-from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource
+from apps.estimates.models import (
+    Estimate, EstimateLineItem, EstimateLineItemSource,
+    ChangeOrder, ChangeOrderLineItem, ServiceItem,
+)
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
-from apps.inventory.models import Material
+from apps.inventory.models import Material, InventoryItem
 
 
 def _task_scheme_fields(scheme):
@@ -650,3 +653,136 @@ class ValidateDataStateInvariantsTest(TestCase):
             )
         output = self._run()
         self.assertNotIn('not billable', output)
+
+
+class ValidateDataFreeformKindConsistencyTest(TestCase):
+    """Tests for check_freeform_kind_consistency() — freeform_kind must be
+    null on any EstimateLineItem/ChangeOrderLineItem that is NOT bare (i.e.
+    has an inventory_item, service_item, or — EstimateLineItem only —
+    adjustment_service). The invariant is enforced only at the service
+    layer (EstimateService._reject_freeform_kind_on_non_bare_line), not by
+    a model clean() guard, so plant violations via QuerySet.update() to
+    bypass the service, matching the file's established pattern."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='FKSvc', code='FKSVC')
+        self.contact = Contact.objects.create(first_name='FK', last_name='Tester')
+        self.job = Job.objects.create(
+            job_number='J-VFK-001', name='FK Job', contact=self.contact,
+        )
+        self.rs = RateScheme.objects.create(
+            name='RS-FK', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.00'), unit_label='each', accounting_category=self.ac,
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-VFK-001', version=1,
+        )
+        self.pli = InventoryItem.objects.create(code='FK-ITEM', accounting_category=self.ac)
+        self.service_item = ServiceItem.objects.create(
+            template_name='FK Service', rate_scheme=self.rs,
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    # ── EstimateLineItem ──────────────────────────────────────────
+
+    def test_estimate_line_freeform_kind_with_inventory_item_is_error(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, inventory_item=self.pli,
+        )
+        EstimateLineItem.objects.filter(pk=li.pk).update(
+            freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+        output = self._run()
+        self.assertIn(f'EstimateLineItem {li.pk}', output)
+        self.assertIn('freeform_kind', output)
+        self.assertIn('not bare', output)
+
+    def test_estimate_line_freeform_kind_with_service_item_is_error(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, service_item=self.service_item,
+        )
+        EstimateLineItem.objects.filter(pk=li.pk).update(
+            freeform_kind=EstimateLineItem.KIND_WORK,
+        )
+        output = self._run()
+        self.assertIn(f'EstimateLineItem {li.pk}', output)
+        self.assertIn('freeform_kind', output)
+        self.assertIn('not bare', output)
+
+    def test_estimate_line_freeform_kind_with_adjustment_service_is_error(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, adjustment_service=self.rs,
+            adjustment_percent=Decimal('-10.00'),
+        )
+        EstimateLineItem.objects.filter(pk=li.pk).update(
+            freeform_kind=EstimateLineItem.KIND_MATERIAL,
+        )
+        output = self._run()
+        self.assertIn(f'EstimateLineItem {li.pk}', output)
+        self.assertIn('freeform_kind', output)
+        self.assertIn('not bare', output)
+
+    def test_estimate_line_freeform_kind_bare_not_flagged(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate,
+        )
+        EstimateLineItem.objects.filter(pk=li.pk).update(
+            freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+        output = self._run()
+        self.assertNotIn('not bare', output)
+
+    def test_estimate_line_no_freeform_kind_with_inventory_item_not_flagged(self):
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, inventory_item=self.pli,
+        )
+        output = self._run()
+        self.assertNotIn('not bare', output)
+
+    # ── ChangeOrderLineItem ───────────────────────────────────────
+
+    def _make_co(self):
+        return ChangeOrder.objects.create(job=self.job, estimate=self.estimate)
+
+    def test_co_line_freeform_kind_with_inventory_item_is_error(self):
+        co = self._make_co()
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            inventory_item=self.pli,
+        )
+        ChangeOrderLineItem.objects.filter(pk=li.pk).update(
+            freeform_kind=ChangeOrderLineItem.KIND_FEE,
+        )
+        output = self._run()
+        self.assertIn(f'ChangeOrderLineItem {li.pk}', output)
+        self.assertIn('freeform_kind', output)
+        self.assertIn('not bare', output)
+
+    def test_co_line_freeform_kind_with_service_item_is_error(self):
+        co = self._make_co()
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            service_item=self.service_item,
+        )
+        ChangeOrderLineItem.objects.filter(pk=li.pk).update(
+            freeform_kind=ChangeOrderLineItem.KIND_WORK,
+        )
+        output = self._run()
+        self.assertIn(f'ChangeOrderLineItem {li.pk}', output)
+        self.assertIn('freeform_kind', output)
+        self.assertIn('not bare', output)
+
+    def test_co_line_freeform_kind_bare_not_flagged(self):
+        co = self._make_co()
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+        )
+        ChangeOrderLineItem.objects.filter(pk=li.pk).update(
+            freeform_kind=ChangeOrderLineItem.KIND_MATERIAL,
+        )
+        output = self._run()
+        self.assertNotIn('not bare', output)
