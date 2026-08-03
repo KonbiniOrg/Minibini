@@ -302,11 +302,31 @@ class Task(TaskBase):
         null=True, blank=True,
         help_text="Position in assignee's work queue on the board"
     )
-    # Billing fields (Phase B: rate_scheme is NOT NULL at the DB level).
-    rate_scheme = models.ForeignKey(
+    # source_scheme: provenance ONLY (task-owned-money Phase 1) — the preset
+    # this task was last stamped from. Never read for money math; the task's
+    # own qty_source/rate/unit_label/accounting_category fields below are the
+    # price of record. Nullable/SET_NULL so deleting a preset never blocks on
+    # its stamped tasks.
+    source_scheme = models.ForeignKey(
         'jobs.RateScheme',
-        on_delete=models.PROTECT,
-        related_name='task_set',
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='stamped_tasks',
+    )
+    # Task-owned money (task-owned-money Phase 1, Task 1): snapshot-at-stamp
+    # fields that will become the price of record. qty_source strings match
+    # RateScheme.ELAPSED_TIME / ENTERED_QTY so the data migration is a copy.
+    QTY_ELAPSED = 'elapsed_time'
+    QTY_ENTERED = 'entered_qty'
+    QTY_SOURCE_CHOICES = [(QTY_ELAPSED, 'Timeslips'), (QTY_ENTERED, 'Entered quantity')]
+
+    qty_source = models.CharField(
+        max_length=20, choices=QTY_SOURCE_CHOICES, default=QTY_ENTERED,
+    )
+    rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    unit_label = models.CharField(max_length=50, default='none')
+    accounting_category = models.ForeignKey(
+        'core.AccountingCategory',
+        on_delete=models.PROTECT, null=True, blank=True, related_name='+',
     )
     active_modifiers = models.JSONField(default=list, blank=True)
     actual_qty = models.DecimalField(
