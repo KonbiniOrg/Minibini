@@ -5,7 +5,7 @@
 import { apiAs } from './api.js';
 import { personas } from './personas.js';
 
-// One shot: every job with embedded tasks (status, scheme_algorithm) and
+// One shot: every job with embedded tasks (status, qty_source) and
 // materials (consumption_state, quantity, qty_on_hand, task, inventory_item).
 export async function loadBackdrop() {
   const api = await apiAs(personas.finjobs);
@@ -44,7 +44,9 @@ export function findStartableTask(jobs, {
     const pending = pendingTasks(job);
     if (pending.length < minPendingTasks) continue;
     for (const task of pending) {
-      if (algorithm && task.scheme_algorithm !== algorithm) continue;
+      // qty_source is the task's own field (task-owned-money Phase 1) —
+      // was scheme_algorithm, an echo of the RateScheme it stamped from.
+      if (algorithm && task.qty_source !== algorithm) continue;
       const mats = taskMaterials(job, task);
       if (materials === 'in-stock' && !(mats.length > 0 && mats.every(stocked))) continue;
       if (materials === 'shortfall' && !mats.some((m) => !stocked(m))) continue;
