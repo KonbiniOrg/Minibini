@@ -38,7 +38,7 @@
       const [tmplResp, schemeResp, allSchemeResp] = await Promise.all([
         api.get('/api/service-items/'),
         api.get('/api/rate-schemes/'),
-        api.get('/api/rate-schemes/?include_superseded=true'),
+        api.get('/api/rate-schemes/?include_inactive=true'),
       ]);
       templates = tmplResp.results || tmplResp;
       schemes = schemeResp.results || schemeResp;
@@ -68,19 +68,19 @@
       .join(', ');
   }
 
-  function isSuperseded(template) {
+  function isInactiveScheme(template) {
     const s = schemeFor(template.rate_scheme);
-    return !!(s && s.superseded);
+    return !!(s && !s.is_active);
   }
 
   async function refreshSchemes() {
     // The schemes list is loaded once on mount, but a RateScheme can be
-    // edited/superseded elsewhere on the settings page while this component
+    // edited/retired elsewhere on the settings page while this component
     // sits open — re-fetch on form open so the picker is never stale.
     try {
       const [schemeResp, allSchemeResp] = await Promise.all([
         api.get('/api/rate-schemes/'),
-        api.get('/api/rate-schemes/?include_superseded=true'),
+        api.get('/api/rate-schemes/?include_inactive=true'),
       ]);
       schemes = schemeResp.results || schemeResp;
       allSchemes = allSchemeResp.results || allSchemeResp;
@@ -186,8 +186,8 @@
             {#if activeModifierNote(t, scheme)}
               <br><small>{activeModifierNote(t, scheme)}</small>
             {/if}
-            {#if isSuperseded(t)}
-              <br><strong style="color:#a8071a">WARNING: Rate Scheme is superseded — update before next use</strong>
+            {#if isInactiveScheme(t)}
+              <br><strong style="color:#a8071a">WARNING: Rate Scheme is inactive — update before next use</strong>
             {/if}
           </td>
           <td>{t.is_active ? 'Yes' : 'No'}</td>

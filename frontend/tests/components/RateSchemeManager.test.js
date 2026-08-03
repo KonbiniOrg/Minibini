@@ -6,26 +6,36 @@ vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.f
 import { api } from '@/lib/api.js';
 import RateSchemeManager from '@/components/RateSchemeManager.svelte';
 
-const SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hour', accounting_category: 1, modifiers: [], reference_counts: {} };
+const SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hour', accounting_category: 1, modifiers: [], reference_counts: {}, is_active: true };
+const INACTIVE_SCHEME = { rate_scheme_id: 2, name: 'Retired Rate', algorithm: 'elapsed_time', rate: '10', unit_label: 'hour', accounting_category: 1, modifiers: [], reference_counts: {}, is_active: false };
+
+function mockSettings(overrides = {}) {
+  return { default_rate_scheme: '', ...overrides };
+}
 
 beforeEach(() => {
   api.get.mockReset();
   api.post.mockReset();
+  api.patch.mockReset();
   api.delete.mockReset();
   api.get.mockImplementation((url) => {
     if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME] });
     if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
     if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
+    if (url === '/api/settings/') return Promise.resolve(mockSettings());
     return Promise.resolve({ results: [] });
   });
   api.post.mockResolvedValue({});
+  api.patch.mockResolvedValue({});
   api.delete.mockResolvedValue({});
 });
 
 describe('RateSchemeManager', () => {
   it('loads and lists schemes', async () => {
-    const { findByText } = render(RateSchemeManager);
-    expect(await findByText('Hourly')).toBeInTheDocument();
+    const { findByRole } = render(RateSchemeManager);
+    // 'Hourly' also appears as an option in the default-preset picker, so
+    // scope to the table row (cell), not a bare text match.
+    expect(await findByRole('cell', { name: 'Hourly' })).toBeInTheDocument();
   });
 
   it('shows the accounting category in the scheme row', async () => {
@@ -53,13 +63,14 @@ describe('RateSchemeManager', () => {
   });
 
   it('keeps the existing-schemes list visible while adding a new one', async () => {
-    const { findByRole, getByText, queryByRole } = render(RateSchemeManager);
-    // Existing scheme is listed before adding.
+    const { findByRole, getByRole, queryByRole } = render(RateSchemeManager);
+    // Existing scheme is listed before adding. ('Hourly' also appears as a
+    // default-preset picker option, so scope to the table row via 'cell'.)
     expect(await findByRole('button', { name: 'Add Rate Scheme' })).toBeInTheDocument();
-    expect(getByText('Hourly')).toBeInTheDocument();
+    expect(getByRole('cell', { name: 'Hourly' })).toBeInTheDocument();
     // Open the add form — the list must NOT be suppressed.
     await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
-    expect(getByText('Hourly')).toBeInTheDocument();           // existing rows still shown
+    expect(getByRole('cell', { name: 'Hourly' })).toBeInTheDocument();  // existing rows still shown
     expect(await findByRole('button', { name: 'Save' })).toBeInTheDocument(); // form is open
     // The Add Rate Scheme button is hidden while the form is open (no double-add).
     expect(queryByRole('button', { name: 'Add Rate Scheme' })).not.toBeInTheDocument();
@@ -235,5 +246,95 @@ describe('RateSchemeManager', () => {
       '/api/rate-schemes/',
       expect.objectContaining({ algorithm: 'elapsed_time', unit_label: 'hour' }),
     );
+  });
+
+  it('shows "Yes" in the Active column for an active scheme, and no supersession affordances anywhere', async () => {
+    const { findByRole, queryByRole, queryByText } = render(RateSchemeManager);
+    expect(await findByRole('cell', { name: 'Yes' })).toBeInTheDocument();
+    expect(queryByRole('button', { name: /Create new version/ })).not.toBeInTheDocument();
+    expect(queryByText(/superseded/i)).not.toBeInTheDocument();
+    expect(queryByRole('checkbox', { name: /Show superseded/ })).not.toBeInTheDocument();
+  });
+
+  it('Edit and Delete remain available for a scheme with references (no longer hidden)', async () => {
+    const referenced = { ...SCHEME, reference_counts: { task_count: 3, service_item_count: 1 } };
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [referenced] });
+      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
+      if (url === '/api/settings/') return Promise.resolve(mockSettings());
+      return Promise.resolve({ results: [] });
+    });
+    const { findByRole } = render(RateSchemeManager);
+    expect(await findByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(await findByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('retires an active scheme with no confirm dialog, and refreshes the list afterward', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm');
+    const { findByRole } = render(RateSchemeManager);
+    const getCallsBefore = api.get.mock.calls.length;
+    await fireEvent.click(await findByRole('button', { name: 'Retire' }));
+    expect(api.post).toHaveBeenCalledWith('/api/rate-schemes/1/retire/');
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(api.get.mock.calls.length).toBeGreaterThan(getCallsBefore); // list reloaded
+    confirmSpy.mockRestore();
+  });
+
+  it('shows Reactivate (not Retire) for an inactive scheme once "Show inactive" reveals it, and reactivating calls the endpoint with no confirm dialog', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm');
+    api.get.mockImplementation((url) => {
+      if (url === '/api/rate-schemes/?include_inactive=true') return Promise.resolve({ results: [SCHEME, INACTIVE_SCHEME] });
+      if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME] });
+      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
+      if (url === '/api/settings/') return Promise.resolve(mockSettings());
+      return Promise.resolve({ results: [] });
+    });
+    const { findByRole, findByText } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('checkbox', { name: /Show inactive/ }));
+    expect(await findByText('Retired Rate')).toBeInTheDocument();
+    await fireEvent.click(await findByRole('button', { name: 'Reactivate' }));
+    expect(api.post).toHaveBeenCalledWith('/api/rate-schemes/2/reactivate/');
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('default preset picker renders the current default from settings', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME] });
+      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
+      if (url === '/api/settings/') return Promise.resolve(mockSettings({ default_rate_scheme: '1' }));
+      return Promise.resolve({ results: [] });
+    });
+    const { findByLabelText } = render(RateSchemeManager);
+    const select = await findByLabelText('Default preset');
+    expect(select.value).toBe('1');
+  });
+
+  it('default preset picker excludes inactive schemes even when "Show inactive" is checked', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/rate-schemes/?include_inactive=true') return Promise.resolve({ results: [SCHEME, INACTIVE_SCHEME] });
+      if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME] });
+      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
+      if (url === '/api/settings/') return Promise.resolve(mockSettings());
+      return Promise.resolve({ results: [] });
+    });
+    const { findByRole, findByText, findByLabelText } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('checkbox', { name: /Show inactive/ }));
+    await findByText('Retired Rate'); // wait for the reload to land
+    const select = await findByLabelText('Default preset');
+    const optionLabels = Array.from(select.options).map((o) => o.textContent);
+    expect(optionLabels).toContain('Hourly');
+    expect(optionLabels).not.toContain('Retired Rate');
+  });
+
+  it('PATCHes settings with the new default when the picker selection changes', async () => {
+    const { findByLabelText } = render(RateSchemeManager);
+    const select = await findByLabelText('Default preset');
+    await fireEvent.change(select, { target: { value: '1' } });
+    expect(api.patch).toHaveBeenCalledWith('/api/settings/', { default_rate_scheme: '1' });
   });
 });
