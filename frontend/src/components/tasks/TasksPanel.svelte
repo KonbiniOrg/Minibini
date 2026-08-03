@@ -451,6 +451,8 @@
     presetTemplateId={taskPresetTemplateId}
     presetServiceItem={taskPresetServiceItem}
     presetName={taskPresetName}
+    canManage={job?.can_manage}
+    {categories}
     onSaved={handleTaskSaved}
     onClose={() => { taskModalOpen = false; }}
   />
@@ -496,6 +498,8 @@
     context="subtask"
     contextId={subtaskModalParentTaskId}
     templates={[]}
+    canManage={job?.can_manage}
+    {categories}
     onSaved={handleSubtaskSaved}
     onClose={() => { subtaskModalOpen = false; }}
   />

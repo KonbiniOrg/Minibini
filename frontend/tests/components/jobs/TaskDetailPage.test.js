@@ -21,7 +21,7 @@ import TaskDetailPage from '@/routes/jobs/TaskDetailPage.svelte';
 function mockApi(taskOverrides = {}) {
   const task = {
     task_id: 7, name: 'Mill', status: 'pending', job: { id: 3 },
-    assignee_name: null, est_qty: '2', effective_rate: '25', scheme_unit_label: 'hr',
+    assignee_name: null, est_qty: '2', effective_rate: '25', unit_label: 'hr',
     ...taskOverrides,
   };
   api.get.mockReset();
@@ -147,9 +147,9 @@ describe('TaskDetailPage stat chips', () => {
     mockApi({
       status: 'in_progress', assignee_name: 'Dana',
       est_worker_time: '6:00:00', est_qty: '240',
-      scheme_name: 'CNC', scheme_algorithm: 'entered_qty',
-      scheme_unit_label: 'minute', actual_qty: '150',
-      effective_rate: '2.50', computed_charge: '375.00',
+      source_scheme_name: 'CNC', qty_source: 'entered_qty',
+      unit_label: 'minute', actual_qty: '150',
+      rate: '2.50', effective_rate: '2.50', computed_charge: '375.00',
     });
     const { findByRole, getByText, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
@@ -161,18 +161,37 @@ describe('TaskDetailPage stat chips', () => {
     expect(getByText(/240 minute/)).toBeInTheDocument();
     expect(getByText('Actual')).toBeInTheDocument();
     expect(getByText(/150 minute/)).toBeInTheDocument();
+    expect(getByText('Scheme')).toBeInTheDocument();
+    expect(getByText('CNC')).toBeInTheDocument();
     expect(getByText('Rate')).toBeInTheDocument();
     expect(getByText('$2.50/minute')).toBeInTheDocument();
     expect(getByText('Charge')).toBeInTheDocument();
     expect(getByText('$375.00')).toBeInTheDocument();
+    // Scheme is provenance, not itself a dollar amount — only Rate + Charge
+    // carry the .money class.
     expect(container.querySelectorAll('.stat-chip.money')).toHaveLength(2);
+  });
+
+  it('shows the Scheme chip as a dash when the task has money but its source preset is gone', async () => {
+    // source_scheme is SET_NULL on preset delete — the task keeps its own
+    // stamped rate/unit_label (still the price of record), just loses the
+    // provenance name. Must render gracefully, not "null" or a crash.
+    mockApi({
+      status: 'pending', rate: '25', unit_label: 'hour', qty_source: 'elapsed_time',
+      source_scheme_name: null, effective_rate: '25',
+    });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const header = getByText('Scheme');
+    const chip = header.closest('.stat-chip');
+    expect(chip.querySelector('.stat-chip-body')).toHaveTextContent('—');
   });
 
   it('suppresses the duplicate Est Qty chip when it restates the worker time (hour-unit scheme)', async () => {
     mockApi({
       status: 'pending', est_worker_time: '2:00:00', est_qty: '2',
-      scheme_name: 'Milling', scheme_algorithm: 'elapsed_time',
-      scheme_unit_label: 'hour', effective_rate: '25',
+      source_scheme_name: 'Milling', qty_source: 'elapsed_time',
+      unit_label: 'hour', rate: '25', effective_rate: '25',
     });
     const { findByRole, getByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
@@ -184,8 +203,8 @@ describe('TaskDetailPage stat chips', () => {
   it('shows both Est Time and Est Qty chips for a legacy row where they diverge', async () => {
     mockApi({
       status: 'pending', est_worker_time: '2:00:00', est_qty: '3',
-      scheme_name: 'Milling', scheme_algorithm: 'elapsed_time',
-      scheme_unit_label: 'hour', effective_rate: '25',
+      source_scheme_name: 'Milling', qty_source: 'elapsed_time',
+      unit_label: 'hour', rate: '25', effective_rate: '25',
     });
     const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
@@ -194,10 +213,10 @@ describe('TaskDetailPage stat chips', () => {
     expect(getByText(/3 hour/)).toBeInTheDocument();
   });
 
-  it('the Actual chip shows the scheme unit label with no literal "hour" fallback', async () => {
+  it('the Actual chip shows the unit label with no literal "hour" fallback', async () => {
     mockApi({
-      status: 'in_progress', scheme_name: 'Milling', scheme_algorithm: 'elapsed_time',
-      scheme_unit_label: 'hour', actual_hours: '1.5', effective_rate: '25',
+      status: 'in_progress', source_scheme_name: 'Milling', qty_source: 'elapsed_time',
+      unit_label: 'hour', rate: '25', actual_hours: '1.5', effective_rate: '25',
     });
     const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
@@ -206,12 +225,13 @@ describe('TaskDetailPage stat chips', () => {
   });
 
   it('renders no money chips when the task has no rate scheme', async () => {
-    mockApi({ scheme_name: null, scheme_algorithm: null, effective_rate: null, scheme_unit_label: null, est_qty: null });
+    mockApi({ rate: null, qty_source: null, effective_rate: null, unit_label: null, source_scheme_name: null, est_qty: null });
     const { findByRole, queryByText, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
     expect(queryByText('Rate')).toBeNull();
     expect(queryByText('Charge')).toBeNull();
     expect(queryByText('Est Qty')).toBeNull();
+    expect(queryByText('Scheme')).toBeNull();
     expect(container.querySelectorAll('.stat-chip.money')).toHaveLength(0);
   });
 
@@ -297,8 +317,8 @@ describe('TaskDetailPage section order', () => {
 
 describe('TaskDetailPage entered-qty add field', () => {
   const enteredQty = {
-    scheme_algorithm: 'entered_qty', scheme_name: 'Press',
-    scheme_unit_label: 'pcs', actual_qty: '9.00', status: 'in_progress',
+    qty_source: 'entered_qty', source_scheme_name: 'Press',
+    unit_label: 'pcs', actual_qty: '9.00', status: 'in_progress',
   };
 
   beforeEach(() => {
@@ -366,8 +386,8 @@ describe('TaskDetailPage prompt modals vs background refetch', () => {
     // blank the page ("Loading…") and remount TaskActions — that would
     // destroy any open prompt modal. Regression caught by driving the
     // real app; invariants documented in jobs-and-tasks §10.1a.
-    mockApi({ scheme_algorithm: 'entered_qty', scheme_name: 'Press',
-              scheme_unit_label: 'pcs', actual_qty: '9.00',
+    mockApi({ qty_source: 'entered_qty', source_scheme_name: 'Press',
+              unit_label: 'pcs', actual_qty: '9.00',
               status: 'in_progress' });
     api.post.mockReset();
     api.post.mockResolvedValue({ needs_actual_qty: true,
@@ -414,7 +434,7 @@ describe('TaskDetailPage does not refetch in a loop', () => {
 function mockApiWithJob(taskOverrides = {}, jobOverrides = {}, subtasks = []) {
   const task = {
     task_id: 7, name: 'Mill', status: 'pending', job: { id: 3 },
-    assignee_name: null, est_qty: '2', effective_rate: '25', scheme_unit_label: 'hr',
+    assignee_name: null, est_qty: '2', effective_rate: '25', unit_label: 'hr',
     ...taskOverrides,
   };
   api.get.mockReset();
@@ -555,7 +575,7 @@ describe('TaskDetailPage materials use the shared task-list row (full action set
     const task = {
       task_id: 7, name: 'Mill', status: 'in_progress', job: { id: 3 },
       can_manage: true, assignee_name: null, est_qty: '2',
-      effective_rate: '25', scheme_unit_label: 'hr',
+      effective_rate: '25', unit_label: 'hr',
       ...taskOverrides,
     };
     api.get.mockReset();

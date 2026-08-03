@@ -24,6 +24,14 @@
                               // in another window) — the pick carries the object so this
                               // form never re-resolves it from a stale list
     presetName = '', // optional pre-fill for the name (manual / custom-task create only)
+    // Money-field write gate (task-owned-money Phase 1) for MANUAL mode only
+    // — template mode's add-from-template endpoint is IsAuthenticated-only,
+    // no MONEY_FIELDS gate, so it never consults this. In edit mode,
+    // item.can_manage (JobScopedCanManageMixin, already resolved server-side
+    // for this task's job) wins when present; this prop is the fallback for
+    // create (no item yet) and the override if a caller ever needs one.
+    canManage = true,
+    categories = [], // AccountingCategory list, for the edit-mode category select/label
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -33,7 +41,7 @@
   let rateSchemeId = $state('');
   let name = $state('');
   let description = $state('');
-  let activeModifiers = $state([]);
+  let activeModifiers = $state([]); // list of modifier KEYS — the checkbox interaction model
   let estQty = $state('');
   let estWorkerTime = $state(''); // accepts "HH:MM" or "" for null
   let busy = $state(false);
@@ -42,24 +50,44 @@
   let saveToCatalog = $state(false); // custom-task create only: also save as a ServiceItem
   let taskCreated = $state(false);   // guards double task-create if catalog save fails + retry
 
+  // Edit-mode money fields: the task's OWN stamped values (task-owned money
+  // Phase 1 — rate_scheme is a create-only trigger, never re-forwarded on
+  // PATCH, so editing works directly off the task, not a re-pick dropdown).
+  let editRate = $state('');
+  let editUnitLabel = $state('');
+  let editAccountingCategory = $state('');
+
   let schemes = $state([]);
   let loading = $state(true);
+  let defaultSchemeId = $state(''); // Configuration `default_rate_scheme`, preselects the CREATE dropdown
 
   onMount(async () => {
     try {
-      const resp = await api.get('/api/rate-schemes/');
+      const resp = await api.get('/api/rate-schemes/?task_applicable=true');
       schemes = resp.results || resp;
     } catch (e) {
       formError = e.message || 'Could not load rate schemes.';
     } finally {
       loading = false;
     }
+    // Best-effort: a settings-fetch failure shouldn't block the form from
+    // loading its (more important) rate-scheme list.
+    try {
+      const settings = await api.get('/api/settings/');
+      defaultSchemeId = settings.default_rate_scheme || '';
+    } catch (e) {
+      defaultSchemeId = '';
+    }
   });
 
-  // Populate when opening or when prefill changes
-  // active_modifiers is always a list of modifier keys.
+  // Populate when opening or when prefill changes.
+  // Modifiers arrive in two shapes depending on source: a ServiceItem's
+  // default_active_modifiers is bare keys, a Task's active_modifiers is now
+  // {key, label, percent} snapshot dicts (task-owned money Phase 1). The
+  // checkbox interaction model stays keys-only either way.
   function loadModifiers(value) {
-    activeModifiers = Array.isArray(value) ? [...value] : [];
+    if (!Array.isArray(value)) { activeModifiers = []; return; }
+    activeModifiers = value.map((v) => (typeof v === 'string' ? v : v?.key)).filter(Boolean);
   }
 
   $effect(() => {
@@ -67,8 +95,15 @@
     if (isEdit && item) {
       name = item.name || '';
       description = item.description || '';
-      rateSchemeId = item.rate_scheme ?? '';
+      // rate_scheme is a create-only stamping trigger (write-only on the
+      // serializer, never echoed back, never re-forwarded on PATCH) — no
+      // re-pick dropdown in edit mode. The task's own money fields below
+      // are the price of record.
+      rateSchemeId = '';
       loadModifiers(item.active_modifiers);
+      editRate = item.rate ?? '';
+      editUnitLabel = item.unit_label ?? '';
+      editAccountingCategory = item.accounting_category ?? '';
       estQty = item.est_qty ?? '';
       estWorkerTime = item.est_worker_time
         ? formatDuration(item.est_worker_time)
@@ -77,14 +112,31 @@
     } else {
       name = (mode === 'manual' ? (presetName || '') : ''); description = '';
       activeModifiers = [];
+      editRate = ''; editUnitLabel = ''; editAccountingCategory = '';
       estQty = ''; estWorkerTime = '';
       // Keep numeric so it matches the numeric <option value={tmpl.template_id}>
       // (Svelte 5 selects match option values with strict ===; String() here left
       // the preset unselected in the pulldown).
       templateId = (mode === 'template' && presetTemplateId != null) ? presetTemplateId : '';
       lastFilledTemplateId = '';
+      // Read both unconditionally (not via short-circuited &&) so this
+      // effect keeps depending on `schemes` even while `defaultSchemeId` is
+      // still its initial '' — otherwise the dependency-tracker never
+      // subscribes to `schemes`, and the later async update that actually
+      // resolves the default preset never triggers a rerun.
+      const defaultInList = schemes.some((s) => String(s.rate_scheme_id) === String(defaultSchemeId));
       if (mode === 'manual' && rateScheme) {
         rateSchemeId = rateScheme.rate_scheme_id;
+      } else if (mode === 'manual' && defaultSchemeId && defaultInList) {
+        // Preselect the shop's configured default preset — but only when
+        // it's actually offered here (task_applicable=true already excludes
+        // percentage schemes; a default naming a retired one would also
+        // fail this check). Otherwise leave the dropdown unselected rather
+        // than preselect a value it doesn't render. Number(): Configuration
+        // values are always strings, but Svelte 5 selects match <option>
+        // values with strict === and s.rate_scheme_id is numeric — same
+        // pitfall already noted below for the template pulldown.
+        rateSchemeId = Number(defaultSchemeId);
       } else {
         rateSchemeId = '';
       }
@@ -134,10 +186,46 @@
       : (schemes.find(s => s.rate_scheme_id === Number(rateSchemeId)) || null)
   );
 
+  // Task-owned money (Phase 1): whether THIS user may write money fields
+  // (rate/unit_label/accounting_category/qty_source/active_modifiers) —
+  // MONEY_FIELDS on the Task serializer, CanManageJobOrPM or
+  // can_manage_financials. In edit mode item.can_manage (already resolved
+  // server-side for this task's job) wins when present; the canManage prop
+  // covers create (no item yet) or a caller override. Irrelevant to
+  // mode === 'template' — add-from-template has no such gate.
+  const effectiveCanManage = $derived(
+    (isEdit && item && typeof item.can_manage === 'boolean') ? item.can_manage : canManage
+  );
+
+  // In edit mode there's no re-pick dropdown (rate_scheme is create-only —
+  // see the effect above), so modifier CHECKBOX DEFINITIONS come from the
+  // task's original source scheme, looked up in the same task-applicable
+  // list the create dropdown uses. Absent (retired/deleted preset, or a
+  // legacy task with no source_scheme) means no definitions to build
+  // checkboxes from — the existing snapshot stays display-only and untouched
+  // on save.
+  const modifierScheme = $derived(
+    (mode === 'manual' && isEdit)
+      ? (item?.source_scheme != null
+          ? (schemes.find(s => String(s.rate_scheme_id) === String(item.source_scheme)) || null)
+          : null)
+      : selectedScheme
+  );
+
+  const showMoneyFields = $derived((mode === 'manual' && isEdit) || !!selectedScheme);
+
   // Keys on unit_label, not algorithm: hour-unit schemes (elapsed, and any
   // entered-qty scheme priced per hour) collapse to a single input whose
   // value drives both est_qty and est_worker_time.
-  const isHourUnit = $derived(selectedScheme?.unit_label === 'hour');
+  const isHourUnit = $derived(
+    (mode === 'manual' && isEdit) ? editUnitLabel === 'hour' : (selectedScheme?.unit_label === 'hour')
+  );
+
+  function categoryLabel(id) {
+    if (id == null || id === '') return '—';
+    const cat = categories.find((c) => String(c.id) === String(id));
+    return cat ? `${cat.code} — ${cat.name}` : `#${id}`;
+  }
 
   function formatDuration(value) {
     // Server returns ISO 8601 like "PT1H30M" or HH:MM:SS — accept either, render HH:MM
@@ -176,7 +264,7 @@
       formError = 'Please pick a template.';
       return;
     }
-    if (mode === 'manual' && !rateSchemeId) {
+    if (!isEdit && mode === 'manual' && !rateSchemeId) {
       formError = 'Please pick a rate scheme.';
       return;
     }
@@ -195,19 +283,41 @@
 
     busy = true;
     try {
-      const payload = {
-        name,
-        description,
-        rate_scheme: rateSchemeId,
-        active_modifiers: activeModifiers,
-        est_qty: estQtyValue,
-        est_worker_time: estWorkerTimeISO,
-      };
-
       if (isEdit && item) {
+        // Money fields (rate/unit_label/accounting_category/active_modifiers)
+        // are MONEY_FIELDS on the Task serializer — the raw key's mere
+        // presence in the request is what the server gates on, so a
+        // non-manager's payload must omit them entirely, not send unchanged
+        // values. rate_scheme is never sent here — it's a create-only
+        // stamping trigger.
+        const editPayload = {
+          name,
+          description,
+          est_qty: estQtyValue,
+          est_worker_time: estWorkerTimeISO,
+        };
+        if (effectiveCanManage) {
+          editPayload.rate = editRate;
+          editPayload.unit_label = editUnitLabel;
+          editPayload.accounting_category = editAccountingCategory;
+          // Only touch active_modifiers when we actually have the selected
+          // preset's modifier definitions to resolve checked keys into
+          // {key, label, percent} snapshots (the model field's real shape on
+          // PATCH — direct setattr, no stamp_from_scheme resolution like
+          // create gets). Without definitions, leave existing modifiers
+          // untouched rather than guess.
+          if (modifierScheme) {
+            editPayload.active_modifiers = (modifierScheme.modifiers || [])
+              .filter((m) => activeModifiers.includes(m.key))
+              .map((m) => ({ key: m.key, label: m.label, percent: m.percent }));
+          }
+        }
         const url = `/api/jobs/${contextId}/tasks/${item.task_id}/`;
-        await api.patch(url, payload);
+        await api.patch(url, editPayload);
       } else if (mode === 'template') {
+        // add-from-template is IsAuthenticated-only — no MONEY_FIELDS gate,
+        // so active_modifiers (a plain key list, resolved server-side same
+        // as stamp_from_scheme's modifier_keys) always goes through.
         const url = `/api/jobs/${contextId}/add-from-template/`;
         await api.post(url, {
           service_item_id: Number(templateId),
@@ -218,6 +328,24 @@
           est_worker_time: estWorkerTimeISO,
         });
       } else {
+        // Manual create: rate_scheme (the preset id) is open to everyone —
+        // it's how a worker's "stamp-only" creation happens. active_modifiers
+        // is a MONEY_FIELD (its key's mere presence gates on
+        // CanManageJobOrPM/financials), so a non-manager must omit the key
+        // entirely and ride the stamp (zero modifiers), never send `[]`.
+        // rate/unit_label/accounting_category are never sent here — the
+        // server always stamps those from the chosen preset regardless of
+        // what's submitted, so there's nothing to gain by including them.
+        const payload = {
+          name,
+          description,
+          rate_scheme: rateSchemeId,
+          est_qty: estQtyValue,
+          est_worker_time: estWorkerTimeISO,
+        };
+        if (effectiveCanManage) {
+          payload.active_modifiers = activeModifiers;
+        }
         let url;
         if (context === 'subtask') {
           url = `/api/tasks/${contextId}/subtasks/`;
@@ -277,7 +405,13 @@
           </p>
         {/if}
 
-        {#if mode === 'manual'}
+        {#if mode === 'manual' && isEdit}
+          <!-- rate_scheme is a create-only stamping trigger (write-only,
+               never re-forwarded on PATCH) — no re-pick dropdown here. This
+               names the preset the task was originally stamped from;
+               editable money fields are below. -->
+          <p><strong>Scheme:</strong> {item?.source_scheme_name || '—'}</p>
+        {:else if mode === 'manual'}
           {#if rateScheme}
             <p><strong>Rate Scheme:</strong> {rateScheme.name}</p>
           {:else}
@@ -311,7 +445,60 @@
           <FieldError errors={fieldErrs} field="description" />
         </p>
 
-        {#if selectedScheme}
+        {#if mode === 'manual' && isEdit}
+          <!-- The task's own stamped money — editable only for a manager
+               (item.can_manage / CanManageJobOrPM / financials). Create-time
+               never gets this treatment: the server always stamps rate/unit/
+               category from the chosen preset regardless of what's
+               submitted, so there's nothing for an editable field to do
+               before the task exists. -->
+          {#if effectiveCanManage}
+            <p>
+              <label><strong>Rate</strong><br>
+                <input type="number" step="0.01" bind:value={editRate}>
+              </label>
+              <span class="rate-per">per</span>
+              <label><strong>Unit</strong><br>
+                <input type="text" bind:value={editUnitLabel}>
+              </label>
+              <FieldError errors={fieldErrs} field="rate" />
+              <FieldError errors={fieldErrs} field="unit_label" />
+            </p>
+            <p>
+              <label><strong>Accounting Category</strong><br>
+                <select bind:value={editAccountingCategory}>
+                  <option value="">-- select --</option>
+                  {#each categories as cat (cat.id)}
+                    <option value={cat.id}>{cat.code} — {cat.name}</option>
+                  {/each}
+                </select>
+              </label>
+              <FieldError errors={fieldErrs} field="accounting_category" />
+            </p>
+          {:else}
+            <p><strong>Rate:</strong> ${editRate || '0.00'}/{editUnitLabel || 'none'}</p>
+            <p><strong>Accounting Category:</strong> {categoryLabel(editAccountingCategory)}</p>
+          {/if}
+          {#if modifierScheme && modifierScheme.modifiers && modifierScheme.modifiers.length > 0}
+            <fieldset>
+              <legend><strong>Modifiers</strong></legend>
+              {#each modifierScheme.modifiers as m (m.key)}
+                <p>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={activeModifiers.includes(m.key)}
+                      disabled={!effectiveCanManage}
+                      onchange={(e) => toggleModifier(m.key, e.target.checked)}
+                    />
+                    {m.label} (+{m.percent}%)
+                  </label>
+                </p>
+              {/each}
+              <FieldError errors={fieldErrs} field="active_modifiers" />
+            </fieldset>
+          {/if}
+        {:else if selectedScheme}
           {#if mode === 'template'}
             <p>
               <strong>Rate Scheme:</strong> {selectedScheme.name} —
@@ -324,6 +511,11 @@
               <small>(from rate scheme)</small>
             </p>
           {/if}
+          {#if mode === 'manual' && selectedScheme.accounting_category}
+            <!-- Create-time preview only — informational, not editable: the
+                 server always stamps this from the chosen preset. -->
+            <p><strong>Accounting Category:</strong> {categoryLabel(selectedScheme.accounting_category)}</p>
+          {/if}
           {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
             <fieldset>
               <legend><strong>Modifiers</strong></legend>
@@ -333,6 +525,7 @@
                     <input
                       type="checkbox"
                       checked={activeModifiers.includes(m.key)}
+                      disabled={mode === 'manual' && !effectiveCanManage}
                       onchange={(e) => toggleModifier(m.key, e.target.checked)}
                     />
                     {m.label} (+{m.percent}%)
@@ -342,16 +535,16 @@
               <FieldError errors={fieldErrs} field="active_modifiers" />
             </fieldset>
           {/if}
+        {/if}
 
-          {#if !isHourUnit}
-            <p>
-              <label><strong>Estimated qty</strong><br>
-                <input type="number" step="0.01" bind:value={estQty}>
-                <small>{selectedScheme.unit_label}</small>
-              </label>
-              <FieldError errors={fieldErrs} field="est_qty" />
-            </p>
-          {/if}
+        {#if showMoneyFields && !isHourUnit}
+          <p>
+            <label><strong>Estimated qty</strong><br>
+              <input type="number" step="0.01" bind:value={estQty}>
+              <small>{(mode === 'manual' && isEdit) ? editUnitLabel : selectedScheme?.unit_label}</small>
+            </label>
+            <FieldError errors={fieldErrs} field="est_qty" />
+          </p>
         {/if}
 
         <p>

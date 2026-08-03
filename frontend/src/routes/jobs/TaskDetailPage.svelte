@@ -89,7 +89,7 @@
   // here — this comparison must NOT be reused for blep-derived elapsed
   // values, which carry seconds and would double-round.
   const estQtyIsDuplicate = $derived(
-    task?.scheme_unit_label === 'hour'
+    task?.unit_label === 'hour'
     && task?.est_worker_time
     && Number(task?.est_qty) === durationToHours(task.est_worker_time)
   );
@@ -278,14 +278,17 @@
     }
   });
 
-  // The Rate chip's tooltip carries the estimating detail (scheme name,
-  // active modifiers) that used to occupy its own table rows.
-  const rateTooltip = $derived.by(() => {
-    if (!task?.scheme_name) return '';
-    const mods = Array.isArray(task.active_modifiers) && task.active_modifiers.length > 0
-      ? ` · Modifiers: ${task.active_modifiers.join(', ')}`
-      : '';
-    return `Scheme: ${task.scheme_name}${mods}`;
+  // Task-owned money (Phase 1): the task carries its own money block
+  // (qty_source/rate/unit_label/accounting_category/active_modifiers) —
+  // source_scheme_name is provenance only (which preset it was stamped
+  // from), never itself read for money math. `active_modifiers` is now a
+  // list of {key, label, percent} snapshot dicts (not bare keys), so the
+  // tooltip reads each modifier's own label.
+  const modifiersTooltip = $derived.by(() => {
+    const mods = task?.active_modifiers;
+    if (!Array.isArray(mods) || mods.length === 0) return '';
+    const names = mods.map((m) => (m && (m.label || m.key)) || '').filter(Boolean);
+    return names.length > 0 ? `Modifiers: ${names.join(', ')}` : '';
   });
 
   // Material modal handlers
@@ -420,20 +423,20 @@
             <div class="stat-chip-body">{formatDuration(task.est_worker_time)}</div>
           </div>
         {/if}
-        {#if task.scheme_name && task.est_qty && !estQtyIsDuplicate}
+        {#if task.rate != null && task.est_qty && !estQtyIsDuplicate}
           <div class="stat-chip">
             <div class="stat-chip-header">Est Qty</div>
-            <div class="stat-chip-body">{task.est_qty} {task.scheme_unit_label}</div>
+            <div class="stat-chip-body">{task.est_qty} {task.unit_label}</div>
           </div>
         {/if}
-        {#if task.scheme_algorithm === 'entered_qty'}
+        {#if task.qty_source === 'entered_qty'}
           <div class="stat-chip">
             <div class="stat-chip-header">{addQtyAdded ? 'added ✓' : 'Actual'}</div>
             <div class="stat-chip-body">
-              {task.actual_qty ?? 0} {task.scheme_unit_label}
+              {task.actual_qty ?? 0} {task.unit_label}
               {#if canAddQty}
                 <label class="add-qty">
-                  <span class="sr-only">Add ({task.scheme_unit_label})</span>
+                  <span class="sr-only">Add ({task.unit_label})</span>
                   <input
                     type="number" step="any" placeholder="+ / −"
                     bind:value={addQtyInput}
@@ -445,19 +448,29 @@
               {/if}
             </div>
           </div>
-        {:else if task.scheme_algorithm === 'elapsed_time'}
+        {:else if task.qty_source === 'elapsed_time'}
           <div class="stat-chip">
             <div class="stat-chip-header">Actual</div>
-            <div class="stat-chip-body">{Number(task.actual_hours) || 0} {task.scheme_unit_label}</div>
+            <div class="stat-chip-body">{Number(task.actual_hours) || 0} {task.unit_label}</div>
           </div>
         {/if}
-        {#if task.scheme_name && task.effective_rate}
+        {#if task.rate != null}
+          <!-- Provenance only — never read for money math. The task owns its
+               own rate/unit_label/etc; this just names the preset it was
+               stamped from, or a dash when that preset is gone (SET_NULL on
+               delete) or was never known (legacy row). -->
+          <div class="stat-chip">
+            <div class="stat-chip-header">Scheme</div>
+            <div class="stat-chip-body" title={modifiersTooltip}>{task.source_scheme_name || '—'}</div>
+          </div>
+        {/if}
+        {#if task.rate != null && task.effective_rate}
           <div class="stat-chip money">
             <div class="stat-chip-header">Rate</div>
-            <div class="stat-chip-body" title={rateTooltip}>${task.effective_rate}/{task.scheme_unit_label}</div>
+            <div class="stat-chip-body">${task.effective_rate}/{task.unit_label}</div>
           </div>
         {/if}
-        {#if task.scheme_name && task.computed_charge}
+        {#if task.rate != null && task.computed_charge}
           <div class="stat-chip money">
             <div class="stat-chip-header">Charge</div>
             <div class="stat-chip-body">${task.computed_charge}</div>
@@ -604,6 +617,8 @@
     context="subtask"
     contextId={task?.task_id}
     templates={[]}
+    canManage={job?.can_manage}
+    {categories}
     onSaved={handleSubtaskSaved}
     onClose={() => { subtaskModalOpen = false; }}
   />
@@ -616,6 +631,8 @@
     item={task}
     isEdit={true}
     {templates}
+    canManage={job?.can_manage}
+    {categories}
     onSaved={() => { editTaskOpen = false; refresh(); }}
     onClose={() => { editTaskOpen = false; }}
   />
