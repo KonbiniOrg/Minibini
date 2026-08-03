@@ -758,6 +758,99 @@ class JobAddFromTemplateTest(TestCase):
         self.assertIn(response.status_code, [401, 403])
 
 
+class AddFromTemplateModifierPermissionTest(TestCase):
+    """Task 12b: `add-from-template` is IsAuthenticated-only (any worker may
+    stamp a template), but `active_modifiers` is money-equivalent to Task 8's
+    MONEY_FIELDS gate on direct task create/edit — only CanManageJobOrPM (the
+    can_manage_jobs atom or the job's project_manager) or can_manage_financials
+    may pass it. Presence of the key is the trigger (even `[]`), matching
+    TaskSerializer.validate() exactly; an omitted key rides the template's
+    `default_active_modifiers` for anyone."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.contact = Contact.objects.create(
+            first_name='T', last_name='C', email='aft-mod-t@test.example')
+        self.job = Job.objects.create(
+            job_number='C2-AFT-MOD-001', name='AFT Mod Job', contact=self.contact,
+        )
+        other_contact = Contact.objects.create(
+            first_name='O', last_name='C', email='aft-mod-o@test.example')
+        self.other_job = Job.objects.create(
+            job_number='C2-AFT-MOD-002', name='AFT Other Job', contact=other_contact,
+        )
+        ac = AccountingCategory.objects.create(code='AFT-MOD-AC', name='aft-mod-ac')
+        self.scheme = RateScheme.objects.create(
+            name='S-aft-mod', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10'), unit_label='ea', accounting_category=ac,
+            modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 50}],
+        )
+        self.template = ServiceItem.objects.create(
+            template_name='Rush Job', is_active=True, rate_scheme=self.scheme,
+            default_active_modifiers=[],
+        )
+        self.worker = User.objects.create_user(username='aft_mod_worker', password='pass')
+        self.pm = User.objects.create_user(username='aft_mod_pm', password='pass')
+        self.job.project_manager = self.pm
+        self.job.save(update_fields=['project_manager'])
+        self.other_pm = User.objects.create_user(username='aft_mod_other_pm', password='pass')
+        self.other_job.project_manager = self.other_pm
+        self.other_job.save(update_fields=['project_manager'])
+        self.financials = User.objects.create_user(username='aft_mod_fin', password='pass')
+        self.financials.user_permissions.add(
+            Permission.objects.get(codename='can_manage_financials'))
+        self.financials = User.objects.get(pk=self.financials.pk)
+        self.manager = _make_admin('aft_mod_mgr')
+
+    def _post(self, user, payload, job=None):
+        self.client.force_authenticate(user=user)
+        return self.client.post(
+            f'/api/jobs/{(job or self.job).pk}/add-from-template/', payload, format='json')
+
+    def test_worker_without_active_modifiers_gets_template_defaults(self):
+        response = self._post(self.worker, {'service_item_id': self.template.pk})
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['active_modifiers'], [])
+
+    def test_worker_with_empty_active_modifiers_rejected(self):
+        """Presence, not content, is the trigger — even `[]` is rejected."""
+        response = self._post(
+            self.worker, {'service_item_id': self.template.pk, 'active_modifiers': []})
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
+
+    def test_worker_with_nonempty_active_modifiers_rejected(self):
+        response = self._post(
+            self.worker, {'service_item_id': self.template.pk, 'active_modifiers': ['rush']})
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
+
+    def test_pm_of_this_job_with_active_modifiers_allowed(self):
+        response = self._post(
+            self.pm, {'service_item_id': self.template.pk, 'active_modifiers': ['rush']})
+        self.assertEqual(response.status_code, 201, response.data)
+        task = Task.objects.get(pk=response.data['task_id'])
+        self.assertEqual(len(task.active_modifiers), 1)
+        self.assertEqual(task.active_modifiers[0]['key'], 'rush')
+
+    def test_pm_of_a_different_job_cannot_set_active_modifiers(self):
+        response = self._post(
+            self.other_pm, {'service_item_id': self.template.pk, 'active_modifiers': ['rush']},
+            job=self.job,
+        )
+        self.assertEqual(response.status_code, 403, response.data)
+
+    def test_financials_atom_with_active_modifiers_allowed(self):
+        response = self._post(
+            self.financials, {'service_item_id': self.template.pk, 'active_modifiers': ['rush']})
+        self.assertEqual(response.status_code, 201, response.data)
+
+    def test_manager_atom_with_active_modifiers_allowed(self):
+        response = self._post(
+            self.manager, {'service_item_id': self.template.pk, 'active_modifiers': ['rush']})
+        self.assertEqual(response.status_code, 201, response.data)
+
+
 class JobDetailInvoiceFieldTest(TestCase):
     """Task/material atoms nested in GET /api/jobs/{id}/ carry an 'invoice' field."""
 

@@ -478,6 +478,23 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         active_modifiers = request.data.get('active_modifiers')  # None means use template default
         est_worker_time = request.data.get('est_worker_time') or None
 
+        # Task 12b: this action is IsAuthenticated-only (any worker may stamp
+        # a template onto the job), but `active_modifiers` overrides the
+        # template's price-affecting defaults — money-equivalent to Task 8's
+        # MONEY_FIELDS gate on direct task create/edit. Gate on the RAW key's
+        # presence (even `[]`), exactly like TaskSerializer.validate();
+        # reuse the same permission evaluation (CanManageJobOrPM or
+        # can_manage_financials) rather than reinventing it. Omitted key ->
+        # the template's default_active_modifiers ride the stamp, unchanged.
+        if 'active_modifiers' in request.data:
+            if not (request.user.has_perm('core.can_manage_financials')
+                    or JobService.user_can_manage(request.user, job)):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(
+                    'Only a manager, the project manager, or financials may '
+                    'set active_modifiers.'
+                )
+
         if not service_item_id:
             return Response(
                 {'service_item_id': ['This field is required.']},

@@ -368,6 +368,62 @@ describe('WorkItemForm modifier checkboxes and money-field gating (manual create
   });
 });
 
+// Task 12b: `active_modifiers` on add-from-template is money-equivalent to
+// MONEY_FIELDS on the direct-create/PATCH endpoints — the backend now 403s a
+// non-manager who sends the key at all (even []), so the checkboxes must be
+// disabled for a non-manager and the payload must omit the key entirely,
+// matching the manual-create gating above exactly.
+describe('WorkItemForm modifier checkboxes and money-field gating (template create)', () => {
+  const MOD_SCHEME = {
+    rate_scheme_id: 9, name: 'CNC Cutting', algorithm: 'entered_qty',
+    rate: '90.00', unit_label: 'ea', modifiers: [{ key: 'rush', label: 'Rush', percent: 15 }],
+    accounting_category: 3,
+  };
+  const TEMPLATE_WITH_MOD_SCHEME = {
+    template_id: 20, template_name: 'Router Pass', rate_scheme: 9,
+    default_active_modifiers: [],
+  };
+
+  it('a manager can check a modifier and it is submitted as a key list', async () => {
+    mockGet({ schemes: [MOD_SCHEME] });
+    const { findByLabelText, getByRole, getByText } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'template', context: 'job', contextId: 5,
+        templates: [TEMPLATE_WITH_MOD_SCHEME], presetTemplateId: 20, canManage: true,
+      },
+    });
+    await findByLabelText(/template/i);
+    const checkbox = await waitFor(() => {
+      const el = getByText(/Rush/).closest('label').querySelector('input[type="checkbox"]');
+      expect(el).not.toBeDisabled();
+      return el;
+    });
+    await fireEvent.click(checkbox);
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/add-from-template/', expect.objectContaining({
+      active_modifiers: ['rush'],
+    }));
+  });
+
+  it('a worker sees disabled modifier checkboxes and the payload omits active_modifiers entirely', async () => {
+    mockGet({ schemes: [MOD_SCHEME] });
+    const { findByLabelText, getByRole, getByText } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'template', context: 'job', contextId: 5,
+        templates: [TEMPLATE_WITH_MOD_SCHEME], presetTemplateId: 20, canManage: false,
+      },
+    });
+    await findByLabelText(/template/i);
+    await waitFor(() => {
+      const checkbox = getByText(/Rush/).closest('label').querySelector('input[type="checkbox"]');
+      expect(checkbox).toBeDisabled();
+    });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const call = api.post.mock.calls.find((c) => c[0] === '/api/jobs/5/add-from-template/');
+    expect('active_modifiers' in call[1]).toBe(false);
+  });
+});
+
 // Task-owned money (Phase 1) edit surface: rate_scheme is a create-only
 // stamping trigger (never re-forwarded on PATCH — apps/api/mixins.py pops
 // it), so editing shows the task's own stamped rate/unit/accounting
