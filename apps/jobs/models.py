@@ -1,10 +1,11 @@
+from datetime import timedelta
 from decimal import Decimal
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from apps.core.models import AbstractWorkContainer, TimeChangeRequest
 from apps.core.history import history
-from apps.core.timeutils import floor_to_minute
+from apps.core.timeutils import floor_to_minute, timedelta_to_hours
 from apps.core.units import HOUR_UNIT
 
 
@@ -37,14 +38,23 @@ def _pick_least_used_accent_color():
 
 
 def copy_active_modifiers(value):
-    """Return a copy of an atom's active_modifiers list (modifier keys).
+    """Return a deep copy of an atom's active_modifiers snapshot list.
 
-    Legacy dicts ({'flat_fee_price': ...}) collapse to [] — fixed charges are
-    now the Fee atom, not a RateScheme algorithm.
+    Task-owned money (Phase 1): active_modifiers now holds
+    ``[{key, label, percent}]`` snapshot dicts stamped at task-creation time,
+    not scheme-relative modifier keys — so it deep-copies each dict rather
+    than aliasing the source list. Legacy shapes can't be resolved without a
+    scheme and collapse to ``[]``: a bare dict (the old
+    ``{'flat_fee_price': ...}`` shape — fixed charges are now the Fee atom,
+    not a RateScheme algorithm) and a list of bare modifier-key strings (the
+    pre-Phase-1 snapshot shape).
     """
     if isinstance(value, dict):
         return []
-    return list(value or [])
+    value = value or []
+    if any(not isinstance(m, dict) for m in value):
+        return []
+    return [dict(m) for m in value]
 
 
 @history(exclude=['job_id'])
@@ -238,17 +248,20 @@ class TaskBase(models.Model):
     def copy_fields(self):
         """Canonical TaskBase field set for cloning to another container.
 
-        Excludes identity, status, document provenance, hierarchy, and
-        assignee — callers add those. ``service_item_id`` IS included: it is
-        catalog identity ("this task is an instance of this sellable
-        service"), not document provenance, and must survive cloning so the
-        QBO invoice push can resolve the clone's Item. Returns the rate
-        scheme as ``rate_scheme_id`` (not the object) so the dict splats
-        straight into ``TaskService.create_direct`` (which takes
-        ``rate_scheme_id``); Django's ``.objects.create()`` accepts the
-        ``_id`` form too, so the raw-create clone paths work as well.
-        ``active_modifiers`` is deep-copied here to keep raw-create callers
-        safe from shared-reference bugs.
+        Excludes identity, status, document provenance (``source_scheme`` —
+        task-owned-money Phase 1 made it a pure provenance pointer, never
+        read for money math), hierarchy, and assignee — callers add those.
+        ``service_item_id`` IS included: it is catalog identity ("this task
+        is an instance of this sellable service"), not document provenance,
+        and must survive cloning so the QBO invoice push can resolve the
+        clone's Item. The task-owned money fields (``qty_source``, ``rate``,
+        ``unit_label``, ``accounting_category_id``) are the task's own price
+        of record and are copied directly — they no longer route through a
+        RateScheme. Returned in ``_id``/plain-value form so the dict splats
+        straight into ``Task.objects.create()``-style callers; Django's
+        ``.objects.create()`` accepts the ``_id`` form too. ``active_modifiers``
+        is deep-copied here to keep raw-create callers safe from
+        shared-reference bugs.
         """
         return dict(
             name=self.name,
@@ -256,7 +269,10 @@ class TaskBase(models.Model):
             sort_order=self.sort_order,
             est_worker_time=self.est_worker_time,
             est_qty=self.est_qty,
-            rate_scheme_id=self.rate_scheme_id,
+            qty_source=self.qty_source,
+            rate=self.rate,
+            unit_label=self.unit_label,
+            accounting_category_id=self.accounting_category_id,
             service_item_id=self.service_item_id,
             active_modifiers=copy_active_modifiers(self.active_modifiers),
         )
@@ -379,7 +395,32 @@ class Task(TaskBase):
 
     @property
     def effective_accounting_category(self):
-        return self.rate_scheme.accounting_category
+        return self.accounting_category
+
+    def effective_rate(self):
+        """Per-unit rate: own ``rate`` plus own ``active_modifiers``
+        surcharges (task-owned-money Phase 1 — no RateScheme lookup)."""
+        if self.rate is None:
+            return Decimal('0.00')
+        pct = sum(
+            (Decimal(str(m.get('percent', 0))) for m in (self.active_modifiers or [])),
+            Decimal('0'),
+        )
+        return (self.rate * (1 + pct / 100)).quantize(Decimal('0.01'))
+
+    def get_actual_qty(self):
+        """Resolve actual quantity from own qty_source (task-owned-money
+        Phase 1 — no RateScheme lookup)."""
+        if self.qty_source == self.QTY_ELAPSED:
+            total = sum(
+                (b.elapsed for b in self.blep_set.all() if b.elapsed is not None),
+                timedelta(),
+            )
+            # Quantize to 2 places: a raw seconds/3600 division is
+            # non-terminating (~28 digits) and overflows the line item qty
+            # field (max_digits=10) when carried into the invoice wizard.
+            return timedelta_to_hours(total).quantize(Decimal('0.01'))
+        return self.actual_qty or Decimal('0')
 
     def compute_amount(self, active_modifiers=None):
         """Uniform atom interface: total billable amount for this task.
@@ -388,26 +429,18 @@ class Task(TaskBase):
         Parameter is accepted to match the BillableAtom interface shared
         with Material.
         """
-        qty = self.rate_scheme.get_actual_qty(self)
-        charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
-        return charge.quantize(Decimal('0.01'))
+        return (self.get_actual_qty() * self.effective_rate()).quantize(Decimal('0.01'))
 
     def compute_estimate_amount(self, active_modifiers=None):
         """Estimate-side amount: bills est_qty, not actuals.
 
         The estimate wizard projects what the job is *expected* to cost, so it
-        uses est_qty via the rate scheme. (compute_amount() resolves qty from
-        actuals — bleps / actual_qty — which is what the *invoice* wizard wants.)
-        Ignores the active_modifiers argument (uses self.active_modifiers) to
-        match the BillableAtom interface.
+        uses est_qty. (compute_amount() resolves qty from actuals — bleps /
+        actual_qty — which is what the *invoice* wizard wants.) Ignores the
+        active_modifiers argument (uses self.active_modifiers) to match the
+        BillableAtom interface.
         """
-        charge = self.rate_scheme.compute_charge(
-            self.est_qty or Decimal('0'), self.active_modifiers,
-        )
-        return charge.quantize(Decimal('0.01'))
-
-    def effective_rate(self):
-        return self.rate_scheme.effective_rate(self.active_modifiers)
+        return ((self.est_qty or Decimal('0')) * self.effective_rate()).quantize(Decimal('0.01'))
 
 
 class Blep(models.Model):
@@ -540,6 +573,11 @@ class RateScheme(models.Model):
         """Compute the per-unit rate.
 
         For time/qty schemes, apply additive modifier surcharges.
+
+        Preset preview only — never called with a task (task-owned-money
+        Phase 1: Task.effective_rate() computes from the task's own
+        rate/active_modifiers instead). Retained for the RateSchemeManager
+        preview and the serializer detail view.
         """
         if self.algorithm == self.PERCENTAGE:
             raise ValueError('percentage services compute at the document layer, not per-unit')
@@ -555,11 +593,21 @@ class RateScheme(models.Model):
         return rate.quantize(Decimal('0.01'))
 
     def compute_charge(self, qty, active_modifiers=None):
-        """Compute total charge for the given quantity."""
+        """Compute total charge for the given quantity.
+
+        Preset preview only — never called with a task (task-owned-money
+        Phase 1: Task.compute_amount()/compute_estimate_amount() compute
+        from the task's own fields instead).
+        """
         return qty * self.effective_rate(active_modifiers)
 
     def get_actual_qty(self, task):
-        """Resolve actual quantity based on algorithm."""
+        """Resolve actual quantity based on algorithm.
+
+        Preset preview only — never called with a task (task-owned-money
+        Phase 1: Task.get_actual_qty() reads the task's own qty_source
+        instead).
+        """
         if self.algorithm == self.PERCENTAGE:
             raise ValueError('percentage services are document adjustments, not task billing')
         if self.algorithm == self.ELAPSED_TIME:
