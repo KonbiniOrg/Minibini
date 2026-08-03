@@ -331,10 +331,21 @@ describe('RateSchemeManager', () => {
     expect(optionLabels).not.toContain('Retired Rate');
   });
 
-  it('PATCHes settings with the new default when the picker selection changes', async () => {
+  // Saves are explicit, never blur/change-only (CLAUDE.md UI conventions) —
+  // matches the sibling DefaultMaterialCategorySetting.svelte picker's
+  // explicit-Save flow, not an auto-PATCH-on-change variant.
+  it('does not PATCH settings from selecting alone — only an explicit Save', async () => {
     const { findByLabelText } = render(RateSchemeManager);
     const select = await findByLabelText('Default preset');
     await fireEvent.change(select, { target: { value: '1' } });
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
+  it('PATCHes settings with the new default when Save is clicked after selecting', async () => {
+    const { findByLabelText, getByRole } = render(RateSchemeManager);
+    const select = await findByLabelText('Default preset');
+    await fireEvent.change(select, { target: { value: '1' } });
+    await fireEvent.click(getByRole('button', { name: 'Save default preset' }));
     expect(api.patch).toHaveBeenCalledWith('/api/settings/', { default_rate_scheme: '1' });
   });
 });
