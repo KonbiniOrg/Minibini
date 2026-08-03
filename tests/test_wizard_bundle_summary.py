@@ -1,7 +1,14 @@
-"""Bundling 2+ atoms in a wizard: when every atom is a task sharing one
-RateScheme and identical active_modifiers, the line item is summarized
-(units = scheme unit_label, qty = summed actuals, price = effective rate)
-instead of the qty=1 / units='none' fallback."""
+"""Bundling 2+ atoms in a wizard: when every atom is a task sharing
+identical (rate, unit_label, active_modifiers), the line item is
+summarized (units = the tasks' own unit_label, qty = summed actuals,
+price = the common effective rate) instead of the qty=1 / units='none'
+fallback.
+
+Task-owned money (Phase 1): uniformity is judged on the tasks' own money
+fields, NOT on source_scheme provenance. Two tasks stamped from different
+RateScheme presets (or one stamped, one hand-edited/never stamped) still
+bundle uniformly if their current rate/unit_label/active_modifiers agree.
+"""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -42,7 +49,7 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         self.scheme_rush = RateScheme.objects.create(
             name='Widgets-rush', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
-            modifiers=[{'key': 'rush', 'percent': 50}],
+            modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 50}],
             accounting_category=self.cat,
         )
         self.scheme_other = RateScheme.objects.create(
@@ -52,11 +59,13 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         )
 
     def _task(self, scheme, actual_qty, modifiers=None):
-        t = Task.objects.create(
-            job=self.job, name='T', rate_scheme=scheme,
-            actual_qty=Decimal(str(actual_qty)),
-            active_modifiers=modifiers or [],
-        )
+        # Stamp copies the preset's money fields onto the task at creation
+        # time (task-owned-money Phase 1); the task's own fields, not the
+        # scheme, drive the wizard from here on.
+        t = Task(job=self.job, name='T')
+        t.stamp_from_scheme(scheme, modifier_keys=modifiers or [])
+        t.actual_qty = Decimal(str(actual_qty))
+        t.save()
         # Complete the task so it is billable (Task 5: only complete tasks are billable).
         t.status = Task.STATUS_COMPLETE
         t.save()
@@ -82,6 +91,23 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.qty, Decimal('6'))
         self.assertEqual(li.price, Decimal('15.00'))  # 10.00 * 1.5
 
+    def test_same_money_different_scheme_still_summarized(self):
+        # Two tasks with identical (rate, unit_label, active_modifiers) but
+        # stamped from DIFFERENT scheme presets still bundle uniformly —
+        # uniformity is judged on task money, never on source_scheme.
+        other_same_money = RateScheme.objects.create(
+            name='Widgets-2', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.00'), unit_label='widgets',
+            accounting_category=self.cat,
+        )
+        a = self._task(self.scheme, 3)
+        b = self._task(other_same_money, 2)
+        self.assertNotEqual(a.source_scheme_id, b.source_scheme_id)
+        li = self._bundle(a, b)
+        self.assertEqual(li.units, 'widgets')
+        self.assertEqual(li.qty, Decimal('5'))
+        self.assertEqual(li.price, Decimal('10.00'))
+
     def test_elapsed_time_same_scheme_sums_blep_hours(self):
         # elapsed_time bills logged time: the bundle sums each task's Blep
         # hours (the actuals), never est_qty. These tasks carry no est_qty,
@@ -91,8 +117,12 @@ class InvoiceWizardBundleSummaryTest(TestCase):
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
-        a = Task.objects.create(job=self.job, name='T', rate_scheme=scheme_hourly)
-        b = Task.objects.create(job=self.job, name='T', rate_scheme=scheme_hourly)
+        a = Task(job=self.job, name='T')
+        a.stamp_from_scheme(scheme_hourly)
+        a.save()
+        b = Task(job=self.job, name='T')
+        b.stamp_from_scheme(scheme_hourly)
+        b.save()
         start = timezone.now()
         Blep.objects.create(task=a, user=self.user, start_time=start, end_time=start + timedelta(hours=2))
         Blep.objects.create(task=b, user=self.user, start_time=start, end_time=start + timedelta(hours=3))
@@ -106,7 +136,7 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.qty, Decimal('5.00'))  # 2h + 3h from Bleps, not 1
         self.assertEqual(li.price, Decimal('50.00'))
 
-    def test_different_schemes_fall_back(self):
+    def test_different_money_fall_back(self):
         a = self._task(self.scheme, 3)        # 3 * 10 = 30
         b = self._task(self.scheme_other, 1)  # 1 * 99 = 99
         li = self._bundle(a, b)
@@ -114,7 +144,7 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.qty, Decimal('1'))
         self.assertEqual(li.price, Decimal('129.00'))
 
-    def test_same_scheme_different_modifiers_fall_back(self):
+    def test_same_rate_different_modifiers_fall_back(self):
         a = self._task(self.scheme_rush, 2, ['rush'])  # 2 * 15 = 30
         b = self._task(self.scheme_rush, 1, [])        # 1 * 10 = 10
         li = self._bundle(a, b)
@@ -188,7 +218,7 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.scheme_rush = RateScheme.objects.create(
             name='E-Widgets-rush', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
-            modifiers=[{'key': 'rush', 'percent': 50}],
+            modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 50}],
             accounting_category=self.cat,
         )
         self.scheme_other = RateScheme.objects.create(
@@ -203,11 +233,13 @@ class EstimateWizardBundleSummaryTest(TestCase):
 
     def _pt(self, scheme, est_qty, modifiers=None):
         # job-owns-atoms refactor (Task 3.1): estimate projects the Job's Tasks
-        # (est_qty-based), now owned directly by the Job.
-        return Task.objects.create(
-            job=self.job, name='PT', rate_scheme=scheme,
-            est_qty=Decimal(str(est_qty)), active_modifiers=modifiers or [],
-        )
+        # (est_qty-based), now owned directly by the Job. Stamping (task-owned-
+        # money Phase 1) copies the preset's money fields onto the task.
+        t = Task(job=self.job, name='PT')
+        t.stamp_from_scheme(scheme, modifier_keys=modifiers or [])
+        t.est_qty = Decimal(str(est_qty))
+        t.save()
+        return t
 
     def _bundle(self, *pts):
         atoms = [{'type': 'task', 'id': p.pk} for p in pts]
@@ -228,9 +260,27 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.qty, Decimal('6'))
         self.assertEqual(li.price, Decimal('15.00'))
 
+    def test_same_money_different_scheme_still_summarized(self):
+        # Uniformity is judged on task money, never on source_scheme —
+        # two Tasks stamped from different presets with identical money
+        # still bundle.
+        other_same_money = RateScheme.objects.create(
+            name='E-Widgets-2', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.00'), unit_label='widgets',
+            accounting_category=self.cat,
+        )
+        a = self._pt(self.scheme, 3)
+        b = self._pt(other_same_money, 2)
+        self.assertNotEqual(a.source_scheme_id, b.source_scheme_id)
+        li = self._bundle(a, b)
+        self.assertEqual(li.units, 'widgets')
+        self.assertEqual(li.qty, Decimal('5'))
+        self.assertEqual(li.price, Decimal('10.00'))
+
     def test_flat_fee_same_scheme_summed(self):
         # flat_fee price now lives on RateScheme.rate; active_modifiers is [].
-        # Same scheme + same (empty) modifiers summarizes — est_qty summed, not set to 1.
+        # Same money (rate/unit_label/modifiers) summarizes — est_qty summed,
+        # not set to 1.
         scheme_flat = RateScheme.objects.create(
             name='E-Tapping', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('7.00'), unit_label='holes',
@@ -244,14 +294,14 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.qty, Decimal('10'))  # 4 + 6 est_qty, not 1
         self.assertEqual(li.price, Decimal('7.00'))
 
-    def test_different_schemes_fall_back(self):
+    def test_different_money_fall_back(self):
         li = self._bundle(
             self._pt(self.scheme, 3), self._pt(self.scheme_other, 1),
         )
         self.assertEqual(li.units, 'none')
         self.assertEqual(li.qty, Decimal('1'))
 
-    def test_same_scheme_different_modifiers_fall_back(self):
+    def test_same_rate_different_modifiers_fall_back(self):
         li = self._bundle(
             self._pt(self.scheme_rush, 2, ['rush']),
             self._pt(self.scheme_rush, 1, []),
@@ -283,3 +333,44 @@ class EstimateWizardBundleSummaryTest(TestCase):
         li.refresh_from_db()
         self.assertEqual(li.qty, Decimal('3'))
         self.assertEqual(li.price, Decimal('10.00'))
+
+
+class UniformMoneyBundleIgnoresProvenanceTest(TestCase):
+    """The Task 6 brief's red test: bundle uniformity must be judged on the
+    tasks' own money fields, not on source_scheme identity — two tasks with
+    identical (rate, unit_label, active_modifiers) bundle uniformly even
+    when one was never stamped from any preset (source_scheme=None) and the
+    other was."""
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(code='UMB', name='UMB')
+        contact = Contact.objects.create(
+            first_name='U', last_name='M', email='u@m.com',
+        )
+        self.job = Job.objects.create(
+            contact=contact, status=Job.STATUS_APPROVED, job_number='JOB-UMB',
+        )
+        self.scheme = RateScheme.objects.create(
+            name='Bench-UMB', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('95.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+
+    def test_bundle_uniform_on_money_not_provenance(self):
+        # t1: hand-set money fields, never stamped (source_scheme=None).
+        t1 = Task(
+            job=self.job, name='Hand-set', qty_source=Task.QTY_ENTERED,
+            rate=Decimal('95.00'), unit_label='hour', active_modifiers=[],
+            est_qty=Decimal('2.00'),
+        )
+        t1.save()
+        # t2: stamped from a preset (source_scheme set), same money.
+        t2 = Task(job=self.job, name='Stamped', est_qty=Decimal('3.00'))
+        t2.stamp_from_scheme(self.scheme)
+        t2.save()
+        self.assertIsNone(t1.source_scheme_id)
+        self.assertIsNotNone(t2.source_scheme_id)
+        self.assertNotEqual(t1.source_scheme_id, t2.source_scheme_id)
+
+        units, qty, price = EstimateWizardService._uniform_money_bundle([t1, t2])
+        self.assertEqual((units, qty, price), ('hour', Decimal('5.00'), Decimal('95.00')))

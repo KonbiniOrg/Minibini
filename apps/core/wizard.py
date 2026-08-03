@@ -85,7 +85,8 @@ class BaseWizardService:
 
     @classmethod
     def _atom_category(cls, atom_instance):
-        """The accounting category of an atom (via rate scheme for tasks)."""
+        """The accounting category of an atom (the task's own field —
+        task-owned-money Phase 1; no RateScheme lookup)."""
         if isinstance(atom_instance, cls._task_model()):
             return atom_instance.effective_accounting_category
         if isinstance(atom_instance, cls._material_model()):
@@ -147,42 +148,52 @@ class BaseWizardService:
         return line_item.price == cls._expected_per_unit(sum_value, line_item.qty)
 
     @classmethod
-    def _uniform_scheme_bundle(cls, instances):
-        """If every atom is a task sharing one RateScheme and identical
-        `active_modifiers`, return `(units, qty, price)` summarizing the
-        bundle — units from the scheme, qty = summed actual quantities,
-        price = the common effective rate. Otherwise None, and the caller
-        falls back to qty=1 / units='none'."""
+    def _uniform_money_bundle(cls, instances):
+        """If every atom is a task sharing identical `(rate, unit_label,
+        active_modifiers)`, return `(units, qty, price)` summarizing the
+        bundle — units/price from the shared task money fields, qty =
+        summed actual quantities. Otherwise None, and the caller falls
+        back to qty=1 / units='none'.
+
+        Uniformity is judged on the tasks' own money fields, not on
+        `source_scheme` provenance — two tasks stamped from different
+        presets (or one stamped and one hand-edited) still bundle if their
+        current rate/unit/modifiers agree (task-owned-money Phase 1)."""
         task_model = cls._task_model()
         if not instances or not all(isinstance(i, task_model) for i in instances):
             return None
-        if any(i.rate_scheme_id is None for i in instances):
+        if any(i.rate is None for i in instances):
             return None
-        if len({i.rate_scheme_id for i in instances}) != 1:
+        if len({i.rate for i in instances}) != 1:
+            return None
+        if len({i.unit_label for i in instances}) != 1:
             return None
         modifier_sets = {
-            tuple(sorted(i.active_modifiers or [])) for i in instances
+            tuple(sorted(
+                (m['key'], Decimal(str(m['percent'])))
+                for m in (i.active_modifiers or [])
+            ))
+            for i in instances
         }
         if len(modifier_sets) != 1:
             return None
-        scheme = instances[0].rate_scheme
-        modifiers = instances[0].active_modifiers or []
+        unit_label = instances[0].unit_label
         actual_qtys = [cls._task_actual_qty(t) for t in instances]
         if any(q is None for q in actual_qtys):
             return None
         qty = sum(actual_qtys, Decimal('0'))
-        price = scheme.effective_rate(modifiers)  # already quantized to cents
-        return scheme.unit_label, qty, price
+        price = instances[0].effective_rate()  # already quantized to cents
+        return unit_label, qty, price
 
     @classmethod
     def _resync_in_sync_line_item(cls, line_item):
         """After a source-set change on an in-sync line item, re-derive its
-        units/qty/price. If the sources form a uniform same-scheme task
-        bundle, summarize; otherwise keep qty and recompute the per-unit
-        price. Saves the line item via LineItemService.save_line_item."""
+        units/qty/price. If the sources form a uniform-money task bundle,
+        summarize; otherwise keep qty and recompute the per-unit price.
+        Saves the line item via LineItemService.save_line_item."""
         from apps.core.services import LineItemService
         instances = [src.resolve() for src in line_item.sources.all()]
-        summary = cls._uniform_scheme_bundle(instances)
+        summary = cls._uniform_money_bundle(instances)
         if summary is not None:
             line_item.units, line_item.qty, line_item.price = summary
         else:
@@ -229,7 +240,7 @@ class BaseWizardService:
         category = categories.pop() if len(categories) == 1 else None
 
         # Single atom: copy over description/units/qty/price from the atom.
-        # Multi-atom: summarize a uniform same-scheme task bundle, else fall
+        # Multi-atom: summarize a uniform-money task bundle, else fall
         # back to blank description, units='none', qty=1, price=total.
         if len(instances) == 1:
             description = cls._atom_description(instances[0])
@@ -237,7 +248,7 @@ class BaseWizardService:
             qty, price = cls._atom_qty_and_price(instances[0], total_price)
         else:
             description = ''
-            summary = cls._uniform_scheme_bundle(instances)
+            summary = cls._uniform_money_bundle(instances)
             if summary is not None:
                 units, qty, price = summary
             else:
