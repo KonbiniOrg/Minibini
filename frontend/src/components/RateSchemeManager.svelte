@@ -258,8 +258,7 @@
   </p>
   <p>
     <label for="default-rate-scheme"><strong>Default preset</strong></label><br>
-    <select id="default-rate-scheme" bind:value={defaultSchemeId}
-            onchange={saveDefaultScheme} disabled={defaultSaving}>
+    <select id="default-rate-scheme" bind:value={defaultSchemeId}>
       <option value="">-- None --</option>
       {#each activeSchemes as s (s.rate_scheme_id)}
         <option value={String(s.rate_scheme_id)}>{s.name}</option>
@@ -267,7 +266,14 @@
     </select>
     {#if defaultError}<strong>Error:</strong> {defaultError}{/if}
     {#if defaultSuccess}<em>{defaultSuccess}</em>{/if}
-    <br><small>The rate scheme offered by default when creating a new task.</small>
+  </p>
+  <p><small>The rate scheme offered by default when creating a new task.</small></p>
+  <p>
+    <!-- Distinct label from the add/edit modal's "Save" button, which can be
+         open at the same time this control is on screen. -->
+    <button type="button" onclick={saveDefaultScheme} disabled={defaultSaving}>
+      {defaultSaving ? 'Saving...' : 'Save default preset'}
+    </button>
   </p>
   <table class="data-table">
     <thead>
