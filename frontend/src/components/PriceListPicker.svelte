@@ -9,16 +9,18 @@
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
 
   // taskSurface: the task-list footer offers three explicit atom buttons
-  // (Task / Material / Fee). Default (estimate) footer is the material checkbox
-  // + "Add Line" (there, tasks come only from a ServiceItem pick).
+  // (Task / Material / Fee). Default (estimate) footer offers three explicit
+  // kind buttons of its own (Work / Material / Fee-Credit) — tasks don't
+  // exist on the estimate surface (work is a deferred ServiceItem descriptor
+  // there, or a bare 'work' kind freeform line), so its middle button reads
+  // "Add Work" rather than "Add Task".
   let { open = false, onChoose = null, onclose = null, taskSurface = false } = $props();
   let pickerQuery = $state('');
-  let isMaterial = $state(false); // freeform: unchecked → Fee, checked → Material
 
   // Start fresh on every open: a cancelled add (or any other close) must not
-  // leave stale typing or a stale material toggle behind when reopened.
+  // leave stale typing behind when reopened.
   $effect(() => {
-    if (open) { pickerQuery = ''; isMaterial = false; }
+    if (open) { pickerQuery = ''; }
   });
 
   const search = async (q) => {
@@ -45,11 +47,13 @@
     if (r.kind === 'service') onChoose?.({ type: 'service', serviceItem: r.item });
     else onChoose?.({ type: 'inventory', inventoryItem: r.item });
   }
-  function emitFreeform() {
-    // Estimate footer: the "is material?" checkbox decides material vs fee.
-    onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial });
+  // Estimate/CO footer: explicit per-kind emits (freeform_kind, sent directly —
+  // no more is_material alias translation on the wire).
+  function emitFreeformKind(kind) {
+    onChoose?.({ type: 'freeform', kind, typed: pickerQuery });
   }
-  // Task-list footer: explicit per-atom emits.
+  // Task-list footer: explicit per-atom emits (still is_material-shaped — that
+  // surface's alias usage is unchanged by this task).
   function emitFreeformMaterial() {
     onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial: true });
   }
@@ -93,8 +97,9 @@
       <button type="button" onclick={emitFreeformMaterial}>Add Material</button>
       <button type="button" onclick={emitFreeformFee}>Add Fee</button>
     {:else}
-      <label><input type="checkbox" bind:checked={isMaterial}> Is this a material?</label>
-      <button type="button" onclick={emitFreeform}>Add Line</button>
+      <button type="button" onclick={() => emitFreeformKind('work')}>Add Work</button>
+      <button type="button" onclick={() => emitFreeformKind('material')}>Add Material</button>
+      <button type="button" onclick={() => emitFreeformKind('fee')}>Add Fee-Credit</button>
     {/if}
   </div>
 </Modal>

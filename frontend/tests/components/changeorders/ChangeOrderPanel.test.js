@@ -103,7 +103,9 @@ describe('ChangeOrderPanel add-line flow', () => {
 
     await fireEvent.click(await findByText('+ New line'));
     // The PriceListPicker's freeform footer is visible…
-    expect(await findByText('Is this a material?')).toBeInTheDocument();
+    expect(await findByText('Add Work')).toBeInTheDocument();
+    expect(await findByText('Add Material')).toBeInTheDocument();
+    expect(await findByText('Add Fee-Credit')).toBeInTheDocument();
     // …and the legacy action-select modal did not open.
     expect(queryByText('Add Change Order Line')).not.toBeInTheDocument();
   });

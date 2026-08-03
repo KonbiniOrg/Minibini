@@ -112,6 +112,48 @@ describe('COLineItemModal', () => {
     expect(await findByRole('alert')).toHaveTextContent('Change order is not editable.');
   });
 
+  it('does not require a manually chosen AC when editing an existing material add line (freeform_kind)', async () => {
+    const onSaved = vi.fn();
+    const item = {
+      line_item_id: 9, action: 'add', target_line_item: null,
+      description: 'Plywood', qty: '1.00', units: 'sheet', price: '25.00',
+      accounting_category: null, freeform_kind: 'material',
+    };
+    const { getByLabelText, getByRole } = render(COLineItemModal, {
+      props: { open: true, mode: 'edit', coId: 3, item, categories: cats, onSaved },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.patch).toHaveBeenCalledTimes(1);
+    const [, payload] = api.patch.mock.calls[0];
+    expect(payload).not.toHaveProperty('is_material');
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('shows the Accounting Category as required (asterisk) on a non-material add line', async () => {
+    const item = {
+      line_item_id: 9, action: 'add', target_line_item: null,
+      description: 'Rush', qty: '1.00', units: 'none', price: '25.00',
+      accounting_category: 7, freeform_kind: 'fee',
+    };
+    const { getByText } = render(COLineItemModal, {
+      props: { open: true, mode: 'edit', coId: 3, item, categories: cats },
+    });
+    expect(getByText(/Accounting Category \*/)).toBeInTheDocument();
+  });
+
+  it('does not mark the Accounting Category required on a material add line', async () => {
+    const item = {
+      line_item_id: 9, action: 'add', target_line_item: null,
+      description: 'Plywood', qty: '1.00', units: 'sheet', price: '25.00',
+      accounting_category: null, freeform_kind: 'material',
+    };
+    const { getByText, queryByText } = render(COLineItemModal, {
+      props: { open: true, mode: 'edit', coId: 3, item, categories: cats },
+    });
+    expect(queryByText(/Accounting Category \*/)).toBeNull();
+    expect(getByText('Accounting Category')).toBeInTheDocument();
+  });
+
   it('hides the line fields for a plain remove', async () => {
     const { getByLabelText, queryByLabelText } = render(COLineItemModal, {
       props: {

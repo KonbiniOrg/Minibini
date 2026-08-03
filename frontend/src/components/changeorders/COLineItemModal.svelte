@@ -90,9 +90,10 @@
       payload.price = price || '0';
     }
     if (needsAccountingCategory) {
-      // Bare add lines need an AC to send (they crystallize into Fees);
-      // material lines get the config default server-side.
-      if (!accountingCategory && !item?.is_material) {
+      // Bare add lines need an AC to send (they crystallize into Fees/Tasks);
+      // material lines (freeform_kind='material') get the config default
+      // server-side. freeform_kind is immutable — read-only here, never sent.
+      if (!accountingCategory && item?.freeform_kind !== 'material') {
         fieldErrs = { accounting_category: ['Accounting Category is required.'] };
         busy = false;
         return;
@@ -182,7 +183,7 @@
 
         {#if needsAccountingCategory}
           <p>
-            <label><strong>Accounting Category{item?.is_material ? '' : ' *'}</strong><br>
+            <label><strong>Accounting Category{item?.freeform_kind === 'material' ? '' : ' *'}</strong><br>
               <select bind:value={accountingCategory}>
                 <option value="">-- Select --</option>
                 {#each categories as cat}

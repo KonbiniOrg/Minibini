@@ -69,34 +69,39 @@ describe('PriceListPicker (onChoose emitter)', () => {
     });
   });
 
-  it('freeform commit defaults to a fee (isMaterial false)', async () => {
+  it('emits {type:freeform, kind:work} from the Add Work button', async () => {
     const props = baseProps();
     const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
-    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Rush charge' } });
-    await fireEvent.click(await findByRole('button', { name: /add line/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Rush charge', isMaterial: false });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Custom milling' } });
+    await fireEvent.click(await findByRole('button', { name: /add work/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', kind: 'work', typed: 'Custom milling' });
   });
 
-  it('freeform commit with the material checkbox set emits isMaterial true', async () => {
+  it('emits {type:freeform, kind:material} from the Add Material button', async () => {
     const props = baseProps();
     const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: '3/4 plywood' } });
-    await fireEvent.click(await findByRole('checkbox', { name: /material/i }));
-    await fireEvent.click(await findByRole('button', { name: /add line/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood', isMaterial: true });
+    await fireEvent.click(await findByRole('button', { name: /add material/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', kind: 'material', typed: '3/4 plywood' });
   });
 
-  it('clears typed text and the material toggle when reopened', async () => {
+  it('emits {type:freeform, kind:fee} from the Add Fee-Credit button', async () => {
     const props = baseProps();
-    const { getByPlaceholderText, getByRole, rerender } = render(PriceListPicker, { props });
+    const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Rush charge' } });
+    await fireEvent.click(await findByRole('button', { name: /add fee-credit/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', kind: 'fee', typed: 'Rush charge' });
+  });
+
+  it('clears typed text when reopened', async () => {
+    const props = baseProps();
+    const { getByPlaceholderText, rerender } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'partial typing' } });
-    await fireEvent.click(getByRole('checkbox', { name: /material/i }));
     expect(getByPlaceholderText(/search/i)).toHaveValue('partial typing');
     // Cancel (close), then reopen — the picker must start fresh.
     await rerender({ ...props, open: false });
     await rerender({ ...props, open: true });
     expect(getByPlaceholderText(/search/i)).toHaveValue('');
-    expect(getByRole('checkbox', { name: /material/i })).not.toBeChecked();
   });
 
   it('does not offer Add Task by default (estimate surface)', () => {
@@ -118,15 +123,16 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Custom milling', isMaterial: false });
   });
 
-  it('shows the material checkbox and Add Line button constantly, from the start', async () => {
+  it('shows the Work/Material/Fee-Credit buttons constantly, from the start', async () => {
     const props = baseProps();
     const { getByRole } = render(PriceListPicker, { props });
-    // Constant affordances — present before anything is typed, label never changes.
-    expect(getByRole('checkbox', { name: /material/i })).toBeInTheDocument();
-    const addBtn = getByRole('button', { name: /add line/i });
-    expect(addBtn).toBeInTheDocument();
+    // Constant affordances — present before anything is typed, labels never change.
+    expect(getByRole('button', { name: /add work/i })).toBeInTheDocument();
+    expect(getByRole('button', { name: /add material/i })).toBeInTheDocument();
+    const feeBtn = getByRole('button', { name: /add fee-credit/i });
+    expect(feeBtn).toBeInTheDocument();
     // Clicking with nothing typed still emits a freeform commit (empty typed).
-    await fireEvent.click(addBtn);
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '', isMaterial: false });
+    await fireEvent.click(feeBtn);
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', kind: 'fee', typed: '' });
   });
 });

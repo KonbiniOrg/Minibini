@@ -30,6 +30,13 @@
   // before the Total column, counting the Source column when shown).
   let footerColspan = $derived(showSource ? 8 : 7);
 
+  /** freeform_kind ('work'|'material'|'fee') is set IFF this is a bare
+   *  hand-authored line (no inventory_item/service_item/adjustment_service) —
+   *  catalog/service/adjustment lines carry null, so the badge only ever
+   *  shows on hand lines. */
+  const KIND_LABELS = { work: 'Work', material: 'Material', fee: 'Fee/Credit' };
+  function kindLabel(k) { return KIND_LABELS[k] || ''; }
+
   /** Build the adjustment badge label, e.g. "+15% Rush on Labor, Materials" */
   function adjustmentBadge(li) {
     if (!li.adjustment_service) return '';
@@ -77,6 +84,9 @@
             {#if li.adjustment_service}
               <span class="adj-badge">{adjustmentBadge(li)}</span>
             {:else}
+              {#if li.freeform_kind}
+                <span class="kind-badge kind-{li.freeform_kind}">{kindLabel(li.freeform_kind)}</span>
+              {/if}
               <LinkifiedText text={li.description || 'No description'} />
             {/if}
           </td>
@@ -151,4 +161,16 @@
     font-weight: 600;
     white-space: nowrap;
   }
+  .kind-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    margin-right: 6px;
+  }
+  .kind-work { background: #e0e7ff; color: #3730a3; }
+  .kind-material { background: #d1fae5; color: #065f46; }
+  .kind-fee { background: #ffedd5; color: #9a3412; }
 </style>

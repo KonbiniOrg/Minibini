@@ -921,11 +921,23 @@ No `Task` is created at authoring time. The Task is created at acceptance by `on
 |---|---|
 | `{type: 'service', serviceItem}` | User picked a `ServiceItem` from the catalog |
 | `{type: 'inventory', inventoryItem}` | User picked a catalog `InventoryItem` |
-| `{type: 'freeform', typed, isMaterial}` | User typed a description; `isMaterial` checkbox sets the `is_material` flag |
+| `{type: 'freeform', typed, kind}` | **Estimate/CO footer** (non-`taskSurface`): three explicit buttons — Add Work / Add Material / Add Fee-Credit — emit `kind: 'work' \| 'material' \| 'fee'` directly (matches `EstimateLineItem`/`ChangeOrderLineItem.freeform_kind`; the retired `is_material` alias is never sent from this footer) |
+| `{type: 'freeform', typed, isMaterial}` | **Task-list footer** (`taskSurface`): Task / Material / Fee buttons — unchanged, still `is_material`-shaped (that surface creates a `Task`/`Material`/`Fee` atom directly, not a line item) |
+| `{type: 'freeform-task', typed}` | Task-list footer only — a manual Task (rate scheme picked in the follow-up `WorkItemForm`) |
 
-On the **estimate detail page** (`EstimatePanel.svelte`, hosted at `#/jobs/:jobId/estimate/:docId`), the picker is followed by `EstimateAddLineForm.svelte`, which handles the post-selection form (qty, units, AC) and dispatches to the correct endpoint: `line-items-from-service/` for service picks, the standard `line-items/` POST for inventory or freeform picks.
+On the **estimate detail page** (`EstimatePanel.svelte`, hosted at `#/jobs/:jobId/estimate/:docId`) and the **change-order panel** (`ChangeOrderPanel.svelte`), the picker is followed by `EstimateAddLineForm.svelte` / `COAddLineForm.svelte` respectively — twin components that dispatch to the correct endpoint (`line-items-from-service/` for service picks, the standard `line-items/` POST — CO adds `action: 'add'` — for inventory or freeform picks) and render a kind-specific freeform subform once a bare line is chosen:
+
+| `kind` | Subform |
+|---|---|
+| `work` | An optional **preset dropdown** (`GET /api/rate-schemes/?task_applicable=true`, same active/non-percentage list as `WorkItemForm`'s manual-mode dropdown; `default_rate_scheme` from `/api/settings/` preselects it when present in the list) — picking a preset only **stamps** its `rate`/`unit_label`/`accounting_category` into the editable local fields client-side; no scheme id is ever sent. Plus description/qty/units/rate/AC (AC required). Payload: `freeform_kind: 'work'` + plain description/qty/units/price/accounting_category. |
+| `material` | The pre-existing form: description/qty/units/price/AC (AC prefills from `default_material_accounting_category`, overridable, and is optional — the backend fills it if blank). Payload: `freeform_kind: 'material'`. |
+| `fee` | description/qty (default 1)/signed amount/AC (required) — a negative amount shows an in-form "This will appear as a credit" note. Payload: `freeform_kind: 'fee'`. |
+
+A negative amount on the Work or Material subform is rejected client-side with a field error ("Negative price is only allowed on a Fee/Credit line.") before it ever reaches the server-side `_validate_price` check (§6.4 above). Line tables (`LineItemTable.svelte`, shared by the estimate/CO/invoice surfaces) render a `.kind-badge` (Work/Material/Fee-Credit) next to the description on any line carrying `freeform_kind`; adjustment lines keep their separate `.adj-badge` and never also get a kind badge (a bare line and an adjustment line are mutually exclusive).
 
 On the **job task-list page** (`JobTaskListPage.svelte`), the same picker opens `WorkItemForm` (service pick → Task via `/add-from-template/`), `MaterialModal` (inventory pick — `presetPli`, `presetDescription`, `defaultMaterialCategoryId`), or `FeeModal` (freeform non-material — `presetDescription`). See `docs/designs/jobs-and-tasks.md` §9.5.
+
+`LineItemModal.svelte` (generic edit-only modal, also shared by Invoice) and `COLineItemModal.svelte` (CO replace/edit) display an existing bare line's `freeform_kind` **read-only** (`freeform_kind` is immutable after creation — no editor) rather than the retired `is_material` checkbox/flag.
 
 ---
 
@@ -1766,17 +1778,20 @@ rows (unit-tested), `CODeliverablesSection.svelte` owns the deliverables
 grid + inline drafting forms, and `COLineItemsSection.svelte` renders the
 line diff with actions as callbacks to the panel.
 **"+ New line"** opens the unified `PriceListPicker` (§6.4) — the same
-service / inventory / freeform (+ is-material checkbox) entry point as
-the estimate detail page — followed by `COAddLineForm.svelte`
-(`components/changeorders/`), which posts a service pick to
-`line-items-from-service/`, an inventory pick to `line-items/` (the
-from-pli path), and a freeform line manually with AC + `is_material`.
+service / inventory / freeform (Work / Material / Fee-Credit buttons)
+entry point as the estimate detail page — followed by
+`COAddLineForm.svelte` (`components/changeorders/`), which posts a
+service pick to `line-items-from-service/`, an inventory pick to
+`line-items/` (the from-pli path, `action: 'add'`), and a freeform line
+with `action: 'add'` + AC + `freeform_kind` (never the retired
+`is_material`; see §6.4 for the kind-specific subforms).
 `COLineItemModal.svelte` remains the editor for existing lines and the
 Change/replace flow; on `add`-action lines it carries an Accounting
-Category select (required for bare fee lines, config-defaulted for
-material lines — the send guard's authoring face). The Estimate detail
-page shows accepted COs as pills/badges in the deliverables and
-line-items sections.
+Category select (required unless the line's immutable `freeform_kind`
+is `'material'`, config-defaulted there — the send guard's authoring
+face) and displays that `freeform_kind` read-only (no editor — kind is
+immutable after creation). The Estimate detail page shows accepted COs
+as pills/badges in the deliverables and line-items sections.
 
 **The "amended" status label.** An accepted estimate that an accepted
 change order amends keeps its stored `status = accepted` — it is still

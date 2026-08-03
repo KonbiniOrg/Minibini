@@ -164,3 +164,73 @@ describe('LineItemModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe('LineItemModal — freeform_kind (read-only; kind is immutable so no editor)', () => {
+  it('displays the kind read-only in edit mode and never renders an editable marker', () => {
+    const item = {
+      line_item_id: 3, description: 'Plywood', qty: 2, units: 'sheet', price: '40.00',
+      accounting_category: 42, freeform_kind: 'material',
+    };
+    const { getByText, queryByLabelText } = render(LineItemModal, {
+      props: {
+        open: true, mode: 'edit', apiBase: '/api/estimates/7', item,
+        categories: SAMPLE_CATEGORIES, showMaterialMarker: true,
+      },
+    });
+    expect(getByText(/kind/i)).toBeInTheDocument();
+    expect(getByText('Material')).toBeInTheDocument();
+    expect(queryByLabelText(/is this a material/i)).toBeNull();
+  });
+
+  it('does not require a manually chosen AC on an existing material line (defers to the backend default)', async () => {
+    const onSaved = vi.fn();
+    const item = {
+      line_item_id: 3, description: 'Plywood', qty: 2, units: 'sheet', price: '40.00',
+      accounting_category: null, freeform_kind: 'material',
+    };
+    const { getByRole } = render(LineItemModal, {
+      props: {
+        open: true, mode: 'edit', apiBase: '/api/estimates/7', item, onSaved,
+        categories: SAMPLE_CATEGORIES, showMaterialMarker: true,
+      },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.patch).toHaveBeenCalledTimes(1);
+    const [, payload] = api.patch.mock.calls[0];
+    expect(payload).not.toHaveProperty('is_material');
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('renders no kind row and no checkbox when the line has no freeform_kind (catalog/service line)', () => {
+    const item = {
+      line_item_id: 4, description: 'Bolt', qty: 5, units: 'ea', price: '1.00',
+      accounting_category: 42, freeform_kind: null,
+    };
+    const { queryByText, queryByLabelText } = render(LineItemModal, {
+      props: {
+        open: true, mode: 'edit', apiBase: '/api/estimates/7', item,
+        categories: SAMPLE_CATEGORIES, showMaterialMarker: true,
+      },
+    });
+    expect(queryByText(/^kind/i)).toBeNull();
+    expect(queryByLabelText(/is this a material/i)).toBeNull();
+  });
+
+  it('never sends is_material when showMaterialMarker is false (invoice surface)', async () => {
+    const onSaved = vi.fn();
+    const item = {
+      line_item_id: 5, description: 'Widget', qty: 1, units: 'none', price: '10.00',
+      accounting_category: 42,
+    };
+    const { getByRole } = render(LineItemModal, {
+      props: {
+        open: true, mode: 'edit', apiBase: '/api/invoices/3', item, onSaved,
+        categories: SAMPLE_CATEGORIES,
+      },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const [, payload] = api.patch.mock.calls[0];
+    expect(payload).not.toHaveProperty('is_material');
+    expect(onSaved).toHaveBeenCalled();
+  });
+});
