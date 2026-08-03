@@ -1005,6 +1005,24 @@ def build_estimates(c):
                         c.ac_mat_pk if classification == 'material'
                         else c.ac_svc_pk
                     ),
+                    # freeform_kind (Phase 2 Task 5): the converter never sets
+                    # inventory_item/service_item/adjustment_service on the
+                    # line itself (those only ever land on the atom it later
+                    # crystallizes into — see derive_atoms), so every emitted
+                    # line is bare and freeform_kind is required, non-null.
+                    # 'material' mirrors the historical backfill's
+                    # is_material=True default (line_kind_backfill.
+                    # compute_freeform_kind); everything else — task-
+                    # classified hand lines and bare discount/credit
+                    # ('lineitem') lines alike — gets 'fee', mirroring that
+                    # backfill's is_material=False default. Never 'work': a
+                    # task-classified line that does crystallize into a real
+                    # Task always carries a genuine RateScheme (_line_billing/
+                    # _stamp_money_block), never the generic no-scheme
+                    # entered-qty shape 'work' denotes.
+                    'freeform_kind': (
+                        'material' if classification == 'material' else 'fee'
+                    ),
                 })
 
                 c.line_items[est_pk].append({
@@ -1248,13 +1266,19 @@ def _emit_fee(c, base_ref, job_pk, li, sort_order):
     line price; the fee carries the services AccountingCategory. Fee has no
     `task` link (dropped 2026-08-03).
 
-    A non-positive price emits nothing (returns None): validate_data requires
+    A zero/absent price emits nothing (returns None): validate_data requires
     Fee.unit_rate != 0, and a $0 fixed charge carries no billing information —
-    the estimate line itself is kept, just unclaimed. (The converter doesn't
-    currently synthesize negative/credit fees from source data.)
+    the estimate line itself is kept, just unclaimed. A negative price DOES
+    emit a Fee (a legal credit, per validate_data.check_fees): real source
+    rows land here as task-classified hand lines with no time/quantity signal
+    (infer_algorithm -> 'fee') whose description reads as a discount/credit/
+    deposit ('Friend Discount', 'Credit from Invoice #9096', 'Material
+    Deposit (Inv #8786)') — genuine negative charges the shop billed, not
+    data noise, so they should crystallize into negative-rate Fees rather
+    than being silently dropped as before 2026-08-03.
     """
-    if not li['price'] or li['price'] <= 0:
-        print(f"  fee skipped (non-positive price {li['price']}): "
+    if not li['price']:
+        print(f"  fee skipped (zero/absent price {li['price']}): "
               f"{(li['description'] or '')[:60]!r}")
         return None
     qty = li['qty'] if (li['qty'] and li['qty'] > 0) else Decimal('1')

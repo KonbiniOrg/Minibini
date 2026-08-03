@@ -434,6 +434,46 @@ class EstimateBuilderTest(unittest.TestCase):
                 any(li['classification'] == 'skip' for li in li_list),
                 'Comment/skip lines must not be stashed in c.line_items')
 
+    def test_every_line_item_carries_explicit_freeform_kind(self):
+        # Phase 2: every converter-emitted EstimateLineItem is bare (the
+        # converter never sets inventory_item/service_item/adjustment_service
+        # on the line itself — those only ever land on the *atom* it later
+        # crystallizes into), so every line must carry an explicit
+        # freeform_kind. 'material' for material-classified freeform lines
+        # (raw stock, labour/prep, and finished-goods — the converter's own
+        # "is_material" proxy is the classification, decided before the later
+        # raw/labour/deliverable split); 'fee' for everything else
+        # (fee-shaped hand lines / discount-credit lines) — mirroring the
+        # historical backfill's is_material True/False -> material/fee
+        # dichotomy (line_kind_backfill.compute_freeform_kind). No line may
+        # carry 'work': the converter never has grounds to claim a line
+        # crystallizes into the generic flat/no-scheme 'work' Task — its own
+        # task-classified lines that do become Tasks always get a real
+        # RateScheme stamped on them.
+        build.build_estimates(self.c)
+        classification_by_pk = {
+            li['line_item_pk']: li['classification']
+            for lis in self.c.line_items.values() for li in lis
+        }
+        seen = 0
+        for li in self._models('estimates.estimatelineitem'):
+            classification = classification_by_pk[li['pk']]
+            expected = 'material' if classification == 'material' else 'fee'
+            self.assertEqual(
+                li['fields'].get('freeform_kind'), expected,
+                f"line item {li['pk']} ({classification}) "
+                f"freeform_kind={li['fields'].get('freeform_kind')!r}, "
+                f"expected {expected!r}")
+            seen += 1
+        self.assertGreater(seen, 0)
+
+    def test_no_line_item_carries_is_material(self):
+        # is_material was retired (Phase 2 Task 2) in favour of
+        # freeform_kind; the converter must never emit the dropped key.
+        build.build_estimates(self.c)
+        for li in self._models('estimates.estimatelineitem'):
+            self.assertNotIn('is_material', li['fields'])
+
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
@@ -588,6 +628,73 @@ class AtomDerivationTest(unittest.TestCase):
             li = line_by_pk.get(claimed_by[0]['fields']['estimate_line_item'])
             self.assertIsNotNone(li)
             self.assertEqual(li['classification'], 'material')
+
+
+class FeeEmissionTest(unittest.TestCase):
+    """Focused tests for _emit_fee's price-sign skip logic. validate_data's
+    check_fees hard-fails a Fee with unit_rate == 0 (a $0 fixed charge carries
+    no billing information), but unit_rate < 0 is now a legal credit — real
+    source data (deposits, 'Friend Discount', 'Credit from Invoice #...')
+    hand-entered as task-classified lines with no time/quantity signal used
+    to be silently dropped by the old <= 0 skip; they must now emit a
+    negative-rate Fee instead."""
+
+    def _make_converter(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.ac_svc_pk = 1
+        return c
+
+    def _li(self, price, qty=None, description='hand line'):
+        return {'description': description, 'qty': qty, 'price': price,
+                'line_item_pk': 1}
+
+    def _fees(self, c):
+        return [f for f in c.fixture_data if f['model'] == 'jobs.fee']
+
+    def _sources(self, c):
+        return [f for f in c.fixture_data
+                if f['model'] == 'estimates.estimatelineitemsource']
+
+    def test_zero_price_emits_no_fee(self):
+        c = self._make_converter()
+        result = build._emit_fee(c, '00001', 1, self._li(Decimal('0')), 1)
+        self.assertIsNone(result)
+        self.assertEqual(self._fees(c), [])
+        self.assertEqual(self._sources(c), [])
+
+    def test_none_price_emits_no_fee(self):
+        c = self._make_converter()
+        result = build._emit_fee(c, '00001', 1, self._li(None), 1)
+        self.assertIsNone(result)
+        self.assertEqual(self._fees(c), [])
+
+    def test_positive_price_emits_a_fee(self):
+        c = self._make_converter()
+        result = build._emit_fee(
+            c, '00001', 1, self._li(Decimal('250.00')), 1)
+        self.assertIsNotNone(result)
+        fees = self._fees(c)
+        self.assertEqual(len(fees), 1)
+        self.assertEqual(fees[0]['fields']['unit_rate'], '250.00')
+
+    def test_negative_price_emits_a_credit_fee(self):
+        # e.g. 'Friend Discount from Gerard!' / 'Credit from Invoice #9096' /
+        # 'Material Deposit' — real hand-typed negative task-classified
+        # lines with no time/qty signal (infer_algorithm -> 'fee').
+        c = self._make_converter()
+        li = self._li(Decimal('-100.00'), description='Friend Discount')
+        result = build._emit_fee(c, '00001', 1, li, 1)
+        self.assertIsNotNone(result)
+        fees = self._fees(c)
+        self.assertEqual(len(fees), 1)
+        self.assertEqual(fees[0]['fields']['unit_rate'], '-100.00')
+        # Claimed via EstimateLineItemSource exactly like a positive fee —
+        # unclaiming it would leave the line free to be re-crystallized on
+        # in-app acceptance, duplicating the atom.
+        sources = self._sources(c)
+        self.assertEqual(len(sources), 1)
+        self.assertEqual(sources[0]['fields']['source_type'], 'fee')
+        self.assertEqual(sources[0]['fields']['source_pk'], result)
 
 
 class InvoiceLineCategoryPickTest(unittest.TestCase):
