@@ -2,11 +2,9 @@
   // One source-pool atom row, shared by the estimate and invoice wizards.
   // Expects a normalized atom: {type, id, description, qty, rate, units,
   // amount, state, sub_info?, claiming_*}.
-  let { atom, selected = false, onToggle } = $props();
+  import { formatMoney as fmtMoney } from '../../lib/format.js';
 
-  function fmtMoney(n) {
-    return Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-  }
+  let { atom, selected = false, onToggle } = $props();
 
   // "3 hours × $25.00 = $75.00" — the qty × rate breakdown of the total.
   // Deposit credit atoms have no meaningful qty × rate breakdown (they're

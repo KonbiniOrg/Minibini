@@ -3,6 +3,8 @@
   // buildMergedRows/lineDiffTotals output. All actions are callbacks — the
   // panel owns the modal and the API calls. Extracted from the old
   // ChangeOrderDetailPage route (2026-07-19).
+  import { formatMoney } from '../../lib/format.js';
+
   let {
     rows = [],              // buildMergedRows output
     estimateLines = [],     // for the empty-state check
@@ -16,11 +18,16 @@
     onDeleteLine = () => {},   // (coItem) → DELETE an added item
   } = $props();
 
-  function fmtMoney(n) { return `$${Number(n ?? 0).toFixed(2)}`; }
+  function fmtMoney(n) { return formatMoney(n ?? 0); }
+  // "+$80.00" for an increase, "-$80.00" for a decrease (diffTotal =
+  // proposedTotal - estimateTotal, so it's a real signed delta, not a
+  // magnitude) — formatMoney on the magnitude plus an explicit sign, rather
+  // than raw "$" string-concatenation which used to drop the "-" entirely
+  // (Math.abs'd the value but only ever prepended "+", never "-").
   function fmtDiff(n) {
     const v = Number(n ?? 0);
     if (v === 0) return '$0.00';
-    return (v > 0 ? '+' : '') + `$${Math.abs(v).toFixed(2)}`;
+    return (v > 0 ? '+' : '-') + formatMoney(Math.abs(v));
   }
 </script>
 

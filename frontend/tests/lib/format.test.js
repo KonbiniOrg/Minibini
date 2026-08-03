@@ -1,8 +1,32 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   formatQtyUnits, parseDurationToISO, formatDuration, formatSessionDateTime,
-  parseDurationToHours, durationToHours,
+  parseDurationToHours, durationToHours, formatMoney,
 } from '@/lib/format.js';
+
+describe('formatMoney', () => {
+  it('puts the minus sign before the dollar sign, not "$-"', () => {
+    expect(formatMoney(-80)).toBe('-$80.00');
+  });
+
+  it('formats a positive amount normally', () => {
+    expect(formatMoney(80)).toBe('$80.00');
+  });
+
+  it('formats zero', () => {
+    expect(formatMoney(0)).toBe('$0.00');
+  });
+
+  it('accepts a string number (as line-item/fee amounts arrive from the API)', () => {
+    expect(formatMoney('80.00')).toBe('$80.00');
+    expect(formatMoney('-80.00')).toBe('-$80.00');
+  });
+
+  it('supports a whole-dollar (0 decimals) mode without mangling a negative', () => {
+    expect(formatMoney(-12400, { decimals: 0 })).toBe('-$12,400');
+    expect(formatMoney(12400, { decimals: 0 })).toBe('$12,400');
+  });
+});
 
 describe('formatQtyUnits', () => {
   it('returns a dash for null/undefined/empty quantity', () => {

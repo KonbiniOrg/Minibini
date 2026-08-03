@@ -1,3 +1,17 @@
+// House-wide currency formatter. toLocaleString's currency style puts the
+// sign before the "$" for a negative amount ("-$80.00") — hand-building the
+// string (e.g. `` `$${n.toFixed(2)}` ``) mangles a credit/decrease as the
+// nonsensical "$-80.00". `decimals` defaults to 2 (cents); pass 0 for the
+// whole-dollar style used by the job-overview stat tiles.
+export function formatMoney(n, { decimals = 2 } = {}) {
+  return Number(n).toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
 export function formatQtyUnits(quantity, units) {
   if (quantity === null || quantity === undefined || quantity === '') {
     return '-';

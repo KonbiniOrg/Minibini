@@ -1,4 +1,5 @@
 import { materialStatus } from './materialStatus.js';
+import { formatMoney } from './format.js';
 
 // jobOverview.js — the pure view-model for the job overview page's six
 // lifecycle blocks (Scope → Work → Materials → Spend → Invoicing → Delivery).
@@ -123,8 +124,10 @@ function num(v) {
 }
 
 // "$12,400" — whole dollars, thousands grouped, cents dropped (mockup style).
+// A negative v (e.g. a CO total that reduces the price) renders "-$12,400",
+// never the mangled "$-12,400" that hand-building the string would produce.
 function fmtMoney(v) {
-  return '$' + Math.round(num(v)).toLocaleString('en-US');
+  return formatMoney(num(v), { decimals: 0 });
 }
 
 // "64" from "64.0", "41.5" from "41.5" — drop a trailing .0.
