@@ -219,3 +219,58 @@ class RetireClearsDefaultRateSchemeTest(TestCase):
         ConfigurationService.retire_rate_scheme(self.scheme.pk)
         self.assertFalse(
             Configuration.objects.filter(key='default_rate_scheme').exists())
+
+
+class GenericUpdateIsActiveBypassTest(TestCase):
+    """Code review finding (post-implementation): RateSchemeSerializer
+    exposes is_active as a normal writable field, and the generic PATCH
+    path (RateSchemeViewSet.update -> ConfigurationService.update_rate_scheme)
+    did a plain setattr/save with no default-clearing logic. So
+    PATCH /api/rate-schemes/{id}/ {"is_active": false} could flip the flag
+    without going through retire_rate_scheme, leaving default_rate_scheme
+    pointing at a now-inactive scheme. update_rate_scheme now shares the
+    same clearing check retire_rate_scheme uses whenever is_active
+    transitions True -> False, regardless of entry point."""
+
+    def setUp(self):
+        self.admin = grant_atoms(
+            User.objects.create_user(username='biv_admin', password='x'),
+            'can_manage_config')
+        self.ac = AccountingCategory.objects.create(code='BIV', name='BIV')
+        self.scheme = RateScheme.objects.create(
+            name='S-biv', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10'), unit_label='ea', accounting_category=self.ac,
+        )
+
+    def test_patch_is_active_false_clears_the_default_via_api(self):
+        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
+        resp = _client(self.admin).patch(
+            f'/api/rate-schemes/{self.scheme.pk}/',
+            {'is_active': False}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertFalse(resp.data['is_active'])
+        self.scheme.refresh_from_db()
+        self.assertFalse(self.scheme.is_active)
+        self.assertEqual(
+            Configuration.objects.get(key='default_rate_scheme').value, '')
+
+    def test_update_rate_scheme_service_clears_the_default_on_deactivate(self):
+        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
+        ConfigurationService.update_rate_scheme(self.scheme, is_active=False)
+        self.assertEqual(
+            Configuration.objects.get(key='default_rate_scheme').value, '')
+
+    def test_update_rate_scheme_service_leaves_default_alone_when_is_active_untouched(self):
+        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
+        ConfigurationService.update_rate_scheme(self.scheme, rate=Decimal('55'))
+        self.assertEqual(
+            Configuration.objects.get(key='default_rate_scheme').value,
+            str(self.scheme.pk))
+
+    def test_update_rate_scheme_service_reactivating_does_not_touch_default(self):
+        # Flipping True -> False -> True shouldn't resurrect a cleared key.
+        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
+        ConfigurationService.update_rate_scheme(self.scheme, is_active=False)
+        ConfigurationService.update_rate_scheme(self.scheme, is_active=True)
+        self.assertEqual(
+            Configuration.objects.get(key='default_rate_scheme').value, '')

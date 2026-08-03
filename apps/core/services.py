@@ -1211,11 +1211,20 @@ class ConfigurationService:
         """Presets are freely editable (task-owned-money Phase 1, Task 4) —
         a stamped Task owns a permanent copy of its money fields, so editing
         a referenced preset never reprices anything already stamped from
-        it. No frozen fields, no referenced-freeze refusal."""
+        it. No frozen fields, no referenced-freeze refusal.
+
+        `is_active` is a normal field here too (PATCH can flip it directly,
+        not just via retire()/reactivate()) — so the default-scheme clear
+        has to be checked here as well as in retire_rate_scheme, or a plain
+        PATCH {"is_active": false} would leave `default_rate_scheme`
+        pointing at an inactive preset (Task 7 review finding)."""
+        was_active = scheme.is_active
         for field, value in fields.items():
             setattr(scheme, field, value)
         scheme.full_clean()
         scheme.save()
+        if was_active and not scheme.is_active:
+            ConfigurationService._clear_default_rate_scheme_if_matches(scheme.pk)
         return scheme
 
     @staticmethod
@@ -1225,6 +1234,18 @@ class ConfigurationService:
         still referenced by a ServiceItem can't be deleted: ServiceItem.rate_scheme
         is PROTECT at the DB level, so that raises ProtectedError uncaught."""
         scheme.delete()
+
+    @staticmethod
+    def _clear_default_rate_scheme_if_matches(pk):
+        """Shared by retire_rate_scheme and update_rate_scheme: whenever a
+        scheme transitions is_active True -> False, and it's the current
+        `default_rate_scheme` Configuration key, clear the key to '' — an
+        inactive preset must never linger as the default offered on new
+        work. This is the single gate for that invariant regardless of
+        which code path flipped the flag."""
+        default = Configuration.objects.filter(key='default_rate_scheme').first()
+        if default is not None and default.value == str(pk):
+            ConfigurationService.set('default_rate_scheme', '')
 
     @staticmethod
     def retire_rate_scheme(pk):
@@ -1243,9 +1264,7 @@ class ConfigurationService:
             raise NotFoundError(f'RateScheme {pk} not found')
         scheme.is_active = False
         scheme.save()
-        default = Configuration.objects.filter(key='default_rate_scheme').first()
-        if default is not None and default.value == str(pk):
-            ConfigurationService.set('default_rate_scheme', '')
+        ConfigurationService._clear_default_rate_scheme_if_matches(pk)
         return scheme
 
     @staticmethod
