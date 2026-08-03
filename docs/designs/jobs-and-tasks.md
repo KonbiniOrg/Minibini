@@ -25,7 +25,7 @@ A Job is the central work-tracking entity. Each Job aggregates its work
 
 - 0+ **Tasks** (metered units of execution; own `qty_source`/`rate`/`unit_label`/`accounting_category` money block stamped from a RateScheme preset, `est_qty`, `actual_qty`)
 - 0+ **Materials** (inventory-backed or freeform; optionally linked to a Task)
-- 0+ **Fees** (fixed charges: `quantity × unit_rate`; optionally linked to a Task)
+- 0+ **Fees** (fixed charges: `quantity × unit_rate`; unit_rate signed, non-zero; no task link)
 - 0+ Estimates (customer-facing quotes — lens over the atoms)
 - 0+ Invoices, Purchase Orders
 
@@ -62,7 +62,7 @@ The Job's atoms are reverse relations from the child side:
 |---|---|---|
 | `Task` | `Task.job` (`related_name='tasks'`) | — (hierarchy via `parent_task`) |
 | `Material` | `Material.job` | `Material.task` |
-| `Fee` | `Fee.job` (`related_name='fees'`) | `Fee.task` (OneToOne) |
+| `Fee` | `Fee.job` (`related_name='fees'`) | — (no task link; dropped 2026-08-03) |
 
 `populate_from_template` generates Tasks via
 `WorkTemplate.generate_tasks_for_job`, then Materials via
@@ -730,12 +730,15 @@ bleps, and no actuals; it is **always billable**.
 |---|---|---|
 | `fee_id` | AutoField PK | |
 | `job` | FK → Job (CASCADE, `related_name='fees'`) | |
-| `task` | OneToOne → Task (SET_NULL, nullable) | optional link to the work behind the charge |
 | `description` | CharField(255), blank | |
 | `quantity` | Decimal(10,2), default `1.00` | |
-| `unit_rate` | Decimal(10,2) | **required** |
+| `unit_rate` | Decimal(10,2) | **required, never zero** — negative is a valid credit (enforced in `FeeService`, not the model) |
 | `accounting_category` | FK → AccountingCategory (PROTECT) | **required, NOT NULL** |
 | `sort_order` | PositiveInteger, default 0 | |
+
+Fee had a `task` OneToOne (SET_NULL, nullable) through 2026-08-03; it was
+dormant (nothing in the UI ever populated it) and was dropped along with
+the field-removal migration — Fee no longer references Task at all.
 
 `Fee.compute_amount() → (quantity × unit_rate).quantize('0.01')`;
 `effective_accounting_category` returns its own `accounting_category`;

@@ -1312,18 +1312,28 @@ class FeeService:
         return (current_max or 0) + 1
 
     @staticmethod
+    def _reject_zero_unit_rate(unit_rate):
+        """A Fee with unit_rate=0 charges nothing — meaningless. Negative is
+        fine (a credit is a negative Fee); zero is not. The model has no
+        validator for this (full_clean() doesn't catch it), so it's enforced
+        here per house pattern."""
+        if unit_rate is not None and Decimal(unit_rate) == 0:
+            raise ValidationError({'unit_rate': ['unit_rate must not be zero.']})
+
+    @staticmethod
     def create_on_job(job, *, description='', quantity=Decimal('1.00'),
-                      unit_rate=None, accounting_category=None, task=None,
+                      unit_rate=None, accounting_category=None,
                       sort_order=None):
         """Create a Fee on `job`. `accounting_category` and `unit_rate` are
         required by the model — a missing one surfaces as a ValidationError
         (→ 400) via full_clean, never a 500."""
         _assert_job_not_on_hold(job, 'add a fee to this job')
+        FeeService._reject_zero_unit_rate(unit_rate)
         with transaction.atomic():
             if sort_order is None:
                 sort_order = FeeService._next_sort_order(job)
             fee = Fee(
-                job=job, task=task,
+                job=job,
                 description=description or '',
                 quantity=quantity if quantity is not None else Decimal('1.00'),
                 unit_rate=unit_rate,
@@ -1341,6 +1351,8 @@ class FeeService:
         except Fee.DoesNotExist:
             raise NotFoundError(f'Fee {fee_pk} not found')
         _assert_job_not_on_hold(fee.job, 'edit this fee')
+        if 'unit_rate' in kwargs:
+            FeeService._reject_zero_unit_rate(kwargs['unit_rate'])
         for field, value in kwargs.items():
             setattr(fee, field, value)
         fee.full_clean()

@@ -36,7 +36,7 @@ class FeeSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     class Meta:
         model = Fee
         fields = [
-            'fee_id', 'task', 'description', 'quantity', 'unit_rate',
+            'fee_id', 'description', 'quantity', 'unit_rate',
             'accounting_category', 'sort_order',
             'invoice', 'claimed',
         ]

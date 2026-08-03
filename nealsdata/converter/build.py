@@ -1240,16 +1240,18 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
     return sort_order
 
 
-def _emit_fee(c, base_ref, job_pk, li, sort_order, task_pk=None):
+def _emit_fee(c, base_ref, job_pk, li, sort_order):
     """Emit a jobs.fee atom for a fixed-charge estimate line, plus the
     EstimateLineItemSource claiming it (source_type='fee'). Returns the fee pk.
 
     quantity comes from the line qty (>0) or defaults to 1; unit_rate is the
-    line price; the fee carries the services AccountingCategory.
+    line price; the fee carries the services AccountingCategory. Fee has no
+    `task` link (dropped 2026-08-03).
 
     A non-positive price emits nothing (returns None): validate_data requires
-    Fee.unit_rate > 0, and a $0 fixed charge carries no billing information —
-    the estimate line itself is kept, just unclaimed.
+    Fee.unit_rate != 0, and a $0 fixed charge carries no billing information —
+    the estimate line itself is kept, just unclaimed. (The converter doesn't
+    currently synthesize negative/credit fees from source data.)
     """
     if not li['price'] or li['price'] <= 0:
         print(f"  fee skipped (non-positive price {li['price']}): "
@@ -1259,7 +1261,6 @@ def _emit_fee(c, base_ref, job_pk, li, sort_order, task_pk=None):
     fee_pk = c.next_pk('jobs.fee')
     c.add_fixture('jobs.fee', fee_pk, {
         'job':                 job_pk,
-        'task':                task_pk,
         'description':         (li['description'] or '')[:255],
         'quantity':            f'{qty:.2f}',
         'unit_rate':           f"{li['price']:.2f}",

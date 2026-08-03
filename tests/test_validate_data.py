@@ -280,7 +280,7 @@ class ValidateDataTaskMoneyTest(TestCase):
 
 
 class ValidateDataFeeTest(TestCase):
-    """Tests for check_fees() — unit_rate, quantity, accounting_category, task-job match."""
+    """Tests for check_fees() — unit_rate, quantity, accounting_category."""
 
     def setUp(self):
         self.ac = AccountingCategory.objects.create(name='FeeSvc', code='FSVC')
@@ -305,28 +305,23 @@ class ValidateDataFeeTest(TestCase):
         defaults.update(kwargs)
         return Fee.objects.create(**defaults)
 
-    def _make_rate_scheme(self, name='RS-Fee'):
-        return RateScheme.objects.create(
-            name=name, algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('10.00'), unit_label='each', accounting_category=self.ac,
-        )
-
     # ── unit_rate ────────────────────────────────────────────────
 
     def test_fee_unit_rate_zero_is_error(self):
         self._make_fee(unit_rate=Decimal('0.00'))
         output = self._run()
-        self.assertIn('unit_rate must be positive', output)
+        self.assertIn('unit_rate must not be zero', output)
 
-    def test_fee_unit_rate_negative_is_error(self):
+    def test_fee_unit_rate_negative_not_flagged(self):
+        """A credit is a negative Fee — negative unit_rate is valid."""
         self._make_fee(unit_rate=Decimal('-5.00'))
         output = self._run()
-        self.assertIn('unit_rate must be positive', output)
+        self.assertNotIn('unit_rate must not be zero', output)
 
     def test_fee_positive_unit_rate_not_flagged(self):
         self._make_fee(unit_rate=Decimal('0.01'))
         output = self._run()
-        self.assertNotIn('unit_rate must be positive', output)
+        self.assertNotIn('unit_rate must not be zero', output)
 
     # ── accounting_category ──────────────────────────────────────
 
@@ -343,33 +338,12 @@ class ValidateDataFeeTest(TestCase):
         output = self._run()
         self.assertNotIn('negative quantity', output)
 
-    # ── task-job consistency ──────────────────────────────────────
-
-    def test_fee_task_on_wrong_job_is_error(self):
-        rs = self._make_rate_scheme()
-        job_b = Job.objects.create(
-            job_number='J-VFEE-002', name='Other Job', contact=self.contact,
-        )
-        task_b = Task.objects.create(name='Task on B', job=job_b, **_task_scheme_fields(rs))
-        # fee.job = self.job (job_a), fee.task = task_b (on job_b) → mismatch
-        self._make_fee(task=task_b)
-        output = self._run()
-        self.assertIn('but Fee belongs to job', output)
-
-    def test_fee_task_on_same_job_not_flagged(self):
-        rs = self._make_rate_scheme(name='RS-SameJob')
-        task = Task.objects.create(name='Same-job Task', job=self.job, **_task_scheme_fields(rs))
-        self._make_fee(task=task)
-        output = self._run()
-        self.assertNotIn('but Fee belongs to job', output)
-
     def test_valid_fee_produces_no_errors(self):
         self._make_fee()
         output = self._run()
-        self.assertNotIn('unit_rate must be positive', output)
+        self.assertNotIn('unit_rate must not be zero', output)
         self.assertNotIn('negative quantity', output)
         self.assertNotIn('missing accounting_category', output)
-        self.assertNotIn('but Fee belongs to job', output)
 
 
 class ValidateDataSourceJobConsistencyTest(TestCase):

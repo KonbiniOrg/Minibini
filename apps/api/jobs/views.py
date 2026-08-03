@@ -334,6 +334,11 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         from .serializers import FeeSerializer
         job = self.get_object()
         data = request.data
+        if 'task' in data:
+            return Response(
+                {'task': ['This field is no longer supported on Fee.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         ac = None
         ac_id = data.get('accounting_category')
         if ac_id:
@@ -344,16 +349,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                     {'accounting_category': ['Accounting category not found.']},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        task = None
-        task_id = data.get('task')
-        if task_id:
-            try:
-                task = Task.objects.get(pk=task_id, job=job)
-            except (Task.DoesNotExist, ValueError, TypeError):
-                return Response(
-                    {'task': ['Task not found on this job.']},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
         try:
             fee = FeeService.create_on_job(
                 job,
@@ -361,7 +356,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 quantity=Decimal(str(data.get('quantity', '1'))),
                 unit_rate=Decimal(str(data.get('unit_rate', '0'))),
                 accounting_category=ac,
-                task=task,
             )
         except InvalidOperation:
             return Response(
@@ -388,8 +382,13 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             FeeService.delete(fee.pk)
             return Response({'message': 'Fee deleted.'}, status=status.HTTP_200_OK)
 
-        # PATCH — only the editable scalar fields plus AC/task relinks.
+        # PATCH — only the editable scalar fields plus AC relink.
         data = request.data
+        if 'task' in data:
+            return Response(
+                {'task': ['This field is no longer supported on Fee.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         fields = {}
         if 'description' in data:
             fields['description'] = data['description'] or ''
@@ -414,18 +413,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                     {'accounting_category': ['Accounting category not found.']},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        if 'task' in data:
-            task_id = data['task']
-            if task_id is None:
-                fields['task'] = None
-            else:
-                try:
-                    fields['task'] = Task.objects.get(pk=task_id, job=job)
-                except (Task.DoesNotExist, ValueError, TypeError):
-                    return Response(
-                        {'task': ['Task not found on this job.']},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
         fee = FeeService.update(fee.pk, **fields)
         return Response(FeeSerializer(fee).data, status=status.HTTP_200_OK)
 

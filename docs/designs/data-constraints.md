@@ -984,8 +984,9 @@ Polymorphic row joining a line item to a Job atom (Task, Material, or Fee).
 - The atom's `job` must match the line item's estimate's `job`
   (validator-enforced — `validate_data.check_estimate_source_job_consistency`;
   the invoice side has the parallel `check_invoice_source_job_consistency`).
-  Fee atoms are validated by `validate_data.check_fees` (unit_rate > 0,
-  accounting_category present, quantity ≥ 0, `task.job == fee.job`).
+  Fee atoms are validated by `validate_data.check_fees` (unit_rate != 0 —
+  negative allowed as a credit, zero rejected — accounting_category
+  present, quantity ≥ 0). Fee has no `task` link (dropped 2026-08-03).
 
 See `docs/designs/estimates-and-prices.md`.
 

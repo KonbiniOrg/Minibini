@@ -76,6 +76,65 @@ class FeeApiTest(APITestCase):
         self.assertIn('message', resp.data)
         self.assertFalse(Fee.objects.filter(pk=fee.pk).exists())
 
+    def test_create_negative_fee_is_201(self):
+        url = f'/api/jobs/{self.job.pk}/fees/'
+        resp = self.client.post(url, {
+            'description': 'Discount',
+            'quantity': '1',
+            'unit_rate': '-20.00',
+            'accounting_category': self.cat.pk,
+        }, format='json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        fee = Fee.objects.get(job=self.job)
+        self.assertEqual(fee.unit_rate, Decimal('-20.00'))
+
+    def test_create_zero_unit_rate_is_400(self):
+        url = f'/api/jobs/{self.job.pk}/fees/'
+        resp = self.client.post(url, {
+            'description': 'Zero',
+            'quantity': '1',
+            'unit_rate': '0.00',
+            'accounting_category': self.cat.pk,
+        }, format='json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('unit_rate', resp.data)
+
+    def test_create_with_task_key_is_400(self):
+        url = f'/api/jobs/{self.job.pk}/fees/'
+        resp = self.client.post(url, {
+            'description': 'With task',
+            'quantity': '1',
+            'unit_rate': '10.00',
+            'accounting_category': self.cat.pk,
+            'task': 1,
+        }, format='json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('task', resp.data)
+
+    def test_patch_zero_unit_rate_is_400(self):
+        fee = Fee.objects.create(job=self.job, description='x', quantity=Decimal('1'),
+                                 unit_rate=Decimal('10.00'), accounting_category=self.cat)
+        url = f'/api/jobs/{self.job.pk}/fees/{fee.pk}/'
+        resp = self.client.patch(url, {'unit_rate': '0.00'}, format='json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('unit_rate', resp.data)
+
+    def test_patch_with_task_key_is_400(self):
+        fee = Fee.objects.create(job=self.job, description='x', quantity=Decimal('1'),
+                                 unit_rate=Decimal('10.00'), accounting_category=self.cat)
+        url = f'/api/jobs/{self.job.pk}/fees/{fee.pk}/'
+        resp = self.client.patch(url, {'task': 1}, format='json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('task', resp.data)
+
+    def test_fee_response_has_no_task_field(self):
+        fee = Fee.objects.create(job=self.job, description='x', quantity=Decimal('1'),
+                                 unit_rate=Decimal('10.00'), accounting_category=self.cat)
+        url = f'/api/jobs/{self.job.pk}/fees/{fee.pk}/'
+        resp = self.client.patch(url, {'description': 'y'}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertNotIn('task', resp.data)
+
     def test_patch_fee_not_on_job_is_404(self):
         other = Job.objects.create(job_number='JOB-FEE-OTHER', contact=self.job.contact)
         fee = Fee.objects.create(job=other, description='x', quantity=Decimal('1'),

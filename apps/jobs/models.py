@@ -698,12 +698,11 @@ class RateScheme(models.Model):
 
 class Fee(models.Model):
     """A fixed charge owned by the Job — the crystallized form of an accepted
-    hand-line. Frozen quantity × unit_rate; no actual lifecycle. Optionally
-    points at the Task that is the work behind it."""
+    hand-line. Frozen quantity × unit_rate; no actual lifecycle. `unit_rate`
+    may be negative (a credit is a negative Fee) but never zero — enforced
+    in FeeService, not here (see FeeService.create_on_job/update)."""
     fee_id = models.AutoField(primary_key=True)
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='fees')
-    task = models.OneToOneField('jobs.Task', on_delete=models.SET_NULL,
-                                null=True, blank=True, related_name='fee')
     description = models.CharField(max_length=255, blank=True, default='')
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
     unit_rate = models.DecimalField(max_digits=10, decimal_places=2)

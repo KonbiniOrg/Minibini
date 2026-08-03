@@ -1890,7 +1890,8 @@ transiently empties the live work set and trips the auto-advance to
     human to reconcile.
   - *Fee*: deleted unless on a live invoice (its estimate-line claim is
     purged; the CO line remains the record of the removal — a Fee
-    `retired` state is deferred to the Fee.task / fixed-price pass).
+    `retired` state is deferred to a future fixed-price pass; Fee no
+    longer has a `task` link at all as of 2026-08-03).
   - A document-only target (adjustment line, or an atom already
     retired) is a no-op — the delta stays document-only, matching
     `compose_agreement`.

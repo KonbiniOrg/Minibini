@@ -779,24 +779,19 @@ class Command(BaseCommand):
             )
 
     def check_fees(self):
-        """For each Fee, validate unit_rate > 0, quantity >= 0,
-        and (if task is set) task.job_id == fee.job_id.
+        """For each Fee, validate unit_rate != 0 (negative is a valid credit;
+        zero charges nothing) and quantity >= 0.
         (accounting_category is NOT NULL on the model; no need to check it here.)"""
         from apps.jobs.models import Fee
-        for fee in Fee.objects.select_related('task', 'job').all():
-            if fee.unit_rate <= 0:
+        for fee in Fee.objects.select_related('job').all():
+            if fee.unit_rate == 0:
                 self.errors.append(
-                    f'Fee {fee.pk} ({fee.description!r}): unit_rate must be positive '
+                    f'Fee {fee.pk} ({fee.description!r}): unit_rate must not be zero '
                     f'(got {fee.unit_rate})'
                 )
             if fee.quantity < 0:
                 self.errors.append(
                     f'Fee {fee.pk} ({fee.description!r}): negative quantity {fee.quantity}'
-                )
-            if fee.task_id and fee.task.job_id != fee.job_id:
-                self.errors.append(
-                    f'Fee {fee.pk} ({fee.description!r}): task {fee.task_id} belongs to '
-                    f'job {fee.task.job_id} but Fee belongs to job {fee.job_id}'
                 )
 
     def check_estimate_source_job_consistency(self):
