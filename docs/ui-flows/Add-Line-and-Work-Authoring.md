@@ -11,9 +11,15 @@
 > lifecycle itself, incl. retire/reactivate/default preset, is covered by
 > `e2e/specs/settings/rate-scheme-presets.spec.js`; this doc's own manual
 > task-creation coverage is `e2e/specs/add-line-and-work-authoring/stamped-task-money.spec.js`,
-> §3). Reference:
-> `docs/designs/estimates-and-prices.md` §6/§8/§9,
+> §3; the estimate-side three-kind footer and Work-line crystallization
+> below (§2/§4) is covered by
+> `e2e/specs/add-line-and-work-authoring/hand-line-kinds.spec.js`).
+> Reference: `docs/designs/estimates-and-prices.md` §6.4/§8/§9,
 > `jobs-and-tasks.md` §9.
+>
+> **Rescoped 2026-08-03 (task-owned-money Phase 2)** for the three-value
+> `freeform_kind` (work | material | fee) that replaced the retired
+> `is_material` boolean on estimate/CO hand-lines — see §2 and §4 below.
 
 **Purpose:** From-the-user's-perspective walkthrough of getting work and lines
 onto a job: the unified service/inventory/freeform picker, the
@@ -69,19 +75,38 @@ Entry: `#/estimates/{id}`, draft estimate → **Add line**.
 
 - [ ] **The unified picker opens** (`PriceListPicker`): one search box across
   Service Items *and* catalog Inventory Items (no initial list — type to see
-  results; rows show label, sub-label, price/unit). Footer: an **"Is this a
-  material?"** checkbox + **Add Line** for free-typed text.
+  results; rows show label, sub-label, price/unit). Footer (task-owned-money
+  Phase 2): three explicit buttons — **Add Work**, **Add Material**, **Add
+  Fee-Credit** — instead of the retired "Is this a material?" checkbox.
 - [ ] **Service pick → deferred service line.** A qty form opens (base unit
   shown beside qty); saving adds a line snapshotting the service's price.
   **No Task is created at authoring** — it crystallizes at acceptance (§4).
   The line's description is editable afterwards without touching the price.
 - [ ] **Inventory pick → catalog material line** carrying the item's
   description/units/price.
-- [ ] **Freeform + material checked → material line.** The typed search text
-  pre-fills the description; Accounting Category pre-fills from the material
-  default (overridable).
-- [ ] **Freeform + material unchecked → fee line.** Same form; **AC is
-  required** — saving without one shows "Accounting Category is required."
+- [ ] **Add Work → a `freeform_kind='work'` line.** An optional **preset
+  dropdown** (task-applicable, non-percentage Rate Schemes; the
+  `default_rate_scheme` setting preselects it when present) picking a
+  preset **stamps** its rate/unit/Accounting-Category into the still-editable
+  fields client-side — no scheme id is ever sent, only the stamped plain
+  values. Description/qty/units/rate/AC (AC required); a negative rate is
+  rejected client-side ("Negative price is only allowed on a Fee/Credit
+  line.").
+- [ ] **Add Material → a `freeform_kind='material'` line.** The typed search
+  text pre-fills the description; Accounting Category pre-fills from the
+  material default (overridable, and optional — the backend fills it if
+  blank).
+- [ ] **Add Fee-Credit → a `freeform_kind='fee'` line.** Description/qty
+  (default 1)/signed amount/AC (**AC required**); a **negative amount** is
+  allowed here only, and shows an inline "This will appear as a credit."
+  note; a **zero amount** is rejected ("unit_rate must not be zero" on the
+  crystallized Fee) — saving without an AC shows "Accounting Category is
+  required."
+- [ ] **Kind badges** (`.kind-badge`: Work / Material / "Fee/Credit") render
+  next to the description on any line carrying `freeform_kind`; negative
+  amounts render `-$X.XX` (shared `formatMoney`), not the mangled `$-X.XX`.
+- [ ] **`freeform_kind` is immutable after creation** — editing an existing
+  bare line shows its kind read-only, no kind switcher.
 - [ ] **Lines are editable/reorderable/deletable while draft** (per-line Edit,
   arrows, delete with renumbering); all of it disappears once sent.
 
@@ -122,13 +147,25 @@ job atoms:
 - [ ] **Service line → Task** (named after the Service Item, description from
   the line, qty as the estimate).
 - [ ] **Inventory line → Material** + earmark.
-- [ ] **Bare material line → provisional Material** (no inventory link).
-- [ ] **Bare fee line → Fee** at qty × price.
+- [ ] **Bare `freeform_kind='material'` line → established Material**
+  (reverse-markup placeholder cost, QOH-0 lot, cost flagged "cost
+  unconfirmed" ⚠ until a real document arrives) — no inventory link.
+- [ ] **Bare `freeform_kind='work'` line → a flat Task** (task-owned-money
+  Phase 2, Task 3): entered qty, typed rate/unit/AC from the line, **no
+  RateScheme** — the task detail page's provenance chip shows a dash "—"
+  where a stamped task would show its scheme. Reopens a `work_complete`
+  job the same way a manually-added task does.
+- [ ] **Bare `freeform_kind='fee'`/legacy-null line → Fee** at qty × price
+  (signed — a negative price crystallizes into a credit Fee).
 - [ ] **Atom-backed lines (wizard-built) don't duplicate** — their atoms already
   exist.
 - [ ] **Adjustment lines stay document-only.**
 - [ ] **Send guard backs this up:** an estimate can't be sent while a hand-line
   lacks an AC, so acceptance never fails on it.
+- [ ] **E2E:** `e2e/specs/add-line-and-work-authoring/hand-line-kinds.spec.js`
+  walks a Work hand-line (preset prefill → flat Task, dash provenance chip)
+  and a negative Fee-Credit hand-line (credit note → negative Fee) through
+  acceptance and into the invoice wizard's source pool.
 
 *(The change-order page repeats this same authoring + crystallization pattern
 against an accepted estimate — `Change-Orders.md` §4/§6.)*
@@ -165,9 +202,9 @@ Entry: estimate detail → **Show Tasks & Materials** (`#/estimates/{id}/wizard`
 | Dimension | Cases |
 |---|---|
 | Start | Start Estimate (direct, no worksheet) · gating (persona/status/live estimate) · past-quoting hint (approved estimate-less) |
-| Picker | dual-source search · no initial list · labeled rows · typed-text carry-over · estimate footer (material checkbox) vs task-surface footer (Task/Material/Fee buttons) · live cross-window search (full-item pick) |
-| Estimate lines (deferred) | service (no Task yet) · inventory · freeform material (AC default) · freeform fee (AC required) · edit/reorder/delete draft-only |
-| Task-list atoms (immediate) | service → Task · manual task (scheme pick) · material (catalog/freeform, earmark) · fee · open to all users |
-| Crystallization | service → Task · inventory → Material+earmark · bare material → provisional Material · bare fee → Fee · atom-backed skip · adjustments document-only · AC send guard |
+| Picker | dual-source search · no initial list · labeled rows · typed-text carry-over · estimate footer (Add Work / Add Material / Add Fee-Credit, `freeform_kind`) vs task-surface footer (Task/Material/Fee buttons, still `is_material`-shaped) · live cross-window search (full-item pick) |
+| Estimate lines (deferred) | service (no Task yet) · inventory · freeform work (preset dropdown prefill, AC required, negative rejected) · freeform material (AC default) · freeform fee/credit (AC required, signed, zero rejected) · kind badges · kind immutable post-create · edit/reorder/delete draft-only |
+| Task-list atoms (immediate) | service → Task · manual task (scheme pick) · material (catalog/freeform, earmark) · fee/credit (signed) · open to all users |
+| Crystallization | service → Task · inventory → Material+earmark · bare material → established Material (reverse-markup) · bare work → flat Task (no scheme) · bare fee/credit → Fee (signed) · atom-backed skip · adjustments document-only · AC send guard |
 | Wizard | job-atom pool + claim states · released materials absent · grouping/summarize · in-sync vs overridden · last-atom removal |
 | Guards | draft-only authoring · on-hold freeze · deletion-doctrine cross-ref |

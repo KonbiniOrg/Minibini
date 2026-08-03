@@ -539,21 +539,33 @@ pure pricing decision, not a record of work:
 |---|---|---|
 | `fee_id` | AutoField PK | |
 | `job` | FK → Job (CASCADE, `related_name='fees'`) | owning job |
-| `task` | OneToOne → Task (SET_NULL, nullable) | optional link to the work behind the charge |
 | `description` | CharField(255), blank | |
 | `quantity` | Decimal(10,2), default `1.00` | |
-| `unit_rate` | Decimal(10,2) | **required** |
+| `unit_rate` | Decimal(10,2) | **required, signed, never zero** — negative is a valid credit |
 | `accounting_category` | FK → AccountingCategory (PROTECT) | **required, NOT NULL** |
 | `sort_order` | PositiveInteger, default 0 | |
+
+Fee had a `task` OneToOne (SET_NULL, nullable) through 2026-08-03; it was
+dormant (nothing in the UI ever populated it) and was dropped in the same
+migration that made `unit_rate` signed (task-owned-money Phase 2, Task 1)
+— Fee no longer references Task at all, and a Fee is otherwise unchanged
+(job-owned, `quantity × unit_rate`, its own required AC, claims via
+`fee` source rows, always-billable).
 
 `Fee.compute_amount() → (quantity × unit_rate).quantize('0.01')`;
 `effective_accounting_category` returns its own `accounting_category`;
 `units` is `'none'`. A Fee has no lifecycle and no actuals — it is
 **always billable** (unlike a Task, which must be `complete`, or a
-Material, which must be `consumed`). Writes go through `FeeService`
+Material, which must be `consumed`). A **negative `unit_rate` is a
+credit** — `unit_rate == 0` is rejected (400) by
+`FeeService._reject_zero_unit_rate` (a zero-rate Fee charges nothing;
+the model itself has no validator for this, so it's enforced in the
+service per house pattern). Writes go through `FeeService`
 (`apps/jobs/services.py`) — `create_on_job` / `update` / `delete`, all
 respecting the job's on-hold guard — and the API at
-`POST /api/jobs/{id}/fees/`.
+`POST /api/jobs/{id}/fees/`. The task-list page's create form
+(`FeeModal.svelte`) is labeled "Fee / Credit" and shows an inline "This
+will appear as a credit." note when the entered amount is negative.
 
 ---
 
@@ -775,9 +787,13 @@ taxability reads `accounting_category.taxable` directly). Declared in
   directly or via the `is_material` alias below; re-sending the same
   value is a no-op.
   The retired `is_material` boolean survives only as a **write-side
-  input alias** on `EstimateService`/`ChangeOrderService` (`Task 7`
-  removes it once the frontend forms send `freeform_kind` directly):
-  `is_material=True` → `freeform_kind='material'`, `=False` →
+  input alias** on `EstimateService`/`ChangeOrderService`. The model
+  field and the SPA are both `is_material`-free as of Task 7/8 (the
+  estimate/CO footer sends `freeform_kind` directly, never `is_material`)
+  — the alias is now purely a backend compatibility shim for any
+  legacy caller still POSTing the old boolean, kept alive intentionally
+  and marked for later removal (`EstimateService._apply_is_material_alias`'s
+  own docstring flags it). `is_material=True` → `freeform_kind='material'`, `=False` →
   `'fee'` — but a directly-supplied `freeform_kind` in the same call
   wins over an absent/`False` alias value (only an explicit
   `is_material=True` conflicting with a *different* direct kind 400s).
@@ -933,7 +949,7 @@ On the **estimate detail page** (`EstimatePanel.svelte`, hosted at `#/jobs/:jobI
 | `material` | The pre-existing form: description/qty/units/price/AC (AC prefills from `default_material_accounting_category`, overridable, and is optional — the backend fills it if blank). Payload: `freeform_kind: 'material'`. |
 | `fee` | description/qty (default 1)/signed amount/AC (required) — a negative amount shows an in-form "This will appear as a credit" note. Payload: `freeform_kind: 'fee'`. |
 
-A negative amount on the Work or Material subform is rejected client-side with a field error ("Negative price is only allowed on a Fee/Credit line.") before it ever reaches the server-side `_validate_price` check (§6.4 above). Line tables (`LineItemTable.svelte`, shared by the estimate/CO/invoice surfaces) render a `.kind-badge` (Work/Material/Fee-Credit) next to the description on any line carrying `freeform_kind`; adjustment lines keep their separate `.adj-badge` and never also get a kind badge (a bare line and an adjustment line are mutually exclusive). `LineItemTable.svelte`'s money formatting is `formatMoney()` from `lib/format.js` (the house-wide currency formatter — `toLocaleString` currency style, not raw `$` string-concatenation), so a negative fee/credit line's price and total render `-$80.00` rather than the mangled `$-80.00`. `formatMoney(n, { decimals })` is the one shared implementation — `WizardAtomRow.svelte`, `COLineItemsSection.svelte`, `lib/taskTotals.js`, and `lib/jobOverview.js` (whole-dollar `{ decimals: 0 }` mode) all delegate to it rather than each hand-rolling their own `$`-concatenation (a prior round of this fix touched three of those sites independently before a review caught the other two still mangling negatives — see git history on `feature/fees`).
+A negative amount on the Work or Material subform is rejected client-side with a field error ("Negative price is only allowed on a Fee/Credit line.") before it ever reaches the server-side `_validate_price` check (§6.4 above). Line tables (`LineItemTable.svelte`, shared by the estimate/CO/invoice surfaces) render a `.kind-badge` (Work / Material / "Fee/Credit") next to the description on any line carrying `freeform_kind`; adjustment lines keep their separate `.adj-badge` and never also get a kind badge (a bare line and an adjustment line are mutually exclusive). `LineItemTable.svelte`'s money formatting is `formatMoney()` from `lib/format.js` (the house-wide currency formatter — `toLocaleString` currency style, not raw `$` string-concatenation), so a negative fee/credit line's price and total render `-$80.00` rather than the mangled `$-80.00`. `formatMoney(n, { decimals })` is the one shared implementation — `WizardAtomRow.svelte`, `COLineItemsSection.svelte`, `lib/taskTotals.js`, and `lib/jobOverview.js` (whole-dollar `{ decimals: 0 }` mode) all delegate to it rather than each hand-rolling their own `$`-concatenation (a prior round of this fix touched three of those sites independently before a review caught the other two still mangling negatives — see git history on `feature/fees`).
 
 On the **job task-list page** (`JobTaskListPage.svelte`), the same picker opens `WorkItemForm` (service pick → Task via `/add-from-template/`), `MaterialModal` (inventory pick — `presetPli`, `presetDescription`, `defaultMaterialCategoryId`), or `FeeModal` (freeform non-material — `presetDescription`). See `docs/designs/jobs-and-tasks.md` §9.5.
 
@@ -1113,6 +1129,12 @@ Task, `inventory_item` → Material, bare `freeform_kind='material'` →
 established Material (reverse-markup cost), bare `freeform_kind='work'` →
 flat Task, bare `freeform_kind='fee'`/`NULL` → Fee.
 
+A **work** hand-line mints a **flat Task** (task-owned-money Phase 2,
+Task 3) — entered-qty, no `RateScheme`, claimed via a `source_type='task'`
+row exactly like a service-generated Task (see §9.1's full field list and
+§14.11 for why the CO-retire discriminator can't tell a flat task apart
+from any other by looking at the atom alone).
+
 ### 9.1 What `on_accept` does
 
 In one `transaction.atomic()` block:
@@ -1136,10 +1158,11 @@ In one `transaction.atomic()` block:
      `_populate_from_pli`), the `inventory_item`, and `accounting_category`.
      Record an `EstimateLineItemSource` with `source_type='material'`.
 
-   - **Bare material line** (`is_material=True`) →
+   - **Bare material line** (`freeform_kind='material'`) →
      create a `Material` via `MaterialService.create_on_job`
      (`inventory_item=None`, `sell_price = li.price`), then **establish it**
-     via `MaterialService.establish` with a **reverse-markup provisional cost**:
+     via `MaterialService.establish_reverse_markup` with a **reverse-markup
+     provisional cost**:
      `unit_cost = sell ÷ (1 + default_material_markup_percent/100)`, minting a
      QOH-0 `LOT-{pk}` lot and stamping `cost_source='estimated'`. The accepted
      **sell price is locked**; the cost is a placeholder flagged "cost
@@ -1155,7 +1178,27 @@ In one `transaction.atomic()` block:
      > cost. CO acceptance establishes identically (shared
      > `MaterialService.establish_reverse_markup`; parity 2026-07-05).
 
-   - **Fee (default)** → create a `Fee`: `description`, `quantity = li.qty or
+   - **Bare work line** (`freeform_kind='work'`) → create a **flat `Task`**
+     (task-owned-money Phase 2, Task 3), not a service-generated one:
+     `Task(job=job, name=(li.description or 'Work')[:100],
+     description=li.description or '', qty_source=Task.QTY_ENTERED,
+     est_qty=li.qty, rate=li.price, unit_label=li.units,
+     accounting_category=li.accounting_category, source_scheme=None)` — no
+     `RateScheme` behind it; the estimate line's own typed qty/rate/units/AC
+     become the task's permanent stamp, exactly as a manually-added
+     `WorkItemForm` (manual mode) task would carry them. A defensive guard
+     raises `ValidationError` on a negative `price` here (entry-time
+     validation, Task 4, should already have caught it).
+     `JobService.mark_work_reopened(job)` runs alongside — the same call a
+     manually-added task triggers — so a `work_complete` job correctly
+     reopens. Record an `EstimateLineItemSource` with `source_type='task'`
+     (a flat work Task claims exactly like a service-generated one; nothing
+     on the `Task` row itself flags it as flat — see §14.11's CO-retire
+     discriminator for why that distinction has to live on the *claiming
+     line*, not the atom).
+
+   - **Fee (default)** — bare `freeform_kind='fee'`, or `NULL` on
+     pre-migration rows — → create a `Fee`: `description`, `quantity = li.qty or
      1`, `unit_rate = li.price or 0`, `accounting_category`, `sort_order =
      li.line_number or 0`. A defensive guard raises `ValidationError` if the
      line has no `accounting_category` (the fee atom requires it NOT NULL;
@@ -1166,14 +1209,18 @@ In one `transaction.atomic()` block:
    (invoice side) can trace which hand-line maps to which atom and claim it.
 
 2. Atom-backed lines (those that already have an `EstimateLineItemSource`
-   for a Task / Material) are skipped — their atoms are already on the
+   for a Task / Material / Fee) are skipped — their atoms are already on the
    job. Adjustment lines stay document-only (they recompute against the
-   live lines and never become Fees).
+   live lines and never become atoms).
 3. Call `InventoryService.create_earmarks_for_job(job)`, so accepting an
    estimate earmarks the job's inventoried materials (including any just
    crystallized from catalog hand-lines or bare material lines).
 
-`on_accept` returns `{'fees_created': int, 'materials_created': int, 'tasks_created': int}`.
+`on_accept` returns `{'fees_created': int, 'materials_created': int,
+'tasks_created': int, 'work_tasks_created': int}` — `tasks_created`
+counts service-line Tasks, `work_tasks_created` counts flat work-line
+Tasks, tallied separately since they crystallize through different
+branches of the discriminator above.
 
 ### 9.2 Idempotency
 
@@ -1228,8 +1275,9 @@ carries AC directly (Materials with no PLI; Expenses).
 | `Fee` | own field, required (NOT NULL) |
 | `EstimateLineItem` from atom | derived from the atom's effective AC at line-item creation; snapshot |
 | `EstimateLineItem` service-line | snapshotted from `service_item.effective_accounting_category` at `add_line_item_from_service` |
-| `EstimateLineItem` `is_material` hand-line | `Configuration['default_material_accounting_category']` if no explicit AC supplied (see §6.4); required if the key is absent |
-| `EstimateLineItem` bare hand-line (Fee path) | user-entered; required before send; carried onto the crystallized `Fee` at acceptance |
+| `EstimateLineItem` bare `freeform_kind='material'` hand-line | `Configuration['default_material_accounting_category']` if no explicit AC supplied (see §6.4); required if the key is absent |
+| `EstimateLineItem` bare `freeform_kind='work'` hand-line | user-entered; required at entry (no config default); carried onto the crystallized flat Task's own `accounting_category` at acceptance |
+| `EstimateLineItem` bare `freeform_kind='fee'`/`NULL` hand-line | user-entered; required before send; carried onto the crystallized `Fee` at acceptance |
 
 `ServiceItem.effective_accounting_category` exposes AC for serializers
 and the wizard's pool building. Wizard single-atom line-item creation
@@ -1559,10 +1607,13 @@ terminal.
 | `target_line_item` | FK → EstimateLineItem (PROTECT). Required for `remove` / `replace`; must be null for `add`. Enforced in `clean()`. |
 | `inventory_item` | Optional catalog pointer, parallel to `EstimateLineItem` provenance. At acceptance the line crystallizes into a `Material` on this item. |
 | `service_item` | Nullable FK → `ServiceItem` (PROTECT). Deferred service descriptor, identical to `EstimateLineItem.service_item` (§6.1): the line snapshots the service's price at authoring and crystallizes to a `Task` at CO acceptance. |
-| `is_material` | Marks a bare (no descriptor) line as a material: crystallizes into an **established Material** (reverse-markup placeholder cost, `cost_source='estimated'`) instead of a Fee, same as `EstimateLineItem.is_material`. Authoring applies the `default_material_accounting_category` config default and rejects the marker on lines that already carry an `inventory_item`/`service_item`. |
+| `freeform_kind` | Nullable CharField, choices `work` \| `material` \| `fee` — mirrors `EstimateLineItem.freeform_kind` (§6.1). Set **iff** the line is bare (no `inventory_item`/`service_item`); required on an `action='add'` line at entry (not on `replace`/`remove`, which mirror the target atom or retire it). At CO acceptance: `material` → established Material (reverse-markup placeholder cost, `cost_source='estimated'`, `default_material_accounting_category` config default applied at authoring); `work` → a flat Task; `fee`/`NULL` → a Fee. Immutable after creation, same rule as the estimate side. |
 
-`clean()` also rejects `service_item` / `is_material` on a `remove` line
-(its own fields are display-only; it never crystallizes anything).
+`clean()` also rejects `service_item` or `freeform_kind='material'` on a
+`remove` line (its own fields are display-only; it never crystallizes
+anything — `freeform_kind='work'`/`'fee'` aren't separately blocked
+there, but a remove line's descriptor fields are never read regardless,
+so this is inert either way).
 
 The `action` field is the heart of CO semantics:
 
@@ -1587,9 +1638,10 @@ was first sold.
 any bare `add` line (no `service_item`, no `inventory_item`) lacks an
 `accounting_category` — the CO parallel of
 `assert_all_hand_lines_have_ac` (§5.1/§15). Such a line crystallizes
-into a Fee or Material at acceptance, and the category must
-be pinned *before* the customer can say yes, so acceptance can never
-fail on it. The check is `ChangeOrderService.assert_all_bare_add_lines_have_ac`
+into a Task, Material, or Fee at acceptance (per `freeform_kind`), and
+the category must be pinned *before* the customer can say yes, so
+acceptance can never fail on it. The check is
+`ChangeOrderService.assert_all_bare_add_lines_have_ac`
 (2026-07-20), shared by the model's `clean()` — so the guard holds on every
 send path (mark-open action, status PATCH, `send_change_order`) — and by
 `ChangeOrderEmailService._validate_send` as a pre-email copy, so a refusal
@@ -1912,30 +1964,53 @@ Lines are processed **adds → replaces → removes** (each group in
 transiently empties the live work set and trips the auto-advance to
 `work_complete`.
 
-- **add** — crystallize via the same four-way discriminator as estimate
-  acceptance (§9.1): `service_item` → Task
+- **add** — crystallize via the same discriminator as estimate acceptance
+  (§9.1): `service_item` → Task
   (`generate_task(allow_inactive_scheme=True)`; name from the
   ServiceItem, description from the line), `inventory_item` → Material
-  (line price = sell price), `is_material` bare → established Material
-  via `MaterialService.establish_reverse_markup` (parity with §9.1 —
-  cost backed out of the locked sell, `cost_source='estimated'`; a bare
-  replace whose mirrored atom was provisional is likewise established),
-  else → Fee (defensive ValidationError if no AC — normally unreachable
-  past the send guard). Write a `ChangeOrderLineItemSource` row.
+  (line price = sell price), `freeform_kind='material'` bare →
+  established Material via `MaterialService.establish_reverse_markup`
+  (parity with §9.1 — cost backed out of the locked sell,
+  `cost_source='estimated'`; a bare replace whose mirrored atom was
+  provisional is likewise established), `freeform_kind='work'` bare →
+  a **flat Task** (`work_tasks_created`; same shape as §9.1's — entered
+  qty, `source_scheme=None`, defensive negative-price guard, and
+  `JobService.mark_work_reopened(job)`), else → Fee (defensive
+  ValidationError if no AC — normally unreachable past the send guard).
+  Write a `ChangeOrderLineItemSource` row.
 - **remove** — resolve the target estimate line to its **current** atom
-  and retire it:
-  - *Task*: `TaskLifecycleService.cancel_task` — **bleps are
-    preserved**; already complete/cancelled tasks are left alone.
+  and retire it. The discriminator for a Task target is the **claiming
+  line's own `freeform_kind`** (`_current_atoms`' `claiming_kind` — the
+  `EstimateLineItem`/`ChangeOrderLineItem` whose source row currently
+  resolves to this atom), not any field on the Task itself: neither
+  `service_item_id` nor `source_scheme` reliably marks a flat work task
+  apart from an ad-hoc or bare-CO-mirrored one (see below), so retire
+  can't discriminate on the atom.
+  - *Task, claiming line's `freeform_kind='work'`* (a flat work task,
+    crystallized straight from a bare work hand-line): **deleted**, not
+    cancelled — re-applying `TaskService.delete_task`'s guards (no
+    bleps, not in-progress/complete, no consumed materials) as
+    `ValidationError`s that tell the caller to cancel instead; a live
+    invoice claim is left alone (skip, like the Fee branch). This
+    mirrors retiring a Fee (delete) rather than a normal Task (cancel)
+    — a flat work task never carried a catalog/scheduling promise.
+    Counted in `work_tasks_removed`.
+  - *Task, any other claiming kind* (service-generated, ad-hoc, or a
+    bare-CO-replace's mirrored task — see the replace note below):
+    `TaskLifecycleService.cancel_task` — **bleps are preserved**;
+    already complete/cancelled tasks are left alone. Counted in
+    `tasks_cancelled`.
   - *Material*: **released** (`MaterialService.release` — earmark backed
     out, quantity moved to `released_qty`, state → `released`, claims
     kept as job history), but **only if** pending, not expense-bound,
     not PO-linked, and not on a live invoice — physical or billed
     reality is never unwound by a document; those are left for the
-    human to reconcile.
+    human to reconcile. Counted in `materials_removed`.
   - *Fee*: deleted unless on a live invoice (its estimate-line claim is
     purged; the CO line remains the record of the removal — a Fee
     `retired` state is deferred to a future fixed-price pass; Fee no
-    longer has a `task` link at all as of 2026-08-03).
+    longer has a `task` link at all as of 2026-08-03). Counted in
+    `fees_removed`.
   - A document-only target (adjustment line, or an atom already
     retired) is a no-op — the delta stays document-only, matching
     `compose_agreement`.
@@ -1963,14 +2038,28 @@ transiently empties the live work set and trips the auto-advance to
   no lens dangles; release never purges.
 - **replace** — crystallize the replacement **first**, then retire the
   old atom (as above). A CO line carrying its own descriptor
-  (service/inventory/is_material) crystallizes per that descriptor; a
-  **bare** replace line mirrors the retired atom's type — a Task target
-  yields a new pending Task with the same name / rate scheme /
+  (service/inventory/`freeform_kind`) crystallizes per that descriptor
+  — including `freeform_kind='work'`, which mints a fresh flat Task
+  exactly like an `add` line does; a **bare** replace line (no
+  descriptor at all) instead mirrors the retired atom's type — a Task
+  target yields a new pending Task with the same name / rate scheme /
   modifiers / sort order / assignee (`TaskBase.copy_fields`) at the CO
   line's qty and description; a Material target a new Material on the
   same inventory item (AC/units inherited when the line omits them); a
   Fee target a new Fee (AC inherited from the old fee if absent on the
   line).
+
+  **A bare replace mirroring a flat work Task "promotes" it.** The new
+  Task is claimed by the *bare* replace line, whose own `freeform_kind`
+  is `NULL` — so a later remove/replace targeting *this* replacement
+  atom sees `claiming_kind=None` and cancels it (§ above), even though
+  its shape (entered qty, `source_scheme=None`) still looks exactly
+  like a flat work task. `TaskBase.copy_fields()` deliberately excludes
+  `source_scheme` as pure provenance, so this isn't visible on the atom
+  either way — only the claiming line's `freeform_kind`, which the bare
+  replace never carries, decides it. This is intentional: a bare
+  replace is a generic "keep what's there, change the numbers" edit,
+  not a re-authored work hand-line.
 
 **Current-atom resolution (multi-CO chain).** The target of a
 remove/replace is always an `EstimateLineItem`, but after an earlier
@@ -1986,6 +2075,13 @@ crystallization does not share it.)
 After the walk, `InventoryService.create_earmarks_for_job(job)` re-runs
 the absolute earmark sweep — same as estimate acceptance — so
 crystallized and retired materials net out to correct reservations.
+
+`on_accept` returns `{'tasks_created', 'materials_created', 'fees_created',
+'work_tasks_created', 'tasks_cancelled', 'materials_removed',
+'fees_removed', 'work_tasks_removed'}` — the created/cancelled/removed
+split for work tasks is separate from the ordinary Task counters for the
+same reason as §9's `work_tasks_created`: they crystallize/retire
+through different branches.
 
 **Idempotency** mirrors §9.2: crystallized lines carry a source row and
 are skipped on re-run; retirement re-checks atom state (a cancelled

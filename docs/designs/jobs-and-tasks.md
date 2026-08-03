@@ -749,11 +749,12 @@ respecting the on-hold guard — and the API at
 `/api/jobs/{id}/fees/{fee_pk}/`).
 
 A Fee is created two ways: directly by the user (the task-list page's "Add
-Fee", §9.5), or by **estimate acceptance**, which crystallizes each
-hand-authored estimate line (a line with no atom source) into a Fee on
-the job and links it back via a `fee` source row (see
-`estimates-and-prices.md` §9). The `Fee` replaces the old `flat_fee`
-RateScheme algorithm.
+Fee / Credit", §9.5), or by **estimate acceptance**, which crystallizes
+each hand-authored estimate line (a line with no atom source) into a
+Task, Material, or Fee per its `freeform_kind` and links it back via a
+matching source row — a bare `freeform_kind='fee'`/`NULL` line is what
+becomes a Fee specifically (see `estimates-and-prices.md` §9). The `Fee`
+replaces the old `flat_fee` RateScheme algorithm.
 
 ## 5. Blep (time tracking)
 
@@ -997,9 +998,9 @@ and `can_manage_time` rules.
 >   line-item recompute on sync, claim state — live in
 >   `docs/designs/estimates-and-prices.md` §§6–8.
 > - **Carry-over on accept** → `EstimateAcceptanceService.on_accept`
->   crystallizes hand-lines into `Fee` atoms and earmarks the job; the
->   work was already on the Job, so nothing is copied
->   (`estimates-and-prices.md` §9).
+>   crystallizes hand-lines into `Task`/`Material`/`Fee` atoms (by
+>   `freeform_kind`) and earmarks the job; the work was already on the
+>   Job, so nothing is copied (`estimates-and-prices.md` §9).
 
 ## 7. Templates
 
@@ -2177,7 +2178,7 @@ with the worksheet layer):
 | Signal | Sender | Receiver | Effect |
 |---|---|---|---|
 | `estimate_status_changed_for_job` | `Estimate.save()` | `update_job_status` | Walks the Job through the right status (draft → submitted → approved on send/accept; **open → rejected** drives the Job to `rejected`); creates a `HistoryEntry` action row attributed to the `system` user; refuses to downgrade or to touch completed/cancelled jobs |
-| `estimate_accepted` | `Estimate.save()` (when transitioning to accepted) | acceptance receiver | Calls `EstimateAcceptanceService.on_accept(estimate)` — crystallizes each hand-line into a `Fee` on the Job and earmarks the job's inventoried materials (`estimates-and-prices.md` §9) |
+| `estimate_accepted` | `Estimate.save()` (when transitioning to accepted) | acceptance receiver | Calls `EstimateAcceptanceService.on_accept(estimate)` — crystallizes each hand-line into a `Task`/`Material`/`Fee` on the Job (by `freeform_kind`) and earmarks the job's inventoried materials (`estimates-and-prices.md` §9) |
 
 `Estimate.save()` (`apps/estimates/models.py`) is what fires these.
 The receivers do not currently mark estimates superseded automatically —

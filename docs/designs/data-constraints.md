@@ -150,8 +150,8 @@ threshold. **Invariant: a sub-minimum close is never persisted — it is
 cancelled.** See `jobs-and-tasks.md` §4.5/§5.5.
 
 Materials: `default_material_accounting_category` (unset) — string-encoded
-`AccountingCategory` PK applied to `is_material=True` hand-lines (Estimate and
-ChangeOrder) with no explicit AC, and used to pre-fill `MaterialModal`'s
+`AccountingCategory` PK applied to `freeform_kind='material'` hand-lines
+(Estimate and ChangeOrder) with no explicit AC, and used to pre-fill `MaterialModal`'s
 category field (`jobs-and-tasks.md` §9.5). Editable in **Settings →
 Accounting Categories → Materials** (blank clears it). The settings API
 (`PATCH /api/settings/`) rejects a value that isn't blank or an existing
@@ -648,14 +648,19 @@ for the removed `flat_fee` RateScheme algorithm. No lifecycle, no actuals;
 always billable.
 
 - **job** (required FK → Job, CASCADE)
-- **task** (optional OneToOne → Task, SET_NULL): the work behind the charge
 - **description**: CharField(255), blank default `''`
 - **quantity**: decimal(10,2), default `1.00`
-- **unit_rate**: decimal(10,2) — **required**
+- **unit_rate**: decimal(10,2) — **required, signed, never zero** — negative
+  is a valid credit; `unit_rate == 0` is rejected (400) by
+  `FeeService._reject_zero_unit_rate` (not a model-level validator)
 - **accounting_category** (required FK → AccountingCategory, PROTECT) —
   **NOT NULL**; a missing value surfaces as a `ValidationError` (→ 400) via
   `full_clean`, never a 500
 - **sort_order**: PositiveInteger, default 0
+
+Fee had a `task` OneToOne (SET_NULL, nullable) through 2026-08-03; it was
+dormant and was dropped in the same migration that made `unit_rate` signed
+(task-owned-money Phase 2, Task 1) — Fee no longer references Task.
 
 `compute_amount() = (quantity × unit_rate).quantize('0.01')`. Writes go
 through `FeeService.create_on_job` / `update` / `delete` (on-hold guarded).
@@ -947,6 +952,22 @@ Enforced in `Estimate.clean()`.
 - **adjustment_target_categories** (M2M → AccountingCategory, blank):
   the categories the adjustment applies to. Empty = all non-adjustment lines.
   Must only be set when `adjustment_service` is set.
+- **freeform_kind** (nullable CharField, choices `work` | `material` |
+  `fee`; task-owned-money Phase 2 Task 2, replaced the retired
+  `is_material` boolean): set **iff** the line is bare (no
+  `inventory_item`, `service_item`, or `adjustment_service`) —
+  `EstimateService._reject_freeform_kind_on_non_bare_line` rejects a
+  direct write on any other line shape. Required at entry on a bare
+  `add_line_item` call (only pre-migration rows may carry `NULL`);
+  immutable after creation. Discriminates crystallization at acceptance:
+  `material` → established Material, `work` → a flat Task, `fee`/`NULL`
+  → a Fee (`estimates-and-prices.md` §9.1). `is_material` survives only
+  as a write-side input alias on the service layer (never a model field,
+  never sent by the SPA), kept for legacy callers and marked for later
+  removal. **Invariant, both directions:** non-null IFF the line is bare
+  and unsourced — checked at entry (services) and by
+  `validate_data.check_freeform_kind_consistency` (a bare line with a
+  null kind, or a non-bare/sourced line with a non-null kind, both flag).
 - **line_number**: auto-generated sequentially per estimate if null
 - **units** (required, max 50 chars, default `'none'`): **non-blank** —
   `CharField` without `blank=True`, and `BaseLineItem.save()` always runs
@@ -1025,7 +1046,7 @@ Valid transitions (`ChangeOrder.VALID_TRANSITIONS`):
 - **One live CO per job**: at most one ChangeOrder per Job in `draft` or `open`.
 - **Create requires the hold flag**: `ChangeOrderService.create` raises `ValidationError` unless `job.on_hold` is set and the job has an `accepted` Estimate.
 - **Line item requirement**: cannot transition out of `draft` without at least one ChangeOrderLineItem. Enforced in `ChangeOrder.clean()`.
-- **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`) lacks an `accounting_category` — it crystallizes into a Fee / provisional Material at acceptance and the category must be pinned before the customer can accept. Enforced in `ChangeOrder.clean()`.
+- **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`) lacks an `accounting_category` — it crystallizes into a Task / established Material / Fee at acceptance (per `freeform_kind`) and the category must be pinned before the customer can accept. Enforced in `ChangeOrder.clean()`.
 - **Release guard**: a held Job cannot be released (`JobService.release_job`) or cancelled while any of its COs is `draft` or `open`.
 - **Acceptance clears the hold**: on transition to `accepted`, the handler drops the job's `on_hold` flag — the job resumes its true underlying status directly (held from `in_progress` goes straight back to `in_progress`).
 - **Acceptance crystallizes atoms**: on transition to `accepted`, `ChangeOrderAcceptanceService.on_accept` applies the line deltas to the Job's atoms (add → Task/Material/Fee; remove/replace → retire the target's current atom) in the same transaction, after the hold is cleared (atom writes are blocked while held). See `estimates-and-prices.md` §14.11.
@@ -1039,8 +1060,18 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - **target_line_item** (optional FK → EstimateLineItem, PROTECT): required for `remove` / `replace`; must be null for `add` (enforced by `clean()`)
 - **inventory_item** (optional FK → InventoryItem, SET_NULL)
 - **service_item** (optional FK → ServiceItem, PROTECT): deferred service descriptor; crystallizes to a Task at CO acceptance (mirrors `EstimateLineItem.service_item`)
-- **is_material** (bool, default False): marks a bare line as crystallizing into an established Material (reverse-markup placeholder cost) instead of a Fee (mirrors `EstimateLineItem.is_material`); authoring rejects it alongside an `inventory_item`/`service_item` and applies the `default_material_accounting_category` config default
-- `clean()` also rejects `service_item` / `is_material` on `remove` lines (display-only; never crystallize)
+- **freeform_kind** (nullable CharField, choices `work` | `material` |
+  `fee`; mirrors `EstimateLineItem.freeform_kind`): set **iff** the line
+  is bare (no `inventory_item`/`service_item`); required on an
+  `action='add'` line at entry (not on `replace`/`remove`, which mirror
+  the target atom or retire it — no kind requirement of their own).
+  Discriminates CO acceptance: `material` → established Material
+  (reverse-markup placeholder cost, `default_material_accounting_category`
+  config default applied at authoring), `work` → a flat Task, `fee`/`NULL`
+  → a Fee. Immutable after creation, same rule as the estimate side.
+  `is_material` survives only as a write-side input alias, same
+  legacy-compatibility status as on `EstimateService`.
+- `clean()` rejects `service_item` or `freeform_kind='material'` on `remove` lines (display-only; never crystallize) — `freeform_kind='work'`/`'fee'` aren't separately blocked there, but a remove line's descriptor fields are never read regardless
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
 
 #### ChangeOrderLineItemSource
@@ -1749,7 +1780,7 @@ Implemented in `Estimate._maybe_update_job_status()` which fires
 
 ---
 
-### 2.3 Estimate accepted → hand-lines crystallized into Fees
+### 2.3 Estimate accepted → hand-lines crystallized into atoms
 
 **Trigger:** Estimate status changes to `accepted`; the `estimate_accepted`
 signal calls `EstimateAcceptanceService.on_accept(estimate)`.
@@ -1757,18 +1788,28 @@ signal calls `EstimateAcceptanceService.on_accept(estimate)`.
 **Effects** (the work already lives on the Job — Tasks/Materials were
 created directly — so nothing is "carried over"):
 - For each `EstimateLineItem` with **no source row** (a hand-line) that is
-  not a percentage adjustment → create a `Fee` on the Job (`description`,
-  `quantity = qty or 1`, `unit_rate = price or 0`, `accounting_category`,
-  `sort_order = line_number`) and record an `EstimateLineItemSource`
-  (`source_type='fee'`) back to it.
-- Atom-backed lines (Task/Material sources) are skipped.
+  not a percentage adjustment, crystallize it by `freeform_kind`:
+  - `material` → an **established Material** (reverse-markup placeholder
+    cost, `cost_source='estimated'`), source row `source_type='material'`.
+  - `work` → a **flat Task** (`qty_source=Task.QTY_ENTERED`, `est_qty =
+    qty`, `rate = price`, `unit_label = units`, `accounting_category`,
+    `source_scheme=None` — no `RateScheme`), source row
+    `source_type='task'`.
+  - `fee` (or `NULL`, for pre-migration rows) → a **Fee**
+    (`description`, `quantity = qty or 1`, `unit_rate = price or 0`,
+    `accounting_category`, `sort_order = line_number`), source row
+    `source_type='fee'`.
+  - (Lines with `inventory_item`/`service_item` crystallize into
+    Material/Task the same way, ahead of this bare-line branch — see
+    `estimates-and-prices.md` §9.1 for the full discriminator order.)
+- Atom-backed lines (Task/Material/Fee sources) are skipped.
 - `InventoryService.create_earmarks_for_job(job)` earmarks the job's
   inventoried materials.
 
 **Data constraint:** Every hand-authored line on an `accepted` Estimate
-should have a corresponding `Fee` on its Job, claimed by a `fee` source
-row. Because the crystallized line becomes source-backed, re-firing the
-signal does not duplicate Fees.
+should have a corresponding Task/Material/Fee on its Job, claimed by a
+source row of the matching type. Because the crystallized line becomes
+source-backed, re-firing the signal does not duplicate atoms.
 
 See `docs/designs/estimates-and-prices.md` §9 and
 `apps/estimates/acceptance.py`.
