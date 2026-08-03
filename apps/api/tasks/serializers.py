@@ -1,7 +1,8 @@
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from apps.api.mixins import JobScopedCanManageMixin, InvoiceRefMixin
-from apps.jobs.models import Task
+from apps.jobs.models import RateScheme, Task
 from apps.inventory.models import Material
 from apps.core.models import AccountingCategory
 from apps.core.units import UnitsField
@@ -112,16 +113,52 @@ class MaterialWriteSerializer(serializers.ModelSerializer):
 
 
 class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.ModelSerializer):
-    """Serializer for tasks nested under /api/jobs/{id}/tasks/."""
+    """Serializer for tasks nested under /api/jobs/{id}/tasks/.
+
+    Task-owned money (Phase 1): the task owns its own money block
+    (``qty_source``/``rate``/``unit_label``/``accounting_category``/
+    ``active_modifiers``) — ``rate_scheme`` is a write-only CREATE-time
+    trigger (a RateScheme preset id) that stamps those fields onto the
+    task via ``Task.stamp_from_scheme``; it is never itself persisted.
+    ``source_scheme`` is the resulting provenance pointer — read-only,
+    never client-settable directly.
+
+    Writing any of ``MONEY_FIELDS`` requires ``CanManageJobOrPM`` (the
+    can_manage_jobs atom or the task's job's project_manager) or the
+    can_manage_financials atom; everyone else gets stamp-only creation
+    (``rate_scheme`` alone) and non-money edits — see ``validate()``.
+    """
     can_manage_job_path = 'job'
     invoice_source_type = 'task'
+
+    # Money fields requiring CanManageJobOrPM / can_manage_financials to
+    # WRITE (read is open to everyone, same as the rest of the task).
+    MONEY_FIELDS = {'rate', 'unit_label', 'qty_source', 'accounting_category', 'active_modifiers'}
+
     assignee_name = serializers.SerializerMethodField()
     parent_task_name = serializers.CharField(
         source='parent_task.name', read_only=True, default=None)
     actual_hours = serializers.SerializerMethodField()
-    scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
-    scheme_algorithm = serializers.CharField(source='rate_scheme.algorithm', read_only=True, default=None)
-    scheme_unit_label = serializers.CharField(source='rate_scheme.unit_label', read_only=True, default=None)
+    # Write-only CREATE trigger — a RateScheme preset id. Stamps qty_source/
+    # rate/unit_label/accounting_category/active_modifiers/source_scheme
+    # onto the task server-side (apps.api.mixins.JobTaskMixin.tasks /
+    # apps.api.tasks.views.TaskViewSet.subtasks); never itself a model field.
+    rate_scheme = serializers.PrimaryKeyRelatedField(
+        queryset=RateScheme.objects.all(), write_only=True,
+        required=False, allow_null=True,
+    )
+    # Nullable on the model (Phase 3 relaxes further); the API tightens to
+    # required so every task gets a real AC — satisfied for stamp-only
+    # creation by the view pre-filling it from the chosen preset (the same
+    # value stamp_from_scheme would set) before validation runs.
+    accounting_category = serializers.PrimaryKeyRelatedField(
+        queryset=AccountingCategory.objects.all(), required=True,
+    )
+    # Provenance only — read-only. Set exclusively via stamp_from_scheme
+    # (triggered by `rate_scheme` on create), never directly through the API.
+    source_scheme = serializers.PrimaryKeyRelatedField(read_only=True)
+    source_scheme_name = serializers.CharField(
+        source='source_scheme.name', read_only=True, default=None)
     effective_rate = serializers.SerializerMethodField()
     computed_charge = serializers.SerializerMethodField()
     has_active_blep = serializers.SerializerMethodField()
@@ -138,9 +175,11 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             'blocked_reason',
             'parent_task', 'parent_task_name', 'assignee', 'assignee_name',
             'worker_queue',
-            'rate_scheme', 'active_modifiers',
+            'rate_scheme',
+            'qty_source', 'rate', 'unit_label', 'accounting_category',
+            'active_modifiers',
+            'source_scheme', 'source_scheme_name',
             'est_qty', 'est_worker_time', 'actual_qty',
-            'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
             'effective_rate', 'computed_charge',
             'actual_hours',
             'has_active_blep', 'active_worker_count', 'has_bleps',
@@ -151,12 +190,67 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         read_only_fields = ['task_id', 'sort_order', 'status']
 
     def validate_rate_scheme(self, value):
-        from apps.jobs.models import RateScheme
         if value and value.algorithm == RateScheme.PERCENTAGE:
             raise serializers.ValidationError(
                 'Percentage services are document adjustments and cannot bill a task.'
             )
         return value
+
+    def _resolve_job(self):
+        """The task's job — from the instance on update, or the view-supplied
+        `job` context key on create (there's no instance yet)."""
+        if self.instance is not None:
+            return self.instance.job
+        return self.context.get('job')
+
+    def _can_write_money(self):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None) if request else None
+        if not user or not user.is_authenticated:
+            return False
+        if user.has_perm('core.can_manage_financials'):
+            return True
+        from apps.jobs.services import JobService
+        return JobService.user_can_manage(user, self._resolve_job())
+
+    def validate(self, attrs):
+        # Gate on the RAW keys the client actually sent — not
+        # `validated_data`, which the view may have pre-filled (see
+        # `prefill_accounting_category`) with a value the client never
+        # supplied. `raw_input_keys` (view-supplied context) reflects the
+        # original request body; fall back to initial_data for callers that
+        # don't provide it.
+        raw_keys = self.context.get('raw_input_keys')
+        if raw_keys is None:
+            raw_keys = set(getattr(self, 'initial_data', {}) or {})
+        money_keys = self.MONEY_FIELDS & set(raw_keys)
+        if money_keys and not self._can_write_money():
+            raise PermissionDenied(
+                'Only a manager, the project manager, or financials may set '
+                + ', '.join(sorted(money_keys)) + '.'
+            )
+        return attrs
+
+    @staticmethod
+    def prefill_accounting_category(data):
+        """CREATE convenience: a stamp-only `rate_scheme` POST doesn't (and
+        for a worker, may not) include `accounting_category` directly, but
+        the field is `required=True` on this serializer. Since stamping
+        (`Task.stamp_from_scheme`) is about to copy the preset's own
+        accounting_category onto the task anyway, pre-fill it here so
+        required-field validation sees the value it's about to get. A
+        missing/invalid `rate_scheme` id is left alone — `rate_scheme`'s own
+        field validation (or `accounting_category` staying absent) renders
+        the real error downstream. Returns a new mapping; never mutates
+        `data` in place."""
+        if 'accounting_category' in data or not data.get('rate_scheme'):
+            return data
+        scheme = RateScheme.objects.filter(pk=data.get('rate_scheme')).first()
+        if scheme is None or scheme.accounting_category_id is None:
+            return data
+        filled = dict(data)
+        filled['accounting_category'] = scheme.accounting_category_id
+        return filled
 
     def get_assignee_name(self, obj):
         if obj.assignee:

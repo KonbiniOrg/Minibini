@@ -28,6 +28,18 @@ def _make_scheme(name_suffix=''):
     )
 
 
+def _stamp_task(job, scheme, name, **extra):
+    """Create+stamp a Task from a RateScheme preset (task-owned-money
+    Phase 1) — Task.objects.create(rate_scheme=...) no longer works since
+    Task has no such field; stamp_from_scheme copies the preset's money
+    fields on before first save."""
+    modifier_keys = extra.pop('modifier_keys', None)
+    task = Task(job=job, name=name, **extra)
+    task.stamp_from_scheme(scheme, modifier_keys=modifier_keys)
+    task.save()
+    return task
+
+
 class MaterialCRUDTest(TestCase):
     """Tests for Material CRUD nested under /api/tasks/{id}/materials/."""
 
@@ -43,11 +55,7 @@ class MaterialCRUDTest(TestCase):
             job_number='MAT-001', name='Material Job', contact=self.contact,
         )
         self.scheme = _make_scheme('mat')
-        self.task = Task.objects.create(
-            job=self.job,
-            name='Install countertop',
-            rate_scheme=self.scheme,
-        )
+        self.task = _stamp_task(self.job, self.scheme, 'Install countertop')
         self.category = AccountingCategory.objects.create(
             name='General', code='GEN',
         )
@@ -206,9 +214,7 @@ class MaterialCRUDTest(TestCase):
 
     def test_material_wrong_task(self):
         """Material on a different task should not be accessible."""
-        task2 = Task.objects.create(
-            job=self.job, name='Other task', rate_scheme=self.scheme,
-        )
+        task2 = _stamp_task(self.job, self.scheme, 'Other task')
         response = self.client.patch(
             f'/api/tasks/{task2.pk}/materials/{self.material.pk}/',
             {'description': 'wrong task'},
@@ -232,11 +238,7 @@ class SubtaskCRUDTest(TestCase):
             job_number='SUB-001', name='Subtask Job', contact=self.contact,
         )
         self.scheme = _make_scheme('sub')
-        self.parent_task = Task.objects.create(
-            job=self.job,
-            name='Parent task',
-            rate_scheme=self.scheme,
-        )
+        self.parent_task = _stamp_task(self.job, self.scheme, 'Parent task')
 
     def test_list_subtasks_empty(self):
         response = self.client.get(f'/api/tasks/{self.parent_task.pk}/subtasks/')
@@ -244,12 +246,7 @@ class SubtaskCRUDTest(TestCase):
         self.assertEqual(len(response.data), 0)
 
     def test_list_subtasks(self):
-        Task.objects.create(
-            job=self.job,
-            parent_task=self.parent_task,
-            name='Child task',
-            rate_scheme=self.scheme,
-        )
+        _stamp_task(self.job, self.scheme, 'Child task', parent_task=self.parent_task)
         response = self.client.get(f'/api/tasks/{self.parent_task.pk}/subtasks/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
@@ -305,9 +302,7 @@ class TerminalTaskGuardTest(TestCase):
         )[0]
 
     def _make_task(self, task_status):
-        return Task.objects.create(
-            job=self.job, name='A task', status=task_status, rate_scheme=self.scheme,
-        )
+        return _stamp_task(self.job, self.scheme, 'A task', status=task_status)
 
     def test_cannot_add_material_to_complete_task(self):
         task = self._make_task(Task.STATUS_COMPLETE)
@@ -410,8 +405,11 @@ class TaskSerializerFlattenTest(TestCase):
         )
 
     def test_task_serializer_flattens_billing_fields(self):
-        """Phase B: rate_scheme, active_modifiers, est_qty, est_worker_time,
-        actual_qty are top-level fields. 'charge' is no longer in the payload."""
+        """Task-owned money (Phase 1): qty_source/rate/unit_label/
+        accounting_category/active_modifiers/source_scheme, plus est_qty/
+        est_worker_time/actual_qty, are top-level fields. 'charge' is no
+        longer in the payload, and 'rate_scheme' (the write-only stamp
+        trigger) never appears in a GET response."""
         from decimal import Decimal
         from apps.jobs.models import RateScheme
 
@@ -420,27 +418,28 @@ class TaskSerializerFlattenTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hour',
             accounting_category=ac,
+            modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 10}],
         )
-        Task.objects.create(
-            job=self.job, name='Test',
-            rate_scheme=scheme, active_modifiers=['rush'],
-            est_qty=Decimal('5'),
+        _stamp_task(
+            self.job, scheme, 'Test',
+            est_qty=Decimal('5'), modifier_keys=['rush'],
         )
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
         payload = body['results'] if isinstance(body, dict) and 'results' in body else body
         row = next(t for t in payload if t['name'] == 'Test')
-        self.assertEqual(row['rate_scheme'], scheme.pk)
-        self.assertEqual(row['active_modifiers'], ['rush'])
+        self.assertNotIn('rate_scheme', row)
+        self.assertEqual(row['source_scheme'], scheme.pk)
+        self.assertEqual([m['key'] for m in row['active_modifiers']], ['rush'])
         self.assertEqual(row['est_qty'], '5.00')
         self.assertIsNone(row['actual_qty'])
         self.assertNotIn('charge', row)
 
     def test_post_task_accepts_flat_billing_fields(self):
-        """POST /api/jobs/<id>/tasks/ accepts rate_scheme, active_modifiers,
-        est_qty, est_worker_time, actual_qty as direct fields (not nested in
-        'actuals')."""
+        """POST /api/jobs/<id>/tasks/ accepts rate_scheme (a stamp trigger)
+        plus est_qty, est_worker_time, actual_qty as direct fields (not
+        nested in 'actuals')."""
         from decimal import Decimal
         from django.contrib.auth.models import Permission
         from apps.jobs.models import RateScheme
@@ -460,7 +459,6 @@ class TaskSerializerFlattenTest(TestCase):
             'name': 'Bench work',
             'description': 'Test',
             'rate_scheme': scheme.pk,
-            'active_modifiers': [],
             'est_qty': '5.00',
             'est_worker_time': 'PT5H',
         }
@@ -468,9 +466,9 @@ class TaskSerializerFlattenTest(TestCase):
             f'/api/jobs/{self.job.pk}/tasks/', payload,
             content_type='application/json',
         )
-        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.status_code, 201, resp.json())
         task = Task.objects.get(pk=resp.json()['task_id'])
-        self.assertEqual(task.rate_scheme_id, scheme.pk)
+        self.assertEqual(task.source_scheme_id, scheme.pk)
         self.assertEqual(task.est_qty, Decimal('5.00'))
         self.assertIsNotNone(task.est_worker_time)
         self.assertIsNone(task.actual_qty)
@@ -498,17 +496,14 @@ class TaskListInvoiceFieldTest(TestCase):
         )
         self.scheme = _make_scheme('tli')
         self.category = AccountingCategory.objects.create(name='G', code='GTLI')
-        self.task = Task.objects.create(
-            job=self.job, name='Parent', rate_scheme=self.scheme,
-        )
+        self.task = _stamp_task(self.job, self.scheme, 'Parent')
         self.material = Material.objects.create(
             job=self.job, task=self.task, description='Slab',
             quantity=2, unit_cost=Decimal('5.00'), sell_price=Decimal('10.00'),
             accounting_category=self.category,
         )
-        self.subtask = Task.objects.create(
-            job=self.job, name='Child', rate_scheme=self.scheme,
-            parent_task=self.task,
+        self.subtask = _stamp_task(
+            self.job, self.scheme, 'Child', parent_task=self.task,
         )
 
     def _invoice_atom(self, source_type, source_pk):
@@ -597,9 +592,7 @@ class TaskMaterialPoFieldsTest(TestCase):
         )
         self.scheme = _make_scheme('pof')
         self.category = AccountingCategory.objects.create(name='POF', code='POF')
-        self.task = Task.objects.create(
-            job=self.job, name='Install', rate_scheme=self.scheme,
-        )
+        self.task = _stamp_task(self.job, self.scheme, 'Install')
 
     def test_materials_endpoint_carries_po_fields_when_ordered(self):
         from apps.inventory.services import MaterialService

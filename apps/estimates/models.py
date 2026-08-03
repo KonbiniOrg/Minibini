@@ -522,7 +522,7 @@ class ServiceItem(models.Model):
         if est_worker_time is None and est_qty is not None:
             from apps.jobs.services import hours_pair_fill
             est_qty, est_worker_time = hours_pair_fill(
-                scheme, est_qty, None)
+                scheme.unit_label, est_qty, None)
         with transaction.atomic():
             task = Task(
                 job=container,

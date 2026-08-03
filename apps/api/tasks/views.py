@@ -167,7 +167,13 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         # on-hold, superseded-scheme, depth, and assignee guards and fires
         # mark_work_reopened (plan A2/B1). Never serializer.save() here.
         from apps.jobs.services import TaskService
-        serializer = TaskSerializer(data=request.data)
+        raw_keys = set(request.data.keys())
+        prefilled = TaskSerializer.prefill_accounting_category(request.data)
+        serializer = TaskSerializer(
+            data=prefilled,
+            context={**self.get_serializer_context(), 'job': task.job,
+                      'raw_input_keys': raw_keys},
+        )
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         new_task = TaskService.create_direct(
