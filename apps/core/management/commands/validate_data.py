@@ -24,6 +24,8 @@ Per-model field checks:
                    W  non-terminal: stray completed_date
   RateScheme       E  valid algorithm value
                    E  missing accounting_category
+                   E  negative rate only allowed for percentage algorithm
+                   E  elapsed_time scheme must be pinned to the hour unit
   Estimate         E  valid status value
                    E  max one accepted estimate per job
                    E  max one draft estimate per job
@@ -32,6 +34,10 @@ Per-model field checks:
                    W  accepted/rejected/superseded/expired: missing closed_date
   Task             E  must belong to a Job
                    E  valid status value
+                   E  valid qty_source value
+                   E  negative rate
+                   E  missing accounting_category
+                   E  active_modifiers must be a list of {key, percent} dicts
   Material         E  must have description or inventory_item
                    E  negative quantity
                    W  has PLI but empty description (--fix: auto-fill)
@@ -77,9 +83,11 @@ Cross-model relationship checks:
   Invoice/Job      W  invoice on draft/submitted/rejected job
                    E  cancelled job's invoices must also be cancelled
 """
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.core.management.base import BaseCommand
 from django.db.models import Sum
+
+from apps.core.units import HOUR_UNIT
 
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate
@@ -309,16 +317,25 @@ class Command(BaseCommand):
         from apps.jobs.models import Task
         from apps.estimates.models import ServiceItem
         valid_task_statuses = {s[0] for s in Task.TASK_STATUS_CHOICES}
-        # Tasks now belong directly to a Job (post-WorkOrder-removal).
+        valid_qty_sources = {s[0] for s in Task.QTY_SOURCE_CHOICES}
+        # Tasks now belong directly to a Job (post-WorkOrder-removal) and own
+        # their money block (task-owned-money Phase 1): qty_source, rate,
+        # unit_label, accounting_category, active_modifiers are the task's
+        # own fields, not read through source_scheme (provenance only — a
+        # null source_scheme from SET_NULL preset deletion is legal, no
+        # check needed).
         for t in Task.objects.select_related('job').all():
             if not t.job_id:
                 self.errors.append(f'Task {t.pk} ({t.name}): not attached to a Job')
             if t.status not in valid_task_statuses:
                 self.errors.append(f'Task {t.pk} ({t.name}): invalid status "{t.status}"')
-            if isinstance(t.active_modifiers, dict):
-                self.errors.append(
-                    f'Task {t.pk} ({t.name}): active_modifiers is a dict; must be a list of keys'
-                )
+            if t.qty_source not in valid_qty_sources:
+                self.errors.append(f'Task {t.pk} ({t.name}): invalid qty_source "{t.qty_source}"')
+            if t.rate is not None and t.rate < 0:
+                self.errors.append(f'Task {t.pk} ({t.name}): negative rate {t.rate}')
+            if not t.accounting_category_id:
+                self.errors.append(f'Task {t.pk} ({t.name}): missing accounting_category')
+            self._check_task_active_modifiers_shape(t)
         # One level of subtasks only (TaskService.create_direct enforces it;
         # a grandchild is invisible in the SPA's two-level tree).
         for t in Task.objects.filter(
@@ -329,12 +346,44 @@ class Command(BaseCommand):
                 f'(parent {t.parent_task_id} already has a parent) — '
                 f'one level of subtasks only'
             )
-        # ServiceItems: default_active_modifiers must be a list
+        # ServiceItems stamp Tasks at generate-time and still store plain
+        # modifier-key lists (not the {key, percent} snapshot shape Tasks
+        # use) — default_active_modifiers just needs to be a list.
         for tt in ServiceItem.objects.all():
             if isinstance(tt.default_active_modifiers, dict):
                 self.errors.append(
                     f'ServiceItem {tt.pk} ({tt.template_name}): '
                     f'default_active_modifiers is a dict; must be a list of keys'
+                )
+
+    def _check_task_active_modifiers_shape(self, t):
+        """A Task's active_modifiers is a snapshot list of {key, label,
+        percent} dicts (label optional) stamped at creation time — never a
+        dict, never bare/malformed entries."""
+        modifiers = t.active_modifiers
+        if not isinstance(modifiers, list):
+            self.errors.append(
+                f'Task {t.pk} ({t.name}): active_modifiers is a '
+                f'{type(modifiers).__name__}; must be a list of {{key, percent}} dicts'
+            )
+            return
+        for m in modifiers:
+            if not isinstance(m, dict):
+                self.errors.append(
+                    f'Task {t.pk} ({t.name}): active_modifiers entry {m!r} is not '
+                    f'a dict (expected {{key, percent}})'
+                )
+                continue
+            if not m.get('key'):
+                self.errors.append(
+                    f'Task {t.pk} ({t.name}): active_modifiers entry {m!r} missing key'
+                )
+            try:
+                Decimal(str(m.get('percent')))
+            except (InvalidOperation, TypeError, ValueError):
+                self.errors.append(
+                    f'Task {t.pk} ({t.name}): active_modifiers entry {m!r} '
+                    f'percent must be numeric'
                 )
 
     # ── Materials ─────────────────────────────────────────────
@@ -443,6 +492,11 @@ class Command(BaseCommand):
             if rs.algorithm != RateScheme.PERCENTAGE and rs.rate is not None and rs.rate < 0:
                 self.errors.append(
                     f'RateScheme {rs.pk} ({rs.name}): negative rate not allowed for {rs.algorithm}'
+                )
+            if rs.algorithm == RateScheme.ELAPSED_TIME and rs.unit_label != HOUR_UNIT:
+                self.errors.append(
+                    f'RateScheme {rs.pk} ({rs.name}): elapsed_time scheme must have '
+                    f'unit_label "{HOUR_UNIT}", got "{rs.unit_label}"'
                 )
 
     # ── Deliverables ──────────────────────────────────────────

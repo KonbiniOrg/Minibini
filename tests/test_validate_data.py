@@ -10,7 +10,28 @@ from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSourc
 from apps.inventory.models import Material
 
 
+def _task_scheme_fields(scheme):
+    """Copy a RateScheme preset's money fields onto Task-creation kwargs,
+    mirroring Task.stamp_from_scheme (task-owned-money Phase 1). Tests that
+    build a Task directly via Task.objects.create() use this instead of the
+    old Task.rate_scheme FK, which was renamed to the provenance-only
+    source_scheme plus the task's own qty_source/rate/unit_label/
+    accounting_category fields."""
+    return dict(
+        source_scheme=scheme,
+        qty_source=scheme.algorithm,
+        rate=scheme.rate,
+        unit_label=scheme.unit_label,
+        accounting_category=scheme.accounting_category,
+    )
+
+
 class ValidateDataRateSchemeTest(TestCase):
+    """Tests for check_rate_schemes() — algorithm, accounting_category,
+    negative-rate-only-for-percentage, elapsed_time hour-pin. RateScheme is
+    a freely-editable preset now (task-owned-money Phase 1, Task 4):
+    supersession/frozen-field assertions are gone, not moved here."""
+
     def setUp(self):
         self.ac = AccountingCategory.objects.create(name='Svc', code='SVC')
         self.contact = Contact.objects.create(first_name='Test', last_name='User')
@@ -20,43 +41,13 @@ class ValidateDataRateSchemeTest(TestCase):
         call_command('validate_data', stdout=out, stderr=out)
         return out.getvalue()
 
-    def _make_sp(self, name='Sp', rate=Decimal('10.00'), algorithm=None):
+    def _make_sp(self, name='Sp', rate=Decimal('10.00'), algorithm=None, unit_label='each'):
         if algorithm is None:
             algorithm = RateScheme.ENTERED_QTY
         return RateScheme.objects.create(
             name=name, algorithm=algorithm,
-            rate=rate, unit_label='each', accounting_category=self.ac,
+            rate=rate, unit_label=unit_label, accounting_category=self.ac,
         )
-
-    def _make_job(self, number='J-VDT-001'):
-        return Job.objects.create(
-            job_number=number, name='Test Job', contact=self.contact,
-        )
-
-    # ── active_modifiers dict-shape checks ───────────────────────
-
-    def test_flags_dict_active_modifiers_on_task(self):
-        sp = self._make_sp(name='Sp-task')
-        job = self._make_job('J-VDT-002')
-        # Bypass full_clean to force a dict into the JSONField
-        Task.objects.filter(pk=Task.objects.create(
-            name='Bad task', job=job, rate_scheme=sp,
-            active_modifiers=[],
-        ).pk).update(active_modifiers={'key': 'val'})
-        output = self._run()
-        self.assertIn('active_modifiers', output.lower())
-
-    def test_flags_dict_default_active_modifiers_on_service_item(self):
-        from apps.estimates.models import ServiceItem
-        sp = self._make_sp(name='Sp-tt')
-        tt = ServiceItem.objects.create(
-            template_name='Bad Template',
-            rate_scheme=sp,
-            default_active_modifiers=[],
-        )
-        ServiceItem.objects.filter(pk=tt.pk).update(default_active_modifiers={'key': 'val'})
-        output = self._run()
-        self.assertIn('default_active_modifiers', output.lower())
 
     # ── Negative rate / percentage checks ───────────────────────
 
@@ -83,15 +74,209 @@ class ValidateDataRateSchemeTest(TestCase):
         self.assertIn('bad-elapsed', output)
         self.assertIn('negative rate', output)
 
-    def test_valid_list_active_modifiers_not_flagged(self):
-        sp = self._make_sp(name='Sp-list')
-        job = self._make_job('J-VDT-004')
-        Task.objects.create(
-            name='Good task', job=job, rate_scheme=sp,
-            active_modifiers=['mod1'],
+    # ── elapsed_time hour-pin ─────────────────────────────────────
+
+    def test_elapsed_time_scheme_wrong_unit_label_is_flagged(self):
+        """clean() pins elapsed_time schemes to 'hour'; bypass it via
+        QuerySet.update() to simulate legacy/corrupt fixture data."""
+        scheme = self._make_sp(name='bad-unit', algorithm=RateScheme.ELAPSED_TIME, unit_label='hour')
+        RateScheme.objects.filter(pk=scheme.pk).update(unit_label='each')
+        output = self._run()
+        self.assertIn('bad-unit', output)
+        self.assertIn('must have unit_label "hour"', output)
+
+    def test_elapsed_time_scheme_hour_unit_not_flagged(self):
+        self._make_sp(name='good-elapsed', algorithm=RateScheme.ELAPSED_TIME, unit_label='hour')
+        output = self._run()
+        self.assertNotIn('good-elapsed', output)
+
+    def test_entered_qty_scheme_non_hour_unit_not_flagged(self):
+        """The hour-pin only applies to elapsed_time; other algorithms are free."""
+        self._make_sp(name='good-entered', algorithm=RateScheme.ENTERED_QTY, unit_label='each')
+        output = self._run()
+        self.assertNotIn('good-entered', output)
+
+
+class ValidateDataTaskMoneyTest(TestCase):
+    """Tests for the check_tasks() task-owned-money checks (task-owned-money
+    Phase 1, Task 9): qty_source in choices, non-negative rate, required
+    accounting_category, and the active_modifiers {key, percent}-dict shape
+    (a Task's own snapshot, unlike ServiceItem.default_active_modifiers,
+    which stays a plain key-list)."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='Svc', code='SVC')
+        self.contact = Contact.objects.create(first_name='Test', last_name='User')
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _make_sp(self, name='Sp', rate=Decimal('10.00'), algorithm=None,
+                 unit_label='each', modifiers=None):
+        if algorithm is None:
+            algorithm = RateScheme.ENTERED_QTY
+        return RateScheme.objects.create(
+            name=name, algorithm=algorithm, rate=rate, unit_label=unit_label,
+            accounting_category=self.ac, modifiers=modifiers or [],
         )
+
+    def _make_job(self, number='J-VDT-001'):
+        return Job.objects.create(
+            job_number=number, name='Test Job', contact=self.contact,
+        )
+
+    def _make_task(self, job, scheme, name='Task', modifier_keys=None):
+        """Build a Task via the real stamping path (Task.stamp_from_scheme)
+        so its money fields have the shape production code actually
+        produces."""
+        task = Task(name=name, job=job)
+        task.stamp_from_scheme(scheme, modifier_keys=modifier_keys)
+        task.save()
+        return task
+
+    # ── active_modifiers {key, percent}-dict shape ────────────────
+
+    def test_flags_dict_active_modifiers_on_task(self):
+        sp = self._make_sp(name='Sp-task')
+        job = self._make_job('J-VDT-002')
+        task = self._make_task(job, sp, name='Bad task')
+        # Bypass full_clean to force a dict into the JSONField
+        Task.objects.filter(pk=task.pk).update(active_modifiers={'key': 'val'})
+        output = self._run()
+        self.assertIn('active_modifiers', output.lower())
+        self.assertIn('Bad task', output)
+
+    def test_flags_string_entry_in_active_modifiers(self):
+        sp = self._make_sp(name='Sp-str')
+        job = self._make_job('J-VDT-003')
+        task = self._make_task(job, sp, name='String-entry task')
+        Task.objects.filter(pk=task.pk).update(active_modifiers=['rush'])
+        output = self._run()
+        self.assertIn('is not', output)
+        self.assertIn('String-entry task', output)
+
+    def test_flags_bare_dict_missing_key_and_percent(self):
+        sp = self._make_sp(name='Sp-bare')
+        job = self._make_job('J-VDT-005')
+        task = self._make_task(job, sp, name='Bare-dict task')
+        Task.objects.filter(pk=task.pk).update(active_modifiers=[{'label': 'Rush'}])
+        output = self._run()
+        self.assertIn('missing key', output)
+        self.assertIn('percent must be numeric', output)
+        self.assertIn('Bare-dict task', output)
+
+    def test_valid_active_modifiers_dict_list_not_flagged(self):
+        sp = self._make_sp(
+            name='Sp-list',
+            modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 10}],
+        )
+        job = self._make_job('J-VDT-006')
+        self._make_task(job, sp, name='Good task', modifier_keys=['rush'])
         output = self._run()
         self.assertNotIn('active_modifiers', output.lower())
+
+    def test_empty_active_modifiers_not_flagged(self):
+        sp = self._make_sp(name='Sp-empty')
+        job = self._make_job('J-VDT-007')
+        self._make_task(job, sp, name='No-modifiers task')
+        output = self._run()
+        self.assertNotIn('active_modifiers', output.lower())
+
+    # ── ServiceItem.default_active_modifiers stays a key-list ─────
+
+    def test_flags_dict_default_active_modifiers_on_service_item(self):
+        from apps.estimates.models import ServiceItem
+        sp = self._make_sp(name='Sp-tt')
+        tt = ServiceItem.objects.create(
+            template_name='Bad Template',
+            rate_scheme=sp,
+            default_active_modifiers=[],
+        )
+        ServiceItem.objects.filter(pk=tt.pk).update(default_active_modifiers={'key': 'val'})
+        output = self._run()
+        self.assertIn('default_active_modifiers', output.lower())
+
+    def test_valid_list_default_active_modifiers_on_service_item_not_flagged(self):
+        from apps.estimates.models import ServiceItem
+        sp = self._make_sp(name='Sp-tt-good')
+        ServiceItem.objects.create(
+            template_name='Good Template',
+            rate_scheme=sp,
+            default_active_modifiers=['mod1'],
+        )
+        output = self._run()
+        self.assertNotIn('default_active_modifiers', output.lower())
+
+    # ── qty_source ──────────────────────────────────────────────
+
+    def test_invalid_qty_source_is_flagged(self):
+        sp = self._make_sp(name='Sp-qty')
+        job = self._make_job('J-VDT-008')
+        task = self._make_task(job, sp, name='Bad qty_source task')
+        Task.objects.filter(pk=task.pk).update(qty_source='bogus')
+        output = self._run()
+        self.assertIn('invalid qty_source', output)
+        self.assertIn('Bad qty_source task', output)
+
+    def test_valid_qty_source_not_flagged(self):
+        sp = self._make_sp(name='Sp-qty-ok', algorithm=RateScheme.ELAPSED_TIME, unit_label='hour')
+        job = self._make_job('J-VDT-009')
+        self._make_task(job, sp, name='Good qty_source task')
+        output = self._run()
+        self.assertNotIn('invalid qty_source', output)
+
+    # ── rate ────────────────────────────────────────────────────
+
+    def test_negative_rate_on_task_is_flagged(self):
+        sp = self._make_sp(name='Sp-rate')
+        job = self._make_job('J-VDT-010')
+        task = self._make_task(job, sp, name='Negative-rate task')
+        Task.objects.filter(pk=task.pk).update(rate=Decimal('-5.00'))
+        output = self._run()
+        self.assertIn('negative rate', output)
+        self.assertIn('Negative-rate task', output)
+
+    def test_positive_rate_on_task_not_flagged(self):
+        sp = self._make_sp(name='Sp-rate-ok')
+        job = self._make_job('J-VDT-011')
+        self._make_task(job, sp, name='Positive-rate task')
+        output = self._run()
+        self.assertNotIn('negative rate', output)
+
+    # ── accounting_category ────────────────────────────────────
+
+    def test_missing_accounting_category_on_task_is_flagged(self):
+        sp = self._make_sp(name='Sp-ac')
+        job = self._make_job('J-VDT-012')
+        task = self._make_task(job, sp, name='No-AC task')
+        Task.objects.filter(pk=task.pk).update(accounting_category=None)
+        output = self._run()
+        self.assertIn('missing accounting_category', output)
+        self.assertIn('No-AC task', output)
+
+    def test_present_accounting_category_not_flagged(self):
+        sp = self._make_sp(name='Sp-ac-ok')
+        job = self._make_job('J-VDT-013')
+        self._make_task(job, sp, name='Has-AC task')
+        output = self._run()
+        self.assertNotIn('missing accounting_category', output)
+
+    # ── source_scheme: SET_NULL orphaning is legal, no check ──────
+
+    def test_deleted_source_scheme_is_not_flagged(self):
+        """Deleting a RateScheme SET_NULLs every Task.source_scheme that
+        stamped from it — provenance-only, so this must never be an error."""
+        sp = self._make_sp(name='Sp-deleteme')
+        job = self._make_job('J-VDT-014')
+        task = self._make_task(job, sp, name='Orphaned task')
+        sp.delete()
+        task.refresh_from_db()
+        self.assertIsNone(task.source_scheme_id)
+        output = self._run()
+        self.assertNotIn('source_scheme', output)
+        self.assertNotIn('Orphaned task', output)
 
 
 class ValidateDataFeeTest(TestCase):
@@ -165,7 +350,7 @@ class ValidateDataFeeTest(TestCase):
         job_b = Job.objects.create(
             job_number='J-VFEE-002', name='Other Job', contact=self.contact,
         )
-        task_b = Task.objects.create(name='Task on B', job=job_b, rate_scheme=rs)
+        task_b = Task.objects.create(name='Task on B', job=job_b, **_task_scheme_fields(rs))
         # fee.job = self.job (job_a), fee.task = task_b (on job_b) → mismatch
         self._make_fee(task=task_b)
         output = self._run()
@@ -173,7 +358,7 @@ class ValidateDataFeeTest(TestCase):
 
     def test_fee_task_on_same_job_not_flagged(self):
         rs = self._make_rate_scheme(name='RS-SameJob')
-        task = Task.objects.create(name='Same-job Task', job=self.job, rate_scheme=rs)
+        task = Task.objects.create(name='Same-job Task', job=self.job, **_task_scheme_fields(rs))
         self._make_fee(task=task)
         output = self._run()
         self.assertNotIn('but Fee belongs to job', output)
@@ -227,7 +412,7 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
     # ── EstimateLineItemSource cross-checks ──────────────────────
 
     def test_estimate_source_task_wrong_job_is_error(self):
-        task_b = Task.objects.create(name='Task B', job=self.job_b, rate_scheme=self.rs)
+        task_b = Task.objects.create(name='Task B', job=self.job_b, **_task_scheme_fields(self.rs))
         EstimateLineItemSource.objects.create(
             estimate_line_item=self.eli,
             source_type=EstimateLineItemSource.SOURCE_TASK,
@@ -276,7 +461,7 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
         self.assertIn('atom not found', output)
 
     def test_estimate_source_task_same_job_not_flagged(self):
-        task_a = Task.objects.create(name='Task A', job=self.job_a, rate_scheme=self.rs)
+        task_a = Task.objects.create(name='Task A', job=self.job_a, **_task_scheme_fields(self.rs))
         EstimateLineItemSource.objects.create(
             estimate_line_item=self.eli,
             source_type=EstimateLineItemSource.SOURCE_TASK,
@@ -289,7 +474,7 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
     # ── InvoiceLineItemSource cross-checks ───────────────────────
 
     def test_invoice_source_task_wrong_job_is_error(self):
-        task_b = Task.objects.create(name='Inv Task B', job=self.job_b, rate_scheme=self.rs)
+        task_b = Task.objects.create(name='Inv Task B', job=self.job_b, **_task_scheme_fields(self.rs))
         InvoiceLineItemSource.objects.create(
             invoice_line_item=self.ili,
             source_type=InvoiceLineItemSource.SOURCE_TASK,
@@ -337,7 +522,7 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
         self.assertIn('atom not found', output)
 
     def test_invoice_source_task_same_job_not_flagged(self):
-        task_a = Task.objects.create(name='Inv Task A', job=self.job_a, rate_scheme=self.rs)
+        task_a = Task.objects.create(name='Inv Task A', job=self.job_a, **_task_scheme_fields(self.rs))
         InvoiceLineItemSource.objects.create(
             invoice_line_item=self.ili,
             source_type=InvoiceLineItemSource.SOURCE_TASK,
@@ -378,7 +563,7 @@ class ValidateDataStateInvariantsTest(TestCase):
 
     def _task(self, job, status=Task.STATUS_PENDING, parent=None, name='T'):
         task = Task.objects.create(
-            name=name, job=job, rate_scheme=self.rs, parent_task=parent,
+            name=name, job=job, parent_task=parent, **_task_scheme_fields(self.rs),
         )
         if status != Task.STATUS_PENDING:
             Task.objects.filter(pk=task.pk).update(status=status)
