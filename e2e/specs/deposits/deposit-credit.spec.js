@@ -97,7 +97,7 @@ test('§2-3 Deposit credit: board banner, pulling the credit, claim lifecycle', 
     await page.getByRole('button', { name: 'Back to lines' }).click();
     const row = page.locator('tr', { hasText: 'Less deposit (INV-E2E-DEP-1)' });
     await expect(row).toBeVisible();
-    await expect(row).toContainText('$-5000.00');
+    await expect(row).toContainText('-$5,000.00');
     // Now applied — the notice from the earlier step is gone.
     await expect(page.getByText(/Unapplied deposit credit/)).toHaveCount(0);
   });

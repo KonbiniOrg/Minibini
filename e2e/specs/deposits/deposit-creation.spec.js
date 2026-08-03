@@ -80,7 +80,7 @@ test('§1 Creating a deposit invoice: states 1→2→3', async ({ page }) => {
     const row = page.locator('tr', { hasText: `Deposit on ${job.job_number}` });
     await expect(row).toBeVisible();
     await expect(row).toContainText('Customer Deposits');
-    await expect(row).toContainText('$2500.00');
+    await expect(row).toContainText('$2,500.00');
   });
 
   await test.step('State 3 (draft has lines): the deposit action is suppressed entirely', async () => {

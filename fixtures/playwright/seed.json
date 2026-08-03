@@ -59334,7 +59334,6 @@
   "pk": 1,
   "fields": {
     "job": 1,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59347,7 +59346,6 @@
   "pk": 2,
   "fields": {
     "job": 2,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59360,7 +59358,6 @@
   "pk": 3,
   "fields": {
     "job": 4,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59373,7 +59370,6 @@
   "pk": 4,
   "fields": {
     "job": 6,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59386,7 +59382,6 @@
   "pk": 5,
   "fields": {
     "job": 7,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59399,7 +59394,6 @@
   "pk": 6,
   "fields": {
     "job": 9,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59412,7 +59406,6 @@
   "pk": 7,
   "fields": {
     "job": 10,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59425,7 +59418,6 @@
   "pk": 8,
   "fields": {
     "job": 10,
-    "task": null,
     "description": "Heat bend parts",
     "quantity": "200.00",
     "unit_rate": "8.00",
@@ -59438,7 +59430,6 @@
   "pk": 9,
   "fields": {
     "job": 11,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59451,7 +59442,6 @@
   "pk": 10,
   "fields": {
     "job": 11,
-    "task": null,
     "description": "Delivery by truck/cargo van to San Francisco",
     "quantity": "1.00",
     "unit_rate": "150.00",
@@ -59464,7 +59454,6 @@
   "pk": 11,
   "fields": {
     "job": 15,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59477,7 +59466,6 @@
   "pk": 12,
   "fields": {
     "job": 16,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59490,7 +59478,6 @@
   "pk": 13,
   "fields": {
     "job": 16,
-    "task": null,
     "description": "Charge to meet minimum order of $300",
     "quantity": "1.00",
     "unit_rate": "115.00",
@@ -59503,7 +59490,6 @@
   "pk": 14,
   "fields": {
     "job": 24,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59516,7 +59502,6 @@
   "pk": 15,
   "fields": {
     "job": 35,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59529,7 +59514,6 @@
   "pk": 16,
   "fields": {
     "job": 35,
-    "task": null,
     "description": "Charge to meet minimum order of $300",
     "quantity": "1.00",
     "unit_rate": "150.00",
@@ -59542,7 +59526,6 @@
   "pk": 17,
   "fields": {
     "job": 35,
-    "task": null,
     "description": "'--== RUSH FEE ==--",
     "quantity": "0.25",
     "unit_rate": "300.00",
@@ -59555,7 +59538,6 @@
   "pk": 18,
   "fields": {
     "job": 42,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59568,7 +59550,6 @@
   "pk": 19,
   "fields": {
     "job": 42,
-    "task": null,
     "description": "Palletize and delivery",
     "quantity": "1.00",
     "unit_rate": "350.00",
@@ -59581,7 +59562,6 @@
   "pk": 20,
   "fields": {
     "job": 44,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59594,7 +59574,6 @@
   "pk": 21,
   "fields": {
     "job": 45,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59607,7 +59586,6 @@
   "pk": 22,
   "fields": {
     "job": 48,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59620,7 +59598,6 @@
   "pk": 23,
   "fields": {
     "job": 56,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59633,7 +59610,6 @@
   "pk": 24,
   "fields": {
     "job": 58,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59646,7 +59622,6 @@
   "pk": 25,
   "fields": {
     "job": 64,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59659,7 +59634,6 @@
   "pk": 26,
   "fields": {
     "job": 70,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59672,7 +59646,6 @@
   "pk": 27,
   "fields": {
     "job": 71,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59685,7 +59658,6 @@
   "pk": 28,
   "fields": {
     "job": 73,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59698,7 +59670,6 @@
   "pk": 29,
   "fields": {
     "job": 75,
-    "task": null,
     "description": "Glue, paint, wire, acrylic, etc",
     "quantity": "1.00",
     "unit_rate": "200.00",
@@ -59711,7 +59682,6 @@
   "pk": 30,
   "fields": {
     "job": 83,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59724,7 +59694,6 @@
   "pk": 31,
   "fields": {
     "job": 84,
-    "task": null,
     "description": "Setup, editing, and coding",
     "quantity": "1.00",
     "unit_rate": "110.00",
@@ -59737,7 +59706,6 @@
   "pk": 32,
   "fields": {
     "job": 87,
-    "task": null,
     "description": "Prepare two-lam stock for cutting M58 roofs:\n* cut black lam and mirror lam to approximate size using 1/8\" bit (dimensions are very tight)\n* cut 5x10 single-sided layup in half\n* Apply black and mirror laminates to blank side of each cut half, butt joinin",
     "quantity": "1.00",
     "unit_rate": "600.00",
@@ -59750,7 +59718,6 @@
   "pk": 33,
   "fields": {
     "job": 87,
-    "task": null,
     "description": "Prepare stock for M67 floors: apply marmoleum to part of 1 side of 5x10 stock and black laminate to the other",
     "quantity": "2.00",
     "unit_rate": "200.00",
@@ -59763,7 +59730,6 @@
   "pk": 34,
   "fields": {
     "job": 87,
-    "task": null,
     "description": "Prepare stock for M58 floors: apply marmoleum to one side of 5x10 stock and black laminate to the other",
     "quantity": "1.00",
     "unit_rate": "200.00",
@@ -59776,7 +59742,6 @@
   "pk": 35,
   "fields": {
     "job": 92,
-    "task": null,
     "description": "Apply epoxy to engraved redwood bench:\n* inspect surface for obvious cracks and gaps; tape and fill\n* seal coat on all sides to seal lettering and find small bubble holes\n* patch and fill remaining gaps (knots and cracks)\n* seal and scrape letters; fill w",
     "quantity": "5.00",
     "unit_rate": "2250.00",
@@ -59789,7 +59754,6 @@
   "pk": 36,
   "fields": {
     "job": 100,
-    "task": null,
     "description": "Glue up MDF to similar proportions and cut a test of the full piece (material included)",
     "quantity": "1.00",
     "unit_rate": "5000.00",
@@ -59802,7 +59766,6 @@
   "pk": 37,
   "fields": {
     "job": 19,
-    "task": null,
     "description": "Cut parts from 1/4\" Baltic Birch Plywood",
     "quantity": "8.00",
     "unit_rate": "30.00",
@@ -59815,7 +59778,6 @@
   "pk": 38,
   "fields": {
     "job": 19,
-    "task": null,
     "description": "Cut parts from 1/8\" Acrylic",
     "quantity": "16.00",
     "unit_rate": "150.00",
@@ -61892,9 +61854,9 @@
     "accounting_category": 1,
     "estimate": 1,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -61910,9 +61872,9 @@
     "accounting_category": 1,
     "estimate": 1,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -61928,9 +61890,9 @@
     "accounting_category": 2,
     "estimate": 1,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -61946,9 +61908,9 @@
     "accounting_category": 1,
     "estimate": 1,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -61964,9 +61926,9 @@
     "accounting_category": 1,
     "estimate": 2,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -61982,9 +61944,9 @@
     "accounting_category": 1,
     "estimate": 3,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -62000,9 +61962,9 @@
     "accounting_category": 1,
     "estimate": 3,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -62018,9 +61980,9 @@
     "accounting_category": 1,
     "estimate": 4,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62036,9 +61998,9 @@
     "accounting_category": 2,
     "estimate": 4,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62054,9 +62016,9 @@
     "accounting_category": 1,
     "estimate": 4,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62072,9 +62034,9 @@
     "accounting_category": 1,
     "estimate": 5,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62090,9 +62052,9 @@
     "accounting_category": 1,
     "estimate": 5,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62108,9 +62070,9 @@
     "accounting_category": 1,
     "estimate": 5,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62126,9 +62088,9 @@
     "accounting_category": 2,
     "estimate": 5,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62144,9 +62106,9 @@
     "accounting_category": 1,
     "estimate": 6,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62162,9 +62124,9 @@
     "accounting_category": 1,
     "estimate": 6,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62180,9 +62142,9 @@
     "accounting_category": 1,
     "estimate": 6,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62198,9 +62160,9 @@
     "accounting_category": 2,
     "estimate": 6,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62216,9 +62178,9 @@
     "accounting_category": 1,
     "estimate": 7,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62234,9 +62196,9 @@
     "accounting_category": 1,
     "estimate": 7,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62252,9 +62214,9 @@
     "accounting_category": 2,
     "estimate": 7,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62270,9 +62232,9 @@
     "accounting_category": 1,
     "estimate": 8,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62288,9 +62250,9 @@
     "accounting_category": 1,
     "estimate": 8,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62306,9 +62268,9 @@
     "accounting_category": 2,
     "estimate": 8,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62324,9 +62286,9 @@
     "accounting_category": 2,
     "estimate": 9,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62342,9 +62304,9 @@
     "accounting_category": 1,
     "estimate": 9,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62360,9 +62322,9 @@
     "accounting_category": 2,
     "estimate": 10,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62378,9 +62340,9 @@
     "accounting_category": 2,
     "estimate": 10,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62396,9 +62358,9 @@
     "accounting_category": 2,
     "estimate": 10,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62414,9 +62376,9 @@
     "accounting_category": 1,
     "estimate": 10,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62432,9 +62394,9 @@
     "accounting_category": 2,
     "estimate": 11,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62450,9 +62412,9 @@
     "accounting_category": 2,
     "estimate": 11,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62468,9 +62430,9 @@
     "accounting_category": 2,
     "estimate": 11,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62486,9 +62448,9 @@
     "accounting_category": 1,
     "estimate": 11,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62504,9 +62466,9 @@
     "accounting_category": 1,
     "estimate": 12,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62522,9 +62484,9 @@
     "accounting_category": 1,
     "estimate": 12,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62540,9 +62502,9 @@
     "accounting_category": 1,
     "estimate": 13,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62558,9 +62520,9 @@
     "accounting_category": 1,
     "estimate": 13,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62576,9 +62538,9 @@
     "accounting_category": 1,
     "estimate": 13,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62594,9 +62556,9 @@
     "accounting_category": 1,
     "estimate": 13,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62612,9 +62574,9 @@
     "accounting_category": 1,
     "estimate": 13,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62630,9 +62592,9 @@
     "accounting_category": 1,
     "estimate": 14,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62648,9 +62610,9 @@
     "accounting_category": 2,
     "estimate": 15,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62666,9 +62628,9 @@
     "accounting_category": 1,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62684,9 +62646,9 @@
     "accounting_category": 1,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62702,9 +62664,9 @@
     "accounting_category": 1,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62720,9 +62682,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62738,9 +62700,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62756,9 +62718,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62774,9 +62736,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62792,9 +62754,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62810,9 +62772,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62828,9 +62790,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62846,9 +62808,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62864,9 +62826,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62882,9 +62844,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62900,9 +62862,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62918,9 +62880,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62936,9 +62898,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62954,9 +62916,9 @@
     "accounting_category": 1,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62972,9 +62934,9 @@
     "accounting_category": 1,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -62990,9 +62952,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63008,9 +62970,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63026,9 +62988,9 @@
     "accounting_category": 1,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63044,9 +63006,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63062,9 +63024,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63080,9 +63042,9 @@
     "accounting_category": 1,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63098,9 +63060,9 @@
     "accounting_category": 1,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63116,9 +63078,9 @@
     "accounting_category": 2,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63134,9 +63096,9 @@
     "accounting_category": 1,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63152,9 +63114,9 @@
     "accounting_category": 1,
     "estimate": 16,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63170,9 +63132,9 @@
     "accounting_category": 1,
     "estimate": 17,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63188,9 +63150,9 @@
     "accounting_category": 1,
     "estimate": 17,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63206,9 +63168,9 @@
     "accounting_category": 1,
     "estimate": 17,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63224,9 +63186,9 @@
     "accounting_category": 2,
     "estimate": 17,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63242,9 +63204,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63260,9 +63222,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63278,9 +63240,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63296,9 +63258,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63314,9 +63276,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63332,9 +63294,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63350,9 +63312,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63368,9 +63330,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63386,9 +63348,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63404,9 +63366,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63422,9 +63384,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63440,9 +63402,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63458,9 +63420,9 @@
     "accounting_category": 1,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63476,9 +63438,9 @@
     "accounting_category": 2,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63494,9 +63456,9 @@
     "accounting_category": 2,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63512,9 +63474,9 @@
     "accounting_category": 2,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63530,9 +63492,9 @@
     "accounting_category": 2,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63548,9 +63510,9 @@
     "accounting_category": 2,
     "estimate": 18,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63566,9 +63528,9 @@
     "accounting_category": 1,
     "estimate": 19,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63584,9 +63546,9 @@
     "accounting_category": 1,
     "estimate": 19,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63602,9 +63564,9 @@
     "accounting_category": 2,
     "estimate": 19,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63620,9 +63582,9 @@
     "accounting_category": 1,
     "estimate": 20,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63638,9 +63600,9 @@
     "accounting_category": 1,
     "estimate": 20,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63656,9 +63618,9 @@
     "accounting_category": 2,
     "estimate": 20,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63674,9 +63636,9 @@
     "accounting_category": 1,
     "estimate": 21,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63692,9 +63654,9 @@
     "accounting_category": 1,
     "estimate": 21,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63710,9 +63672,9 @@
     "accounting_category": 1,
     "estimate": 22,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63728,9 +63690,9 @@
     "accounting_category": 1,
     "estimate": 22,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63746,9 +63708,9 @@
     "accounting_category": 2,
     "estimate": 22,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63764,9 +63726,9 @@
     "accounting_category": 1,
     "estimate": 23,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63782,9 +63744,9 @@
     "accounting_category": 1,
     "estimate": 23,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63800,9 +63762,9 @@
     "accounting_category": 1,
     "estimate": 24,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63818,9 +63780,9 @@
     "accounting_category": 1,
     "estimate": 24,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63836,9 +63798,9 @@
     "accounting_category": 1,
     "estimate": 24,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -63854,9 +63816,9 @@
     "accounting_category": 2,
     "estimate": 24,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63872,9 +63834,9 @@
     "accounting_category": 1,
     "estimate": 25,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63890,9 +63852,9 @@
     "accounting_category": 1,
     "estimate": 27,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63908,9 +63870,9 @@
     "accounting_category": 2,
     "estimate": 27,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63926,9 +63888,9 @@
     "accounting_category": 2,
     "estimate": 27,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63944,9 +63906,9 @@
     "accounting_category": 1,
     "estimate": 27,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63962,9 +63924,9 @@
     "accounting_category": 1,
     "estimate": 27,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63980,9 +63942,9 @@
     "accounting_category": 1,
     "estimate": 28,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -63998,9 +63960,9 @@
     "accounting_category": 1,
     "estimate": 28,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64016,9 +63978,9 @@
     "accounting_category": 2,
     "estimate": 28,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64034,9 +63996,9 @@
     "accounting_category": 2,
     "estimate": 28,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64052,9 +64014,9 @@
     "accounting_category": 1,
     "estimate": 28,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64070,9 +64032,9 @@
     "accounting_category": 1,
     "estimate": 29,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64088,9 +64050,9 @@
     "accounting_category": 1,
     "estimate": 29,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64106,9 +64068,9 @@
     "accounting_category": 1,
     "estimate": 29,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64124,9 +64086,9 @@
     "accounting_category": 2,
     "estimate": 29,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64142,9 +64104,9 @@
     "accounting_category": 1,
     "estimate": 30,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64160,9 +64122,9 @@
     "accounting_category": 1,
     "estimate": 30,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64178,9 +64140,9 @@
     "accounting_category": 1,
     "estimate": 31,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64196,9 +64158,9 @@
     "accounting_category": 1,
     "estimate": 31,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64214,9 +64176,9 @@
     "accounting_category": 1,
     "estimate": 31,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64232,9 +64194,9 @@
     "accounting_category": 1,
     "estimate": 31,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64250,9 +64212,9 @@
     "accounting_category": 2,
     "estimate": 31,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64268,9 +64230,9 @@
     "accounting_category": 1,
     "estimate": 32,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64286,9 +64248,9 @@
     "accounting_category": 1,
     "estimate": 32,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64304,9 +64266,9 @@
     "accounting_category": 2,
     "estimate": 32,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64322,9 +64284,9 @@
     "accounting_category": 1,
     "estimate": 32,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64340,9 +64302,9 @@
     "accounting_category": 2,
     "estimate": 32,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64358,9 +64320,9 @@
     "accounting_category": 1,
     "estimate": 32,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64376,9 +64338,9 @@
     "accounting_category": 2,
     "estimate": 32,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64394,9 +64356,9 @@
     "accounting_category": 2,
     "estimate": 32,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64412,9 +64374,9 @@
     "accounting_category": 2,
     "estimate": 32,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64430,9 +64392,9 @@
     "accounting_category": 2,
     "estimate": 32,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64448,9 +64410,9 @@
     "accounting_category": 2,
     "estimate": 32,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -64466,9 +64428,9 @@
     "accounting_category": 1,
     "estimate": 33,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64484,9 +64446,9 @@
     "accounting_category": 1,
     "estimate": 33,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64502,9 +64464,9 @@
     "accounting_category": 2,
     "estimate": 33,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64520,9 +64482,9 @@
     "accounting_category": 2,
     "estimate": 33,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64538,9 +64500,9 @@
     "accounting_category": 1,
     "estimate": 34,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64556,9 +64518,9 @@
     "accounting_category": 1,
     "estimate": 34,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -64574,9 +64536,9 @@
     "accounting_category": 2,
     "estimate": 34,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64592,9 +64554,9 @@
     "accounting_category": 1,
     "estimate": 34,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -64610,9 +64572,9 @@
     "accounting_category": 1,
     "estimate": 35,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64628,9 +64590,9 @@
     "accounting_category": 1,
     "estimate": 35,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64646,9 +64608,9 @@
     "accounting_category": 1,
     "estimate": 35,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64664,9 +64626,9 @@
     "accounting_category": 2,
     "estimate": 35,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64682,9 +64644,9 @@
     "accounting_category": 1,
     "estimate": 36,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64700,9 +64662,9 @@
     "accounting_category": 2,
     "estimate": 36,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64718,9 +64680,9 @@
     "accounting_category": 1,
     "estimate": 36,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64736,9 +64698,9 @@
     "accounting_category": 2,
     "estimate": 36,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64754,9 +64716,9 @@
     "accounting_category": 1,
     "estimate": 36,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64772,9 +64734,9 @@
     "accounting_category": 1,
     "estimate": 37,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64790,9 +64752,9 @@
     "accounting_category": 1,
     "estimate": 37,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64808,9 +64770,9 @@
     "accounting_category": 2,
     "estimate": 37,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64826,9 +64788,9 @@
     "accounting_category": 1,
     "estimate": 37,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -64844,9 +64806,9 @@
     "accounting_category": 2,
     "estimate": 37,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64862,9 +64824,9 @@
     "accounting_category": 1,
     "estimate": 37,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -64880,9 +64842,9 @@
     "accounting_category": 2,
     "estimate": 37,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64898,9 +64860,9 @@
     "accounting_category": 1,
     "estimate": 37,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -64916,9 +64878,9 @@
     "accounting_category": 1,
     "estimate": 37,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -64934,9 +64896,9 @@
     "accounting_category": 1,
     "estimate": 37,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -64952,9 +64914,9 @@
     "accounting_category": 1,
     "estimate": 38,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64970,9 +64932,9 @@
     "accounting_category": 2,
     "estimate": 38,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -64988,9 +64950,9 @@
     "accounting_category": 1,
     "estimate": 38,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65006,9 +64968,9 @@
     "accounting_category": 1,
     "estimate": 38,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65024,9 +64986,9 @@
     "accounting_category": 1,
     "estimate": 39,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65042,9 +65004,9 @@
     "accounting_category": 1,
     "estimate": 39,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65060,9 +65022,9 @@
     "accounting_category": 1,
     "estimate": 40,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65078,9 +65040,9 @@
     "accounting_category": 1,
     "estimate": 40,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65096,9 +65058,9 @@
     "accounting_category": 2,
     "estimate": 40,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65114,9 +65076,9 @@
     "accounting_category": 1,
     "estimate": 41,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65132,9 +65094,9 @@
     "accounting_category": 1,
     "estimate": 42,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65150,9 +65112,9 @@
     "accounting_category": 1,
     "estimate": 42,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65168,9 +65130,9 @@
     "accounting_category": 1,
     "estimate": 42,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65186,9 +65148,9 @@
     "accounting_category": 1,
     "estimate": 42,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65204,9 +65166,9 @@
     "accounting_category": 1,
     "estimate": 42,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65222,9 +65184,9 @@
     "accounting_category": 1,
     "estimate": 42,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65240,9 +65202,9 @@
     "accounting_category": 1,
     "estimate": 42,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65258,9 +65220,9 @@
     "accounting_category": 1,
     "estimate": 42,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65276,9 +65238,9 @@
     "accounting_category": 2,
     "estimate": 42,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65294,9 +65256,9 @@
     "accounting_category": 1,
     "estimate": 43,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65312,9 +65274,9 @@
     "accounting_category": 1,
     "estimate": 43,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65330,9 +65292,9 @@
     "accounting_category": 1,
     "estimate": 43,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65348,9 +65310,9 @@
     "accounting_category": 1,
     "estimate": 43,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65366,9 +65328,9 @@
     "accounting_category": 1,
     "estimate": 43,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65384,9 +65346,9 @@
     "accounting_category": 1,
     "estimate": 43,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65402,9 +65364,9 @@
     "accounting_category": 1,
     "estimate": 43,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65420,9 +65382,9 @@
     "accounting_category": 1,
     "estimate": 43,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65438,9 +65400,9 @@
     "accounting_category": 2,
     "estimate": 43,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65456,9 +65418,9 @@
     "accounting_category": 1,
     "estimate": 44,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65474,9 +65436,9 @@
     "accounting_category": 1,
     "estimate": 44,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65492,9 +65454,9 @@
     "accounting_category": 1,
     "estimate": 44,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65510,9 +65472,9 @@
     "accounting_category": 1,
     "estimate": 44,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65528,9 +65490,9 @@
     "accounting_category": 1,
     "estimate": 45,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65546,9 +65508,9 @@
     "accounting_category": 1,
     "estimate": 45,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65564,9 +65526,9 @@
     "accounting_category": 1,
     "estimate": 45,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65582,9 +65544,9 @@
     "accounting_category": 2,
     "estimate": 45,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65600,9 +65562,9 @@
     "accounting_category": 1,
     "estimate": 46,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65618,9 +65580,9 @@
     "accounting_category": 1,
     "estimate": 46,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65636,9 +65598,9 @@
     "accounting_category": 1,
     "estimate": 46,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65654,9 +65616,9 @@
     "accounting_category": 1,
     "estimate": 46,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65672,9 +65634,9 @@
     "accounting_category": 1,
     "estimate": 47,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65690,9 +65652,9 @@
     "accounting_category": 1,
     "estimate": 47,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65708,9 +65670,9 @@
     "accounting_category": 1,
     "estimate": 47,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65726,9 +65688,9 @@
     "accounting_category": 1,
     "estimate": 47,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65744,9 +65706,9 @@
     "accounting_category": 1,
     "estimate": 48,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65762,9 +65724,9 @@
     "accounting_category": 1,
     "estimate": 48,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65780,9 +65742,9 @@
     "accounting_category": 1,
     "estimate": 48,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65798,9 +65760,9 @@
     "accounting_category": 2,
     "estimate": 48,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65816,9 +65778,9 @@
     "accounting_category": 1,
     "estimate": 49,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65834,9 +65796,9 @@
     "accounting_category": 1,
     "estimate": 49,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65852,9 +65814,9 @@
     "accounting_category": 1,
     "estimate": 50,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65870,9 +65832,9 @@
     "accounting_category": 1,
     "estimate": 50,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65888,9 +65850,9 @@
     "accounting_category": 1,
     "estimate": 50,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65906,9 +65868,9 @@
     "accounting_category": 2,
     "estimate": 50,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65924,9 +65886,9 @@
     "accounting_category": 2,
     "estimate": 50,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65942,9 +65904,9 @@
     "accounting_category": 1,
     "estimate": 51,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65960,9 +65922,9 @@
     "accounting_category": 1,
     "estimate": 51,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -65978,9 +65940,9 @@
     "accounting_category": 1,
     "estimate": 51,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -65996,9 +65958,9 @@
     "accounting_category": 2,
     "estimate": 51,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66014,9 +65976,9 @@
     "accounting_category": 2,
     "estimate": 51,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66032,9 +65994,9 @@
     "accounting_category": 1,
     "estimate": 52,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66050,9 +66012,9 @@
     "accounting_category": 1,
     "estimate": 52,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66068,9 +66030,9 @@
     "accounting_category": 1,
     "estimate": 52,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66086,9 +66048,9 @@
     "accounting_category": 2,
     "estimate": 52,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66104,9 +66066,9 @@
     "accounting_category": 2,
     "estimate": 52,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66122,9 +66084,9 @@
     "accounting_category": 1,
     "estimate": 53,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66140,9 +66102,9 @@
     "accounting_category": 1,
     "estimate": 53,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66158,9 +66120,9 @@
     "accounting_category": 1,
     "estimate": 53,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66176,9 +66138,9 @@
     "accounting_category": 2,
     "estimate": 53,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66194,9 +66156,9 @@
     "accounting_category": 2,
     "estimate": 53,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66212,9 +66174,9 @@
     "accounting_category": 2,
     "estimate": 53,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66230,9 +66192,9 @@
     "accounting_category": 2,
     "estimate": 53,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66248,9 +66210,9 @@
     "accounting_category": 1,
     "estimate": 54,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66266,9 +66228,9 @@
     "accounting_category": 1,
     "estimate": 54,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66284,9 +66246,9 @@
     "accounting_category": 2,
     "estimate": 54,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66302,9 +66264,9 @@
     "accounting_category": 1,
     "estimate": 55,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66320,9 +66282,9 @@
     "accounting_category": 1,
     "estimate": 55,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66338,9 +66300,9 @@
     "accounting_category": 1,
     "estimate": 55,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66356,9 +66318,9 @@
     "accounting_category": 1,
     "estimate": 56,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66374,9 +66336,9 @@
     "accounting_category": 1,
     "estimate": 56,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66392,9 +66354,9 @@
     "accounting_category": 2,
     "estimate": 56,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66410,9 +66372,9 @@
     "accounting_category": 1,
     "estimate": 57,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66428,9 +66390,9 @@
     "accounting_category": 1,
     "estimate": 57,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66446,9 +66408,9 @@
     "accounting_category": 1,
     "estimate": 57,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66464,9 +66426,9 @@
     "accounting_category": 1,
     "estimate": 58,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66482,9 +66444,9 @@
     "accounting_category": 1,
     "estimate": 58,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66500,9 +66462,9 @@
     "accounting_category": 1,
     "estimate": 58,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66518,9 +66480,9 @@
     "accounting_category": 1,
     "estimate": 58,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66536,9 +66498,9 @@
     "accounting_category": 1,
     "estimate": 58,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66554,9 +66516,9 @@
     "accounting_category": 1,
     "estimate": 59,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66572,9 +66534,9 @@
     "accounting_category": 1,
     "estimate": 59,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66590,9 +66552,9 @@
     "accounting_category": 1,
     "estimate": 59,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66608,9 +66570,9 @@
     "accounting_category": 2,
     "estimate": 59,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66626,9 +66588,9 @@
     "accounting_category": 2,
     "estimate": 59,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66644,9 +66606,9 @@
     "accounting_category": 2,
     "estimate": 59,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66662,9 +66624,9 @@
     "accounting_category": 2,
     "estimate": 59,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66680,9 +66642,9 @@
     "accounting_category": 2,
     "estimate": 59,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66698,9 +66660,9 @@
     "accounting_category": 2,
     "estimate": 59,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66716,9 +66678,9 @@
     "accounting_category": 1,
     "estimate": 59,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66734,9 +66696,9 @@
     "accounting_category": 1,
     "estimate": 59,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66752,9 +66714,9 @@
     "accounting_category": 1,
     "estimate": 60,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66770,9 +66732,9 @@
     "accounting_category": 1,
     "estimate": 60,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66788,9 +66750,9 @@
     "accounting_category": 2,
     "estimate": 60,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66806,9 +66768,9 @@
     "accounting_category": 1,
     "estimate": 61,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66824,9 +66786,9 @@
     "accounting_category": 1,
     "estimate": 61,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66842,9 +66804,9 @@
     "accounting_category": 1,
     "estimate": 61,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66860,9 +66822,9 @@
     "accounting_category": 1,
     "estimate": 61,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66878,9 +66840,9 @@
     "accounting_category": 1,
     "estimate": 62,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66896,9 +66858,9 @@
     "accounting_category": 1,
     "estimate": 62,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66914,9 +66876,9 @@
     "accounting_category": 1,
     "estimate": 62,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66932,9 +66894,9 @@
     "accounting_category": 1,
     "estimate": 62,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -66950,9 +66912,9 @@
     "accounting_category": 2,
     "estimate": 62,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66968,9 +66930,9 @@
     "accounting_category": 2,
     "estimate": 62,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -66986,9 +66948,9 @@
     "accounting_category": 1,
     "estimate": 63,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67004,9 +66966,9 @@
     "accounting_category": 1,
     "estimate": 63,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67022,9 +66984,9 @@
     "accounting_category": 2,
     "estimate": 63,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67040,9 +67002,9 @@
     "accounting_category": 2,
     "estimate": 63,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67058,9 +67020,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67076,9 +67038,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67094,9 +67056,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67112,9 +67074,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67130,9 +67092,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67148,9 +67110,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67166,9 +67128,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67184,9 +67146,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67202,9 +67164,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67220,9 +67182,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67238,9 +67200,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67256,9 +67218,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67274,9 +67236,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67292,9 +67254,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67310,9 +67272,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67328,9 +67290,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67346,9 +67308,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67364,9 +67326,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67382,9 +67344,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67400,9 +67362,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67418,9 +67380,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67436,9 +67398,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67454,9 +67416,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67472,9 +67434,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67490,9 +67452,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67508,9 +67470,9 @@
     "accounting_category": 1,
     "estimate": 64,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67526,9 +67488,9 @@
     "accounting_category": 1,
     "estimate": 65,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67544,9 +67506,9 @@
     "accounting_category": 1,
     "estimate": 65,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67562,9 +67524,9 @@
     "accounting_category": 1,
     "estimate": 65,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67580,9 +67542,9 @@
     "accounting_category": 2,
     "estimate": 65,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67598,9 +67560,9 @@
     "accounting_category": 2,
     "estimate": 65,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67616,9 +67578,9 @@
     "accounting_category": 2,
     "estimate": 65,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67634,9 +67596,9 @@
     "accounting_category": 2,
     "estimate": 65,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67652,9 +67614,9 @@
     "accounting_category": 2,
     "estimate": 65,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67670,9 +67632,9 @@
     "accounting_category": 1,
     "estimate": 66,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67688,9 +67650,9 @@
     "accounting_category": 1,
     "estimate": 66,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67706,9 +67668,9 @@
     "accounting_category": 2,
     "estimate": 66,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67724,9 +67686,9 @@
     "accounting_category": 1,
     "estimate": 67,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67742,9 +67704,9 @@
     "accounting_category": 1,
     "estimate": 67,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67760,9 +67722,9 @@
     "accounting_category": 2,
     "estimate": 67,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67778,9 +67740,9 @@
     "accounting_category": 1,
     "estimate": 68,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67796,9 +67758,9 @@
     "accounting_category": 1,
     "estimate": 68,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67814,9 +67776,9 @@
     "accounting_category": 1,
     "estimate": 68,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67832,9 +67794,9 @@
     "accounting_category": 1,
     "estimate": 69,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67850,9 +67812,9 @@
     "accounting_category": 1,
     "estimate": 69,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67868,9 +67830,9 @@
     "accounting_category": 1,
     "estimate": 69,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -67886,9 +67848,9 @@
     "accounting_category": 1,
     "estimate": 70,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67904,9 +67866,9 @@
     "accounting_category": 1,
     "estimate": 70,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67922,9 +67884,9 @@
     "accounting_category": 1,
     "estimate": 70,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67940,9 +67902,9 @@
     "accounting_category": 1,
     "estimate": 71,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67958,9 +67920,9 @@
     "accounting_category": 1,
     "estimate": 71,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67976,9 +67938,9 @@
     "accounting_category": 2,
     "estimate": 71,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -67994,9 +67956,9 @@
     "accounting_category": 2,
     "estimate": 71,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68012,9 +67974,9 @@
     "accounting_category": 2,
     "estimate": 71,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68030,9 +67992,9 @@
     "accounting_category": 2,
     "estimate": 71,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68048,9 +68010,9 @@
     "accounting_category": 1,
     "estimate": 71,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68066,9 +68028,9 @@
     "accounting_category": 2,
     "estimate": 71,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68084,9 +68046,9 @@
     "accounting_category": 1,
     "estimate": 72,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68102,9 +68064,9 @@
     "accounting_category": 1,
     "estimate": 72,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68120,9 +68082,9 @@
     "accounting_category": 1,
     "estimate": 72,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68138,9 +68100,9 @@
     "accounting_category": 1,
     "estimate": 73,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68156,9 +68118,9 @@
     "accounting_category": 1,
     "estimate": 73,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68174,9 +68136,9 @@
     "accounting_category": 1,
     "estimate": 73,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68192,9 +68154,9 @@
     "accounting_category": 2,
     "estimate": 73,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68210,9 +68172,9 @@
     "accounting_category": 2,
     "estimate": 73,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68228,9 +68190,9 @@
     "accounting_category": 2,
     "estimate": 73,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68246,9 +68208,9 @@
     "accounting_category": 2,
     "estimate": 73,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68264,9 +68226,9 @@
     "accounting_category": 2,
     "estimate": 73,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68282,9 +68244,9 @@
     "accounting_category": 1,
     "estimate": 74,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68300,9 +68262,9 @@
     "accounting_category": 1,
     "estimate": 74,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68318,9 +68280,9 @@
     "accounting_category": 1,
     "estimate": 74,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68336,9 +68298,9 @@
     "accounting_category": 1,
     "estimate": 74,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68354,9 +68316,9 @@
     "accounting_category": 1,
     "estimate": 75,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68372,9 +68334,9 @@
     "accounting_category": 1,
     "estimate": 75,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68390,9 +68352,9 @@
     "accounting_category": 1,
     "estimate": 75,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68408,9 +68370,9 @@
     "accounting_category": 2,
     "estimate": 75,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68426,9 +68388,9 @@
     "accounting_category": 2,
     "estimate": 75,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68444,9 +68406,9 @@
     "accounting_category": 1,
     "estimate": 76,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68462,9 +68424,9 @@
     "accounting_category": 1,
     "estimate": 76,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68480,9 +68442,9 @@
     "accounting_category": 1,
     "estimate": 76,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68498,9 +68460,9 @@
     "accounting_category": 2,
     "estimate": 76,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68516,9 +68478,9 @@
     "accounting_category": 2,
     "estimate": 76,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68534,9 +68496,9 @@
     "accounting_category": 1,
     "estimate": 77,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68552,9 +68514,9 @@
     "accounting_category": 1,
     "estimate": 77,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68570,9 +68532,9 @@
     "accounting_category": 1,
     "estimate": 77,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68588,9 +68550,9 @@
     "accounting_category": 2,
     "estimate": 77,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68606,9 +68568,9 @@
     "accounting_category": 2,
     "estimate": 77,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68624,9 +68586,9 @@
     "accounting_category": 1,
     "estimate": 78,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68642,9 +68604,9 @@
     "accounting_category": 1,
     "estimate": 78,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68660,9 +68622,9 @@
     "accounting_category": 1,
     "estimate": 78,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68678,9 +68640,9 @@
     "accounting_category": 2,
     "estimate": 78,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68696,9 +68658,9 @@
     "accounting_category": 2,
     "estimate": 79,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68714,9 +68676,9 @@
     "accounting_category": 2,
     "estimate": 80,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68732,9 +68694,9 @@
     "accounting_category": 1,
     "estimate": 81,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68750,9 +68712,9 @@
     "accounting_category": 1,
     "estimate": 81,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68768,9 +68730,9 @@
     "accounting_category": 2,
     "estimate": 81,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68786,9 +68748,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -68804,9 +68766,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68822,9 +68784,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68840,9 +68802,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68858,9 +68820,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68876,9 +68838,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68894,9 +68856,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68912,9 +68874,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68930,9 +68892,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68948,9 +68910,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68966,9 +68928,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -68984,9 +68946,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69002,9 +68964,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69020,9 +68982,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69038,9 +69000,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69056,9 +69018,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69074,9 +69036,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69092,9 +69054,9 @@
     "accounting_category": 1,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69110,9 +69072,9 @@
     "accounting_category": 2,
     "estimate": 82,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69128,9 +69090,9 @@
     "accounting_category": 1,
     "estimate": 83,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69146,9 +69108,9 @@
     "accounting_category": 1,
     "estimate": 83,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69164,9 +69126,9 @@
     "accounting_category": 2,
     "estimate": 83,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69182,9 +69144,9 @@
     "accounting_category": 1,
     "estimate": 84,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69200,9 +69162,9 @@
     "accounting_category": 1,
     "estimate": 84,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69218,9 +69180,9 @@
     "accounting_category": 1,
     "estimate": 85,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69236,9 +69198,9 @@
     "accounting_category": 1,
     "estimate": 85,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69254,9 +69216,9 @@
     "accounting_category": 1,
     "estimate": 85,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69272,9 +69234,9 @@
     "accounting_category": 2,
     "estimate": 85,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69290,9 +69252,9 @@
     "accounting_category": 1,
     "estimate": 85,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69308,9 +69270,9 @@
     "accounting_category": 1,
     "estimate": 85,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69326,9 +69288,9 @@
     "accounting_category": 1,
     "estimate": 86,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69344,9 +69306,9 @@
     "accounting_category": 1,
     "estimate": 86,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69362,9 +69324,9 @@
     "accounting_category": 1,
     "estimate": 86,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69380,9 +69342,9 @@
     "accounting_category": 1,
     "estimate": 86,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69398,9 +69360,9 @@
     "accounting_category": 2,
     "estimate": 86,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69416,9 +69378,9 @@
     "accounting_category": 1,
     "estimate": 87,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69434,9 +69396,9 @@
     "accounting_category": 1,
     "estimate": 87,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69452,9 +69414,9 @@
     "accounting_category": 1,
     "estimate": 87,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69470,9 +69432,9 @@
     "accounting_category": 1,
     "estimate": 87,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69488,9 +69450,9 @@
     "accounting_category": 2,
     "estimate": 87,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69506,9 +69468,9 @@
     "accounting_category": 1,
     "estimate": 87,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69524,9 +69486,9 @@
     "accounting_category": 1,
     "estimate": 88,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69542,9 +69504,9 @@
     "accounting_category": 1,
     "estimate": 88,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69560,9 +69522,9 @@
     "accounting_category": 1,
     "estimate": 88,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69578,9 +69540,9 @@
     "accounting_category": 1,
     "estimate": 88,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69596,9 +69558,9 @@
     "accounting_category": 2,
     "estimate": 88,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69614,9 +69576,9 @@
     "accounting_category": 1,
     "estimate": 88,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69632,9 +69594,9 @@
     "accounting_category": 1,
     "estimate": 88,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69650,9 +69612,9 @@
     "accounting_category": 1,
     "estimate": 88,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69668,9 +69630,9 @@
     "accounting_category": 1,
     "estimate": 89,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69686,9 +69648,9 @@
     "accounting_category": 1,
     "estimate": 89,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69704,9 +69666,9 @@
     "accounting_category": 1,
     "estimate": 89,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69722,9 +69684,9 @@
     "accounting_category": 1,
     "estimate": 89,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69740,9 +69702,9 @@
     "accounting_category": 2,
     "estimate": 89,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69758,9 +69720,9 @@
     "accounting_category": 1,
     "estimate": 89,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69776,9 +69738,9 @@
     "accounting_category": 1,
     "estimate": 90,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69794,9 +69756,9 @@
     "accounting_category": 1,
     "estimate": 90,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69812,9 +69774,9 @@
     "accounting_category": 1,
     "estimate": 90,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69830,9 +69792,9 @@
     "accounting_category": 1,
     "estimate": 90,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69848,9 +69810,9 @@
     "accounting_category": 2,
     "estimate": 90,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69866,9 +69828,9 @@
     "accounting_category": 1,
     "estimate": 90,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -69884,9 +69846,9 @@
     "accounting_category": 1,
     "estimate": 91,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69902,9 +69864,9 @@
     "accounting_category": 2,
     "estimate": 91,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69920,9 +69882,9 @@
     "accounting_category": 2,
     "estimate": 91,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69938,9 +69900,9 @@
     "accounting_category": 1,
     "estimate": 92,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69956,9 +69918,9 @@
     "accounting_category": 2,
     "estimate": 92,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69974,9 +69936,9 @@
     "accounting_category": 2,
     "estimate": 92,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -69992,9 +69954,9 @@
     "accounting_category": 1,
     "estimate": 93,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -70010,9 +69972,9 @@
     "accounting_category": 2,
     "estimate": 93,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -70028,9 +69990,9 @@
     "accounting_category": 2,
     "estimate": 93,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70046,9 +70008,9 @@
     "accounting_category": 1,
     "estimate": 94,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70064,9 +70026,9 @@
     "accounting_category": 1,
     "estimate": 94,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70082,9 +70044,9 @@
     "accounting_category": 2,
     "estimate": 94,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70100,9 +70062,9 @@
     "accounting_category": 2,
     "estimate": 94,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70118,9 +70080,9 @@
     "accounting_category": 1,
     "estimate": 95,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70136,9 +70098,9 @@
     "accounting_category": 1,
     "estimate": 95,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70154,9 +70116,9 @@
     "accounting_category": 2,
     "estimate": 95,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70172,9 +70134,9 @@
     "accounting_category": 1,
     "estimate": 95,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70190,9 +70152,9 @@
     "accounting_category": 2,
     "estimate": 95,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70208,9 +70170,9 @@
     "accounting_category": 2,
     "estimate": 95,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70226,9 +70188,9 @@
     "accounting_category": 1,
     "estimate": 96,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70244,9 +70206,9 @@
     "accounting_category": 1,
     "estimate": 96,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70262,9 +70224,9 @@
     "accounting_category": 1,
     "estimate": 96,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -70280,9 +70242,9 @@
     "accounting_category": 1,
     "estimate": 97,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70298,9 +70260,9 @@
     "accounting_category": 2,
     "estimate": 97,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70316,9 +70278,9 @@
     "accounting_category": 1,
     "estimate": 97,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70334,9 +70296,9 @@
     "accounting_category": 1,
     "estimate": 98,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70352,9 +70314,9 @@
     "accounting_category": 1,
     "estimate": 98,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70370,9 +70332,9 @@
     "accounting_category": 1,
     "estimate": 99,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70388,9 +70350,9 @@
     "accounting_category": 1,
     "estimate": 99,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70406,9 +70368,9 @@
     "accounting_category": 2,
     "estimate": 99,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70424,9 +70386,9 @@
     "accounting_category": 1,
     "estimate": 99,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70442,9 +70404,9 @@
     "accounting_category": 1,
     "estimate": 100,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70460,9 +70422,9 @@
     "accounting_category": 1,
     "estimate": 100,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70478,9 +70440,9 @@
     "accounting_category": 1,
     "estimate": 100,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70496,9 +70458,9 @@
     "accounting_category": 1,
     "estimate": 100,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70514,9 +70476,9 @@
     "accounting_category": 1,
     "estimate": 101,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70532,9 +70494,9 @@
     "accounting_category": 1,
     "estimate": 101,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70550,9 +70512,9 @@
     "accounting_category": 1,
     "estimate": 101,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -70568,9 +70530,9 @@
     "accounting_category": 1,
     "estimate": 101,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -70586,9 +70548,9 @@
     "accounting_category": 1,
     "estimate": 102,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70604,9 +70566,9 @@
     "accounting_category": 2,
     "estimate": 102,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70622,9 +70584,9 @@
     "accounting_category": 2,
     "estimate": 102,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70640,9 +70602,9 @@
     "accounting_category": 1,
     "estimate": 103,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70658,9 +70620,9 @@
     "accounting_category": 1,
     "estimate": 103,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70676,9 +70638,9 @@
     "accounting_category": 1,
     "estimate": 103,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70694,9 +70656,9 @@
     "accounting_category": 2,
     "estimate": 103,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70712,9 +70674,9 @@
     "accounting_category": 2,
     "estimate": 103,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70730,9 +70692,9 @@
     "accounting_category": 1,
     "estimate": 104,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70748,9 +70710,9 @@
     "accounting_category": 1,
     "estimate": 104,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -70766,9 +70728,9 @@
     "accounting_category": 2,
     "estimate": 104,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70784,9 +70746,9 @@
     "accounting_category": 1,
     "estimate": 105,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70802,9 +70764,9 @@
     "accounting_category": 1,
     "estimate": 106,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70820,9 +70782,9 @@
     "accounting_category": 1,
     "estimate": 106,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70838,9 +70800,9 @@
     "accounting_category": 1,
     "estimate": 106,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70856,9 +70818,9 @@
     "accounting_category": 2,
     "estimate": 106,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70874,9 +70836,9 @@
     "accounting_category": 2,
     "estimate": 106,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70892,9 +70854,9 @@
     "accounting_category": 1,
     "estimate": 107,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70910,9 +70872,9 @@
     "accounting_category": 1,
     "estimate": 107,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70928,9 +70890,9 @@
     "accounting_category": 1,
     "estimate": 107,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70946,9 +70908,9 @@
     "accounting_category": 1,
     "estimate": 107,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -70964,9 +70926,9 @@
     "accounting_category": 1,
     "estimate": 107,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -70982,9 +70944,9 @@
     "accounting_category": 1,
     "estimate": 108,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71000,9 +70962,9 @@
     "accounting_category": 1,
     "estimate": 109,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71018,9 +70980,9 @@
     "accounting_category": 1,
     "estimate": 109,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71036,9 +70998,9 @@
     "accounting_category": 1,
     "estimate": 109,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71054,9 +71016,9 @@
     "accounting_category": 1,
     "estimate": 110,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71072,9 +71034,9 @@
     "accounting_category": 1,
     "estimate": 110,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -71090,9 +71052,9 @@
     "accounting_category": 1,
     "estimate": 110,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -71108,9 +71070,9 @@
     "accounting_category": 1,
     "estimate": 111,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71126,9 +71088,9 @@
     "accounting_category": 1,
     "estimate": 112,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71144,9 +71106,9 @@
     "accounting_category": 1,
     "estimate": 112,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71162,9 +71124,9 @@
     "accounting_category": 2,
     "estimate": 112,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71180,9 +71142,9 @@
     "accounting_category": 1,
     "estimate": 113,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71198,9 +71160,9 @@
     "accounting_category": 1,
     "estimate": 113,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71216,9 +71178,9 @@
     "accounting_category": 1,
     "estimate": 113,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71234,9 +71196,9 @@
     "accounting_category": 1,
     "estimate": 114,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71252,9 +71214,9 @@
     "accounting_category": 1,
     "estimate": 114,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71270,9 +71232,9 @@
     "accounting_category": 1,
     "estimate": 114,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71288,9 +71250,9 @@
     "accounting_category": 2,
     "estimate": 114,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71306,9 +71268,9 @@
     "accounting_category": 1,
     "estimate": 115,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71324,9 +71286,9 @@
     "accounting_category": 1,
     "estimate": 116,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71342,9 +71304,9 @@
     "accounting_category": 1,
     "estimate": 117,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -71360,9 +71322,9 @@
     "accounting_category": 1,
     "estimate": 117,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -71378,9 +71340,9 @@
     "accounting_category": 1,
     "estimate": 118,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71396,9 +71358,9 @@
     "accounting_category": 1,
     "estimate": 119,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71414,9 +71376,9 @@
     "accounting_category": 1,
     "estimate": 119,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71432,9 +71394,9 @@
     "accounting_category": 1,
     "estimate": 119,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71450,9 +71412,9 @@
     "accounting_category": 1,
     "estimate": 119,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -71468,9 +71430,9 @@
     "accounting_category": 1,
     "estimate": 119,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -71486,9 +71448,9 @@
     "accounting_category": 1,
     "estimate": 120,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71504,9 +71466,9 @@
     "accounting_category": 1,
     "estimate": 121,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71522,9 +71484,9 @@
     "accounting_category": 2,
     "estimate": 121,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": "fee"
   }
 },
 {
@@ -71540,9 +71502,9 @@
     "accounting_category": 1,
     "estimate": 122,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71558,9 +71520,9 @@
     "accounting_category": 1,
     "estimate": 122,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
@@ -71576,9 +71538,9 @@
     "accounting_category": 1,
     "estimate": 123,
     "adjustment_service": null,
-    "is_material": false,
     "service_item": null,
-    "adjustment_target_categories": []
+    "adjustment_target_categories": [],
+    "freeform_kind": null
   }
 },
 {
