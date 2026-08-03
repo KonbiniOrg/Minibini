@@ -964,10 +964,19 @@ Enforced in `Estimate.clean()`.
   → a Fee (`estimates-and-prices.md` §9.1). `is_material` survives only
   as a write-side input alias on the service layer (never a model field,
   never sent by the SPA), kept for legacy callers and marked for later
-  removal. **Invariant, both directions:** non-null IFF the line is bare
-  and unsourced — checked at entry (services) and by
-  `validate_data.check_freeform_kind_consistency` (a bare line with a
-  null kind, or a non-bare/sourced line with a non-null kind, both flag).
+  removal. **Invariant: non-null iff bare (no catalog/service/adjustment
+  FK); claimed bare hand-lines keep their kind.** The two directions of
+  `validate_data.check_freeform_kind_consistency` are checked
+  asymmetrically: forward (an FK-carrying line must have
+  `freeform_kind=NULL`) is FK-only and ignores source rows; inverse (a
+  line with none of the three FKs must carry a non-null kind) applies
+  only when the line is ALSO unsourced. A claimed bare hand-line —
+  crystallized at acceptance into a Task/Material/Fee and then
+  source-linked to the atom it produced — legitimately has both a source
+  row and its original non-null kind: acceptance never clears it, and the
+  CO retire discriminator depends on reading it. Backfill/converter rows
+  emitting `NULL` on a claimed line are legal too — kind is
+  optional-but-meaningful there, never forbidden.
 - **line_number**: auto-generated sequentially per estimate if null
 - **units** (required, max 50 chars, default `'none'`): **non-blank** —
   `CharField` without `blank=True`, and `BaseLineItem.save()` always runs

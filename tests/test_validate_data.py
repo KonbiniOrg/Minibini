@@ -885,3 +885,104 @@ class ValidateDataFreeformKindConsistencyTest(TestCase):
         output = self._run()
         self.assertNotIn('null on a bare line', output)
         self.assertNotIn('not bare', output)
+
+    # ── C1 seam tests: forward is FK-only, inverse is bare+unsourced ──
+
+    def test_accepted_estimate_all_three_hand_line_kinds_is_clean(self):
+        """CRITICAL review finding (C1), seam test (a): an accepted
+        estimate's claimed bare hand-lines (freeform_kind set at entry,
+        PLUS a self-pointing EstimateLineItemSource added by acceptance)
+        must not be flagged. Under the old is_bare = no-FK-and-no-source
+        definition, acceptance's source row alone flipped these lines to
+        "not bare" and falsely errored on their retained (legal) kind."""
+        from apps.estimates.acceptance import EstimateAcceptanceService
+
+        job = Job.objects.create(
+            job_number='J-VFK-ACC', name='FK Accept Job', contact=self.contact,
+        )
+        estimate = Estimate.objects.create(
+            job=job, estimate_number='EST-VFK-ACC', version=1,
+            status=Estimate.STATUS_OPEN,
+        )
+        EstimateLineItem.objects.create(
+            estimate=estimate, line_number=1, description='Raw stock',
+            qty=Decimal('2'), price=Decimal('40.00'), units='ft',
+            accounting_category=self.ac, freeform_kind=EstimateLineItem.KIND_MATERIAL,
+        )
+        EstimateLineItem.objects.create(
+            estimate=estimate, line_number=2, description='Custom fitting',
+            qty=Decimal('3'), price=Decimal('50.00'), units='ea',
+            accounting_category=self.ac, freeform_kind=EstimateLineItem.KIND_WORK,
+        )
+        EstimateLineItem.objects.create(
+            estimate=estimate, line_number=3, description='Rush handling',
+            qty=Decimal('1'), price=Decimal('25.00'),
+            accounting_category=self.ac, freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+
+        EstimateAcceptanceService.on_accept(estimate)
+
+        output = self._run()
+        self.assertNotIn('freeform_kind', output)
+
+
+class ValidateDataNegativePriceFeeExemptionTest(TestCase):
+    """check_line_items() (M1 review finding): a negative price is
+    legitimate on a fee/credit line — bare freeform_kind='fee' hand-lines,
+    or lines claiming/sourced from a Fee atom via SOURCE_FEE — and must not
+    warn. Everything else (bare work lines, PO lines) still warns."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='FeeNeg', code='FEENEG')
+        self.contact = Contact.objects.create(first_name='Neg', last_name='Tester')
+        self.job = Job.objects.create(
+            job_number='J-NEGFEE-001', name='Neg Fee Job', contact=self.contact,
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-NEGFEE-001', version=1,
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def test_bare_fee_kind_negative_price_not_warned(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Credit',
+            qty=Decimal('1'), price=Decimal('-25.00'),
+            accounting_category=self.ac, freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+        output = self._run()
+        self.assertNotIn(f'EstimateLineItem {li.pk}: negative price', output)
+
+    def test_invoice_line_sourced_from_fee_negative_price_not_warned(self):
+        fee = Fee.objects.create(
+            job=self.job, description='Sourced Credit',
+            unit_rate=Decimal('-40.00'), accounting_category=self.ac,
+        )
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-NEGFEE-001')
+        ili = InvoiceLineItem.objects.create(
+            invoice=invoice, line_number=1, description='Sourced Credit',
+            qty=Decimal('1'), price=Decimal('-40.00'),
+            accounting_category=self.ac,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=ili,
+            source_type=InvoiceLineItemSource.SOURCE_FEE,
+            source_pk=fee.pk,
+        )
+        output = self._run()
+        self.assertNotIn(f'InvoiceLineItem {ili.pk}: negative price', output)
+
+    def test_bare_work_kind_negative_price_still_warned(self):
+        """Control: the exemption is scoped to fee-kind/fee-sourced lines
+        only — a bare work line with a negative price (a data mistake, not
+        legitimately billable) still warns."""
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Bad work line',
+            qty=Decimal('1'), price=Decimal('-10.00'),
+            accounting_category=self.ac, freeform_kind=EstimateLineItem.KIND_WORK,
+        )
+        output = self._run()
+        self.assertIn(f'EstimateLineItem {li.pk}: negative price', output)

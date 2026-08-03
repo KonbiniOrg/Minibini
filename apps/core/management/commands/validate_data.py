@@ -437,38 +437,72 @@ class Command(BaseCommand):
                     self.errors.append(
                         f'{name} {li.pk}: has both task and inventory_item (mutually exclusive)'
                     )
-                # Negative price
+                # Negative price — legitimate on a fee/credit line (bare
+                # freeform_kind='fee' hand-line, or a line claiming/sourced
+                # from a Fee atom via SOURCE_FEE); only warn on everything
+                # else, where a negative price is likely a data mistake.
                 if li.price < 0:
-                    self.warnings.append(f'{name} {li.pk}: negative price {li.price}')
+                    is_fee_kind = getattr(li, 'freeform_kind', None) == 'fee'
+                    has_fee_source = (
+                        hasattr(li, 'sources')
+                        and li.sources.filter(source_type='fee').exists()
+                    )
+                    if not (is_fee_kind or has_fee_source):
+                        self.warnings.append(f'{name} {li.pk}: negative price {li.price}')
 
     # ── freeform_kind consistency (EstimateLineItem / ChangeOrderLineItem) ──
 
     def check_freeform_kind_consistency(self):
         """freeform_kind is a real writable field (task-owned-money Phase 2,
-        Task 4): non-null IFF the line is "bare" — no inventory_item, no
-        service_item, (EstimateLineItem only — ChangeOrderLineItem has no
-        adjustment_service field) no adjustment_service, AND no
-        EstimateLineItemSource/ChangeOrderLineItemSource row. That last
-        condition matters: the wizard's add_atoms_to_new_line_item path
-        composes a line purely from existing Task/Material/Fee atoms via
-        the polymorphic source join table — such a line legitimately has
-        none of the three FKs and a NULL freeform_kind (it isn't a
-        freeform entry at all, so freeform_kind never applies), and this
-        shape is common on real data. Omitting the source check would
-        make every atom-sourced line look "bare" and wrongly trip the
-        inverse branch below. The invariant is enforced only at the
-        service layer (EstimateService._reject_freeform_kind_on_non_bare_line,
-        shared with ChangeOrderService), not by a model clean() guard, so
-        data written via QuerySet.update(), fixtures, or other bypass
-        paths can violate it undetected.
+        Task 4). The two directions of the invariant are checked
+        DIFFERENTLY — they are NOT mirror images of each other:
 
-        The inverse — a bare (including source-checked) line with
-        freeform_kind NULL — is also checked. This is not paranoia: it's
-        reachable in production via at least two known gaps in the
-        InventoryItem deletion/merge paths that neither one is this
-        task's job to fix (flagged separately for the phase final
-        review): (1) a plain InventoryItem delete, whose deletability
-        guard (assert_item_deletable / has_document_line_refs) never checks
+        Forward (non-bare → kind must be null): FK-ONLY. A line carrying an
+        inventory_item, service_item, or (EstimateLineItem only) an
+        adjustment_service must have freeform_kind=NULL. Source rows are
+        irrelevant here — do NOT fold "has a source" into this branch. A
+        claimed bare hand-line (see below) has a source row too and must NOT
+        trip this check.
+
+        Inverse (bare AND unsourced → kind must be non-null): a line with
+        NONE of the three FKs *and* no EstimateLineItemSource/
+        ChangeOrderLineItemSource row must carry a determinate freeform_kind.
+        The source check matters here for two DIFFERENT reasons, both of
+        which leave freeform_kind legally NULL:
+
+        1. Wizard-composed lines (add_atoms_to_new_line_item): a line built
+           purely from existing Task/Material/Fee atoms via the polymorphic
+           source join table. It never had a freeform_kind — the line isn't
+           a freeform entry at all — and correctly has none of the three FKs
+           plus a NULL kind. Common shape on real data.
+        2. Claimed bare hand-lines (acceptance.py / co_acceptance.py): a
+           bare hand-line (freeform_kind='work'/'material'/'fee' set at
+           entry) gets crystallized into a Task/Material/Fee at acceptance,
+           and the SAME line item is then source-linked to the atom IT
+           produced — acceptance never clears the line's own freeform_kind
+           (apps/estimates/acceptance.py ~:141-183). So after acceptance
+           this line has BOTH a source row AND a non-null freeform_kind.
+           This is legal and expected, not a corruption: the CO retire
+           discriminator (ChangeOrderAcceptanceService._current_atoms /
+           _retire) depends on reading claiming_kind off exactly this kind
+           value to tell a flat work Task apart from every other Task.
+           Backfill/converter code emitting NULL for claimed lines is ALSO
+           legal — kind is optional-but-meaningful on a claimed bare line,
+           never forbidden there.
+
+        Only a line with NO FKs and NO source row is truly freeform; only
+        THAT population is required to carry a kind. The invariant is
+        enforced only at the service layer
+        (EstimateService._reject_freeform_kind_on_non_bare_line, shared with
+        ChangeOrderService), not by a model clean() guard, so data written
+        via QuerySet.update(), fixtures, or other bypass paths can violate
+        it undetected.
+
+        The inverse check is not paranoia: it's reachable in production via
+        at least two known gaps in the InventoryItem deletion/merge paths
+        (flagged separately for the phase final review): (1) a plain
+        InventoryItem delete, whose deletability guard
+        (assert_item_deletable / has_document_line_refs) never checks
         ChangeOrderLineItem references, combined with inventory_item being
         SET_NULL — deleting an item referenced only by a CO line silently
         turns that line bare while leaving freeform_kind NULL; (2)
@@ -504,13 +538,17 @@ class Command(BaseCommand):
                     adjustment_service_id = li.adjustment_service_id
                 else:
                     adjustment_service_id = None
-                is_bare = (
-                    li.inventory_item_id is None
-                    and li.service_item_id is None
-                    and adjustment_service_id is None
-                    and not li.has_source
+                has_fk = (
+                    li.inventory_item_id is not None
+                    or li.service_item_id is not None
+                    or adjustment_service_id is not None
                 )
-                if not is_bare and li.freeform_kind is not None:
+                # Forward direction: FK-only. A claimed bare hand-line has a
+                # source row (pointing at the atom it crystallized) AND
+                # retains its freeform_kind — that combination is legal and
+                # must NOT trip this branch, so source is deliberately not
+                # considered here.
+                if has_fk and li.freeform_kind is not None:
                     self.errors.append(
                         f'{name} {li.pk}: freeform_kind="{li.freeform_kind}" is set but '
                         f'line is not bare (inventory_item={li.inventory_item_id}, '
@@ -518,7 +556,10 @@ class Command(BaseCommand):
                         + (f', adjustment_service={adjustment_service_id}' if has_adjustment_service else '')
                         + ') — freeform_kind must be null on a catalog/service/adjustment line'
                     )
-                elif is_bare and li.freeform_kind is None:
+                # Inverse direction: only a line with no FKs AND no source
+                # row (truly freeform, nothing claimed it and it claims
+                # nothing) is required to carry a kind.
+                elif not has_fk and not li.has_source and li.freeform_kind is None:
                     self.errors.append(
                         f'{name} {li.pk}: freeform_kind is null on a bare line '
                         f'(no inventory_item, service_item'
