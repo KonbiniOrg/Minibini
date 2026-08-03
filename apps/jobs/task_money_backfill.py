@@ -17,10 +17,26 @@
 def backfill_task_money(Task, RateScheme):
     """One-shot copy of scheme values onto tasks + key->snapshot modifier resolution.
     Iterates and saves via update() per-row on the historical model (no custom save
-    side effects exist for these fields)."""
+    side effects exist for these fields).
+
+    Skips tasks whose scheme is a 'percentage' algorithm: percentage schemes
+    are document-level adjustments, never valid task billing (the current
+    stamp_from_scheme/RateScheme.clean guards forbid stamping one onto a
+    task) — a task pointing at one here is a historical anomaly that
+    predates those guards. Task.qty_source has no 'percentage' choice, so
+    copying scheme.algorithm verbatim would persist an out-of-choices value;
+    the skipped task's money fields are left as-is (empty/whatever they
+    already were) instead. Returns the skipped count so the migration can
+    report it — hardcode the 'percentage' literal rather than importing
+    RateScheme.PERCENTAGE: this runs against the historical model frozen at
+    this migration's position in schema history, not the live model."""
+    skipped_percentage = 0
     for task in Task.objects.select_related('source_scheme').iterator():
         scheme = task.source_scheme
         if scheme is None:
+            continue
+        if scheme.algorithm == 'percentage':
+            skipped_percentage += 1
             continue
         keys = task.active_modifiers if isinstance(task.active_modifiers, list) else []
         resolved = [m for m in (scheme.modifiers or []) if m.get('key') in keys]
@@ -29,3 +45,4 @@ def backfill_task_money(Task, RateScheme):
             unit_label=scheme.unit_label,
             accounting_category_id=scheme.accounting_category_id,
             active_modifiers=resolved)
+    return skipped_percentage

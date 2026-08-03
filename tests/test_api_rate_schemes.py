@@ -166,6 +166,21 @@ class DefaultRateSchemeSettingsTest(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn('default_rate_scheme', resp.data)
 
+    def test_default_rate_scheme_rejects_percentage_scheme(self):
+        """A percentage scheme is a document-level adjustment, never valid
+        task billing (stamp_from_scheme/RateScheme-on-Task guards forbid
+        it elsewhere) — default_rate_scheme offers a preset for new task
+        creation, so it must reject one too."""
+        pct = RateScheme.objects.create(
+            name='S-drs-pct', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10'), unit_label='%', accounting_category=self.ac,
+        )
+        resp = _client(self.admin).patch(
+            '/api/settings/', {'default_rate_scheme': str(pct.pk)},
+            format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('default_rate_scheme', resp.data)
+
     def test_default_rate_scheme_can_be_cleared_to_blank(self):
         Configuration.objects.update_or_create(
             key='default_rate_scheme', defaults={'value': str(self.scheme.pk)})

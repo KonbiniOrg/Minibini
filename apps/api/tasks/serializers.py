@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
@@ -194,6 +196,61 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             raise serializers.ValidationError(
                 'Percentage services are document adjustments and cannot bill a task.'
             )
+        return value
+
+    def validate_rate(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError('Rate cannot be negative.')
+        return value
+
+    def validate_active_modifiers(self, value):
+        """The contract is asymmetric by design (task-owned-money Phase 1):
+        on CREATE (no instance yet) ``active_modifiers`` is a list of
+        modifier KEY STRINGS — resolved into snapshot dicts server-side by
+        ``Task.stamp_from_scheme``. On UPDATE (instance exists) it's the
+        full ``{key, label, percent}`` snapshot list itself, applied
+        directly via ``setattr`` in ``TaskService.update_task`` — there's no
+        re-stamp step to resolve bare keys against. Without this check, a
+        manager PATCHing key-strings (the create shape) persists a
+        malformed row and ``Task.effective_rate()`` blows up on every
+        later read of that task."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError('Must be a list.')
+        if self.instance is None:
+            for item in value:
+                if not isinstance(item, str):
+                    raise serializers.ValidationError(
+                        'On create, active_modifiers must be a list of '
+                        'modifier key strings.'
+                    )
+            return value
+        for item in value:
+            if not isinstance(item, dict):
+                raise serializers.ValidationError(
+                    'On update, active_modifiers must be a list of '
+                    '{key, percent} snapshot dicts.'
+                )
+            key = item.get('key')
+            if not isinstance(key, str) or not key:
+                raise serializers.ValidationError(
+                    'Each active_modifiers entry needs a string "key".'
+                )
+            label = item.get('label')
+            if label is not None and not isinstance(label, str):
+                raise serializers.ValidationError(
+                    'active_modifiers "label" must be a string.'
+                )
+            percent = item.get('percent')
+            # bool is a subclass of int (isinstance(True, int) is True), so
+            # mirror validate_data's Decimal(str(...)) idiom instead of an
+            # isinstance numeric check — str(True) == 'True', which Decimal
+            # rejects, so bool is correctly excluded without a special case.
+            try:
+                Decimal(str(percent))
+            except (InvalidOperation, TypeError, ValueError):
+                raise serializers.ValidationError(
+                    'active_modifiers "percent" must be numeric.'
+                )
         return value
 
     def _resolve_job(self):
