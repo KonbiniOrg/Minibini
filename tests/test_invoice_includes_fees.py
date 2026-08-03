@@ -315,6 +315,7 @@ class CopyFromEstimateClaimsFeeTest(TestCase):
             estimate=self.estimate, line_number=2,
             description='Rush 10%', qty=Decimal('1'), price=Decimal('15.00'),
             units='%', adjustment_service=rush_svc,
+            adjustment_percent=rush_svc.rate,
         )
         InvoiceService.copy_from_estimate(self.invoice)
         # Only 1 InvoiceLineItemSource of type 'fee' should exist

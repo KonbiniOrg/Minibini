@@ -52,6 +52,7 @@ def _make_adjustment_fixture(test_case):
         description='Rush Fee', price=Decimal('10.00'),
         accounting_category=cat,
         adjustment_service=svc,
+        adjustment_percent=svc.rate,
     )
     adj_line.adjustment_target_categories.set([cat.pk])
 

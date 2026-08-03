@@ -155,10 +155,22 @@ class InvoiceLineItem(BaseLineItem):
     """Line item for invoices - inherits shared functionality from BaseLineItem."""
 
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
+    # adjustment_service: provenance ONLY (task-owned-money Phase 1, Task 5) —
+    # which preset this adjustment line was created from. Still what SELECTS a
+    # line as an adjustment (adjustment_service_id is not None is identity, not
+    # computation) but never read for math; adjustment_percent below is the
+    # price of record.
     adjustment_service = models.ForeignKey(
         'jobs.RateScheme', on_delete=models.PROTECT,
         null=True, blank=True, related_name='+',
         help_text='Set when this line is a percentage adjustment (rush/discount).',
+    )
+    adjustment_percent = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True,
+        help_text=(
+            "Snapshot of adjustment_service's rate at creation time. "
+            "compute_adjustment_amount reads this field, never the live scheme."
+        ),
     )
     adjustment_target_categories = models.ManyToManyField(
         'core.AccountingCategory', blank=True, related_name='+',

@@ -219,8 +219,10 @@ class InvoiceService:
 
         Creates one InvoiceLineItem per line returned by compose_agreement(invoice.job),
         preserving description, qty, price, units, and accounting_category. Adjustment
-        lines also receive adjustment_service and adjustment_target_categories so the
-        agreement panel dedup sees them as already_added.
+        lines also receive adjustment_service, adjustment_percent (the snapshot carried
+        forward from the estimate line — never re-read off the live scheme), and
+        adjustment_target_categories so the agreement panel dedup sees them as
+        already_added.
 
         Preconditions (raise ValidationError if violated):
         - invoice.status == Invoice.STATUS_DRAFT
@@ -272,6 +274,7 @@ class InvoiceService:
                 )
                 if line.get('is_adjustment') and line.get('adjustment_service_id'):
                     li.adjustment_service_id = line['adjustment_service_id']
+                    li.adjustment_percent = line.get('percent')
 
                 LineItemService.save_line_item(li)
 
@@ -324,6 +327,7 @@ class InvoiceService:
                 price=Decimal('0.00'),
                 accounting_category=svc.accounting_category,
                 adjustment_service=svc,
+                adjustment_percent=svc.rate,
             )
             line.save()
             if target_category_ids:

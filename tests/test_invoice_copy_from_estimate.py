@@ -64,6 +64,7 @@ class InvoiceCopyFromEstimateServiceTest(TestCase):
             estimate=self.est, line_number=2, qty=Decimal('1'),
             units='%', description='Rush 10%', price=Decimal('10.00'),
             adjustment_service=self.rush_svc,
+            adjustment_percent=self.rush_svc.rate,
         )
         # Add a target category for the adjustment.
         self.adj_line.adjustment_target_categories.set([self.cat])
@@ -102,6 +103,24 @@ class InvoiceCopyFromEstimateServiceTest(TestCase):
             self.cat.pk,
             list(adj.adjustment_target_categories.values_list('pk', flat=True)),
         )
+
+    def test_copy_carries_adjustment_percent_snapshot(self):
+        """copy_from_estimate carries the estimate line's adjustment_percent
+        snapshot onto the invoice line — not a fresh read of the scheme's
+        current rate. Changing the preset afterward must not move the
+        already-copied invoice line."""
+        InvoiceService.copy_from_estimate(self.invoice)
+        adj = InvoiceLineItem.objects.get(
+            invoice=self.invoice, adjustment_service=self.rush_svc,
+        )
+        self.assertEqual(adj.adjustment_percent, Decimal('10.00'))
+
+        # Editing the preset after the copy must not retroactively change
+        # the snapshot already carried onto the invoice line.
+        self.rush_svc.rate = Decimal('77.00')
+        self.rush_svc.save()
+        adj.refresh_from_db()
+        self.assertEqual(adj.adjustment_percent, Decimal('10.00'))
 
     def test_adjustment_line_is_already_added_after_copy(self):
         """After copy, agreement-adjustments should see the copied adjustment as already_added."""
@@ -192,6 +211,7 @@ class InvoiceCopyFromEstimateAPITest(TestCase):
             estimate=self.est, line_number=2, qty=Decimal('1'),
             units='%', description='Rush 15%', price=Decimal('30.00'),
             adjustment_service=self.rush_svc,
+            adjustment_percent=self.rush_svc.rate,
         )
 
         self.invoice = Invoice.objects.create(
