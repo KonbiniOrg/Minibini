@@ -75,6 +75,7 @@ class HandLineACValidationSetup(TestCase):
             qty=Decimal('1'), price=Decimal('50.00'),
             accounting_category=None,  # also None to confirm adjustment exemption
             adjustment_service=self.adj_scheme,
+            adjustment_percent=self.adj_scheme.rate,
         )
 
 

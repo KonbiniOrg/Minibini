@@ -279,6 +279,7 @@ class EstimateService:
                 price=li.price,
                 accounting_category=li.accounting_category,
                 adjustment_service_id=li.adjustment_service_id,
+                adjustment_percent=li.adjustment_percent,
                 service_item=li.service_item,
                 is_material=li.is_material,
             )
@@ -557,6 +558,7 @@ class EstimateService:
             price=Decimal('0.00'),
             accounting_category=svc.accounting_category,
             adjustment_service=svc,
+            adjustment_percent=svc.rate,
         )
         line.save()
         if target_category_ids:

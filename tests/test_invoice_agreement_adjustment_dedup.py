@@ -71,6 +71,7 @@ class InvoiceAgreementAdjustmentDedupTest(TestCase):
             estimate=self.est, line_number=2, qty=Decimal('1'),
             units='%', description='Rush 15%', price=Decimal('30.00'),
             adjustment_service=self.rush_svc,
+            adjustment_percent=self.rush_svc.rate,
         )
 
         # A draft invoice for the same job.
@@ -135,6 +136,7 @@ class InvoiceAgreementAdjustmentDedupTest(TestCase):
             invoice=self.invoice, line_number=1, qty=Decimal('1'),
             units='%', description='Rush 15%', price=Decimal('30.00'),
             adjustment_service=self.rush_svc,
+            adjustment_percent=self.rush_svc.rate,
         )
 
         adjustments = self._agreement_adjustments()

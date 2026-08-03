@@ -88,13 +88,15 @@ class ComputeAdjustmentAmountTest(TestCase):
         )
 
     def _make_adj_line(self, svc, line_number):
-        """Create an adjustment EstimateLineItem."""
+        """Create an adjustment EstimateLineItem, snapshotting svc.rate onto
+        adjustment_percent the way the real creation paths do."""
         from apps.estimates.models import EstimateLineItem
         return EstimateLineItem.objects.create(
             estimate=self.est, line_number=line_number,
             qty=Decimal('1'), price=Decimal('0.00'),
             accounting_category=self.labor,
             adjustment_service=svc,
+            adjustment_percent=svc.rate,
         )
 
     def test_compute_adjustment_all_lines(self):
@@ -196,6 +198,7 @@ class RecomputeAdjustmentsHelperTest(TestCase):
             estimate=self.est, line_number=2, qty=Decimal('1'),
             units='%', description='Rush 10%', price=Decimal('0.00'),
             adjustment_service=self.pct_svc,
+            adjustment_percent=self.pct_svc.rate,
         )
 
     def test_recompute_updates_stale_adjustment(self):
@@ -288,6 +291,26 @@ class EstimateAutoRecomputeTest(TestCase):
         self.adj.refresh_from_db()
         self.assertEqual(self.adj.price, Decimal('0.00'))
 
+    def test_add_adjustment_line_snapshots_percent(self):
+        """add_adjustment_line stamps adjustment_percent from the scheme's
+        rate at creation time — the line's own field, not a live pointer."""
+        self.assertEqual(self.adj.adjustment_percent, Decimal('10.00'))
+
+    def test_editing_percentage_preset_does_not_move_existing_adjustments(self):
+        """Changing the preset's rate after the adjustment line exists must
+        NOT move the line's amount on recompute — it reads its own snapshot
+        (adjustment_percent), never the live RateScheme.rate."""
+        from apps.core.adjustments import recompute_adjustments
+        from apps.estimates.models import EstimateLineItem
+
+        before = self.adj.price
+        self.pct_svc.rate = Decimal('99.00')
+        self.pct_svc.save()
+        recompute_adjustments(EstimateLineItem.objects.filter(estimate=self.est))
+        self.adj.refresh_from_db()
+        self.assertEqual(self.adj.price, before)
+        self.assertEqual(self.adj.adjustment_percent, Decimal('10.00'))
+
 
 # ---------------------------------------------------------------------------
 # InvoiceService auto-recompute
@@ -359,6 +382,25 @@ class InvoiceAutoRecomputeTest(TestCase):
         self.adj.refresh_from_db()
         self.assertEqual(self.adj.price, Decimal('0.00'))
 
+    def test_add_adjustment_line_snapshots_percent(self):
+        """InvoiceService.add_adjustment_line stamps adjustment_percent from
+        the scheme's rate at creation time — the line's own field."""
+        self.assertEqual(self.adj.adjustment_percent, Decimal('5.00'))
+
+    def test_editing_percentage_preset_does_not_move_existing_invoice_adjustment(self):
+        """Changing the preset's rate after the invoice adjustment line exists
+        must NOT move the line's amount on recompute."""
+        from apps.core.adjustments import recompute_adjustments
+        from apps.invoicing.models import InvoiceLineItem
+
+        before = self.adj.price
+        self.pct_svc.rate = Decimal('50.00')
+        self.pct_svc.save()
+        recompute_adjustments(InvoiceLineItem.objects.filter(invoice=self.invoice))
+        self.adj.refresh_from_db()
+        self.assertEqual(self.adj.price, before)
+        self.assertEqual(self.adj.adjustment_percent, Decimal('5.00'))
+
 
 # ---------------------------------------------------------------------------
 # EstimateWizardService auto-recompute
@@ -389,10 +431,11 @@ class EstimateWizardAutoRecomputeTest(TestCase):
             accounting_category=self.cat,
         )
         # job-owns-atoms refactor (Task 3.1): estimate projects the Job's Tasks.
-        self.pt = Task.objects.create(
-            name='Wiring', job=self.job,
-            rate_scheme=flat_svc, est_qty=Decimal('1'),
-        )
+        # task-owned-money Phase 1 (Task 1/3): Task no longer takes rate_scheme
+        # directly — stamp_from_scheme() copies the preset's money fields on.
+        self.pt = Task(name='Wiring', job=self.job, est_qty=Decimal('1'))
+        self.pt.stamp_from_scheme(flat_svc)
+        self.pt.save()
 
         self.est = Estimate.objects.create(
             job=self.job, estimate_number=self.job.job_number, version=1,
@@ -463,6 +506,7 @@ class SaveLineItemChokePointTest(TestCase):
             estimate=self.est, line_number=2, qty=Decimal('1'),
             units='%', description='Rush-CK', price=Decimal('0.00'),
             accounting_category=self.cat, adjustment_service=pct_svc,
+            adjustment_percent=pct_svc.rate,
         )
 
     def test_save_line_item_recomputes_adjustments(self):
@@ -481,3 +525,76 @@ class SaveLineItemChokePointTest(TestCase):
         # Adjustment should now be 10% of (100 + 50) = 15
         self.adj.refresh_from_db()
         self.assertEqual(self.adj.price, Decimal('15.00'))
+
+
+# ---------------------------------------------------------------------------
+# adjustment_percent backfill migrations (0044/estimates, 0022/invoicing)
+# ---------------------------------------------------------------------------
+
+class AdjustmentPercentBackfillMigrationTest(TestCase):
+    """Direct tests of the migrations' forwards() backfill functions against
+    rows that predate adjustment_percent (adjustment_service set, percent
+    left null — simulates pre-migration data)."""
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.estimates.models import Estimate, EstimateLineItem
+        from apps.invoicing.models import Invoice, InvoiceLineItem
+        from apps.jobs.services import JobService
+
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-BF', name='Labor-BF', taxable=False,
+        )
+        self.contact = Contact.objects.create(
+            first_name='BF', last_name='Test', email='bf@t.com', work_number='555-5555',
+        )
+        self.job = JobService.create_job(name='BF Job', contact=self.contact)
+
+        self.svc = RateScheme.objects.create(
+            name='Rush-BF', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('12.50'), unit_label='%',
+            accounting_category=self.cat,
+        )
+
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-BF-001', status=Estimate.STATUS_DRAFT,
+        )
+        # Pre-migration-shaped row: adjustment_service set, adjustment_percent
+        # left at its default (null) — exactly what existing rows look like
+        # before the backfill runs.
+        self.est_adj = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, qty=Decimal('1'),
+            units='%', description='Rush-BF', price=Decimal('0.00'),
+            adjustment_service=self.svc,
+        )
+
+        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        self.inv_adj = InvoiceLineItem.objects.create(
+            invoice=self.invoice, line_number=1, qty=Decimal('1'),
+            units='%', description='Rush-BF', price=Decimal('0.00'),
+            adjustment_service=self.svc,
+        )
+
+    def test_estimate_migration_backfills_adjustment_percent(self):
+        import importlib
+        from django.apps import apps as real_apps
+
+        self.assertIsNone(self.est_adj.adjustment_percent)
+        mod = importlib.import_module(
+            'apps.estimates.migrations.0044_estimatelineitem_adjustment_percent'
+        )
+        mod.forwards(real_apps, None)
+        self.est_adj.refresh_from_db()
+        self.assertEqual(self.est_adj.adjustment_percent, Decimal('12.50'))
+
+    def test_invoice_migration_backfills_adjustment_percent(self):
+        import importlib
+        from django.apps import apps as real_apps
+
+        self.assertIsNone(self.inv_adj.adjustment_percent)
+        mod = importlib.import_module(
+            'apps.invoicing.migrations.0022_invoicelineitem_adjustment_percent'
+        )
+        mod.forwards(real_apps, None)
+        self.inv_adj.refresh_from_db()
+        self.assertEqual(self.inv_adj.adjustment_percent, Decimal('12.50'))

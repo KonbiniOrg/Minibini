@@ -36,7 +36,9 @@ def _line_dict_from_estimate_item(eli, source_fee_id=None):
         'origin': 'estimate',
         'is_adjustment': is_adjustment,
         'adjustment_service_id': eli.adjustment_service_id,
-        'percent': (eli.adjustment_service.rate if is_adjustment else None),
+        # Line's own snapshot, never the live scheme (adjustment_service is
+        # provenance only — see EstimateLineItem.adjustment_service).
+        'percent': (eli.adjustment_percent if is_adjustment else None),
         'target_category_ids': (
             list(eli.adjustment_target_categories.values_list('pk', flat=True))
             if is_adjustment else []
