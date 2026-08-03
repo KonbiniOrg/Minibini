@@ -455,9 +455,18 @@ class AtomDerivationTest(unittest.TestCase):
         build.derive_atoms(self.c)
         self.assertGreater(len(self._models('jobs.ratescheme')), 0)
         self.assertGreater(len(self._models('jobs.task')), 0)
-        rs_pks = {f['pk'] for f in self._models('jobs.ratescheme')}
+        schemes_by_pk = {f['pk']: f['fields'] for f in self._models('jobs.ratescheme')}
         for t in self._models('jobs.task'):
-            self.assertIn(t['fields']['rate_scheme'], rs_pks)
+            fields = t['fields']
+            self.assertIn(fields['source_scheme'], schemes_by_pk)
+            # Task-owned money (task-owned-money Phase 1): the task carries its
+            # own permanent copy of the resolved scheme's money fields, mirroring
+            # Task.stamp_from_scheme / task_money_backfill.backfill_task_money.
+            scheme = schemes_by_pk[fields['source_scheme']]
+            self.assertEqual(fields['qty_source'], scheme['algorithm'])
+            self.assertEqual(fields['rate'], scheme['rate'])
+            self.assertEqual(fields['unit_label'], scheme['unit_label'])
+            self.assertEqual(fields['accounting_category'], scheme['accounting_category'])
 
     def test_atoms_emit_canon_units_only(self):
         # Materials and Deliverables must use canonical units (no 'each' /
@@ -497,7 +506,7 @@ class AtomDerivationTest(unittest.TestCase):
         # Every flat-fee task: rate on RateScheme, empty list modifiers.
         ff_pks = {f['pk'] for f in ff_schemes}
         for t in self._models('jobs.task'):
-            sp = t['fields']['rate_scheme']
+            sp = t['fields']['source_scheme']
             mods = t['fields']['active_modifiers']
             self.assertIsInstance(mods, list,
                                   f"task {t['pk']} active_modifiers should be list")
@@ -1687,12 +1696,16 @@ class BlepShiftSynthesisTest(unittest.TestCase):
     """Bleps + Shifts for complete tasks: window placement, enclosure, no
     per-user overlap, entered_qty actuals. Synthetic state for control."""
 
+    # scheme pk -> algorithm, for _add_task's qty_source (task-owned money:
+    # build_bleps_and_shifts now reads the task's own qty_source directly,
+    # not a rate_scheme indirection).
+    _SCHEME_ALGO = {10: 'elapsed_time', 11: 'entered_qty'}
+
     def _converter(self):
         c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
         # Two seed-style users in the rotation pool.
         c.user_by_username = {'u1': 1, 'u2': 2}
         c.rotation_user_pks = [1, 2]
-        c.scheme_algorithm_by_pk = {10: 'elapsed_time', 11: 'entered_qty'}
         c._pk_counters['core.user'] = 2
         return c
 
@@ -1710,7 +1723,10 @@ class BlepShiftSynthesisTest(unittest.TestCase):
     def _add_task(self, c, pk, job, status='complete', scheme=10,
                   ewt='02:00:00', est_qty=None, sort_order=1):
         c.add_fixture('jobs.task', pk, {
-            'job': job, 'rate_scheme': scheme, 'name': f't{pk}', 'description': '',
+            'job': job, 'source_scheme': scheme,
+            'qty_source': self._SCHEME_ALGO[scheme], 'rate': None,
+            'unit_label': 'none', 'accounting_category': None,
+            'name': f't{pk}', 'description': '',
             'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
             'active_modifiers': [], 'status': status, 'blocked_reason': '',
             'worker_queue': None, 'assignee': None, 'parent_task': None,
@@ -1831,14 +1847,21 @@ class BlepShiftSynthesisTest(unittest.TestCase):
 class EstQuantityHeuristicTest(unittest.TestCase):
     """assign_est_quantities fills est_qty on real Tasks by scheme algorithm."""
 
+    # scheme pk -> algorithm, for _add_task's qty_source. 'flat_fee' isn't a
+    # real Task.qty_source choice (fixed charges are jobs.Fee atoms now, not
+    # Tasks) — kept as a value assign_est_quantities' branches don't match,
+    # to exercise the "leaves est_qty untouched" fallthrough.
+    _SCHEME_ALGO = {1: 'elapsed_time', 2: 'entered_qty', 3: 'flat_fee'}
+
     def _converter(self):
-        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
-        c.scheme_algorithm_by_pk = {1: 'elapsed_time', 2: 'entered_qty', 3: 'flat_fee'}
-        return c
+        return NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
 
     def _add_task(self, c, pk, scheme, ewt='02:30:00', est_qty=None):
         c.add_fixture('jobs.task', pk, {
-            'job': 1, 'rate_scheme': scheme, 'name': 't', 'description': '',
+            'job': 1, 'source_scheme': scheme,
+            'qty_source': self._SCHEME_ALGO[scheme], 'rate': None,
+            'unit_label': 'none', 'accounting_category': None,
+            'name': 't', 'description': '',
             'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
             'active_modifiers': [], 'status': 'complete', 'blocked_reason': '',
             'worker_queue': None, 'assignee': None, 'parent_task': None,

@@ -57079,8 +57079,7 @@
       }
     ],
     "accounting_category": 3,
-    "replaced_by": null,
-    "replaced_at": null
+    "is_active": true
   }
 },
 {
@@ -57094,8 +57093,7 @@
     "unit_label": "hour",
     "modifiers": [],
     "accounting_category": 1,
-    "replaced_by": null,
-    "replaced_at": null
+    "is_active": true
   }
 },
 {
@@ -57120,8 +57118,7 @@
       }
     ],
     "accounting_category": 3,
-    "replaced_by": null,
-    "replaced_at": null
+    "is_active": true
   }
 },
 {
@@ -57135,8 +57132,7 @@
     "unit_label": "hour",
     "modifiers": [],
     "accounting_category": 3,
-    "replaced_by": 7,
-    "replaced_at": "2026-05-04T13:10:35.229Z"
+    "is_active": false
   }
 },
 {
@@ -57150,8 +57146,7 @@
     "unit_label": "hour",
     "modifiers": [],
     "accounting_category": 1,
-    "replaced_by": null,
-    "replaced_at": null
+    "is_active": true
   }
 },
 {
@@ -57165,8 +57160,7 @@
     "unit_label": "hour",
     "modifiers": [],
     "accounting_category": 3,
-    "replaced_by": null,
-    "replaced_at": null
+    "is_active": true
   }
 },
 {
@@ -57191,8 +57185,7 @@
       }
     ],
     "accounting_category": 2,
-    "replaced_by": null,
-    "replaced_at": null
+    "is_active": true
   }
 },
 {
@@ -57212,8 +57205,7 @@
       }
     ],
     "accounting_category": 3,
-    "replaced_by": null,
-    "replaced_at": null
+    "is_active": true
   }
 },
 {

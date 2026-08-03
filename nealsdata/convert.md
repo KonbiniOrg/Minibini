@@ -116,8 +116,9 @@ loaded after the dataset; they are not the converter's concern.)
    `derive_atoms`.) **Assigns
    explicit pks to the (otherwise pk-less) seed users** and builds
    `c.user_by_username`, the blep-rotation pool `c.rotation_user_pks` (every
-   active seed user except `system`), and `c.scheme_algorithm_by_pk` (used for
-   entered_qty actuals). Records a seed worker's fields as the clone template
+   active seed user except `system`), and `c.scheme_fields_by_pk` (each
+   seeded RateScheme's full fields dict, for stamping the money block onto
+   every Task — §4). Records a seed worker's fields as the clone template
    for minting extra users (§4).
 4. **`build_configuration`**: emits the `core.configuration` entries the
    app needs at runtime (numbering patterns + counters, `units_list`,
@@ -204,9 +205,9 @@ loaded after the dataset; they are not the converter's concern.)
 9a. **`assign_worker_times`**: gives every Task an invented per-task
     `est_worker_time` — random in `[0.5, 4.0]` hours, 2 sig figs,
     minute granularity (§4).
-9b. **`assign_est_quantities`**: fills `est_qty` on every Task by its
-    rate-scheme algorithm (hourly = worker hours; flat fee = 1; entered_qty =
-    piece count tied to worker time) — §4.
+9b. **`assign_est_quantities`**: fills `est_qty` on every Task by its own
+    `qty_source` (hourly = worker hours; entered_qty = piece count tied to
+    worker time) — §4.
 10. **`build_invoices`**: emits Invoices + line items via the
     Project-name link. Stashes each emitted line's classification (`task`,
     `material`, `lineitem`, `skip`) on `c.invoice_line_kinds` for the
@@ -292,7 +293,17 @@ Tasks come from two sources:
    `engrave …` — see `_LABOR_VERB_PREFIXES`) also become Tasks, even when a
    Checklist is present.
 
-Every task is assigned a RateScheme:
+Every task resolves a RateScheme and **stamps its money block from it**
+(`_stamp_money_block`, mirroring `Task.stamp_from_scheme` /
+`apps.jobs.task_money_backfill.backfill_task_money`): the scheme's `pk`
+lands on `source_scheme` (provenance only — never read for money math), and
+`qty_source` (= the scheme's `algorithm`), `rate`, `unit_label` and
+`accounting_category` are copied onto the task as its own permanent values.
+`active_modifiers` resolves any modifier keys against the scheme's
+`modifiers` into full `{key, label, percent}` snapshot dicts — the
+converter never activates any, so it's always `[]` in practice, but the
+resolution path is real (matches `_line_billing`'s `active_modifiers`
+return, currently always an empty key list).
 
 - Checklist tasks: keyword-matched (`checklist_scheme_name`):
   - `cut`        → `CNC Routing`
@@ -304,9 +315,8 @@ Every task is assigned a RateScheme:
   line with a time/quantity signal matches a seeded scheme by
   `(algorithm, rate)` (`_match_seed_scheme`), and a line with **no**
   time/quantity signal is a **fixed charge → it becomes a `jobs.fee`
-  atom, not a Task** (`_emit_fee`; the retired flat-fee RateScheme and
-  the `active_modifiers` price-dict hack are gone — `active_modifiers`
-  is always a list of modifier keys).
+  atom, not a Task** (`_emit_fee`; the retired flat-fee RateScheme is
+  gone).
 
 If the named scheme isn't in nealseed, the closest match is used (see
 `_match_seed_scheme`). When you add new schemes to nealseed, this will pick
@@ -608,8 +618,9 @@ resolver, the FreeAgent Contacts indexes it builds (`c.fa_org_by_norm` /
 `c.fa_org_display` / `c.fa_org_norms` / `c.fa_person_by_norm`),
 `c.job_map`, `c.jobs`, `c.estimates`, `c.line_items`, `c.cut_task`
 (the first-cut-task index for
-material attach), `c.scheme_by_name`, `c.scheme_algorithm_by_pk` (for
-entered_qty actuals), `c.user_by_username` / `c.rotation_user_pks` (blep
+material attach), `c.scheme_by_name`, `c.scheme_fields_by_pk` (full seeded
+RateScheme fields, for stamping the task money block),
+`c.user_by_username` / `c.rotation_user_pks` (blep
 rotation), `c.pli_index` / `c.pli_purchase_by_code` (material→PLI matching),
 `c.invoice_line_kinds` (per-line classifications used by
 `build_invoice_line_item_sources`), the pk counters, and diagnostics
