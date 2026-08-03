@@ -4,8 +4,8 @@ Reference for the work-execution and fulfillment side of Minibini: how
 Jobs, Tasks, Bleps, the Fee atom, Templates, Deliverables, and Shipments
 fit together. For service-layer mechanics, mixin catalog, permission
 atoms, history capture, and DELETE conventions, see
-`docs/designs/architecture-and-conventions.md`. For RateScheme / billing
-identity / estimate wizard / supersession, see
+`docs/designs/architecture-and-conventions.md`. For RateScheme presets /
+task-owned money and stamping / estimate wizard, see
 `docs/designs/estimates-and-prices.md`. For Material and
 TemplateMaterialAssociation, see
 `docs/designs/materials-inventory-and-purchasing.md`.
@@ -23,7 +23,7 @@ TemplateMaterialAssociation, see
 A Job is the central work-tracking entity. Each Job aggregates its work
 **atoms** directly plus its customer-facing documents:
 
-- 0+ **Tasks** (metered units of execution; `rate_scheme`, `est_qty`, `actual_qty`)
+- 0+ **Tasks** (metered units of execution; own `qty_source`/`rate`/`unit_label`/`accounting_category` money block stamped from a RateScheme preset, `est_qty`, `actual_qty`)
 - 0+ **Materials** (inventory-backed or freeform; optionally linked to a Task)
 - 0+ **Fees** (fixed charges: `quantity × unit_rate`; optionally linked to a Task)
 - 0+ Estimates (customer-facing quotes — lens over the atoms)
@@ -348,8 +348,8 @@ status (including `draft`). Ways to populate it:
 | Path | Trigger | Service | Notes |
 |---|---|---|---|
 | From WorkTemplate | `POST /api/jobs/{id}/populate-from-template` | `JobService.populate_from_template` | Generates Tasks + Materials from a `WorkTemplate`; creates earmarks |
-| Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `ServiceItem.generate_task` | One Task from a `ServiceItem`; available to any authenticated user (workers can self-serve) |
-| Direct task creation | `POST /api/jobs/{id}/tasks/` | `TaskService.create_direct` | One Task at a time; freeform (requires `rate_scheme_id`) |
+| Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `ServiceItem.generate_task` | One Task from a `ServiceItem`; endpoint is `IsAuthenticated`-only (workers can self-serve) — but a request that includes the `active_modifiers` key (even `[]`, overriding the template's own defaults) requires `CanManageJobOrPM` or `can_manage_financials`, same money-field gate as direct create (users-and-permissions.md) |
+| Direct task creation | `POST /api/jobs/{id}/tasks/` | `TaskService.create_direct` | One Task at a time; freeform (requires `rate_scheme_id`, the stamping trigger); money fields (`rate`/`unit_label`/`qty_source`/`accounting_category`/`active_modifiers`) require the same gate |
 | Direct material creation | `POST /api/jobs/{id}/materials/` | `MaterialService.create_on_job` | One Material; inventory-backed or freeform |
 | Direct fee creation | `POST /api/jobs/{id}/fees/` | `FeeService.create_on_job` | One Fee (fixed charge); also the crystallization target on estimate acceptance (see `estimates-and-prices.md` §9) |
 
@@ -408,9 +408,15 @@ returns `{job_id}` at HTTP 201. Permission: `CanManageJobs`.
   `Task`s and `Material`s.
 - **Tasks** are copied with billing fields intact but execution state
   fully reset: `status=pending`, no bleps, no assignee, `actual_qty=None`,
-  `worker_queue=None`, `blocked_reason=''`. Carried: `name`, `description`,
-  `sort_order`, `est_worker_time`, `est_qty`, `rate_scheme`,
-  `active_modifiers` (via `copy_active_modifiers`).
+  `worker_queue=None`, `blocked_reason=''`. Carried via `Task.copy_fields()`:
+  `name`, `description`, `sort_order`, `est_worker_time`, `est_qty`,
+  the task's own money block (`qty_source`, `rate`, `unit_label`,
+  `accounting_category`) copied directly (no RateScheme re-lookup),
+  `active_modifiers` (deep-copied via `copy_active_modifiers`), and
+  `service_item_id` (catalog identity, not provenance — survives cloning
+  so a QBO push can resolve the clone's Item). **Not** carried:
+  `source_scheme` — provenance is deliberately not cloned; the copy has
+  no stamping event of its own.
 - **Materials** carry `description`, `quantity`, `units`, `unit_cost`,
   `sell_price`, `inventory_item`, `accounting_category`, and their task
   attachment (task-less materials stay loose). Inventory state is fully
@@ -459,7 +465,7 @@ capped at **one level**: a subtask can never itself have subtasks —
 parent from a different job), and the subtask detail page hides its Add
 Subtask affordance. Both creation surfaces (`POST /api/tasks/{id}/subtasks/`
 and the job-nested create with `parent_task`) route through
-`create_direct`, so the on-hold, superseded-scheme, depth, and assignee
+`create_direct`, so the on-hold, inactive-scheme, depth, and assignee
 guards — and `mark_work_reopened` — apply identically; pinned by
 `tests/test_subtask_service_guards.py`.
 
@@ -576,31 +582,48 @@ independent of `sort_order` (which is the position within the Job's
 task list). Set by drag-and-drop on the board; nulled when assignee
 clears.
 
-### 4.4 Billing fields
+### 4.4 Billing fields — task-owned money
 
-`Task` carries billing identity directly via the `TaskBase` abstract:
+**Task-owned money (Phase 1).** `Task` carries its own permanent money
+block directly, not a live FK to `RateScheme`. A `RateScheme` preset is
+copied onto the task exactly once, at creation, by
+`Task.stamp_from_scheme(scheme, modifier_keys=None)` — from then on the
+task's own fields are the price of record; editing, retiring, or
+deleting the source preset never reprices or orphans the task. Full
+stamping/retirement mechanics: `estimates-and-prices.md` §3.
 
 | Field | Description |
 |---|---|
-| `rate_scheme` | FK to `RateScheme` (PROTECT). Required at the DB level on Task. Algorithms: `elapsed_time` / `entered_qty` / `percentage` (no `flat_fee` — fixed charges are the `Fee` atom, §4.7). |
+| `qty_source` | CharField, choices `'elapsed_time'` (`Task.QTY_ELAPSED`) / `'entered_qty'` (`Task.QTY_ENTERED`); default `entered_qty`. Copied from `scheme.algorithm` at stamp time — never `'percentage'` (percentage schemes can't stamp a task; no `flat_fee` either — fixed charges are the `Fee` atom, §4.7). |
+| `rate` | Decimal(10,2), nullable. Copied from `scheme.rate` at stamp time. |
+| `unit_label` | CharField(50), default `'none'`. Copied from `scheme.unit_label`. |
+| `accounting_category` | FK → `AccountingCategory` (PROTECT), nullable at the DB level. Copied from `scheme.accounting_category`; the API serializer requires it (§10, users-and-permissions.md). `Task.effective_accounting_category` returns it directly. |
+| `active_modifiers` | JSON list of `{key, label, percent}` **snapshot** dicts — resolved from `modifier_keys` against the scheme's `modifiers` at stamp time; always a list of dicts, never scheme-relative keys or a bare dict (`copy_active_modifiers()`, `apps/jobs/models.py`) |
+| `source_scheme` | FK → `RateScheme` (`SET_NULL`, `related_name='stamped_tasks'`). **Provenance only** — which preset this task was stamped from; never read by any compute path. Excluded from `copy_fields()` (job duplication doesn't carry provenance). |
 | `service_item` | Nullable FK to `ServiceItem` (SET_NULL), added 2026-07-21. **Catalog identity**, not document provenance: stamped by `ServiceItem.generate_task` (every path — template population, estimate/CO acceptance crystallization) and `TaskService.create_from_template`; included in `copy_fields()` so clones keep it. Lets the QBO invoice push resolve a task-sourced line to its mirrored QBO Item (quickbooks-integration.md). Hand-created tasks have none. |
-| `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`); always a list, never a dict |
-| `est_qty` | Estimated billable quantity in the rate scheme's units. Nullable on Task. Drives `compute_estimate_amount` (the estimate lens). |
+| `est_qty` | Estimated billable quantity in the task's own `unit_label`. Nullable on Task. Drives `compute_estimate_amount` (the estimate lens). |
 | `est_worker_time` | DurationField — estimated worker time for scheduling. Required once the Task is **explicitly assigned**: assigned work must be schedulable. Enforced on the assign gestures (`TaskService.assign` / `create_direct`-with-assignee / `update_task`-setting-assignee), **not** `Task.clean()` — auto-assign on start (`start_work` / `create_historical` claiming an unassigned task for its first worker) deliberately skips it, so assignee-without-est-time is a legal model state the schedule must tolerate. |
-| `actual_qty` | Running total of worker-entered increments for `ENTERED_QTY` schemes (every write is an add via `add_actual_qty` — signed, locked, floored at zero; settled at completion via `complete_task(add_qty=...)`); null for `ELAPSED_TIME` (derived from bleps). Drives `compute_amount` (the invoice lens). Entry surfaces + prompt flows: estimates-and-prices.md §4.2. |
+| `actual_qty` | Running total of worker-entered increments for `qty_source='entered_qty'` tasks (every write is an add via `add_actual_qty` — signed, locked, floored at zero; settled at completion via `complete_task(add_qty=...)`); null for `qty_source='elapsed_time'` (derived from bleps). Drives `compute_amount` (the invoice lens). Entry surfaces + prompt flows: estimates-and-prices.md §4.2. |
 
-`Task.compute_amount()` resolves the actual quantity per scheme algorithm
-and applies modifiers (the **invoice** view); `Task.compute_estimate_amount()`
-bills `est_qty` instead (the **estimate** view). `Task.effective_rate()`
-returns the modifier-adjusted rate. The full rules — scheme algorithms,
-modifier arithmetic, supersession, `is_referenced()` checks, the
-documents-as-lenses model — live in the estimates-and-prices doc.
+`Task.compute_amount()` resolves the actual quantity per the task's own
+`qty_source` and applies its own `active_modifiers` (the **invoice**
+view) — no `RateScheme` lookup; `Task.compute_estimate_amount()` bills
+`est_qty` instead (the **estimate** view). `Task.effective_rate()`
+returns the task's own `rate` plus its own `active_modifiers`
+surcharges. The full rules — algorithms, modifier snapshot shape,
+`is_active` retirement, the documents-as-lenses model — live in the
+estimates-and-prices doc.
 
 ### 4.5 Lifecycle service
 
 `TaskLifecycleService` (`apps/jobs/services.py`) is the only
 sanctioned path to transition a Task. All methods wrap in
 `transaction.atomic()` and use `select_for_update()` on the Task row.
+Every settle-up / prior-session gate below keys off the task's own
+`qty_source` field (`task.qty_source == Task.QTY_ENTERED`) — not a
+`RateScheme` lookup — since task-owned-money Phase 1 (§4.4). "ENTERED_QTY
+task" / "ELAPSED_TIME task" below is prose shorthand for that comparison,
+matching the service's own code comments.
 
 | Method | Inputs | Behavior |
 |---|---|---|
@@ -1004,17 +1027,24 @@ Task, or Material.
 ### 7.2 generate_task
 
 `ServiceItem.generate_task(container, est_qty, ...)`
-(`apps/estimates/models.py`) creates a `Task` on a `Job`. The container
-must be a `Job` — it raises `ValueError` for anything else (the
-worksheet/PlanTask branch was removed).
+(`apps/estimates/models.py`) creates a `Task` on a `Job`, stamping the
+template's `rate_scheme` onto it via `Task.stamp_from_scheme` (§4.4)
+before first save. The container must be a `Job` — it raises
+`ValueError` for anything else (the worksheet/PlanTask branch was
+removed).
 
-It refuses to fire if the template's `rate_scheme` has been superseded
-(raises `SchemeSupersededError`, which the API translates to HTTP 409).
-See estimates-and-prices for the supersession story.
+It refuses to fire if the template's `rate_scheme` is **inactive**
+(`is_active=False`) — raises `SchemeInactiveError`, which the API
+translates to HTTP 409 — unless the caller passes
+`allow_inactive_scheme=True` (used by acceptance-time crystallization,
+which must be able to replay a hand-line whose scheme was retired after
+authoring). See `estimates-and-prices.md` §3 for the stamping/retirement
+story.
 
-Optional overrides: `name`, `description`, `active_modifiers`,
-`est_worker_time`, `assignee`, `sort_order`. Falls back to the
-template's defaults when not provided.
+Optional overrides: `name`, `description`, `active_modifiers` (a list of
+modifier keys resolved into snapshot dicts at stamp time, falling back
+to `default_active_modifiers`), `est_worker_time`, `assignee`,
+`sort_order`. Falls back to the template's defaults when not provided.
 
 ### 7.3 Job-level generation
 

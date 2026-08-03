@@ -61,7 +61,7 @@ end (e.g. `InvoiceService.copy_from_estimate`).
 - No serializers cross the service boundary. Viewsets extract
   `serializer.validated_data` and pass plain kwargs.
 - Services raise domain exceptions (`ServiceError`, `NotFoundError`,
-  `SchemeSupersededError`). Views translate those into HTTP responses
+  `SchemeInactiveError`). Views translate those into HTTP responses
   or Django messages.
 
 The estimate and invoice wizards share their line-items-from-atoms logic
@@ -70,7 +70,7 @@ through `BaseWizardService` (`apps/core/wizard.py`):
 supplying a small config block (line-item/source models, atom types)
 plus model hooks for the few genuine divergences.
 
-**Exception hierarchy** (`apps/core/services.py`):
+**Exception hierarchy.** Base classes in `apps/core/services.py`:
 
 ```python
 class ServiceError(Exception):
@@ -78,9 +78,16 @@ class ServiceError(Exception):
 
 class NotFoundError(ServiceError):
     """Raised when a requested object does not exist."""
+```
 
-class SchemeSupersededError(ServiceError):
-    """Raised when a template referencing a superseded RateScheme is used."""
+App-specific `ServiceError` subclasses live next to the domain they
+guard. Example — `apps/jobs/models.py`:
+
+```python
+class SchemeInactiveError(ServiceError):
+    """Raised when a task-creation path stamps from an inactive (retired)
+    RateScheme preset without allow_inactive_scheme=True. Replaces the old
+    supersession-based SchemeSupersededError (task-owned-money Phase 1)."""
 ```
 
 A typical create:
@@ -366,6 +373,29 @@ Bleps); the manager/PM-only job actions fall through to
 flat `cancel` action requires `CanManageJobOrPM` while the other
 lifecycle actions stay `IsAuthenticated`.
 
+**Field-level gating: the MONEY_FIELDS presence pattern.** Some
+endpoints are open at the DRF permission-class level but gate a *subset
+of fields* inside the serializer instead — the write is only rejected
+if the client actually tries to touch money. `TaskSerializer`
+(`apps/api/tasks/serializers.py`) is the exemplar (task-owned-money
+Phase 1, Task 8): `MONEY_FIELDS = {'rate', 'unit_label', 'qty_source',
+'accounting_category', 'active_modifiers'}`. `validate()` checks the
+**raw keys the client actually sent** (`raw_input_keys` — the original
+request body, not `validated_data`, which the view may have pre-filled
+with a value the client never supplied — e.g. `prefill_accounting_category`)
+against `MONEY_FIELDS`; if the intersection is non-empty, it re-checks
+`can_manage_financials` or `JobService.user_can_manage(user, job)` and
+raises DRF `PermissionDenied` if neither holds. **Presence, not value,
+triggers the gate** — a worker POSTing `active_modifiers: []` still
+403s, because the key itself signals an attempt to override the
+template's price-affecting defaults. `POST /api/jobs/{id}/add-from-template/`
+(`apps/api/jobs/views.py`) reuses the identical rule by hand for its one
+gated field (`active_modifiers`) rather than duplicating the
+serializer's permission evaluation — same atoms, same "key present in
+the raw payload" trigger. This pattern is reserved for gating a field
+subset on an otherwise-open endpoint; a whole-resource gate belongs on
+`get_permissions()` (above), not inside `validate()`.
+
 ### 3.6 DELETE responses are 200 with JSON
 
 Convention: every DELETE returns HTTP 200 with a JSON body (e.g.
@@ -448,11 +478,11 @@ stubs — they are live in `apps/api/shifts/views.py` (work-shifts feature).
 
 | Shape | Meaning | Example |
 |---|---|---|
-| `{'detail': '<sentence>'}` | Operation error — a guard, state-machine refusal, permission problem, missing record | `{'detail': 'Scheme is referenced; create a new version instead of editing.'}` |
+| `{'detail': '<sentence>'}` | Operation error — a guard, state-machine refusal, permission problem, missing record | `{'detail': 'Template "Hourly Labor" references an inactive RateScheme.'}` |
 | `{'<field>': ['msg', ...]}` | Field validation error (DRF serializer shape); cross-field problems use the `non_field_errors` key | `{'unit_label': ['"parsec" is not a configured unit.']}` |
 
 Status codes carry the semantics: 400 validation/guard, 403 permission,
-404 missing, 409 conflict (referenced/superseded/two-phase collisions).
+404 missing, 409 conflict (inactive-preset/PROTECT/two-phase collisions).
 `{'message': ...}` is **success-only** (the DELETE-returns-200 convention,
 §3.6) and never appears in an error body. The `'error'` key is retired —
 never emit it.
@@ -472,13 +502,13 @@ any *uncaught* exception into the contract:
 **View rule: don't catch what you don't reshape.** A service
 `ValidationError` that should be a plain 400 needs *no* try/except — let it
 propagate to the handler. Catch it only to change the status code or add
-payload (e.g. the rate-scheme referenced 409 with `supersede_url` +
-`reference_counts`, or the wizard claim-conflict 409s carrying
-`code: 'atoms_already_claimed'` + `atom_ids`). When a client needs to
-branch on *which* conflict occurred, add a machine-readable `code` key
-beside the human `detail` — never make `detail` itself a token. In any
-kept catch, `raise` variants you don't handle rather than hand-rendering
-them:
+payload (e.g. `SchemeInactiveError` caught and reshaped to a 409
+`{'detail': ...}` on the task-create endpoints, or the wizard
+claim-conflict 409s carrying `code: 'atoms_already_claimed'` +
+`atom_ids`). When a client needs to branch on *which* conflict occurred,
+add a machine-readable `code` key beside the human `detail` — never make
+`detail` itself a token. In any kept catch, `raise` variants you don't
+handle rather than hand-rendering them:
 
 ```python
 try:

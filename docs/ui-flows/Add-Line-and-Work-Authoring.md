@@ -7,7 +7,11 @@
 > authoring surfaces — the **estimate detail page** (document lines, deferred)
 > and the **job task list** (work atoms, immediate) — which share one unified
 > picker. Companions: `Change-Orders.md` §4 (the same picker on a CO) and
-> `Services-and-Adjustments.md` (pricing). Reference:
+> `Services-and-Adjustments.md` (pricing — the Rate Scheme preset
+> lifecycle itself, incl. retire/reactivate/default preset, is covered by
+> `e2e/specs/settings/rate-scheme-presets.spec.js`; this doc's own manual
+> task-creation coverage is `e2e/specs/add-line-and-work-authoring/stamped-task-money.spec.js`,
+> §3). Reference:
 > `docs/designs/estimates-and-prices.md` §6/§8/§9,
 > `jobs-and-tasks.md` §9.
 
@@ -101,6 +105,14 @@ three explicit buttons — **Add Task**, **Add Material**, **Add Fee**.
   page loaded is findable WITHOUT reloading, and picking it opens **Add Task
   From Template** with the template selected and the name prefilled — the
   pick carries the full item, not an index into the stale mount-time list.
+- [ ] **Manual task creation stamps a permanent money copy (task-owned-money
+  Phase 1).** Picking a Rate Scheme in `WorkItemForm` is open to a worker,
+  but only a manager/PM/financials user sees editable rate/unit/category
+  inputs and an enabled modifier checkbox at create time — a worker sees a
+  read-only rate preview and a disabled checkbox (`active_modifiers` is a
+  money field). The stamp lands on the task server-side either way; a
+  manager can edit the task's own rate afterward without disturbing the
+  Scheme provenance chip. E2E: `e2e/specs/add-line-and-work-authoring/stamped-task-money.spec.js`.
 
 ## 4. Acceptance — hand-lines crystallize
 
