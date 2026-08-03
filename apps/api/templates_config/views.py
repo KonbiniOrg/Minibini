@@ -13,6 +13,7 @@ from imap_tools import MailBox
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
 from apps.core.units import HOUR_UNIT
+from apps.jobs.models import RateScheme
 from apps.api.permissions import CanManageConfig, CanManageJobsOrFinancialsOrConfig
 from apps.api.mixins import JSONDestroyMixin
 from apps.inventory.models import TemplateMaterialAssociation
@@ -279,6 +280,20 @@ def settings_view(request):
                 return Response(
                     {'default_deposit_accounting_category':
                      'unknown, inactive, or not a deposit category'},
+                    status=400)
+    if 'default_rate_scheme' in request.data:
+        raw = request.data['default_rate_scheme']
+        raw = '' if raw is None else str(raw).strip()
+        if raw != '':
+            try:
+                pk = int(raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {'default_rate_scheme': 'must be a rate scheme id'},
+                    status=400)
+            if not RateScheme.objects.filter(pk=pk, is_active=True).exists():
+                return Response(
+                    {'default_rate_scheme': 'unknown or inactive rate scheme'},
                     status=400)
     for key, value in request.data.items():
         # The envelope is stored as canonical JSON; a dict payload must be

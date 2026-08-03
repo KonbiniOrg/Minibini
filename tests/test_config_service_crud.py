@@ -12,7 +12,6 @@ ServiceItem reference still blocks delete (PROTECT) — see
 tests/test_rate_scheme_retire.py for that coverage.
 """
 from decimal import Decimal
-from unittest import skip
 
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -78,26 +77,17 @@ class RateSchemeServiceCrudTest(TestCase):
         ConfigurationService.delete_rate_scheme(scheme)
         self.assertFalse(RateScheme.objects.filter(pk=scheme.pk).exists())
 
-    @skip(
-        'Blocked by pre-existing, out-of-scope breakage: '
-        'RateSchemeSerializer.Meta.fields still lists replaced_by/replaced_at '
-        '(apps/api/rate_schemes/serializers.py), fields Task 4 removes from '
-        'the model — any request through this serializer now raises '
-        'ImproperlyConfigured. The 409-on-referenced-edit contract this test '
-        'covered is also gone (Task 4: presets are freely editable). '
-        "Task 7's job (rate-scheme API — retire/filters/default) to replace "
-        'this coverage.'
-    )
-    def test_api_referenced_patch_still_409_with_payload(self):
-        # The 409 shape (supersede_url + reference_counts) is the SPA's
-        # contract; the decision now lives in the service.
+    def test_api_referenced_patch_succeeds_no_409(self):
+        # Task 4: presets are freely editable — a stamped Task already owns
+        # its own permanent copy of the money fields, so editing the preset
+        # never reprices it. Task 7 removes the old 409-on-referenced-edit
+        # shaping (supersede_url + reference_counts) from the view entirely.
         scheme = self._scheme()
         self._reference(scheme)
         resp = _admin_client().patch(
             f'/api/rate-schemes/{scheme.pk}/', {'rate': '99'}, format='json')
-        self.assertEqual(resp.status_code, 409, resp.data)
-        self.assertIn('supersede_url', resp.data)
-        self.assertIn('reference_counts', resp.data)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['rate'], '99.00')
 
 
 class AccountingCategoryDeleteGuardTest(TestCase):
