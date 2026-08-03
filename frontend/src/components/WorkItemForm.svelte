@@ -24,12 +24,16 @@
                               // in another window) — the pick carries the object so this
                               // form never re-resolves it from a stale list
     presetName = '', // optional pre-fill for the name (manual / custom-task create only)
-    // Money-field write gate (task-owned-money Phase 1) for MANUAL mode only
-    // — template mode's add-from-template endpoint is IsAuthenticated-only,
-    // no MONEY_FIELDS gate, so it never consults this. In edit mode,
-    // item.can_manage (JobScopedCanManageMixin, already resolved server-side
-    // for this task's job) wins when present; this prop is the fallback for
-    // create (no item yet) and the override if a caller ever needs one.
+    // Money-field write gate (task-owned-money Phase 1). Manual mode: gates
+    // rate/unit_label/accounting_category/active_modifiers per MONEY_FIELDS
+    // on TaskSerializer. Template mode: add-from-template is
+    // IsAuthenticated-only overall, but as of Task 12b it 403s on the mere
+    // presence of `active_modifiers` in the payload unless the caller can
+    // manage the job's money — same CanManageJobOrPM/can_manage_financials
+    // rule, gating that one field. In edit mode, item.can_manage
+    // (JobScopedCanManageMixin, already resolved server-side for this task's
+    // job) wins when present; this prop is the fallback for create (no item
+    // yet) and the override if a caller ever needs one.
     canManage = true,
     categories = [], // AccountingCategory list, for the edit-mode category select/label
     onSaved = () => {},
@@ -191,8 +195,9 @@
   // MONEY_FIELDS on the Task serializer, CanManageJobOrPM or
   // can_manage_financials. In edit mode item.can_manage (already resolved
   // server-side for this task's job) wins when present; the canManage prop
-  // covers create (no item yet) or a caller override. Irrelevant to
-  // mode === 'template' — add-from-template has no such gate.
+  // covers create (no item yet) or a caller override. Also drives the
+  // template-mode modifier gate (Task 12b: add-from-template's
+  // `active_modifiers` key).
   const effectiveCanManage = $derived(
     (isEdit && item && typeof item.can_manage === 'boolean') ? item.can_manage : canManage
   );
@@ -315,18 +320,24 @@
         const url = `/api/jobs/${contextId}/tasks/${item.task_id}/`;
         await api.patch(url, editPayload);
       } else if (mode === 'template') {
-        // add-from-template is IsAuthenticated-only — no MONEY_FIELDS gate,
-        // so active_modifiers (a plain key list, resolved server-side same
-        // as stamp_from_scheme's modifier_keys) always goes through.
+        // add-from-template is IsAuthenticated-only overall, but (Task 12b)
+        // 403s on the mere presence of `active_modifiers` unless the caller
+        // can manage the job's money — same convention as the money-field
+        // gates elsewhere in this form: a non-manager must omit the key
+        // entirely (never send `[]`) and let the template's own
+        // default_active_modifiers ride the stamp server-side.
         const url = `/api/jobs/${contextId}/add-from-template/`;
-        await api.post(url, {
+        const payload = {
           service_item_id: Number(templateId),
           name,
           description,
           est_qty: estQtyValue,
-          active_modifiers: activeModifiers,
           est_worker_time: estWorkerTimeISO,
-        });
+        };
+        if (effectiveCanManage) {
+          payload.active_modifiers = activeModifiers;
+        }
+        await api.post(url, payload);
       } else {
         // Manual create: rate_scheme (the preset id) is open to everyone —
         // it's how a worker's "stamp-only" creation happens. active_modifiers
@@ -525,7 +536,7 @@
                     <input
                       type="checkbox"
                       checked={activeModifiers.includes(m.key)}
-                      disabled={mode === 'manual' && !effectiveCanManage}
+                      disabled={!effectiveCanManage}
                       onchange={(e) => toggleModifier(m.key, e.target.checked)}
                     />
                     {m.label} (+{m.percent}%)
