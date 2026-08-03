@@ -11,7 +11,12 @@ directly), so there is nothing to copy from a worksheet. Instead, acceptance:
        - a bare hand-line with `freeform_kind='material'` → becomes an **established
          Material** (QOH-0 lot minted at a reverse-markup placeholder cost,
          cost_source='estimated');
-       - any other hand-line → becomes a **Fee** (the frozen fixed charge).
+       - a bare hand-line with `freeform_kind='work'` → becomes a **flat Task**
+         (task-owned money Phase 2, Task 3) — entered-qty, no RateScheme, no
+         document lifecycle beyond the estimate that crystallized it;
+       - a bare hand-line with `freeform_kind='fee'` (or unset, for pre-migration
+         rows — see the freeform_kind field's own docstring) → becomes a **Fee**
+         (the frozen fixed charge).
      Either way the estimate line is source-linked to the atom it created.
   2. Earmarks the job's inventoried materials.
 
@@ -32,10 +37,14 @@ class EstimateAcceptanceService:
         """Crystallize the estimate's hand-lines into atoms, then earmark the job.
 
         Discriminator order: service_item → Task, inventory_item → Material,
-        freeform_kind='material' (bare) → established Material (reverse-markup), else → Fee.
-        Returns: {'fees_created': int, 'materials_created': int, 'tasks_created': int}
+        freeform_kind='material' (bare) → established Material (reverse-markup),
+        freeform_kind='work' (bare) → flat Task, freeform_kind='fee'/NULL (bare)
+        → Fee.
+        Returns: {'fees_created': int, 'materials_created': int, 'tasks_created': int,
+                  'work_tasks_created': int}
         """
-        from apps.jobs.models import Fee
+        from apps.jobs.models import Fee, Task
+        from apps.jobs.services import JobService
         from apps.inventory.models import Material
         from apps.inventory.services import InventoryService, MaterialService
 
@@ -49,6 +58,7 @@ class EstimateAcceptanceService:
         fees_created = 0
         materials_created = 0
         tasks_created = 0
+        work_tasks_created = 0
         for li in estimate.estimatelineitem_set.all():
             if li.sources.exists():              # atom-backed → already on the job
                 continue
@@ -90,10 +100,11 @@ class EstimateAcceptanceService:
                 materials_created += 1
                 continue
 
-            # Bare line marked as a material → Material atom, ESTABLISHED with a
-            # reverse-markup placeholder cost (see
-            # MaterialService.establish_reverse_markup — shared with CO
-            # acceptance so both documents crystallize identically).
+            # Explicit three-way branch on the bare line's freeform_kind
+            # (task-owned-money Phase 2, Task 3): 'material' established
+            # above; 'work' → flat Task below; 'fee' (or NULL, for
+            # pre-migration rows — the freeform_kind field's own docstring
+            # notes this legacy default) → Fee.
             # (pinned discriminator): the service_item branch sits above inventory_item;
             # this freeform_kind branch stays here, between inventory_item and Fee.
             if li.freeform_kind == li.KIND_MATERIAL:
@@ -116,6 +127,36 @@ class EstimateAcceptanceService:
                 materials_created += 1
                 continue
 
+            if li.freeform_kind == li.KIND_WORK:
+                # Defensive guard: entry-time validation (Task 4) is meant to
+                # keep a negative-price work line from ever reaching
+                # acceptance, but acceptance must not mint a negative-rate
+                # Task regardless of how the line got here.
+                if li.price is not None and li.price < 0:
+                    raise ValidationError(
+                        f'Estimate line "{li.description or "(no description)"}" '
+                        f'has a negative price. Work lines cannot bill a '
+                        f'negative rate.'
+                    )
+                task = Task(
+                    job=job, name=(li.description or 'Work')[:100],
+                    description=li.description or '',
+                    qty_source=Task.QTY_ENTERED, est_qty=li.qty, rate=li.price,
+                    unit_label=li.units, accounting_category=li.accounting_category,
+                    source_scheme=None,
+                )
+                task.save()
+                JobService.mark_work_reopened(job)
+                EstimateLineItemSource.objects.create(
+                    estimate_line_item=li,
+                    source_type=EstimateLineItemSource.SOURCE_TASK,
+                    source_pk=task.pk,
+                )
+                work_tasks_created += 1
+                continue
+
+            # freeform_kind == KIND_FEE, or NULL (legacy default for
+            # pre-migration rows — see the freeform_kind field's docstring).
             # Defensive guard: Fee.accounting_category is NOT NULL. A hand-line
             # with no category would throw an opaque IntegrityError. Raise a
             # clear ValidationError here instead so the caller gets a useful message.
@@ -143,4 +184,7 @@ class EstimateAcceptanceService:
             fees_created += 1
 
         InventoryService.create_earmarks_for_job(job)
-        return {'fees_created': fees_created, 'materials_created': materials_created, 'tasks_created': tasks_created}
+        return {
+            'fees_created': fees_created, 'materials_created': materials_created,
+            'tasks_created': tasks_created, 'work_tasks_created': work_tasks_created,
+        }

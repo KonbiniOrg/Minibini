@@ -1,13 +1,14 @@
 """ChangeOrderAcceptanceService — CO acceptance crystallizes deltas onto Job atoms.
 
 Mirrors EstimateAcceptanceService.on_accept (tests/test_acceptance_fees.py):
-- add    → crystallize a new atom via the same four-way discriminator
-           (service_item → Task, inventory_item → Material, is_material bare →
-           established Material with reverse-markup cost, else → Fee),
-           source-linked to the CO line.
-- remove → retire the target line's current atom: cancel a Task (bleps
-           preserved), delete a pending un-invoiced Material (earmark released),
-           delete an un-invoiced Fee. Consumed / invoiced / terminal atoms are
+- add    → crystallize a new atom via the same explicit discriminator
+           (service_item → Task, inventory_item → Material, freeform_kind='material'
+           bare → established Material with reverse-markup cost, freeform_kind='work'
+           bare → flat Task, else → Fee), source-linked to the CO line.
+- remove → retire the target line's current atom: cancel a service-backed Task
+           (bleps preserved), delete an un-invoiced flat work Task, delete a
+           pending un-invoiced Material (earmark released), delete an
+           un-invoiced Fee. Consumed / invoiced / terminal atoms are
            left alone; document-only targets (adjustments) are a no-op.
 - replace → crystallize the replacement first (a bare CO line mirrors the old
            atom's type), then retire the old atom.
@@ -89,9 +90,15 @@ class ChangeOrderAcceptanceBase(TestCase):
     # --- estimate-side atom-backed lines (as estimate acceptance leaves them) ---
 
     def _task_backed_line(self, line_number=1, est_qty=Decimal('10')):
+        # service_item=self.service_item marks this as a catalog/service-
+        # backed Task (task-owned-money Phase 2, Task 3's cancel-not-delete
+        # discriminator in ChangeOrderAcceptanceService._retire) — distinct
+        # from a bare freeform_kind='work' line's flat Task, which is never
+        # service_item-linked and retires by delete instead. See
+        # tests/test_acceptance_work_lines.py for the flat-task counterpart.
         task = Task(
             job=self.job, name='Cutting',
-            est_qty=est_qty,
+            est_qty=est_qty, service_item=self.service_item,
         )
         task.stamp_from_scheme(self.scheme)
         task.save()
@@ -448,7 +455,8 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         line = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=1,
             description='Foam', qty=Decimal('3'), price=Decimal('100.00'),
-            units='sheet', accounting_category=self.mat_cat, is_material=True,
+            units='sheet', accounting_category=self.mat_cat,
+            freeform_kind=EstimateLineItem.KIND_MATERIAL,
         )
         EstimateLineItemSource.objects.create(
             estimate_line_item=line,
@@ -587,7 +595,7 @@ class COAuthoringParityTests(ChangeOrderAcceptanceBase):
         self.assertEqual(svc_copy.service_item, self.service_item)
         mat_copy = ChangeOrderLineItem.objects.get(
             change_order=new_co, description='Membrane')
-        self.assertTrue(mat_copy.is_material)
+        self.assertEqual(mat_copy.freeform_kind, ChangeOrderLineItem.KIND_MATERIAL)
         self.assertEqual(mat_copy.accounting_category, self.mat_cat)
 
 

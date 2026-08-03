@@ -7,13 +7,19 @@ held, so crystallization runs against the released job.
 
 Mirrors EstimateAcceptanceService.on_accept (apps/estimates/acceptance.py):
 
-- **add** — crystallize a new atom via the same four-way discriminator
+- **add** — crystallize a new atom via the same explicit discriminator
   (service_item → Task, inventory_item → Material, freeform_kind='material' bare →
-  established Material at a reverse-markup placeholder cost, else → Fee) and
-  link it back to the CO line with a ChangeOrderLineItemSource row.
+  established Material at a reverse-markup placeholder cost, freeform_kind='work'
+  bare → flat Task, else → Fee) and link it back to the CO line with a
+  ChangeOrderLineItemSource row.
 - **remove** — resolve the target estimate line to its *current* atom (through
-  the accepted-CO replace chain) and retire it: cancel a Task (bleps preserved
-  — cancelled-task time stays on record), **release** a pending un-invoiced
+  the accepted-CO replace chain) and retire it: cancel a service-backed Task
+  (bleps preserved — cancelled-task time stays on record), **delete** an
+  un-invoiced flat work Task (task-owned money Phase 2, Task 3 — a bare hand-
+  line's Task never had a lifecycle promise beyond the document that
+  crystallized it, so it is retired like a Fee, not cancelled; the same
+  bleps/in-progress/complete guards that block a plain task delete still
+  apply and surface as a ValidationError), **release** a pending un-invoiced
   Material (earmark backed out, quantity moved to released_qty, claims kept as
   job history), delete an un-invoiced Fee. Consumed / invoiced / PO-linked /
   terminal atoms are deliberately left alone — physical or billed reality is
@@ -52,7 +58,8 @@ class ChangeOrderAcceptanceService:
         """Apply the accepted CO's line deltas to its Job's atoms.
 
         Returns {'tasks_created', 'materials_created', 'fees_created',
-                 'tasks_cancelled', 'materials_removed', 'fees_removed'}.
+                 'work_tasks_created', 'tasks_cancelled', 'materials_removed',
+                 'fees_removed', 'work_tasks_removed'}.
         """
         from apps.inventory.services import InventoryService
         from apps.jobs.models import Job
@@ -63,7 +70,9 @@ class ChangeOrderAcceptanceService:
 
         counts = {
             'tasks_created': 0, 'materials_created': 0, 'fees_created': 0,
+            'work_tasks_created': 0,
             'tasks_cancelled': 0, 'materials_removed': 0, 'fees_removed': 0,
+            'work_tasks_removed': 0,
         }
 
         from apps.estimates.models import ChangeOrderLineItem
@@ -84,9 +93,14 @@ class ChangeOrderAcceptanceService:
             mirror = ChangeOrderAcceptanceService._mirror_of(atoms)
             # Document-only target (adjustment line / already-retired atom) and
             # no descriptor on the CO line: the delta stays document-only.
+            # freeform_kind='work' is a real descriptor (task-owned money
+            # Phase 2, Task 3) and forces crystallization here exactly like
+            # 'material' already does — a bare/fee-default line (freeform_kind
+            # unset or 'fee') is the only case that stays document-only when
+            # there's nothing to mirror.
             has_descriptor = (li.service_item_id is not None
                               or li.inventory_item_id is not None
-                              or li.freeform_kind == li.KIND_MATERIAL)
+                              or li.freeform_kind in (li.KIND_MATERIAL, li.KIND_WORK))
             if mirror is not None or has_descriptor:
                 ChangeOrderAcceptanceService._crystallize(job, li, mirror=mirror, counts=counts)
             for source_type, atom in atoms:
@@ -177,8 +191,9 @@ class ChangeOrderAcceptanceService:
         """Create the atom a CO add/replace line describes and source-link it.
 
         Same discriminator order as estimate acceptance (service_item →
-        inventory_item → freeform_kind='material' → Fee); a bare replace line falls through
-        to mirroring the retired atom's type instead.
+        inventory_item → freeform_kind='material' → freeform_kind='work' → Fee);
+        a bare replace line falls through to mirroring the retired atom's type
+        instead.
         """
         from apps.estimates.models import ChangeOrderLineItemSource
         from apps.inventory.services import MaterialService
@@ -225,6 +240,29 @@ class ChangeOrderAcceptanceService:
             material = MaterialService.establish_reverse_markup(material)
             ChangeOrderAcceptanceService._link(li, ChangeOrderLineItemSource.SOURCE_MATERIAL, material.pk)
             counts['materials_created'] += 1
+            return
+
+        if li.freeform_kind == li.KIND_WORK:
+            # Defensive guard: entry-time validation (Task 4) is meant to
+            # keep a negative-price work line from ever reaching acceptance,
+            # but CO acceptance must not mint a negative-rate Task regardless.
+            if li.price is not None and li.price < 0:
+                raise ValidationError(
+                    f'Change order line "{li.description or "(no description)"}" '
+                    f'has a negative price. Work lines cannot bill a negative rate.'
+                )
+            task = Task(
+                job=job, name=(li.description or 'Work')[:100],
+                description=li.description or '',
+                qty_source=Task.QTY_ENTERED, est_qty=li.qty, rate=li.price,
+                unit_label=li.units, accounting_category=li.accounting_category,
+                source_scheme=None,
+            )
+            task.save()
+            from apps.jobs.services import JobService
+            JobService.mark_work_reopened(job)
+            ChangeOrderAcceptanceService._link(li, ChangeOrderLineItemSource.SOURCE_TASK, task.pk)
+            counts['work_tasks_created'] += 1
             return
 
         if mirror is not None and mirror['type'] == 'task':
@@ -300,10 +338,46 @@ class ChangeOrderAcceptanceService:
         from apps.invoicing.claims import InvoiceClaimService
         from apps.invoicing.models import InvoiceLineItemSource
         from apps.inventory.models import Material
-        from apps.jobs.models import Task
+        from apps.jobs.models import Blep, Task
         from apps.jobs.services import TaskLifecycleService
 
         if source_type == 'task':
+            if atom.service_item_id is None:
+                # Flat work task (task-owned money Phase 2, Task 3): it was
+                # crystallized straight from a bare hand-line, never carried
+                # a catalog/scheduling promise, and has (normally) no bleps
+                # yet — retire it like a Fee (delete), not like a
+                # service-backed Task (cancel, bleps preserved). Re-apply the
+                # guards TaskService.delete_task enforces (bleps, in-progress/
+                # complete) so the same failure surfaces as a ValidationError;
+                # the "claimed by a non-draft document" guard from
+                # delete_task is deliberately NOT re-applied here — retiring
+                # THIS claim (the CO/estimate source row that resolved this
+                # atom) is exactly what this call is doing, mirroring how the
+                # Fee branch below skips atom_is_claimed and only checks
+                # is_invoiced.
+                if InvoiceClaimService.is_invoiced(
+                        InvoiceLineItemSource.SOURCE_TASK, atom.pk):
+                    return  # billed money: leave it alone
+                if atom.status in (Task.STATUS_IN_PROGRESS, Task.STATUS_COMPLETE):
+                    raise ValidationError(
+                        f'Cannot retire a {atom.status} work task via change '
+                        f'order. Cancel it instead.'
+                    )
+                if Blep.objects.filter(task=atom).exists():
+                    raise ValidationError(
+                        'Cannot retire a work task that has time entries via '
+                        'change order. Cancel it instead.'
+                    )
+                if atom.materials.filter(
+                        consumption_state=Material.CONSUMPTION_STATE_CONSUMED).exists():
+                    raise ValidationError(
+                        'Cannot retire a work task with consumed materials via '
+                        'change order. Cancel it instead.'
+                    )
+                atom.delete()  # Task.delete() purges its source rows
+                counts['work_tasks_removed'] += 1
+                return
             cancellable = (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS,
                            Task.STATUS_BLOCKED)
             if atom.status in cancellable:

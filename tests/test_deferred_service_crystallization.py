@@ -327,6 +327,6 @@ class ReviseEstimateCarriesDescriptorFieldsTest(DeferredServiceBase):
     def test_is_material_preserved_on_revision(self):
         revision = EstimateService.revise_estimate(self.estimate.pk)
         lines = list(EstimateLineItem.objects.filter(estimate=revision).order_by('line_number'))
-        material_lines = [li for li in lines if li.is_material]
+        material_lines = [li for li in lines if li.freeform_kind == EstimateLineItem.KIND_MATERIAL]
         self.assertEqual(len(material_lines), 1)
         self.assertEqual(material_lines[0].description, 'Raw stock')

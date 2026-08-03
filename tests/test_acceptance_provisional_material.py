@@ -10,10 +10,10 @@ from apps.jobs.models import Fee, Job
 
 
 class AcceptanceProvisionalMaterialTest(TestCase):
-    """A bare line marked is_material=True crystallizes into an ESTABLISHED
-    Material: a QOH-0 lot minted at a reverse-markup provisional cost, with the
-    accepted sell price locked and cost_source='estimated'. An unmarked bare
-    line still becomes a Fee (unchanged)."""
+    """A bare line marked freeform_kind='material' crystallizes into an
+    ESTABLISHED Material: a QOH-0 lot minted at a reverse-markup provisional
+    cost, with the accepted sell price locked and cost_source='estimated'. An
+    unmarked bare line still becomes a Fee (unchanged)."""
 
     def setUp(self):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
@@ -45,7 +45,7 @@ class AcceptanceProvisionalMaterialTest(TestCase):
         """Spec §provisional cost: sell $400, 25% markup → cost $320, estimated."""
         line = self._add_line(
             line_number=1, description='M77 ABS', qty=Decimal('2'),
-            price=Decimal('400.00'), is_material=True,
+            price=Decimal('400.00'), freeform_kind=EstimateLineItem.KIND_MATERIAL,
         )
 
         result = EstimateAcceptanceService.on_accept(self.estimate)
@@ -72,7 +72,7 @@ class AcceptanceProvisionalMaterialTest(TestCase):
         """A $0 marked line still establishes: lot at cost 0, sell 0, estimated."""
         self._add_line(
             line_number=1, description='Freebie stock', qty=Decimal('1'),
-            price=Decimal('0.00'), is_material=True,
+            price=Decimal('0.00'), freeform_kind=EstimateLineItem.KIND_MATERIAL,
         )
 
         EstimateAcceptanceService.on_accept(self.estimate)
@@ -86,7 +86,7 @@ class AcceptanceProvisionalMaterialTest(TestCase):
     def test_unmarked_bare_line_still_becomes_a_fee(self):
         self._add_line(
             line_number=1, description='Rush handling', qty=Decimal('3'),
-            price=Decimal('25.00'), is_material=False,
+            price=Decimal('25.00'), freeform_kind=EstimateLineItem.KIND_FEE,
         )
 
         result = EstimateAcceptanceService.on_accept(self.estimate)
