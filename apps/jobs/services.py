@@ -1437,7 +1437,7 @@ class TaskLifecycleService:
             task = Task.objects.select_for_update().get(pk=task_pk)
             if task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
                 raise ValidationError('Task is already settled.')
-            if task.rate_scheme.algorithm != RateScheme.ENTERED_QTY:
+            if task.qty_source != Task.QTY_ENTERED:
                 raise ValidationError(
                     'Task is not billed by entered quantity.')
             try:
@@ -1475,17 +1475,17 @@ class TaskLifecycleService:
                     f"Cannot complete task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
-            if task.rate_scheme.algorithm == RateScheme.ENTERED_QTY:
+            if task.qty_source == Task.QTY_ENTERED:
                 if add_qty is None:
                     raise TaskActualQtyRequired(
-                        task.rate_scheme.unit_label, task.actual_qty)
+                        task.unit_label, task.actual_qty)
                 final = (task.actual_qty or Decimal('0')) + add_qty
                 if final <= 0:
                     raise ValidationError({'add_qty': [
                         'Final quantity must be greater than 0.']})
                 task.actual_qty = final
-            if (task.rate_scheme.algorithm == RateScheme.ELAPSED_TIME
-                    and task.rate_scheme.get_actual_qty(task) <= 0):
+            if (task.qty_source == Task.QTY_ELAPSED
+                    and task.get_actual_qty() <= 0):
                 raise TaskTimeRequired()
             # A complete task can never blep again, so nothing would ever
             # consume a leftover pending material — it would sit unbillable
@@ -1586,12 +1586,12 @@ class TaskLifecycleService:
                     })
                 return {'conflict': 'active_workers', 'workers': workers}
             if (user is not None and not prior_qty_handled
-                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and task.qty_source == Task.QTY_ENTERED
                     and open_bleps.filter(user=user).exists()):
                 return {
                     'conflict': 'prior_session_qty',
                     'prior_task': {'task_id': task.pk, 'name': task.name},
-                    'unit_label': task.rate_scheme.unit_label,
+                    'unit_label': task.unit_label,
                     'current_qty': (
                         str(task.actual_qty)
                         if task.actual_qty is not None else None
@@ -1644,14 +1644,14 @@ class TaskLifecycleService:
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
             if (user is not None and not prior_qty_handled
-                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and task.qty_source == Task.QTY_ENTERED
                     and Blep.objects.filter(
                         task=task, user=user, end_time__isnull=True,
                     ).exists()):
                 return {
                     'conflict': 'prior_session_qty',
                     'prior_task': {'task_id': task.pk, 'name': task.name},
-                    'unit_label': task.rate_scheme.unit_label,
+                    'unit_label': task.unit_label,
                     'current_qty': (
                         str(task.actual_qty)
                         if task.actual_qty is not None else None
@@ -1707,8 +1707,8 @@ class TaskLifecycleService:
         the SPA to settle it first."""
         qs = Blep.objects.filter(
             user=user, end_time__isnull=True,
-            task__rate_scheme__algorithm=RateScheme.ENTERED_QTY,
-        ).select_related('task__rate_scheme')
+            task__qty_source=Task.QTY_ENTERED,
+        ).select_related('task')
         if exclude_task_pk is not None:
             qs = qs.exclude(task_id=exclude_task_pk)
         prior = qs.first()
@@ -1721,7 +1721,7 @@ class TaskLifecycleService:
                 'task_id': prior_task.pk,
                 'name': prior_task.name,
             },
-            'unit_label': prior_task.rate_scheme.unit_label,
+            'unit_label': prior_task.unit_label,
             'current_qty': (
                 str(prior_task.actual_qty)
                 if prior_task.actual_qty is not None else None
@@ -1866,21 +1866,21 @@ class TaskLifecycleService:
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             if (on_behalf_of is None and not prior_qty_handled
-                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and task.qty_source == Task.QTY_ENTERED
                     and Blep.objects.filter(
                         task=task, user=target, end_time__isnull=True,
                     ).exists()):
                 return {
                     'conflict': 'prior_session_qty',
                     'prior_task': {'task_id': task.pk, 'name': task.name},
-                    'unit_label': task.rate_scheme.unit_label,
+                    'unit_label': task.unit_label,
                     'current_qty': (
                         str(task.actual_qty)
                         if task.actual_qty is not None else None
                     ),
                 }
             if add_qty is not None:
-                if task.rate_scheme.algorithm != RateScheme.ENTERED_QTY:
+                if task.qty_source != Task.QTY_ENTERED:
                     raise ValidationError(
                         'Task is not billed by entered quantity.')
                 if add_qty <= 0:
