@@ -5,7 +5,10 @@
 import { durationToHours } from './format.js';
 
 export function fmtMoney(n) {
-  return n ? `$${Number(n).toFixed(2)}` : '-';
+  // toLocaleString's currency style puts the sign before the "$" for a
+  // negative amount ("-$80.00") — string-concatenating "$" in front of the
+  // number instead would mangle a credit as "$-80.00".
+  return n ? Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : '-';
 }
 
 export function fmtWorkerTime(value) {

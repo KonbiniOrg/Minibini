@@ -167,6 +167,7 @@ describe('TasksPanel — Add Work picker → FeeModal path', () => {
     await fireEvent.input(getByPlaceholderText(/search services or materials/i), { target: { value: 'Rush' } });
     await fireEvent.click(await findByRole('button', { name: /add fee/i }));
     await waitFor(() => getByRole('heading', { name: /add fee/i }));
+    await fireEvent.input(getByLabelText(/Unit Rate/), { target: { value: '50' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(api.post).toHaveBeenCalledWith('/api/jobs/3/fees/', expect.any(Object));
   });

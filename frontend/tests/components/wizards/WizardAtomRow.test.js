@@ -53,6 +53,28 @@ describe('WizardAtomRow cancelled-task flag (C3)', () => {
   });
 });
 
+describe('WizardAtomRow fee/credit atoms', () => {
+  it('tags a fee atom "fee / credit"', () => {
+    const { getByText } = render(WizardAtomRow, {
+      props: { atom: atom({ type: 'fee', description: 'Setup fee' }), onToggle: vi.fn() },
+    });
+    expect(getByText('[fee / credit]')).toBeInTheDocument();
+  });
+
+  it('formats a negative fee (a credit) with the minus before the dollar sign, not mangled as "$-"', () => {
+    const { getByText } = render(WizardAtomRow, {
+      props: {
+        atom: atom({
+          type: 'fee', description: 'Loyalty credit',
+          qty: '1', rate: '-80.00', units: 'none', amount: '-80.00',
+        }),
+        onToggle: vi.fn(),
+      },
+    });
+    expect(getByText(/-\$80\.00 = -\$80\.00/)).toBeInTheDocument();
+  });
+});
+
 describe('WizardAtomRow deposit credit atoms', () => {
   function depositAtom(overrides = {}) {
     return {

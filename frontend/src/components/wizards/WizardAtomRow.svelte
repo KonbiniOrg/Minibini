@@ -17,7 +17,9 @@
     }
     const qty = Number(a.qty);
     const unit = a.units && a.units !== 'none' ? ` ${a.units}` : '';
-    return `${qty}${unit} × $${a.rate} = $${a.amount}`;
+    // fmtMoney (not raw "$" concatenation) so a negative fee/credit renders
+    // "-$80.00" rather than the mangled "$-80.00".
+    return `${qty}${unit} × ${fmtMoney(a.rate)} = ${fmtMoney(a.amount)}`;
   }
 </script>
 
@@ -28,7 +30,7 @@
 {:else if atom.state === 'available'}
   <label>
     <input type="checkbox" checked={selected} onchange={onToggle}>
-    <small>[{atom.type === 'task' ? 'task' : atom.type === 'expense' ? 'expense' : atom.type === 'fee' ? 'fee' : atom.type === 'deposit' ? 'deposit' : 'material'}]</small>
+    <small>[{atom.type === 'task' ? 'task' : atom.type === 'expense' ? 'expense' : atom.type === 'fee' ? 'fee / credit' : atom.type === 'deposit' ? 'deposit' : 'material'}]</small>
     {atom.description}
     {#if atom.task_cancelled}<span class="atom-cancelled" title="This task was cancelled; its recorded work is still billable.">cancelled — work done</span>{/if}
     {#if atom.struck_from_agreement}<span class="atom-cancelled" title="An accepted change order removed this from the agreement, but the work or material remains on the job. Bill it consciously, or reconcile the job.">struck from agreement</span>{/if}

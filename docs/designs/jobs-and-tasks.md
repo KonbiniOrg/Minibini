@@ -1498,8 +1498,12 @@ affordances:
   - `{type: 'freeform', isMaterial: true}` → `MaterialModal` with
     `presetDescription` + `defaultMaterialCategoryId`
     → `POST /api/jobs/{id}/materials/`
-  - `{type: 'freeform', isMaterial: false}` → `FeeModal` with `presetDescription`
-    → `POST /api/jobs/{id}/fees/`
+  - `{type: 'freeform', isMaterial: false}` → `FeeModal` (button labelled
+    "Add Fee / Credit") with `presetDescription` → `POST /api/jobs/{id}/fees/`.
+    `Fee` carries no `task` FK (never sent in the payload); `unit_rate` is
+    signed — a negative value shows an inline "This will appear as a
+    credit." note, and a zero value is rejected client-side with a field
+    error before the round trip (mirrors `FeeService._reject_zero_unit_rate`).
 - **"Add Expense"** — opens `ExpenseModal`; open to any authenticated user.
 
 **`WorkItemForm`'s est_qty / est_worker_time input.** The form keys off

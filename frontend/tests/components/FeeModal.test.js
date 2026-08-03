@@ -41,7 +41,6 @@ describe('FeeModal — create', () => {
       quantity: 2,
       unit_rate: 50,
       accounting_category: null,
-      task: null,
     });
     expect(onSaved).toHaveBeenCalled();
   });
@@ -53,6 +52,7 @@ describe('FeeModal — create', () => {
     });
 
     await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Misc fee' } });
+    await fireEvent.input(getByLabelText(/Unit Rate/), { target: { value: '10' } });
     await fireEvent.change(getByLabelText(/Accounting Category/), { target: { value: '2' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
@@ -79,6 +79,7 @@ describe('FeeModal — create', () => {
       props: { open: true, mode: 'create', jobId: 7, categories: [] },
     });
     await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Bad fee' } });
+    await fireEvent.input(getByLabelText(/Unit Rate/), { target: { value: '10' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(await findByRole('alert')).toHaveTextContent('Invalid fee.');
   });
@@ -93,6 +94,7 @@ describe('FeeModal — create', () => {
       props: { open: true, mode: 'create', jobId: 7, categories: [] },
     });
     await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Fee' } });
+    await fireEvent.input(getByLabelText(/Unit Rate/), { target: { value: '10' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(await findByText('A valid number is required.')).toHaveClass('field-error');
@@ -109,6 +111,7 @@ describe('FeeModal — create', () => {
       props: { open: true, mode: 'create', jobId: 7, categories: [] },
     });
     await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Fee' } });
+    await fireEvent.input(getByLabelText(/Unit Rate/), { target: { value: '10' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(await findByText('A valid number is required.')).toBeInTheDocument();
 
@@ -132,28 +135,17 @@ describe('FeeModal — create', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('includes task in the POST payload when taskId prop is provided', async () => {
-    const onSaved = vi.fn();
-    const { getByLabelText, getByRole } = render(FeeModal, {
-      props: { open: true, mode: 'create', jobId: 7, taskId: 99, categories: [], onSaved },
-    });
-    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Task fee' } });
-    await fireEvent.click(getByRole('button', { name: 'Save' }));
-    expect(api.post).toHaveBeenCalledWith('/api/jobs/7/fees/', expect.objectContaining({
-      task: 99,
-    }));
-  });
-
-  it('sends task: null in the POST payload when taskId prop is not provided', async () => {
+  it('never includes a task key in the POST payload (Fee has no task field)', async () => {
     const onSaved = vi.fn();
     const { getByLabelText, getByRole } = render(FeeModal, {
       props: { open: true, mode: 'create', jobId: 7, categories: [], onSaved },
     });
     await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Unassigned fee' } });
+    await fireEvent.input(getByLabelText(/Unit Rate/), { target: { value: '50' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
-    expect(api.post).toHaveBeenCalledWith('/api/jobs/7/fees/', expect.objectContaining({
-      task: null,
-    }));
+    expect(api.post).toHaveBeenCalled();
+    const [, payload] = api.post.mock.calls[0];
+    expect(payload).not.toHaveProperty('task');
   });
 
   it('seeds description from presetDescription on create', async () => {
@@ -161,6 +153,68 @@ describe('FeeModal — create', () => {
       props: { open: true, mode: 'create', jobId: 5, categories: [], presetDescription: 'Rush charge' },
     });
     expect(getByLabelText(/description/i)).toHaveValue('Rush charge');
+  });
+
+  it('titles the modal "Add Fee / Credit"', () => {
+    const { getByRole } = render(FeeModal, {
+      props: { open: true, mode: 'create', jobId: 7, categories: [] },
+    });
+    expect(getByRole('heading', { name: 'Add Fee / Credit' })).toBeInTheDocument();
+  });
+});
+
+describe('FeeModal — zero unit_rate (client-side, mirrors FeeService)', () => {
+  it('rejects a zero unit_rate without calling the API', async () => {
+    const { getByLabelText, getByRole, findByText } = render(FeeModal, {
+      props: { open: true, mode: 'create', jobId: 7, categories: [] },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Free fee' } });
+    await fireEvent.input(getByLabelText(/Unit Rate/), { target: { value: '0' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByText(/unit_rate must not be zero/i)).toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank (defaulted-to-zero) unit_rate without calling the API', async () => {
+    const { getByLabelText, getByRole, findByText } = render(FeeModal, {
+      props: { open: true, mode: 'create', jobId: 7, categories: [] },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Free fee' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByText(/unit_rate must not be zero/i)).toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+});
+
+describe('FeeModal — negative unit_rate (credit)', () => {
+  it('shows a credit note when the unit rate is negative', async () => {
+    const { getByLabelText, findByText } = render(FeeModal, {
+      props: { open: true, mode: 'create', jobId: 7, categories: [] },
+    });
+    await fireEvent.input(getByLabelText(/Unit Rate/), { target: { value: '-25' } });
+    expect(await findByText(/this will appear as a credit/i)).toBeInTheDocument();
+  });
+
+  it('shows no credit note for a positive unit rate', async () => {
+    const { getByLabelText, queryByText } = render(FeeModal, {
+      props: { open: true, mode: 'create', jobId: 7, categories: [] },
+    });
+    await fireEvent.input(getByLabelText(/Unit Rate/), { target: { value: '25' } });
+    expect(queryByText(/this will appear as a credit/i)).toBeNull();
+  });
+
+  it('allows saving a negative unit_rate (a credit)', async () => {
+    const onSaved = vi.fn();
+    const { getByLabelText, getByRole } = render(FeeModal, {
+      props: { open: true, mode: 'create', jobId: 7, categories: [], onSaved },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Loyalty credit' } });
+    await fireEvent.input(getByLabelText(/Unit Rate/), { target: { value: '-25' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/7/fees/', expect.objectContaining({
+      unit_rate: -25,
+    }));
+    expect(onSaved).toHaveBeenCalled();
   });
 });
 

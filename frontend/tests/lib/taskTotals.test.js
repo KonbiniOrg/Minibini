@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { taskActual, taskTotalInfo, taskTotal } from '@/lib/taskTotals.js';
+import { taskActual, taskTotalInfo, taskTotal, feeTotal, fmtMoney } from '@/lib/taskTotals.js';
 
 // Task-owned money (Phase 1): taskActual branches on the task's own
 // qty_source field now, not the retired scheme_algorithm echo.
@@ -42,5 +42,25 @@ describe('taskTotalInfo / taskTotal (unaffected by the qty_source rename)', () =
   it('returns a zero, non-estimate total with nothing to compute from', () => {
     expect(taskTotalInfo({})).toEqual({ value: 0, isEstimate: false });
     expect(taskTotal({})).toBe(0);
+  });
+});
+
+describe('feeTotal (signed — a credit fee has a negative unit_rate)', () => {
+  it('computes quantity × unit_rate for a charge', () => {
+    expect(feeTotal({ quantity: '4', unit_rate: '12.50' })).toBe(50);
+  });
+
+  it('computes a negative total for a credit fee (negative unit_rate)', () => {
+    expect(feeTotal({ quantity: '2', unit_rate: '-10.00' })).toBe(-20);
+  });
+});
+
+describe('fmtMoney (negative amounts)', () => {
+  it('puts the minus sign before the dollar sign, not after', () => {
+    expect(fmtMoney(-80)).toBe('-$80.00');
+  });
+
+  it('formats a positive amount normally', () => {
+    expect(fmtMoney(80)).toBe('$80.00');
   });
 });

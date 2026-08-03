@@ -123,6 +123,12 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Custom milling', isMaterial: false });
   });
 
+  it('labels the task-surface fee button "Add Fee / Credit"', () => {
+    const props = { ...baseProps(), taskSurface: true };
+    const { getByRole } = render(PriceListPicker, { props });
+    expect(getByRole('button', { name: 'Add Fee / Credit' })).toBeInTheDocument();
+  });
+
   it('shows the Work/Material/Fee-Credit buttons constantly, from the start', async () => {
     const props = baseProps();
     const { getByRole } = render(PriceListPicker, { props });

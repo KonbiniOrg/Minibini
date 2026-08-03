@@ -9,8 +9,8 @@
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
 
   // taskSurface: the task-list footer offers three explicit atom buttons
-  // (Task / Material / Fee). Default (estimate) footer offers three explicit
-  // kind buttons of its own (Work / Material / Fee-Credit) — tasks don't
+  // (Task / Material / Fee / Credit). Default (estimate) footer offers three
+  // explicit kind buttons of its own (Work / Material / Fee-Credit) — tasks don't
   // exist on the estimate surface (work is a deferred ServiceItem descriptor
   // there, or a bare 'work' kind freeform line), so its middle button reads
   // "Add Work" rather than "Add Task".
@@ -95,7 +95,7 @@
     {#if taskSurface}
       <button type="button" onclick={emitFreeformTask}>Add Task</button>
       <button type="button" onclick={emitFreeformMaterial}>Add Material</button>
-      <button type="button" onclick={emitFreeformFee}>Add Fee</button>
+      <button type="button" onclick={emitFreeformFee}>Add Fee / Credit</button>
     {:else}
       <button type="button" onclick={() => emitFreeformKind('work')}>Add Work</button>
       <button type="button" onclick={() => emitFreeformKind('material')}>Add Material</button>

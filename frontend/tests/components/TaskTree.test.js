@@ -39,6 +39,18 @@ describe('TaskTree', () => {
     expect(onEditFee).toHaveBeenCalledWith(expect.objectContaining({ fee_id: 3 }));
   });
 
+  it('renders a negative fee (credit) correctly and subtracts it from the grand total', () => {
+    const t = task({}); // task total 2*25 = $50.00
+    // credit 1 * -20.00 = -$20.00 → grand total 50 - 20 = $30.00
+    const credit = { fee_id: 4, description: 'Loyalty credit', quantity: '1', unit_rate: '-20.00' };
+    const { getByText, getAllByText } = render(TaskTree, {
+      props: { tasks: [t], fees: [credit], canManage: true },
+    });
+    expect(getByText('Loyalty credit')).toBeInTheDocument();
+    expect(getAllByText('-$20.00').length).toBeGreaterThan(0);
+    expect(getByText('$30.00')).toBeInTheDocument();
+  });
+
   it('shows material units in the units column, not appended to qty', () => {
     const t = task({
       materials: [{ material_id: 9, description: 'Steel', quantity: '3', sell_price: '5',

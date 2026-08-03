@@ -13,7 +13,10 @@
     Object.fromEntries((categories || []).map(c => [c.id, c]))
   );
 
-  function fmtMoney(n) { return `$${Number(n).toFixed(2)}`; }
+  // toLocaleString's currency style puts the sign before the "$" for a
+  // negative amount ("-$80.00") — string-concatenating "$" in front of the
+  // number instead would mangle a fee/credit line as "$-80.00".
+  function fmtMoney(n) { return Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD' }); }
   function lineTotal(li) { return Number(li.qty || 0) * Number(li.price || 0); }
   function categoryName(id) { return categoryById[id]?.name || '—'; }
   function categoryTaxable(id) {

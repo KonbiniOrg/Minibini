@@ -11,7 +11,6 @@
     mode = 'create', // 'create' | 'edit'
     fee = null,
     jobId = null,
-    taskId = null,
     categories = [],
     presetDescription = '',
     onSaved = () => {},
@@ -26,6 +25,13 @@
   let formError = $state('');
   let fieldErrs = $state({});
   let confirmDelete = $state(false);
+
+  // Fee.unit_rate is signed: negative = credit. Echo that back so the user
+  // sees it coming before they save — mirrors the wording used on the
+  // Estimate/CO Fee-Credit hand-line forms.
+  const isCredit = $derived(
+    unitRate !== '' && !Number.isNaN(Number(unitRate)) && Number(unitRate) < 0
+  );
 
   $effect(() => {
     if (open) {
@@ -67,11 +73,19 @@
       unit_rate: unitRate !== '' ? Number(unitRate) : 0,
       accounting_category: accountingCategory !== '' ? Number(accountingCategory) : null,
     };
+    // A Fee with unit_rate=0 charges nothing — meaningless. Mirrors
+    // FeeService._reject_zero_unit_rate server-side (apps/jobs/services.py);
+    // caught here too so the user doesn't need a round trip to find out.
+    if (payload.unit_rate === 0) {
+      fieldErrs = { unit_rate: ['unit_rate must not be zero.'] };
+      busy = false;
+      return;
+    }
     try {
       if (mode === 'edit' && fee) {
         await api.patch(`/api/jobs/${jobId}/fees/${fee.fee_id}/`, payload);
       } else {
-        await api.post(`/api/jobs/${jobId}/fees/`, { ...payload, task: taskId || null });
+        await api.post(`/api/jobs/${jobId}/fees/`, payload);
       }
       onSaved();
     } catch (e) {
@@ -110,7 +124,7 @@
 
 <Modal {open} onCancel={() => { if (confirmDelete) confirmDelete = false; else onClose(); }} maxWidth="720px">
 <form onsubmit={(e) => { e.preventDefault(); if (!busy && !confirmDelete) save(); }}>
-      <h3>{mode === 'edit' ? 'Edit Fee' : 'Add Fee'}</h3>
+      <h3>{mode === 'edit' ? 'Edit Fee / Credit' : 'Add Fee / Credit'}</h3>
 
       <p>
         <label><strong>Description</strong><br>
@@ -132,6 +146,7 @@
         </label>
         <FieldError errors={fieldErrs} field="unit_rate" />
       </p>
+      {#if isCredit}<p class="credit-note">This will appear as a credit.</p>{/if}
 
       <p>
         <label><strong>Accounting Category</strong><br>
@@ -166,4 +181,5 @@
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .btn-danger { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
   .btn-danger:hover:not(:disabled) { background: #fecaca; }
+  .credit-note { color: #9a3412; font-style: italic; }
 </style>
