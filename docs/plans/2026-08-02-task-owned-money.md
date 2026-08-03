@@ -48,8 +48,10 @@ authoritative thereafter:
 Picking a preset in any dropdown **stamps** its values onto the task; the
 preset is not referenced for pricing afterward. A nullable `source_scheme`
 FK (`SET_NULL`, provenance only — same pattern as `service_item` catalog
-identity) supports "what came from this preset" reporting and
-rate-drift auditing.
+identity) supports "what came from this preset" reporting, a name chip on
+task detail, and rate-drift auditing (RM confirmed keep, 2026-08-02).
+**Invariant: no compute path may ever read `source_scheme`** — that is
+what keeps it a label rather than quietly becoming a live link again.
 
 ### 2. RateScheme becomes a freely editable preset
 
@@ -66,34 +68,45 @@ Since nothing reads a preset's values after stamping:
   rate-scheme dropdowns (instead of starting blank). Retiring the default
   clears/reassigns it.
 
-### 3. Fee is eliminated
+### 3. Fee re-scoped: the pure-money atom (NOT eliminated)
 
-A flat fee is not an algorithm — it is an `entered_qty` task whose rate was
-**typed in** rather than stamped from a preset:
+The example walk-through (2026-08-02) reversed this spec's original
+headline. The original sin was never Fee's existence — it was work-backed
+charges (setup, delivery, site visits) being shoehorned into Fee because
+RateScheme couldn't price per-item. Those move to flat tasks (§1). What
+remains is Fee's honest role — the context-free money charge — and for
+that, Fee is already the right shape.
 
-- Work-backed fees (setup, delivery): a flat task collects bleps for
-  auditing ("is this fee priced right?") while billing qty × rate — exactly
-  the existing entered-qty shape. Billability gates on completion like any
-  task (Fee's "always billable" rule is retired deliberately).
-- Pass-throughs (waste disposal, tax-like charges): a flat task **born
-  complete**, `actual_qty` set at creation (default 1) so the entered-qty
-  completion gate never blocks, `est_worker_time` 0/null so it draws no
-  schedule bar and never holds up `work_complete` long.
-- **Hand-lines** on an accepted estimate/CO crystallize into flat tasks —
-  description, rate, qty, AC straight off the line, **no scheme reference**
-  (`Task.rate_scheme` NOT-NULL problem dissolves along with the "which
-  scheme does a bare hand-line get" question).
-- One kind of fee. The distinction work-backed vs pass-through is
-  behavioral (born-complete or not), not typal.
+Why an atom and not a document line: a percentage adjustment is a
+*function* (its value depends on sibling lines, must recompute per
+document, cannot be an atom). A fixed charge is a context-free *value* —
+it means the same $80 on any document and must bill **exactly once**,
+which is what the claim machinery enforces structurally. The rejected
+alternative (a fixed-amount adjustment kind) needed advisory "soft
+tracking" against forgetting/double-billing — a shadow claims system.
+When the mitigation is a hand-rolled imitation of the thing deleted, keep
+the thing.
 
-Deletions: `Fee` model + `FeeService` + `/api/jobs/{id}/fees/` endpoints,
-the `SOURCE_FEE` choices in all three source-row models and their `resolve()`
-branches, fee branches of acceptance/CO-acceptance discriminators, agreement
-`source_fee_id` plumbing, the invoice wizard's "Fees" group and `_atom_*`
-fee branches, `FeeModal.svelte`, TaskTree's Fees section, `taskTotals.feeTotal`,
-`check_fees`. Data migration converts existing Fee rows to flat tasks and
-repoints source rows `'fee'` → `'task'`. nealsdata converter `_emit_fee`
-emits flat tasks instead.
+- **Fee keeps**: job ownership, `quantity × unit_rate` (qty defaults 1),
+  its own AC, the `SOURCE_FEE` claims in all three source-row models, the
+  invoice wizard's Fees group, FeeModal, and always-billable with no
+  completion gate — *correct* for pure money.
+- **Fee drops the `task` OneToOne** — the dormant field and its documented
+  double-billing hazard die.
+- **Amounts become signed: a credit is a negative Fee**, inheriting
+  exactly-once (double-crediting is real money too). Validation
+  `unit_rate > 0` becomes `≠ 0`. Work/material entry rejects negative
+  prices with a message pointing at Fee/Credit.
+- **Pass-throughs** (waste disposal, tax-like charges) are Fees. The
+  born-complete-task idea is withdrawn; born-complete tasks are not part
+  of the design.
+- **Post-invoice credits** (refunds, after-the-fact goodwill) are QBO
+  credit memos — out of scope, per QBO authority. Credits carried to a
+  later invoice: not needed now; an invoice-time Fee covers it if ever.
+- **Work-backed charges become flat tasks**: entered-qty, typed rate, no
+  preset required (§1 dissolves the NOT-NULL scheme constraint); bleps
+  audit the time; completion gates billability — Fee's always-billable
+  rule deliberately does NOT transfer to them.
 
 ### 4. Accounting: nullable, late-bound, QBO-authoritative
 
@@ -197,6 +210,104 @@ costs). Bill entry originating in Minibini with push-to-QBO (viable, bigger;
 revisit only if the PO-actuals rung proves insufficient). Pushing POs to QBO
 and pulling bill links back (most duplication, desync risk).
 
+### 8. Line-entry vocabulary (estimate, job, invoice)
+
+One "Add line" picker per surface: catalog search on top (ServiceItems +
+inventory together — always the first reach, since a pick answers kind,
+money, and AC at once), explicit kind buttons below. No checkbox, no
+default fallthrough — the writer declares what the thing is:
+
+- **Work** — description, qty + units, rate, AC (required). The form
+  opens with the preset dropdown (default preset preselected, §2);
+  choosing one stamps rate/units/AC into the visible, editable fields;
+  typing over them is fine. At acceptance the line crystallizes verbatim
+  into a flat task (qty-source = entered, `source_scheme` = the preset or
+  null). Expected population: one-off operations at standard rates
+  (stamped), lump-priced work (the population that used to misfile into
+  Fee), negotiated rate deviations (stamp, then edit). Recurring freeform
+  work is the signal to mint a ServiceItem.
+- **Material** — as today, AC prefilled from the config default.
+- **Fee / Credit** — description, qty (default 1) × amount (signed — a
+  negative amount *is* a credit; the form echoes "this will appear as a
+  credit"), AC required. Crystallizes to a Fee atom.
+- **Adjustment** — the percentage form; document-layer, never
+  crystallizes (§5).
+
+Schema: `EstimateLineItem.is_material` (and the CO twin) generalizes to a
+three-value freeform kind (work | material | fee); the acceptance/CO
+discriminators branch on it explicitly — the historical bare-hand-line →
+Fee default fallthrough is gone. Lines wear a small kind badge from
+creation, since kind now acts at acceptance.
+
+Surfaces: the estimate footer gains **Work** (freeform tasks were
+previously impossible there — a scar of the NOT-NULL scheme, which is why
+the current footer is a material checkbox). The job work area keeps its
+three atom buttons; its Add Task flow becomes the same preset-stamp form.
+The invoice offers Fee/Credit + Adjustment for invoice-time money. One
+mental model everywhere: *search the catalog first; otherwise say whether
+it's work, goods, or money.* The "Add Fee" button therefore stays — it is
+the money entry, not a casualty.
+
+### 9. Quantity structure: parent × per-unit subtasks
+
+For "make N of a thing" (quote 10 widgets built from many operations).
+Built **ad hoc in the work area** — Add Task ("Widgets, 10 ea"), then Add
+Subtask per operation. A WorkTemplate can stamp the whole structure for
+recurring products (apply asks N); it is a convenience, never a
+prerequisite — one-offs live and die as hand-built structures.
+
+Subtasks already exist (one level, `parent_task`, enforced). What made
+them troublesome for per-unit estimating was the NOT-NULL rate scheme
+forcing every subtask to be an independent billing object; §1 removes
+that. Rules:
+
+- **A task with subtasks becomes non-startable**: no bleps, no assignee;
+  all project-management functions live on the children.
+- **Parent qty is a multiplier** over per-unit children: a laser subtask
+  carries 15 min/ea; parent qty 10 ⇒ the system expects 150 min. A qty-1
+  parent unifies plain lump-task decomposition (multiplier 1).
+- **The parent is the unit of billing.** Claims point at the parent only;
+  **subtasks are never wizard-pool atoms**, whatever money values they
+  carry. Children's per-unit qty × rate compose the parent's per-unit
+  price (Σ children = $45/ea ⇒ the parent bills 10 ea @ $45; line-level
+  override applies as ever). A subtask that must bill independently gets
+  detached — full stop. Adding execution granularity after acceptance
+  (which WILL happen — that is the point of project management) is
+  thereby structurally incapable of double-billing.
+- **Estimates are per-unit; actuals are batch totals.** Work happens in
+  batches, so bleps and entered quantities land on subtasks as totals
+  (147 min), never per-widget. On a subtask, est fields mean per-unit and
+  actual fields mean totals. This asymmetry is explicit, not
+  conventional: **one blessed derivation helper** (multiplier =
+  `parent.qty` if parent and `qty_scales_with_parent` else 1) is the only
+  path by which schedule bars (`est_worker_time` × N), expected-vs-logged
+  displays, and estimate composition read subtask est values. Nothing may
+  compare 15 to 147 raw.
+- **`qty_scales_with_parent`** (boolean, default true) lives on Task like
+  any state-dependent field (cf. `actual_qty`): functional only when a
+  parent exists, inert on top-level rows, rendered only on subtask forms.
+  Per-batch work (laser setup, first-article inspection) sets it false —
+  expected = est × 1 regardless of N.
+- **Parent completion** is offered (not automatic) when children finish,
+  and keeps the entered-qty gate: "quantity made?" — that answer (9 good
+  widgets, not the estimated 10) is what the invoice wizard bills. For an
+  elapsed-billed parent decomposed mid-flight, actual hours roll up:
+  pre-decomposition own bleps + children's.
+
+**Wizard facts recorded** (code-verified 2026-08-02, to avoid
+re-derivation): presentation qty/units on bundled lines **already
+exists** — in-sync is defined as `price == round(Σ atoms / qty, 2)`
+(`apps/core/wizard.py`), so "present as 10 ea at the divided price" is
+current behavior; an override is the out-of-sync state, resettable to
+atom values; resync runs on source-set changes, otherwise recompute is
+user-requested only. Atoms claimed by a **non-draft** document (or an
+invoice) are locked against edits; draft-claimed atoms remain editable
+(`apps/jobs/services.py:1185-1219`). A §9 parent atom presents natively
+as N ea × Σ. Post-refactor, `_uniform_scheme_bundle`'s same-scheme test
+restates as identical (rate, unit) across atoms. Partial-bundle invoicing
+(6 of 10 widgets shipped) is deliberately NOT built — claims are
+whole-atom; revisit only when a real case forces it.
+
 ## Unchanged
 
 The document architecture — atoms, source rows, claims, estimates/invoices
@@ -206,24 +317,26 @@ Estimate hand-line AC requirement unchanged.
 
 ## Open / deferred
 
-- Example walk-through (2026-08-02, in progress). Resolved as clean under
-  this design: resale materials, N-parts-from-material, setup/delivery/site-
-  visit fees, hourly CAD, cutting & engraving (presets in machining-minutes;
-  wizard translates to per-piece; heavy-material/intricate/flip surcharges
-  are modifiers), untracked consumables (absorb, percentage adjustment, or
-  flat task — policy choice), deposits (already built). Resolved: outsourced
-  work (§7). Resolved: jigs & customer-funded tooling — billed via ordinary
-  flat/hourly tasks + materials; NO asset/reuse-tracking infrastructure (RM
-  decision 2026-08-02; revisit only if remade-jig incidents make it earn a
-  place). Still to walk: credits (atom-or-document-line rule needed — a
-  negative hand-line must NOT crystallize into a nonsense task),
-  N-finished-items product bundles.
-- "Add Fee" button in the work-area modal: dies with Fee, but may survive as
-  a preset-filtered "add flat task" shortcut. Pure UI sugar; decide late.
+- **Example walk-through COMPLETE (2026-08-02).** All fourteen items have
+  a defined shape: resale materials, N-parts-from-material,
+  setup/delivery/site-visit fees (flat tasks), hourly CAD, cutting &
+  engraving (presets in machining-minutes; wizard translates to
+  per-piece; surcharges are modifiers), untracked consumables (absorb /
+  percentage adjustment / flat task — policy choice), deposits (already
+  built), outsourced work (§7), jigs & customer-funded tooling (ordinary
+  tasks + materials; NO asset/reuse registry — RM decision; revisit only
+  if remade-jig incidents force it), credits (negative Fees, §3),
+  pass-throughs (Fees, §3), N finished items (§9).
+- **RM verdict pending real use**: build it and work with it a while
+  before final judgment — the whole design is provisional until exercised.
+- Fee form keeps the qty × unit_rate pair (qty defaults 1); collapsing to
+  a single amount field was floated and not pursued.
 - Multi-Materials-per-PO-line plan (schema already permits; code assumes
   one via `linked_material`'s `.first()`) — interacts with §7 only in that
   multi-job POs keep variance at PO granularity.
-- Migration sequencing and phasing (task money block → Fee elimination →
+- Deliverables/shipment linkage for §9 structures (10 widgets →
+  Deliverable records) untouched by this design; existing machinery.
+- Migration sequencing and phasing (task money block → Fee re-scope →
   nullable AC + fallback → preset default/retirement) belongs to the
   implementation plan, not this spec.
 - "Save corrected AC back to task" wizard affordance — only if the re-do
