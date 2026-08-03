@@ -1008,8 +1008,8 @@ def build_estimates(c):
                     # freeform_kind (Phase 2 Task 5): the converter never sets
                     # inventory_item/service_item/adjustment_service on the
                     # line itself (those only ever land on the atom it later
-                    # crystallizes into — see derive_atoms), so every emitted
-                    # line is bare and freeform_kind is required, non-null.
+                    # crystallizes into — see derive_atoms), so every line
+                    # STARTS bare here and gets a non-null starting value.
                     # 'material' mirrors the historical backfill's
                     # is_material=True default (line_kind_backfill.
                     # compute_freeform_kind); everything else — task-
@@ -1020,6 +1020,28 @@ def build_estimates(c):
                     # Task always carries a genuine RateScheme (_line_billing/
                     # _stamp_money_block), never the generic no-scheme
                     # entered-qty shape 'work' denotes.
+                    #
+                    # This starting value is NOT final, and "every emitted
+                    # line is bare" stops being true the moment a later pass
+                    # claims it: derive_atoms emits an EstimateLineItemSource
+                    # for every material-classified line that becomes a real
+                    # Material, and for every task-classified line that
+                    # becomes a Fee (_emit_fee); build_synthetic_estimate_sources
+                    # (much later — after atoms/bleps/purchasing/reconcile
+                    # settle) retroactively claims some task-classified lines
+                    # that became real Tasks too. A claimed line is not a
+                    # bare freeform line — the same footing as a catalog/
+                    # service/adjustment line — so validate_data's
+                    # check_freeform_kind_consistency() requires its
+                    # freeform_kind be null. null_freeform_kind_for_sourced_lines
+                    # runs last (after every claiming pass, including the
+                    # synthetic one) and nulls it out for every line the
+                    # final claim set actually covers. Only genuinely
+                    # never-claimed lines keep this starting value: bare
+                    # discount/credit ('lineitem') lines with no matching
+                    # atom, and deliverable-classified lines (finished-goods
+                    # material lines — _build_deliverables never emits a
+                    # source at all).
                     'freeform_kind': (
                         'material' if classification == 'material' else 'fee'
                     ),
@@ -1811,6 +1833,41 @@ def build_synthetic_estimate_sources(c):
         for i, t in enumerate(sorted(tasks, key=lambda f: f['pk'])):
             li = lines[i % len(lines)]
             _emit_estimate_line_item_source(c, li['pk'], 'task', t['pk'])
+
+
+def null_freeform_kind_for_sourced_lines(c):
+    """Final sweep: null freeform_kind on every EstimateLineItem the
+    converter ends up claiming with a source row.
+
+    build_estimates stamps every line with a non-null STARTING freeform_kind
+    ('material'/'fee') before any claim exists yet — see that function's
+    comment. Claiming happens across three passes at different points in the
+    pipeline: derive_atoms claims material-classified lines that become
+    Materials and task-classified lines that become Fees immediately;
+    build_synthetic_estimate_sources retroactively claims some task-
+    classified lines that became real Tasks, much later (after atoms/bleps/
+    purchasing/reconcile have all settled). A claimed line is not a bare
+    freeform line — same footing as a catalog/service/adjustment line — so
+    validate_data.check_freeform_kind_consistency() requires its
+    freeform_kind be null (it checks both directions: non-null iff bare AND
+    unclaimed). Running this once, last, after every claiming pass has
+    finished, is simpler and more robust than threading the null-out through
+    each of the three call sites (or their callers) individually — it can't
+    miss a future claiming path the way a per-call-site fix could.
+
+    Never-claimed lines are untouched, correctly keeping their starting
+    value: bare discount/credit ('lineitem') lines with no matching atom,
+    and deliverable-classified lines (_build_deliverables never emits a
+    source at all).
+    """
+    sourced_pks = {
+        f['fields']['estimate_line_item']
+        for f in c.fixture_data
+        if f['model'] == 'estimates.estimatelineitemsource'
+    }
+    for f in c.fixture_data:
+        if f['model'] == 'estimates.estimatelineitem' and f['pk'] in sourced_pks:
+            f['fields']['freeform_kind'] = None
 
 
 def build_invoice_line_item_sources(c):

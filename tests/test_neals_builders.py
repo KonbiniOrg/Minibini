@@ -629,6 +629,59 @@ class AtomDerivationTest(unittest.TestCase):
             self.assertIsNotNone(li)
             self.assertEqual(li['classification'], 'material')
 
+    def test_sourced_lines_get_null_freeform_kind_after_sweep(self):
+        # build_estimates stamps every line with a non-null STARTING
+        # freeform_kind (see its own comment); derive_atoms then claims
+        # material-classified lines (Materials) and some task-classified
+        # lines (Fees) immediately. null_freeform_kind_for_sourced_lines
+        # (run last in the real pipeline, called directly here) must null
+        # freeform_kind on every line the final claim set covers — a
+        # claimed line is not a bare freeform line — while genuinely
+        # unclaimed lines (deliverable-classified, bare discount/credit)
+        # keep their starting 'material'/'fee' value.
+        build.derive_atoms(self.c)
+        build.null_freeform_kind_for_sourced_lines(self.c)
+        claimed_pks = {
+            s['fields']['estimate_line_item']
+            for s in self._models('estimates.estimatelineitemsource')
+        }
+        self.assertGreater(len(claimed_pks), 0)
+        lines = self._models('estimates.estimatelineitem')
+        self.assertGreater(len(lines), 0)
+        for li in lines:
+            if li['pk'] in claimed_pks:
+                self.assertIsNone(
+                    li['fields']['freeform_kind'],
+                    f"line {li['pk']} is claimed but freeform_kind="
+                    f"{li['fields']['freeform_kind']!r} (expected None)")
+            else:
+                self.assertIn(
+                    li['fields']['freeform_kind'], ('material', 'fee'),
+                    f"unclaimed line {li['pk']} lost its starting "
+                    f"freeform_kind={li['fields']['freeform_kind']!r}")
+
+    def test_synthetic_task_claims_also_get_null_freeform_kind(self):
+        # build_synthetic_estimate_sources retroactively claims some
+        # task-classified lines (that became real Tasks, not Fees) well
+        # after derive_atoms — a separate, later claiming pass. Those
+        # claims must ALSO be nulled by the sweep, not just derive_atoms's
+        # immediate fee/material claims.
+        build.derive_atoms(self.c)
+        build.build_synthetic_estimate_sources(self.c)
+        build.null_freeform_kind_for_sourced_lines(self.c)
+        task_claims = [
+            s for s in self._models('estimates.estimatelineitemsource')
+            if s['fields']['source_type'] == 'task'
+        ]
+        self.assertGreater(len(task_claims), 0)
+        lines_by_pk = {li['pk']: li for li in self._models('estimates.estimatelineitem')}
+        for s in task_claims:
+            li = lines_by_pk[s['fields']['estimate_line_item']]
+            self.assertIsNone(
+                li['fields']['freeform_kind'],
+                f"task-claimed line {li['pk']} freeform_kind="
+                f"{li['fields']['freeform_kind']!r} (expected None)")
+
 
 class FeeEmissionTest(unittest.TestCase):
     """Focused tests for _emit_fee's price-sign skip logic. validate_data's

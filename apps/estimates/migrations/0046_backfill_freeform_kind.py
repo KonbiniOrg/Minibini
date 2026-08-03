@@ -8,8 +8,10 @@ def forwards(apps, schema_editor):
     )
     EstimateLineItem = apps.get_model('estimates', 'EstimateLineItem')
     ChangeOrderLineItem = apps.get_model('estimates', 'ChangeOrderLineItem')
-    backfill_estimate_line_item_kind(EstimateLineItem)
-    backfill_change_order_line_item_kind(ChangeOrderLineItem)
+    EstimateLineItemSource = apps.get_model('estimates', 'EstimateLineItemSource')
+    ChangeOrderLineItemSource = apps.get_model('estimates', 'ChangeOrderLineItemSource')
+    backfill_estimate_line_item_kind(EstimateLineItem, EstimateLineItemSource)
+    backfill_change_order_line_item_kind(ChangeOrderLineItem, ChangeOrderLineItemSource)
 
 
 class Migration(migrations.Migration):

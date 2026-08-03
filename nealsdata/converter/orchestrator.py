@@ -145,6 +145,11 @@ class NealsDataConverter:
         # round-robin assign each job's unclaimed Tasks as synthetic sources of
         # its estimate lines so the Client View projects atoms.
         build.build_synthetic_estimate_sources(self)
+        # After every claiming pass (including the synthetic one above):
+        # null freeform_kind on any EstimateLineItem the final claim set
+        # covers — a source-claimed line is not bare, so it must not carry
+        # a freeform_kind (validate_data.check_freeform_kind_consistency).
+        build.null_freeform_kind_for_sourced_lines(self)
         build.build_history(self)     # last: emit a created entry per tracked object
         self._write_json()
         if self.verbose:
