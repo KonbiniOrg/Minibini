@@ -38,13 +38,15 @@ export function taskTotal(task) {
 }
 
 export function taskActual(task) {
-  // ELAPSED_TIME → hours from bleps. ENTERED_QTY → worker-entered qty.
-  // Unset/other → no actual to display.
-  if (task.scheme_algorithm === 'elapsed_time') {
+  // Task-owned money (Phase 1): the task carries its own qty_source now
+  // (was the RateScheme's scheme_algorithm echo, retired). elapsed_time →
+  // hours from bleps. entered_qty → worker-entered qty. Unset/other → no
+  // actual to display.
+  if (task.qty_source === 'elapsed_time') {
     const h = Number(task.actual_hours) || 0;
     return h > 0 ? h : null;
   }
-  if (task.scheme_algorithm === 'entered_qty') {
+  if (task.qty_source === 'entered_qty') {
     return task.actual_qty != null && task.actual_qty !== '' ? task.actual_qty : null;
   }
   return null;

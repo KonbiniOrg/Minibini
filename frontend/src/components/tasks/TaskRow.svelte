@@ -67,8 +67,10 @@
   // Time column already shows the number, so drop the redundant one here.
   // Inputs are minute-grained in practice; do not reuse this comparison for
   // blep-derived elapsed values (those carry seconds and would double-round).
+  // unit_label is the task's own money field now (was the RateScheme's
+  // scheme_unit_label echo, retired — task-owned money Phase 1).
   const estQtyIsDuplicate = $derived(
-    task.scheme_unit_label === 'hour'
+    task.unit_label === 'hour'
     && task.est_worker_time
     && Number(task.est_qty) === durationToHours(task.est_worker_time)
   );
@@ -87,7 +89,7 @@
   {#if showStatus}<td>{#if task.invoice}<a class="badge-invoiced" href={`#/invoices/${task.invoice.id}`} title="Billed on this invoice">INVOICED</a>{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
   <td class="text-right">{estQtyIsDuplicate ? '-' : (task.est_qty ?? '-')}</td>
   <td class="text-right">{taskActual(task) ?? '-'}</td>
-  <td class="text-right">{task.scheme_unit_label || '-'}</td>
+  <td class="text-right">{task.unit_label || '-'}</td>
   <td class="text-right">-</td>
   <td class="text-right">{fmtMoney(task.effective_rate)}</td>
   <td class="text-right" class:est-total={taskTotalInfo(task).isEstimate}>{fmtMoney(taskTotal(task))}</td>

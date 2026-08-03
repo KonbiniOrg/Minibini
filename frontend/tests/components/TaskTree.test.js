@@ -6,7 +6,7 @@ import { user } from '@/stores/auth.js';
 function task(overrides) {
   return {
     task_id: 1, name: 'Cut', status: 'pending', est_qty: '2', effective_rate: '25',
-    computed_charge: '0', est_worker_time: null, scheme_unit_label: 'hr', materials: [], ...overrides,
+    computed_charge: '0', est_worker_time: null, unit_label: 'hr', materials: [], ...overrides,
   };
 }
 
@@ -593,19 +593,19 @@ describe('TaskRow Est Qty duplicate suppression', () => {
   }
 
   it('renders "-" for Est Qty when it duplicates est_worker_time on an hour-unit scheme', () => {
-    const t = task({ est_worker_time: '2:00:00', est_qty: '2', scheme_unit_label: 'hour' });
+    const t = task({ est_worker_time: '2:00:00', est_qty: '2', unit_label: 'hour' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
     expect(estQtyCell(container).textContent.trim()).toBe('-');
   });
 
   it('still shows Est Qty when it diverges from est_worker_time (legacy row)', () => {
-    const t = task({ est_worker_time: '2:00:00', est_qty: '3', scheme_unit_label: 'hour' });
+    const t = task({ est_worker_time: '2:00:00', est_qty: '3', unit_label: 'hour' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
     expect(estQtyCell(container).textContent.trim()).toBe('3');
   });
 
   it('shows Est Qty normally for a non-hour-unit scheme', () => {
-    const t = task({ est_worker_time: null, est_qty: '5', scheme_unit_label: 'pcs' });
+    const t = task({ est_worker_time: null, est_qty: '5', unit_label: 'pcs' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
     expect(estQtyCell(container).textContent.trim()).toBe('5');
   });
