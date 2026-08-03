@@ -16,20 +16,28 @@ and invoice line items. It guides manual/user testing today and is intended to s
 automated UI test platform later — each checklist item maps to an assertion. Keep it
 current as the pricing UI evolves.
 
-**Model:** a **Rate Scheme** (`RateScheme`) is one priced thing the shop charges for.
-Its `rate` is the price for **every** algorithm — including flat-fee, whose price used
-to live on the task. So flat-fee rate schemes proliferate (one per priced item) and
-tasks carry **no price of their own**; they read it from the linked Rate Scheme. A
-**Service Item** (`ServiceItem`, the saved-work catalog) is a separate thing: a reusable
-task definition that bundles a name + default modifiers + a Rate Scheme, added to a Plan
-via **Add Line**. A fourth Rate Scheme algorithm, **`percentage`**, is a *document
-adjustment*: its `rate` is a percent (negative = discount), it never backs a Task, and it
-is applied to a draft estimate or invoice as its own line whose amount =
-`percent × (sum of the other lines it targets)`, scoped by accounting category. The
-amount **recalculates while the document is a draft and freezes when the document is
-sent/finalized**. Agreement adjustments surface in the invoice wizard so they can't be
-missed when billing. See `docs/designs/estimates-and-prices.md` and the consolidation
-phase plans in `docs/plans/`.
+**Model (task-owned-money Phase 1, 2026-08).** A **Rate Scheme** (`RateScheme`) is a
+**freely editable preset** — a named, priced service the shop performs. There is no
+`flat_fee` algorithm (fixed one-off charges are the `Fee` atom, not a Rate Scheme) and no
+supersession: a Rate Scheme's fields can be edited directly at any time, referenced or
+not. When a worker or manager creates a Task from a preset, the task **stamps a
+permanent copy** of the preset's `rate`/`unit`/`category`/checked modifiers onto itself
+at that moment — from then on the task's own copy, not a live link, is its price of
+record. Editing (or even deleting) the preset afterward never reprices a task that
+already stamped from it. Retiring a preset (`is_active=False`) only hides it from *new*
+task creation; it has zero effect on tasks that already stamped from it. A **Service
+Item** (`ServiceItem`, the saved-work catalog) is a separate thing: a reusable task
+definition that bundles a name + default modifiers + a Rate Scheme, added via **Add
+Work**/**Add Line**; unlike a Task, a Service Item keeps a *live* link to its preset (it
+has no money of its own to stamp until it generates a Task). A fourth Rate Scheme
+algorithm, **`percentage`**, is a *document adjustment*: its `rate` is a percent
+(negative = discount), it never backs a Task, and it is applied to a draft estimate or
+invoice as its own line whose amount = `percent × (sum of the other lines it targets)`,
+scoped by accounting category. The amount **recalculates while the document is a draft
+and freezes when the document is sent/finalized**. Agreement adjustments surface in the
+invoice wizard so they can't be missed when billing. See
+`docs/designs/estimates-and-prices.md` §2-§3 (preset semantics + stamping) and §10.3
+(adjustment-percent snapshots).
 
 > **Scope — what to test now vs. what's coming (Phase 8 deferred).** Today,
 > adjustments are **document-scoped**: you add one per **draft estimate** and again per
@@ -48,36 +56,41 @@ phase plans in `docs/plans/`.
 
 ## Personas
 
-- **Worker** — no permission atoms. Adds/completes tasks (picking a Rate Scheme for
-  the task); cannot manage Rate Schemes and cannot add adjustments.
+- **Worker** — no permission atoms. Adds/completes tasks (picking a Rate Scheme preset
+  to stamp for the task, but with no editable money fields at create time — §2); cannot
+  manage Rate Schemes and cannot add adjustments.
 - **Jobs / PM** — holds `can_manage_jobs`, **or** is the Job's `project_manager`
-  (scoped to that job). Can add adjustments on that job's **draft estimates**.
+  (scoped to that job). Can add adjustments on that job's **draft estimates**; can write
+  a task's money fields (rate/unit/category/modifiers) at create and edit time (§2).
 - **Financials** — holds `can_manage_financials`. Can add adjustments on
-  **draft invoices** and use the invoice wizard's Agreement Adjustments panel.
-- **Config** — holds `can_manage_config`. Creates/edits/supersedes **Rate Schemes**
-  (and Service Items) in Settings → Catalog. *(Creating a Service Item is also allowed
-  for `can_manage_jobs` — the inline "save to catalog" while plan-building — but Rate
-  Schemes are config-only.)*
+  **draft invoices** and use the invoice wizard's Agreement Adjustments panel; shares
+  the same task money-field write access as Jobs/PM.
+- **Config** — holds `can_manage_config`. Creates/edits/retires/reactivates **Rate
+  Schemes** (and Service Items) in Settings → Catalog. *(Creating a Service Item is
+  also allowed for `can_manage_jobs`/`can_manage_financials` — the shared Catalog
+  management widening — but Rate Schemes stay config-only.)*
 
 ## Dev note — percentage rate schemes are document-only
 
-A `percentage` Rate Scheme is meaningless on a task. The backend rejects assigning one
-to a Task (HTTP 400) and excludes it from
-`GET /api/rate-schemes/?task_applicable=true`. **Known gap (verify / likely bug):** the
-task rate picker (`WorkItemForm`) and the Service Item form's rate picker
-(`ServiceItemManager`) currently fetch `/api/rate-schemes/` *without*
-`task_applicable=true`, so a percentage Rate Scheme may still appear in those dropdowns —
-picking one errors only on save. Treat its appearance there as a bug to fix (wire the
-filter), not as intended behavior. See §2 and §9.
+A `percentage` Rate Scheme is meaningless on a task. `Task.stamp_from_scheme` rejects
+one with `ValueError` (surfaced as a field error / 400), and it's excluded from
+`GET /api/rate-schemes/?task_applicable=true`. **The task picker (`WorkItemForm`) is
+now fixed:** it fetches with `?task_applicable=true`, so a percentage Rate Scheme never
+appears there. **The Service Item form's rate picker (`ServiceItemManager`) still has
+the gap:** it fetches plain `/api/rate-schemes/` (active, unfiltered by algorithm), so a
+percentage Rate Scheme can still be selected there — the server's
+`ServiceItemSerializer.validate_rate_scheme` rejects it with a 400 on save. Treat its
+appearance in `ServiceItemManager` as a bug to fix (wire the filter), not as intended
+behavior. See §2 and §9.
 
 ## Prerequisites (test-data setup)
 
 Without these, whole branches below are silent no-ops:
 
 - [ ] **A Rate Scheme of each task algorithm** — one `elapsed_time` (e.g. "CNC
-  Router", rate 85/hour), one `entered_qty`, and one **`flat_fee`** (e.g. "Std
-  Setup Fee", rate 50/job). The flat-fee one is needed for the price-on-rate
-  reframe checks (§1, §2).
+  Router", rate 85/hour) and one `entered_qty` (e.g. "Tap a hole", rate 5/unit).
+  Needed for the stamping checks (§1, §2). (No `flat_fee` algorithm exists —
+  fixed one-off charges are the `Fee` atom, out of this doc's scope.)
 - [ ] **A `percentage` "Rush" Rate Scheme** (rate **15**) and a **`percentage`
   "Discount" Rate Scheme** (rate **-10**). Without these, no adjustment can be added.
 - [ ] **At least two AccountingCategories** (e.g. **Labor** and **Materials**) so
@@ -110,9 +123,10 @@ section (`RateSchemeManager`, heading **"Rate Schemes"**).
 - [ ] **List stays visible while adding.** After **Add Rate Scheme**, the existing
   rate schemes remain listed above the form (the list is not suppressed); the
   **Add Rate Scheme** button is hidden while the form is open.
-- [ ] **Flat-fee has a single price field.** Create a Rate Scheme with algorithm
-  **"Fixed charge"** → there is **one Rate field** (no separate "flat-fee
-  price"); enter the price there. Save → it lists with that rate.
+- [ ] **Only three algorithms.** The **Algorithm** dropdown offers **"Based on time
+  worked"** (`elapsed_time`), **"Worker enters quantity"** (`entered_qty`), and
+  **"Percentage of other lines"** (`percentage`) — no "Fixed charge"/flat-fee option
+  (removed; fixed one-off charges are the `Fee` atom, out of this doc's scope).
 - [ ] **Percentage type.** Choose algorithm **"Percentage of other lines"** → the
   form shows a **"Rate (%)"** field, **no modifier menu**, and **no unit/quantity
   fields**; the AccountingCategory selector stays. Save a "Rush" at **15**.
@@ -120,26 +134,67 @@ section (`RateSchemeManager`, heading **"Rate Schemes"**).
   with **Rate (%) = -10** → saves (no "must be ≥ 0" block). *(Honest note: a
   negative rate is **only** accepted for percentage; a negative rate on any other
   algorithm is rejected.)*
-- [ ] **Supersede a referenced Rate Scheme.** Editing a Rate Scheme that's already in
-  use surfaces a **"New Version of Rate Scheme"** path (supersession) rather than an
-  in-place edit of frozen fields — the old version stays, work keeps its price.
+- [ ] **Freely editable, even when stamped onto tasks — no supersession.**
+  Editing a Rate Scheme already stamped onto live tasks saves **in place** — there is
+  no "New Version"/frozen-fields block. The already-stamped tasks' own rate/unit/
+  category/modifiers are unaffected (they hold their own permanent copy, not a live
+  link); only *future* task creation sees the new values.
+- [ ] **Retire / Reactivate.** Each row shows **Retire** (active row) or
+  **Reactivate** (inactive row) — a reversible toggle, no confirmation prompt.
+  Retiring flips the **Active** column to **No** and removes the row from the
+  default (active-only) list view; it does **not** delete the scheme or touch any
+  task that already stamped from it.
+- [ ] **Show inactive rate schemes.** The **"Show inactive rate schemes"** checkbox
+  toggles the list between active-only (default) and all schemes
+  (`?include_inactive=true`).
+- [ ] **Default preset picker.** The **Default preset** dropdown lists only **active**
+  schemes; picking one and clicking **Save default preset** persists it (explicit
+  button — not auto-saved on change) as the `default_rate_scheme` Configuration key,
+  which preselects the Rate Scheme dropdown on a fresh manual task-creation form
+  (§2) for every user. Retiring the current default clears the dropdown back to
+  **"-- None --"**.
 
-## 2. A Rate Scheme in the task & Service Item forms (reframe + applicability)
+## 2. A Rate Scheme in the task form — stamping and money-field gating
 
-Entry: task list **Add Work Item** (`#/jobs/{id}/tasklist`, `WorkItemForm`); and
-**Settings → Catalog → Service Items** (`ServiceItemManager`).
+Entry: task list **Add Work** (`#/jobs/{id}/tasklist`, `WorkItemForm`, manual and
+template modes); and **Settings → Catalog → Service Items** (`ServiceItemManager`).
 
-- [ ] **No flat-fee price input.** Select a **flat-fee** Rate Scheme in the task (or
-  Service Item) form → there is **no** per-task price field; instead the form shows the
-  Rate Scheme's price read-only: **"Rate: $50/job (from rate scheme)"**.
-- [ ] **Modifiers only for time/qty.** A flat-fee Rate Scheme shows **no modifier
-  checkboxes**; an `elapsed_time`/`entered_qty` Rate Scheme still shows its modifier
-  menu.
+- [ ] **Create is a stamp, not a live link.** Picking a Rate Scheme (manual mode) or a
+  Service Item template (template mode) and saving copies the preset's
+  rate/unit/category/checked-modifiers onto the new task permanently
+  (`Task.stamp_from_scheme`, server-side). The picked preset's own fields are never
+  touched by this.
+- [ ] **Create-time money fields are always read-only, for every persona.** At create
+  time nobody — worker or manager — gets an editable rate/unit input: the form shows
+  a read-only preview (**"Rate: $X/unit (from rate scheme)"** in manual mode,
+  **"Rate Scheme: Name — $X/unit (from template)"** in template mode), because the
+  server always stamps those fields from the chosen preset regardless of what's
+  submitted. A manual-mode preview also shows the preset's Accounting Category,
+  read-only.
+- [ ] **Modifier checkboxes are the one create-time gate.** If the picked preset has
+  modifiers, checkboxes render for everyone, but are only **enabled** for a manager/PM
+  (`can_manage_jobs` or the job's PM) or `can_manage_financials`; a worker sees the
+  same checkboxes **disabled** — visible so they know what's available, un-checkable
+  so they can't change the price. This applies in both manual and template mode
+  (template mode gates the `active_modifiers` override the same way `add-from-template`
+  does server-side).
+- [ ] **Editing an existing task's money is manager/PM/financials-only.** Open an
+  existing task for edit: a manager sees **editable** Rate, Unit, and Accounting
+  Category inputs plus enabled modifier checkboxes (built from the task's original
+  stamped-from preset, when it's still resolvable); a worker sees the same fields as
+  **read-only text** (`Rate: $X/unit`, category name) and disabled checkboxes. There is
+  **no Rate Scheme re-pick dropdown in edit mode** — a static **"Scheme: {name}"** line
+  names the preset the task was originally stamped from (provenance only; editing the
+  task's own rate never changes what this line shows).
+- [ ] **Retiring/deleting the stamped-from preset doesn't touch the task.** A task
+  whose `source_scheme` was later retired or deleted still edits and displays its own
+  money fields normally; the "Scheme:" provenance line falls back to **"—"** only if
+  the preset was deleted (retiring alone leaves the name resolvable).
 - [ ] **Guard — percentage not selectable for a task.** A **percentage** Rate Scheme
-  should **not** appear in the task / Service Item rate picker. *(Known gap, §Dev
-  note: it may currently appear because the picker omits `?task_applicable=true`.
-  If it appears, that's a bug.)* If one is somehow selected and saved, the server
-  **rejects it with a 400** ("Percentage … cannot bill a task").
+  does **not** appear in the task rate picker (`WorkItemForm` fetches
+  `?task_applicable=true` — fixed, §Dev note). The **Service Item** form's rate picker
+  still has no such filter (known gap, §Dev note) — if one is somehow selected and
+  saved there, the server rejects it with a 400 ("Percentage … cannot bill a task").
 
 ## 3. Add an adjustment to a draft estimate (Jobs / PM persona)
 
@@ -193,8 +248,9 @@ alongside reorder arrows and the "out of sync with atoms" marker.)*
 
 - [ ] **Revise carries the adjustment.** From an `open` estimate that has a rush
   line, **Revise Estimate** → the new draft revision still contains the rush
-  adjustment line with the **same Rate Scheme and the same target categories** (it is
-  not silently dropped).
+  adjustment line with the **same Rate Scheme, the same percent, and the same target
+  categories** (it is not silently dropped, and the percent doesn't re-read the live
+  scheme — see `adjustment_percent` in `estimates-and-prices.md` §10.3).
 
 ## 7. Invoice adjustments (Financials persona)
 
@@ -248,10 +304,15 @@ and it works **whether or not the invoice was built from the estimate**.
   button; adjustments update silently on every line-item mutation. Line-item edits
   are blocked on non-draft documents, so frozen state is enforced by the draft gate.
 - [ ] **Percentage Rate Scheme rejected on a task (400).** Assigning a percentage
-  Rate Scheme to a task is refused by the server (and should be hidden from
-  the picker — §2 known gap).
+  Rate Scheme to a task is refused by the server; the `WorkItemForm` task picker
+  already hides it, the `ServiceItemManager` template picker doesn't yet (§2 known
+  gap).
 - [ ] **Negative rate only for percentage.** Saving a negative rate on a
   non-percentage Rate Scheme is rejected.
+- [ ] **Money-field write is gated on presence, not value.** A worker who somehow
+  POSTs `active_modifiers: []` on task create still 403s — the server gate triggers
+  on the key being present in the request at all, not on what it's set to (mirrors
+  `Add-Line-and-Work-Authoring.md` §6).
 
 ---
 
@@ -259,12 +320,14 @@ and it works **whether or not the invoice was built from the estimate**.
 
 | Dimension | Cases |
 |---|---|
-| Rate Scheme algorithm | elapsed_time · entered_qty · flat_fee (price on `rate`) · **percentage** |
-| Reframe | flat-fee shows one Rate field · task/Service-Item forms show rate scheme rate read-only (no price input) · modifiers only on time/qty |
+| Rate Scheme algorithm | elapsed_time · entered_qty · **percentage** (no `flat_fee` — removed) |
+| Preset lifecycle | freely editable, referenced or not (no supersession) · retire/reactivate · default-preset picker |
+| Stamping | create copies preset's money onto the task permanently · retiring/deleting the preset afterward doesn't touch already-stamped tasks |
+| Money-field gating | create-time fields always read-only for everyone · modifier checkboxes enabled (manager/PM/financials) vs disabled (worker) · edit-time fields editable (manager) vs read-only (worker) |
 | Adjustment scope | whole-order (empty target) · single category · multi-category · no stacking |
 | Sign | positive (rush) · negative (discount) |
 | Lifecycle | add (draft) · auto-recompute on every mutation (draft) · freeze on send/finalize · revision preserves |
 | Surface | estimate detail/Client View · invoice detail · invoice wizard Agreement panel (path-independent) · NOT atom pool |
-| Persona | worker (none) · jobs/PM (estimate) · financials (invoice) · config (Rate Schemes manager) |
-| Guards | non-draft hides controls · percentage rejected on task (400) + picker filter (known gap) · negative-rate non-percentage rejected |
+| Persona | worker (stamp-only, no money writes) · jobs/PM (estimate + task money) · financials (invoice + task money) · config (Rate Schemes manager) |
+| Guards | non-draft hides adjustment controls · percentage rejected on task (`ValueError`/400) + picker filter (fixed in `WorkItemForm`, still gapped in `ServiceItemManager`) · negative-rate non-percentage rejected |
 | Display | badge shows percent + rate scheme + categories (no `NaN%`/`undefined`) · adjustment row distinct · sorted last |

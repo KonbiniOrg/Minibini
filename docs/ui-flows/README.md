@@ -33,13 +33,13 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 | Surface | Routes | Flow doc | E2E specs |
 |---|---|---|---|
 | Job overview | `/jobs/:id` | Job-Overview.md | — |
-| Estimate & work authoring | `/jobs/:id/estimate`, task-list Add Work, wizard | Add-Line-and-Work-Authoring.md | — |
+| Estimate & work authoring | `/jobs/:id/estimate`, task-list Add Work, wizard | Add-Line-and-Work-Authoring.md | `add-line-and-work-authoring/` |
 | Change orders | `/jobs/:id/change-order/:coId`, `/change-orders/:id/send` | Change-Orders.md | — |
 | Invoice seeding & send | `/jobs/:id/invoice`, `/invoices/*` | Invoice-Seeding-and-Send.md | — |
 | Bills & payments | `/bills/*` | Bills.md | — |
 | Expenses & reimbursements | `/expenses`, `/reimbursements/:id` | Expenses.md | `expenses/` (§1 only) |
 | Inventory | `/catalog`, `/catalog/earmarks` (§7 only) | Inventory.md | — |
-| Rate schemes & adjustments | `/catalog/service-items`, adjustments in estimate/invoice | Services-and-Adjustments.md | — |
+| Rate schemes & adjustments | `/catalog/service-items`, adjustments in estimate/invoice | Services-and-Adjustments.md | `settings/` (rate-scheme-modal, rate-scheme-presets — §1/§2 only) |
 | QuickBooks sync | payments/expenses sync, Settings §1 | QuickBooks-Sync.md | — (mostly not e2e-able) |
 | Deletion & retirement | cross-cutting | Deletion-and-Retirement.md | — |
 | Production lifecycle (job status × inventory × time) | spans job detail, task list/detail, catalog | Production-Lifecycle.md | — |
