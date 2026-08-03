@@ -274,13 +274,16 @@ that. Rules:
   detached — full stop. Adding execution granularity after acceptance
   (which WILL happen — that is the point of project management) is
   thereby structurally incapable of double-billing.
-- **Estimates are per-unit; actuals are batch totals.** Work happens in
-  batches, so bleps and entered quantities land on subtasks as totals
-  (147 min), never per-widget. On a subtask, est fields mean per-unit and
-  actual fields mean totals. This asymmetry is explicit, not
-  conventional: **one blessed derivation helper** (multiplier =
-  `parent.qty` if parent and `qty_scales_with_parent` else 1) is the only
-  path by which schedule bars (`est_worker_time` × N), expected-vs-logged
+- **Actuals are always batch totals; est values are always read through
+  the helper.** Work happens in batches, so bleps and entered quantities
+  land on subtasks as raw totals (147 min), never per-widget. A subtask's
+  est fields mean **per-unit when `qty_scales_with_parent` is true**
+  (15 min/ea × parent qty 10 ⇒ expected 150) and **per-batch when false**
+  (20 min setup ⇒ expected 20 at any N — there, est and actual are
+  directly comparable). The asymmetry is explicit, not conventional:
+  **one blessed derivation helper** (multiplier = `parent.qty` if parent
+  and `qty_scales_with_parent` else 1) is the only path by which schedule
+  bars (`est_worker_time` through the same multiplier), expected-vs-logged
   displays, and estimate composition read subtask est values. Nothing may
   compare 15 to 147 raw.
 - **`qty_scales_with_parent`** (boolean, default true) lives on Task like
