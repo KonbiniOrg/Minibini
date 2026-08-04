@@ -1042,10 +1042,17 @@ class JobDetailInvoiceFieldTest(TestCase):
         # +1 for `has_estimates` (2026-07-19): the job-detail serializer runs one
         # estimate_set.exists() so the header pill can offer direct Approved only
         # on estimate-less jobs (approval otherwise flows from estimate acceptance).
+        # +2 for `_linked_po_variances` (task-owned-money Phase 5 Task 4,
+        # 2026-08-04): `compute_job_financials` now always runs two queries to
+        # find POs linked to this job — one over
+        # `PurchaseOrderLineItem.filter(task__job=job)`, one over
+        # `Material.filter(job=job, po_line_item__isnull=False)` — even when
+        # the job has no linked POs (the early-return `if not po_ids` still
+        # costs those two lookups). 17 -> 19.
         # If the jobs viewset gains new prefetches/annotations this number may need
         # updating — update it together with a comment explaining why the count changed.
         self.assertEqual(
-            count_one, 17,
-            f'Absolute query count for job-detail changed: expected 17, got {count_one}. '
+            count_one, 19,
+            f'Absolute query count for job-detail changed: expected 19, got {count_one}. '
             f'Update this pin if the viewset legitimately changed (add a comment explaining why).',
         )

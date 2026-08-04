@@ -44,6 +44,7 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 | Deletion & retirement | cross-cutting | Deletion-and-Retirement.md | — |
 | Production lifecycle (job status × inventory × time) | spans job detail, task list/detail, catalog | Production-Lifecycle.md | — |
 | Settings — Accounting Categories delete guard | `/settings` (Accounting tab) | Settings.md (§1 only) | `settings/` |
+| Purchase orders | `/purchase-orders/*`, `/jobs/:id/pos` | Purchasing.md | `purchasing/` |
 
 ### No flow doc yet (the gap list)
 
@@ -57,7 +58,6 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 | Login & session | login form, logout, expiry notice | Personas land here via auth.setup; guards + session-expired path. Post-login/logout landing is already covered by `e2e/specs/auth/session-landing.spec.js` (see users-and-permissions.md → Login flow); the rest of the surface is uncovered. |
 | Contacts | `/contacts`, `/contacts/new`, `:id`, `:id/edit` | CRUD, notes, delete impact counts. |
 | Businesses | `/businesses`, `/businesses/new`, `:id`, `:id/edit` | CRUD, payment terms, contact association. |
-| Purchase orders | `/purchase-orders/*`, `/jobs/:id/pos` | Create/edit/send/receive; Bills.md covers only the bill side of linking. |
 | Deliverables & shipments | `/jobs/:jobId/shipments`, `/shipments/:sid/print` | Deliverable states, shipment build, packing-list print. |
 | Estimate lifecycle (beyond authoring) | `/estimates/:id`, `/estimates/:id/send` | Send + PDF, accept/reject, revision/supersede, expiry. Authoring is Add-Line's. |
 | Email inbox & email-to-X | `/email`, `/email/:id/*` | Inbox, detail, create-job/PO/bill, associate flows. Bills §9 covers one path. |

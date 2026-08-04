@@ -1526,16 +1526,61 @@ Only `draft` POs can be deleted.
 Cannot transition out of `draft` without at least one PurchaseOrderLineItem.
 Enforced in `PurchaseOrder.clean()`.
 
+#### Reconciliation fields (task-owned-money Phase 5, spec §7 — added 2026-08-04)
+
+- **bill_total** (`Decimal(10,2)`, nullable): the vendor bill's total, as
+  entered once in QBO. `None` = not yet reconciled.
+- **vendor_invoice_ref** (`CharField(100)`, blank-default `''`)
+- **reconciled** (`BooleanField`, default `False`): **not** part of the
+  status machine above — reconciliation is orthogonal bookkeeping, not a
+  PO lifecycle state. Set (and re-set) by `PurchaseOrderService.reconcile()`.
+- **reconciled_date** (datetime, nullable): unlike every other date field
+  on this model, **not** write-once — `reconcile()` overwrites it on every
+  call, including re-reconcile. Set alongside `reconciled=True`.
+- **Write path**: all four are read-only on `PurchaseOrderSerializer` — a
+  bare `PATCH /api/purchase-orders/{id}/` cannot touch them. The only
+  writer is `POST /api/purchase-orders/{id}/reconcile/`
+  (`CanManageFinancials`).
+- **Allowed PO status**: `reconcile()` requires the PO be **past `draft`**
+  — `issued`, `partly_received`, `received_in_full`, or `cancelled` are
+  all valid. Only `draft` is rejected (plain `ValidationError`, not
+  field-shaped: *"Cannot reconcile a purchase order before it has been
+  issued."*). Not gated on the awaiting-reconciliation nudge below.
+- See `materials-inventory-and-purchasing.md` §10a for the full
+  reconciliation reference (wholesale-replace `line_finals`/
+  `appended_lines` semantics, the task-rate prompt).
+
+#### `is_awaiting_reconciliation` (derived, not stored)
+
+`status == 'received_in_full' and not reconciled`. Purchasing-side only —
+independent of any linked task's completion or invoice status. Backs the
+`?awaiting_reconciliation=true` list filter and the PO list's badge.
+
 #### PurchaseOrderLineItem
 
 No direct `job` FK; the link to a Job derives through the Material that the
-line item ordered (`Material.po_line_item`).
+line item ordered (`Material.po_line_item`) **or** through the `task` FK's
+job (task-owned-money Phase 5, below) — a line may carry either, both, or
+neither.
 
 - **purchase_order** (required FK → PurchaseOrder, CASCADE)
-- **task** (optional FK → Task, PROTECT): reserved for a future
-  "service PO" feature. No flow currently populates it; the field is
-  null on every PO line. Defined directly on the subclass, not on
-  `BaseLineItem`.
+- **task** (optional FK → Task, PROTECT): cost→sell attribution
+  (task-owned-money Phase 5, spec §7 rule 1) — links this line's cost to
+  the flat task it's outsourcing. **Validated in `clean()`** (both fields
+  ERROR-shaped as `{'task': [...]}`):
+  - Must be a **top-level task** (`parent_task_id is None`) — *"Linked
+    task must be a top-level task — link the parent task instead;
+    subtasks cannot be linked directly."*
+  - Must be **job-bearing** (`task.job_id is not None`) — *"Linked task
+    must belong to a job."*
+  - Optional on every line; independent of the Material-derived job
+    attribution above — a line can attribute cost to a task on one job
+    while its Material serves a different job.
+  - **Mutually exclusive with `inventory_item`** below — this is a
+    **pre-existing** `BaseLineItem.clean()` rule (predates Phase 5;
+    also applies to the retired `BillLineItem`), not new here: *"LineItem
+    cannot have both task and inventory_item."* A task-outsourcing line
+    is therefore always manual/freeform, never catalog/PLI-sourced.
 - **inventory_item** (optional FK → InventoryItem, PROTECT)
 - **line_number**: auto-generated sequentially per PO if null
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work)
@@ -1543,6 +1588,44 @@ line item ordered (`Material.po_line_item`).
 - **qty_cancelled**: decimal, default 0 (replaces the old `cancelled` boolean)
 - **received_by** (optional FK → User, SET_NULL); **received_date**: nullable
 - **receipt_note**: text, default ''
+- **final_price** (`Decimal(10,2)`, nullable, added Phase 5): reconciliation-owned.
+  `None` = "as ordered" (`price` stands). Read-only on
+  `POLineItemSerializer` — written only via `reconcile()`'s `line_finals`.
+  **Wholesale-replace on every reconcile call**: an ordered line whose id
+  isn't a key in that call's `line_finals` has `final_price` reverted to
+  `None`, even if a prior call had set one.
+- **invoice_only** (`BooleanField`, default `False`, added Phase 5): a
+  line appended during reconciliation (freight, tax, etc.) that was
+  **never ordered or received**. Read-only on the serializer — created/
+  updated/deleted only via `reconcile()`'s `appended_lines`
+  (append-only-mirror: an existing `invoice_only` line whose id isn't
+  resent is deleted, via `LineItemService.delete_line_item_with_renumber`).
+  Excluded from **both** receiving entry points (`receive_items` 400s if
+  one is included; `receive_all` silently filters it out) and from
+  `PurchaseOrder.ordered_total`. **Included** in `po_total` (unchanged
+  legacy property — sums every line regardless).
+
+#### `validate_data` checks (Phase 5 Task 4, belt/detection — not enforcement)
+
+`clean()` above is the real enforcement point for the task-link rule;
+these three (`check_purchase_orders`, `apps/core/management/commands/
+validate_data.py`) catch data that bypassed `save()`/`clean()` (e.g.
+fixtures written directly):
+
+- **invoice_only line has receiving data (ERROR)**: an `invoice_only`
+  line with `qty_received`, `received_by`, or `received_date` set —
+  invoice_only lines are excluded from every receiving flow by
+  construction, so any of these being non-empty means something wrote
+  around that exclusion.
+- **`final_price` set on an unreconciled PO (WARN)**: a line's
+  `final_price` is non-null but `PurchaseOrder.reconciled` is `False` —
+  a stale partial entry (e.g. `reconcile()` was interrupted, or a row
+  was hand-edited). Not an ERROR: this is a legitimately reachable
+  transient state mid-workflow, same tolerance pattern as other
+  draft/in-progress WARNs in this doc.
+- **task link points at a subtask (ERROR)**: `li.task_id` is set and
+  `li.task.parent_task_id` is not `None` — the top-level-only rule
+  (above) bypassed `clean()`.
 
 ---
 

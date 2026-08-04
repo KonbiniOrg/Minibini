@@ -625,6 +625,18 @@ surcharges. The full rules — algorithms, modifier snapshot shape,
 `is_active` retirement, the documents-as-lenses model — live in the
 estimates-and-prices doc.
 
+**Outsourced work (task-owned-money Phase 5).** An ordinary flat task
+(no new model, no new field here) can be the sell side of a PO line
+whose cost is bought from a vendor — the PO line's `task` FK is the
+attribution (`materials-inventory-and-purchasing.md` §10a). Once that
+PO is reconciled with a per-line final cost, a human may be offered a
+rate-prompt suggesting this task's `rate` move to match — accepting it
+is an ordinary `PATCH .../tasks/{id}/ {rate: ...}` through this same
+money-gated field, same as editing the rate by hand; nothing about the
+`rate` field's shape, provenance chip, or `MONEY_FIELDS` gating changes.
+See §10a for the full prompt mechanics (qualifying-line rule, markup
+config, accept/decline).
+
 ### 4.5 Lifecycle service
 
 `TaskLifecycleService` (`apps/jobs/services.py`) is the only
@@ -1035,6 +1047,22 @@ resolve to a *child*, since subtask atoms are excluded from every
 billing pool, above). Error: *"Cannot make this task a subtask — it is
 claimed by an estimate, change order, or invoice line. Release the
 claim first."*
+
+Why this asymmetry needs no mirror-image check on the detach side: the
+reparent-in guard's "any claim, draft or not" strictness only has work
+to do at the *moment of the move*, because it's the one instant a
+task's claim status and its about-to-be-subtask status can collide —
+before the move it was an ordinary top-level task, freely claimable
+like any other. Once the move succeeds, that possibility is closed for
+as long as the task remains a subtask: the pool-listing exclusion and
+`_assert_atom_billable` rejection above (§4a.3) keep every claiming
+path — compose, append, revise — from ever resolving to a subtask, so
+a subtask cannot *acquire* a claim while it is one. Detaching it later
+therefore never needs its own "is the child claimed?" check — there is
+structurally nothing to find. That's exactly why the existing detach
+guard only inspects the **parent's** claim (§ above): the child's side
+of that question is already impossible by construction, not merely
+unchecked.
 
 **Parent delete/retire guard** (final-review finding I3). Deleting a
 parent Task cascades (`Task.parent_task` is `on_delete=CASCADE`) —
@@ -1866,6 +1894,17 @@ Decimal, quantized to cents), surfaced as detail-only serializer fields
 `JobSerializer`. Like `latest_change_request`, they are computed once per detail
 render (memoized) and returned as `null` in list context, so the board list
 payload stays cheap; the header falls back to `$—` when a value is `null`.
+
+**`linked_po_variances`** (task-owned-money Phase 5 Task 4, added
+2026-08-04) — a fifth key on `compute_job_financials`'s return, a list of
+every PO with at least one line linked to this job (via a task or via a
+job-owned Material), each reported at **PO granularity** (no proration):
+`{'po_id', 'po_number', 'status', 'reconciled', 'ordered_total',
+'bill_total', 'variance', 'multi_job'}`. See
+`materials-inventory-and-purchasing.md` §10a for the full PO
+reconciliation reference (`_linked_po_variances`, `PurchaseOrder.variance`,
+and the PO-line task-link rule). **API-only** — `JobSerializer` exposes
+it, but no frontend surface renders it yet (`docs/designs/LATER.md`).
 
 - **Estimate** — `compose_agreement(job).grand_total` when the job was ever
   approved (keyed off the immutable `Job.start_date`; see data-constraints §1.8);

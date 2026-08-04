@@ -352,6 +352,26 @@ non-percentage only). The RateSchemeManager (outdated-schemes /
 retirement UI) defaults to active-only and reveals the full set via
 `?include_inactive=true`.
 
+### 3.6 Post-stamp rate changes
+
+Once stamped, a task's `rate` is an ordinary money-gated field — a
+manager/PM or `can_manage_financials` user can edit it directly at any
+time (`PATCH .../tasks/{id}/ {rate: ...}`), same as any other
+`MONEY_FIELDS` entry; `source_scheme` provenance never moves regardless
+(§3.1).
+
+**Outsourced work (task-owned-money Phase 5)** is the one *suggested*
+path to that same edit: a flat task linked to a PO line
+(`materials-inventory-and-purchasing.md` §10a) can be the target of a
+**task-rate prompt** once that PO is reconciled with a per-line final
+cost that differs from what was ordered — "update the selling rate to
+final × markup?" A human must explicitly accept it; accepting issues
+the exact same `PATCH .../tasks/{id}/ {rate: ...}` call described
+above, so nothing here is a second money-writing code path. Declining
+leaves the quoted rate untouched, and nothing about the decline is
+persisted. Full mechanics — qualifying-line rule, the markup config,
+accept/decline — live in `materials-inventory-and-purchasing.md` §10a.
+
 ---
 
 ## 4. Task billing (and the Fee atom)

@@ -1060,4 +1060,3 @@ Cross-cutting UI/API conventions and shared components.
   small table/section on `JobDetail.svelte` near the header, shown only
   when the list is non-empty), or the team decides API-only is fine
   indefinitely and this entry is closed.
-  target list is built from a task's subtasks.

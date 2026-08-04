@@ -296,6 +296,18 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 
 `InvoiceService.discard_draft(invoice)` is the discard path — validates draft status, then hard-deletes the invoice (cascade frees all claimed atoms).
 
+**No hard block from PO reconciliation (task-owned-money Phase 5, spec §7
+rule 5).** A task linked to an outsourced PO line
+(`materials-inventory-and-purchasing.md` §10a) invoices exactly like any
+other task, per the billability line above — whether its PO has been
+received, reconciled, or neither. Reconciliation state is never consulted
+by `get_source_pool` or any billability check; the only gate is task
+completion (or cancellation). A vendor bill that arrives late, or a final
+cost that turns out higher than quoted, is recorded as margin after the
+fact — never a reason to hold up billing the customer. If a cost overrun
+needs to be passed through, that's a deliberate new line or change order,
+not an automatic consequence of reconciling.
+
 ### Copy from estimate (`copy_from_estimate`)
 
 `InvoiceService.copy_from_estimate(invoice)` (`POST /api/invoices/{id}/copy-from-estimate/`) seeds a fresh draft invoice from the job's **accepted-estimate agreement** (`compose_agreement(invoice.job)`) — one `InvoiceLineItem` per agreement line (description, qty, price, units, accounting_category; adjustment lines also carry `adjustment_service` + target categories). Preconditions (else `ValidationError`): the invoice is `draft`, has no existing line items, and is the only non-cancelled invoice for the job (i.e. it's the first invoice).

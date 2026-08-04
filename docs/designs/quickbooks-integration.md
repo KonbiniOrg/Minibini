@@ -322,6 +322,25 @@ When step 1 finds a catalog entity with no `qbo_id`, the QBO Item is created mid
 
 `QBOBillSyncService` (bill push, bill-payment push/update/void) was deleted with the bill retirement — vendor invoices and their payments are entered directly in QBO, so there is nothing to push. The `/api/bills/{id}/send-to-qbo/` and bill-payment endpoints are gone. `Bill`/`BillLineItem`/`BillPayment` survive only as schema-only stubs (materials-inventory-and-purchasing.md §13); `QBOSyncLog` rows with `entity_type` `'bill'` / `'bill_payment'` remain as history.
 
+**Bills stay in QBO — PO reconciliation (task-owned-money Phase 5) does
+not reopen this door.** `PurchaseOrderService.reconcile()`
+(`materials-inventory-and-purchasing.md` §10a) is a **konbini-side-only**
+capture of the delta between a PO's ordered lines and what the vendor
+actually billed — `bill_total`, `vendor_invoice_ref`, optional per-line
+`final_price`, optional `invoice_only` lines. None of it is pushed to
+QBO, reads from QBO, or resurrects `Bill`/`BillPayment`; a human still
+types the bill total by hand, having read it off the real bill already
+sitting in QBO. There is no PO→QBO push either (never built, never
+planned — POs are a konbini-only planning document).
+
+**Future: a phase-2 pull-matcher.** The one gap this leaves: reconciling
+still requires manually copying `bill_total`/`vendor_invoice_ref` from
+QBO into the Minibini form. A later pass could pull the matching vendor
+bill from QBO (by vendor + date range, or a stored PO↔bill correlation)
+and pre-fill/match the reconcile form instead of a blank one — read-only
+from QBO's side, still no push, still no `Bill` model revival. Not
+started; no design work done beyond noting the shape here.
+
 ## Expense push — `QBOExpenseSyncService`
 
 The Minibini-side workflow (entering expenses, batching reimbursements, voiding) is described in `invoicing-and-expenses.md`. This section covers the QBO mechanics.
