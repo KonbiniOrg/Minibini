@@ -853,7 +853,16 @@ member, so any authenticated user with edit access to the task can
 change it (subject to the normal C1 editability matrix, §4.0).
 
 **`Task._parent_multiplier()`** (private, `apps/jobs/models.py`) is the
-**one** blessed multiplier — no other code re-derives this math:
+**one** blessed multiplier on the backend — no server-side code re-derives
+this math. The one disclosed exception is `WorkItemForm.svelte`'s
+`expectedPreview`, a client-side reimplementation of the same formula used
+only to preview an unsaved subtask's expected total before a save
+round-trip can fetch the real value; it follows the same established
+precedent as `RateSchemeManager.svelte`'s `previewTotal` (which has
+re-implemented `Task.effective_rate()` client-side since task-owned-money
+Phase 1) and is anchored against the backend's own fixture numbers by a
+Vitest "drift tripwire" test, so a future change to `_parent_multiplier()`'s
+math fails that test first instead of silently diverging:
 
 ```python
 def _parent_multiplier(self):
