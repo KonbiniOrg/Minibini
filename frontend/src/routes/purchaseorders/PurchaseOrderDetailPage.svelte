@@ -1,5 +1,6 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
   import { showError, showSuccess } from '../../stores/messages.js';
   import { orderPrefillQty } from '../../lib/materials.js';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
@@ -8,6 +9,8 @@
   import LineItemForm from '../../components/purchaseorders/LineItemForm.svelte';
   import ReceiveItemsForm from '../../components/purchaseorders/ReceiveItemsForm.svelte';
   import MaterialSeverDialog from '../../components/purchaseorders/MaterialSeverDialog.svelte';
+  import ReconciliationSection from '../../components/purchaseorders/ReconciliationSection.svelte';
+  import RatePromptDialog from '../../components/purchaseorders/RatePromptDialog.svelte';
   import HistoryPanel from '../../components/HistoryPanel.svelte';
 
   const { params = {} } = $props();
@@ -21,6 +24,9 @@
   let showReceiveForm = $state(false);
   let busy = $state(false);
   let severPrompt = $state(null); // { items, onSubmit } when showing
+  let reconcileFormError = $state('');
+  let reconcileFieldErrs = $state({});
+  let ratePrompts = $state(null); // rate_prompts array from the last reconcile response, or null
 
   // Prefill state when navigating in with ?prefill_material / ?prefill_inventory_item
   // (+ optional ?default_job). The neutral `prefilledLine` is what LineItemForm
@@ -357,6 +363,33 @@
     }
   }
 
+  async function handleReconcile(payload) {
+    reconcileFormError = '';
+    reconcileFieldErrs = {};
+    busy = true;
+    try {
+      const data = await api.post(`/api/purchase-orders/${po.po_id}/reconcile/`, payload);
+      await reload();
+      showSuccess(po.reconciled ? 'Reconciliation updated.' : 'Purchase order reconciled.');
+      // rate_prompts are money-equivalent suggestions (spec §7 rule 4) — the
+      // dialog itself PATCHes tasks through the same money-gated path, so
+      // only offer it to users who can actually act on it.
+      if (canManageFinancials && data.rate_prompts && data.rate_prompts.length) {
+        ratePrompts = data.rate_prompts;
+      }
+    } catch (e) {
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
+      } else {
+        reconcileFormError = t.message;
+        reconcileFieldErrs = t.fields;
+      }
+    } finally {
+      busy = false;
+    }
+  }
+
   async function handleAddNote(text) {
     try {
       await api.post(`/api/purchase-orders/${params.id}/notes/`, { text });
@@ -404,6 +437,16 @@
     />
   {/if}
 
+  <ReconciliationSection
+    {po}
+    {canManageFinancials}
+    {categories}
+    busy={busy}
+    errors={reconcileFieldErrs}
+    formError={reconcileFormError}
+    onReconcile={handleReconcile}
+  />
+
   {#if canManageFinancials && po.status === 'draft'}
     <p>
       {#if showAddLineItem}
@@ -433,4 +476,8 @@
     onSubmit={severPrompt.onSubmit}
     onCancel={() => { severPrompt = null; }}
   />
+{/if}
+
+{#if ratePrompts}
+  <RatePromptDialog prompts={ratePrompts} onClose={() => { ratePrompts = null; }} />
 {/if}

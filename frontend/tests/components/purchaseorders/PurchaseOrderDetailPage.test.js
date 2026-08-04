@@ -122,6 +122,65 @@ describe('PurchaseOrderDetailPage one-shot material prefill', () => {
   });
 });
 
+describe('PurchaseOrderDetailPage reconciliation wiring', () => {
+  const ISSUED_PO = {
+    po_id: 7, po_number: 'PO-7', status: 'issued', business_name: 'Acme',
+    created_date: '2026-06-20T00:00:00Z',
+    bill_total: null, vendor_invoice_ref: '', reconciled: false, reconciled_date: null,
+    variance: null,
+    line_items: [
+      { line_item_id: 42, line_number: 1, description: 'Outsourced work',
+        qty: '1', price: '100.00', units: 'ea', final_price: null, invoice_only: false },
+    ],
+  };
+
+  beforeEach(() => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/history/')) return Promise.resolve([]);
+      if (url.includes('/accounting-categories/')) return Promise.resolve({ results: [] });
+      return Promise.resolve(ISSUED_PO);
+    });
+  });
+
+  it('POSTs the reconcile payload to the reconcile endpoint and shows success', async () => {
+    api.post.mockResolvedValue({ ...ISSUED_PO, reconciled: true, rate_prompts: [] });
+    const { getByRole } = render(PurchaseOrderDetailPage, { props: { params: { id: '7' } } });
+    await vi.waitFor(() => expect(getByRole('button', { name: 'Reconcile' })).toBeInTheDocument());
+
+    await fireEvent.click(getByRole('button', { name: 'Reconcile' }));
+
+    await vi.waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/api/purchase-orders/7/reconcile/',
+      expect.objectContaining({ bill_total: null, line_finals: {}, appended_lines: [] }),
+    ));
+    await vi.waitFor(() => {
+      expect(get(overlayMessage)).toEqual({ kind: 'success', text: 'Purchase order reconciled.' });
+    });
+  });
+
+  it('opens the rate-prompt dialog when the reconcile response carries prompts', async () => {
+    api.post.mockResolvedValue({
+      ...ISSUED_PO, reconciled: true,
+      rate_prompts: [{ task_id: 10, task_name: 'Outsourced work', current_rate: '100.00', suggested_rate: '132.00' }],
+    });
+    const { getByRole, findByText: find } = render(PurchaseOrderDetailPage, { props: { params: { id: '7' } } });
+    await vi.waitFor(() => expect(getByRole('button', { name: 'Reconcile' })).toBeInTheDocument());
+    await fireEvent.click(getByRole('button', { name: 'Reconcile' }));
+
+    expect(await find('Update task rates?')).toBeInTheDocument();
+  });
+
+  it('does not open the rate-prompt dialog when the response carries none', async () => {
+    api.post.mockResolvedValue({ ...ISSUED_PO, reconciled: true, rate_prompts: [] });
+    const { getByRole, queryByText } = render(PurchaseOrderDetailPage, { props: { params: { id: '7' } } });
+    await vi.waitFor(() => expect(getByRole('button', { name: 'Reconcile' })).toBeInTheDocument());
+    await fireEvent.click(getByRole('button', { name: 'Reconcile' }));
+
+    await vi.waitFor(() => expect(api.post).toHaveBeenCalled());
+    expect(queryByText('Update task rates?')).toBeNull();
+  });
+});
+
 describe('PurchaseOrderDetailPage global overlay messages', () => {
   it('raises the global error overlay when delete fails (no local overlay markup)', async () => {
     api.delete.mockRejectedValue(Object.assign(new Error('Conflict'), {

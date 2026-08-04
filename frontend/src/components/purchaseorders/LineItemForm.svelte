@@ -3,6 +3,7 @@
   import InventoryItemPicker from '../InventoryItemPicker.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
   import JobPicker from '../JobPicker.svelte';
+  import TaskLinkPicker from '../TaskLinkPicker.svelte';
 
   const {
     categories = [],
@@ -19,6 +20,11 @@
   let jobId = $state(defaultJob?.job_id ?? null);
   // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let jobRow = $state(defaultJob ?? null);
+
+  // Cost→sell task attribution (task-owned-money Phase 5, spec §7 rule 1) —
+  // independent of the material `jobId` above: a PO line may serve one
+  // job via its material and attribute cost to a task on a DIFFERENT job.
+  let taskId = $state(null);
 
   let form = $state({
     description: '',
@@ -88,6 +94,9 @@
     if (materialId) {
       data.material_id = materialId;
     }
+    if (taskId) {
+      data.task = taskId;
+    }
 
     onSubmit(data);
   }
@@ -151,6 +160,11 @@
     <p>
       <label><strong>Job (optional)</strong></label><br>
       <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} openOnly />
+    </p>
+
+    <p>
+      <label><strong>Task Link (optional)</strong></label><br>
+      <TaskLinkPicker bind:value={taskId} />
     </p>
 
     <p>
