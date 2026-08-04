@@ -143,6 +143,72 @@ class ReconcileReReconcileTest(POReconciliationTestBase):
         li.refresh_from_db()
         self.assertEqual(li.final_price, Decimal('13.00'))
 
+    def test_re_reconcile_with_smaller_line_finals_reverts_omitted_line(self):
+        """REPLACE semantics, not merge: a later reconcile call with a
+        smaller line_finals set is the new complete statement of which
+        lines carry a final price — an omitted line's final_price reverts
+        to None (as ordered), even though a previous call had set it."""
+        po = self._make_issued_po(num_items=2)
+        li_a, li_b = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('40.00'),
+            line_finals={li_a.pk: Decimal('11.00'), li_b.pk: Decimal('9.00')},
+        )
+        li_a.refresh_from_db()
+        li_b.refresh_from_db()
+        self.assertEqual(li_a.final_price, Decimal('11.00'))
+        self.assertEqual(li_b.final_price, Decimal('9.00'))
+
+        # Second call only mentions li_a — li_b must revert to None.
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('35.00'),
+            line_finals={li_a.pk: Decimal('12.00')},
+        )
+        li_a.refresh_from_db()
+        li_b.refresh_from_db()
+        self.assertEqual(li_a.final_price, Decimal('12.00'))
+        self.assertIsNone(li_b.final_price)
+
+    def test_re_reconcile_with_no_line_finals_clears_all_ordered_lines(self):
+        po = self._make_issued_po(num_items=2)
+        li_a, li_b = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('40.00'),
+            line_finals={li_a.pk: Decimal('11.00'), li_b.pk: Decimal('9.00')},
+        )
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('20.00'))
+        li_a.refresh_from_db()
+        li_b.refresh_from_db()
+        self.assertIsNone(li_a.final_price)
+        self.assertIsNone(li_b.final_price)
+
+    def test_re_reconcile_does_not_auto_clear_untargeted_invoice_only_line(self):
+        """invoice_only lines are excluded from the REPLACE-clearing sweep
+        — one keeps whatever final_price it has unless a later call
+        explicitly targets it in line_finals."""
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'),
+            appended_lines=[{
+                'description': 'Freight', 'qty': Decimal('1.00'),
+                'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+            }],
+        )
+        invoice_only_li = PurchaseOrderLineItem.objects.get(
+            purchase_order=po, invoice_only=True,
+        )
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'),
+            line_finals={invoice_only_li.pk: Decimal('18.00')},
+        )
+        invoice_only_li.refresh_from_db()
+        self.assertEqual(invoice_only_li.final_price, Decimal('18.00'))
+
+        # A later call that omits it must NOT clear it back to None.
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('30.00'))
+        invoice_only_li.refresh_from_db()
+        self.assertEqual(invoice_only_li.final_price, Decimal('18.00'))
+
 
 class ReconcileBeforeIssueTest(POReconciliationTestBase):
 
@@ -162,6 +228,22 @@ class ReconcileBeforeIssueTest(POReconciliationTestBase):
         PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('20.00'))
         po.refresh_from_db()
         self.assertTrue(po.reconciled)
+
+    def test_reconcile_allowed_on_cancelled_po(self):
+        """A vendor bill can still land for whatever actually shipped
+        before cancellation — reconcile is not gated on PO status beyond
+        excluding draft."""
+        po = self._make_issued_po()
+        PurchaseOrderService.cancel_po(po.pk)
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_CANCELLED)
+
+        result = PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('18.00'), vendor_invoice_ref='CANCELLED-PO-INV',
+        )
+        self.assertTrue(result.reconciled)
+        self.assertEqual(result.bill_total, Decimal('18.00'))
+        self.assertEqual(result.status, PurchaseOrder.STATUS_CANCELLED)
 
 
 class ReconcileLineFinalsValidationTest(POReconciliationTestBase):

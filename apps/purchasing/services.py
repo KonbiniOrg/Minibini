@@ -68,13 +68,27 @@ class PurchaseOrderService:
         once ISSUED".
 
         Reconcile is editable, not a lifecycle lock: calling this again on
-        an already-reconciled PO overwrites the PO-level fields and
-        (re-)applies `line_finals` — it's bookkeeping, not a one-shot
-        transition. `reconciled`/`reconciled_date` are always (re)set.
+        an already-reconciled PO overwrites the PO-level fields — it's
+        bookkeeping, not a one-shot transition. `reconciled`/
+        `reconciled_date` are always (re)set. `bill_total` = None if not
+        supplied (allowed once ISSUED — see above; a cancelled PO can still
+        be reconciled, since a vendor bill can land for whatever actually
+        shipped before cancellation).
 
         `line_finals`: {line_item_id: Decimal} — sets the optional
         per-line `final_price` (null elsewhere means "as ordered"). Every
-        key must reference a line item that belongs to THIS PO.
+        key must reference a line item that belongs to THIS PO (invoice_only
+        lines included, if one was targeted deliberately).
+
+        REPLACE semantics, not merge: each call mirrors the vendor's bill
+        wholesale — every non-`invoice_only` line on the PO that is NOT a
+        key in this call's `line_finals` has its `final_price` cleared back
+        to `None` ("as ordered"), even if a *previous* reconcile call had
+        set it. A smaller `line_finals` set on a later call is therefore
+        not additive; it is the new complete statement of which lines carry
+        a final price. `invoice_only` lines are never auto-cleared by this
+        sweep (they aren't "ordered" lines to begin with) — one is only
+        touched if its id is explicitly present in `line_finals`.
 
         `appended_lines`: a list of PurchaseOrderLineItem field kwargs
         (same shape as `add_line_item`, task may be included for optional
@@ -99,12 +113,10 @@ class PurchaseOrderService:
                 'Cannot reconcile a purchase order before it has been issued.'
             )
 
-        line_items_by_id = {
-            li.pk: li for li in PurchaseOrderLineItem.objects.filter(
-                purchase_order=po, pk__in=list(line_finals.keys()),
-            )
+        all_lines_by_id = {
+            li.pk: li for li in PurchaseOrderLineItem.objects.filter(purchase_order=po)
         }
-        missing = set(line_finals.keys()) - set(line_items_by_id.keys())
+        missing = set(line_finals.keys()) - set(all_lines_by_id.keys())
         if missing:
             raise ValidationError({'line_finals': [
                 f'Line item {line_id} does not belong to PO {po.po_number}.'
@@ -112,12 +124,21 @@ class PurchaseOrderService:
             ]})
 
         with transaction.atomic():
-            for line_id, final_price in line_finals.items():
-                li = line_items_by_id[line_id]
-                li.final_price = (
-                    final_price if isinstance(final_price, Decimal)
-                    else Decimal(str(final_price))
-                )
+            for li in all_lines_by_id.values():
+                if li.pk in line_finals:
+                    value = line_finals[li.pk]
+                    li.final_price = (
+                        value if isinstance(value, Decimal) else Decimal(str(value))
+                    )
+                elif not li.invoice_only:
+                    # REPLACE semantics: an omitted ordered line reverts to
+                    # "as ordered" — see docstring. invoice_only lines not
+                    # targeted this call are left untouched entirely.
+                    if li.final_price is None:
+                        continue
+                    li.final_price = None
+                else:
+                    continue
                 li.full_clean()
                 li.save()
 
