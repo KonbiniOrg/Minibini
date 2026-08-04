@@ -326,6 +326,58 @@ describe('WorkItemForm create-time preset preview', () => {
   });
 });
 
+// task-owned-money Phase 3, Task 2: a manager may override the stamped
+// accounting_category at create time (including clearing it to null,
+// "categorize at invoicing"); a non-manager (default canManage prop) still
+// only gets the read-only preview and never sends the key.
+describe('WorkItemForm create-time accounting_category override (manager only)', () => {
+  it('defaults the select to the preset AC and submits it unless changed', async () => {
+    const { findByLabelText, getByRole } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'manual', context: 'job', contextId: 5,
+        categories: CATEGORIES, canManage: true,
+      },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '1' } });
+    await fireEvent.input(await findByLabelText(/Name/), { target: { value: 'Route it' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
+      accounting_category: 3,
+    }));
+  });
+
+  it('a manager can clear the AC to null via the "none" option', async () => {
+    const { findByLabelText, getByRole, getByLabelText } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'manual', context: 'job', contextId: 5,
+        categories: CATEGORIES, canManage: true,
+      },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '1' } });
+    await fireEvent.input(await findByLabelText(/Name/), { target: { value: 'Flat task' } });
+    await fireEvent.change(getByLabelText(/Accounting Category/), { target: { value: '' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
+      accounting_category: null,
+    }));
+  });
+
+  it('a non-manager gets the read-only preview and never sends accounting_category', async () => {
+    const { findByLabelText, getByRole, queryByLabelText } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'manual', context: 'job', contextId: 5,
+        categories: CATEGORIES, canManage: false,
+      },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '1' } });
+    await fireEvent.input(await findByLabelText(/Name/), { target: { value: 'Worker task' } });
+    expect(queryByLabelText(/Accounting Category/)).not.toBeInTheDocument();
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const call = api.post.mock.calls.find((c) => c[0] === '/api/jobs/5/tasks/');
+    expect('accounting_category' in call[1]).toBe(false);
+  });
+});
+
 // Task-owned money (Phase 1): create-time active_modifiers is gated on
 // MONEY_FIELDS (CanManageJobOrPM/financials) — a worker's checkbox picks
 // must never even be POSTed (the key's mere presence 403s), so they ride
@@ -492,5 +544,28 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
     for (const f of ['rate', 'unit_label', 'accounting_category', 'active_modifiers']) {
       expect(f in call[1]).toBe(false);
     }
+  });
+
+  // task-owned-money Phase 3, Task 2: accounting_category is optional
+  // end-to-end — a manager may clear it to null via the select's explicit
+  // "none" option.
+  it('offers an explicit "none" option and PATCHes null when the manager picks it', async () => {
+    mockGet({ schemes: [MOD_SCHEME] });
+    const { findByLabelText, getByRole, getByLabelText } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+        item: STAMPED_ITEM, categories: CATEGORIES,
+      },
+    });
+    await findByLabelText(/^Rate/);
+    const select = getByLabelText(/Accounting Category/);
+    expect(select.querySelector('option[value=""]').textContent).toMatch(
+      /none \(categorize at invoicing\)/i,
+    );
+    await fireEvent.change(select, { target: { value: '' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/tasks/42/', expect.objectContaining({
+      accounting_category: null,
+    }));
   });
 });

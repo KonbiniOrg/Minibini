@@ -322,14 +322,13 @@ class JobTaskMixin:
 
         from apps.jobs.services import TaskService
         from apps.jobs.models import RateScheme, SchemeInactiveError
-        # Gate money-field writes on what the client actually sent — capture
-        # BEFORE prefill_accounting_category may inject a key of its own
-        # (task-owned-money Phase 1: stamp-only creation shouldn't need to
-        # name accounting_category to pass the serializer's required=True).
+        # Money-field writes (MONEY_FIELDS, incl. accounting_category) are
+        # gated in TaskSerializer.validate() against the raw request keys —
+        # accounting_category is required=False now (task-owned-money Phase
+        # 3, Task 2), so no pre-fill is needed to satisfy a required check.
         raw_keys = set(request.data.keys())
-        data = self.task_serializer_class.prefill_accounting_category(request.data)
         serializer = self.task_serializer_class(
-            data=data,
+            data=request.data,
             context={**self.get_serializer_context(), 'job': job, 'raw_input_keys': raw_keys},
         )
         serializer.is_valid(raise_exception=True)
@@ -337,6 +336,15 @@ class JobTaskMixin:
         scheme = validated.get('rate_scheme')
         assignee = validated.get('assignee')
         parent_task = validated.get('parent_task')
+        # accounting_category is stamped from the preset by default
+        # (TaskService.create_direct -> Task.stamp_from_scheme); a permitted
+        # caller (already verified by the serializer's MONEY_FIELDS gate
+        # above) may override the stamp explicitly — including clearing it
+        # to null — by naming the key. Forward it ONLY when present, so an
+        # omitted key still rides the stamp untouched.
+        money_overrides = {}
+        if 'accounting_category' in validated:
+            money_overrides['accounting_category'] = validated['accounting_category']
         try:
             task = TaskService.create_direct(
                 job,
@@ -349,6 +357,7 @@ class JobTaskMixin:
                 description=validated.get('description', ''),
                 parent_task_id=parent_task.pk if parent_task else None,
                 assignee_id=assignee.pk if assignee else None,
+                **money_overrides,
             )
         except RateScheme.DoesNotExist:
             return Response(

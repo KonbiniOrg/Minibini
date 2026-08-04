@@ -291,6 +291,17 @@
     return names.length > 0 ? `Modifiers: ${names.join(', ')}` : '';
   });
 
+  // accounting_category is nullable end-to-end now (task-owned-money Phase
+  // 3, Task 2): a manual/flat task may legitimately carry no AC yet
+  // ("categorize at invoicing"). Render that state as a plain dash, not an
+  // error — the money-permission gate (server-side) is what actually
+  // controls who may set/clear it.
+  function categoryLabel(id) {
+    if (id == null) return '—';
+    const cat = categories.find((c) => String(c.id) === String(id));
+    return cat ? `${cat.code} — ${cat.name}` : `#${id}`;
+  }
+
   // Material modal handlers
   function openAddMaterial() {
     matModalMaterial = null;
@@ -468,6 +479,16 @@
           <div class="stat-chip money">
             <div class="stat-chip-header">Rate</div>
             <div class="stat-chip-body">${task.effective_rate}/{task.unit_label}</div>
+          </div>
+        {/if}
+        {#if task.rate != null}
+          <!-- Nullable end-to-end (Phase 3, Task 2): a flat/manual task may
+               have no AC yet — "—" here, not an error; correction happens
+               at invoicing (fallback stamping, Task 3) or via edit. Not a
+               dollar amount itself (like Scheme), so no .money class. -->
+          <div class="stat-chip">
+            <div class="stat-chip-header">Category</div>
+            <div class="stat-chip-body">{categoryLabel(task.accounting_category)}</div>
           </div>
         {/if}
         {#if task.rate != null && task.computed_charge}

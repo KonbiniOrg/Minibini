@@ -102,10 +102,11 @@ class ValidateDataRateSchemeTest(TestCase):
 
 class ValidateDataTaskMoneyTest(TestCase):
     """Tests for the check_tasks() task-owned-money checks (task-owned-money
-    Phase 1, Task 9): qty_source in choices, non-negative rate, required
-    accounting_category, and the active_modifiers {key, percent}-dict shape
-    (a Task's own snapshot, unlike ServiceItem.default_active_modifiers,
-    which stays a plain key-list)."""
+    Phase 1, Task 9; accounting_category nullability relaxed in Phase 3,
+    Task 2): qty_source in choices, non-negative rate, and the
+    active_modifiers {key, percent}-dict shape (a Task's own snapshot,
+    unlike ServiceItem.default_active_modifiers, which stays a plain
+    key-list)."""
 
     def setUp(self):
         self.ac = AccountingCategory.objects.create(name='Svc', code='SVC')
@@ -249,15 +250,18 @@ class ValidateDataTaskMoneyTest(TestCase):
         self.assertNotIn('negative rate', output)
 
     # ── accounting_category ────────────────────────────────────
+    # Nullable end-to-end as of task-owned-money Phase 3, Task 2: a
+    # manual/flat task may legitimately carry no AC ("categorize at
+    # invoicing" — the invoice compose fallback, Phase 3 Task 3), so a null
+    # value here is clean, not an error.
 
-    def test_missing_accounting_category_on_task_is_flagged(self):
+    def test_null_accounting_category_on_task_not_flagged(self):
         sp = self._make_sp(name='Sp-ac')
         job = self._make_job('J-VDT-012')
         task = self._make_task(job, sp, name='No-AC task')
         Task.objects.filter(pk=task.pk).update(accounting_category=None)
         output = self._run()
-        self.assertIn('missing accounting_category', output)
-        self.assertIn('No-AC task', output)
+        self.assertNotIn('accounting_category', output)
 
     def test_present_accounting_category_not_flagged(self):
         sp = self._make_sp(name='Sp-ac-ok')

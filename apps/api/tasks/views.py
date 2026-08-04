@@ -168,15 +168,23 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         # mark_work_reopened (plan A2/B1). Never serializer.save() here.
         from apps.jobs.services import TaskService
         from apps.jobs.models import SchemeInactiveError
+        # accounting_category is required=False now (task-owned-money Phase
+        # 3, Task 2) — no pre-fill needed to satisfy a required check.
         raw_keys = set(request.data.keys())
-        prefilled = TaskSerializer.prefill_accounting_category(request.data)
         serializer = TaskSerializer(
-            data=prefilled,
+            data=request.data,
             context={**self.get_serializer_context(), 'job': task.job,
                       'raw_input_keys': raw_keys},
         )
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        # A permitted caller (already verified by the serializer's
+        # MONEY_FIELDS gate) may override the preset's stamped AC —
+        # including clearing it to null — by naming the key explicitly; an
+        # omitted key rides the stamp untouched. Mirrors JobTaskMixin.tasks.
+        money_overrides = {}
+        if 'accounting_category' in data:
+            money_overrides['accounting_category'] = data['accounting_category']
         try:
             new_task = TaskService.create_direct(
                 task.job,
@@ -189,6 +197,7 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
                 description=data.get('description', ''),
                 assignee_id=data['assignee'].pk if data.get('assignee') else None,
                 parent_task_id=task.pk,
+                **money_overrides,
             )
         except SchemeInactiveError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)

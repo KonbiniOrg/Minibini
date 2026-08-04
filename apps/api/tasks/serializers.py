@@ -158,12 +158,17 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         queryset=RateScheme.objects.all(), write_only=True,
         required=False, allow_null=True,
     )
-    # Nullable on the model (Phase 3 relaxes further); the API tightens to
-    # required so every task gets a real AC — satisfied for stamp-only
-    # creation by the view pre-filling it from the chosen preset (the same
-    # value stamp_from_scheme would set) before validation runs.
+    # Nullable on the model AND the API (task-owned-money Phase 3, Task 2):
+    # a manual/flat task may carry no AC ("categorize at invoicing" — the
+    # invoice compose fallback, Phase 3 Task 3). Stamping from a preset
+    # (RateScheme.accounting_category is itself NOT NULL) still fills this
+    # in for stamp-only creation; a manager/financials write can override it
+    # — including clearing it to null — same as any other MONEY_FIELDS
+    # entry (see validate() below). Estimate/CO Work hand-lines are a
+    # separate, unrelated field (EstimateLineItem.accounting_category) and
+    # keep their own required-at-entry rule (apps/estimates/services.py).
     accounting_category = serializers.PrimaryKeyRelatedField(
-        queryset=AccountingCategory.objects.all(), required=True,
+        queryset=AccountingCategory.objects.all(), required=False, allow_null=True,
     )
     # Provenance only — read-only. Set exclusively via stamp_from_scheme
     # (triggered by `rate_scheme` on create), never directly through the API.
@@ -278,11 +283,13 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
 
     def validate(self, attrs):
         # Gate on the RAW keys the client actually sent — not
-        # `validated_data`, which the view may have pre-filled (see
-        # `prefill_accounting_category`) with a value the client never
-        # supplied. `raw_input_keys` (view-supplied context) reflects the
+        # `validated_data` (which omits any field the client left out, now
+        # that `accounting_category` is no longer `required=True` — Phase 3,
+        # Task 2 dropped the prefill-before-validate hack this comment used
+        # to describe, since there's no longer a required-field check for it
+        # to satisfy). `raw_input_keys` (view-supplied context) reflects the
         # original request body; fall back to initial_data for callers that
-        # don't provide it.
+        # don't provide it (e.g. PATCH via task_detail).
         raw_keys = self.context.get('raw_input_keys')
         if raw_keys is None:
             raw_keys = set(getattr(self, 'initial_data', {}) or {})
@@ -293,27 +300,6 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
                 + ', '.join(sorted(money_keys)) + '.'
             )
         return attrs
-
-    @staticmethod
-    def prefill_accounting_category(data):
-        """CREATE convenience: a stamp-only `rate_scheme` POST doesn't (and
-        for a worker, may not) include `accounting_category` directly, but
-        the field is `required=True` on this serializer. Since stamping
-        (`Task.stamp_from_scheme`) is about to copy the preset's own
-        accounting_category onto the task anyway, pre-fill it here so
-        required-field validation sees the value it's about to get. A
-        missing/invalid `rate_scheme` id is left alone — `rate_scheme`'s own
-        field validation (or `accounting_category` staying absent) renders
-        the real error downstream. Returns a new mapping; never mutates
-        `data` in place."""
-        if 'accounting_category' in data or not data.get('rate_scheme'):
-            return data
-        scheme = RateScheme.objects.filter(pk=data.get('rate_scheme')).first()
-        if scheme is None or scheme.accounting_category_id is None:
-            return data
-        filled = dict(data)
-        filled['accounting_category'] = scheme.accounting_category_id
-        return filled
 
     def get_assignee_name(self, obj):
         if obj.assignee:

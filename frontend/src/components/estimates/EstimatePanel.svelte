@@ -422,6 +422,7 @@
     showSource={true}
     canEdit={canEdit}
     actions={canEdit ? actionsSnippet : null}
+    allowNullCategory={true}
   />
 
   <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />

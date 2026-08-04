@@ -73,3 +73,33 @@ describe('LineItemTable category cell — needs-category flag', () => {
     expect(flaggedCell).toBeNull();
   });
 });
+
+describe('LineItemTable category cell — allowNullCategory (estimate-side, task-owned-money Phase 3)', () => {
+  it('renders "Uncategorized" instead of "needs category" when allowNullCategory and canEdit', () => {
+    const items = [{ ...lineItems[0], accounting_category: null }];
+    const { getByText, queryByText, container } = render(LineItemTable, {
+      props: { lineItems: items, categories, canEdit: true, allowNullCategory: true },
+    });
+    expect(getByText('Uncategorized')).toBeTruthy();
+    expect(queryByText(/needs category/i)).toBeNull();
+    expect(container.querySelector('td.needs-category')).toBeNull();
+    expect(container.querySelector('td.uncategorized')).toBeTruthy();
+  });
+
+  it('renders "Uncategorized" even when !canEdit, unlike the default needs-category treatment', () => {
+    const items = [{ ...lineItems[0], accounting_category: null }];
+    const { getByText } = render(LineItemTable, {
+      props: { lineItems: items, categories, canEdit: false, allowNullCategory: true },
+    });
+    expect(getByText('Uncategorized')).toBeTruthy();
+  });
+
+  it('leaves the default (needs-category) treatment alone when allowNullCategory is unset', () => {
+    const items = [{ ...lineItems[0], accounting_category: null }];
+    const { getByText, queryByText } = render(LineItemTable, {
+      props: { lineItems: items, categories, canEdit: true },
+    });
+    expect(getByText(/needs category/i)).toBeTruthy();
+    expect(queryByText('Uncategorized')).toBeNull();
+  });
+});

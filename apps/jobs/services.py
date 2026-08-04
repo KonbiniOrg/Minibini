@@ -1052,6 +1052,10 @@ class TaskService:
             JobService.mark_work_reopened(job)
         return task
 
+    # Sentinel for create_direct's accounting_category override — distinct
+    # from `None`, which is itself a legal override value (clearing the AC).
+    _UNSET = object()
+
     @staticmethod
     def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
                       est_qty=None, est_worker_time=None, actual_qty=None,
@@ -1066,6 +1070,16 @@ class TaskService:
         which must clone a worksheet faithfully even when its rate scheme has
         since been retired.
 
+        A caller may pass ``accounting_category`` (task-owned-money Phase 3,
+        Task 2) to override the preset's stamped AC after stamping —
+        including ``None``, to explicitly clear it (a "categorize at
+        invoicing" flat task). Omitting the key entirely leaves the stamp
+        untouched; this is NOT the general escape hatch for ``rate``/
+        ``unit_label``/``qty_source`` — those still come from the preset
+        only. Permission (CanManageJobOrPM / can_manage_financials) is
+        enforced by the caller (TaskSerializer.MONEY_FIELDS gate) before this
+        is ever reached.
+
         This is the single creation gate for direct tasks AND subtasks (the
         /api/tasks/{id}/subtasks/ endpoint routes here too) — the on-hold,
         inactive-scheme, depth, and assignee guards can't be skipped by
@@ -1074,6 +1088,8 @@ class TaskService:
         from apps.jobs.models import SchemeInactiveError
 
         _assert_job_not_on_hold(job, 'add a task to this job')
+        accounting_category_override = task_fields.pop(
+            'accounting_category', TaskService._UNSET)
         if not rate_scheme_id:
             raise ValidationError({'rate_scheme': 'Required.'})
         scheme = RateScheme.objects.get(pk=rate_scheme_id)
@@ -1123,6 +1139,8 @@ class TaskService:
                 **task_fields,
             )
             task.stamp_from_scheme(scheme, modifier_keys=active_modifiers)
+            if accounting_category_override is not TaskService._UNSET:
+                task.accounting_category = accounting_category_override
             task.save()
             if task.status not in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
                 JobService.mark_work_reopened(job)

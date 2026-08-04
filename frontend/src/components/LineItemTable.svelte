@@ -8,6 +8,16 @@
     showSource = false,
     canEdit = false,         // true when document is draft + user can edit
     actions = null,          // optional snippet `(li, i) => ...` for action buttons
+    // Estimate-only (task-owned-money Phase 3, Task 2): a line sourced from
+    // a null-AC task/material atom is legitimate there — hand-lines still
+    // require AC at entry (apps/estimates/services.py), so a null AC on an
+    // estimate line always means "sourced from an uncategorized atom", not
+    // an incomplete hand-line. Renders "Uncategorized" (informational, not
+    // an error) instead of the "needs category" warning. Invoices keep the
+    // warning treatment (default false) — the compose-time fallback stamp
+    // that makes a null-AC invoice line impossible is Phase 3 Task 3, not
+    // yet built.
+    allowNullCategory = false,
   } = $props();
 
   const categoryById = $derived(
@@ -72,8 +82,13 @@
       {#each lineItems as li, i}
         <tr class:adjustment-row={!!li.adjustment_service}>
           <td>{li.line_number}</td>
-          <td class:needs-category={canEdit && li.accounting_category == null}>
-            {#if canEdit && li.accounting_category == null}
+          <td
+            class:needs-category={canEdit && li.accounting_category == null && !allowNullCategory}
+            class:uncategorized={li.accounting_category == null && allowNullCategory}
+          >
+            {#if li.accounting_category == null && allowNullCategory}
+              Uncategorized
+            {:else if canEdit && li.accounting_category == null}
               needs category
             {:else}
               {categoryName(li.accounting_category)}
@@ -149,6 +164,10 @@
   .needs-category {
     background-color: #fff8e1;
     color: #b45309;
+    font-style: italic;
+  }
+  .uncategorized {
+    color: #6b7280;
     font-style: italic;
   }
   .adj-badge {

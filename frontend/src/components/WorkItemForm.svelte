@@ -61,6 +61,16 @@
   let editUnitLabel = $state('');
   let editAccountingCategory = $state('');
 
+  // Create-mode AC override (task-owned-money Phase 3, Task 2): the server
+  // always stamps rate/unit_label from the chosen preset, but a manager may
+  // now override the stamped accounting_category — including clearing it
+  // to null ("categorize at invoicing") — so this one field gets its own
+  // editable select in create mode too, defaulted from the picked scheme
+  // (see lastFilledSchemeId effect below, same fill-once-then-editable
+  // pattern as the template-mode field-fill effect).
+  let createAccountingCategory = $state('');
+  let lastFilledSchemeId = $state('');
+
   let schemes = $state([]);
   let loading = $state(true);
   let defaultSchemeId = $state(''); // Configuration `default_rate_scheme`, preselects the CREATE dropdown
@@ -117,6 +127,7 @@
       name = (mode === 'manual' ? (presetName || '') : ''); description = '';
       activeModifiers = [];
       editRate = ''; editUnitLabel = ''; editAccountingCategory = '';
+      createAccountingCategory = ''; lastFilledSchemeId = '';
       estQty = ''; estWorkerTime = '';
       // Keep numeric so it matches the numeric <option value={tmpl.template_id}>
       // (Svelte 5 selects match option values with strict ===; String() here left
@@ -189,6 +200,18 @@
       ? rateScheme
       : (schemes.find(s => s.rate_scheme_id === Number(rateSchemeId)) || null)
   );
+
+  // Manual create mode: default the (now-editable, manager-only)
+  // accounting_category field from the picked scheme's own AC each time
+  // the scheme selection changes — same fill-once-then-freely-editable
+  // pattern as the template-mode field-fill effect above. Harmless to seed
+  // even for a non-manager; the field is simply never rendered/sent for one.
+  $effect(() => {
+    if (mode !== 'manual' || isEdit) return;
+    if (rateSchemeId === lastFilledSchemeId) return;
+    lastFilledSchemeId = rateSchemeId;
+    createAccountingCategory = selectedScheme?.accounting_category ?? '';
+  });
 
   // Task-owned money (Phase 1): whether THIS user may write money fields
   // (rate/unit_label/accounting_category/qty_source/active_modifiers) —
@@ -304,7 +327,10 @@
         if (effectiveCanManage) {
           editPayload.rate = editRate;
           editPayload.unit_label = editUnitLabel;
-          editPayload.accounting_category = editAccountingCategory;
+          // '' is the select's "— none (categorize at invoicing) —" option
+          // (task-owned-money Phase 3, Task 2) — map it to a real null so
+          // the server clears the AC rather than rejecting an empty pk.
+          editPayload.accounting_category = editAccountingCategory || null;
           // Only touch active_modifiers when we actually have the selected
           // preset's modifier definitions to resolve checked keys into
           // {key, label, percent} snapshots (the model field's real shape on
@@ -341,12 +367,15 @@
       } else {
         // Manual create: rate_scheme (the preset id) is open to everyone —
         // it's how a worker's "stamp-only" creation happens. active_modifiers
-        // is a MONEY_FIELD (its key's mere presence gates on
-        // CanManageJobOrPM/financials), so a non-manager must omit the key
-        // entirely and ride the stamp (zero modifiers), never send `[]`.
-        // rate/unit_label/accounting_category are never sent here — the
+        // and accounting_category are MONEY_FIELDS (their key's mere
+        // presence gates on CanManageJobOrPM/financials), so a non-manager
+        // must omit them entirely and ride the stamp, never send an
+        // unchanged/blank value. rate/unit_label are never sent here — the
         // server always stamps those from the chosen preset regardless of
-        // what's submitted, so there's nothing to gain by including them.
+        // what's submitted, so there's nothing to gain by including them;
+        // accounting_category is the one stamped field a manager may
+        // override at create time (task-owned-money Phase 3, Task 2),
+        // including clearing it to null via the "none" option.
         const payload = {
           name,
           description,
@@ -356,6 +385,7 @@
         };
         if (effectiveCanManage) {
           payload.active_modifiers = activeModifiers;
+          payload.accounting_category = createAccountingCategory || null;
         }
         let url;
         if (context === 'subtask') {
@@ -478,7 +508,7 @@
             <p>
               <label><strong>Accounting Category</strong><br>
                 <select bind:value={editAccountingCategory}>
-                  <option value="">-- select --</option>
+                  <option value="">— none (categorize at invoicing) —</option>
                   {#each categories as cat (cat.id)}
                     <option value={cat.id}>{cat.code} — {cat.name}</option>
                   {/each}
@@ -522,10 +552,28 @@
               <small>(from rate scheme)</small>
             </p>
           {/if}
-          {#if mode === 'manual' && selectedScheme.accounting_category}
-            <!-- Create-time preview only — informational, not editable: the
-                 server always stamps this from the chosen preset. -->
-            <p><strong>Accounting Category:</strong> {categoryLabel(selectedScheme.accounting_category)}</p>
+          {#if mode === 'manual'}
+            <!-- Defaults to the preset's stamped AC (see the fill effect
+                 above); a manager may override it here, including clearing
+                 it to "none" (task-owned-money Phase 3, Task 2). Non-managers
+                 get a read-only preview — the server stamps from the preset
+                 regardless of what a worker's payload would say, and workers
+                 never send accounting_category at all (MONEY_FIELDS gate). -->
+            {#if effectiveCanManage}
+              <p>
+                <label><strong>Accounting Category</strong><br>
+                  <select bind:value={createAccountingCategory}>
+                    <option value="">— none (categorize at invoicing) —</option>
+                    {#each categories as cat (cat.id)}
+                      <option value={cat.id}>{cat.code} — {cat.name}</option>
+                    {/each}
+                  </select>
+                </label>
+                <FieldError errors={fieldErrs} field="accounting_category" />
+              </p>
+            {:else if selectedScheme.accounting_category}
+              <p><strong>Accounting Category:</strong> {categoryLabel(selectedScheme.accounting_category)}</p>
+            {/if}
           {/if}
           {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
             <fieldset>

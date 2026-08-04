@@ -172,6 +172,47 @@ describe('TaskDetailPage stat chips', () => {
     expect(container.querySelectorAll('.stat-chip.money')).toHaveLength(2);
   });
 
+  it('renders a missing accounting_category as a dash, not an error (Phase 3: nullable end-to-end)', async () => {
+    mockApi({
+      status: 'in_progress', rate: '2.50', effective_rate: '2.50',
+      unit_label: 'minute', accounting_category: null,
+    });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const header = getByText('Category');
+    const chip = header.closest('.stat-chip');
+    expect(chip.querySelector('.stat-chip-body')).toHaveTextContent('—');
+  });
+
+  it('renders the accounting category label when set', async () => {
+    mockApi({
+      status: 'in_progress', rate: '2.50', effective_rate: '2.50',
+      unit_label: 'minute', accounting_category: 5,
+    });
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/accounting-categories/')) {
+        return Promise.resolve([{ id: 5, code: 'LAB', name: 'Labor' }]);
+      }
+      if (url.startsWith('/api/tasks/7/')) {
+        if (url.includes('/materials')) return Promise.resolve([]);
+        if (url.includes('/subtasks')) return Promise.resolve([]);
+        return Promise.resolve({
+          task_id: 7, name: 'Mill', status: 'in_progress', job: { id: 3 },
+          rate: '2.50', effective_rate: '2.50', unit_label: 'minute',
+          accounting_category: 5,
+        });
+      }
+      if (url.startsWith('/api/jobs/3/')) return Promise.resolve({ job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress' });
+      if (url.startsWith('/api/bleps/')) return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const header = getByText('Category');
+    const chip = header.closest('.stat-chip');
+    expect(chip.querySelector('.stat-chip-body')).toHaveTextContent('LAB — Labor');
+  });
+
   it('shows the Scheme chip as a dash when the task has money but its source preset is gone', async () => {
     // source_scheme is SET_NULL on preset delete — the task keeps its own
     // stamped rate/unit_label (still the price of record), just loses the

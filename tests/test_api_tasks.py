@@ -331,6 +331,82 @@ class TaskMoneyPermissionTest(TestCase):
         self.assertEqual(task.active_modifiers[0]['key'], 'rush')
         self.assertEqual(task.source_scheme_id, self.scheme.pk)
 
+    # --- accounting_category is optional end-to-end (task-owned-money
+    # Phase 3, Task 2): no longer serializer-required; stamping from a
+    # preset still fills it; a permitted caller may override the stamp at
+    # create time, including clearing it to null ("categorize at
+    # invoicing"); the write-permission gate (MONEY_FIELDS) is unchanged. ---
+
+    def test_manager_creates_flat_task_with_null_ac_returns_201(self):
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Flat task', 'rate_scheme': self.scheme.pk,
+            'accounting_category': None,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertIsNone(body['accounting_category'])
+        task = Task.objects.get(pk=body['task_id'])
+        self.assertIsNone(task.accounting_category_id)
+        # The rest of the stamp still applies — only AC was overridden.
+        self.assertEqual(task.rate, self.scheme.rate)
+        self.assertEqual(task.unit_label, self.scheme.unit_label)
+
+    def test_financials_atom_creates_task_with_null_ac_via_subtasks_endpoint(self):
+        """Same override mechanism via /api/tasks/{id}/subtasks/ —
+        TaskViewSet.subtasks shares TaskService.create_direct with
+        JobTaskMixin.tasks and must honor the same override."""
+        self.client.force_login(self.financials)
+        resp = self.client.post(f'/api/tasks/{self.task.pk}/subtasks/', {
+            'name': 'Flat subtask', 'rate_scheme': self.scheme.pk,
+            'accounting_category': None,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertIsNone(resp.json()['accounting_category'])
+
+    def test_manager_create_without_ac_key_still_stamps_from_scheme(self):
+        """Omitting accounting_category entirely (never naming the key) must
+        NOT be treated as a clear-to-null override — the stamp from the
+        preset still wins, same as stamp-only worker creation."""
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Stamped, no override', 'rate_scheme': self.scheme.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()['accounting_category'], self.ac.pk)
+
+    def test_worker_post_with_explicit_null_accounting_category_returns_403(self):
+        """A worker naming accounting_category at all — even to send null —
+        is a money-field write attempt: still gated. required=False only
+        drops the required-field check; the write-permission gate is
+        unchanged."""
+        self.client.force_login(self.worker)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Worker null AC', 'rate_scheme': self.scheme.pk,
+            'accounting_category': None,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 403, resp.content)
+
+    def test_pm_can_patch_accounting_category_to_null(self):
+        self.client.force_login(self.pm)
+        resp = self.client.patch(
+            self._task_detail_url(), data={'accounting_category': None},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.task.refresh_from_db()
+        self.assertIsNone(self.task.accounting_category_id)
+
+    def test_worker_patch_with_explicit_null_accounting_category_returns_403(self):
+        self.client.force_login(self.worker)
+        resp = self.client.patch(
+            self._task_detail_url(), data={'accounting_category': None},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 403, resp.content)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.accounting_category_id, self.ac.pk)
+
     # --- Worker: money fields are 403 on both create and edit ---
 
     def test_worker_post_with_money_field_returns_403(self):
