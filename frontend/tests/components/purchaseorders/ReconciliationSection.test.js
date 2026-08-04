@@ -93,17 +93,74 @@ describe('ReconciliationSection — edits', () => {
     expect(onReconcile.mock.calls[0][0].line_finals).toEqual({ 1: 95 });
   });
 
-  it('adds and removes an invoice-only line before save with no confirm', async () => {
+  it('adds and removes a same-session (unsaved) invoice-only line before save with no confirm', async () => {
     vi.stubGlobal('confirm', vi.fn());
     const onReconcile = vi.fn();
-    const { getByRole, getByText } = render(ReconciliationSection, {
+    const { getByRole, queryByText } = render(ReconciliationSection, {
       props: { po: po(), canManageFinancials: true, onReconcile },
     });
     await fireEvent.click(getByRole('button', { name: 'Add Invoice-Only Line' }));
     await fireEvent.click(getByRole('button', { name: 'Remove' }));
     expect(window.confirm).not.toHaveBeenCalled();
+    // A same-session draft row was never persisted — nothing at risk, no notice.
+    expect(queryByText(/will be deleted when you save/)).toBeNull();
     await fireEvent.click(getByRole('button', { name: 'Reconcile' }));
     expect(onReconcile.mock.calls[0][0].appended_lines).toEqual([]);
+  });
+});
+
+describe('ReconciliationSection — removing a persisted invoice-only line', () => {
+  function poWithPersistedAppended() {
+    return po({
+      reconciled: true,
+      line_items: [
+        { line_item_id: 1, line_number: 1, description: 'Outsourced work', qty: 1,
+          price: '100.00', final_price: null, invoice_only: false },
+        { line_item_id: 2, line_number: 2, description: 'Widget', qty: 2,
+          price: '10.00', final_price: null, invoice_only: false },
+        { line_item_id: 3, line_number: 3, description: 'Freight', qty: 1,
+          price: '15.00', final_price: null, invoice_only: true, units: 'ea',
+          accounting_category: '', task: null },
+      ],
+    });
+  }
+
+  it('shows a delete notice (no confirm) and omits the row from the save payload', async () => {
+    vi.stubGlobal('confirm', vi.fn());
+    const onReconcile = vi.fn();
+    const { getByRole, getAllByRole, getByText, queryByText } = render(ReconciliationSection, {
+      props: { po: poWithPersistedAppended(), canManageFinancials: true, onReconcile },
+    });
+
+    expect(queryByText(/will be deleted when you save/)).toBeNull();
+
+    const removeButtons = getAllByRole('button', { name: 'Remove' });
+    await fireEvent.click(removeButtons[0]); // the only appended row: Freight
+    expect(window.confirm).not.toHaveBeenCalled();
+
+    expect(getByText(/1\s*recorded line will be deleted when you save/)).toBeInTheDocument();
+    expect(getByText('Freight')).toBeInTheDocument(); // named in the notice list
+
+    await fireEvent.click(getByRole('button', { name: 'Update reconciliation' }));
+    expect(onReconcile.mock.calls[0][0].appended_lines).toEqual([]);
+  });
+
+  it('clears the notice and restores the row to the payload on Re-add', async () => {
+    const onReconcile = vi.fn();
+    const { getByRole, getAllByRole, queryByText } = render(ReconciliationSection, {
+      props: { po: poWithPersistedAppended(), canManageFinancials: true, onReconcile },
+    });
+
+    await fireEvent.click(getAllByRole('button', { name: 'Remove' })[0]);
+    expect(queryByText(/will be deleted when you save/)).toBeInTheDocument();
+
+    await fireEvent.click(getByRole('button', { name: 'Re-add' }));
+    expect(queryByText(/will be deleted when you save/)).toBeNull();
+
+    await fireEvent.click(getByRole('button', { name: 'Update reconciliation' }));
+    expect(onReconcile.mock.calls[0][0].appended_lines).toEqual([
+      { line_item_id: 3, description: 'Freight', qty: 1, units: 'ea', price: '15.00' },
+    ]);
   });
 });
 

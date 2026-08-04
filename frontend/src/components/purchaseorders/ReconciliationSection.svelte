@@ -64,6 +64,17 @@
   // svelte-ignore state_referenced_locally -- mount-seed by design (see note above)
   const appended = $state(existingAppended.map(appendedRow));
 
+  // Persisted invoice-only rows the user has removed THIS session but not
+  // yet saved. No confirm() on Remove (repo doctrine: it's reversible —
+  // re-add it) — but "reversible" only holds if the section is honest
+  // about the save-time consequence: unlike a same-session draft add,
+  // removing a row that already has a `line_item_id` means the append-only
+  // mirror (PurchaseOrderService.reconcile) will hard-delete it server-side
+  // if it's not resent. Tracked separately (not just "missing from
+  // `appended`") so the notice can list exactly what's at risk and offer a
+  // one-click re-add that clears it.
+  let removedPersisted = $state([]);
+
   function addAppendedLine() {
     appended.push({
       _key: nextKey--, line_item_id: null,
@@ -73,9 +84,22 @@
   }
 
   function removeAppendedLine(row) {
-    // No confirm: pre-save, reversible by re-adding.
+    // No confirm: pre-save, reversible by re-adding — see removedPersisted
+    // above for why a persisted row needs its own honest notice instead of
+    // silently vanishing.
     const idx = appended.indexOf(row);
-    if (idx >= 0) appended.splice(idx, 1);
+    if (idx < 0) return;
+    appended.splice(idx, 1);
+    if (row.line_item_id != null) {
+      removedPersisted.push(row);
+    }
+  }
+
+  function restoreAppendedLine(row) {
+    const idx = removedPersisted.indexOf(row);
+    if (idx < 0) return;
+    removedPersisted.splice(idx, 1);
+    appended.push(row);
   }
 
   function buildPayload() {
@@ -194,6 +218,26 @@
       <p>
         <button type="button" onclick={addAppendedLine}>Add Invoice-Only Line</button>
       </p>
+
+      {#if removedPersisted.length}
+        <div class="recon-notice">
+          <p>
+            {removedPersisted.length}
+            recorded line{removedPersisted.length === 1 ? '' : 's'}
+            will be deleted when you save —
+            re-add {removedPersisted.length === 1 ? 'it' : 'them'} to keep
+            {removedPersisted.length === 1 ? 'it' : 'them'}.
+          </p>
+          <ul>
+            {#each removedPersisted as row (row._key)}
+              <li>
+                {row.description}
+                <button type="button" onclick={() => restoreAppendedLine(row)}>Re-add</button>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
       <FieldError {errors} field="appended_lines" />
 
       <p><strong>Variance:</strong> {varianceDisplay ?? '—'}</p>
@@ -226,4 +270,12 @@
 
 <style>
   .text-right { text-align: right; }
+  /* Same amber warning treatment as the PO list's awaiting-reconciliation
+     badge and the line-status "partial" pill — the codebase's established
+     caution color, reused here for consistency rather than inventing one. */
+  .recon-notice {
+    background: #fef3c7; color: #92400e;
+    border-radius: 4px; padding: 4px 10px; margin: 0.5em 0;
+  }
+  .recon-notice ul { margin: 0.25em 0 0.25em 1.2em; padding: 0; }
 </style>
