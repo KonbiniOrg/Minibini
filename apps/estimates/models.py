@@ -384,7 +384,17 @@ class WorkTemplate(models.Model):
         Returns a list of (TemplateTaskAssociation, instance_index, Task) tuples
         so generate_materials_for_job can pair generated Materials with their
         matching Tasks.
+
+        Product-structure stamping (spec §9 rule 6, task-owned-money Phase 4
+        Task 3): when ``is_product_structure`` is set, ``quantity`` means
+        something different — the ONE parent task's est_qty — and generation
+        branches entirely (``_generate_structure_for_job``) instead of
+        repeating the flat per-item loop below N times. Flat generation
+        (``is_product_structure`` False, the default) is unchanged.
         """
+        if self.is_product_structure:
+            return self._generate_structure_for_job(job, quantity)
+
         generated = []
 
         for instance in range(1, quantity + 1):
@@ -402,6 +412,66 @@ class WorkTemplate(models.Model):
                 )
                 generated.append((association, instance, task))
 
+        return generated
+
+    def _generate_structure_for_job(self, job, quantity):
+        """Product-structure stamping (spec §9 rule 6, Phase 4 Task 3): mints
+        ONE top-level parent task (est_qty=quantity, unit 'ea', entered-qty;
+        rate = self.base_price when the template defines one, else NULL — a
+        NULL parent rate falls back to Task.derived_unit_price() aggregating
+        the children, the path Phase 4 Task 2 already built for ad-hoc
+        structures; accounting_category stays NULL — WorkTemplate has no AC
+        of its own, "categorize at invoicing" like any other manual/flat
+        task) plus one per-unit SUBTASK per active TemplateTaskAssociation,
+        each stamped from its own ServiceItem exactly like flat generation
+        (own rate_scheme, own money) — only ``parent_task`` and the
+        unit-keyed ``qty_scales_with_parent`` default (rule 2 — true since
+        the parent's unit is always 'ea' here) are new.
+
+        Whole-structure atomic: a mid-loop SchemeInactiveError (an
+        association's ServiceItem references a retired preset) rolls back
+        the parent too, rather than leaving an orphan parent with a partial
+        set of children — a stricter guarantee than flat generation's
+        per-item atomicity, deliberately: a "parent" with zero children from
+        a failed apply is a confusing half-state a plain flat task isn't.
+
+        Returns the (association, instance, task) pairing for the CHILDREN
+        only — materials still pair by association -> task, and Task 2's
+        material-subtask remap already lands a child's material on the
+        parent; the parent itself carries no association to pair.
+        """
+        from django.db import transaction
+        from apps.jobs.models import Task
+        from apps.jobs.services import JobService
+
+        with transaction.atomic():
+            parent = Task(
+                job=job,
+                name=self.template_name,
+                description=self.description,
+                qty_source=Task.QTY_ENTERED,
+                est_qty=Decimal(quantity),
+                unit_label='ea',
+                rate=self.base_price,
+                accounting_category=None,
+                source_scheme=None,
+            )
+            parent.save()
+            JobService.mark_work_reopened(job)
+
+            generated = []
+            associations = TemplateTaskAssociation.objects.filter(
+                work_template=self,
+                service_item__is_active=True,
+            ).order_by('sort_order', 'service_item__template_name')
+            for association in associations:
+                child = association.service_item.generate_task(
+                    job,
+                    est_qty=association.est_qty,
+                    sort_order=association.sort_order,
+                    parent_task=parent,
+                )
+                generated.append((association, 1, child))
         return generated
 
     def generate_materials_for_job(self, job, quantity=1, task_pairing=None):
@@ -505,7 +575,7 @@ class ServiceItem(models.Model):
                        assignee=None, sort_order=None,
                        name=None, description=None,
                        active_modifiers=None, est_worker_time=None,
-                       allow_inactive_scheme=False):
+                       allow_inactive_scheme=False, parent_task=None):
         """Generate a Task on a Job from this template with specified quantity.
 
         Stamps the template's RateScheme onto the Task (task-owned money
@@ -520,6 +590,12 @@ class ServiceItem(models.Model):
           allow_inactive_scheme – if True, bypasses SchemeInactiveError so acceptance can
                                   crystallize a line whose scheme was deactivated after the estimate
                                   was created. Default False preserves current behavior.
+          parent_task     – spec §9 rule 6 (Phase 4 Task 3): when given, the
+                             generated task is a SUBTASK of it, with
+                             qty_scales_with_parent defaulted per the
+                             unit-keyed rule (true iff parent_task.unit_label
+                             == 'ea'). None (default) is today's flat,
+                             top-level generation — unchanged.
         """
         from apps.jobs.models import Job, Task, SchemeInactiveError
         from django.db import transaction
@@ -556,6 +632,10 @@ class ServiceItem(models.Model):
                 service_item=self,
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
+                parent_task=parent_task,
+                qty_scales_with_parent=(
+                    parent_task.unit_label == 'ea' if parent_task is not None else True
+                ),
             )
             task.stamp_from_scheme(scheme, modifier_keys=resolved_modifier_keys)
             task.save()

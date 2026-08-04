@@ -315,9 +315,20 @@ class JobTaskMixin:
         job = self.get_object()
         if request.method == 'GET':
             from apps.jobs.models import Task
-            tasks = Task.objects.filter(job=job).order_by('sort_order')
+            # Materialize once: is_parent (Task 3) is precomputed from this
+            # SAME already-fetched list (no children query is a job's own
+            # task, so the full parent-id set is already in hand) instead of
+            # each row calling the querying `Task.is_parent` property.
+            tasks = list(
+                Task.objects.filter(job=job).select_related('parent_task')
+                .order_by('sort_order')
+            )
+            parent_ids = {t.parent_task_id for t in tasks if t.parent_task_id is not None}
             serializer = self.task_serializer_class(
-                tasks, many=True, context=self.get_serializer_context())
+                tasks, many=True,
+                context={**self.get_serializer_context(),
+                         'parent_task_ids_with_children': parent_ids},
+            )
             return Response(serializer.data)
 
         from apps.jobs.services import TaskService
@@ -357,6 +368,7 @@ class JobTaskMixin:
                 description=validated.get('description', ''),
                 parent_task_id=parent_task.pk if parent_task else None,
                 assignee_id=assignee.pk if assignee else None,
+                qty_scales_with_parent=validated.get('qty_scales_with_parent'),
                 **money_overrides,
             )
         except RateScheme.DoesNotExist:

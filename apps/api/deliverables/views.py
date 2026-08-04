@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from apps.api.mixins import JSONDestroyMixin, StatusTransitionMixin, JobScopedPermissionMixin
-from apps.api.permissions import CanManageJobOrPM
+from apps.api.permissions import CanManageFinancials, CanManageJobOrPM
 from apps.core.services import NotFoundError
 from apps.deliverables.models import Deliverable, Shipment, ShipmentItem
 from apps.deliverables.services import DeliverableService, ShipmentService
@@ -25,6 +25,14 @@ class DeliverableViewSet(JobScopedPermissionMixin, JSONDestroyMixin, ModelViewSe
     def get_permissions(self):
         if self.action in ('list', 'retrieve', 'editability'):
             return [IsAuthenticated()]
+        if self.action == 'create_work_structure':
+            # Money-shaped creation (spec §9 rule 7): this mints a Task row
+            # — even though it's deliberately money-LESS (rate/AC NULL) —
+            # so the gate matches flat-task creation
+            # (docs/plans/2026-08-02-task-owned-money.md §6: can_manage_jobs,
+            # the job's PM, or financials), not the plain CanManageJobOrPM
+            # the rest of this viewset uses.
+            return [IsAuthenticated(), (CanManageJobOrPM | CanManageFinancials)()]
         return [IsAuthenticated(), CanManageJobOrPM()]
 
     def get_queryset(self):
@@ -97,6 +105,46 @@ class DeliverableViewSet(JobScopedPermissionMixin, JSONDestroyMixin, ModelViewSe
             'editable': DeliverableService.is_editable(job),
             'reason': DeliverableService.editability_reason(job),
         })
+
+    def create_work_structure(self, request, *args, **kwargs):
+        """Deliverable -> Task bridge (spec §9 rule 7, reverse direction of
+        Task.add_as_deliverable): mints a top-level, SCHEME-LESS task — no
+        money (rate/accounting_category NULL) — copying description ->
+        name, qty_ordered -> est_qty, units -> unit_label, entered-qty.
+        Bypasses TaskService.create_direct (which mandates a rate_scheme)
+        the same way estimate-acceptance's flat-task crystallization does
+        (apps/estimates/acceptance.py) — a money-less task has no preset to
+        stamp from. Links Deliverable.source_task to the new task
+        (provenance only). Rejected when the deliverable is already linked."""
+        from apps.jobs.models import Task
+        from apps.jobs.services import JobService, _assert_job_not_on_hold
+        from apps.api.tasks.serializers import TaskSerializer
+        deliverable = self.get_object()
+        job = deliverable.job
+        _assert_job_not_on_hold(job, 'create a work structure from this deliverable')
+        if deliverable.source_task_id is not None:
+            return Response(
+                {'detail': 'This deliverable is already linked to a task.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        task = Task(
+            job=job,
+            name=(deliverable.description or 'Deliverable')[:100],
+            qty_source=Task.QTY_ENTERED,
+            est_qty=deliverable.qty_ordered,
+            unit_label=deliverable.units,
+            rate=None,
+            accounting_category=None,
+            source_scheme=None,
+        )
+        task.save()
+        JobService.mark_work_reopened(job)
+        deliverable.source_task = task
+        deliverable.save(update_fields=['source_task', 'updated_at'])
+        return Response(
+            TaskSerializer(task, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class ShipmentViewSet(StatusTransitionMixin, JSONDestroyMixin, ModelViewSet):

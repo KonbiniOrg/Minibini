@@ -183,6 +183,21 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     invoice = serializers.SerializerMethodField()
     claimed = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
+    # Quantity structure (spec §9, task-owned-money Phase 4 Task 3).
+    # qty_scales_with_parent is declared explicitly (rather than relying on
+    # the auto-generated ModelSerializer field) so an OMITTED key stays
+    # absent from validated_data instead of silently filling in the model's
+    # DB default (True) — TaskService.create_direct needs to tell "absent"
+    # apart from "explicitly sent" to apply the unit-keyed default only when
+    # the caller didn't specify one. Not in MONEY_FIELDS: this flag shapes
+    # the ESTIMATE (like est_qty), not the price rate — same open-to-any-
+    # authenticated-user treatment as est_qty, on create and on edit alike
+    # (see validate() below; update_task's generic C1 matrix covers edits).
+    qty_scales_with_parent = serializers.BooleanField(required=False)
+    is_parent = serializers.SerializerMethodField()
+    expected_qty = serializers.SerializerMethodField()
+    expected_worker_time = serializers.SerializerMethodField()
+    derived_unit_price = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -196,6 +211,8 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             'active_modifiers',
             'source_scheme', 'source_scheme_name',
             'est_qty', 'est_worker_time', 'actual_qty',
+            'qty_scales_with_parent', 'is_parent', 'expected_qty',
+            'expected_worker_time', 'derived_unit_price',
             'effective_rate', 'computed_charge',
             'actual_hours',
             'has_active_blep', 'active_worker_count', 'has_bleps',
@@ -343,6 +360,56 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         """True iff a non-superseded estimate on this job has claimed this task."""
         claims = self.context.get('estimate_claims') or frozenset()
         return ('task', obj.pk) in claims
+
+    def get_is_parent(self, obj):
+        """True iff this task has ≥1 subtask (spec §9 rule 1).
+
+        A subtask can never itself have subtasks (one level of nesting
+        only, enforced at creation — TaskService.create_direct rejects a
+        second-level parent_task) so a row with parent_task_id set is
+        ALWAYS False, no query needed. For a top-level row in a list
+        context, the call site precomputes 'parent_task_ids_with_children'
+        from the same already-fetched task list (job task list, job-detail
+        embed) so this never issues a per-row query; a single-instance
+        render (detail retrieve, a freshly created task) has no such
+        context and falls back to the querying `Task.is_parent` property —
+        one query, but never an N+1 since there's only one instance."""
+        if obj.parent_task_id is not None:
+            return False
+        precomputed = self.context.get('parent_task_ids_with_children')
+        if precomputed is not None:
+            return obj.pk in precomputed
+        return obj.is_parent
+
+    def get_expected_qty(self, obj):
+        value = obj.expected_qty()
+        if value is None:
+            return None
+        # expected_qty() itself is unquantized (raw Decimal multiplication,
+        # e.g. 500.00 * 20.00 -> 10000.0000) — quantize only for display,
+        # matching every other 2-decimal quantity field in this payload
+        # (est_qty, rate, ...). Never touches the model's own math.
+        return str(value.quantize(Decimal('0.01')))
+
+    def get_expected_worker_time(self, obj):
+        value = obj.expected_worker_time()
+        if value is None:
+            return None
+        from rest_framework.fields import DurationField
+        return DurationField().to_representation(value)
+
+    def get_derived_unit_price(self, obj):
+        # Gate on the already-optimized is_parent (context set / short
+        # circuit) BEFORE calling Task.derived_unit_price() — that model
+        # method starts with `if not self.is_parent: return None`, and
+        # `Task.is_parent` is the QUERYING property (`.subtasks.exists()`).
+        # Calling derived_unit_price() unconditionally on every row would
+        # reintroduce, for EVERY leaf task in a list, exactly the per-row
+        # query this field's sibling (is_parent) was built to avoid.
+        if not self.get_is_parent(obj):
+            return None
+        value = obj.derived_unit_price()
+        return str(value) if value is not None else None
 
     def get_can_edit(self, obj):
         """The C1 editability matrix, precomputed for the SPA: pending is

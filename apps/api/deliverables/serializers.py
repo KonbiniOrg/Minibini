@@ -18,16 +18,24 @@ class DeliverableSerializer(JobScopedCanManageMixin, serializers.ModelSerializer
     qty_picked_up = serializers.SerializerMethodField()
     qty_prepped = serializers.SerializerMethodField()
     qty_remaining = serializers.SerializerMethodField()
+    # Provenance only (spec §9 rule 7, task-owned-money Phase 4) — the Task
+    # an "Add as deliverable" copy action minted this row from, or that a
+    # "Create work structure" action set on an existing row. Read-only:
+    # never client-settable directly, only via the two bridge endpoints.
+    source_task_name = serializers.CharField(
+        source='source_task.name', read_only=True, default=None)
 
     class Meta:
         model = Deliverable
         fields = [
             'id', 'job', 'description', 'qty_ordered', 'units', 'sort_order',
             'qty_picked_up', 'qty_prepped', 'qty_remaining',
+            'source_task', 'source_task_name',
             'can_manage', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'job', 'created_at', 'updated_at',
-                            'qty_picked_up', 'qty_prepped', 'qty_remaining']
+                            'qty_picked_up', 'qty_prepped', 'qty_remaining',
+                            'source_task', 'source_task_name']
 
     def _fulfillment(self, obj):
         if not hasattr(obj, '_cached_fulfillment'):

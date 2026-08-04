@@ -8,6 +8,9 @@ deliverable_detail = DeliverableViewSet.as_view({
 })
 deliverable_reorder = DeliverableViewSet.as_view({'post': 'reorder'})
 deliverable_editability = DeliverableViewSet.as_view({'get': 'editability'})
+deliverable_create_work_structure = DeliverableViewSet.as_view(
+    {'post': 'create_work_structure'},
+)
 
 shipment_create = ShipmentViewSet.as_view({'post': 'create_for_job'})
 shipment_list = ShipmentViewSet.as_view({'get': 'list'})
@@ -43,6 +46,11 @@ urlpatterns = [
         'jobs/<int:job_id>/deliverables/<int:deliverable_id>/',
         deliverable_detail,
         name='job-deliverable-detail',
+    ),
+    path(
+        'jobs/<int:job_id>/deliverables/<int:deliverable_id>/create-work-structure/',
+        deliverable_create_work_structure,
+        name='job-deliverable-create-work-structure',
     ),
 
     # Shipments (flat, job-nested create)

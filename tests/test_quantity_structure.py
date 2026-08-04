@@ -30,9 +30,9 @@ from apps.inventory.services import MaterialService
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.invoicing.services import InvoiceWizardService
 from apps.jobs.models import Job, RateScheme, Task
-from apps.jobs.services import BlepService, TaskLifecycleService, TaskService
+from apps.jobs.services import BlepService, JobService, TaskLifecycleService, TaskService
 from apps.schedule.services import ScheduleService
-from tests.base import BaseTestCase
+from tests.base import BaseTestCase, grant_atoms
 
 
 class QuantityStructureTestBase(BaseTestCase):
@@ -849,3 +849,497 @@ class InvoicePoolMaterialSurfacingTest(QuantityStructureTestBase):
         # The child itself still draws no group of its own — the material
         # rides under the parent, not a resurrected child group.
         self.assertFalse(any(g['task_id'] == child.pk for g in pool['tasks']))
+
+
+# ═══════════════ Phase 4 Task 3: API + serializers ═══════════════
+# Covers rules 2, 6, 7 of docs/plans/2026-08-03-task-owned-money-phase4-plan.md
+# at the API layer: TaskSerializer exposes is_parent/expected_qty/
+# expected_worker_time/derived_unit_price/qty_scales_with_parent; subtask
+# CREATE resolves the unit-keyed qty_scales_with_parent default
+# service-side; the Deliverables bridge (Task <-> Deliverable copy actions);
+# WorkTemplate product-structure stamping with an explicit quantity N.
+
+class TaskSerializerQuantityFieldsTest(QuantityStructureTestBase):
+    """is_parent / expected_qty / expected_worker_time / derived_unit_price
+    / qty_scales_with_parent all appear on task payloads."""
+
+    def test_leaf_task_is_parent_false(self):
+        leaf = self._task('Leaf', est_qty=Decimal('1'))
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/tasks/{leaf.pk}/')
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.json()['is_parent'])
+
+    def test_parent_task_is_parent_true(self):
+        parent = self._task('Parent', est_qty=Decimal('5'))
+        self._task('Child', parent=parent, est_qty=Decimal('1'))
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/tasks/{parent.pk}/')
+        self.assertTrue(r.json()['is_parent'])
+
+    def test_child_expected_qty_and_worker_time_reflect_multiplier(self):
+        parent = self._task('Parent', est_qty=Decimal('500'))
+        self._task(
+            'Child', parent=parent, qty_scales_with_parent=True,
+            est_qty=Decimal('20'), est_worker_time=timedelta(minutes=20),
+        )
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
+        row = next(t for t in r.json() if t['name'] == 'Child')
+        self.assertEqual(row['expected_qty'], '10000.00')
+        self.assertEqual(row['expected_worker_time'], '6 22:40:00')
+
+    def test_parent_derived_unit_price_exposed(self):
+        parent = self._task('Widget', est_qty=Decimal('10'))
+        self._task(
+            'Per-unit', parent=parent, qty_scales_with_parent=True,
+            est_qty=Decimal('2'), scheme=self._scheme('r1', rate=Decimal('3.00')),
+        )
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/tasks/{parent.pk}/')
+        self.assertEqual(r.json()['derived_unit_price'], '6.00')
+
+    def test_leaf_derived_unit_price_null(self):
+        leaf = self._task('Leaf2', est_qty=Decimal('1'))
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/tasks/{leaf.pk}/')
+        self.assertIsNone(r.json()['derived_unit_price'])
+
+    def test_qty_scales_with_parent_present_on_top_level_task(self):
+        top = self._task('Top', est_qty=Decimal('1'))
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/tasks/{top.pk}/')
+        self.assertIn('qty_scales_with_parent', r.json())
+        self.assertTrue(r.json()['qty_scales_with_parent'])
+
+
+class IsParentQueryCostTest(QuantityStructureTestBase):
+    """is_parent must read from a precomputed context set rather than
+    querying `.subtasks.exists()` per row — the per-row cost Task 3 flags
+    for a list queryset (job task list, job-detail embed)."""
+
+    def test_precomputed_context_avoids_a_query(self):
+        parent = self._task('P', est_qty=Decimal('1'))
+        child = self._task('C', parent=parent, est_qty=Decimal('1'))
+        from apps.api.tasks.serializers import TaskSerializer
+        serializer = TaskSerializer(
+            context={'parent_task_ids_with_children': {parent.pk}},
+        )
+        with self.assertNumQueries(0):
+            self.assertTrue(serializer.get_is_parent(parent))
+            self.assertFalse(serializer.get_is_parent(child))
+
+    def test_subtask_never_queries_even_without_context(self):
+        # One level of nesting only (enforced at creation) — a subtask can
+        # never itself be a parent, so this short-circuits on parent_task_id
+        # with no query regardless of context.
+        parent = self._task('P2', est_qty=Decimal('1'))
+        child = self._task('C2', parent=parent, est_qty=Decimal('1'))
+        from apps.api.tasks.serializers import TaskSerializer
+        serializer = TaskSerializer(context={})
+        with self.assertNumQueries(0):
+            self.assertFalse(serializer.get_is_parent(child))
+
+    def test_top_level_falls_back_to_property_without_context(self):
+        # Detail/single-instance rendering has no precomputed set — falls
+        # back to the querying property (one query, not zero, but never an
+        # N+1 across a list since there's only one instance).
+        top = self._task('P3', est_qty=Decimal('1'))
+        from apps.api.tasks.serializers import TaskSerializer
+        serializer = TaskSerializer(context={})
+        with self.assertNumQueries(1):
+            self.assertFalse(serializer.get_is_parent(top))
+
+    def test_job_tasklist_endpoint_reports_is_parent_correctly(self):
+        parent = self._task('P4', est_qty=Decimal('1'))
+        child = self._task('C4', parent=parent, est_qty=Decimal('1'))
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
+        by_name = {t['name']: t for t in r.json()}
+        self.assertTrue(by_name['P4']['is_parent'])
+        self.assertFalse(by_name['C4']['is_parent'])
+
+    def test_job_detail_endpoint_reports_is_parent_correctly(self):
+        parent = self._task('P5', est_qty=Decimal('1'))
+        child = self._task('C5', parent=parent, est_qty=Decimal('1'))
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/jobs/{self.job.pk}/')
+        by_name = {t['name']: t for t in r.json()['tasks']}
+        self.assertTrue(by_name['P5']['is_parent'])
+        self.assertFalse(by_name['C5']['is_parent'])
+
+
+class SubtaskQtyScalesDefaultTest(QuantityStructureTestBase):
+    """The unit-keyed qty_scales_with_parent default (rule 2) resolves
+    SERVICE-side, at subtask creation, when the key is absent from the
+    request — true iff the parent's unit_label == 'ea'."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.user)
+
+    def test_default_true_when_parent_unit_is_ea(self):
+        parent_scheme = self._scheme('parent-ea', unit_label='ea')
+        parent = self._task('P-ea', est_qty=Decimal('5'), scheme=parent_scheme)
+        child_scheme = self._scheme('child-scheme')
+        r = self.client.post(
+            f'/api/tasks/{parent.pk}/subtasks/',
+            {'name': 'Child', 'est_qty': '1.00', 'rate_scheme': child_scheme.pk},
+            content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        child = Task.objects.get(pk=r.json()['task_id'])
+        self.assertTrue(child.qty_scales_with_parent)
+
+    def test_default_false_when_parent_unit_is_not_ea(self):
+        parent_scheme = self._scheme('parent-bf', unit_label='bd ft')
+        parent = self._task('P-bf', est_qty=Decimal('5'), scheme=parent_scheme)
+        child_scheme = self._scheme('child-scheme-2')
+        r = self.client.post(
+            f'/api/tasks/{parent.pk}/subtasks/',
+            {'name': 'Child', 'est_qty': '1.00', 'rate_scheme': child_scheme.pk},
+            content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        child = Task.objects.get(pk=r.json()['task_id'])
+        self.assertFalse(child.qty_scales_with_parent)
+
+    def test_explicit_flag_overrides_default(self):
+        parent_scheme = self._scheme('parent-ea2', unit_label='ea')
+        parent = self._task('P-ea2', est_qty=Decimal('5'), scheme=parent_scheme)
+        child_scheme = self._scheme('child-scheme-3')
+        r = self.client.post(
+            f'/api/tasks/{parent.pk}/subtasks/',
+            {'name': 'Child', 'est_qty': '1.00', 'rate_scheme': child_scheme.pk,
+             'qty_scales_with_parent': False},
+            content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        child = Task.objects.get(pk=r.json()['task_id'])
+        self.assertFalse(child.qty_scales_with_parent)
+
+    def test_generic_tasks_endpoint_also_applies_default(self):
+        parent_scheme = self._scheme('parent-ea4', unit_label='ea')
+        parent = self._task('P-ea4', est_qty=Decimal('5'), scheme=parent_scheme)
+        child_scheme = self._scheme('child-scheme-4')
+        r = self.client.post(
+            f'/api/jobs/{self.job.pk}/tasks/',
+            {'name': 'Child via job endpoint', 'est_qty': '1.00',
+             'rate_scheme': child_scheme.pk, 'parent_task': parent.pk},
+            content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        child = Task.objects.get(pk=r.json()['task_id'])
+        self.assertTrue(child.qty_scales_with_parent)
+
+    def test_flag_editable_post_create_same_as_est_qty_pending(self):
+        """Pending: open to any authenticated user — the same C1 gate
+        est_qty edits use (no MONEY_FIELDS-style permission add-on)."""
+        parent_scheme = self._scheme('parent-ea3', unit_label='ea')
+        parent = self._task('P-ea3', est_qty=Decimal('5'), scheme=parent_scheme)
+        child = self._task(
+            'Child', parent=parent, qty_scales_with_parent=True, est_qty=Decimal('1'),
+        )
+        r = self.client.patch(
+            f'/api/jobs/{self.job.pk}/tasks/{child.pk}/',
+            {'qty_scales_with_parent': False},
+            content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        child.refresh_from_db()
+        self.assertFalse(child.qty_scales_with_parent)
+
+
+# ═══════════════ Phase 4 Task 3: Deliverables bridge (rule 7) ═══════════════
+
+class DeliverableSourceTaskSerializerTest(QuantityStructureTestBase):
+
+    def test_source_task_and_name_exposed(self):
+        task = self._task('Widget task', est_qty=Decimal('5'))
+        from apps.deliverables.models import Deliverable
+        d = Deliverable.objects.create(
+            job=self.job, description='Widget', qty_ordered=Decimal('5'),
+            units='ea', source_task=task,
+        )
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/jobs/{self.job.pk}/deliverables/{d.pk}/')
+        body = r.json()
+        self.assertEqual(body['source_task'], task.pk)
+        self.assertEqual(body['source_task_name'], 'Widget task')
+
+    def test_source_task_null_when_unlinked(self):
+        from apps.deliverables.models import Deliverable
+        d = Deliverable.objects.create(
+            job=self.job, description='Stool', qty_ordered=Decimal('1'), units='ea',
+        )
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/jobs/{self.job.pk}/deliverables/{d.pk}/')
+        body = r.json()
+        self.assertIsNone(body['source_task'])
+        self.assertIsNone(body['source_task_name'])
+
+
+class AddAsDeliverableEndpointTest(QuantityStructureTestBase):
+    """POST /api/tasks/{id}/add-as-deliverable/ — permission matches
+    deliverable creation today (CanManageJobOrPM)."""
+
+    def setUp(self):
+        super().setUp()
+        self.pm = User.objects.create_user(username='qs_pm', password='pass')
+        self.job.project_manager = self.pm
+        self.job.save()
+
+    def test_manager_can_add_task_as_deliverable(self):
+        task = self._task('Widget', est_qty=Decimal('7'))
+        mgr = grant_atoms(
+            User.objects.create_user(username='qs_mgr', password='pass'),
+            'can_manage_jobs',
+        )
+        self.client.force_login(mgr)
+        r = self.client.post(f'/api/tasks/{task.pk}/add-as-deliverable/')
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertEqual(body['description'], 'Widget')
+        self.assertEqual(body['qty_ordered'], '7.00')
+        self.assertEqual(body['units'], 'ea')
+        self.assertEqual(body['source_task'], task.pk)
+        from apps.deliverables.models import Deliverable
+        d = Deliverable.objects.get(pk=body['id'])
+        self.assertEqual(d.source_task_id, task.pk)
+
+    def test_pm_can_add_task_as_deliverable(self):
+        task = self._task('Widget PM', est_qty=Decimal('3'))
+        self.client.force_login(self.pm)
+        r = self.client.post(f'/api/tasks/{task.pk}/add-as-deliverable/')
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_plain_worker_forbidden(self):
+        task = self._task('Widget worker', est_qty=Decimal('3'))
+        self.client.force_login(self.user)
+        r = self.client.post(f'/api/tasks/{task.pk}/add-as-deliverable/')
+        self.assertEqual(r.status_code, 403)
+
+    def test_subtask_rejected(self):
+        parent = self._task('Structure', est_qty=Decimal('5'))
+        child = self._task('Child', parent=parent, est_qty=Decimal('1'))
+        self.client.force_login(self.pm)
+        r = self.client.post(f'/api/tasks/{child.pk}/add-as-deliverable/')
+        self.assertEqual(r.status_code, 400)
+
+    def test_already_linked_rejected(self):
+        task = self._task('Linked', est_qty=Decimal('2'))
+        self.client.force_login(self.pm)
+        r1 = self.client.post(f'/api/tasks/{task.pk}/add-as-deliverable/')
+        self.assertEqual(r1.status_code, 201)
+        r2 = self.client.post(f'/api/tasks/{task.pk}/add-as-deliverable/')
+        self.assertEqual(r2.status_code, 400)
+
+    def test_task_with_no_est_qty_rejected(self):
+        task = self._task('No qty', est_qty=None)
+        self.client.force_login(self.pm)
+        r = self.client.post(f'/api/tasks/{task.pk}/add-as-deliverable/')
+        self.assertEqual(r.status_code, 400)
+
+
+class CreateWorkStructureEndpointTest(QuantityStructureTestBase):
+    """POST /api/jobs/{job_id}/deliverables/{id}/create-work-structure/ —
+    mints a money-less flat task, so the gate matches flat-task creation
+    (can_manage_jobs, the job's PM, or financials), not the plain
+    CanManageJobOrPM the rest of DeliverableViewSet uses."""
+
+    def setUp(self):
+        super().setUp()
+        self.pm = User.objects.create_user(username='qs_pm2', password='pass')
+        self.job.project_manager = self.pm
+        self.job.save()
+
+    def _deliverable(self, **kwargs):
+        from apps.deliverables.models import Deliverable
+        defaults = dict(
+            job=self.job, description='Stool', qty_ordered=Decimal('12'), units='ea',
+        )
+        defaults.update(kwargs)
+        return Deliverable.objects.create(**defaults)
+
+    def test_manager_can_create_work_structure(self):
+        mgr = grant_atoms(
+            User.objects.create_user(username='qs_mgr2', password='pass'),
+            'can_manage_jobs',
+        )
+        d = self._deliverable()
+        self.client.force_login(mgr)
+        r = self.client.post(
+            f'/api/jobs/{self.job.pk}/deliverables/{d.pk}/create-work-structure/'
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertEqual(body['name'], 'Stool')
+        self.assertEqual(body['est_qty'], '12.00')
+        self.assertEqual(body['unit_label'], 'ea')
+        self.assertIsNone(body['rate'])
+        self.assertIsNone(body['accounting_category'])
+        d.refresh_from_db()
+        self.assertEqual(d.source_task_id, body['task_id'])
+
+    def test_financials_atom_without_pm_can_create(self):
+        fin = grant_atoms(
+            User.objects.create_user(username='qs_fin', password='pass'),
+            'can_manage_financials',
+        )
+        d = self._deliverable()
+        self.client.force_login(fin)
+        r = self.client.post(
+            f'/api/jobs/{self.job.pk}/deliverables/{d.pk}/create-work-structure/'
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_pm_can_create(self):
+        d = self._deliverable()
+        self.client.force_login(self.pm)
+        r = self.client.post(
+            f'/api/jobs/{self.job.pk}/deliverables/{d.pk}/create-work-structure/'
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_plain_worker_forbidden(self):
+        d = self._deliverable()
+        self.client.force_login(self.user)
+        r = self.client.post(
+            f'/api/jobs/{self.job.pk}/deliverables/{d.pk}/create-work-structure/'
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_already_linked_rejected(self):
+        d = self._deliverable()
+        self.client.force_login(self.pm)
+        r1 = self.client.post(
+            f'/api/jobs/{self.job.pk}/deliverables/{d.pk}/create-work-structure/'
+        )
+        self.assertEqual(r1.status_code, 201)
+        r2 = self.client.post(
+            f'/api/jobs/{self.job.pk}/deliverables/{d.pk}/create-work-structure/'
+        )
+        self.assertEqual(r2.status_code, 400)
+
+
+# ═══════════════ Phase 4 Task 3: Template N (rule 6) ═══════════════
+
+class TemplateProductStructureGenerationTest(QuantityStructureTestBase):
+
+    def setUp(self):
+        super().setUp()
+        from apps.estimates.models import WorkTemplate, ServiceItem, TemplateTaskAssociation
+        self.WorkTemplate = WorkTemplate
+        self.ServiceItem = ServiceItem
+        self.TemplateTaskAssociation = TemplateTaskAssociation
+        self.child_scheme_ea = self._scheme(
+            'mill-scheme', unit_label='ea', rate=Decimal('3.00'))
+        self.template = WorkTemplate.objects.create(
+            template_name='Widget Structure', description='A widget',
+            is_product_structure=True,
+        )
+        self.si = ServiceItem.objects.create(
+            template_name='Mill each', rate_scheme=self.child_scheme_ea, is_active=True,
+        )
+        TemplateTaskAssociation.objects.create(
+            work_template=self.template, service_item=self.si,
+            est_qty=Decimal('2'), sort_order=1,
+        )
+
+    def test_apply_with_quantity_creates_parent_and_subtask(self):
+        JobService.populate_from_template(self.job, self.template, quantity=Decimal('10'))
+        parent = Task.objects.get(job=self.job, name='Widget Structure')
+        self.assertIsNone(parent.parent_task_id)
+        self.assertEqual(parent.est_qty, Decimal('10'))
+        self.assertEqual(parent.unit_label, 'ea')
+        self.assertIsNone(parent.rate)
+        self.assertIsNone(parent.accounting_category_id)
+        children = list(Task.objects.filter(parent_task=parent))
+        self.assertEqual(len(children), 1)
+        child = children[0]
+        self.assertEqual(child.name, 'Mill each')
+        self.assertEqual(child.est_qty, Decimal('2'))
+        self.assertTrue(child.qty_scales_with_parent)
+        self.assertEqual(child.expected_qty(), Decimal('20'))
+
+    def test_parent_uses_base_price_when_set(self):
+        self.template.base_price = Decimal('99.00')
+        self.template.save()
+        JobService.populate_from_template(self.job, self.template, quantity=Decimal('5'))
+        parent = Task.objects.get(job=self.job, name='Widget Structure')
+        self.assertEqual(parent.rate, Decimal('99.00'))
+
+    def test_api_endpoint_accepts_quantity_for_structure_template(self):
+        mgr = grant_atoms(
+            User.objects.create_user(username='tmpl_mgr', password='pass'),
+            'can_manage_jobs',
+        )
+        self.client.force_login(mgr)
+        r = self.client.post(
+            f'/api/jobs/{self.job.pk}/populate-from-template/',
+            {'template_id': self.template.pk, 'quantity': '4'},
+            content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        parent = Task.objects.get(job=self.job, name='Widget Structure')
+        self.assertEqual(parent.est_qty, Decimal('4'))
+
+    def test_api_rejects_quantity_on_non_structure_template(self):
+        flat_template = self.WorkTemplate.objects.create(template_name='Flat template')
+        mgr = grant_atoms(
+            User.objects.create_user(username='tmpl_mgr2', password='pass'),
+            'can_manage_jobs',
+        )
+        self.client.force_login(mgr)
+        r = self.client.post(
+            f'/api/jobs/{self.job.pk}/populate-from-template/',
+            {'template_id': flat_template.pk, 'quantity': '3'},
+            content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_api_rejects_zero_or_negative_quantity(self):
+        mgr = grant_atoms(
+            User.objects.create_user(username='tmpl_mgr3', password='pass'),
+            'can_manage_jobs',
+        )
+        self.client.force_login(mgr)
+        r = self.client.post(
+            f'/api/jobs/{self.job.pk}/populate-from-template/',
+            {'template_id': self.template.pk, 'quantity': '0'},
+            content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_flat_generation_unchanged_without_quantity(self):
+        flat_template = self.WorkTemplate.objects.create(template_name='Flat template 2')
+        self.TemplateTaskAssociation.objects.create(
+            work_template=flat_template, service_item=self.si,
+            est_qty=Decimal('3'), sort_order=1,
+        )
+        JobService.populate_from_template(self.job, flat_template)
+        task = Task.objects.get(job=self.job, name='Mill each')
+        self.assertIsNone(task.parent_task_id)
+        self.assertEqual(task.est_qty, Decimal('3'))
+
+
+class WorkTemplateSerializerProductStructureFieldsTest(QuantityStructureTestBase):
+    """is_product_structure/base_price ride the existing WorkTemplate CRUD
+    permission (CanManageConfig) — no new plumbing needed."""
+
+    def test_fields_present_and_writable(self):
+        mgr = grant_atoms(
+            User.objects.create_user(username='wt_mgr', password='pass'),
+            'can_manage_config',
+        )
+        self.client.force_login(mgr)
+        r = self.client.post(
+            '/api/work-templates/',
+            {'template_name': 'Structure T', 'is_product_structure': True,
+             'base_price': '25.00'},
+            content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertTrue(body['is_product_structure'])
+        self.assertEqual(body['base_price'], '25.00')

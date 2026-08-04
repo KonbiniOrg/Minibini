@@ -207,7 +207,15 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         tasks = obj.tasks.all()
         if not hasattr(obj, '_prefetched_objects_cache') or 'tasks' not in obj._prefetched_objects_cache:
             tasks = tasks.order_by('sort_order')
-        return TaskSerializer(tasks, many=True, context=self._atom_context(obj)).data
+        # Materialize once (avoids a double query when the prefetch cache
+        # wasn't hit) and precompute is_parent's parent-id set from this
+        # same full list (Task 3) — every row a task's own children could
+        # come from is already right here, so no per-row
+        # `Task.is_parent`/`.subtasks.exists()` query is needed.
+        tasks = list(tasks)
+        parent_ids = {t.parent_task_id for t in tasks if t.parent_task_id is not None}
+        context = {**self._atom_context(obj), 'parent_task_ids_with_children': parent_ids}
+        return TaskSerializer(tasks, many=True, context=context).data
 
     def get_materials(self, obj):
         from apps.api.inventory.serializers import MaterialSerializer

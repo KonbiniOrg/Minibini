@@ -96,7 +96,8 @@ class DeliverableService:
 
     @staticmethod
     @transaction.atomic
-    def create(*, job_id, description, qty_ordered, units, sort_order=None):
+    def create(*, job_id, description, qty_ordered, units, sort_order=None,
+               source_task=None):
         from apps.jobs.models import Job
         try:
             job = Job.objects.get(pk=job_id)
@@ -108,6 +109,9 @@ class DeliverableService:
             description=description,
             qty_ordered=qty_ordered,
             units=units,
+            # Provenance only (spec §9 rule 7) — the "Add as deliverable"
+            # task-copy action passes this; every other caller omits it.
+            source_task=source_task,
         )
         if sort_order is not None:
             d.sort_order = sort_order

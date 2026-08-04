@@ -27,6 +27,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 'tasks',
                 queryset=Task.objects.select_related(
                     'assignee', 'source_scheme', 'accounting_category',
+                    'parent_task',
                 ).prefetch_related('blep_set').order_by('sort_order'),
             ),
             Prefetch(
@@ -254,8 +255,36 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 {'template_id': ['Template not found.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # Product-structure stamping (spec §9 rule 6, Phase 4 Task 3): the
+        # optional `quantity` only means something for an is_product_structure
+        # template (the new parent task's est_qty) — reject it outright on a
+        # flat template rather than silently reinterpreting it as the
+        # dormant "repeat the flat list N times" parameter
+        # generate_tasks_for_job already accepts internally, which the API
+        # has never exposed and isn't wiring up now.
+        quantity = None
+        if 'quantity' in request.data:
+            if not template.is_product_structure:
+                return Response(
+                    {'quantity': ['This template is not a product structure '
+                                  '— quantity only applies to '
+                                  'product-structure templates.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            try:
+                quantity = Decimal(str(request.data.get('quantity')))
+            except (InvalidOperation, ValueError, TypeError):
+                return Response(
+                    {'quantity': ['Invalid decimal value.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if quantity <= 0:
+                return Response(
+                    {'quantity': ['Must be greater than zero.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         try:
-            JobService.populate_from_template(job, template)
+            JobService.populate_from_template(job, template, quantity=quantity)
         except SchemeInactiveError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         job.refresh_from_db()

@@ -14,6 +14,7 @@ from apps.inventory.models import Material, Earmark
 from apps.inventory.services import MaterialService
 from apps.core.services import NotFoundError, ServiceError
 from apps.api.mixins import JobScopedPermissionMixin
+from apps.api.permissions import CanManageJobOrPM
 
 _inv_earmarked_subq = Coalesce(
     Subquery(
@@ -197,12 +198,63 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
                 description=data.get('description', ''),
                 assignee_id=data['assignee'].pk if data.get('assignee') else None,
                 parent_task_id=task.pk,
+                qty_scales_with_parent=data.get('qty_scales_with_parent'),
                 **money_overrides,
             )
         except SchemeInactiveError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         out = TaskSerializer(new_task, context=self.get_serializer_context())
         return Response(out.data, status=status.HTTP_201_CREATED)
+
+    # --- Deliverables bridge (spec §9 rule 7) ---
+
+    @action(detail=True, methods=['post'], url_path='add-as-deliverable',
+            url_name='add-as-deliverable',
+            permission_classes=[IsAuthenticated, CanManageJobOrPM])
+    def add_as_deliverable(self, request, pk=None):
+        """Copy this task into a Deliverable on its job: name -> description,
+        est_qty -> qty_ordered, unit_label -> units, linked via
+        Deliverable.source_task (provenance only — no sync, no computation
+        through it). Same permission as deliverable creation today
+        (CanManageJobOrPM — see DeliverableViewSet.get_permissions).
+
+        Rejected when the task already has a linked deliverable (the
+        `sourced_deliverables` reverse accessor), when it's a SUBTASK (a
+        structure exports from its PARENT only — the parent already
+        represents the billed unit), or when it has no est_qty to copy."""
+        from apps.deliverables.services import DeliverableService
+        from apps.api.deliverables.serializers import DeliverableSerializer
+        task = self.get_object()
+        if task.parent_task_id is not None:
+            return Response(
+                {'detail': 'A subtask cannot be added as a deliverable — '
+                           'structures export from their parent task.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if task.sourced_deliverables.exists():
+            return Response(
+                {'detail': 'This task is already linked to a deliverable.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if task.est_qty is None:
+            return Response(
+                {'detail': 'Task has no quantity — set est_qty before '
+                           'adding it as a deliverable.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        deliverable = DeliverableService.create(
+            job_id=task.job_id,
+            description=task.name,
+            qty_ordered=task.est_qty,
+            units=task.unit_label,
+            source_task=task,
+        )
+        return Response(
+            DeliverableSerializer(
+                deliverable, context=self.get_serializer_context(),
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):

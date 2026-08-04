@@ -932,11 +932,19 @@ class JobService:
             job.refresh_from_db()
 
     @staticmethod
-    def populate_from_template(job, template):
+    def populate_from_template(job, template, quantity=None):
         """Populate a Job's tasks and materials from a WorkTemplate. The
         template itself is not stored on the Job; only its generated children
-        land here."""
-        task_pairing = template.generate_tasks_for_job(job)
+        land here.
+
+        ``quantity`` (spec §9 rule 6, Phase 4 Task 3): only meaningful when
+        ``template.is_product_structure`` — forwarded to
+        generate_tasks_for_job as the new parent task's est_qty. ``None``
+        (the default) is today's flat, per-item generation, byte-identical
+        to before this parameter existed."""
+        task_pairing = template.generate_tasks_for_job(
+            job, quantity=(quantity if quantity is not None else 1),
+        )
         template.generate_materials_for_job(job, task_pairing=task_pairing)
 
         from apps.inventory.services import InventoryService
@@ -1110,6 +1118,7 @@ class TaskService:
     def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
                       est_qty=None, est_worker_time=None, actual_qty=None,
                       allow_inactive_scheme=False, parent_task_id=None,
+                      qty_scales_with_parent=None,
                       **task_fields):
         """Create Task directly. Requires rate_scheme_id — stamps its billing
         fields onto the Task (task-owned money Phase 1) via
@@ -1129,6 +1138,16 @@ class TaskService:
         only. Permission (CanManageJobOrPM / can_manage_financials) is
         enforced by the caller (TaskSerializer.MONEY_FIELDS gate) before this
         is ever reached.
+
+        ``qty_scales_with_parent`` (spec §9 rule 2, Phase 4 Task 3):
+        ``None`` (the default — the caller didn't specify one) resolves the
+        unit-keyed default HERE, the single creation gate, so both the
+        /api/tasks/{id}/subtasks/ endpoint and a generic
+        /api/jobs/{id}/tasks/ POST carrying `parent_task` land on the same
+        rule — true iff the parent's `unit_label` == 'ea', else false. An
+        explicit True/False from the caller always wins. Inert (but still
+        set, matching the model's own DB default) on a top-level create —
+        the flag only means something once a parent exists.
 
         This is the single creation gate for direct tasks AND subtasks (the
         /api/tasks/{id}/subtasks/ endpoint routes here too) — the on-hold,
@@ -1173,6 +1192,13 @@ class TaskService:
                 raise ValidationError({'parent_task': [
                     f"Cannot add a subtask to a task that is "
                     f"'{parent.status}' — decompose before starting."]})
+            if qty_scales_with_parent is None:
+                qty_scales_with_parent = (parent.unit_label == 'ea')
+        if qty_scales_with_parent is None:
+            # No parent — the flag is inert, but always set it explicitly
+            # (matching the model's own DB default) rather than leaning on
+            # that default implicitly.
+            qty_scales_with_parent = True
         est_qty, est_worker_time = hours_pair_fill(scheme.unit_label, est_qty, est_worker_time)
         # A type _coerce_duration can't parse (e.g. a raw JSON int from this
         # endpoint's unserialized POST) would otherwise reach Task.save()'s
@@ -1196,6 +1222,7 @@ class TaskService:
                 est_worker_time=est_worker_time,
                 actual_qty=actual_qty,
                 parent_task_id=parent_task_id,
+                qty_scales_with_parent=qty_scales_with_parent,
                 **task_fields,
             )
             task.stamp_from_scheme(scheme, modifier_keys=active_modifiers)
