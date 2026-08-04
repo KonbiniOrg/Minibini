@@ -3,6 +3,15 @@
 from django.db import migrations, models
 
 
+def forwards(apps, schema_editor):
+    from apps.jobs.subtask_scale_backfill import backfill_subtask_qty_scales_with_parent
+    Task = apps.get_model('jobs', 'Task')
+    touched = backfill_subtask_qty_scales_with_parent(Task)
+    if touched:
+        print(f'[subtask_scale_backfill] set qty_scales_with_parent=False '
+              f'for {touched} pre-existing subtask(s)')
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -15,4 +24,14 @@ class Migration(migrations.Migration):
             name='qty_scales_with_parent',
             field=models.BooleanField(default=True, help_text="Subtask only: when true, this task's raw est_qty/est_worker_time are PER-UNIT and multiply by the parent's est_qty to get the expected total (Task.expected_qty() / expected_worker_time()). When false, the raw values are already a per-batch total (multiplier 1). Inert on a top-level task (no parent)."),
         ),
+        # Final-review finding (controller-verified, 2026-08-04): 26 real
+        # dev-DB subtask rows predate this flag entirely — their est_qty
+        # values were authored as plain per-batch totals. The blanket
+        # AddField default above (True) would silently start multiplying
+        # them by their parent's est_qty. Amended in place (this migration
+        # has not yet run anywhere) rather than appended as a follow-on —
+        # same shape as jobs/0054_job_on_hold_alter_job_status (AddField +
+        # RunPython backfill in one migration). See
+        # apps/jobs/subtask_scale_backfill.py for the full rationale.
+        migrations.RunPython(forwards, migrations.RunPython.noop),
     ]
