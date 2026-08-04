@@ -348,34 +348,74 @@ class ScheduleQueryBudgetTest(QuantityStructureTestBase):
             status=Task.STATUS_PENDING, assignee=self.user,
         )
 
-    def test_schedule_build_query_count_does_not_scale_with_child_count(self):
+    def test_schedule_build_does_not_refetch_shared_parent_per_child(self):
+        """Direct, deterministic version of the regression check (tighter
+        than an aggregate query-count budget, which a full schedule build's
+        fixture-driven noise — other workers' unrelated lanes, etc. — made
+        too fuzzy to pin a per-child query delta on: an aggregate delta
+        comparison across two full builds doesn't isolate cleanly enough to
+        catch a 1-extra-query-per-child regression against that noise
+        floor).
+
+        A single-row `WHERE tasks.task_id = <parent.pk> LIMIT ...` query is
+        exactly what Django emits when `.parent_task` is lazily dereferenced
+        WITHOUT select_related having already joined it in. With
+        select_related('parent_task') present at every site whose tasks
+        flow into expected_worker_time(), this exact query must never
+        appear — not once — no matter how many children share the parent.
+        Without it, each child accessing `self.parent_task` in
+        `_parent_multiplier()` re-issues this query separately (Django's ORM
+        has no instance-spanning FK identity cache), so 2 children would
+        show it twice.
+        """
         from django.db import connection
         from django.test.utils import CaptureQueriesContext
 
         self._add_child('Child 1')
-        with CaptureQueriesContext(connection) as ctx_one:
-            ScheduleService.get_schedule(now=timezone.now())
-        count_one_child = len(ctx_one.captured_queries)
-
         self._add_child('Child 2')
-        self._add_child('Child 3')
-        with CaptureQueriesContext(connection) as ctx_three:
-            ScheduleService.get_schedule(now=timezone.now())
-        count_three_children = len(ctx_three.captured_queries)
 
-        added_children = 2
-        added_queries = count_three_children - count_one_child
-        # Each additional same-parent child legitimately adds a small,
-        # bounded number of its own queries (its blep_set lookup, its own
-        # bar(s)) — generous budget of 2 queries/child. Without
-        # select_related('parent_task'), each child would ALSO trigger a
-        # fresh SELECT to re-fetch the shared parent row, pushing this over
-        # budget as more children are added.
-        self.assertLessEqual(
-            added_queries, added_children * 2,
-            f'schedule build queries grew by {added_queries} for '
-            f'{added_children} more same-parent children '
-            f'({count_one_child} -> {count_three_children}) — check '
+        with CaptureQueriesContext(connection) as ctx:
+            ScheduleService.get_schedule(now=timezone.now())
+
+        parent_refetch_pattern = f'`tasks`.`task_id` = {self.parent.pk} LIMIT'
+        refetches = [
+            q['sql'] for q in ctx.captured_queries
+            if parent_refetch_pattern in q['sql']
+        ]
+        self.assertEqual(
+            refetches, [],
+            f'expected zero separate parent-task refetch queries for '
+            f'parent {self.parent.pk}, found {len(refetches)} — check '
             f"select_related('parent_task') on the querysets whose tasks "
             f'flow into Task.expected_worker_time().'
+        )
+
+    def test_schedule_build_does_not_refetch_shared_parent_for_running_blep(self):
+        """Same regression via the OTHER site: `window_bleps` (the running-
+        blep projection in `_compute_axis`) is a separate queryset from
+        `_build_lane`'s `tasks_qs` — a distinct `Blep`/`Task` Python object
+        per row, so its own `select_related('task', 'task__parent_task')` is
+        what prevents ITS `b.task.expected_worker_time()` call from
+        re-fetching the parent, independent of whether `tasks_qs` has the
+        fix."""
+        from apps.jobs.models import Blep
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        child = self._add_child('Running-blep child')
+        Blep.objects.create(task=child, user=self.user, start_time=timezone.now())
+
+        with CaptureQueriesContext(connection) as ctx:
+            ScheduleService.get_schedule(now=timezone.now())
+
+        parent_refetch_pattern = f'`tasks`.`task_id` = {self.parent.pk} LIMIT'
+        refetches = [
+            q['sql'] for q in ctx.captured_queries
+            if parent_refetch_pattern in q['sql']
+        ]
+        self.assertEqual(
+            refetches, [],
+            f'expected zero separate parent-task refetch queries for '
+            f'parent {self.parent.pk}, found {len(refetches)} — check '
+            f"select_related('task', 'task__parent_task') on window_bleps."
         )
