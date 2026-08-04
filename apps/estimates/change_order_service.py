@@ -385,42 +385,6 @@ class ChangeOrderService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _apply_is_material_alias(li, is_material):
-        """`is_material` input alias — Task 7 removes this alias. Mirrors
-        EstimateService._apply_is_material_alias: meaningful only on a bare
-        line (a line with an inventory_item or service_item already knows
-        its crystallization type).
-
-        Task 4: a direct freeform_kind wins over an absent/False
-        is_material — no longer clobbers a caller-supplied kind (e.g.
-        'work') with the old unconditional bare->fee mapping. See
-        EstimateService._apply_is_material_alias for the full mapping
-        rationale."""
-        if li.inventory_item_id is not None:
-            if is_material:
-                raise ValidationError({'is_material': (
-                    'A line with an inventory item is already a material; '
-                    'the "is material" marker only applies to a bare line.'
-                )})
-            return
-        if li.service_item_id is not None:
-            if is_material:
-                raise ValidationError({'is_material': (
-                    'A service line cannot be marked as a material.'
-                )})
-            return
-        if is_material:
-            if (li.freeform_kind is not None
-                    and li.freeform_kind != ChangeOrderLineItem.KIND_MATERIAL):
-                raise ValidationError({'freeform_kind': (
-                    f'is_material=True conflicts with freeform_kind='
-                    f'{li.freeform_kind!r}; send only one.'
-                )})
-            li.freeform_kind = ChangeOrderLineItem.KIND_MATERIAL
-        elif li.freeform_kind is None:
-            li.freeform_kind = ChangeOrderLineItem.KIND_FEE
-
-    @staticmethod
     def add_line_item(co_pk, **kwargs):
         """Add a manual line item to a draft change order.
 
@@ -438,21 +402,16 @@ class ChangeOrderService:
         from apps.core.services import LineItemService
         from apps.estimates.services import EstimateService
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
-        # `is_material` input alias (Task 7 removes this alias): pop it
-        # before constructing the model. Track whether the caller sent it
-        # at all — an explicit False still maps to 'fee'; an absent key
-        # falls through to the kind-required check below instead of
-        # silently defaulting (Task 4).
-        is_material_provided = 'is_material' in kwargs
-        is_material = kwargs.pop('is_material', False)
+        # `is_material` is retired (Task 6 removed the compatibility alias)
+        # — a payload still sending it is a clean 400, checked before
+        # constructing the model.
+        EstimateService._reject_is_material_field(kwargs)
         li = ChangeOrderLineItem(change_order=co, **kwargs)
-        if is_material_provided:
-            ChangeOrderService._apply_is_material_alias(li, is_material)
         # Guards against a caller sending freeform_kind directly on a
-        # catalog/service line (bypassing the alias above).
+        # catalog/service line.
         EstimateService._reject_freeform_kind_on_non_bare_line(li)
         if li.action == ChangeOrderLineItem.ACTION_ADD:
-            EstimateService._require_kind_on_bare_add(li, is_material_provided)
+            EstimateService._require_kind_on_bare_add(li)
         # Material lines (freeform_kind='material') get their AC from config
         # if not supplied — same default the estimate side applies at authoring.
         EstimateService._apply_material_ac_default(li)
@@ -552,29 +511,20 @@ class ChangeOrderService:
         from apps.core.services import LineItemService
         from apps.estimates.services import EstimateService
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
-        # `is_material` input alias (Task 7 removes this alias): pop it
-        # before the generic setattr loop and only touch freeform_kind when
-        # the caller actually sent it — an omitted key leaves the line's
-        # persisted kind untouched, same as the retired field would have.
-        is_material_provided = 'is_material' in kwargs
-        is_material = kwargs.pop('is_material', None)
+        # `is_material` is retired (Task 6 removed the compatibility alias)
+        # — a payload still sending it is a clean 400.
+        EstimateService._reject_is_material_field(kwargs)
         kind_provided = 'freeform_kind' in kwargs
         original_kind = li.freeform_kind
         for field, value in kwargs.items():
             setattr(li, field, value)
         # Guards against a caller sending freeform_kind directly on a
-        # catalog/service line (bypassing the alias below) — checked first
-        # so that case gets its own diagnostic rather than the immutability
-        # message below.
+        # catalog/service line — checked first so that case gets its own
+        # diagnostic rather than the immutability message below.
         EstimateService._reject_freeform_kind_on_non_bare_line(li)
-        if is_material_provided or kind_provided:
+        if kind_provided:
             # Task 4: freeform_kind is immutable after creation. See
-            # EstimateService.update_line_item for the full rationale of
-            # this reset-then-resolve-then-restore shape.
-            if not kind_provided:
-                li.freeform_kind = None
-            if is_material_provided:
-                ChangeOrderService._apply_is_material_alias(li, is_material)
+            # EstimateService.update_line_item for the same shape.
             requested_kind = li.freeform_kind
             if requested_kind is not None and requested_kind != original_kind:
                 raise ValidationError({'freeform_kind': [

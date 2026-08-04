@@ -197,17 +197,18 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         self.assertEqual(earmark.quantity, Decimal('5'))
 
     def test_bare_material_add_line_establishes_with_reverse_markup(self):
-        # Parity with estimate acceptance: a bare is_material CO line is
-        # ESTABLISHED at acceptance — placeholder cost backed out of the locked
-        # sell (sell / (1 + markup%)), QOH-0 lot, cost_source='estimated' —
-        # not left provisional.
+        # Parity with estimate acceptance: a bare freeform_kind='material'
+        # CO line is ESTABLISHED at acceptance — placeholder cost backed out
+        # of the locked sell (sell / (1 + markup%)), QOH-0 lot,
+        # cost_source='estimated' — not left provisional.
         Configuration.objects.create(
             key='default_material_markup_percent', value='25')
         co = self._make_co()
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Dragon skin', qty=Decimal('2'), price=Decimal('400.00'),
-            units='sheet', is_material=True, accounting_category=self.mat_cat.pk,
+            units='sheet', freeform_kind=ChangeOrderLineItem.KIND_MATERIAL,
+            accounting_category=self.mat_cat.pk,
         )
         self._accept(co)
 
@@ -616,7 +617,7 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
 
 class COAuthoringParityTests(ChangeOrderAcceptanceBase):
     """Part A: CO line authoring mirrors the estimate's service pick and
-    is_material marker rules."""
+    freeform_kind='material' rules."""
 
     def test_add_line_item_from_service_snapshots_service_values(self):
         co = self._make_co()
@@ -631,25 +632,30 @@ class COAuthoringParityTests(ChangeOrderAcceptanceBase):
         self.assertEqual(li.price, Decimal('100'))
         self.assertEqual(li.accounting_category, self.cat)
 
-    def test_is_material_line_defaults_ac_from_config(self):
+    def test_material_line_defaults_ac_from_config(self):
         Configuration.objects.create(
             key='default_material_accounting_category', value=str(self.mat_cat.pk))
         co = self._make_co()
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Mystery membrane', qty=Decimal('1'),
-            price=Decimal('200.00'), is_material=True,
+            price=Decimal('200.00'), freeform_kind=ChangeOrderLineItem.KIND_MATERIAL,
         )
         self.assertEqual(li.accounting_category, self.mat_cat)
 
-    def test_is_material_invalid_with_inventory_item(self):
+    def test_is_material_is_retired_field_400_even_with_inventory_item(self):
+        # Phase 3 Task 6: is_material is retired outright — sending it is a
+        # 400 regardless of what else is in the payload (the old alias's
+        # "conflicts with an inventory item" check no longer applies; the
+        # retired-field rejection fires first).
         co = self._make_co()
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(ValidationError) as ctx:
             ChangeOrderService.add_line_item(
                 co.pk, action=ChangeOrderLineItem.ACTION_ADD,
                 description='PLY', qty=Decimal('1'), price=Decimal('100.00'),
                 inventory_item=self.pli.pk, is_material=True,
             )
+        self.assertIn('is_material', ctx.exception.message_dict)
 
     def test_seed_new_copies_crystallization_fields(self):
         co = self._make_co()
@@ -658,7 +664,7 @@ class COAuthoringParityTests(ChangeOrderAcceptanceBase):
         ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Membrane', qty=Decimal('1'), price=Decimal('50.00'),
-            is_material=True, accounting_category=self.mat_cat.pk,
+            freeform_kind=ChangeOrderLineItem.KIND_MATERIAL, accounting_category=self.mat_cat.pk,
         )
         ChangeOrderService.mark_open(co.pk)
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_REJECTED)

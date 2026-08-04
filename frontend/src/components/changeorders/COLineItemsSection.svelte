@@ -18,6 +18,13 @@
     onDeleteLine = () => {},   // (coItem) → DELETE an added item
   } = $props();
 
+  // Kind badge (task-owned-money Phase 2/3): same freeform_kind vocabulary
+  // and markup/CSS as the estimate/invoice tables' LineItemTable.svelte —
+  // 'work' | 'material' | 'fee', set IFF the row's line is a bare
+  // hand-authored freeform line (catalog/service lines carry null).
+  const KIND_LABELS = { work: 'Work', material: 'Material', fee: 'Fee/Credit' };
+  function kindLabel(k) { return KIND_LABELS[k] || ''; }
+
   function fmtMoney(n) { return formatMoney(n ?? 0); }
   // "+$80.00" for an increase, "-$80.00" for a decrease (diffTotal =
   // proposedTotal - estimateTotal, so it's a real signed delta, not a
@@ -71,7 +78,12 @@
           {#if row.kind === 'unchanged'}
             <tr>
               <td>{row.lineNumber}</td>
-              <td>{row.description || '—'}</td>
+              <td>
+                {#if row.freeform_kind}
+                  <span class="kind-badge kind-{row.freeform_kind}">{kindLabel(row.freeform_kind)}</span>
+                {/if}
+                {row.description || '—'}
+              </td>
               <td class="num">{row.qty ?? '—'}</td>
               <td>{row.units || '—'}</td>
               <td class="num">{fmtMoney(row.price)}</td>
@@ -86,7 +98,12 @@
           {:else if row.kind === 'changed'}
             <tr class="row-changed">
               <td>{row.lineNumber}</td>
-              <td>{row.description || '—'}</td>
+              <td>
+                {#if row.freeform_kind}
+                  <span class="kind-badge kind-{row.freeform_kind}">{kindLabel(row.freeform_kind)}</span>
+                {/if}
+                {row.description || '—'}
+              </td>
               <td class="num">{row.qty ?? '—'}</td>
               <td>{row.units || '—'}</td>
               <td class="num">{fmtMoney(row.price)}</td>
@@ -101,7 +118,12 @@
           {:else if row.kind === 'changed-orig'}
             <tr class="row-gone">
               <td class="keep">{row.lineNumber}</td>
-              <td>{row.description || '—'}</td>
+              <td>
+                {#if row.freeform_kind}
+                  <span class="kind-badge kind-{row.freeform_kind}">{kindLabel(row.freeform_kind)}</span>
+                {/if}
+                {row.description || '—'}
+              </td>
               <td class="num">{row.qty ?? '—'}</td>
               <td>{row.units || '—'}</td>
               <td class="num">{fmtMoney(row.price)}</td>
@@ -111,7 +133,12 @@
           {:else if row.kind === 'removed'}
             <tr class="row-gone">
               <td class="keep">{row.lineNumber}</td>
-              <td>{row.description || '—'}</td>
+              <td>
+                {#if row.freeform_kind}
+                  <span class="kind-badge kind-{row.freeform_kind}">{kindLabel(row.freeform_kind)}</span>
+                {/if}
+                {row.description || '—'}
+              </td>
               <td class="num">{row.qty ?? '—'}</td>
               <td>{row.units || '—'}</td>
               <td class="num">{fmtMoney(row.price)}</td>
@@ -125,7 +152,13 @@
           {:else if row.kind === 'added'}
             <tr class="row-added">
               <td>{row.lineNumber}</td>
-              <td><span class="added-tag">+</span>{row.description || '—'}</td>
+              <td>
+                <span class="added-tag">+</span>
+                {#if row.freeform_kind}
+                  <span class="kind-badge kind-{row.freeform_kind}">{kindLabel(row.freeform_kind)}</span>
+                {/if}
+                {row.description || '—'}
+              </td>
               <td class="num">{row.qty ?? '—'}</td>
               <td>{row.units || '—'}</td>
               <td class="num">{fmtMoney(row.price)}</td>
@@ -190,6 +223,21 @@
   .diff-table tr.row-gone td.acts.keep { text-decoration: none; }
 
   .added-tag { color: #166534; font-weight: 600; margin-right: 5px; }
+
+  /* Kind badge — same markup/palette as LineItemTable.svelte's estimate/
+     invoice tables (task-owned-money Phase 2), reused here for CO lines. */
+  .kind-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    margin-right: 6px;
+  }
+  .kind-work { background: #e0e7ff; color: #3730a3; }
+  .kind-material { background: #d1fae5; color: #065f46; }
+  .kind-fee { background: #ffedd5; color: #9a3412; }
 
   /* Footer */
   .diff-table tfoot td { padding: 8px; border-top: 2px solid #e5e7eb; font-size: 13px; }

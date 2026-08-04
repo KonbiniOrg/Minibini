@@ -2,12 +2,12 @@
 gone (task-owned-money Phase 2 Task 2 review fix). The generic
 LineItemMixin (apps/api/mixins.py) passes raw request.data straight through
 to add_line_item/update_line_item, so a caller could set freeform_kind
-directly on a catalog/service/adjustment line without ever touching the
-is_material alias — violating the mapping invariant this task establishes
-(freeform_kind non-null IFF the line is a bare freeform line). These tests
-cover the write-time guard (_reject_freeform_kind_on_non_bare_line) added to
-close that gap, plus confirm the existing is_material alias paths are
-unaffected.
+directly on a catalog/service/adjustment line — violating the mapping
+invariant this task establishes (freeform_kind non-null IFF the line is a
+bare freeform line). These tests cover the write-time guard
+(_reject_freeform_kind_on_non_bare_line) added to close that gap, plus
+(Phase 3 Task 6) confirm a payload still sending the retired `is_material`
+key is rejected outright rather than silently accepted.
 """
 from decimal import Decimal
 
@@ -121,24 +121,25 @@ class EstimateFreeformKindWriteGuardTest(FreeformKindWriteGuardSetup):
         self.assertEqual(updated.freeform_kind, EstimateLineItem.KIND_FEE)
         self.assertEqual(updated.description, 'Rush (edited)')
 
-    # -- is_material alias paths still green (unaffected by the new guard) --
+    # -- is_material retired-field guard (Phase 3 Task 6) --
 
-    def test_is_material_alias_add_bare_material_line_still_works(self):
-        li = EstimateService.add_line_item(
-            self.estimate.pk, description='ABS sheet', qty=Decimal('1'),
-            price=Decimal('400'), units='ea', accounting_category=self.cat.pk,
-            is_material=True,
-        )
-        li.refresh_from_db()
-        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_MATERIAL)
+    def test_is_material_on_add_is_retired_field_400(self):
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.add_line_item(
+                self.estimate.pk, description='ABS sheet', qty=Decimal('1'),
+                price=Decimal('400'), units='ea', accounting_category=self.cat.pk,
+                is_material=True,
+            )
+        self.assertIn('is_material', ctx.exception.message_dict)
 
-    def test_is_material_alias_rejects_inventory_item_line(self):
-        with self.assertRaises(ValidationError):
+    def test_is_material_on_add_is_retired_field_400_even_with_inventory_item(self):
+        with self.assertRaises(ValidationError) as ctx:
             EstimateService.add_line_item(
                 self.estimate.pk, description='ply', qty=Decimal('1'),
                 price=Decimal('1'), accounting_category=self.cat.pk,
                 inventory_item=self.pli.pk, is_material=True,
             )
+        self.assertIn('is_material', ctx.exception.message_dict)
 
 
 class ChangeOrderFreeformKindWriteGuardTest(FreeformKindWriteGuardSetup):
@@ -169,13 +170,13 @@ class ChangeOrderFreeformKindWriteGuardTest(FreeformKindWriteGuardSetup):
         li.refresh_from_db()
         self.assertEqual(li.freeform_kind, ChangeOrderLineItem.KIND_FEE)
 
-    # -- is_material alias path still green --
+    # -- is_material retired-field guard (Phase 3 Task 6) --
 
-    def test_is_material_alias_add_bare_material_line_still_works(self):
-        li = ChangeOrderService.add_line_item(
-            self.co.pk, action=ChangeOrderLineItem.ACTION_ADD,
-            description='ABS sheet', qty=Decimal('1'), price=Decimal('400'),
-            units='ea', accounting_category=self.cat.pk, is_material=True,
-        )
-        li.refresh_from_db()
-        self.assertEqual(li.freeform_kind, ChangeOrderLineItem.KIND_MATERIAL)
+    def test_is_material_on_add_is_retired_field_400(self):
+        with self.assertRaises(ValidationError) as ctx:
+            ChangeOrderService.add_line_item(
+                self.co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+                description='ABS sheet', qty=Decimal('1'), price=Decimal('400'),
+                units='ea', accounting_category=self.cat.pk, is_material=True,
+            )
+        self.assertIn('is_material', ctx.exception.message_dict)

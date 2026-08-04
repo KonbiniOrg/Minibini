@@ -293,7 +293,7 @@ class ServiceLineSendGateTest(DeferredServiceBase):
 
 
 class ReviseEstimateCarriesDescriptorFieldsTest(DeferredServiceBase):
-    """revise_estimate must copy service_item and is_material onto the new revision's lines."""
+    """revise_estimate must copy service_item and freeform_kind onto the new revision's lines."""
 
     def setUp(self):
         super().setUp()
@@ -301,7 +301,7 @@ class ReviseEstimateCarriesDescriptorFieldsTest(DeferredServiceBase):
         self.service_line = EstimateService.add_line_item_from_service(
             self.estimate.pk, self.service_item.pk, Decimal('2'),
         )
-        # Add a bare is_material=True line (requires DRAFT; supply AC explicitly).
+        # Add a bare freeform_kind='material' line (requires DRAFT; supply AC explicitly).
         self.material_line = EstimateService.add_line_item(
             self.estimate.pk,
             description='Raw stock',
@@ -309,7 +309,7 @@ class ReviseEstimateCarriesDescriptorFieldsTest(DeferredServiceBase):
             price=Decimal('10'),
             units='ft',
             accounting_category=self.cat.pk,
-            is_material=True,
+            freeform_kind=EstimateLineItem.KIND_MATERIAL,
         )
         # revise_estimate requires a non-draft parent. Force OPEN bypassing
         # model validation (the estimate has no deliverable, but that guard is
@@ -324,7 +324,7 @@ class ReviseEstimateCarriesDescriptorFieldsTest(DeferredServiceBase):
         self.assertEqual(len(service_lines), 1)
         self.assertEqual(service_lines[0].service_item_id, self.service_item.pk)
 
-    def test_is_material_preserved_on_revision(self):
+    def test_freeform_kind_material_preserved_on_revision(self):
         revision = EstimateService.revise_estimate(self.estimate.pk)
         lines = list(EstimateLineItem.objects.filter(estimate=revision).order_by('line_number'))
         material_lines = [li for li in lines if li.freeform_kind == EstimateLineItem.KIND_MATERIAL]

@@ -20,6 +20,10 @@
  *   kind:        'unchanged' | 'changed' | 'removed' | 'added' | 'changed-orig'
  *   lineNumber:  display line number
  *   description, qty, units, price, total: display values
+ *   freeform_kind: 'work' | 'material' | 'fee' | null — same field the
+ *                estimate tables badge (task-owned-money Phase 2); sourced
+ *                from whichever line item is on display for this row (the
+ *                CO item for changed/added, the estimate line otherwise).
  *   coItem:      the backing CO line item (for edit/delete/undo) — null for
  *                unchanged/changed-orig
  *   estLine:     the backing estimate line (null for 'added')
@@ -61,6 +65,7 @@ export function buildMergedRows(estimateLines, coLineItems) {
         units: replaceCI.units,
         price: replaceCI.price,
         total: Number(replaceCI.qty || 0) * Number(replaceCI.price || 0),
+        freeform_kind: replaceCI.freeform_kind ?? null,
         coItem: replaceCI,
         estLine: el,
       });
@@ -72,6 +77,7 @@ export function buildMergedRows(estimateLines, coLineItems) {
         units: el.units,
         price: el.price,
         total: Number(el.qty || 0) * Number(el.price || 0),
+        freeform_kind: el.freeform_kind ?? null,
         coItem: null,
         estLine: el,
       });
@@ -85,6 +91,7 @@ export function buildMergedRows(estimateLines, coLineItems) {
         units: el.units,
         price: el.price,
         total: Number(el.qty || 0) * Number(el.price || 0),
+        freeform_kind: el.freeform_kind ?? null,
         coItem: removeCI,
         estLine: el,
       });
@@ -98,6 +105,7 @@ export function buildMergedRows(estimateLines, coLineItems) {
         units: el.units,
         price: el.price,
         total: Number(el.qty || 0) * Number(el.price || 0),
+        freeform_kind: el.freeform_kind ?? null,
         coItem: null,
         estLine: el,
       });
@@ -114,6 +122,7 @@ export function buildMergedRows(estimateLines, coLineItems) {
       units: ci.units,
       price: ci.price,
       total: Number(ci.qty || 0) * Number(ci.price || 0),
+      freeform_kind: ci.freeform_kind ?? null,
       coItem: ci,
       estLine: null,
     });

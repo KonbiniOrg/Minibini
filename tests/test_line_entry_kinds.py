@@ -5,10 +5,10 @@ on top of the freeform_kind field itself (Task 2) and acceptance's three-way
 branch on it (Task 3):
 
 1. Kind required on a bare freeform ADD — the old silent bare->fee default
-   at ENTRY is gone. A direct freeform_kind (including 'work') is honored;
-   the is_material alias still works (True->material, False->fee); an
-   explicit is_material=True conflicting with a different direct kind is a
-   400, but direct kind wins over an absent/False is_material.
+   at ENTRY is gone. A direct freeform_kind (including 'work') is required;
+   `is_material` is retired (Task 6 removed the compatibility alias) — any
+   payload still sending it is a clean 400 naming `is_material`, regardless
+   of what else (including a valid freeform_kind) is in the payload.
 2. Sign rules: negative price only on a fee/credit line; a fee/credit line's
    price must never be zero (it would crystallize into a Fee with
    unit_rate=0, which FeeService forbids).
@@ -17,12 +17,16 @@ branch on it (Task 3):
    existing generic hand-line AC-required check once every hand-line has a
    determinate kind; covered here for kind-specific documentation.
 4. freeform_kind is immutable after creation — an update attempting to
-   change it (directly or via the is_material alias) is rejected; re-sending
-   the same value is a no-op, not an error.
+   change it directly is rejected; re-sending the same value is a no-op,
+   not an error. A retired `is_material` key on an update is a 400 same as
+   on add.
 
 ChangeOrderService mirrors all of this, but "kind required on ADD" only
 applies to action=ADD lines — REPLACE/REMOVE lines mirror the old atom's
 type or don't crystallize a new one, so they carry no kind requirement.
+
+is_material retired-field tests live in this file (the old alias-mapping
+tests, rewritten) and in test_freeform_kind_write_guard.py.
 """
 from decimal import Decimal
 
@@ -73,56 +77,39 @@ class EstimateKindRequiredOnAddTest(LineEntryKindsSetup):
         li.refresh_from_db()
         self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_WORK)
 
-    def test_direct_kind_wins_over_absent_is_material(self):
-        # No is_material at all — direct freeform_kind='work' must not be
-        # clobbered by the old alias's unconditional bare->fee mapping.
-        li = EstimateService.add_line_item(
-            self.estimate.pk, description='Cutting', qty=Decimal('2'),
-            price=Decimal('50.00'), accounting_category=self.cat.pk,
-            freeform_kind=EstimateLineItem.KIND_WORK,
-        )
-        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_WORK)
+    def test_bare_add_with_is_material_true_is_retired_field_400(self):
+        # is_material is retired (Task 6 removed the compatibility alias
+        # that used to translate True -> 'material').
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.add_line_item(
+                self.estimate.pk, description='ABS', qty=Decimal('1'),
+                price=Decimal('400.00'), accounting_category=self.cat.pk,
+                is_material=True,
+            )
+        self.assertIn('is_material', ctx.exception.message_dict)
 
-    def test_direct_kind_wins_over_explicit_false_is_material(self):
-        li = EstimateService.add_line_item(
-            self.estimate.pk, description='Cutting', qty=Decimal('2'),
-            price=Decimal('50.00'), accounting_category=self.cat.pk,
-            freeform_kind=EstimateLineItem.KIND_WORK, is_material=False,
-        )
-        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_WORK)
+    def test_bare_add_with_is_material_false_is_retired_field_400(self):
+        # Same for the historical False -> 'fee' mapping.
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.add_line_item(
+                self.estimate.pk, description='Rush', qty=Decimal('1'),
+                price=Decimal('25.00'), accounting_category=self.cat.pk,
+                is_material=False,
+            )
+        self.assertIn('is_material', ctx.exception.message_dict)
 
-    def test_is_material_true_conflicting_with_direct_kind_raises_400(self):
+    def test_is_material_alongside_direct_kind_is_still_retired_field_400(self):
+        # Even when a valid freeform_kind is also present, sending
+        # is_material at all is rejected — it no longer "loses" to a direct
+        # kind; the retired field is a hard error regardless of payload
+        # shape.
         with self.assertRaises(ValidationError) as ctx:
             EstimateService.add_line_item(
                 self.estimate.pk, description='Cutting', qty=Decimal('2'),
                 price=Decimal('50.00'), accounting_category=self.cat.pk,
                 freeform_kind=EstimateLineItem.KIND_WORK, is_material=True,
             )
-        self.assertIn('freeform_kind', ctx.exception.message_dict)
-
-    def test_is_material_true_matching_direct_material_kind_succeeds(self):
-        li = EstimateService.add_line_item(
-            self.estimate.pk, description='ABS', qty=Decimal('1'),
-            price=Decimal('400.00'), accounting_category=self.cat.pk,
-            freeform_kind=EstimateLineItem.KIND_MATERIAL, is_material=True,
-        )
-        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_MATERIAL)
-
-    def test_is_material_alias_still_maps_true_to_material(self):
-        li = EstimateService.add_line_item(
-            self.estimate.pk, description='ABS', qty=Decimal('1'),
-            price=Decimal('400.00'), accounting_category=self.cat.pk,
-            is_material=True,
-        )
-        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_MATERIAL)
-
-    def test_is_material_alias_still_maps_false_to_fee(self):
-        li = EstimateService.add_line_item(
-            self.estimate.pk, description='Rush', qty=Decimal('1'),
-            price=Decimal('25.00'), accounting_category=self.cat.pk,
-            is_material=False,
-        )
-        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_FEE)
+        self.assertIn('is_material', ctx.exception.message_dict)
 
     def test_non_bare_line_unaffected_by_kind_requirement(self):
         # Catalog (inventory_item) lines never carry freeform_kind — the
@@ -283,7 +270,11 @@ class EstimateKindImmutableOnUpdateTest(LineEntryKindsSetup):
         li.refresh_from_db()
         self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_WORK)
 
-    def test_update_changing_kind_via_is_material_alias_rejected(self):
+    def test_update_with_is_material_is_retired_field_400(self):
+        # is_material is retired on update too (Task 6) — this used to be
+        # the alias's "changing kind via is_material is rejected" case;
+        # now it's rejected up front as a retired field, before the
+        # immutability check even runs.
         li = EstimateService.add_line_item(
             self.estimate.pk, description='Cutting', qty=Decimal('1'),
             price=Decimal('50.00'), accounting_category=self.cat.pk,
@@ -291,7 +282,7 @@ class EstimateKindImmutableOnUpdateTest(LineEntryKindsSetup):
         )
         with self.assertRaises(ValidationError) as ctx:
             EstimateService.update_line_item(li.pk, is_material=True)
-        self.assertIn('freeform_kind', ctx.exception.message_dict)
+        self.assertIn('is_material', ctx.exception.message_dict)
         li.refresh_from_db()
         self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_WORK)
 
@@ -307,15 +298,21 @@ class EstimateKindImmutableOnUpdateTest(LineEntryKindsSetup):
         self.assertEqual(updated.freeform_kind, EstimateLineItem.KIND_WORK)
         self.assertEqual(updated.description, 'Cutting (edited)')
 
-    def test_update_resending_false_is_material_on_fee_line_is_a_noop_success(self):
+    def test_update_resending_is_material_false_is_still_retired_field_400(self):
+        # Even "False", and even when it would have been a no-op under the
+        # old alias, is_material is a hard 400 now — there is no meaningful
+        # value for the retired key any more.
         li = EstimateService.add_line_item(
             self.estimate.pk, description='Rush', qty=Decimal('1'),
             price=Decimal('25.00'), accounting_category=self.cat.pk,
-            is_material=False,
+            freeform_kind=EstimateLineItem.KIND_FEE,
         )
-        updated = EstimateService.update_line_item(li.pk, is_material=False, qty=Decimal('2'))
-        self.assertEqual(updated.freeform_kind, EstimateLineItem.KIND_FEE)
-        self.assertEqual(updated.qty, Decimal('2'))
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.update_line_item(li.pk, is_material=False, qty=Decimal('2'))
+        self.assertIn('is_material', ctx.exception.message_dict)
+        li.refresh_from_db()
+        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_FEE)
+        self.assertEqual(li.qty, Decimal('1'))
 
     def test_update_other_fields_without_touching_kind_leaves_it_unchanged(self):
         li = EstimateService.add_line_item(
@@ -347,7 +344,7 @@ class ChangeOrderKindRequiredOnAddTest(LineEntryKindsSetup):
         )
         self.assertEqual(li.freeform_kind, ChangeOrderLineItem.KIND_WORK)
 
-    def test_is_material_true_conflicting_with_direct_kind_raises_400(self):
+    def test_is_material_alongside_direct_kind_is_retired_field_400(self):
         with self.assertRaises(ValidationError) as ctx:
             ChangeOrderService.add_line_item(
                 self.co.pk, action=ChangeOrderLineItem.ACTION_ADD,
@@ -355,7 +352,7 @@ class ChangeOrderKindRequiredOnAddTest(LineEntryKindsSetup):
                 accounting_category=self.cat.pk,
                 freeform_kind=ChangeOrderLineItem.KIND_WORK, is_material=True,
             )
-        self.assertIn('freeform_kind', ctx.exception.message_dict)
+        self.assertIn('is_material', ctx.exception.message_dict)
 
     def test_replace_line_without_kind_is_not_required(self):
         # REPLACE/REMOVE lines mirror the old atom or retire it — the

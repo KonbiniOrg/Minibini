@@ -87,3 +87,69 @@ class FeeServiceSignedAmountTest(TestCase):
         )
         updated = FeeService.update(fee.pk, unit_rate=Decimal('-5.00'))
         self.assertEqual(updated.unit_rate, Decimal('-5.00'))
+
+
+class FeeServiceQuantityValidationTest(TestCase):
+    """FeeService.create_on_job/update reject quantity <= 0 (Phase 3 Task 6):
+    zero always zeroes compute_amount() regardless of unit_rate, and
+    negative quantity would silently flip a charge/credit's sign instead of
+    the caller using unit_rate's own sign for that (the credit convention
+    already covers negative amounts)."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Test', last_name='Customer', email='test3@example.com'
+        )
+        self.ac = AccountingCategory.objects.create(name='Services3', code='SVC3')
+        self.job = Job.objects.create(
+            job_number='JOB-T-3', status=Job.STATUS_DRAFT, contact=self.contact
+        )
+
+    def test_create_on_job_rejects_zero_quantity(self):
+        with self.assertRaises(ValidationError) as ctx:
+            FeeService.create_on_job(
+                self.job, description='Zero qty', quantity=Decimal('0'),
+                unit_rate=Decimal('10.00'), accounting_category=self.ac,
+            )
+        self.assertIn('quantity', ctx.exception.message_dict)
+
+    def test_create_on_job_rejects_negative_quantity(self):
+        with self.assertRaises(ValidationError) as ctx:
+            FeeService.create_on_job(
+                self.job, description='Negative qty', quantity=Decimal('-2'),
+                unit_rate=Decimal('10.00'), accounting_category=self.ac,
+            )
+        self.assertIn('quantity', ctx.exception.message_dict)
+
+    def test_create_on_job_accepts_positive_quantity(self):
+        fee = FeeService.create_on_job(
+            self.job, description='Fine', quantity=Decimal('3'),
+            unit_rate=Decimal('10.00'), accounting_category=self.ac,
+        )
+        self.assertEqual(fee.quantity, Decimal('3'))
+
+    def test_update_rejects_zero_quantity(self):
+        fee = FeeService.create_on_job(
+            self.job, description='Starts fine', quantity=Decimal('1'),
+            unit_rate=Decimal('10.00'), accounting_category=self.ac,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            FeeService.update(fee.pk, quantity=Decimal('0'))
+        self.assertIn('quantity', ctx.exception.message_dict)
+
+    def test_update_rejects_negative_quantity(self):
+        fee = FeeService.create_on_job(
+            self.job, description='Starts fine', quantity=Decimal('1'),
+            unit_rate=Decimal('10.00'), accounting_category=self.ac,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            FeeService.update(fee.pk, quantity=Decimal('-1'))
+        self.assertIn('quantity', ctx.exception.message_dict)
+
+    def test_update_accepts_positive_quantity(self):
+        fee = FeeService.create_on_job(
+            self.job, description='Starts fine', quantity=Decimal('1'),
+            unit_rate=Decimal('10.00'), accounting_category=self.ac,
+        )
+        updated = FeeService.update(fee.pk, quantity=Decimal('4'))
+        self.assertEqual(updated.quantity, Decimal('4'))

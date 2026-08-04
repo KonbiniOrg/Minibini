@@ -164,6 +164,29 @@ describe('COAddLineForm', () => {
         expect.objectContaining({ action: 'add', freeform_kind: 'fee', price: '-25' }));
       expect(onSaved).toHaveBeenCalled();
     });
+
+    it('rejects a zero amount with a field error, mirroring FeeModal', async () => {
+      const choice = { type: 'freeform', kind: 'fee', typed: 'Free sample' };
+      const { getByLabelText, getByRole, findByText } = render(COAddLineForm, {
+        props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
+      });
+      await fireEvent.input(getByLabelText(/amount/i), { target: { value: '0' } });
+      await fireEvent.change(getByLabelText(/accounting category/i), { target: { value: '7' } });
+      await fireEvent.click(getByRole('button', { name: /add/i }));
+      expect(api.post).not.toHaveBeenCalled();
+      expect(await findByText(/must not have a zero price/i)).toBeInTheDocument();
+    });
+
+    it('rejects an empty amount as zero for a fee line', async () => {
+      const choice = { type: 'freeform', kind: 'fee', typed: 'Free sample' };
+      const { getByLabelText, getByRole, findByText } = render(COAddLineForm, {
+        props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
+      });
+      await fireEvent.change(getByLabelText(/accounting category/i), { target: { value: '7' } });
+      await fireEvent.click(getByRole('button', { name: /add/i }));
+      expect(api.post).not.toHaveBeenCalled();
+      expect(await findByText(/must not have a zero price/i)).toBeInTheDocument();
+    });
   });
 
   describe('kind=work', () => {

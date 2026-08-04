@@ -159,6 +159,16 @@
         fieldErrs = { price: ['Negative price is only allowed on a Fee/Credit line.'] };
         return;
       }
+      // A Fee/Credit line's amount must not be zero — mirrors
+      // FeeService._reject_zero_unit_rate's counterpart for hand-line entry
+      // (apps/estimates/services.py EstimateService._validate_price) and
+      // FeeModal's client-side zero-rate check; caught here too so the user
+      // doesn't need a round trip to find out. An empty amount falls back
+      // to '0' in the payload below, so it's zero too.
+      if (isFee && (price === '' || priceNum === 0)) {
+        fieldErrs = { price: ['A Fee/Credit line must not have a zero price.'] };
+        return;
+      }
       payload = {
         description,
         qty: qty || '0',

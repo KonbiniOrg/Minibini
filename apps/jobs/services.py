@@ -1339,6 +1339,19 @@ class FeeService:
             raise ValidationError({'unit_rate': ['unit_rate must not be zero.']})
 
     @staticmethod
+    def _reject_non_positive_quantity(quantity):
+        """A Fee's quantity multiplies unit_rate into compute_amount() — zero
+        or negative quantity is meaningless (zero always charges nothing
+        regardless of unit_rate; negative would silently flip the sign of a
+        credit/charge rather than the caller using unit_rate's own sign for
+        that, as the credit convention already does). The model has no
+        validator for this (full_clean() doesn't catch it — DecimalField has
+        no MinValueValidator here), so it's enforced here per house pattern,
+        mirroring `_reject_zero_unit_rate`."""
+        if quantity is not None and Decimal(quantity) <= 0:
+            raise ValidationError({'quantity': ['quantity must be greater than zero.']})
+
+    @staticmethod
     def create_on_job(job, *, description='', quantity=Decimal('1.00'),
                       unit_rate=None, accounting_category=None,
                       sort_order=None):
@@ -1347,6 +1360,7 @@ class FeeService:
         (→ 400) via full_clean, never a 500."""
         _assert_job_not_on_hold(job, 'add a fee to this job')
         FeeService._reject_zero_unit_rate(unit_rate)
+        FeeService._reject_non_positive_quantity(quantity)
         with transaction.atomic():
             if sort_order is None:
                 sort_order = FeeService._next_sort_order(job)
@@ -1371,6 +1385,8 @@ class FeeService:
         _assert_job_not_on_hold(fee.job, 'edit this fee')
         if 'unit_rate' in kwargs:
             FeeService._reject_zero_unit_rate(kwargs['unit_rate'])
+        if 'quantity' in kwargs:
+            FeeService._reject_non_positive_quantity(kwargs['quantity'])
         for field, value in kwargs.items():
             setattr(fee, field, value)
         fee.full_clean()

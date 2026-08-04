@@ -35,7 +35,8 @@ class EstimateMaterialAcDefaultTest(TestCase):
     def test_material_without_ac_defaults_from_config(self):
         li = EstimateService.add_line_item(
             self.estimate.pk, description='ABS sheet', qty=Decimal('1'),
-            price=Decimal('400'), units='ea', is_material=True,
+            price=Decimal('400'), units='ea',
+            freeform_kind=EstimateLineItem.KIND_MATERIAL,
         )
         li.refresh_from_db()
         self.assertEqual(li.accounting_category, self.default_cat)
@@ -43,7 +44,8 @@ class EstimateMaterialAcDefaultTest(TestCase):
     def test_material_with_explicit_ac_is_respected(self):
         li = EstimateService.add_line_item(
             self.estimate.pk, description='ABS sheet', qty=Decimal('1'),
-            price=Decimal('400'), units='ea', is_material=True,
+            price=Decimal('400'), units='ea',
+            freeform_kind=EstimateLineItem.KIND_MATERIAL,
             accounting_category=self.other_cat.pk,
         )
         li.refresh_from_db()
@@ -56,7 +58,8 @@ class EstimateMaterialAcDefaultTest(TestCase):
         with self.assertRaises(ValidationError):
             EstimateService.add_line_item(
                 self.estimate.pk, description='ABS sheet', qty=Decimal('1'),
-                price=Decimal('400'), units='ea', is_material=True,
+                price=Decimal('400'), units='ea',
+                freeform_kind=EstimateLineItem.KIND_MATERIAL,
             )
 
     def test_bare_add_without_kind_raises_kind_required_not_ac(self):
@@ -72,11 +75,11 @@ class EstimateMaterialAcDefaultTest(TestCase):
         self.assertIn('freeform_kind', ctx.exception.message_dict)
 
     def test_fee_without_ac_still_raises(self):
-        # is_material=False (a fee) is unchanged: AC is still required.
+        # freeform_kind='fee' is unchanged: AC is still required.
         with self.assertRaises(ValidationError) as ctx:
             EstimateService.add_line_item(
                 self.estimate.pk, description='Rush', qty=Decimal('1'),
-                price=Decimal('25'), is_material=False,
+                price=Decimal('25'), freeform_kind=EstimateLineItem.KIND_FEE,
             )
         self.assertIn('accounting_category', ctx.exception.message_dict)
 
@@ -87,13 +90,32 @@ class EstimateMaterialAcDefaultTest(TestCase):
         li = EstimateService.add_line_item(
             self.estimate.pk, description='ABS', qty=Decimal('1'),
             price=Decimal('400'), accounting_category=self.other_cat.pk,
-            is_material=False,
+            freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.update_line_item(
+                li.pk, freeform_kind=EstimateLineItem.KIND_MATERIAL, accounting_category=None,
+            )
+        self.assertIn('freeform_kind', ctx.exception.message_dict)
+        li.refresh_from_db()
+        self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_FEE)
+        self.assertEqual(li.accounting_category, self.other_cat)
+
+    def test_update_with_is_material_is_retired_field_400(self):
+        # Phase 3 Task 6: is_material is retired outright on update too —
+        # this used to be the alias's "can't use is_material to sneak past
+        # the immutability guard" case; now it 400s as a retired field
+        # before the immutability check even runs.
+        li = EstimateService.add_line_item(
+            self.estimate.pk, description='ABS', qty=Decimal('1'),
+            price=Decimal('400'), accounting_category=self.other_cat.pk,
+            freeform_kind=EstimateLineItem.KIND_FEE,
         )
         with self.assertRaises(ValidationError) as ctx:
             EstimateService.update_line_item(
                 li.pk, is_material=True, accounting_category=None,
             )
-        self.assertIn('freeform_kind', ctx.exception.message_dict)
+        self.assertIn('is_material', ctx.exception.message_dict)
         li.refresh_from_db()
         self.assertEqual(li.freeform_kind, EstimateLineItem.KIND_FEE)
         self.assertEqual(li.accounting_category, self.other_cat)

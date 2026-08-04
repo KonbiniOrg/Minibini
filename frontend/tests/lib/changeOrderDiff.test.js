@@ -59,6 +59,40 @@ describe('buildMergedRows', () => {
     expect(rows[3].kind).toBe('added');
     expect(rows[3].estLine).toBeNull();
   });
+
+  // task-owned-money Phase 3 Task 6: freeform_kind carries through onto
+  // every row (matching the estimate tables' kind badge — LineItemTable.svelte).
+  it('carries freeform_kind from the estimate line onto an unchanged row', () => {
+    const lines = [{ ...EST_LINES[0], freeform_kind: 'work' }];
+    const rows = buildMergedRows(lines, []);
+    expect(rows[0].freeform_kind).toBe('work');
+  });
+
+  it('carries freeform_kind from the CO item onto changed/added rows, and from the estimate line onto changed-orig', () => {
+    const replace = {
+      line_item_id: 10, action: 'replace', target_line_item: 2,
+      description: 'Panel XL', qty: 4, units: 'ea', price: '60.00', line_number: 1,
+      freeform_kind: 'material',
+    };
+    const lines = EST_LINES.map((l) => (l.line_item_id === 2 ? { ...l, freeform_kind: 'fee' } : l));
+    const rows = buildMergedRows(lines, [replace]);
+    expect(rows[1].kind).toBe('changed');
+    expect(rows[1].freeform_kind).toBe('material');
+    expect(rows[2].kind).toBe('changed-orig');
+    expect(rows[2].freeform_kind).toBe('fee');
+  });
+
+  it('carries freeform_kind onto a removed row from the estimate line', () => {
+    const remove = { line_item_id: 11, action: 'remove', target_line_item: 1, line_number: 1 };
+    const lines = EST_LINES.map((l) => (l.line_item_id === 1 ? { ...l, freeform_kind: 'fee' } : l));
+    const rows = buildMergedRows(lines, [remove]);
+    expect(rows[0].freeform_kind).toBe('fee');
+  });
+
+  it('defaults freeform_kind to null when the line carries none (catalog/service lines)', () => {
+    const rows = buildMergedRows(EST_LINES, []);
+    expect(rows[0].freeform_kind).toBeNull();
+  });
 });
 
 describe('lineDiffTotals', () => {
