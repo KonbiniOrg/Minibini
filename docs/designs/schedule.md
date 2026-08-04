@@ -24,6 +24,13 @@ The schedule owns no schema of its own. It reads:
 - `Task.assignee`, `Task.worker_queue` (queue position, shared with the Job
   Board), `Task.est_worker_time` (required once a task has an assignee),
   `Task.status`.
+- `Task.expected_worker_time()` — not the raw `est_worker_time` field —
+  is what the schedule actually sizes bars from (see the note at the end
+  of §3). For a subtask under a quantity structure this scales by the
+  parent's `est_qty`; for every other task it equals the raw field.
+  `Task.parent_task` — a task with ≥1 subtask (a **parent**, see
+  `jobs-and-tasks.md` §4a) draws no bar of its own; its schedulable work
+  lives entirely on its children.
 - `Blep.start_time` / `Blep.end_time` — actuals; an open blep (`end_time IS
   NULL`) is the running session.
 - `Job.status`, `Job.on_hold` — the work-driven scoping below.
@@ -151,7 +158,7 @@ now-line:
 | `kind` | Source | Colour |
 |---|---|---|
 | `actual` | one per contiguous blep session (immutable past); the session holding an open blep ends at `now` and is flagged `is_running` | dark (darkened accent) |
-| `forecast` | the assignee's remaining estimate of unfinished **planned** work — full estimate if unstarted, `est − logged` otherwise, floored at `MIN_FORECAST` (10 min) | light (accent) |
+| `forecast` | the assignee's remaining estimate of unfinished **planned** work — full estimate if unstarted, `expected − logged` otherwise, floored at `MIN_FORECAST` (10 min) | light (accent) |
 
 Actual pieces are wall-clock-anchored and `<= now`; forecasts cascade from a
 `cursor` (queue order, floored at `now`) and are `>= now`, so no two bars in
@@ -187,6 +194,25 @@ The pure math lives in `calendar_arithmetic.py` over `WeekEnvelope`:
 `next_workable_moment`, `add_work_time`, `segments_for`,
 `work_minutes_between`, `is_working_day`, `shift_working_days`,
 `day_segments_clamped`.
+
+**Quantity structures (task-owned-money Phase 4).** Every place this
+service used to read `task.est_worker_time` directly — the running-blep
+remaining-time projection, the per-worker remaining-time calc, and each
+forecast bar's `est_minutes` — reads `task.expected_worker_time()`
+instead (`jobs-and-tasks.md` §4a.2): a flag-`True` subtask's bar is
+sized by its own per-unit estimate × its parent's `est_qty`, not the
+raw per-unit number. A **parent task draws no bar at all**: `_build_lane`'s
+task queryset excludes any task with subtasks
+(`.exclude(Exists(Task.objects.filter(parent_task_id=OuterRef('pk'))))`)
+at the query level, not just via the `assign()` guard that normally
+keeps a parent from acquiring `worker_queue`/assignee state in the
+first place — a task can become a parent (gain its first subtask)
+*after* it already carried planning state from before it had children,
+and the query-level exclusion covers that case too. Every queryset that
+feeds `expected_worker_time()`/`expected_qty()` (`window_bleps` and
+`_build_lane`'s `tasks_qs`) carries `select_related('parent_task')`, so
+a lane with several same-parent subtasks costs one JOIN, not one query
+per sibling.
 
 ---
 

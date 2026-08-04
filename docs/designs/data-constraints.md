@@ -827,7 +827,29 @@ Valid transitions:
 - **parent_task** (optional FK → self, CASCADE): **one level only** — a
   task whose `parent_task` is set can never itself be a parent
   (`TaskService.create_direct` rejects grandchildren and cross-job
-  parents)
+  parents). A task with ≥1 subtask (`Task.is_parent`, a live
+  `.subtasks.exists()` query, not a stored flag) is **non-startable**:
+  start-work, historical-blep, and assign are all rejected on it
+  (delegate to the children instead), a first subtask can only be added
+  while the parent's own status is `pending`/`blocked`, and
+  complete/cancel are rejected while any child is non-terminal.
+  Reparenting or detaching a child away from a parent that a **non-draft**
+  estimate/change-order/invoice claims is rejected (`TaskService.update_task`,
+  `_task_claimed_by_non_draft_document`) — same "draft still editable"
+  doctrine as task deletion above. Full behavior:
+  `jobs-and-tasks.md` §4a.1/§4a.3.
+- **qty_scales_with_parent**: BooleanField, DB default `True`.
+  **Subtask-only** — inert on a top-level task (`Task._parent_multiplier()`
+  never reads it when `parent_task_id` is null). `True` means the task's
+  own `est_qty`/`est_worker_time` are per-unit and multiply by the
+  parent's `est_qty` to get `expected_qty()`/`expected_worker_time()`;
+  `False` means they're already a per-batch total. Default at creation
+  (`TaskService.create_direct`, when the caller doesn't specify a value):
+  `parent.unit_label == 'ea'`. Freely editable after creation, same as
+  `est_qty` — not a `MONEY_FIELDS` member. `validate_data.py` adds no
+  check for this field on a parentless row (comment in `check_tasks()`
+  explains why — the value is equally inert there). Full derivation:
+  `jobs-and-tasks.md` §4a.2.
 - **sort_order**: auto-assigned per Job on save
 - **name** / **description**: text
 
@@ -845,6 +867,18 @@ Valid transitions:
   Unassigning has no requirement.
 - A Task with any Bleps must not be in `pending`. Validator-enforced.
 - Task → terminal auto-closes any open Bleps (end_time := now).
+- **Subtask billing invariant (ERROR, `validate_data.check_subtask_billing_invariant`)**:
+  no `EstimateLineItemSource` / `ChangeOrderLineItemSource` /
+  `InvoiceLineItemSource` row may have `source_type='task'` pointing at a
+  subtask (`parent_task` set) — the parent is the sole unit of billing
+  (§1.13, §1.16 below; `jobs-and-tasks.md` §4a.3). Unreachable through
+  normal app usage (the wizard pools and the shared claim-check both
+  exclude subtasks); a hit means a bypass path.
+- **Parent-with-own-bleps / parent-with-own-assignee (WARN, tolerated
+  history)**: a blep or an assignee that landed directly on a task
+  *before* it grew its first subtask is legitimate pre-structure history
+  the non-startable gate can't retroactively erase — flagged as a
+  warning, once per task, never an error.
 - **Deletion (Rule 1)**: `TaskService.delete_task` refuses when the task is
   in-progress/complete, has bleps, is claimed by a **non-draft** estimate/CO,
   or is on a live invoice — "cancel it instead." Draft claims stay deletable
@@ -1176,7 +1210,19 @@ structures.
 #### WorkTemplate
 
 - **template_name**: max 255 chars; **description**: text
-- **base_price**: optional decimal
+- **base_price**: optional decimal — when `is_product_structure` is set,
+  this becomes the minted parent task's `rate` (`None` unless set, in
+  which case `Task.effective_rate()`'s parent-derivation fallback takes
+  over instead — `jobs-and-tasks.md` §4a.4)
+- **is_product_structure**: BooleanField, default `False`
+  (task-owned-money Phase 4). When set,
+  `generate_tasks_for_job(job, quantity)` mints one top-level parent
+  task (`est_qty=quantity`) plus one per-unit subtask per active
+  `TemplateTaskAssociation`, instead of the flat per-item generation
+  every other template uses. **Settable only via the API**
+  (`PATCH /api/work-templates/{id}/`, `CanManageConfig`) — no SPA UI or
+  Django admin surface exists to author or toggle it. Full mechanics:
+  `jobs-and-tasks.md` §4a.4.
 - **created_date**: auto-set
 - Hard-deleted. Nothing in the system holds a back-reference to a
   WorkTemplate after it has populated a Job, so a delete cascades cleanly
@@ -1630,6 +1676,13 @@ customer-facing manifest distinct from billing line items.
   Changes via direct edit of the live list (pre-send) or via the
   draft-CO edit-in-place flow. Anchored once shipped (see below).
 - **units** (required, max 50 chars): drawn from `Configuration['units_list']`
+- **source_task** (optional FK → Task, `SET_NULL`, `related_name='sourced_deliverables'`;
+  task-owned-money Phase 4): **provenance only** — the top-level structure
+  task an "Add as deliverable" copy was minted from, or that a
+  "Create work structure" action minted from this row. Same invariant
+  family as `Task.source_scheme` — nothing computes or syncs through it
+  after the one-time copy; deleting the task never blocks on a
+  deliverable it seeded. Full bridge mechanics: `jobs-and-tasks.md` §4a.6.
 - **sort_order** (PositiveInteger): auto-assigned to next slot on save when
   unset (10, 20, 30, …). Renumbered to a contiguous sequence after a
   service-driven delete.

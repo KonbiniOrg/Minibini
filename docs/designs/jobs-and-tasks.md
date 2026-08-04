@@ -469,6 +469,13 @@ and the job-nested create with `parent_task`) route through
 guards — and `mark_work_reopened` — apply identically; pinned by
 `tests/test_subtask_service_guards.py`.
 
+Once a task has any subtasks it is a **parent** — non-startable and
+non-billable on its own; work, time, assignment, and money all delegate
+to its children, and its own price/expectation can derive from theirs.
+See §4a for the full quantity-structure story (the `qty_scales_with_parent`
+flag, the derivation helper, parent pricing/billing, template stamping,
+the Deliverables bridge).
+
 `Task` IS decorated with `@history(exclude=['task_id', 'worker_queue'])`,
 and every lifecycle transition is history-visible: block / unblock /
 complete / cancel and the pending→in_progress promotion go through
@@ -604,6 +611,7 @@ stamping/retirement mechanics: `estimates-and-prices.md` §3.
 | `est_qty` | Estimated billable quantity in the task's own `unit_label`. Nullable on Task. Drives `compute_estimate_amount` (the estimate lens). |
 | `est_worker_time` | DurationField — estimated worker time for scheduling. Required once the Task is **explicitly assigned**: assigned work must be schedulable. Enforced on the assign gestures (`TaskService.assign` / `create_direct`-with-assignee / `update_task`-setting-assignee), **not** `Task.clean()` — auto-assign on start (`start_work` / `create_historical` claiming an unassigned task for its first worker) deliberately skips it, so assignee-without-est-time is a legal model state the schedule must tolerate. |
 | `actual_qty` | Running total of worker-entered increments for `qty_source='entered_qty'` tasks (every write is an add via `add_actual_qty` — signed, locked, floored at zero; settled at completion via `complete_task(add_qty=...)`); null for `qty_source='elapsed_time'` (derived from bleps). Drives `compute_amount` (the invoice lens). Entry surfaces + prompt flows: estimates-and-prices.md §4.2. |
+| `qty_scales_with_parent` | BooleanField, DB default `True`. **Subtask-only** — inert on a top-level task. See §4a for the full derivation story. |
 
 `Task.compute_amount()` resolves the actual quantity per the task's own
 `qty_source` and applies its own `active_modifiers` (the **invoice**
@@ -755,6 +763,361 @@ Task, Material, or Fee per its `freeform_kind` and links it back via a
 matching source row — a bare `freeform_kind='fee'`/`NULL` line is what
 becomes a Fee specifically (see `estimates-and-prices.md` §9). The `Fee`
 replaces the old `flat_fee` RateScheme algorithm.
+
+## 4a. Quantity structures — parent/child tasks
+
+*(Numbered `4a` rather than renumbering §5–§14 — every other doc's
+cross-references to this file's section numbers (e.g.
+`estimates-and-prices.md`'s references to this doc's §9.5 and §10.1a,
+and `materials-inventory-and-purchasing.md`'s to its "Job-status guard"
+anchor) stay valid instead of silently going stale. Task-owned-money
+Phase 4, 2026-08-04.)*
+
+This is the definitive reference for the "quantity structure" feature —
+a parent Task whose per-unit or per-batch cost is built up from its
+subtasks, rather than priced directly. The **one-level subtask
+hierarchy itself** (`Task.parent_task`, capped depth, the passive
+`TaskTree` render, sibling reorder) predates this feature (§4 above) —
+what's new here is: subtasks becoming the sole billable and
+schedulable unit once a task has any, a per-child scaling flag, one
+shared derivation helper for "expected" totals, parent-derived
+pricing, and two authoring bridges (a template that stamps a whole
+structure in one call, and a Deliverable↔Task link).
+
+**Deliberately out of scope** (unchanged by this feature): multi-level
+nesting (a subtask can never itself have subtasks — still true, §4);
+auto-completing a parent when its last child finishes (completion is
+always *offered*, never automatic); syncing a Deliverable's
+`qty_ordered` back into its source task, or vice versa (the bridge is
+provenance-only); billing part of one atom across multiple line items.
+
+### 4a.1 The parent state: non-startable, non-billable-alone
+
+`Task.is_parent` (`apps/jobs/models.py`) is a live property —
+`self.subtasks.exists()` — not a stored/denormalized flag, so every
+guard re-evaluates it fresh. A task becomes a parent the instant its
+first subtask is created and stays one for the rest of its life (a
+subtask can be reparented or deleted, but nothing currently
+un-parents a task back to a leaf by removing its last child — the
+guards below simply stop firing once `is_parent` goes false again,
+they don't need to notice the transition).
+
+Once a task is a parent, its own row stops being a place work or money
+attaches directly — every one of those actions now delegates to its
+children:
+
+| Action | Where enforced | Behavior on a parent |
+|---|---|---|
+| Start work | `TaskLifecycleService.start_work` | Rejected: *"Cannot start work on a parent task — it delegates work to its subtasks. Start work on a subtask instead."* |
+| Log a historical time entry | `BlepService.create_historical` | Same rejection message, "Log time..." variant |
+| Assign to a worker | `TaskService.assign` | Rejected (only when `assignee_id` is truthy — unassigning is fine): *"Cannot assign a parent task — PM functions live on its subtasks. Assign the subtasks instead."* |
+| Add a **first** subtask | `TaskService.create_direct` | Rejected unless the parent's own status is `pending` or `blocked`: *"Cannot add a subtask to a task that is '{status}' — decompose before starting."* The check runs on every subtask add, not just a detected "first" one — equivalent in practice, since a parent can only still be pending/blocked once it already has subtasks if the earlier guards held. |
+| Complete | `TaskLifecycleService.complete_task` | Rejected while any child is non-terminal, listing up to 5 by name: *"Cannot complete: subtask(s) not yet finished — {names}. Complete or cancel every subtask first."* Once every child is `complete`/`cancelled`, completion is **offered** (not automatic) and the parent's own `qty_source == QTY_ENTERED` settle-up prompt (§4.5) applies exactly as it does to a leaf task — the gate is checked first, then the normal entered-qty flow runs. |
+| Cancel | `TaskLifecycleService.cancel_task` | Same shape as Complete — any non-terminal child blocks cancel (listed by name); cancel does **not** cascade to children, each must be individually handled first. |
+| Bill directly (claim as an atom) | `BaseWizardService._assert_atom_billable` and its own listing pools | Not rejected — see §4a.3; a parent bills fine, a *child* is what's rejected. |
+
+The SPA mirrors every one of these: the Assignee chip's "assign"
+control and `BlepList`'s "Add Entry" button are hidden on a parent
+task's detail page; the job-board `TaskCard` is never draggable for a
+parent (dragging assigns); `TaskDetailPage` shows a children table
+(Name / Status / Per-unit Est / Expected / Logged-Actual) plus an
+explanatory note ("Complete will be available once every subtask is
+complete or cancelled.") while children are still open, in place of
+the Complete button.
+
+### 4a.2 `qty_scales_with_parent` and the derivation helper
+
+`Task.qty_scales_with_parent` (BooleanField, DB default `True`) governs
+how a **subtask's own** `est_qty`/`est_worker_time` relate to its
+parent's quantity. It is functional only on a subtask
+(`parent_task` set) — inert, and not rendered, on a top-level task.
+
+- **`True` (the common case)**: the subtask's own numbers are
+  **per-unit** — they multiply by the parent's `est_qty` to get the
+  expected total. Example: a "Laser cutting" subtask estimated at 15
+  min, under a parent with `est_qty=10`, expects 150 min total.
+- **`False`**: the subtask's own numbers are already a **per-batch
+  total** — fixed regardless of how many units the parent makes (e.g.
+  a one-time "Setup" step). The multiplier is 1.
+
+**Default at creation** (`TaskService.create_direct`, the single
+creation gate both `/api/tasks/{id}/subtasks/` and a generic
+`/api/jobs/{id}/tasks/` POST carrying `parent_task` route through): if
+the caller doesn't specify a value, it resolves to
+`parent.unit_label == 'ea'` — a parent counted in discrete units
+defaults its children to per-unit scaling; anything else (hours, feet,
+etc.) defaults to per-batch. An explicit `True`/`False` from the
+caller always wins. The field is freely editable after creation too,
+on create and edit alike, same as `est_qty` — not a `MONEY_FIELDS`
+member, so any authenticated user with edit access to the task can
+change it (subject to the normal C1 editability matrix, §4.0).
+
+**`Task._parent_multiplier()`** (private, `apps/jobs/models.py`) is the
+**one** blessed multiplier — no other code re-derives this math:
+
+```python
+def _parent_multiplier(self):
+    if self.parent_task_id is None or not self.qty_scales_with_parent:
+        return Decimal('1')
+    return self.parent_task.est_qty or Decimal('1')
+```
+
+Returns `1` for a top-level task (flag inert) and for a flag-`False`
+subtask (already a batch total). For a flag-`True` subtask it returns
+the *parent's own* `est_qty` — unit-agnostic; there is no requirement
+that the parent's unit be `'ea'`, only that its default steers that
+way. **Decision** (not addressed by the original spec, made explicit
+in the method's docstring): a flag-`True` subtask whose parent has no
+`est_qty` yet falls back to multiplier `1` rather than raising or
+propagating `None` — the expected total silently equals the raw
+per-unit number until the parent's quantity is filled in. The UI never
+lets this pass as an unremarked number (below).
+
+Two public methods are the **only** callers of `_parent_multiplier()`:
+
+- **`Task.expected_qty()`** = `est_qty × _parent_multiplier()`, `None`
+  when `est_qty` is `None`.
+- **`Task.expected_worker_time()`** = `est_worker_time ×
+  float(_parent_multiplier())`, `None` when `est_worker_time` is
+  `None`.
+
+Everything that wants a task's "how much is this really going to be"
+number — the schedule's forecast bars (§4a.5, `schedule.md`), the
+task-list/task-detail displays, the estimate composition preview —
+reads through these two methods, never through the raw
+`est_qty`/`est_worker_time` fields directly. On a top-level task the
+expected value always equals the raw one (multiplier 1), so nothing
+regresses for a job with no structures.
+
+**API exposure**: `TaskSerializer` carries `qty_scales_with_parent`,
+`is_parent`, `expected_qty` (quantized to 2dp for display),
+`expected_worker_time` (rendered through the same `DurationField` as
+`est_worker_time`), and `derived_unit_price` (§4a.3). `get_is_parent`
+short-circuits to `False` with zero queries for any row that already
+has `parent_task_id` set (one level of nesting — a subtask can never
+itself be a parent); for a genuine top-level row it prefers a
+precomputed `parent_task_ids_with_children` set passed in the
+serializer context (list views build this once from the already-fetched
+task list) and falls back to the querying property only for
+single-instance rendering.
+
+**UI disclosure (never a silent ×1).** `WorkItemForm`'s subtask mode
+shows an always-visible inline line: `"{per-unit} {unit} × {parent
+qty} {parent unit} = {expected} expected"` when the flag is on and the
+parent has a quantity; `"{qty} {unit} per batch — fixed regardless of
+parent quantity."` when the flag is off; and an explicit `"Parent
+quantity not set — treated as ×1."` state — never a bare computed
+number — when the flag is on but the parent's `est_qty` is unset. The
+same disclosure is repeated in `TaskDetailPage`'s children table
+(`childExpectedDisplay`) for a flag-`True` child of a qty-unset
+parent, appending `" (parent quantity not set — treated as ×1)"` to
+the Expected cell — this was a fix-round finding (the anti-pattern
+initially escaped one of the two surfaces) and both surfaces now share
+the exact wording.
+
+### 4a.3 Parent pricing and billing aggregation
+
+**`Task.effective_rate()`**: when a task's own `rate` is `None` *and*
+it `is_parent`, the rate is derived from its children
+(`derived_unit_price()`) instead of defaulting to `0.00`. An explicit
+`rate` on a parent always overrides the derivation. A childless task
+with no rate still prices at `0.00` — nothing to derive from.
+
+**`Task.derived_unit_price()`**: sums flag-`True` children's `est_qty ×
+effective_rate()` (already per-unit, added straight in) plus
+flag-`False` children's `est_qty × effective_rate()` (a per-batch
+total) divided by the parent's own `est_qty` to spread it per unit;
+quantized to cents once at the very end (child amounts are **not**
+individually quantized first). Returns `None` when the task is not a
+parent. **Decision**: when the flag-`False` sum is non-zero but the
+parent's own `est_qty` is falsy, the divisor is treated as `1` rather
+than raising — the raw batch total stands until the parent gets a
+quantity.
+
+```python
+per_unit_total = Σ(flag-True child.est_qty × child.effective_rate())
+batch_total    = Σ(flag-False child.est_qty × child.effective_rate())
+derived_unit_price = (per_unit_total + batch_total / (parent.est_qty or 1)).quantize('0.01')
+```
+
+Both money-computing entry points already route through
+`effective_rate()`, so the parent fallback lands with no separate
+parent-pricing code path: `compute_estimate_amount()` = the parent's
+own `est_qty` (the structure quantity) × `effective_rate()`;
+`compute_amount()` = `get_actual_qty()` × `effective_rate()` — for an
+entered-qty parent, `get_actual_qty()` is the parent's own
+`actual_qty`, the completion-time "quantity made" (settled the same
+way a leaf's entered-qty completion prompt works, §4a.1). See
+`estimates-and-prices.md` §4.1a for the full aggregation write-up and
+its interaction with the wizard.
+
+**Pools exclude children, everywhere, including direct claims.** A
+subtask never appears in an estimate or invoice source pool
+(`get_source_pool` filters `parent_task__isnull=True` on both sides),
+and — closing the path a client could otherwise use to route around
+pool-listing exclusion — the shared claim/add entry point
+`BaseWizardService._assert_atom_billable` rejects a subtask directly:
+*"'{name}' is a subtask of '{parent name}' and cannot be billed on its
+own — the parent is the unit of billing."* This fires whether the
+caller is composing a brand-new line item or appending to an existing
+one; `InvoiceWizardService`'s own lifecycle-readiness override calls
+`super()._assert_atom_billable(instance)` first so the base rejection
+survives the subclass chain. See `estimates-and-prices.md` §7
+("Wizard-pool billability gates") for the full table.
+
+**Detach guard.** `TaskService.update_task` rejects reparenting or
+detaching (`parent_task` → `None` or a different task) a child away
+from a parent that is claimed by a **non-draft** estimate, change
+order, or invoice — that claim is a promise about the whole structure
+(its `derived_unit_price()` and `expected_qty()` depend on every
+current child), so pulling a child out from under it would silently
+change what was sold. Detaching while the only claim is a **draft**
+document is fine (same "draft still editable" doctrine used everywhere
+else in the claims system). Error: *"Cannot detach from '{parent
+name}' — it is claimed by a sent estimate, change order, or invoice.
+Detach is only allowed while the claiming document is still a draft."*
+
+**Materials on a subtask.** A structure's materials belong to the
+parent — the unit of billing — not to an individual subtask:
+`MaterialService.assign_task` and `MaterialService.create_on_job` both
+reject attaching a Material to a task whose `parent_task_id` is set,
+naming the parent in the error. As a backstop for a row that reaches a
+subtask some other way (a historical row, or a direct `QuerySet.update()`
+that bypasses the service-layer guard — see CLAUDE.md's standing rule
+on why that bypass exists), the invoice pool's per-task material query
+also matches `Q(task=task) | Q(task__parent_task=task)`, so a
+subtask-attached material still surfaces under its parent's group
+rather than vanishing into permanently-unbillable dead money. Job
+duplication (`JobService._copy_work_to_job`) and template material
+generation (`WorkTemplate.generate_materials_for_job`) both remap a
+subtask-sourced material to the copied structure's **parent** task on
+copy, for the same reason.
+
+### 4a.4 Template N — stamping a whole structure
+
+`WorkTemplate.is_product_structure` (BooleanField, default `False`) —
+when set, `generate_tasks_for_job(job, quantity=1)` branches to mint
+**one** top-level parent task (`est_qty=quantity`, entered-qty,
+`unit_label='ea'`, `rate=template.base_price` — `None` unless the
+template sets one, in which case `effective_rate()`'s parent fallback
+takes over) plus **one per-unit subtask per active
+`TemplateTaskAssociation`** (each still stamps its own money from its
+own `ServiceItem`/`RateScheme` — only the `parent_task` link and the
+unit-keyed `qty_scales_with_parent` default are new). The whole
+structure — parent plus every child — is minted inside one
+`transaction.atomic()` block, stricter than flat generation's
+per-item atomicity: a mid-loop failure (e.g. a retired rate scheme)
+rolling back to leave an orphan parent with a partial child set would
+be a worse failure mode than flat generation's existing "leaves
+whatever was already created" behavior.
+
+Flat generation (`is_product_structure=False`, the default — every
+existing template) is entirely unchanged; the branch is additive.
+
+`POST /api/jobs/{id}/populate-from-template/` accepts an optional
+`quantity`, rejecting it (400) when the template is **not**
+`is_product_structure` and rejecting `quantity <= 0` or an unparseable
+value. Permission is unchanged (`CanManageJobOrPM` — quantity is
+structural, same ungated philosophy as `est_qty`).
+
+`is_product_structure` (and `base_price`) is **settable only via the
+API today** — `PATCH /api/work-templates/{id}/` under the existing
+`CanManageConfig` gate. There is no SPA UI and no Django admin
+registration for authoring or toggling it; a `WorkTemplate` in general
+has no frontend authoring surface at all (create/edit, item
+management) — see `docs/designs/LATER.md` for the tracked gap. The one
+UI surface that exists is consumption, not authoring:
+`ApplyTemplateModal.svelte` (wired into the job task list's "Apply
+Template" button, gated on `job.can_manage`) lists templates, shows a
+required positive Quantity field only when the selected template's
+`is_product_structure` is true, and POSTs to `populate-from-template`.
+
+### 4a.5 Schedule bars
+
+`ScheduleService` reads a task's schedulable size exclusively through
+`expected_worker_time()`, never raw `est_worker_time` — so a
+flag-`True` subtask's forecast bar (and its contribution to a running
+blep's remaining-time projection) is already scaled by its parent's
+quantity. A parent itself draws **no bar**: `_build_lane`'s task
+queryset excludes any task with subtasks at the query level (not just
+relying on the `assign()` guard), because a task can become a parent
+*after* it already carried planning state (an assignee, a queue
+position) from before it had children. `ScheduleService`
+`select_related`s `parent_task` on every queryset that feeds
+`expected_worker_time()`/`expected_qty()`, so a lane with several
+same-parent subtasks costs one JOIN, not one query per sibling. Full
+write-up: `docs/designs/schedule.md` §1/§3.
+
+### 4a.6 Deliverables bridge
+
+Two one-way, provenance-only copies link a top-level structure task to
+a `Deliverable` — see §12.1 below for what a Deliverable is. Neither
+syncs after the copy; both are pure convenience for not retyping the
+same qty/units twice.
+
+- **Task → Deliverable**: `POST /api/tasks/{id}/add-as-deliverable/`
+  (`CanManageJobOrPM`) copies `name → description`, `est_qty →
+  qty_ordered`, `unit_label → units`, and sets
+  `Deliverable.source_task`. Rejected when the task is itself a
+  subtask ("structures export from their parent task"), already has a
+  linked deliverable, or has no `est_qty` to copy. SPA: an "Add as
+  Deliverable" button on `TaskDetailPage`, visible only for an
+  unlinked, `est_qty`-having top-level task the user can manage.
+- **Deliverable → Task** (the reverse direction): `POST
+  /api/jobs/{job_id}/deliverables/{id}/create-work-structure/`
+  (`CanManageJobOrPM | CanManageFinancials` — broader than the plain
+  `CanManageJobOrPM` the rest of the Deliverables endpoints use,
+  matching the precedent that minting a task with a money-shaped block
+  needs the wider gate even though this one mints no money at all)
+  mints a **top-level, scheme-less task** — `rate` and
+  `accounting_category` both `NULL`, entered-qty, `est_qty ←
+  qty_ordered`, `unit_label ← units` — bypassing
+  `TaskService.create_direct` (which mandates a rate scheme) the same
+  way estimate-acceptance's flat-task crystallization does for a
+  money-less hand-line. Rejected when the deliverable is already
+  linked. SPA: a "Create work structure" button on an unlinked
+  Deliverables row.
+- **`Deliverable.source_task`**: nullable FK to `Task`, `SET_NULL`.
+  Same invariant family as `Task.source_scheme` — provenance only,
+  nothing computes or syncs through it; deleting the task never blocks
+  on a deliverable it seeded.
+- **Provenance link + mismatch badge**: `DeliverablesSection.svelte`
+  shows a `from {task name}` link on a linked row (to the task's
+  detail page), and a passive `mismatch` badge — tooltip *"Task
+  estimates {X}; this deliverable orders {Y}."* — when the linked
+  task's current `est_qty` differs from the deliverable's
+  `qty_ordered`. Comparison is **est vs. ordered only**, never actuals;
+  the badge is purely informational, nothing auto-corrects either
+  side.
+
+### 4a.7 `validate_data` checks
+
+`apps/core/management/commands/validate_data.py` (full-DB integrity
+scan, see `data-constraints.md`) adds three checks for this feature:
+
+- **`check_subtask_billing_invariant()` — ERROR.** Scans
+  `EstimateLineItemSource`, `ChangeOrderLineItemSource`, and
+  `InvoiceLineItemSource` for any `source_type='task'` row whose
+  `source_pk` resolves to a subtask. The service-layer pool exclusion
+  and claim rejection (§4a.3) make this unreachable through normal app
+  usage — a hit means a bypass path (fixture/converter authoring, a
+  bulk write, or a service-layer regression), so it's an ERROR, not a
+  WARN.
+- **Parent-with-own-bleps — WARN**, inline in the existing
+  `check_bleps_and_shifts()`. A blep logged directly on a task
+  *before* it grew its first subtask is legitimate history the
+  non-startable gate can't retroactively erase, so it's tolerated
+  (once per task, not once per blep) rather than flagged as an error.
+- **Parent-with-own-assignee — WARN**, inline in `check_tasks()`.
+  Same tolerance, mirrored: an assignee set before a task became a
+  parent is pre-structure history, not a violation.
+
+No check exists (deliberately — a code comment in `check_tasks()`
+explains why) for `qty_scales_with_parent` on a parentless row: the
+flag is DB-default `True` and inert there (`_parent_multiplier()`
+never reads it on a top-level task), so any stored value is equally
+harmless — same shape as the already-uncommented `source_scheme`
+field.
 
 ## 5. Blep (time tracking)
 
@@ -1056,13 +1419,26 @@ to `default_active_modifiers`), `est_worker_time`, `assignee`,
 
 - `generate_tasks_for_job(job, quantity=1)` — iterates associations and
   calls `generate_task` for each, optionally multi-instance (returns
-  `[(association, instance_index, task), ...]`).
+  `[(association, instance_index, task), ...]`). **When
+  `WorkTemplate.is_product_structure` is set**, this branches entirely
+  instead: `quantity` means "how many units of the structure," and the
+  template stamps one parent task plus one per-unit subtask per
+  association in a single call — see §4a.4 for the full mechanics.
+  Flat generation (the default, `is_product_structure=False`) is this
+  bullet's original behavior, unchanged.
 - `generate_materials_for_job(...)` — uses the task pairing returned
-  above to attach materials to the right tasks.
+  above to attach materials to the right tasks. A pairing whose task is
+  itself a subtask remaps to that structure's parent (§4a.3) — inert
+  today since no template-generation path yet produces a parent/child
+  pairing for it to see, but disarmed in advance.
 
 The `task_pairing` argument is how the materials side knows which Task
 each generated Material belongs to — critical for multi-instance template
 fanout.
+
+`is_product_structure` and `base_price` are settable only via
+`PATCH /api/work-templates/{id}/` (`CanManageConfig`) — no SPA UI or
+Django admin surface authors a `WorkTemplate` at all today. See §4a.4.
 
 ## 8. Job Board
 
@@ -1768,7 +2144,12 @@ Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
    section renders the shared `MaterialRow` fragment with the full
    action set** (chips, tombstones, Order/receipt dialogs, Move — the
    subtask rows' radios are the move targets; removal is the release
-   action, not a raw delete). The subtask tree is deliberately
+   action, not a raw delete). **Predates quantity structures and not
+   updated for them**: `MaterialService.assign_task`/`create_on_job`
+   now reject attaching a material to a subtask (§4a.3), so selecting a
+   subtask radio and clicking Move on this page always 400s — the UI
+   still offers the target, it just can no longer succeed. Tracked in
+   `docs/designs/LATER.md`. The subtask tree is deliberately
    **passive for task ops** (A3: `TaskTree` renders a button only when
    its callback is wired — never a dead no-op button): no
    edit/del/cancel on subtask rows here — a subtask's own detail page
@@ -1796,6 +2177,15 @@ are the ones who discover these conditions, and cancel is the exit from
 a task that can no longer be deleted (C2, 2026-07-12). **Edit Task** is
 gated on the per-task `can_edit` flag (the C1 matrix, §4.0), and the
 whole action band is hidden while the job is held (§3.1).
+
+**A parent task (§4a) overrides this table further**: Start Work is
+never offered (work delegates to subtasks) and Complete is withheld —
+replaced by an explanatory note — until every subtask is terminal, at
+which point it behaves like the table above. Block/Unblock/Cancel are
+unaffected (a parent can still be blocked or cancelled itself, subject
+to §4a.1's "every child must be terminal first" rule for cancel). The
+Assignee chip's assign control and `BlepList`'s "Add Entry" are hidden
+on a parent's page for the same reason.
 
 While the active session is under `blep_minimum_minutes` (compared in whole
 minutes), the "Stop Work" button instead reads "Cancel" and deletes the
@@ -1906,6 +2296,12 @@ see §12.2 and §12.9).
   Shipment, with each Deliverable's qty_ordered, this shipment's qty,
   qty previously picked up in other shipments, and qty remaining after
   this shipment.
+- **`Deliverable.source_task`** (nullable FK → `Task`, `SET_NULL`,
+  task-owned-money Phase 4): provenance-only link to the top-level
+  structure task a Deliverable was copied from, or that was minted from
+  it — the two-directional "Add as Deliverable" /
+  "Create work structure" bridge. Nothing computes or syncs through it
+  after the copy. Full mechanics: §4a.6.
 
 **Permissions — deliberate asymmetry.** Editing the **Deliverables** list
 requires `can_manage_jobs` **or** being the job's `project_manager`

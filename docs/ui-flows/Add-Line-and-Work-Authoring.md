@@ -20,6 +20,12 @@
 > **Rescoped 2026-08-03 (task-owned-money Phase 2)** for the three-value
 > `freeform_kind` (work | material | fee) that replaced the retired
 > `is_material` boolean on estimate/CO hand-lines — see §2 and §4 below.
+>
+> **Extended 2026-08-04 (task-owned-money Phase 4)** with §7, "quantity
+> structures" — a parent task priced from its subtasks. Covered by
+> `e2e/specs/add-line-and-work-authoring/quantity-structure.spec.js`.
+> Reference: `docs/designs/jobs-and-tasks.md` §4a (the definitive
+> reference), `estimates-and-prices.md` §4.1a/§7, `schedule.md` §3.
 
 **Purpose:** From-the-user's-perspective walkthrough of getting work and lines
 onto a job: the unified service/inventory/freeform picker, the
@@ -205,6 +211,69 @@ Entry: estimate detail → **Show Tasks & Materials** (`#/estimates/{id}/wizard`
   claimed by a sent document refuses with "cancel / change order" messaging;
   see `Deletion-and-Retirement.md`.
 
+## 7. Quantity structures — a parent task priced from its subtasks
+
+Entry: `#/jobs/{jobId}/tasks/{taskId}` on a top-level task with ≥1
+subtask (build one with **Add Task** then **Add Subtask**, or apply a
+product-structure template — §7a below). Reference:
+`docs/designs/jobs-and-tasks.md` §4a.
+
+- [ ] **Add Subtask, per-unit.** From a parent task's page, **Add
+  Subtask** opens `WorkItemForm` with a `qty_scales_with_parent`
+  checkbox, defaulted to checked when the parent's unit is `ea` (and
+  unchecked otherwise). Checked shows an inline line: `"{per-unit qty}
+  {unit} × {parent qty} {parent unit} = {expected} expected"`.
+- [ ] **Add Subtask, per-batch.** Unchecking the box switches the
+  inline line to `"{qty} {unit} per batch — fixed regardless of parent
+  quantity."`
+- [ ] **Parent quantity not set.** A flag-checked subtask under a
+  parent with no `est_qty` yet shows `"Parent quantity not set —
+  treated as ×1."` instead of a bare number — both here and in the
+  parent's children table (next bullet).
+- [ ] **Children table** on the parent's page: Name / Status / Per-unit
+  Est / Expected / Logged-Actual, one row per subtask.
+- [ ] **Non-startable parent.** On the parent's own page: no Start
+  Work button, no "Add Entry" (historical blep) button, no assign
+  control on the Assignee chip. **Complete** is absent, replaced by
+  "Complete will be available once every subtask is complete or
+  cancelled," until every subtask reaches `complete`/`cancelled`.
+- [ ] **Derived Rate chip.** When the parent's own `rate` is unset, its
+  Rate chip reads `"derived from children: $X/unit"` instead of a
+  plain rate — computed from its children's own rates weighted by
+  `qty_scales_with_parent` (§4a.3).
+- [ ] **Job board.** A parent task's card is never draggable (dragging
+  assigns, which the server rejects for a parent).
+- [ ] **Estimate/invoice wizard pool.** The parent appears in the
+  source pool at `{parent est_qty} {unit} × {derived rate} = {amount}`;
+  **no subtask ever appears** in the pool, claimed or otherwise —
+  neither wizard offers one to pick.
+- [ ] **Worker time tracking happens on the subtask**, never the
+  parent — Start Work on a subtask works normally.
+- [ ] **Add as Deliverable** (button on a top-level task's page, hidden
+  once already linked or on a subtask) copies name/qty/units into a new
+  Deliverable, linked via provenance. The Deliverables panel shows a
+  `from {task name}` link on a linked row.
+- [ ] **Mismatch badge.** Editing the linked task's `est_qty` to a
+  value different from the deliverable's `qty_ordered` shows a passive
+  `mismatch` badge on the Deliverables panel row (est vs. ordered, not
+  actuals) — nothing auto-corrects either side.
+- [ ] **Create work structure** (reverse direction, on an unlinked
+  Deliverables row) mints a scheme-less top-level task (no Rate chip at
+  all) with the deliverable's qty/units copied over.
+
+### 7a. Applying a product-structure template
+
+Entry: `#/jobs/{id}/tasklist` → **Apply Template**.
+
+- [ ] Selecting a template with `is_product_structure` set shows a
+  required **Quantity** field; selecting a flat template hides it.
+- [ ] Submitting mints one parent task plus its per-unit subtasks in
+  one call — same shape as building the structure by hand (§7 above).
+- [ ] A `WorkTemplate`'s `is_product_structure` flag itself has **no UI
+  to set** — it's API-only (`PATCH /api/work-templates/{id}/`,
+  `can_manage_config`); this modal only *consumes* an
+  already-configured template, it does not author one.
+
 ---
 
 ## Coverage matrix
@@ -218,3 +287,4 @@ Entry: estimate detail → **Show Tasks & Materials** (`#/estimates/{id}/wizard`
 | Crystallization | service → Task · inventory → Material+earmark · bare material → established Material (reverse-markup) · bare work → flat Task (no scheme) · bare fee/credit → Fee (signed) · atom-backed skip · adjustments document-only · AC send guard |
 | Wizard | job-atom pool + claim states · released materials absent · grouping/summarize · in-sync vs overridden · last-atom removal |
 | Guards | draft-only authoring · on-hold freeze · deletion-doctrine cross-ref |
+| Quantity structures | per-unit vs per-batch subtask · parent-qty-unset disclosure · non-startable parent (no start/blep/assign) · completion offer gate · derived Rate chip · pool exclusion of subtasks · deliverables bridge both directions · mismatch badge · product-structure template apply |

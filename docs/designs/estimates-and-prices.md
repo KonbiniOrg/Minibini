@@ -384,8 +384,13 @@ task's own fields — **no RateScheme lookup**:
 ```python
 class Task:
     def effective_rate(self):
-        # Own rate + own active_modifiers surcharges.
+        # Own rate + own active_modifiers surcharges. When rate is None
+        # AND this task is a parent (task-owned-money Phase 4, §4.1a),
+        # the rate derives from its children instead of defaulting to
+        # zero. An explicit rate on a parent always overrides derivation.
         if self.rate is None:
+            if self.is_parent:
+                return self.derived_unit_price()
             return Decimal('0.00')
         pct = sum(Decimal(str(m.get('percent', 0))) for m in (self.active_modifiers or []))
         return (self.rate * (1 + pct / 100)).quantize(Decimal('0.01'))
@@ -432,6 +437,59 @@ money value that is copied straight onto a line item's `price` field (a
 caller that uses it as a price (the estimate wizard's single-atom and
 "send all atoms" paths, the bundle summary, the source-pool detail) is
 then safe without having to remember its own `.quantize()`.
+
+### 4.1a Parent/subtask billing aggregation (task-owned-money Phase 4)
+
+A **parent task** — one with ≥1 subtask, `Task.is_parent` — is priced
+by aggregating its children rather than carrying its own `rate`. Full
+non-billing mechanics (non-startable enforcement, the
+`qty_scales_with_parent` flag, the `expected_qty`/`expected_worker_time`
+derivation helper, Template N, the Deliverables bridge) are the
+**definitive reference** in `jobs-and-tasks.md` §4a; this section
+covers only the billing/aggregation math and how it flows through the
+estimate/invoice wizards.
+
+**`Task.derived_unit_price()`** — the parent's per-unit price:
+
+```python
+per_unit_total = Σ(flag-True child.est_qty × child.effective_rate())   # already per-unit
+batch_total    = Σ(flag-False child.est_qty × child.effective_rate())  # a per-batch total
+derived_unit_price = (per_unit_total + batch_total / (parent.est_qty or 1)).quantize('0.01')
+```
+
+`None` when the task is not a parent. Quantized once, at the end — the
+per-child amounts are not individually rounded first. When the
+flag-`False` sum is non-zero but the parent's own `est_qty` is falsy,
+the divisor is treated as `1` (the raw batch total stands) rather than
+raising.
+
+**Both money entry points bill the parent through the one rate.**
+Neither `compute_estimate_amount()` (`est_qty × effective_rate()`) nor
+`compute_amount()` (`get_actual_qty() × effective_rate()`) needed a
+parent-specific branch — `effective_rate()`'s own fallback (§4.1)
+already routes there. Concretely: the **estimate** side bills the
+parent's own `est_qty` (the structure quantity — "10 units of this
+assembly"); the **invoice** side bills `get_actual_qty()`, which for
+an entered-qty parent is the parent's own `actual_qty` — the
+completion-time "quantity actually made," settled through the same
+entered-qty prompt a leaf task uses (`jobs-and-tasks.md` §4a.1).
+
+**Wizard composition.** `_task_qty_and_price` (both
+`EstimateWizardService` and `InvoiceWizardService`) gates a single-atom
+line-item copy on `task.rate is not None or task.is_parent`, so a
+derived-price parent composes correctly solo (qty = the parent's own
+qty field, price = `effective_rate()`). A parent mixed into a
+multi-atom bundle with a differently-rated sibling still falls back to
+the pre-existing non-uniform summary (`_uniform_money_bundle` already
+treats any `rate is None` atom as non-uniform) rather than crashing —
+a parent can't currently be summarized into a *uniform* bundle
+alongside siblings, same as any other `rate=None` atom.
+
+**Pool exclusion and direct-claim rejection** — see §7 "Wizard-pool
+billability gates" below; the short version is that a subtask never
+appears in a source pool and is rejected if claimed directly, on both
+the estimate and invoice sides, so the parent is always the sole
+billing surface for its structure.
 
 ### 4.2 actual_qty semantics
 
@@ -985,6 +1043,13 @@ claimed as atoms themselves. **Whole-task billing**: there is no
 business reason to split bleps from one Task across multiple line
 items; if such a need arises, the Task itself gets split first.
 
+**A subtask is never an atom on its own** (task-owned-money Phase 4):
+when a Task has a `parent_task`, its parent is the sole billing surface
+for the whole structure — see §4.1a and the pool-exclusion rule below.
+The `Task` row in the table above describes a top-level task; a parent
+task's amount is the same `compute_estimate_amount`/`compute_amount`
+call, just backed by `derived_unit_price()` instead of an own `rate`.
+
 Atom claim semantics (per document):
 
 - An atom is **available** if no source row of that document points at it.
@@ -1019,6 +1084,26 @@ point: it re-checks readiness when atoms are actually submitted to the wizard
 each atom), raising `ValidationError` if the readiness condition is not met.
 (The estimate side has no readiness gate — it projects `est_qty`, which exists
 the moment a Task is created.)
+
+**Subtask exclusion (task-owned-money Phase 4, §4.1a)** applies on
+**both** sides and at **two** layers, not just the pool listing:
+
+- **Pool listing** — `get_source_pool` filters `parent_task__isnull=True`
+  on its task queryset (`EstimateWizardService` and
+  `InvoiceWizardService` both), so a subtask never appears as a row to
+  pick, claimed or otherwise.
+- **Direct claim** — `BaseWizardService._assert_atom_billable`'s base
+  implementation (not a subclass override) rejects any atom that is a
+  `Task` with `parent_task_id is not None`, before either wizard's own
+  lifecycle-readiness check runs. This closes the path a client could
+  otherwise use to route around the pool by POSTing a child's
+  `{type, id}` straight at `add_atoms_to_new_line_item` /
+  `add_atoms_to_line_item` — `InvoiceWizardService`'s override calls
+  `super()._assert_atom_billable(instance)` first, so the base
+  rejection isn't bypassed by the subclass chain.
+
+The parent itself is never excluded — it's the one billable surface
+for the whole structure, priced via `derived_unit_price()` (§4.1a).
 
 Out of scope: partial-atom billing (per-hour or per-unit slicing of a
 single atom across line items). See §16.

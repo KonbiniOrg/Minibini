@@ -968,3 +968,80 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the cleanup lands with bucket (a) re-authored, fresh
   `migrate` + full suite green from an empty DB, and the e2e seed still
   loads.
+
+## Tasks, templates & schedule (quantity structures, Phase 4)
+
+- **Schedule tests: audit for wall-clock-dependence.** — _added 2026-08-04_
+  During task-owned-money Phase 4, a controller twice observed
+  `tests.test_api_schedule` failing 3F/1E when run standalone (at two
+  different commits) but passing inside the full suite — a classic
+  test-order-dependence smell. A dedicated verification pass
+  (fresh test DB, `--noinput`, standalone, repeated 3×, and re-run at
+  the exact commits cited via a disposable worktree) could not
+  reproduce it at all — 26/26 green every time. Leading theory: the
+  original failures happened near the midnight date boundary and/or
+  under concurrent `manage.py test` invocations racing the shared MySQL
+  test DB (a failure mode CLAUDE.md already warns about), not a real
+  module defect. Nobody has audited the module's fixtures/assertions
+  for actual now()-relative brittleness (e.g. a `timezone.now()` call
+  whose result is used both to build fixtures and to assert against,
+  with no fixed-clock patching).
+  _Done when:_ either a genuine wall-clock/date-boundary dependency is
+  found and fixed (fixed-clock fixtures or explicit rollover handling),
+  or the module is confirmed clean and this entry is removed.
+
+- **`WorkTemplate` has no frontend authoring surface.** — _added 2026-08-04_
+  Task-owned-money Phase 4 added `WorkTemplate.is_product_structure`
+  (the flag that makes template-apply mint a parent + per-unit subtasks
+  in one call, `jobs-and-tasks.md` §4a.4) but it's settable only via
+  `PATCH /api/work-templates/{id}/` — no SPA UI and no Django admin
+  registration create/edit a `WorkTemplate`, toggle the flag, or manage
+  its `TemplateTaskAssociation` items at all. This predates Phase 4 (a
+  `WorkTemplate` has always been admin/script-seeded convenience data),
+  but Phase 4 made the gap more visible by adding a second flag nobody
+  can flip from the UI. Also blocking: `TemplateAssociationSerializer`
+  is currently read-only, so even a hypothetical manager couldn't
+  populate a new template's items through the existing API. Needs a
+  brainstorming session, not a quick fix — real design work (what does
+  authoring a product-structure template look like, item ordering,
+  quantity defaults) before any code.
+  _Done when:_ either a `WorkTemplate` CRUD surface ships (with its own
+  design pass), or the team explicitly decides templates stay
+  admin/script-authored and this entry is closed as "won't do."
+
+- **No UI gesture nulls a task's own `rate` — parent-derived pricing
+  (rule 4) is only reachable through non-UI paths.** — _added 2026-08-04_
+  `Task.effective_rate()` derives a parent's price from its children
+  only when the parent's own `rate` is `None` (`jobs-and-tasks.md`
+  §4a.3). Every real path that reaches that state today is a *system*
+  path — hand-line crystallization, the Deliverable→Task bridge (both
+  money-less by construction) — never a person choosing it: the manual
+  "Add Task" form always stamps a picked Rate Scheme's rate onto a new
+  task, and "Edit Task" offers no "clear the rate / derive from
+  children instead" gesture on an already-priced task. (The Task 8 e2e
+  spec has to `PATCH {rate: null}` directly via the API to exercise the
+  derived-price UI at all — see its "Deviations" section.) Flagged at
+  Phase 4 review time (RM sign-off item) as needing a product decision:
+  is "convert a priced task into a container" a real workflow, and if
+  so what's the gesture (a button on Edit Task? a checkbox at
+  create-subtask time that clears the parent's rate automatically)?
+  _Done when:_ either a UI path to null a task's own rate ships (with
+  its own design pass), or the team decides parent-derived pricing stays
+  reachable only via the two system paths and this entry is closed.
+
+- **Materials "Move" still offers a subtask as a target it can never
+  reach.** — _added 2026-08-04_
+  Predates Phase 4: `TaskDetailPage`'s Materials section has always
+  offered its subtask rows' radio buttons as Move targets
+  (`jobs-and-tasks.md` §10.2 point 4). Phase 4 added a server-side
+  guard (`MaterialService.assign_task`/`create_on_job` reject a subtask
+  target, §4a.3 — materials belong to the structure's parent, the unit
+  of billing) but never revisited this pre-existing UI affordance, so
+  selecting a subtask radio and clicking Move now always 400s. Same
+  "UI offers what the server refuses" shape as the shift-delete and
+  invoiced-blep entries above (Time tracking section) — fix by hiding
+  subtask radios as move targets (or disabling Move to a subtask with
+  an inline explanation) once a parent has children.
+  _Done when:_ the Move UI no longer offers a target the guard will
+  reject, on `TaskDetailPage` and anywhere else `MaterialRow`'s move
+  target list is built from a task's subtasks.
