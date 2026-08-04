@@ -182,6 +182,106 @@ class ReconcileEndpointTest(POReconciliationAPITestBase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('line_finals', response.data)
 
+    def test_reconcile_malformed_bill_total_rejected_field_shaped(self):
+        """A non-numeric bill_total must 400 with a field-shaped error, not
+        500 — malformed input from an API caller is not a programming
+        error."""
+        po = self._make_issued_po()
+        response = self.client.post(
+            f'/api/purchase-orders/{po.pk}/reconcile/',
+            {'bill_total': 'not-a-number'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn('bill_total', response.data)
+
+    def test_reconcile_malformed_line_finals_value_rejected_field_shaped(self):
+        po = self._make_issued_po()
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+        response = self.client.post(
+            f'/api/purchase-orders/{po.pk}/reconcile/',
+            {'bill_total': '5.00', 'line_finals': {str(li.pk): 'not-a-number'}},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn('line_finals', response.data)
+        li.refresh_from_db()
+        self.assertIsNone(li.final_price)
+
+    def test_reconcile_malformed_appended_line_item_id_rejected_field_shaped(self):
+        po = self._make_issued_po()
+        response = self.client.post(
+            f'/api/purchase-orders/{po.pk}/reconcile/',
+            {
+                'bill_total': '5.00',
+                'appended_lines': [{
+                    'line_item_id': 'not-an-id', 'description': 'Freight',
+                    'qty': '1.00', 'price': '15.00',
+                    'accounting_category': self.cat.pk,
+                }],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn('appended_lines', response.data)
+
+    def test_reconcile_smuggled_qty_received_on_appended_line_rejected(self):
+        """appended_lines is restricted to the whitelist `add_line_item`
+        accepts — a caller cannot pre-seed a freshly-appended invoice_only
+        line's receiving state through reconcile."""
+        po = self._make_issued_po()
+        response = self.client.post(
+            f'/api/purchase-orders/{po.pk}/reconcile/',
+            {
+                'bill_total': '5.00',
+                'appended_lines': [{
+                    'description': 'Freight', 'qty': '1.00', 'price': '15.00',
+                    'accounting_category': self.cat.pk, 'qty_received': '1.00',
+                }],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn('appended_lines', response.data)
+        self.assertFalse(
+            PurchaseOrderLineItem.objects.filter(
+                purchase_order=po, description='Freight',
+            ).exists()
+        )
+
+
+class CancelLineItemInvoiceOnlyGuardAPITest(POReconciliationAPITestBase):
+    """POST /api/purchase-orders/{id}/cancel-line-item/ rejects an
+    invoice_only target (task-owned-money Phase 5, Task 5 hardening) —
+    matches PurchaseOrderReceivingService.cancel_line_item's guard."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(user=self.admin)
+
+    def test_cancel_line_item_on_invoice_only_line_rejected(self):
+        po = self._make_issued_po()
+        self.client.post(
+            f'/api/purchase-orders/{po.pk}/reconcile/',
+            {
+                'bill_total': '15.00',
+                'appended_lines': [{
+                    'description': 'Freight', 'qty': '1.00', 'price': '15.00',
+                    'accounting_category': self.cat.pk,
+                }],
+            },
+            format='json',
+        )
+        invoice_only_li = PurchaseOrderLineItem.objects.get(
+            purchase_order=po, invoice_only=True,
+        )
+        response = self.client.post(
+            f'/api/purchase-orders/{po.pk}/cancel-line-item/',
+            {'line_item_id': invoice_only_li.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+
 
 class ReconcilePermissionMatrixTest(POReconciliationAPITestBase):
     """The PO viewset's existing gate (apps/api/purchasing/views.py

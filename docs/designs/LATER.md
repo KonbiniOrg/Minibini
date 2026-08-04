@@ -462,6 +462,38 @@ Billing mechanics and money-record lifecycle.
   _Done when:_ merging is driven from the list rows with a searchable picker and an explicit
   before-commit preview of the outcome, no top-of-page dropdown hunting.
 
+- **PO reconciliation rate-prompt rough edges (task-owned-money Phase 5 final-review carry-notes).** — _added 2026-08-04_
+  Three small gaps found alongside the final-review fix wave (Findings 1–7
+  fixed same session):
+  1. **Parent-linked task rate prompts ignore modifiers, and derivation-mode
+     parents show a misleading $0.00 "current rate."** `compute_rate_prompts`
+     (`apps/purchasing/services.py`) reads `task.rate` directly as
+     `current_rate` — for a task whose sell price comes from active rate
+     modifiers, or a parent task in derivation mode (rate computed from
+     children, not stored), the displayed "current rate" doesn't reflect
+     what the task actually bills at today. Also: **accepting a prompt sets
+     an explicit `rate` on the parent**, silently overriding derivation mode
+     without telling the user that's what "Accept" does.
+  2. **No reparent guard for PO-linked tasks.** A task with a PO line
+     pointing at it (`PurchaseOrderLineItem.task`) can be reparented (made a
+     subtask) with nothing checking the PO link — `PurchaseOrderLineItem.clean()`
+     only validates at *link time* that the target is top-level; it isn't
+     re-checked if the task's `parent_task` changes afterward, which would
+     leave a PO line's task-link invariant silently violated.
+  3. **Manual line-POST doesn't strip a caller-supplied `invoice_only`.**
+     `reconcile`'s `appended_lines` whitelist (Finding 7) now rejects an
+     explicit `invoice_only` key outright, but the *manual* add-line-item
+     endpoint (`PurchaseOrderService.add_line_item` /
+     `POST /api/purchase-orders/{id}/line-items/`) has no equivalent
+     guard — a caller could POST `invoice_only: true` directly on an
+     ordinary manual line, which the receiving/reconcile machinery isn't
+     designed to expect outside the reconcile-appended path.
+  _Done when:_ (1) current_rate accounts for active modifiers and derivation
+  mode, with the parent-rate-override behavior surfaced to the user before
+  it applies; (2) reparenting a PO-linked task is guarded (or the invariant
+  is re-validated); (3) `add_line_item` rejects (or ignores)
+  caller-supplied `invoice_only` the same way `reconcile`'s whitelist does.
+
 ## Time tracking (shifts & bleps)
 
 - **Time managers can't reach the shift request queue / payroll report.** — _added 2026-05-31_

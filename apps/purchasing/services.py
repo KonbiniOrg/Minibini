@@ -1,5 +1,5 @@
 import logging
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from apps.core.history import record_history, record_action
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -15,6 +15,19 @@ from apps.core.services import NotFoundError, NumberGenerationService
 
 class PurchaseOrderService:
     """Service for purchase order operations."""
+
+    # Whitelist for `reconcile`'s `appended_lines` entries (spec §7 rule 3 /
+    # task-owned-money Phase 5, Task 5 hardening): the same field set
+    # `add_line_item` accepts, plus the optional `line_item_id` target
+    # handled separately. `invoice_only` is always set server-side and is
+    # therefore NOT in this set — a caller-supplied `invoice_only` (true or
+    # false) is rejected like any other unknown field. Anything outside
+    # this set (e.g. qty_received, line_number, received_by) is a
+    # smuggling attempt through a call site that isn't the receiving flow
+    # and is rejected wholesale.
+    APPENDED_LINE_FIELDS = frozenset({
+        'description', 'qty', 'units', 'price', 'accounting_category', 'task',
+    })
 
     @staticmethod
     def create_po(**kwargs):
@@ -126,6 +139,32 @@ class PurchaseOrderService:
                 'Cannot reconcile a purchase order before it has been issued.'
             )
 
+        # Malformed vendor-bill input (non-numeric bill_total/line_finals
+        # values, non-integer appended-line ids) is arbitrary API-caller
+        # input, not a programming error — coerce up front and raise a
+        # field-shaped ValidationError instead of letting a bare
+        # Decimal()/int() conversion 500.
+        if bill_total is not None and not isinstance(bill_total, Decimal):
+            try:
+                bill_total = Decimal(str(bill_total))
+            except (InvalidOperation, ValueError, TypeError):
+                raise ValidationError({'bill_total': [
+                    f'{bill_total!r} is not a valid number.'
+                ]})
+
+        converted_line_finals = {}
+        for line_id, value in line_finals.items():
+            if value is None or isinstance(value, Decimal):
+                converted_line_finals[line_id] = value
+                continue
+            try:
+                converted_line_finals[line_id] = Decimal(str(value))
+            except (InvalidOperation, ValueError, TypeError):
+                raise ValidationError({'line_finals': [
+                    f'Line item {line_id}: {value!r} is not a valid number.'
+                ]})
+        line_finals = converted_line_finals
+
         all_lines_by_id = {
             li.pk: li for li in PurchaseOrderLineItem.objects.filter(purchase_order=po)
         }
@@ -139,10 +178,31 @@ class PurchaseOrderService:
         existing_invoice_only = {
             pk: li for pk, li in all_lines_by_id.items() if li.invoice_only
         }
-        appended_ids = {
-            int(entry['line_item_id']) for entry in appended_lines
-            if entry.get('line_item_id') is not None
-        }
+
+        # Each appended-line dict is whitelisted to the fields
+        # `add_line_item` itself accepts (plus the optional `line_item_id`
+        # target) — closes a smuggling path where a caller sneaks
+        # receiving-state fields (qty_received, line_number, ...) into a
+        # reconcile call, bypassing the receiving flow's own guards.
+        appended_ids = set()
+        for entry in appended_lines:
+            unknown = (
+                set(entry.keys()) - PurchaseOrderService.APPENDED_LINE_FIELDS
+                - {'line_item_id'}
+            )
+            if unknown:
+                raise ValidationError({'appended_lines': [
+                    f'Unknown field(s): {", ".join(sorted(unknown))}.'
+                ]})
+            raw_id = entry.get('line_item_id')
+            if raw_id is None:
+                continue
+            try:
+                appended_ids.add(int(raw_id))
+            except (ValueError, TypeError):
+                raise ValidationError({'appended_lines': [
+                    f'{raw_id!r} is not a valid line item id.'
+                ]})
         bad_ids = appended_ids - set(existing_invoice_only.keys())
         if bad_ids:
             raise ValidationError({'appended_lines': [
@@ -153,10 +213,7 @@ class PurchaseOrderService:
         with transaction.atomic():
             for li in all_lines_by_id.values():
                 if li.pk in line_finals:
-                    value = line_finals[li.pk]
-                    li.final_price = (
-                        value if isinstance(value, Decimal) else Decimal(str(value))
-                    )
+                    li.final_price = line_finals[li.pk]
                 elif not li.invoice_only:
                     # REPLACE semantics: an omitted ordered line reverts to
                     # "as ordered" — see docstring. invoice_only lines not
@@ -196,11 +253,7 @@ class PurchaseOrderService:
                 if pk not in seen_invoice_only_ids:
                     LineItemService.delete_line_item_with_renumber(li)
 
-            po.bill_total = (
-                None if bill_total is None
-                else (bill_total if isinstance(bill_total, Decimal)
-                      else Decimal(str(bill_total)))
-            )
+            po.bill_total = bill_total
             po.vendor_invoice_ref = vendor_invoice_ref or ''
             po.reconciled = True
             po.reconciled_date = timezone.now()
@@ -688,6 +741,11 @@ class PurchaseOrderReceivingService:
             li = PurchaseOrderLineItem.objects.select_for_update().get(
                 pk=line_item_id, purchase_order=po,
             )
+            if li.invoice_only:
+                raise ValidationError(
+                    f'Line item #{li.line_number} is invoice-only and was '
+                    'never ordered/received — it cannot be cancelled.'
+                )
             if li.qty_received + li.qty_cancelled >= li.qty:
                 raise ValidationError(
                     f'Line item #{li.line_number} has no outstanding quantity to cancel.'

@@ -760,10 +760,11 @@ class Command(BaseCommand):
             for li in po.purchaseorderlineitem_set.all():
                 # invoice_only lines are excluded from receiving flows
                 # entirely (PurchaseOrderReceivingService refuses to act on
-                # them) — any receiving data on one is unreachable through
-                # normal use.
+                # them, including cancel_line_item) — any receiving data on
+                # one is unreachable through normal use.
                 if li.invoice_only and (
                     li.qty_received or li.received_by_id or li.received_date
+                    or li.qty_cancelled
                 ):
                     self.errors.append(
                         f'PO {po.po_number} line {li.line_number}: '

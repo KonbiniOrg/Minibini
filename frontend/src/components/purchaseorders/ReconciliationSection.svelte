@@ -34,10 +34,14 @@
       .slice().sort((a, b) => a.line_number - b.line_number)
   );
 
-  // Mount-seed by design (parent remounts this section via {#key} if it
-  // ever needs a hard resync — e.g. after a save, the just-submitted
-  // values already match what's shown, so no resync is required for
-  // identity to hold on the next save).
+  // Mount-seed by design. The parent (PurchaseOrderDetailPage) remounts
+  // this section via `{#key}` on every successful save (keyed off
+  // po.reconciled_date, which always changes) — that's load-bearing, not
+  // just a resync convenience: a same-session invoice-only line has no
+  // server id until the save round-trips, so without a forced remount its
+  // `line_item_id` would stay null even after the server assigned one,
+  // breaking the persisted-removal notice and causing a later save to
+  // delete-recreate the row instead of updating it in place.
   // svelte-ignore state_referenced_locally
   let billTotal = $state(po.bill_total ?? '');
   // svelte-ignore state_referenced_locally

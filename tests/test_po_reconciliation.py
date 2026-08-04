@@ -687,6 +687,107 @@ class AppendedLinesCarryNoteTest(POReconciliationTestBase):
             )
 
 
+class AppendedLinesWhitelistTest(POReconciliationTestBase):
+    """`appended_lines` entries are restricted to the fields
+    `add_line_item` itself accepts (task-owned-money Phase 5, Task 5
+    hardening) — a caller cannot smuggle receiving-state fields
+    (qty_received, line_number, received_by, ...) or an explicit
+    `invoice_only` through a reconcile call. `invoice_only` is always set
+    server-side."""
+
+    def test_smuggled_qty_received_rejected(self):
+        po = self._make_issued_po()
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('20.00'),
+                appended_lines=[{
+                    'description': 'Freight', 'qty': Decimal('1.00'),
+                    'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+                    'qty_received': Decimal('1.00'),
+                }],
+            )
+        self.assertFalse(
+            PurchaseOrderLineItem.objects.filter(
+                purchase_order=po, description='Freight',
+            ).exists()
+        )
+
+    def test_smuggled_line_number_rejected(self):
+        po = self._make_issued_po()
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('20.00'),
+                appended_lines=[{
+                    'description': 'Freight', 'qty': Decimal('1.00'),
+                    'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+                    'line_number': 99,
+                }],
+            )
+
+    def test_smuggled_invoice_only_false_rejected(self):
+        """invoice_only is always set server-side — an explicit value
+        (even a no-op True, or an attempted False) in the payload is
+        rejected like any other unknown field."""
+        po = self._make_issued_po()
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('20.00'),
+                appended_lines=[{
+                    'description': 'Freight', 'qty': Decimal('1.00'),
+                    'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+                    'invoice_only': False,
+                }],
+            )
+
+    def test_allowed_fields_still_accepted(self):
+        """Whitelisted fields (including optional task link) still work."""
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'),
+            appended_lines=[{
+                'description': 'Outsourced extra', 'qty': Decimal('1.00'),
+                'units': 'ea', 'price': Decimal('15.00'),
+                'accounting_category': self.cat.pk, 'task': self.top_task.pk,
+            }],
+        )
+        li = PurchaseOrderLineItem.objects.get(
+            purchase_order=po, description='Outsourced extra',
+        )
+        self.assertTrue(li.invoice_only)
+        self.assertEqual(li.task_id, self.top_task.pk)
+
+
+class CancelLineItemInvoiceOnlyGuardTest(POReconciliationTestBase):
+    """PurchaseOrderReceivingService.cancel_line_item must reject an
+    invoice_only line — it was never ordered/received, so "cancel the
+    remaining quantity" is meaningless for it (task-owned-money Phase 5,
+    Task 5 hardening)."""
+
+    def test_cancel_invoice_only_line_rejected(self):
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'),
+            appended_lines=[{
+                'description': 'Freight', 'qty': Decimal('1.00'),
+                'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+            }],
+        )
+        invoice_only_li = PurchaseOrderLineItem.objects.get(
+            purchase_order=po, invoice_only=True,
+        )
+        with self.assertRaises(ValidationError):
+            PurchaseOrderReceivingService.cancel_line_item(po, invoice_only_li.pk)
+        invoice_only_li.refresh_from_db()
+        self.assertEqual(invoice_only_li.qty_cancelled, Decimal('0.00'))
+
+    def test_cancel_ordinary_line_still_works(self):
+        po = self._make_issued_po()
+        ordinary_li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+        PurchaseOrderReceivingService.cancel_line_item(po, ordinary_li.pk)
+        ordinary_li.refresh_from_db()
+        self.assertEqual(ordinary_li.qty_cancelled, ordinary_li.qty)
+
+
 class RatePromptsTest(POReconciliationTestBase):
     """PurchaseOrderService.compute_rate_prompts (spec §7 rule 4,
     task-owned-money Phase 5 Task 2)."""

@@ -1466,6 +1466,19 @@ class ValidateDataPOReconciliationTest(TestCase):
         self.assertIn('[ERROR]', line)
         self.assertIn('invoice_only', line)
 
+    def test_invoice_only_line_with_qty_cancelled_is_error(self):
+        """qty_cancelled is receiving-adjacent data too — cancel_line_item
+        now refuses to touch an invoice_only line (task-owned-money Phase 5,
+        Task 5 hardening), so any qty_cancelled found on one can only have
+        arrived via a bypass, same as the other three receiving fields."""
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, qty_cancelled=Decimal('1.00'))
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
     def test_invoice_only_line_without_receiving_data_not_flagged(self):
         po = self._issued_po()
         self._line(po, invoice_only=True)

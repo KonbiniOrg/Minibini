@@ -62,3 +62,26 @@ describe('RatePromptDialog', () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe('RatePromptDialog — markup_applied note', () => {
+  it('shows a note when markupApplied is false (suggestion equals vendor cost)', () => {
+    const { getByText } = render(RatePromptDialog, {
+      props: { prompts: prompts(), markupApplied: false, onClose: vi.fn() },
+    });
+    expect(getByText(/no markup configured/i)).toBeInTheDocument();
+  });
+
+  it('omits the note when markupApplied is true', () => {
+    const { queryByText } = render(RatePromptDialog, {
+      props: { prompts: prompts(), markupApplied: true, onClose: vi.fn() },
+    });
+    expect(queryByText(/no markup configured/i)).toBeNull();
+  });
+
+  it('omits the note when markupApplied is not passed (defaults true)', () => {
+    const { queryByText } = render(RatePromptDialog, {
+      props: { prompts: prompts(), onClose: vi.fn() },
+    });
+    expect(queryByText(/no markup configured/i)).toBeNull();
+  });
+});

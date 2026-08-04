@@ -27,6 +27,7 @@
   let reconcileFormError = $state('');
   let reconcileFieldErrs = $state({});
   let ratePrompts = $state(null); // rate_prompts array from the last reconcile response, or null
+  let ratePromptsMarkupApplied = $state(true); // markup_applied from that same response
 
   // Prefill state when navigating in with ?prefill_material / ?prefill_inventory_item
   // (+ optional ?default_job). The neutral `prefilledLine` is what LineItemForm
@@ -367,15 +368,20 @@
     reconcileFormError = '';
     reconcileFieldErrs = {};
     busy = true;
+    // Capture BEFORE reload() — reload() replaces `po` with the just-saved
+    // (always-reconciled) state, so reading po.reconciled after it would
+    // always say "updated" even on the very first save.
+    const wasReconciled = po.reconciled;
     try {
       const data = await api.post(`/api/purchase-orders/${po.po_id}/reconcile/`, payload);
       await reload();
-      showSuccess(po.reconciled ? 'Reconciliation updated.' : 'Purchase order reconciled.');
+      showSuccess(wasReconciled ? 'Reconciliation updated.' : 'Purchase order reconciled.');
       // rate_prompts are money-equivalent suggestions (spec §7 rule 4) — the
       // dialog itself PATCHes tasks through the same money-gated path, so
       // only offer it to users who can actually act on it.
       if (canManageFinancials && data.rate_prompts && data.rate_prompts.length) {
         ratePrompts = data.rate_prompts;
+        ratePromptsMarkupApplied = data.markup_applied;
       }
     } catch (e) {
       const t = triageError(e);
@@ -437,15 +443,27 @@
     />
   {/if}
 
-  <ReconciliationSection
-    {po}
-    {canManageFinancials}
-    {categories}
-    busy={busy}
-    errors={reconcileFieldErrs}
-    formError={reconcileFormError}
-    onReconcile={handleReconcile}
-  />
+  {#key `${po.po_id}:${po.reconciled_date ?? ''}`}
+    <!-- ReconciliationSection mount-seeds its editable state from `po`
+         once (by design — see the component's own comment). A successful
+         reconcile+reload must force a fresh mount so the section re-seeds
+         from the just-reloaded server state: freshly-appended invoice-only
+         lines pick up their real line_item_id (so a later Remove shows the
+         persisted-removal notice, and a later save updates them in place
+         instead of delete-recreating them). reconciled_date changes on
+         every save (always re-set to now()), so keying on it (plus po_id,
+         for navigating between two never-reconciled POs) reliably remounts
+         exactly when the server state actually moved. -->
+    <ReconciliationSection
+      {po}
+      {canManageFinancials}
+      {categories}
+      busy={busy}
+      errors={reconcileFieldErrs}
+      formError={reconcileFormError}
+      onReconcile={handleReconcile}
+    />
+  {/key}
 
   {#if canManageFinancials && po.status === 'draft'}
     <p>
@@ -479,5 +497,9 @@
 {/if}
 
 {#if ratePrompts}
-  <RatePromptDialog prompts={ratePrompts} onClose={() => { ratePrompts = null; }} />
+  <RatePromptDialog
+    prompts={ratePrompts}
+    markupApplied={ratePromptsMarkupApplied}
+    onClose={() => { ratePrompts = null; }}
+  />
 {/if}

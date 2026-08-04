@@ -24,7 +24,14 @@
   import { triageError } from '../../lib/errorTriage.js';
   import { formatMoney } from '../../lib/format.js';
 
-  const { prompts = [], onClose = () => {} } = $props();
+  // markupApplied mirrors the reconcile response's `markup_applied` flag
+  // (compute_rate_prompts): false means no `default_material_markup_percent`
+  // Configuration row exists, so every suggested_rate above is simply the
+  // clean final_price with no markup layered on — worth surfacing so the
+  // PM doesn't mistake the number for a marked-up sell price. Defaults true
+  // (no note) so callers that don't thread the flag through render exactly
+  // as before.
+  const { prompts = [], markupApplied = true, onClose = () => {} } = $props();
 
   // rowState[task_id] = { status: 'pending'|'accepted'|'declined'|'error', message? }
   const rowState = $state({});
@@ -56,6 +63,9 @@
 <Modal open={true} onCancel={onClose} maxWidth="700px" label="Update task rates?">
   <h3>Update task rates?</h3>
   <p>Reconciliation recorded a final price that differs from the quoted rate on these linked tasks. Accept to update the task's selling rate, or decline to leave it as quoted.</p>
+  {#if !markupApplied}
+    <p class="markup-note"><em>No markup configured — suggestion equals vendor cost.</em></p>
+  {/if}
   <table class="data-table">
     <thead>
       <tr><th>Task</th><th class="text-right">Current Rate</th><th class="text-right">Suggested Rate</th><th>Decision</th></tr>

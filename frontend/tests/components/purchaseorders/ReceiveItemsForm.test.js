@@ -58,6 +58,32 @@ describe('ReceiveItemsForm', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it('excludes invoice_only lines from the receivable list', () => {
+    // invoice_only lines (reconciliation-appended freight/etc.) were never
+    // ordered/received — the server 400s if they're targeted via receive/.
+    const { getByText, container } = render(ReceiveItemsForm, {
+      props: {
+        lineItems: [
+          line({ line_item_id: 1, description: 'Bolt' }),
+          line({ line_item_id: 2, description: 'Freight', invoice_only: true }),
+        ],
+        onSubmit: vi.fn(), onCancel: vi.fn(),
+      },
+    });
+    expect(getByText('Bolt')).toBeInTheDocument();
+    expect(container.textContent).not.toContain('Freight');
+  });
+
+  it('shows the all-received message when only an invoice_only line remains', () => {
+    const { getByText } = render(ReceiveItemsForm, {
+      props: {
+        lineItems: [line({ description: 'Freight', invoice_only: true })],
+        onSubmit: vi.fn(), onCancel: vi.fn(),
+      },
+    });
+    expect(getByText('All items have been received.')).toBeInTheDocument();
+  });
+
   it('cancels via onCancel', async () => {
     const onCancel = vi.fn();
     const { getByRole } = render(ReceiveItemsForm, {
