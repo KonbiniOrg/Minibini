@@ -7,6 +7,24 @@ accounting_category_id is None.
 
 The helper _assert_all_lines_categorized(invoice) is tested directly so
 the positive-path test never reaches external calls (QBO/email).
+
+Task 5 (task-owned-money Phase 3) reconciliation note: invoice compose now
+stamps the configured fallback_accounting_category onto any composed line
+whose null category traces back to a source atom with no AC of its own
+(see tests/test_invoice_compose_fallback_ac.py). That does NOT make this
+gate obsolete — bundling two atoms that carry two DIFFERENT real
+categories into one line still legitimately resolves to a null category
+(no atom is null, so the fallback hook is never consulted — the "pick
+manually" case, see
+AddAtomsToNewLineItemFallbackTest.test_bundle_two_different_real_categories_stays_none
+in test_invoice_compose_fallback_ac.py). Manually-added freeform lines
+added directly against the API (bypassing the frontend's client-side
+"Accounting Category is required" check) are a second live path. So this
+gate remains necessary, reachable through ordinary (non-corrupted) usage
+— see InvoiceSendGateAmbiguousBundleTest below — not merely a backstop for
+a surgically-corrupted DB row (that backstop is
+apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice's own guard,
+see tests/test_qbo_invoice_push.py::NullCategoryDefensiveGuardTest).
 """
 from decimal import Decimal
 
@@ -16,8 +34,10 @@ from django.test import TestCase
 from apps.core.models import User, Configuration, AppState, AccountingCategory
 from apps.contacts.models import Contact
 from apps.jobs.models import Job
+from apps.jobs.models import RateScheme, Task
+from apps.inventory.models import Material
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.invoicing.services import InvoiceEmailService
+from apps.invoicing.services import InvoiceEmailService, InvoiceWizardService
 
 
 class InvoiceSendCategoryGateTest(TestCase):
@@ -142,3 +162,66 @@ class InvoiceSendCategoryGateTest(TestCase):
             )
         self.assertIn('accounting category', str(ctx.exception).lower())
         self.assertIn('1', str(ctx.exception))
+
+
+class InvoiceSendGateAmbiguousBundleTest(TestCase):
+    """Task 5 reconciliation: the gate is still reachable through ordinary
+    (non-corrupted) usage even with compose-time fallback stamping (Task
+    3) in place — bundling two atoms that each carry a different REAL
+    accounting category onto one line resolves to a null category with no
+    null atom involved, so the fallback hook is never consulted (the
+    pre-existing "pick manually" behavior — see
+    test_invoice_compose_fallback_ac.py::AddAtomsToNewLineItemFallbackTest.
+    test_bundle_two_different_real_categories_stays_none). No fallback
+    is configured here at all, proving this path doesn't depend on it."""
+
+    def setUp(self):
+        Configuration.objects.create(
+            key='invoice_number_sequence', value='INV-{year}-{counter:04d}',
+        )
+        AppState.objects.create(key='invoice_counter', value='0')
+        self.cat_labor = AccountingCategory.objects.create(
+            code='LBR-AMB', name='Labor-AMB',
+        )
+        self.cat_materials = AccountingCategory.objects.create(
+            code='MAT-AMB', name='Materials-AMB',
+        )
+        self.contact = Contact.objects.create(
+            first_name='Amb', last_name='Iguous', email='amb@test.com',
+        )
+        self.job = Job.objects.create(
+            contact=self.contact,
+            status=Job.STATUS_APPROVED,
+            job_number='JOB-AMB-0001',
+        )
+        self.invoice = Invoice.objects.create(
+            job=self.job,
+            status=Invoice.STATUS_DRAFT,
+        )
+        self.task = Task(
+            job=self.job, name='Labor',
+            qty_source=Task.QTY_ENTERED, rate=Decimal('25.00'),
+            unit_label='hour', actual_qty=Decimal('1.00'),
+            accounting_category=self.cat_labor,
+        )
+        self.task.save()
+        self.task.status = Task.STATUS_COMPLETE
+        self.task.save()
+        self.material = Material.objects.create(
+            job=self.job, description='Plywood',
+            quantity=Decimal('1.00'), sell_price=Decimal('25.00'),
+            accounting_category=self.cat_materials,
+        )
+        self.material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        self.material.save(update_fields=['consumption_state'])
+
+    def test_ambiguous_bundle_line_trips_the_gate(self):
+        line_item = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice,
+            [{'type': 'task', 'id': self.task.pk},
+             {'type': 'material', 'id': self.material.pk}],
+        )
+        self.assertIsNone(line_item.accounting_category_id)
+        with self.assertRaises(ValidationError) as ctx:
+            InvoiceEmailService._assert_all_lines_categorized(self.invoice)
+        self.assertIn(str(line_item.line_number), str(ctx.exception))

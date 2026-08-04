@@ -1,5 +1,6 @@
 from unittest.mock import patch, MagicMock, ANY
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -181,5 +182,36 @@ class PerLineInvoiceBuilderTest(TestCase):
         self._line(1, 'L', '1', '1.00', self.taxable_cat)
         qbo_inv = self._build()
         self.assertEqual(qbo_inv.CustomerRef.value, '77')
+
+
+class NullCategoryDefensiveGuardTest(PerLineInvoiceBuilderTest):
+    """Defensive guard: _build_qbo_invoice must never AttributeError on a
+    line whose accounting_category is null. In normal operation this can't
+    happen — InvoiceEmailService._assert_all_lines_categorized gates
+    send_invoice before this builder ever runs — so the only way to reach
+    this state is a surgically-planted null (QuerySet.update bypasses
+    Model.save()/full_clean(), same technique CLAUDE.md documents for
+    simulating "shouldn't happen" corruption)."""
+
+    def test_null_category_raises_clear_validation_error(self):
+        li = self._line(1, 'Corrupted', '1', '10.00', self.taxable_cat)
+        InvoiceLineItem.objects.filter(pk=li.pk).update(
+            accounting_category_id=None)
+        with self.assertRaises(ValidationError) as ctx:
+            self._build()
+        msg = str(ctx.exception)
+        self.assertIn('accounting category', msg.lower())
+        self.assertIn('1', msg)
+        # Operation error (plain sentence), not a field-keyed one.
+        self.assertFalse(hasattr(ctx.exception, 'message_dict'))
+
+    def test_null_category_line_named_by_line_number_not_position(self):
+        self._line(1, 'Fine', '1', '5.00', self.taxable_cat)
+        bad = self._line(2, 'Corrupted', '1', '10.00', self.taxable_cat)
+        InvoiceLineItem.objects.filter(pk=bad.pk).update(
+            accounting_category_id=None)
+        with self.assertRaises(ValidationError) as ctx:
+            self._build()
+        self.assertIn('2', str(ctx.exception))
 
 

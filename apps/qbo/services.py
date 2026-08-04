@@ -4,6 +4,7 @@ from apps.core.history import record_history
 import json
 from decimal import Decimal
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 from apps.core.models import Configuration
@@ -338,6 +339,19 @@ class QBOInvoiceSyncService:
                       .select_related('accounting_category', 'inventory_item')
                       .order_by('line_number'))
         for li in line_items:
+            if li.accounting_category_id is None:
+                # Should be unreachable in normal operation — send_invoice's
+                # InvoiceEmailService._assert_all_lines_categorized gate
+                # (and invoice-compose's fallback-AC stamping, task-owned-
+                # money Phase 3) both run before this builder does. Guard
+                # anyway so a gap between them (or a future caller that
+                # skips the gate) fails with a clear, contract-shaped
+                # error instead of an AttributeError deep in QBO plumbing.
+                raise ValidationError(
+                    f'Line {li.line_number} has no accounting category; '
+                    f'recompose the invoice or set one on the line before '
+                    f'sending to QuickBooks.'
+                )
             line = SalesItemLine()
             line.Amount = float(li.total_amount)
             line.Description = li.description
