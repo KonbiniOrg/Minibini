@@ -4,6 +4,12 @@
 
   let { task, draggable = false } = $props();
 
+  // Quantity structure (spec §9 rule 1, task-owned-money Phase 4): a parent
+  // task delegates PM functions to its children — a drag-to-assign gesture
+  // is rejected server-side same as start-work, so never let the card be
+  // dragged in the first place (regardless of what the caller passes).
+  const effectiveDraggable = $derived(draggable && !task.is_parent);
+
   // Single vocabulary: Working (live) / Ongoing / Unstarted / Blocked (+ terminal).
   const activity = $derived(taskActivity(task));
   const badgeLabel = $derived(activity?.label || '');
@@ -87,8 +93,8 @@
 <div
   class="task-card"
   class:urgent={isUrgent()}
-  draggable={draggable ? 'true' : 'false'}
-  ondragstart={draggable ? handleDragStart : null}
+  draggable={effectiveDraggable ? 'true' : 'false'}
+  ondragstart={effectiveDraggable ? handleDragStart : null}
   onmouseenter={(e) => scheduleShow(e.currentTarget)}
   onmouseleave={scheduleHide}
   data-task-id={task.task_id}

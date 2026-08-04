@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
-  import { parseDurationToISO, isoHoursFromDuration } from '../lib/format.js';
+  import { parseDurationToISO, isoHoursFromDuration, parseDurationToHours } from '../lib/format.js';
   import { triageError } from '../lib/errorTriage.js';
   import { showError } from '../stores/messages.js';
   import FieldError from './FieldError.svelte';
@@ -53,6 +53,20 @@
   let fieldErrs = $state({});
   let saveToCatalog = $state(false); // custom-task create only: also save as a ServiceItem
   let taskCreated = $state(false);   // guards double task-create if catalog save fails + retry
+
+  // Quantity structure (spec §9, task-owned-money Phase 4 Task 4):
+  // qty_scales_with_parent renders ONLY on subtask forms — creating a
+  // subtask (context 'subtask') or editing one (item.parent_task set).
+  // Not a MONEY_FIELD (it shapes the ESTIMATE, like est_qty — see
+  // TaskSerializer's docstring), so it's sent unconditionally, never
+  // gated on effectiveCanManage. parentInfo is this form's own fetch of
+  // the parent task (unit_label/est_qty) — self-contained, same pattern
+  // as the onMount scheme/settings fetches above — so no caller needs to
+  // thread the parent object through.
+  let qtyScalesWithParent = $state(true);
+  let parentInfo = $state(null);
+  let lastLoadedParentId = $state(null);
+  let lastDefaultedParentId = $state(null);
 
   // Edit-mode money fields: the task's OWN stamped values (task-owned money
   // Phase 1 — rate_scheme is a create-only trigger, never re-forwarded on
@@ -123,12 +137,21 @@
         ? formatDuration(item.est_worker_time)
         : (isHourUnit ? (item.est_qty ?? '') : '');
       templateId = '';
+      // Subtask forms only (item.parent_task set) — read the flag straight
+      // off the task, matching the fill-once-then-freely-editable pattern
+      // used elsewhere in this form (never re-defaulted from the parent's
+      // unit once a real value exists to show).
+      qtyScalesWithParent = item.qty_scales_with_parent ?? true;
     } else {
       name = (mode === 'manual' ? (presetName || '') : ''); description = '';
       activeModifiers = [];
       editRate = ''; editUnitLabel = ''; editAccountingCategory = '';
       createAccountingCategory = ''; lastFilledSchemeId = '';
       estQty = ''; estWorkerTime = '';
+      // Redefaulted once parentInfo loads (see the effect below) —
+      // true here is just the pre-fetch placeholder.
+      qtyScalesWithParent = true;
+      lastDefaultedParentId = null;
       // Keep numeric so it matches the numeric <option value={tmpl.template_id}>
       // (Svelte 5 selects match option values with strict ===; String() here left
       // the preset unselected in the pulldown).
@@ -160,6 +183,55 @@
     taskCreated = false;
     formError = '';
     fieldErrs = {};
+  });
+
+  // Quantity structure (spec §9, Phase 4 Task 4): the parent task id for
+  // THIS form instance — creating a subtask (contextId IS the parent) or
+  // editing one (item.parent_task). null on every other surface (job-level
+  // create/edit, template mode), which is exactly when the flag is inert.
+  const parentTaskId = $derived(
+    (!isEdit && mode === 'manual' && context === 'subtask') ? contextId
+    : (isEdit && item?.parent_task != null) ? item.parent_task
+    : null
+  );
+  const isSubtaskForm = $derived(parentTaskId != null);
+
+  // Self-contained fetch of the parent task (unit_label + est_qty) — same
+  // fetch-on-open pattern as onMount's scheme/settings loads, just keyed on
+  // parentTaskId instead of mount. Refetches only when the parent identity
+  // actually changes (not on every keystroke).
+  $effect(() => {
+    if (!open || parentTaskId == null) {
+      parentInfo = null;
+      lastLoadedParentId = null;
+      return;
+    }
+    if (String(parentTaskId) === String(lastLoadedParentId)) return;
+    lastLoadedParentId = parentTaskId;
+    (async () => {
+      try {
+        parentInfo = await api.get(`/api/tasks/${parentTaskId}/`);
+      } catch (e) {
+        parentInfo = null;
+      }
+    })();
+  });
+
+  // CREATE only: default the checkbox from the parent's unit_label once
+  // parentInfo arrives — unit-keyed ('ea' -> true), mirroring
+  // TaskService.create_direct's server-side default exactly (spec §9 rule
+  // 2) so what the checkbox shows is what the server would pick if the
+  // field were omitted. Fires once per parent identity, then the user is
+  // free to override without being redefaulted (same fill-once pattern as
+  // the template/scheme-fill effects above). Edit mode never redefaults —
+  // it reads the task's own already-persisted value instead (see the
+  // populate effect above).
+  $effect(() => {
+    if (isEdit) return;
+    if (!open || !isSubtaskForm || !parentInfo) return;
+    if (String(parentTaskId) === String(lastDefaultedParentId)) return;
+    lastDefaultedParentId = parentTaskId;
+    qtyScalesWithParent = parentInfo.unit_label === 'ea';
   });
 
   // In template mode, when the user picks a template, defaults flow downward.
@@ -249,6 +321,39 @@
     (mode === 'manual' && isEdit) ? editUnitLabel === 'hour' : (selectedScheme?.unit_label === 'hour')
   );
 
+  // Live preview inputs for the ALWAYS-visible inline derived-expectation
+  // line (spec §9 rule 3: "the subtask form ALWAYS shows the derived
+  // expectation inline"). Mirrors save()'s own estQtyValue resolution
+  // (hour-unit schemes drive qty from the parsed worker-time field) so the
+  // preview never diverges from what actually gets submitted.
+  const childUnitLabelForPreview = $derived(
+    isHourUnit ? 'hours'
+      : (((mode === 'manual' && isEdit) ? editUnitLabel : selectedScheme?.unit_label) || '')
+  );
+  const childQtyPreview = $derived.by(() => {
+    if (isHourUnit) {
+      const h = parseDurationToHours(estWorkerTime);
+      return (h === null || h === false) ? null : h;
+    }
+    const n = parseFloat(estQty);
+    return Number.isFinite(n) ? n : null;
+  });
+  const parentEstQtyPreview = $derived.by(() => {
+    if (!parentInfo || parentInfo.est_qty == null || parentInfo.est_qty === '') return null;
+    const n = parseFloat(parentInfo.est_qty);
+    return Number.isFinite(n) ? n : null;
+  });
+  // The ONE multiplier this preview uses — mirrors Task._parent_multiplier()
+  // (apps/jobs/models.py): flag-false is always ×1; flag-true with no
+  // parent est_qty ALSO falls back to ×1, but the template below renders
+  // that case as an explicit "not set" state rather than a bare number
+  // (carried reviewer note, Task 1 -> Task 4 — never a silent x1).
+  const expectedPreview = $derived.by(() => {
+    if (childQtyPreview == null) return null;
+    if (!qtyScalesWithParent || parentEstQtyPreview == null) return childQtyPreview;
+    return childQtyPreview * parentEstQtyPreview;
+  });
+
   function categoryLabel(id) {
     if (id == null || id === '') return '—';
     const cat = categories.find((c) => String(c.id) === String(id));
@@ -324,6 +429,12 @@
           est_qty: estQtyValue,
           est_worker_time: estWorkerTimeISO,
         };
+        // Subtask forms only — inert (and omitted) on a top-level task, same
+        // as the model field itself (spec §9 rule 2). Not a MONEY_FIELD, so
+        // unconditional regardless of effectiveCanManage.
+        if (isSubtaskForm) {
+          editPayload.qty_scales_with_parent = qtyScalesWithParent;
+        }
         if (effectiveCanManage) {
           editPayload.rate = editRate;
           editPayload.unit_label = editUnitLabel;
@@ -390,6 +501,9 @@
         let url;
         if (context === 'subtask') {
           url = `/api/tasks/${contextId}/subtasks/`;
+          // Not a MONEY_FIELD — est-shaping like est_qty, open to whoever
+          // may create the subtask at all (see TaskSerializer's docstring).
+          payload.qty_scales_with_parent = qtyScalesWithParent;
         } else {
           url = `/api/jobs/${contextId}/tasks/`;
         }
@@ -614,6 +728,35 @@
           <FieldError errors={fieldErrs} field="est_worker_time" />
           {#if isHourUnit}<FieldError errors={fieldErrs} field="est_qty" />{/if}
         </p>
+
+        {#if isSubtaskForm}
+          <!-- Quantity structure (spec §9 rule 2): functional and rendered
+               ONLY on a subtask form. Default is unit-keyed from the
+               parent's own unit_label (see the effect above); freely
+               overridable from there — "let users complain" per RM. -->
+          <p>
+            <label>
+              <input type="checkbox" bind:checked={qtyScalesWithParent}>
+              Scales with parent quantity (per-unit estimate × parent qty)
+            </label>
+          </p>
+          <!-- ALWAYS visible (spec §9 rule 3) — never hidden behind a toggle,
+               and NEVER a silently-computed number when the parent has no
+               qty yet (carried reviewer note, Task 1 -> Task 4). -->
+          <p class="derived-expectation">
+            {#if childQtyPreview == null}
+              <em>Enter an estimated quantity to see the expected total.</em>
+            {:else if !qtyScalesWithParent}
+              {childQtyPreview} {childUnitLabelForPreview} per batch — fixed regardless of parent quantity.
+            {:else if parentEstQtyPreview == null}
+              <em>Parent quantity not set — treated as ×1.</em>
+              Expected: {childQtyPreview} {childUnitLabelForPreview}.
+            {:else}
+              {childQtyPreview} {childUnitLabelForPreview} × {parentEstQtyPreview} {parentInfo?.unit_label || 'parent unit'}
+              = <strong>{expectedPreview} expected</strong>
+            {/if}
+          </p>
+        {/if}
 
         {#if mode === 'manual' && !isEdit}
           <p>

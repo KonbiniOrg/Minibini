@@ -594,6 +594,70 @@ describe('TaskTree task rows are one shared fragment (TaskRow)', () => {
   });
 });
 
+// Quantity structure (spec §9, task-owned-money Phase 4 Task 4): rows read
+// the API's derived expected_qty/expected_worker_time fields (the ONE
+// multiplier, apps/jobs/models.py Task._parent_multiplier) instead of raw
+// est_qty/est_worker_time when present — a top-level task's expected value
+// always equals its raw one (multiplier 1), so this is a pure fallback and
+// never regresses a payload that predates these fields.
+describe('TaskRow shows derived expected totals when the API provides them', () => {
+  function estQtyCell(container) {
+    const row = container.querySelector('tbody tr.subtask-row') || container.querySelector('tbody tr.task-row');
+    return row.querySelectorAll('td')[5];
+  }
+  function scheduledTimeCell(container) {
+    const row = container.querySelector('tbody tr.subtask-row') || container.querySelector('tbody tr.task-row');
+    return row.querySelectorAll('td')[3];
+  }
+
+  it('shows expected_qty (the scaled total) instead of the raw per-unit est_qty', () => {
+    const parent = task({
+      task_id: 30, name: 'Widget batch', is_parent: true,
+      subtasks: [task({
+        task_id: 31, name: 'Per-widget polish', est_qty: '2', expected_qty: '20',
+        unit_label: 'ea', qty_scales_with_parent: true,
+      })],
+    });
+    const { container } = render(TaskTree, { props: { tasks: [parent], canManage: true } });
+    expect(estQtyCell(container).textContent.trim()).toBe('20');
+  });
+
+  it('shows expected_worker_time (the scaled total) instead of the raw per-unit est_worker_time', () => {
+    const parent = task({
+      task_id: 32, name: 'Sanding batch', is_parent: true,
+      subtasks: [task({
+        task_id: 33, name: 'Per-unit sand', est_worker_time: '0:05:00',
+        expected_worker_time: '0:50:00', unit_label: 'ea', qty_scales_with_parent: true,
+      })],
+    });
+    const { container } = render(TaskTree, { props: { tasks: [parent], canManage: true } });
+    expect(scheduledTimeCell(container).textContent.trim()).toBe('50m');
+  });
+
+  it('falls back to the raw est_qty when expected_qty is absent (legacy payload)', () => {
+    const t = task({ est_qty: '5', unit_label: 'pcs' });
+    const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(estQtyCell(container).textContent.trim()).toBe('5');
+  });
+});
+
+// Quantity structure (spec §9 rule 1): a parent delegates PM functions
+// (start/blep/assign) to its children — the assign gesture must never even
+// render for it, since the server rejects setting a NEW assignee outright.
+describe('TaskRow hides assign on a parent task', () => {
+  it('hides the assign button when the task is_parent, even with canManage', () => {
+    const t = task({ task_id: 40, is_parent: true });
+    const { queryByRole } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(queryByRole('button', { name: 'assign' })).toBeNull();
+  });
+
+  it('still shows assign on a non-parent task', () => {
+    const t = task({ task_id: 41, is_parent: false });
+    const { getByRole } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getByRole('button', { name: 'assign' })).toBeInTheDocument();
+  });
+});
+
 describe('TaskRow Est Qty duplicate suppression', () => {
   // Same dedupe as TaskDetailPage's Est Qty chip: for an hour-unit scheme,
   // est_qty restates est_worker_time (backend pair-fills them, Task 8) — the

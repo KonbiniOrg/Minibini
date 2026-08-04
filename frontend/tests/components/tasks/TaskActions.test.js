@@ -98,6 +98,43 @@ describe('TaskActions', () => {
     expect(c2.querySelector('.cancel-work')).toBeNull();
   });
 
+  // Quantity structure (spec §9 rule 1, task-owned-money Phase 4 Task 4): a
+  // parent task delegates start/blep to its children — start-work must
+  // never render for it, regardless of status.
+  it('hides Start Work on a parent task', () => {
+    const { queryByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'pending' }, user: { id: 1 }, isParent: true },
+    });
+    expect(queryByRole('button', { name: 'Start Work' })).toBeNull();
+  });
+
+  it('still shows Block/Cancel on a parent task', () => {
+    const { getByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'pending' }, user: { id: 1 }, isParent: true },
+    });
+    expect(getByRole('button', { name: 'Block' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+  });
+
+  // Parent completion is OFFERED, not automatic — only once every child is
+  // terminal (spec §9 rule 1). childrenReady defaults true (every
+  // non-parent surface unaffected); a parent whose children aren't all
+  // terminal yet hides Complete instead of letting it round-trip a
+  // guaranteed 400 from the server.
+  it('hides Complete on a parent task while children are not all terminal', () => {
+    const { queryByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 }, isParent: true, childrenReady: false },
+    });
+    expect(queryByRole('button', { name: 'Complete' })).toBeNull();
+  });
+
+  it('shows Complete on a parent task once every child is terminal', () => {
+    const { getByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 }, isParent: true, childrenReady: true },
+    });
+    expect(getByRole('button', { name: 'Complete' })).toBeInTheDocument();
+  });
+
   it('raises the global error overlay when an action fails', async () => {
     api.post.mockRejectedValue(Object.assign(new Error('Request failed'), {
       status: 400,

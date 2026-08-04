@@ -43,6 +43,20 @@ describe('BlepList', () => {
     expect(getByRole('button', { name: 'Edit' })).toBeInTheDocument();
   });
 
+  // Quantity structure (spec §9 rule 1, task-owned-money Phase 4): a
+  // historical time entry is a blep, and the backend rejects creating one
+  // on a parent task the same as start-work — hide the affordance rather
+  // than let it round-trip a guaranteed error.
+  it('hides Add Entry when canAdd is false', () => {
+    const { queryByRole } = render(BlepList, { props: { bleps: [], canAdd: false } });
+    expect(queryByRole('button', { name: 'Add Entry' })).toBeNull();
+  });
+
+  it('shows Add Entry by default (canAdd defaults true)', () => {
+    const { getByRole } = render(BlepList, { props: { bleps: [] } });
+    expect(getByRole('button', { name: 'Add Entry' })).toBeInTheDocument();
+  });
+
   it("does not let a worker edit someone else's blep", () => {
     const { queryByRole } = render(BlepList, {
       props: {

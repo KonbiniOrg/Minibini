@@ -22,6 +22,7 @@
   import AssignModal from '../../components/AssignModal.svelte';
   import JobShell from '../../components/jobs/JobShell.svelte';
   import { formatDuration, durationToHours } from '../../lib/format.js';
+  import { taskActual, fmtWorkerTime } from '../../lib/taskTotals.js';
 
   let { params = {} } = $props();
 
@@ -92,6 +93,32 @@
     task?.unit_label === 'hour'
     && task?.est_worker_time
     && Number(task?.est_qty) === durationToHours(task.est_worker_time)
+  );
+
+  // Quantity structure (spec §9 rule 4, task-owned-money Phase 4 Task 4): a
+  // parent task with no explicit rate of its own still has real money —
+  // Task.effective_rate() already resolves to derived_unit_price() for it
+  // server-side. The money block used to gate purely on the task's OWN raw
+  // `rate` (never null-but-priced before structures existed); widen the
+  // gate so a rate-null parent still shows its Scheme/Rate/Category/Charge
+  // chips, with the Rate chip labeled to say where the number came from.
+  const hasMoney = $derived(
+    task?.rate != null || (task?.is_parent && task?.derived_unit_price != null)
+  );
+  const rateIsDerived = $derived(task?.rate == null && task?.is_parent);
+
+  // Quantity structure (spec §9 rule 1): a parent delegates start/blep/
+  // assign to its children — never render those affordances for one.
+  const isParentTask = $derived(!!task?.is_parent);
+
+  // Parent completion is OFFERED, not automatic — only once every child is
+  // terminal (complete/cancelled), mirroring TaskLifecycleService.
+  // complete_task's own open_children check exactly (vacuously true with
+  // no children yet, same as the backend's `.exclude(...)` returning
+  // empty). Drives both the Complete button's visibility (via TaskActions)
+  // and the explanatory note below it.
+  const childrenReady = $derived(
+    subtasks.every((s) => s.status === 'complete' || s.status === 'cancelled')
   );
 
   // Same lock the job task list uses: terminal jobs freeze everything.
@@ -302,6 +329,26 @@
     return cat ? `${cat.code} — ${cat.name}` : `#${id}`;
   }
 
+  // Quantity structure (spec §9 rule 3, task-owned-money Phase 4): the
+  // children table's "Expected" column reads the API's derived value —
+  // never re-derives the multiplier client-side (that's Task.expected_qty()/
+  // expected_worker_time()'s job, the ONE place it's computed). Falls back
+  // to the worker-time expectation for a scheme with no quantity of its own
+  // (e.g. elapsed_time), then to a dash.
+  function childExpectedDisplay(sub) {
+    if (sub.expected_qty != null) return `${sub.expected_qty} ${sub.unit_label || ''}`.trim();
+    if (sub.expected_worker_time) return fmtWorkerTime(sub.expected_worker_time);
+    return '-';
+  }
+
+  // "Logged / Actual" reads the same taskActual() helper TaskRow uses —
+  // bleps-derived hours for elapsed_time, worker-entered actual_qty for
+  // entered_qty.
+  function childLoggedDisplay(sub) {
+    const actual = taskActual(sub);
+    return actual == null ? '-' : `${actual} ${sub.unit_label || ''}`.trim();
+  }
+
   // Material modal handlers
   function openAddMaterial() {
     matModalMaterial = null;
@@ -420,7 +467,7 @@
         <div class="stat-chip">
           <div class="stat-chip-header">Assignee</div>
           <div class="stat-chip-body">
-            {#if task.can_manage}
+            {#if task.can_manage && !isParentTask}
               <button type="button" class="chip-link" class:muted={!task.assignee_name}
                 onclick={() => { assignModalOpen = true; }}>{task.assignee_name || 'Unassigned'}</button>
             {:else}
@@ -465,23 +512,27 @@
             <div class="stat-chip-body">{Number(task.actual_hours) || 0} {task.unit_label}</div>
           </div>
         {/if}
-        {#if task.rate != null}
+        {#if hasMoney}
           <!-- Provenance only — never read for money math. The task owns its
                own rate/unit_label/etc; this just names the preset it was
                stamped from, or a dash when that preset is gone (SET_NULL on
-               delete) or was never known (legacy row). -->
+               delete) or was never known (legacy row). A rate-null parent
+               has no preset of its own (its price comes from children), so
+               this stays a dash for it too. -->
           <div class="stat-chip">
             <div class="stat-chip-header">Scheme</div>
             <div class="stat-chip-body" title={modifiersTooltip}>{task.source_scheme_name || '—'}</div>
           </div>
         {/if}
-        {#if task.rate != null && task.effective_rate}
+        {#if hasMoney && task.effective_rate}
           <div class="stat-chip money">
             <div class="stat-chip-header">Rate</div>
-            <div class="stat-chip-body">${task.effective_rate}/{task.unit_label}</div>
+            <div class="stat-chip-body">
+              {#if rateIsDerived}derived from children: {/if}${task.effective_rate}/{task.unit_label}
+            </div>
           </div>
         {/if}
-        {#if task.rate != null}
+        {#if hasMoney}
           <!-- Nullable end-to-end (Phase 3, Task 2): a flat/manual task may
                have no AC yet — "—" here, not an error; correction happens
                at invoicing (fallback stamping, Task 3) or via edit. Not a
@@ -491,7 +542,7 @@
             <div class="stat-chip-body">{categoryLabel(task.accounting_category)}</div>
           </div>
         {/if}
-        {#if task.rate != null && task.computed_charge}
+        {#if hasMoney && task.computed_charge}
           <div class="stat-chip money">
             <div class="stat-chip-header">Charge</div>
             <div class="stat-chip-body">${task.computed_charge}</div>
@@ -514,6 +565,8 @@
         user={$userStore}
         {activeBlepOnThisTask}
         hideStop={true}
+        isParent={isParentTask}
+        {childrenReady}
         onChanged={refresh}
         onConflict={handleConflict}
       />
@@ -521,6 +574,11 @@
         <button type="button" class="quiet" onclick={() => { editTaskOpen = true; }}>Edit Task</button>
       {/if}
     </div>
+    {#if isParentTask && !taskIsTerminal && !childrenReady}
+      <p class="completion-note">
+        Complete will be available once every subtask is complete or cancelled.
+      </p>
+    {/if}
   {/if}
 
   <StartWorkConflictModal
@@ -540,6 +598,38 @@
   {#if !task.parent_task}
     <h3>Subtasks</h3>
     {#if subtasks.length > 0}
+      <!-- Quantity structure (spec §9, task-owned-money Phase 4): the
+           expected-vs-logged comparison for a parent's children — the
+           per-unit estimate a subtask actually carries, the DERIVED total
+           it expects (Task.expected_qty(), the ONE place the parent
+           multiplier is applied), and what's actually been logged against
+           it so far. Additive to the passive tree below (which keeps its
+           own materials/reorder wiring untouched). -->
+      <table class="children-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th class="text-right">Per-unit Est</th>
+            <th class="text-right">Expected</th>
+            <th class="text-right">Logged / Actual</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each subtasks as sub (sub.task_id)}
+            <tr>
+              <td>{sub.name}</td>
+              <td>{sub.status}</td>
+              <td class="text-right">
+                {sub.est_qty ?? '-'} {sub.unit_label || ''}{sub.qty_scales_with_parent === false ? ' (batch)' : ''}
+              </td>
+              <td class="text-right">{childExpectedDisplay(sub)}</td>
+              <td class="text-right">{childLoggedDisplay(sub)}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+
       <!-- Deliberately passive rows (A3): no edit/del/cancel here — a
            subtask's own detail page is its editing surface. Wired: material
            add/edit and sibling reorder (B3). -->
@@ -664,6 +754,7 @@
     onEdit={openEdit}
     onDelete={(b) => { editingBlep = b; modalMode = 'edit'; }}
     onAdd={openCreate}
+    canAdd={!isParentTask}
   />
 
   <BlepEditModal
@@ -733,4 +824,13 @@
   .materials-table td { padding: 6px 10px; }
   .text-right { text-align: right; }
   /* Row buttons use .row-actions, INVOICED uses .badge-invoiced (app.css). */
+
+  /* Quantity structure (spec §9, task-owned-money Phase 4): the parent's
+     expected-vs-logged comparison — a compact, money-adjacent counterpart
+     to the passive tree below it (materials-table's palette, not the
+     tree's green header). */
+  .children-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 8px; }
+  .children-table th { padding: 6px 10px; text-align: left; background: #fefce8; }
+  .children-table td { padding: 6px 10px; }
+  .completion-note { font-size: 13px; color: #6b7280; margin: 0 0 8px; }
 </style>

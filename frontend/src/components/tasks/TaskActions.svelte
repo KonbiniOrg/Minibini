@@ -15,6 +15,16 @@
     // stop/cancel surface while a session runs — avoids two Cancel
     // buttons in one row (blep-cancel beside task-cancel).
     hideStop = false,
+    // Quantity structure (spec §9 rule 1, task-owned-money Phase 4): a
+    // parent task (≥1 subtask) delegates start/blep to its children — the
+    // server 409/400s start-work/blep/assign on one outright, so this hides
+    // Start Work rather than let the click round-trip a guaranteed error.
+    // Parent completion is OFFERED, not automatic: it's gated on
+    // childrenReady (every child terminal) so Complete doesn't invite a
+    // 400 either — computed by the caller from its own loaded subtasks
+    // list, since this component has no subtask data of its own.
+    isParent = false,
+    childrenReady = true,
     onChanged = () => {},
     onConflict = () => {},
   } = $props();
@@ -56,9 +66,9 @@
       block: false, unblock: false, cancel: false,
     };
     if (status === 'pending' || status === 'in_progress') {
-      base.startWork = !isActiveHere;
+      base.startWork = !isActiveHere && !isParent;
       base.stopWork = isActiveHere;
-      base.complete = true;
+      base.complete = !isParent || childrenReady;
       base.block = true;
       base.cancel = true;
     } else if (status === 'blocked') {

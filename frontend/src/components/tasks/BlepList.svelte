@@ -7,6 +7,11 @@
     onEdit = () => {},
     onDelete = () => {},
     onAdd = () => {},
+    // Quantity structure (spec §9 rule 1): a parent task's own bleps are
+    // rejected server-side same as start-work — the caller (TaskDetailPage)
+    // passes false for a parent task so this historical-entry affordance
+    // never invites the same guaranteed error.
+    canAdd = true,
   } = $props();
 
   const canManageTime = $derived($canManageTimeStore);
@@ -66,5 +71,5 @@
       </tbody>
     </table>
   {/if}
-  <p><button type="button" onclick={onAdd}>Add Entry</button></p>
+  {#if canAdd}<p><button type="button" onclick={onAdd}>Add Entry</button></p>{/if}
 </section>

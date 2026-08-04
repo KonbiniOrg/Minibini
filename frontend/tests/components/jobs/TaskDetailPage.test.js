@@ -520,9 +520,12 @@ describe('TaskDetailPage subtask tree (A3/B3)', () => {
 
   it('offers no edit/del/cancel buttons on subtask rows', async () => {
     mockApiWithJob({ can_manage: true }, {}, subs);
-    const { findByRole, findByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    const { findByRole, findAllByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
-    await findByText('Sub A');
+    // Two surfaces now name each subtask (the expected-vs-logged comparison
+    // table + the passive tree below it) — findAll, not find, since a bare
+    // name match is deliberately ambiguous.
+    await findAllByText('Sub A');
     expect(queryByText('edit')).toBeNull();
     expect(queryByText('del')).toBeNull();
     expect(queryByText('cancel')).toBeNull();
@@ -532,9 +535,9 @@ describe('TaskDetailPage subtask tree (A3/B3)', () => {
     mockApiWithJob({ can_manage: true }, {}, subs);
     api.post.mockReset();
     api.post.mockResolvedValue({});
-    const { findByRole, findByText, queryAllByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    const { findByRole, findAllByText, queryAllByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
-    await findByText('Sub A');
+    await findAllByText('Sub A');
     const downArrows = queryAllByText('▼');
     expect(downArrows.length).toBeGreaterThan(0);
     await fireEvent.click(downArrows[0]);
@@ -608,6 +611,128 @@ describe('TaskDetailPage crumbs', () => {
     const parentLink = getByText('Build shelving unit');
     expect(parentLink.tagName).toBe('A');
     expect(parentLink.getAttribute('href')).toBe('/jobs/3/tasks/4');
+  });
+});
+
+// Quantity structure (spec §9, task-owned-money Phase 4 Task 4): a parent
+// task (is_parent) prices from its children when it has no rate of its
+// own — Task.effective_rate()/derived_unit_price() already compute this
+// server-side; the page just needs to widen its money-block gate (today
+// keyed on the task's OWN raw `rate`) and label the derived case.
+describe('TaskDetailPage parent view — derived pricing', () => {
+  it('labels the Rate chip "derived from children" for a rate-null parent', async () => {
+    mockApi({
+      status: 'pending', rate: null, is_parent: true,
+      derived_unit_price: '12.50', effective_rate: '12.50', unit_label: 'ea',
+    });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const header = getByText('Rate');
+    const chip = header.closest('.stat-chip');
+    expect(chip.querySelector('.stat-chip-body')).toHaveTextContent(/derived from children/i);
+    expect(chip.querySelector('.stat-chip-body')).toHaveTextContent('$12.50/ea');
+  });
+
+  it('still shows Charge for a rate-null parent (money block gate widened beyond raw rate)', async () => {
+    mockApi({
+      status: 'pending', rate: null, is_parent: true,
+      derived_unit_price: '12.50', effective_rate: '12.50', unit_label: 'ea',
+      computed_charge: '25.00',
+    });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByText('Charge')).toBeInTheDocument();
+    expect(getByText('$25.00')).toBeInTheDocument();
+  });
+
+  it('shows the plain rate (no "derived" label) when a parent has an explicit rate override', async () => {
+    mockApi({
+      status: 'pending', rate: '99.00', is_parent: true,
+      effective_rate: '99.00', unit_label: 'ea',
+    });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const header = getByText('Rate');
+    const chip = header.closest('.stat-chip');
+    expect(chip.querySelector('.stat-chip-body')).not.toHaveTextContent(/derived from children/i);
+    expect(chip.querySelector('.stat-chip-body')).toHaveTextContent('$99.00/ea');
+  });
+});
+
+// Quantity structure (spec §9 rule 1): PM functions (start/blep/assign)
+// delegate to a parent's children — the assign gesture must never render
+// for one, since the server rejects setting a new assignee outright.
+describe('TaskDetailPage non-startable parent affordances', () => {
+  it('hides the assign button on a parent task, even with can_manage', async () => {
+    mockApi({ can_manage: true, is_parent: true });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: 'Unassigned' })).toBeNull();
+  });
+
+  it('hides Start Work in the action band on a parent task', async () => {
+    mockApi({ status: 'pending', is_parent: true });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: 'Start Work' })).toBeNull();
+  });
+
+  it('hides "Add Entry" (historical blep) on a parent task', async () => {
+    mockApi({ status: 'pending', is_parent: true });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: 'Add Entry' })).toBeNull();
+  });
+
+  it('keeps Start Work and Add Entry on a non-parent task', async () => {
+    mockApi({ status: 'pending', is_parent: false });
+    const { findByRole, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByRole('button', { name: 'Start Work' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Add Entry' })).toBeInTheDocument();
+  });
+});
+
+describe('TaskDetailPage parent completion offer (spec §9 rule 1)', () => {
+  const openChild = { task_id: 8, name: 'Sub A', status: 'in_progress', parent_task: 7 };
+  const terminalChild = { task_id: 9, name: 'Sub B', status: 'complete', parent_task: 7 };
+
+  it('hides Complete and shows a note while children are not all terminal', async () => {
+    mockApiWithJob({ status: 'in_progress', is_parent: true }, {}, [openChild]);
+    const { findByRole, queryByRole, findAllByText, findByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    await findAllByText(/Sub A/);
+    expect(queryByRole('button', { name: 'Complete' })).toBeNull();
+    expect(await findByText(/once every subtask/i)).toBeInTheDocument();
+  });
+
+  it('offers Complete once every child is terminal', async () => {
+    mockApiWithJob({ status: 'in_progress', is_parent: true }, {}, [terminalChild]);
+    const { findByRole, getByRole, findAllByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    await findAllByText(/Sub B/);
+    expect(getByRole('button', { name: 'Complete' })).toBeInTheDocument();
+  });
+});
+
+describe('TaskDetailPage children table (expected vs logged)', () => {
+  it('renders name, status, per-unit est, expected, and logged/actual for each child', async () => {
+    const child = {
+      task_id: 8, name: 'Per-widget polish', status: 'in_progress', parent_task: 7,
+      est_qty: '2', expected_qty: '20', unit_label: 'ea', qty_source: 'entered_qty',
+      actual_qty: '6', qty_scales_with_parent: true,
+    };
+    mockApiWithJob({ status: 'in_progress', is_parent: true }, {}, [child]);
+    const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const table = await waitFor(() => {
+      const t = container.querySelector('.children-table');
+      expect(t).not.toBeNull();
+      return t;
+    });
+    expect(table).toHaveTextContent('Per-widget polish');
+    expect(table).toHaveTextContent('20'); // expected (derived)
+    expect(table).toHaveTextContent('6');  // logged/actual
   });
 });
 

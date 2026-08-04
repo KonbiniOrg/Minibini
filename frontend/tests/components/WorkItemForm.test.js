@@ -569,3 +569,137 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
     }));
   });
 });
+
+// Quantity structure (spec §9, task-owned-money Phase 4 Task 4): the
+// qty_scales_with_parent checkbox + its ALWAYS-visible inline derived
+// expectation line render ONLY on subtask forms (create-subtask context, or
+// editing an existing subtask), defaulted unit-keyed from the PARENT's own
+// unit_label ('ea' -> checked) — mirroring TaskService.create_direct's
+// server-side default (apps/jobs/services.py) so the checkbox's initial
+// state is never a lie about what the server would pick.
+describe('WorkItemForm subtask mode — qty_scales_with_parent', () => {
+  const PARENT_EA = { task_id: 50, name: 'Widget batch', unit_label: 'ea', est_qty: '10' };
+  const PARENT_HR = { task_id: 51, name: 'Sanding job', unit_label: 'hour', est_qty: '4' };
+  const PARENT_NO_QTY = { task_id: 52, name: 'Custom order', unit_label: 'ea', est_qty: null };
+
+  function mockGetWithParent(parent, schemes = [EACH_SCHEME]) {
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: schemes });
+      if (url.startsWith('/api/settings/')) return Promise.resolve({});
+      if (url === `/api/tasks/${parent.task_id}/`) return Promise.resolve(parent);
+      return Promise.resolve({});
+    });
+  }
+
+  it('shows no qty_scales_with_parent checkbox in job (non-subtask) context', async () => {
+    const { findByLabelText, queryByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5 },
+    });
+    await findByLabelText(/Rate Scheme/);
+    expect(queryByLabelText(/scales with parent/i)).not.toBeInTheDocument();
+  });
+
+  it('defaults the checkbox CHECKED when the parent unit is "ea"', async () => {
+    mockGetWithParent(PARENT_EA);
+    const { findByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'subtask', contextId: PARENT_EA.task_id },
+    });
+    const checkbox = await findByLabelText(/scales with parent/i);
+    await waitFor(() => expect(checkbox.checked).toBe(true));
+  });
+
+  it('defaults the checkbox UNCHECKED when the parent unit is not "ea"', async () => {
+    mockGetWithParent(PARENT_HR, [HOUR_UNIT_SCHEME]);
+    const { findByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'subtask', contextId: PARENT_HR.task_id },
+    });
+    const checkbox = await findByLabelText(/scales with parent/i);
+    await waitFor(() => expect(checkbox.checked).toBe(false));
+  });
+
+  it('sends qty_scales_with_parent on subtask create, freely overridable', async () => {
+    mockGetWithParent(PARENT_EA);
+    const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'subtask', contextId: PARENT_EA.task_id },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '8' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Per-widget polish' } });
+    const checkbox = await findByLabelText(/scales with parent/i);
+    await waitFor(() => expect(checkbox.checked).toBe(true));
+    await fireEvent.click(checkbox); // uncheck it — freely overridable
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith(`/api/tasks/${PARENT_EA.task_id}/subtasks/`, expect.objectContaining({
+      qty_scales_with_parent: false,
+    }));
+  });
+
+  it('shows the derived expectation line multiplying per-unit qty by the parent quantity', async () => {
+    mockGetWithParent(PARENT_EA);
+    const { findByLabelText, getByLabelText, findByText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'subtask', contextId: PARENT_EA.task_id },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '8' } });
+    await fireEvent.input(getByLabelText(/Estimated qty/), { target: { value: '2' } });
+    // 2 ea/unit x 10 (parent est_qty) = 20 expected
+    expect(await findByText(/20 expected/)).toBeInTheDocument();
+  });
+
+  it('a flag-false (batch) subtask does not multiply — expected equals the raw qty', async () => {
+    mockGetWithParent(PARENT_EA);
+    const { findByLabelText, getByLabelText, findByText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'subtask', contextId: PARENT_EA.task_id },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '8' } });
+    const checkbox = await findByLabelText(/scales with parent/i);
+    await waitFor(() => expect(checkbox.checked).toBe(true));
+    await fireEvent.click(checkbox); // batch total, not per-unit
+    await fireEvent.input(getByLabelText(/Estimated qty/), { target: { value: '7' } });
+    expect(await findByText(/7 ea per batch/)).toBeInTheDocument();
+  });
+
+  it('shows an explicit "parent quantity not set" state instead of a silently-computed number', async () => {
+    // Reviewer flag carried from Task 1 (progress.md): a flag-true subtask
+    // whose parent has no est_qty must NEVER render a silent x1 total.
+    mockGetWithParent(PARENT_NO_QTY);
+    const { findByLabelText, getByLabelText, findByText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'subtask', contextId: PARENT_NO_QTY.task_id },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '8' } });
+    await fireEvent.input(getByLabelText(/Estimated qty/), { target: { value: '2' } });
+    expect(await findByText(/parent quantity not set/i)).toBeInTheDocument();
+  });
+
+  it('offers the checkbox and PATCHes it when editing an existing subtask', async () => {
+    mockGetWithParent(PARENT_EA);
+    const subtaskItem = {
+      task_id: 60, name: 'Per-unit sand', parent_task: PARENT_EA.task_id,
+      active_modifiers: [], est_qty: '1', est_worker_time: null,
+      rate: '5', unit_label: 'ea', qty_scales_with_parent: false, can_manage: true,
+    };
+    const { findByLabelText, getByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true, item: subtaskItem },
+    });
+    const checkbox = await findByLabelText(/scales with parent/i);
+    expect(checkbox.checked).toBe(false);
+    await fireEvent.click(checkbox);
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/tasks/60/', expect.objectContaining({
+      qty_scales_with_parent: true,
+    }));
+  });
+
+  it('omits qty_scales_with_parent when editing a top-level (non-subtask) task', async () => {
+    const item = {
+      task_id: 61, name: 'Flat task', parent_task: null, active_modifiers: [],
+      est_qty: '1', est_worker_time: null, can_manage: true,
+    };
+    const { findByLabelText, getByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true, item },
+    });
+    await findByLabelText(/Name/);
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const call = api.patch.mock.calls.find((c) => c[0] === '/api/jobs/5/tasks/61/');
+    expect('qty_scales_with_parent' in call[1]).toBe(false);
+  });
+});

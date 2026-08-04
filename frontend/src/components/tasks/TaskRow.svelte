@@ -62,17 +62,31 @@
     && (task.materials || []).some(isMaterialAwaitingStock)
   );
 
+  // Quantity structure (spec §9 rule 3, task-owned-money Phase 4): the API
+  // exposes the DERIVED expected total (raw est × the parent multiplier —
+  // Task.expected_qty()/expected_worker_time(), the ONE place that
+  // multiplier is ever applied) — prefer it over the raw per-unit estimate
+  // so a structure's subtask rows show what's actually expected, not the
+  // per-unit input. A top-level task's expected value always equals its
+  // raw one (multiplier 1), and an older payload that predates these
+  // fields simply falls back to the raw fields — never a regression.
+  const displayQty = $derived(task.expected_qty ?? task.est_qty);
+  const displayWorkerTime = $derived(task.expected_worker_time ?? task.est_worker_time);
+
   // Same dedupe as TaskDetailPage's Est Qty chip: for an hour-unit scheme,
   // est_qty restates est_worker_time (backend pair-fills them) — the Est
   // Time column already shows the number, so drop the redundant one here.
   // Inputs are minute-grained in practice; do not reuse this comparison for
   // blep-derived elapsed values (those carry seconds and would double-round).
   // unit_label is the task's own money field now (was the RateScheme's
-  // scheme_unit_label echo, retired — task-owned money Phase 1).
+  // scheme_unit_label echo, retired — task-owned money Phase 1). Compares
+  // the DISPLAYED (expected) values so the dedupe still holds on a scaled
+  // subtask, where expected_qty and expected_worker_time carry the same
+  // multiplier applied to both.
   const estQtyIsDuplicate = $derived(
     task.unit_label === 'hour'
-    && task.est_worker_time
-    && Number(task.est_qty) === durationToHours(task.est_worker_time)
+    && displayWorkerTime
+    && Number(displayQty) === durationToHours(displayWorkerTime)
   );
 </script>
 
@@ -84,10 +98,10 @@
     <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
     {#if awaitingMaterials}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
   </td>
-  {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
-  <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
+  {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal && canManage && !jobOnHold && !task.is_parent}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
+  <td class="text-right">{fmtWorkerTime(displayWorkerTime)}</td>
   {#if showStatus}<td>{#if task.invoice}<a class="badge-invoiced" href={`#/invoices/${task.invoice.id}`} title="Billed on this invoice">INVOICED</a>{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
-  <td class="text-right">{estQtyIsDuplicate ? '-' : (task.est_qty ?? '-')}</td>
+  <td class="text-right">{estQtyIsDuplicate ? '-' : (displayQty ?? '-')}</td>
   <td class="text-right">{taskActual(task) ?? '-'}</td>
   <td class="text-right">{task.unit_label || '-'}</td>
   <td class="text-right">-</td>

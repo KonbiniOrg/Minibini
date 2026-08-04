@@ -40,6 +40,20 @@ describe('TaskCard', () => {
     expect(badge.style.color).toBe('rgb(22, 163, 74)');
   });
 
+  // Quantity structure (spec §9 rule 1, task-owned-money Phase 4): dragging
+  // a card onto a worker column calls assign, which the server 409/400s
+  // outright for a parent task — disable the drag gesture so the board
+  // never invites that guaranteed error.
+  it('is not draggable when the task is_parent, even when the caller asks for draggable', () => {
+    const { container } = render(TaskCard, {
+      props: {
+        task: { task_id: 7, job_id: 3, name: 'Widget batch', status: 'pending', job_name: 'JobX', is_parent: true },
+        draggable: true,
+      },
+    });
+    expect(container.querySelector('.task-card')).toHaveAttribute('draggable', 'false');
+  });
+
   it('writes the task id into the drag payload when draggable', async () => {
     const setData = vi.fn();
     const { container } = render(TaskCard, {
