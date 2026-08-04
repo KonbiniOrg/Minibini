@@ -661,6 +661,17 @@ class MaterialService:
         from apps.jobs.services import _assert_job_not_on_hold
         _assert_job_not_on_hold(job, 'add a material to this job')
         from django.db import transaction
+        if task is not None and task.parent_task_id is not None:
+            # Mirrors the assign_task guard (spec §9 rule 4/5, Phase 4 Task
+            # 2 follow-up): the parent is the unit of billing — a material
+            # created directly on a subtask (e.g. POST
+            # /api/tasks/{id}/materials/) would otherwise become invisible
+            # to the invoice pool's per-task material grouping.
+            raise ValidationError(
+                f'Cannot add a material to "{task.name}" — it is a subtask '
+                f'of "{task.parent_task.name}". Add the material to the '
+                f'parent task instead.'
+            )
         if customer_supplied and (
                 inventory_item is not None
                 or (unit_cost and unit_cost != Decimal('0.00'))
@@ -1067,6 +1078,18 @@ class MaterialService:
                 raise ValidationError('Task must belong to the same job as the material')
             if task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
                 raise ValidationError('Cannot assign material to a completed or cancelled task')
+            if task.parent_task_id is not None:
+                # Spec §9 rule 4/5 (Phase 4 Task 2 follow-up): the parent is
+                # the unit of billing — materials belong to the structure,
+                # not to one of its per-unit subtasks. Attaching here would
+                # otherwise become invisible to the invoice pool's per-task
+                # material grouping (which now only iterates non-child
+                # tasks) with no claim/bill path.
+                raise ValidationError(
+                    f'Cannot assign a material to "{task.name}" — it is a '
+                    f'subtask of "{task.parent_task.name}". Assign the '
+                    f'material to the parent task instead.'
+                )
         material.task = task
         material.save(update_fields=['task_id'])
         # Moved onto a task that already started? The promote-time

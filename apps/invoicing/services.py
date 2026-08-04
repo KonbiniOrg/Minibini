@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.jobs.models import Job
@@ -785,10 +786,20 @@ class InvoiceWizardService(BaseWizardService):
                 **state_info,
             })
 
-            # Material atoms
+            # Material atoms — also picks up a Material attached to a CHILD
+            # of this task (Q(task__parent_task=task)), surfacing it under
+            # the PARENT's group rather than letting it vanish now that
+            # `tasks` above excludes subtasks. The PRIMARY defense is
+            # MaterialService.assign_task / create_on_job rejecting the
+            # attach outright (spec §9 rule 4/5) — this is the fallback for
+            # a row that got attached to a subtask some other way (a
+            # QuerySet.update() bypass, a historical/pre-guard row, direct
+            # ORM) so it still surfaces and bills somewhere instead of
+            # becoming permanently unbillable dead money.
             materials = (
-                Material.objects.filter(task=task, quantity__gt=0)
-                .order_by('pk')
+                Material.objects.filter(
+                    Q(task=task) | Q(task__parent_task=task), quantity__gt=0,
+                ).order_by('pk')
             )
             for mat in materials:
                 detail = InvoiceWizardService._atom_detail(mat)

@@ -1202,7 +1202,11 @@ class TaskService:
         passes it; internal callers may omit it); terminal is frozen.
         """
         try:
-            task = Task.objects.get(pk=pk)
+            # select_related('parent_task'): the detach guard below reads
+            # task.parent_task (old_parent.name in its error message) —
+            # without the join that's a second query on every reparent/
+            # detach attempt.
+            task = Task.objects.select_related('parent_task').get(pk=pk)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {pk} not found')
         _assert_job_not_on_hold(task.job, 'edit this task')

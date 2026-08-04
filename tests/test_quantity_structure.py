@@ -25,6 +25,8 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, User
 from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource
 from apps.estimates.services import EstimateWizardService
+from apps.inventory.models import Material
+from apps.inventory.services import MaterialService
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.invoicing.services import InvoiceWizardService
 from apps.jobs.models import Job, RateScheme, Task
@@ -710,3 +712,140 @@ class WizardComposeParentAtomTest(QuantityStructureTestBase):
         )
         self.assertEqual(line.units, 'none')
         self.assertEqual(line.qty, Decimal('1'))
+
+
+# ═══════════ Phase 4 Task 2 follow-up: material-subtask guard ═══════════
+# Code review finding: MaterialService.assign_task / create_on_job had no
+# guard against attaching a Material directly to a subtask, and the
+# invoice pool's new parent_task__isnull=True task filter (above) meant
+# such a material — no longer surfaced by any per-task group, and not
+# task-less either — would become permanently unbillable dead money.
+# Fixed both ends: (1) the attach guards below (primary defense), (2) the
+# invoice pool's material query also covers Q(task__parent_task=task) as a
+# defensive fallback for a row that got there some other way.
+
+class MaterialSubtaskGuardTest(QuantityStructureTestBase):
+    """Spec §9 rule 4/5 follow-up: a Material cannot be attached to a
+    subtask directly — materials belong to the structure, same doctrine as
+    billing pools excluding children. The parent remains a legal target."""
+
+    def setUp(self):
+        super().setUp()
+        self.parent = self._task('Structure', est_qty=Decimal('5'))
+        self.child = self._task(
+            'Sub', parent=self.parent, qty_scales_with_parent=True,
+            est_qty=Decimal('1'),
+        )
+
+    def test_assign_task_rejects_subtask(self):
+        mat = MaterialService.create_on_job(
+            job=self.job, task=None, description='steel',
+            quantity=Decimal('1'), accounting_category=self.ac,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            MaterialService.assign_task(mat, self.child)
+        self.assertIn('Structure', str(ctx.exception))
+
+    def test_assign_task_allows_parent(self):
+        mat = MaterialService.create_on_job(
+            job=self.job, task=None, description='steel',
+            quantity=Decimal('1'), accounting_category=self.ac,
+        )
+        MaterialService.assign_task(mat, self.parent)
+        mat.refresh_from_db()
+        self.assertEqual(mat.task_id, self.parent.pk)
+
+    def test_create_on_job_rejects_subtask(self):
+        with self.assertRaises(ValidationError) as ctx:
+            MaterialService.create_on_job(
+                job=self.job, task=self.child, description='glue',
+                quantity=Decimal('1'), accounting_category=self.ac,
+            )
+        self.assertIn('Structure', str(ctx.exception))
+
+    def test_create_on_job_allows_parent(self):
+        mat = MaterialService.create_on_job(
+            job=self.job, task=self.parent, description='glue',
+            quantity=Decimal('1'), accounting_category=self.ac,
+        )
+        self.assertEqual(mat.task_id, self.parent.pk)
+
+
+class MaterialSubtaskGuardApiTest(QuantityStructureTestBase):
+    """API-level coverage of the material-subtask guard, both attachment
+    routes: POST /api/tasks/{id}/materials/ (create_on_job) and
+    POST /api/materials/{id}/assign-task/ (assign_task)."""
+
+    def setUp(self):
+        super().setUp()
+        self.parent = self._task('Structure', est_qty=Decimal('5'))
+        self.child = self._task(
+            'Sub', parent=self.parent, qty_scales_with_parent=True,
+            est_qty=Decimal('1'),
+        )
+        self.client.force_login(self.user)
+
+    def test_create_material_on_subtask_via_task_endpoint_rejected(self):
+        r = self.client.post(
+            f'/api/tasks/{self.child.pk}/materials/',
+            data={'description': 'glue', 'quantity': '1.00',
+                  'accounting_category': self.ac.pk},
+            content_type='application/json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_create_material_on_parent_via_task_endpoint_allowed(self):
+        r = self.client.post(
+            f'/api/tasks/{self.parent.pk}/materials/',
+            data={'description': 'glue', 'quantity': '1.00',
+                  'accounting_category': self.ac.pk},
+            content_type='application/json')
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_assign_task_to_subtask_via_material_endpoint_rejected(self):
+        mat = MaterialService.create_on_job(
+            job=self.job, task=None, description='steel',
+            quantity=Decimal('1'), accounting_category=self.ac,
+        )
+        r = self.client.post(
+            f'/api/materials/{mat.pk}/assign-task/',
+            data={'task': self.child.pk}, content_type='application/json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+
+class InvoicePoolMaterialSurfacingTest(QuantityStructureTestBase):
+    """Defensive fallback: a Material that ends up attached to a CHILD task
+    some other way (the guards above are the primary defense; this covers
+    a QuerySet.update() bypass, which — per CLAUDE.md — skips Model.save()
+    and therefore skips those guards entirely) still surfaces, under its
+    PARENT's atom group, and is billable — instead of becoming permanently
+    unbillable dead money."""
+
+    def test_child_attached_material_bills_under_parent_group(self):
+        parent = self._task('Structure', est_qty=Decimal('5'))
+        child = self._task(
+            'Sub', parent=parent, qty_scales_with_parent=True,
+            est_qty=Decimal('1'),
+        )
+        mat = MaterialService.create_on_job(
+            job=self.job, task=None, description='Planted on child',
+            quantity=Decimal('3'), unit_cost=Decimal('2.00'),
+            accounting_category=self.ac,
+        )
+        mat.inventory_item.qty_on_hand = mat.quantity
+        mat.inventory_item.save()
+        MaterialService.consume(mat)
+        # Simulate a pre-guard/bypass row landing on the child — a direct
+        # QuerySet.update() (not MaterialService.assign_task), which skips
+        # the guard entirely, same as it skips Model.save()'s own
+        # normalization per CLAUDE.md's QuerySet.update() rule.
+        Material.objects.filter(pk=mat.pk).update(task_id=child.pk)
+
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        pool = InvoiceWizardService.get_source_pool(invoice)
+        parent_group = next(g for g in pool['tasks'] if g['task_id'] == parent.pk)
+        mat_atoms = {a['id']: a for a in parent_group['atoms'] if a['type'] == 'material'}
+        self.assertIn(mat.pk, mat_atoms)
+        self.assertEqual(mat_atoms[mat.pk]['state'], 'available')
+        # The child itself still draws no group of its own — the material
+        # rides under the parent, not a resurrected child group.
+        self.assertFalse(any(g['task_id'] == child.pk for g in pool['tasks']))
