@@ -63,6 +63,9 @@ Per-model field checks:
                    E  contact must have a business
                    E  cannot link to draft PO
                    E  non-draft must have at least one line item
+                   E  invoice_only PO line has receiving data
+                   W  line final_price set but PO not reconciled (stale)
+                   E  PO line task link points at a subtask
   Invoice          E  valid status value
                    W  draft line missing accounting_category
                    E  non-draft line missing accounting_category (past the
@@ -722,9 +725,15 @@ class Command(BaseCommand):
 
     def check_purchase_orders(self):
         from apps.purchasing.models import PurchaseOrder
+
         valid_statuses = {s[0] for s in PurchaseOrder.PO_STATUS_CHOICES}
 
-        for po in PurchaseOrder.objects.select_related('business', 'contact').all():
+        for po in (
+            PurchaseOrder.objects
+            .select_related('business', 'contact')
+            .prefetch_related('purchaseorderlineitem_set__task')
+            .all()
+        ):
             if po.status not in valid_statuses:
                 self.errors.append(f'PO {po.po_number}: invalid status "{po.status}"')
 
@@ -743,6 +752,46 @@ class Command(BaseCommand):
             # Cancelled POs should have cancel_date
             if po.status == PurchaseOrder.STATUS_CANCELLED and not po.cancel_date:
                 self.warnings.append(f'PO {po.po_number}: cancelled but no cancel_date')
+
+            # Reconciliation belt-checks (task-owned-money Phase 5 Task 4,
+            # spec §7): all three below check line items that bypassed
+            # save()/clean() (e.g. fixture loading), same purpose as the
+            # rest of this command.
+            for li in po.purchaseorderlineitem_set.all():
+                # invoice_only lines are excluded from receiving flows
+                # entirely (PurchaseOrderReceivingService refuses to act on
+                # them) — any receiving data on one is unreachable through
+                # normal use.
+                if li.invoice_only and (
+                    li.qty_received or li.received_by_id or li.received_date
+                ):
+                    self.errors.append(
+                        f'PO {po.po_number} line {li.line_number}: '
+                        'invoice_only line has receiving data (invoice_only '
+                        'lines are excluded from receiving flows)'
+                    )
+
+                # final_price is normally only ever written inside
+                # PurchaseOrderService.reconcile(), which always sets
+                # PurchaseOrder.reconciled=True in the same transaction — a
+                # final_price surviving on an unreconciled PO is a stale
+                # partial entry (or bypassed data).
+                if li.final_price is not None and not po.reconciled:
+                    self.warnings.append(
+                        f'PO {po.po_number} line {li.line_number}: '
+                        'final_price is set but PO is not reconciled '
+                        '(stale partial entry)'
+                    )
+
+                # Belt for PurchaseOrderLineItem.clean()'s subtask
+                # rejection — validate_data checks loaded data that
+                # bypassed save()/clean().
+                if li.task_id is not None and li.task.parent_task_id is not None:
+                    self.errors.append(
+                        f'PO {po.po_number} line {li.line_number}: '
+                        'task link points at a subtask (must link the '
+                        'top-level task)'
+                    )
 
     # ── Invoices ──────────────────────────────────────────────
 

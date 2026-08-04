@@ -1045,3 +1045,19 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the Move UI no longer offers a target the guard will
   reject, on `TaskDetailPage` and anywhere else `MaterialRow`'s move
   target list is built from a task's subtasks.
+
+- **`linked_po_variances` (job costing, Phase 5 Task 4) is API-only —
+  no frontend display yet.** — _added 2026-08-04_
+  `compute_job_financials` now returns a `linked_po_variances` list
+  (per-PO ordered vs. `bill_total`, no proration, `multi_job` marker —
+  see `apps/jobs/financials.py::_linked_po_variances`) and it's exposed
+  on `JobSerializer` (`GET /api/jobs/{id}/`, detail context only). The
+  job-detail header (`JobHeader.svelte`) only has a fixed four-tile
+  strip (Estimate/Spent/Invoiced/Profit); a variable-length per-PO list
+  doesn't fit that slot, and building a new section for it felt out of
+  scope for a job-costing backend task — punted rather than bolted on.
+  _Done when:_ someone designs and builds a display for this (e.g. a
+  small table/section on `JobDetail.svelte` near the header, shown only
+  when the list is non-empty), or the team decides API-only is fine
+  indefinitely and this entry is closed.
+  target list is built from a task's subtasks.

@@ -16,10 +16,13 @@ from apps.contacts.models import Contact
 from apps.estimates.models import (
     ChangeOrder, ChangeOrderLineItem, Estimate, EstimateLineItem,
 )
+from apps.contacts.models import Business
 from apps.expenses.models import Expense
 from apps.inventory.models import Material
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.jobs.models import Blep, Job, RateScheme, Task
+from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+from apps.purchasing.services import PurchaseOrderService
 
 
 def _job(contact, status=Job.STATUS_DRAFT, start_date=None):
@@ -276,6 +279,158 @@ class InvoicedAndProfitTests(FixtureTestCase):
         fin = compute_job_financials(self.job)
         self.assertEqual(fin['invoiced'], Decimal('0.00'))
         self.assertEqual(fin['profit'], Decimal('-50.00'))
+
+
+class LinkedPOVarianceTests(FixtureTestCase):
+    """Tests for `linked_po_variances` (task-owned-money Phase 5 Task 4,
+    spec §7 rule 7): a job-level rollup of POs linked (via a task on this
+    job, or a Material owned by this job) to at least one line, at
+    PO-level granularity — no proration. A PO linked to more than one job
+    carries the whole PO's numbers on every job it touches, flagged
+    `multi_job=True`."""
+
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.first()
+        self.vendor_contact = Contact.objects.create(
+            first_name='PO', last_name='Vendor',
+            email='po-vendor@test.com', work_number='555-9999',
+        )
+        self.vendor = Business.objects.create(
+            business_name='PO Vendor Co', business_phone='555-9999',
+            default_contact=self.vendor_contact,
+        )
+        self.cat = AccountingCategory.objects.create(code='FIN-PO', name='fin-po')
+        self.job = _job(self.contact)
+        self.other_job = _job(self.contact)
+        Configuration.objects.update_or_create(
+            key='average_labor_cost', defaults={'value': '0'})
+
+    def _issued_po(self):
+        return PurchaseOrder.objects.create(
+            business=self.vendor, status=PurchaseOrder.STATUS_ISSUED)
+
+    def test_no_linked_pos_is_empty_list(self):
+        from apps.jobs.financials import compute_job_financials
+        self.assertEqual(
+            compute_job_financials(self.job)['linked_po_variances'], [])
+
+    def test_po_linked_via_task_appears_with_ordered_and_bill_totals(self):
+        from apps.jobs.financials import compute_job_financials
+        task = Task.objects.create(job=self.job, name='Outsourced')
+        po = self._issued_po()
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=po, task=task, accounting_category=self.cat,
+            qty=Decimal('2'), price=Decimal('50.00'))
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('120.00'))
+
+        result = compute_job_financials(self.job)['linked_po_variances']
+        self.assertEqual(len(result), 1)
+        entry = result[0]
+        self.assertEqual(entry['po_id'], po.pk)
+        self.assertEqual(entry['po_number'], po.po_number)
+        self.assertEqual(entry['ordered_total'], Decimal('100.00'))
+        self.assertEqual(entry['bill_total'], Decimal('120.00'))
+        self.assertEqual(entry['variance'], Decimal('20.00'))
+        self.assertFalse(entry['multi_job'])
+
+    def test_po_linked_via_material_appears(self):
+        from apps.jobs.financials import compute_job_financials
+        po = self._issued_po()
+        li = PurchaseOrderLineItem.objects.create(
+            purchase_order=po, accounting_category=self.cat,
+            qty=Decimal('1'), price=Decimal('30.00'))
+        Material.objects.create(
+            job=self.job, accounting_category=self.cat, description='m',
+            quantity=Decimal('1'), unit_cost=Decimal('30'),
+            consumption_state=Material.CONSUMPTION_STATE_PENDING,
+            po_line_item=li,
+        )
+        result = compute_job_financials(self.job)['linked_po_variances']
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['po_id'], po.pk)
+        self.assertIsNone(result[0]['bill_total'])
+        self.assertIsNone(result[0]['variance'])
+
+    def test_unreconciled_po_variance_is_none(self):
+        from apps.jobs.financials import compute_job_financials
+        task = Task.objects.create(job=self.job, name='Outsourced')
+        po = self._issued_po()
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=po, task=task, accounting_category=self.cat,
+            qty=Decimal('1'), price=Decimal('10.00'))
+        result = compute_job_financials(self.job)['linked_po_variances']
+        self.assertEqual(result[0]['bill_total'], None)
+        self.assertEqual(result[0]['variance'], None)
+        self.assertEqual(result[0]['reconciled'], False)
+
+    def test_multi_job_po_appears_on_both_jobs_with_whole_numbers(self):
+        from apps.jobs.financials import compute_job_financials
+        task_a = Task.objects.create(job=self.job, name='Job A work')
+        task_b = Task.objects.create(job=self.other_job, name='Job B work')
+        po = self._issued_po()
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=po, task=task_a, accounting_category=self.cat,
+            qty=Decimal('1'), price=Decimal('10.00'))
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=po, task=task_b, accounting_category=self.cat,
+            qty=Decimal('1'), price=Decimal('40.00'))
+
+        result_a = compute_job_financials(self.job)['linked_po_variances']
+        result_b = compute_job_financials(self.other_job)['linked_po_variances']
+        self.assertEqual(len(result_a), 1)
+        self.assertEqual(len(result_b), 1)
+        # Whole-PO numbers (both lines), not a per-job slice.
+        self.assertEqual(result_a[0]['ordered_total'], Decimal('50.00'))
+        self.assertEqual(result_b[0]['ordered_total'], Decimal('50.00'))
+        self.assertTrue(result_a[0]['multi_job'])
+        self.assertTrue(result_b[0]['multi_job'])
+
+    def test_cancelled_and_invoice_only_lines_ignored_by_task_link(self):
+        """invoice_only lines are appended at reconcile time and excluded
+        from ordered_total (see PurchaseOrder.ordered_total); the rollup
+        just reuses that property, so no separate handling is needed
+        here — this pins that behavior at the job-costing surface too."""
+        from apps.jobs.financials import compute_job_financials
+        task = Task.objects.create(job=self.job, name='Outsourced')
+        po = self._issued_po()
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=po, task=task, accounting_category=self.cat,
+            qty=Decimal('1'), price=Decimal('100.00'))
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('150.00'),
+            appended_lines=[{
+                'description': 'Freight', 'qty': Decimal('1'),
+                'price': Decimal('50.00'), 'accounting_category': self.cat.pk,
+            }],
+        )
+        result = compute_job_financials(self.job)['linked_po_variances']
+        self.assertEqual(result[0]['ordered_total'], Decimal('100.00'))
+        self.assertEqual(result[0]['bill_total'], Decimal('150.00'))
+        self.assertEqual(result[0]['variance'], Decimal('50.00'))
+
+
+class SerializerLinkedPOVarianceTests(FixtureTestCase):
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.first()
+        self.job = _job(self.contact)
+        Configuration.objects.update_or_create(
+            key='average_labor_cost', defaults={'value': '0'})
+
+    def _serialize(self, action):
+        from apps.api.jobs.serializers import JobSerializer
+        view = type('V', (), {'action': action})()
+        return JobSerializer(self.job, context={'view': view}).data
+
+    def test_detail_includes_linked_po_variances(self):
+        data = self._serialize('retrieve')
+        self.assertIn('linked_po_variances', data)
+        self.assertEqual(data['linked_po_variances'], [])
+
+    def test_list_nulls_linked_po_variances(self):
+        data = self._serialize('list')
+        self.assertIsNone(data['linked_po_variances'])
 
 
 class SerializerExposureTests(FixtureTestCase):

@@ -171,12 +171,73 @@ def _invoiced(job):
     return total or Decimal('0')
 
 
+def _linked_po_variances(job):
+    """Job-level rollup of PO cost variance (task-owned-money Phase 5 Task 4,
+    spec §7 rule 7): every PO with at least one line linked to this job —
+    either directly via `PurchaseOrderLineItem.task` on one of the job's
+    tasks, or indirectly via a `Material` this job owns that references the
+    PO line item — reported at PO GRANULARITY. No proration: a PO whose
+    lines also serve other jobs (through other lines/materials) appears with
+    its WHOLE ordered/bill numbers on every job it touches, flagged
+    `multi_job=True` so the UI can signal "this isn't fully yours".
+
+    Returns a list of
+    {'po_id', 'po_number', 'status', 'reconciled', 'ordered_total',
+     'bill_total', 'variance', 'multi_job'}, money fields quantized to
+    cents (None where the PO has no `bill_total` yet — nothing to vary
+    against, mirroring `PurchaseOrder.variance`).
+    """
+    from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+    from apps.inventory.models import Material
+
+    po_ids = set(
+        PurchaseOrderLineItem.objects.filter(task__job=job)
+        .values_list('purchase_order_id', flat=True)
+    )
+    po_ids |= set(
+        Material.objects.filter(job=job, po_line_item__isnull=False)
+        .values_list('po_line_item__purchase_order_id', flat=True)
+    )
+    if not po_ids:
+        return []
+
+    results = []
+    for po in PurchaseOrder.objects.filter(pk__in=po_ids).order_by('po_number'):
+        linked_job_ids = set(
+            PurchaseOrderLineItem.objects
+            .filter(purchase_order=po, task__isnull=False)
+            .values_list('task__job_id', flat=True)
+        )
+        linked_job_ids |= set(
+            Material.objects.filter(po_line_item__purchase_order=po)
+            .values_list('job_id', flat=True)
+        )
+        multi_job = bool(linked_job_ids - {job.pk})
+
+        variance = po.variance
+        results.append({
+            'po_id': po.pk,
+            'po_number': po.po_number,
+            'status': po.status,
+            'reconciled': po.reconciled,
+            'ordered_total': po.ordered_total.quantize(CENTS),
+            'bill_total': (
+                None if po.bill_total is None else po.bill_total.quantize(CENTS)
+            ),
+            'variance': None if variance is None else variance.quantize(CENTS),
+            'multi_job': multi_job,
+        })
+    return results
+
+
 def compute_job_financials(job):
     """Return the job's financial rollups, each quantized to cents.
 
-    {'estimated', 'spent', 'invoiced', 'profit'} — all Decimal.
-    Profit = invoiced − spent (intentionally negative for work done but not yet
-    billed).
+    {'estimated', 'spent', 'invoiced', 'profit', 'linked_po_variances'}.
+    The first four are Decimal. Profit = invoiced − spent (intentionally
+    negative for work done but not yet billed). `linked_po_variances` is a
+    list — see `_linked_po_variances` — of the job's linked-PO cost variance
+    at PO granularity (task-owned-money Phase 5 Task 4, spec §7 rule 7).
     """
     estimated = _estimated(job)
     spent = _spent(job)
@@ -187,4 +248,5 @@ def compute_job_financials(job):
         'spent': spent.quantize(CENTS),
         'invoiced': invoiced.quantize(CENTS),
         'profit': profit.quantize(CENTS),
+        'linked_po_variances': _linked_po_variances(job),
     }

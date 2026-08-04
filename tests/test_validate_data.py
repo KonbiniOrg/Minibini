@@ -12,6 +12,9 @@ from apps.estimates.models import (
 )
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.inventory.models import Material, InventoryItem
+from apps.contacts.models import Business
+from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+from apps.purchasing.services import PurchaseOrderService
 
 
 def _task_scheme_fields(scheme):
@@ -1379,3 +1382,154 @@ class ValidateDataParentAssigneeTest(TestCase):
         self._task(parent=parent, name='Child', assignee=self.user)
         output = self._run()
         self.assertNotIn('own assignee', output)
+
+
+class ValidateDataPOReconciliationTest(TestCase):
+    """Tests for the PO reconciliation belt-checks added to
+    check_purchase_orders() (task-owned-money Phase 5 Task 4, spec §7):
+
+    - invoice_only line carrying receiving data = ERROR (invoice_only lines
+      are excluded from receiving flows entirely by
+      PurchaseOrderReceivingService; any receiving data on one can only
+      arise via a bypass — e.g. fixture loading — planted directly here).
+    - final_price set on a line while the PO is not reconciled = WARN
+      (stale partial entry — final_price is normally only ever set inside
+      PurchaseOrderService.reconcile(), which always sets
+      PurchaseOrder.reconciled=True in the same transaction).
+    - task link pointing at a subtask = ERROR (belt for the model guard in
+      PurchaseOrderLineItem.clean(); validate_data checks loaded data that
+      bypassed save()/clean()).
+    """
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(name='POVal', code='POVAL')
+        self.vendor_contact = Contact.objects.create(
+            first_name='PO', last_name='Vendor', email='po-val@test.com',
+        )
+        self.vendor = Business.objects.create(
+            business_name='PO Val Vendor Co', default_contact=self.vendor_contact,
+        )
+        self.contact = Contact.objects.create(first_name='Cust', last_name='Omer')
+        self.job = Job.objects.create(
+            job_number='J-VPO-001', name='PO Validation Job', contact=self.contact,
+        )
+        self.top_task = Task.objects.create(job=self.job, name='Top')
+        self.sub_task = Task.objects.create(
+            job=self.job, name='Sub', parent_task=self.top_task,
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _issued_po(self):
+        return PurchaseOrder.objects.create(
+            business=self.vendor, status=PurchaseOrder.STATUS_ISSUED,
+        )
+
+    def _line(self, po, **kwargs):
+        defaults = dict(
+            purchase_order=po, accounting_category=self.cat,
+            qty=Decimal('1'), price=Decimal('10.00'),
+        )
+        defaults.update(kwargs)
+        return PurchaseOrderLineItem.objects.create(**defaults)
+
+    # ── invoice_only + receiving data ────────────────────────────
+
+    def test_invoice_only_line_with_qty_received_is_error(self):
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, qty_received=Decimal('1.00'))
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
+    def test_invoice_only_line_with_received_by_is_error(self):
+        user = User.objects.create_user(username='povalworker', password='x')
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, received_by=user)
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
+    def test_invoice_only_line_with_received_date_is_error(self):
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, received_date=timezone.now())
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
+    def test_invoice_only_line_without_receiving_data_not_flagged(self):
+        po = self._issued_po()
+        self._line(po, invoice_only=True)
+        output = self._run()
+        self.assertNotIn('invoice_only line has receiving data', output)
+
+    def test_ordinary_line_with_receiving_data_not_flagged(self):
+        po = self._issued_po()
+        self._line(po, invoice_only=False, qty_received=Decimal('1.00'))
+        output = self._run()
+        self.assertNotIn('invoice_only line has receiving data', output)
+
+    # ── final_price on an unreconciled PO ────────────────────────
+
+    def test_final_price_on_unreconciled_po_is_warned(self):
+        po = self._issued_po()
+        li = self._line(po, final_price=Decimal('12.00'))
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[WARN]', line)
+        self.assertIn('final_price', line)
+        self.assertIn('not reconciled', line)
+
+    def test_final_price_on_reconciled_po_not_flagged(self):
+        po = self._issued_po()
+        li = self._line(po, price=Decimal('10.00'))
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('12.00'),
+            line_finals={li.pk: Decimal('12.00')},
+        )
+        output = self._run()
+        self.assertNotIn('final_price is set but PO is not reconciled', output)
+
+    def test_no_final_price_on_unreconciled_po_not_flagged(self):
+        po = self._issued_po()
+        self._line(po)
+        output = self._run()
+        self.assertNotIn('final_price is set but PO is not reconciled', output)
+
+    # ── task link pointing at a subtask ──────────────────────────
+
+    def test_task_link_to_subtask_is_error(self):
+        po = self._issued_po()
+        li = self._line(po)
+        # Bypass PurchaseOrderLineItem.clean()'s subtask rejection the same
+        # way other tests in this file plant unreachable states: a raw
+        # QuerySet.update() skips save()/full_clean() entirely.
+        PurchaseOrderLineItem.objects.filter(pk=li.pk).update(task=self.sub_task)
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('subtask', line)
+
+    def test_task_link_to_top_level_task_not_flagged(self):
+        po = self._issued_po()
+        li = self._line(po)
+        PurchaseOrderLineItem.objects.filter(pk=li.pk).update(task=self.top_task)
+        output = self._run()
+        self.assertNotIn('task link points at a subtask', output)
+
+    def test_no_task_link_not_flagged(self):
+        po = self._issued_po()
+        self._line(po)
+        output = self._run()
+        self.assertNotIn('task link points at a subtask', output)
