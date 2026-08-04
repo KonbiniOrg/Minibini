@@ -3,6 +3,7 @@ from decimal import Decimal
 from apps.core.history import record_history, record_action
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,95 @@ class PurchaseOrderService:
         po.status = new_status
         po.full_clean()
         po.save()
+        return po
+
+    @staticmethod
+    def reconcile(po_id, bill_total=None, vendor_invoice_ref='',
+                   line_finals=None, appended_lines=None):
+        """Record vendor-bill reconciliation data against a PO (spec §7 rule
+        3). The bill is entered once in QBO by whoever does payables —
+        Minibini captures only the delta.
+
+        Allowed once the PO has been ISSUED (any non-draft status,
+        including cancelled — a vendor bill can still land for whatever
+        actually shipped before cancellation). NOT gated on receiving
+        state: `awaiting_reconciliation` is a downstream nudge, not a
+        precondition here — the plan explicitly decided "reconcile allowed
+        once ISSUED".
+
+        Reconcile is editable, not a lifecycle lock: calling this again on
+        an already-reconciled PO overwrites the PO-level fields and
+        (re-)applies `line_finals` — it's bookkeeping, not a one-shot
+        transition. `reconciled`/`reconciled_date` are always (re)set.
+
+        `line_finals`: {line_item_id: Decimal} — sets the optional
+        per-line `final_price` (null elsewhere means "as ordered"). Every
+        key must reference a line item that belongs to THIS PO.
+
+        `appended_lines`: a list of PurchaseOrderLineItem field kwargs
+        (same shape as `add_line_item`, task may be included for optional
+        attribution) for NEW lines this call creates with
+        `invoice_only=True` — e.g. freight or other vendor-invoice-only
+        charges that were never ordered/received. Each goes through the
+        model's normal `full_clean()`, including the task-link validation
+        in `PurchaseOrderLineItem.clean()`.
+        """
+        from apps.core.services import LineItemService
+
+        line_finals = line_finals or {}
+        appended_lines = appended_lines or []
+
+        try:
+            po = PurchaseOrder.objects.get(pk=po_id)
+        except PurchaseOrder.DoesNotExist:
+            raise NotFoundError(f'PurchaseOrder {po_id} not found')
+
+        if po.status == PurchaseOrder.STATUS_DRAFT:
+            raise ValidationError(
+                'Cannot reconcile a purchase order before it has been issued.'
+            )
+
+        line_items_by_id = {
+            li.pk: li for li in PurchaseOrderLineItem.objects.filter(
+                purchase_order=po, pk__in=list(line_finals.keys()),
+            )
+        }
+        missing = set(line_finals.keys()) - set(line_items_by_id.keys())
+        if missing:
+            raise ValidationError({'line_finals': [
+                f'Line item {line_id} does not belong to PO {po.po_number}.'
+                for line_id in sorted(missing)
+            ]})
+
+        with transaction.atomic():
+            for line_id, final_price in line_finals.items():
+                li = line_items_by_id[line_id]
+                li.final_price = (
+                    final_price if isinstance(final_price, Decimal)
+                    else Decimal(str(final_price))
+                )
+                li.full_clean()
+                li.save()
+
+            for line_data in appended_lines:
+                data = dict(line_data)
+                data['invoice_only'] = True
+                data = LineItemService.normalize_fk_kwargs(PurchaseOrderLineItem, data)
+                li = PurchaseOrderLineItem(purchase_order=po, **data)
+                li.full_clean()
+                li.save()
+
+            po.bill_total = (
+                None if bill_total is None
+                else (bill_total if isinstance(bill_total, Decimal)
+                      else Decimal(str(bill_total)))
+            )
+            po.vendor_invoice_ref = vendor_invoice_ref or ''
+            po.reconciled = True
+            po.reconciled_date = timezone.now()
+            po.full_clean()
+            po.save()
+
         return po
 
     @staticmethod
@@ -346,7 +436,6 @@ class PurchaseOrderReceivingService:
         Material.quantity is unchanged — planned consumption is set at line-add time.
         QOH bumps by received qty for inventoried PLIs. Overage is accepted."""
         from apps.inventory.services import InventoryService
-        from django.utils import timezone
 
         if po.status not in (
             PurchaseOrder.STATUS_ISSUED,
@@ -366,6 +455,11 @@ class PurchaseOrderReceivingService:
                     pk=item_data['line_item_id'],
                     purchase_order=po,
                 )
+                if li.invoice_only:
+                    raise ValidationError(
+                        f'Line item #{li.line_number} is invoice-only and '
+                        'excluded from receiving.'
+                    )
                 qty = Decimal(str(item_data['qty_received']))
                 if qty <= 0:
                     continue
@@ -413,9 +507,13 @@ class PurchaseOrderReceivingService:
     @staticmethod
     def receive_all(po, user):
         """
-        Receive all remaining items on a PO at full quantity.
+        Receive all remaining items on a PO at full quantity. `invoice_only`
+        lines (reconciliation-appended, e.g. freight) are excluded — they
+        were never ordered/received and take no part in receiving flows.
         """
-        line_items = PurchaseOrderLineItem.objects.filter(purchase_order=po)
+        line_items = PurchaseOrderLineItem.objects.filter(
+            purchase_order=po, invoice_only=False,
+        )
         items = []
         for li in line_items:
             remaining = li.qty - li.qty_received - li.qty_cancelled
@@ -548,8 +646,16 @@ class PurchaseOrderReceivingService:
 
     @staticmethod
     def _update_po_status(po):
-        """Recalculate PO status based on line item receipt state."""
-        all_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        """Recalculate PO status based on line item receipt state.
+
+        `invoice_only` lines (reconciliation-appended) are excluded from
+        this computation (spec §7 rule 3) — they were never ordered or
+        received, so their permanently-zero qty_received must never hold
+        the PO back from (or knock it out of) `received_in_full`.
+        """
+        all_items = list(PurchaseOrderLineItem.objects.filter(
+            purchase_order=po, invoice_only=False,
+        ))
         if not all_items:
             return
 

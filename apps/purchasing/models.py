@@ -6,6 +6,27 @@ from apps.core.models import BaseLineItem, QBOSyncable
 from apps.core.history import history
 
 
+class PurchaseOrderQuerySet(models.QuerySet):
+    """Queryset helpers for PO reconciliation (task-owned-money Phase 5).
+
+    `PurchaseOrder` isn't fully defined yet when this class body executes,
+    but `PurchaseOrder.STATUS_RECEIVED_IN_FULL` is only looked up when
+    `awaiting_reconciliation()` actually runs, by which point the module
+    has finished loading and the name resolves fine.
+    """
+
+    def awaiting_reconciliation(self):
+        """POs that are received in full but not yet reconciled (spec §7
+        rule 2 — the purchasing-side "awaiting reconciliation" nudge; NOT
+        tied to task completion). `_update_po_status` already excludes
+        `invoice_only` lines from the received-in-full computation, so this
+        filter doesn't need to re-derive that."""
+        return self.filter(
+            status=PurchaseOrder.STATUS_RECEIVED_IN_FULL,
+            reconciled=False,
+        )
+
+
 @history(exclude=['po_id'])
 class PurchaseOrder(models.Model):
     STATUS_DRAFT = 'draft'
@@ -39,6 +60,30 @@ class PurchaseOrder(models.Model):
     issued_date = models.DateTimeField(null=True, blank=True)
     received_date = models.DateTimeField(null=True, blank=True)
     cancel_date = models.DateTimeField(null=True, blank=True)
+
+    # Reconciliation (task-owned-money Phase 5, spec §7 rule 3): the bill is
+    # entered once in QBO by whoever does payables — these fields capture
+    # only the delta Minibini needs (vendor's total + reference + a
+    # reconciled marker). Deliberately NOT part of the PO status lifecycle
+    # (`status` above is untouched by reconciliation): `reconciled` is a
+    # plain boolean + `reconciled_date`, always settable once the PO has
+    # been issued regardless of receiving state, and re-settable — see
+    # `PurchaseOrderService.reconcile()`.
+    bill_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    vendor_invoice_ref = models.CharField(max_length=100, blank=True, default='')
+    reconciled = models.BooleanField(default=False)
+    reconciled_date = models.DateTimeField(null=True, blank=True)
+
+    objects = PurchaseOrderQuerySet.as_manager()
+
+    @property
+    def is_awaiting_reconciliation(self):
+        """Instance-level mirror of `PurchaseOrderQuerySet.awaiting_reconciliation()`
+        for single-object call sites (e.g. detail serializers)."""
+        return (
+            self.status == PurchaseOrder.STATUS_RECEIVED_IN_FULL
+            and not self.reconciled
+        )
 
     def clean(self):
         """Validate PurchaseOrder state transitions and protect immutable date fields."""
@@ -289,6 +334,15 @@ class PurchaseOrderLineItem(BaseLineItem):
     receipt_note = models.TextField(blank=True, default='')
     qty_cancelled = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 
+    # Reconciliation (task-owned-money Phase 5, spec §7 rule 3). `final_price`
+    # is optional per-line: null means "as ordered" (the `price` field
+    # stands). `invoice_only` flags lines appended AT reconcile time to
+    # capture vendor-invoice-only charges (e.g. freight) that were never
+    # ordered/received — these are excluded from receiving-completeness
+    # logic (`PurchaseOrderReceivingService`) and receiving flows entirely.
+    final_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    invoice_only = models.BooleanField(default=False)
+
     @property
     def linked_material(self):
         from apps.inventory.models import Material
@@ -298,6 +352,32 @@ class PurchaseOrderLineItem(BaseLineItem):
         db_table = 'po_li'
         verbose_name = "Purchase Order Line Item"
         verbose_name_plural = "Purchase Order Line Items"
+
+    def clean(self):
+        """Extend BaseLineItem.clean() (task/inventory_item exclusivity)
+        with the cost→sell task-link rule (spec §7 rule 1): a PO line may
+        link to a `Task` — the reserved FK this phase activates — only when
+        that task is TOP-LEVEL (structures link at the parent; a subtask
+        link is rejected, since a subtask's cost is its parent's) and
+        job-bearing (`Task.job` is a required FK, so this is always true
+        for a real row — checked explicitly as defense in depth rather than
+        trusted implicitly). The link itself stays optional; material lines
+        are unaffected."""
+        super().clean()
+        if self.task_id is not None:
+            task = self.task
+            if task.parent_task_id is not None:
+                raise ValidationError(
+                    {'task': [
+                        'Linked task must be a top-level task — link the '
+                        'parent task instead; subtasks cannot be linked '
+                        'directly.'
+                    ]}
+                )
+            if task.job_id is None:
+                raise ValidationError(
+                    {'task': ['Linked task must belong to a job.']}
+                )
 
     def get_parent_field_name(self):
         """Get the name of the parent field for this line item type."""
