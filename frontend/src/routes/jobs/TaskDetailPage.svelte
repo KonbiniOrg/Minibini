@@ -428,9 +428,16 @@
     subtaskModalOpen = true;
   }
 
-  function handleSubtaskSaved() {
+  async function handleSubtaskSaved() {
     subtaskModalOpen = false;
-    loadSubtasks();
+    // A subtask's creation can flip THIS task's own `is_parent` (its first
+    // child) and `derived_unit_price`/`effective_rate` (every child) — both
+    // read off `task`, not `subtasks`. loadSubtasks() alone left those
+    // stale until the next full page load: Start Work stayed visible and
+    // the Rate chip kept showing pre-structure money right after adding the
+    // very subtask that was supposed to change both.
+    await loadTask();
+    await loadSubtasks();
   }
 
   // Subtask tree callbacks
@@ -583,7 +590,7 @@
           <div class="stat-chip money">
             <div class="stat-chip-header">Rate</div>
             <div class="stat-chip-body">
-              {#if rateIsDerived}derived from children: {/if}${task.effective_rate}/{task.unit_label}
+              {#if rateIsDerived}derived from children:&nbsp;{/if}${task.effective_rate}/{task.unit_label}
             </div>
           </div>
         {/if}
