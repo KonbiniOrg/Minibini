@@ -11,6 +11,7 @@ Methods are classmethods so `cls` resolves the subclass's hooks/config.
 
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.db import transaction, IntegrityError
 
 
@@ -74,7 +75,26 @@ class BaseWizardService:
 
     @classmethod
     def _assert_atom_billable(cls, instance):
-        """Override to reject atoms that aren't in a billable lifecycle state."""
+        """Override to reject atoms that aren't in a billable lifecycle state.
+
+        Base check (spec §9 rule 4/5, Phase 4 Task 2): a subtask
+        (``Task.parent_task`` set) can never be claimed on its own — the
+        parent is the sole unit of billing, and a child's money aggregates
+        into the parent's ``derived_unit_price()``. This guards the shared
+        claim/add path directly (not just pool-listing exclusion), so a
+        client can't route around the pool by POSTing a child's id
+        straight at ``add_atoms_to_new_line_item`` /
+        ``add_atoms_to_line_item``. Subclass overrides that add their own
+        lifecycle checks must call ``super()._assert_atom_billable(instance)``
+        to keep this in effect.
+        """
+        task_model = cls._task_model()
+        if isinstance(instance, task_model) and instance.parent_task_id is not None:
+            raise ValidationError(
+                f'"{instance.name}" is a subtask of '
+                f'"{instance.parent_task.name}" and cannot be billed on its '
+                f'own — the parent is the unit of billing.'
+            )
         return None
 
     @classmethod

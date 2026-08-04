@@ -183,6 +183,37 @@ def _assert_job_not_on_hold(job, action):
         )
 
 
+def _task_claimed_by_non_draft_document(task_pk):
+    """True when a non-draft estimate, change order, OR invoice claims the
+    Task atom at ``task_pk``.
+
+    The detach-guard's claim check (spec §9 rule 5, Phase 4 Task 2):
+    ``atom_claimed_by_non_draft_document`` (apps.estimates.claims) already
+    covers the estimate/CO side. This adds the invoice side, using the
+    same "draft stays editable" doctrine — a claim held only by a DRAFT
+    invoice doesn't lock the structure (the invoice wizard's own
+    remove-atoms path already tolerates a shrinking pool); anything past
+    draft (open/partly-paid/paid/defaulted) does. Cancelled/superseded
+    invoices hold no live claims at all (their source rows are released on
+    death — see apps.invoicing.claims), so they're excluded the same as
+    DEAD_INVOICE_STATUSES everywhere else.
+    """
+    from apps.estimates.claims import atom_claimed_by_non_draft_document
+    from apps.invoicing.claims import DEAD_INVOICE_STATUSES
+    from apps.invoicing.models import Invoice, InvoiceLineItemSource
+    if atom_claimed_by_non_draft_document('task', task_pk):
+        return True
+    return (
+        InvoiceLineItemSource.objects.filter(
+            source_type=InvoiceLineItemSource.SOURCE_TASK, source_pk=task_pk,
+        ).exclude(
+            invoice_line_item__invoice__status__in=(
+                Invoice.STATUS_DRAFT, *DEAD_INVOICE_STATUSES,
+            ),
+        ).exists()
+    )
+
+
 class BlepService:
     """All Blep (time entry) writes flow through this service.
 
@@ -1213,6 +1244,27 @@ class TaskService:
             if not est:
                 raise ValidationError({'est_worker_time': [
                     'An assigned task must have an estimated worker time.']})
+        # Detach guard (spec §9 rule 5, Phase 4 Task 2): a child cannot be
+        # detached (parent_task=null) or reparented away from a PARENT that
+        # is claimed by a non-draft estimate/change-order/invoice — that
+        # claim is a promise about the whole structure (its
+        # derived_unit_price() and expected_qty() depend on every current
+        # child), and pulling a child out from under it would silently
+        # change what was sold. Detaching while the parent is claimed only
+        # by a DRAFT document is fine — the draft's still editable.
+        if 'parent_task' in kwargs:
+            old_parent_id = task.parent_task_id
+            new_parent = kwargs['parent_task']
+            new_parent_id = new_parent.pk if new_parent is not None else None
+            if old_parent_id is not None and new_parent_id != old_parent_id:
+                old_parent = task.parent_task
+                if _task_claimed_by_non_draft_document(old_parent_id):
+                    raise ValidationError({'parent_task': [
+                        f'Cannot detach from "{old_parent.name}" — it is '
+                        f'claimed by a sent estimate, change order, or '
+                        f'invoice. Detach is only allowed while the '
+                        f'claiming document is still a draft.'
+                    ]})
         for field, value in kwargs.items():
             setattr(task, field, value)
         task.full_clean()

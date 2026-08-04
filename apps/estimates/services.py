@@ -1328,7 +1328,12 @@ class EstimateWizardService(BaseWizardService):
         # PLANNED work (est_qty), and a cancelled task is not planned work.
         # (The invoice pool is the opposite — recorded actuals on a
         # cancelled task remain billable. Plan C3.)
-        for task in Task.objects.filter(job=job).exclude(
+        #
+        # Subtasks (parent_task set) are also excluded (spec §9 rule 4/5,
+        # Phase 4 Task 2): the parent is the sole unit of billing — a
+        # child's money aggregates into the parent's derived_unit_price()
+        # and the child is never itself a pool atom.
+        for task in Task.objects.filter(job=job, parent_task__isnull=True).exclude(
             status=Task.STATUS_CANCELLED,
         ).select_related(
             'accounting_category',
@@ -1422,7 +1427,11 @@ class EstimateWizardService(BaseWizardService):
 
     @classmethod
     def _task_qty_and_price(cls, task, total_price):
-        if task.rate is not None and task.est_qty is not None:
+        # A parent's rate may be None (derived from children rather than
+        # own-rate — spec §9 rule 4) yet still price correctly through
+        # effective_rate(); is_parent widens the same gate own-rate would
+        # normally satisfy.
+        if task.est_qty is not None and (task.rate is not None or task.is_parent):
             return task.est_qty, task.effective_rate()
         return Decimal('1'), total_price
 

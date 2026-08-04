@@ -1,14 +1,19 @@
-"""§9 quantity structure — Phase 4 Task 1.
+"""§9 quantity structure — Phase 4 Tasks 1-2.
 
 Covers the binding rules from docs/plans/2026-08-03-task-owned-money-phase4-plan.md
-(rules 1-4 + 8, and the Task 1 section): the blessed multiplier
-(`Task._parent_multiplier()` / `expected_qty()` / `expected_worker_time()`),
-`Task.derived_unit_price()`, non-startable enforcement (start/blep/assign
-rejection on a parent, first-subtask-on-a-started-task rejection, parent
-completion offered-not-auto with a children-terminal gate, parent cancel
-requiring children individually handled), and schedule bar derivation
-(parent draws no bar; a child's bar duration is the derived expectation,
-not its raw per-unit estimate).
+(rules 1-5 + 8): the blessed multiplier (`Task._parent_multiplier()` /
+`expected_qty()` / `expected_worker_time()`), `Task.derived_unit_price()`,
+non-startable enforcement (start/blep/assign rejection on a parent,
+first-subtask-on-a-started-task rejection, parent completion
+offered-not-auto with a children-terminal gate, parent cancel requiring
+children individually handled), schedule bar derivation (parent draws no
+bar; a child's bar duration is the derived expectation, not its raw
+per-unit estimate), and — Phase 4 Task 2 — billing: wizard source pools
+excluding children, the shared claim/add path rejecting a direct child
+claim, `Task.effective_rate()` falling back to `derived_unit_price()` on a
+parent with no explicit rate, the detach-while-claimed guard, and parent
+amount math flowing through the existing `compute_estimate_amount()` /
+`compute_amount()` paths.
 """
 from datetime import timedelta
 from decimal import Decimal
@@ -18,6 +23,10 @@ from django.utils import timezone
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, User
+from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource
+from apps.estimates.services import EstimateWizardService
+from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+from apps.invoicing.services import InvoiceWizardService
 from apps.jobs.models import Job, RateScheme, Task
 from apps.jobs.services import BlepService, TaskLifecycleService, TaskService
 from apps.schedule.services import ScheduleService
@@ -419,3 +428,285 @@ class ScheduleQueryBudgetTest(QuantityStructureTestBase):
             f'parent {self.parent.pk}, found {len(refetches)} — check '
             f"select_related('task', 'task__parent_task') on window_bleps."
         )
+
+
+# ═══════════════════════ Phase 4 Task 2: billing ═══════════════════════
+
+class SourcePoolExclusionTest(QuantityStructureTestBase):
+    """Wizard source pools (estimate + invoice) exclude subtasks — the
+    parent is the sole unit of billing (rule 4/5)."""
+
+    def setUp(self):
+        super().setUp()
+        self.parent = self._task('Widget run', est_qty=Decimal('5'))
+        self.child = self._task(
+            'Per-unit step', parent=self.parent, qty_scales_with_parent=True,
+            est_qty=Decimal('1'),
+        )
+
+    def test_estimate_pool_excludes_child_includes_parent(self):
+        estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-QS-1', version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+        pool = EstimateWizardService.get_source_pool(estimate)
+        atom_ids = {(a['type'], a['id']) for a in pool['atoms']}
+        self.assertIn(('task', self.parent.pk), atom_ids)
+        self.assertNotIn(('task', self.child.pk), atom_ids)
+
+    def test_invoice_pool_excludes_child_includes_parent(self):
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        pool = InvoiceWizardService.get_source_pool(invoice)
+        task_ids = {t['task_id'] for t in pool['tasks']}
+        self.assertIn(self.parent.pk, task_ids)
+        self.assertNotIn(self.child.pk, task_ids)
+
+
+class DirectClaimRejectionTest(QuantityStructureTestBase):
+    """A child can't be claimed via the shared claim/add path even when a
+    caller bypasses pool listing and posts its id directly — the base
+    `_assert_atom_billable` check rejects it before the invoice/estimate
+    subclass's own lifecycle checks run (rule 4/5)."""
+
+    def setUp(self):
+        super().setUp()
+        self.parent = self._task('Batch', est_qty=Decimal('5'))
+        self.child = self._task(
+            'Per-unit', parent=self.parent, qty_scales_with_parent=True,
+            est_qty=Decimal('1'),
+        )
+
+    def test_estimate_add_atoms_rejects_child(self):
+        estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-QS-2', version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateWizardService.add_atoms_to_new_line_item(
+                estimate, [{'type': 'task', 'id': self.child.pk}])
+        self.assertIn('Batch', str(ctx.exception))
+
+    def test_invoice_add_atoms_rejects_child(self):
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        with self.assertRaises(ValidationError) as ctx:
+            InvoiceWizardService.add_atoms_to_new_line_item(
+                invoice, [{'type': 'task', 'id': self.child.pk}])
+        self.assertIn('Batch', str(ctx.exception))
+
+    def test_invoice_add_atoms_to_existing_line_rejects_child(self):
+        # append-to-existing-line path (add_atoms_to_line_item), not just
+        # the new-line-item path — both funnel through the same
+        # _assert_atom_billable gate.
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        other = self._task('Loose task', est_qty=Decimal('1'))
+        TaskLifecycleService.complete_task(other.pk, add_qty=Decimal('1'))
+        line = InvoiceWizardService.add_atoms_to_new_line_item(
+            invoice, [{'type': 'task', 'id': other.pk}])
+        with self.assertRaises(ValidationError):
+            InvoiceWizardService.add_atoms_to_line_item(
+                line, [{'type': 'task', 'id': self.child.pk}])
+
+
+class EffectiveRateTest(QuantityStructureTestBase):
+    """Task.effective_rate() — rate None + is_parent falls back to
+    derived_unit_price(); an explicit parent.rate overrides; a childless
+    task with no rate still prices 0 (rule 4)."""
+
+    def test_derived_when_rate_none_and_is_parent(self):
+        parent = self._task('Widget', est_qty=Decimal('10'))
+        parent.rate = None
+        parent.save()
+        self._task(
+            'Per-unit labor', parent=parent, qty_scales_with_parent=True,
+            est_qty=Decimal('2'),
+            scheme=self._scheme('per-unit-rate-eff', rate=Decimal('3.00')),
+        )
+        parent.refresh_from_db()
+        self.assertEqual(parent.effective_rate(), parent.derived_unit_price())
+        self.assertEqual(parent.effective_rate(), Decimal('6.00'))
+
+    def test_explicit_rate_overrides_derivation(self):
+        parent = self._task(
+            'Widget2', est_qty=Decimal('10'),
+            scheme=self._scheme('parent-explicit', rate=Decimal('99.00')),
+        )
+        self._task(
+            'Per-unit labor 2', parent=parent, qty_scales_with_parent=True,
+            est_qty=Decimal('2'),
+            scheme=self._scheme('per-unit-rate-eff2', rate=Decimal('3.00')),
+        )
+        parent.refresh_from_db()
+        self.assertEqual(parent.effective_rate(), Decimal('99.00'))
+        self.assertNotEqual(parent.effective_rate(), parent.derived_unit_price())
+
+    def test_childless_no_rate_prices_zero(self):
+        leaf = self._task('Leaf money-less', est_qty=Decimal('1'))
+        leaf.rate = None
+        leaf.save()
+        self.assertEqual(leaf.effective_rate(), Decimal('0.00'))
+
+
+class ParentAmountMathTest(QuantityStructureTestBase):
+    """Parent estimate/actual amounts flow through the EXISTING
+    `compute_estimate_amount()` / `compute_amount()` paths using the
+    derived (or explicit) `effective_rate()` — no separate parent-pricing
+    path exists (rule 4). Estimate side bills the parent's own `est_qty`
+    (the structure quantity); actual side bills `get_actual_qty()` (for an
+    entered-qty parent, the completion-time "quantity made")."""
+
+    def _parent_with_derived_price(self, parent_est_qty=Decimal('10')):
+        parent = self._task('Structure', est_qty=parent_est_qty)
+        parent.rate = None
+        parent.save()
+        self._task(
+            'Sub', parent=parent, qty_scales_with_parent=True,
+            est_qty=Decimal('2'),
+            scheme=self._scheme('sub-rate-amt', rate=Decimal('3.00')),
+        )
+        parent.refresh_from_db()
+        return parent
+
+    def test_compute_estimate_amount_uses_derived_rate_times_own_est_qty(self):
+        parent = self._parent_with_derived_price(parent_est_qty=Decimal('10'))
+        # derived_unit_price = 2 * 3.00 = 6.00; est amount = est_qty(10) * 6.00
+        self.assertEqual(parent.derived_unit_price(), Decimal('6.00'))
+        self.assertEqual(parent.compute_estimate_amount(), Decimal('60.00'))
+
+    def test_compute_amount_uses_actual_qty_times_effective_rate(self):
+        parent = self._parent_with_derived_price(parent_est_qty=Decimal('10'))
+        parent.actual_qty = Decimal('7')
+        parent.save()
+        self.assertEqual(parent.get_actual_qty(), Decimal('7'))
+        # 7 * 6.00 = 42.00
+        self.assertEqual(parent.compute_amount(), Decimal('42.00'))
+
+
+class DetachGuardTest(QuantityStructureTestBase):
+    """Detaching (or reparenting) a child away from a PARENT that is
+    claimed by a non-draft document is rejected; a claim held only by a
+    DRAFT document doesn't block detach — the draft is still editable
+    (rule 5)."""
+
+    def setUp(self):
+        super().setUp()
+        self.parent = self._task('Structure', est_qty=Decimal('5'))
+        self.child = self._task(
+            'Sub', parent=self.parent, qty_scales_with_parent=True,
+            est_qty=Decimal('1'),
+        )
+
+    def _claim_parent_via_estimate(self, status):
+        estimate = Estimate.objects.create(
+            job=self.job, estimate_number=f'EST-DG-{status}', version=1,
+            status=status,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=estimate, qty=Decimal('1'), units='ea',
+            price=Decimal('10'), description='', accounting_category=self.ac,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=self.parent.pk,
+        )
+        return estimate
+
+    def _claim_parent_via_invoice(self, status):
+        invoice = Invoice.objects.create(job=self.job, status=status)
+        li = InvoiceLineItem.objects.create(
+            invoice=invoice, qty=Decimal('1'), units='ea',
+            price=Decimal('10'), description='', accounting_category=self.ac,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.parent.pk,
+        )
+        return invoice
+
+    def test_detach_allowed_when_parent_unclaimed(self):
+        updated = TaskService.update_task(self.child.pk, parent_task=None)
+        self.assertIsNone(updated.parent_task_id)
+
+    def test_detach_blocked_when_parent_claimed_by_open_estimate(self):
+        self._claim_parent_via_estimate(Estimate.STATUS_OPEN)
+        with self.assertRaises(ValidationError) as ctx:
+            TaskService.update_task(self.child.pk, parent_task=None)
+        self.assertIn('Structure', str(ctx.exception))
+
+    def test_detach_allowed_when_parent_claimed_only_by_draft_estimate(self):
+        self._claim_parent_via_estimate(Estimate.STATUS_DRAFT)
+        updated = TaskService.update_task(self.child.pk, parent_task=None)
+        self.assertIsNone(updated.parent_task_id)
+
+    def test_detach_blocked_when_parent_claimed_by_open_invoice(self):
+        self._claim_parent_via_invoice(Invoice.STATUS_OPEN)
+        with self.assertRaises(ValidationError):
+            TaskService.update_task(self.child.pk, parent_task=None)
+
+    def test_detach_allowed_when_parent_claimed_only_by_draft_invoice(self):
+        self._claim_parent_via_invoice(Invoice.STATUS_DRAFT)
+        updated = TaskService.update_task(self.child.pk, parent_task=None)
+        self.assertIsNone(updated.parent_task_id)
+
+    def test_reparent_to_other_parent_also_guarded(self):
+        self._claim_parent_via_estimate(Estimate.STATUS_OPEN)
+        other_parent = self._task('Other structure', est_qty=Decimal('2'))
+        with self.assertRaises(ValidationError):
+            TaskService.update_task(self.child.pk, parent_task=other_parent)
+
+    def test_detach_allowed_after_estimate_claim_released_by_rejection(self):
+        # A rejected estimate releases its EstimateLineItemSource rows
+        # (apps.estimates.claims.DEAD_DOCUMENT_STATUSES) — no live claim
+        # remains, so detach is allowed again.
+        estimate = self._claim_parent_via_estimate(Estimate.STATUS_OPEN)
+        estimate.status = Estimate.STATUS_REJECTED
+        estimate.save()
+        updated = TaskService.update_task(self.child.pk, parent_task=None)
+        self.assertIsNone(updated.parent_task_id)
+
+
+class WizardComposeParentAtomTest(QuantityStructureTestBase):
+    """Composing a parent atom through the wizard's shared add-atoms path
+    (rule 4): solo-atom copy-over prices via the derived rate; a parent
+    mixed into a multi-atom bundle with a differently-rated atom falls
+    back to the non-uniform summary (parent.rate is None, which
+    `_uniform_money_bundle` already treats as non-uniform) instead of
+    crashing."""
+
+    def _parent_with_derived_price(self):
+        parent = self._task('Structure', est_qty=Decimal('4'))
+        parent.rate = None
+        parent.save()
+        self._task(
+            'Sub', parent=parent, qty_scales_with_parent=True,
+            est_qty=Decimal('2'),
+            scheme=self._scheme('sub-rate-bundle', rate=Decimal('5.00')),
+        )
+        parent.refresh_from_db()
+        return parent
+
+    def test_estimate_solo_compose_uses_derived_price(self):
+        parent = self._parent_with_derived_price()
+        estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-QS-3', version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+        line = EstimateWizardService.add_atoms_to_new_line_item(
+            estimate, [{'type': 'task', 'id': parent.pk}])
+        self.assertEqual(line.qty, Decimal('4'))
+        self.assertEqual(line.price, Decimal('10.00'))  # derived: 2 * 5.00
+
+    def test_multi_atom_bundle_with_parent_falls_back_gracefully(self):
+        parent = self._parent_with_derived_price()
+        other = self._task('Flat task', est_qty=Decimal('1'))
+        estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-QS-4', version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+        line = EstimateWizardService.add_atoms_to_new_line_item(
+            estimate,
+            [{'type': 'task', 'id': parent.pk}, {'type': 'task', 'id': other.pk}],
+        )
+        self.assertEqual(line.units, 'none')
+        self.assertEqual(line.qty, Decimal('1'))

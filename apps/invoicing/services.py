@@ -751,8 +751,12 @@ class InvoiceWizardService(BaseWizardService):
                         'claiming_invoice_id': None, 'claiming_invoice_number': None}
             return None
 
+        # Subtasks (parent_task set) are excluded from the invoice pool too
+        # (spec §9 rule 4/5, Phase 4 Task 2): the parent is the sole unit of
+        # billing — a child's money aggregates into the parent's
+        # derived_unit_price() and the child never bills independently.
         tasks = (
-            Task.objects.filter(job=job)
+            Task.objects.filter(job=job, parent_task__isnull=True)
             .order_by('sort_order', 'pk')
         )
         task_list = []
@@ -1058,6 +1062,10 @@ class InvoiceWizardService(BaseWizardService):
     def _assert_atom_billable(cls, instance):
         from apps.jobs.models import Task
         from apps.inventory.models import Material
+        # Base check first: rejects a subtask outright (spec §9 rule 4/5) —
+        # keep it in effect before the invoice-specific lifecycle checks
+        # below.
+        super()._assert_atom_billable(instance)
         if isinstance(instance, InvoiceLineItem):
             if not instance.is_deposit_line:
                 raise ValidationError('Not a deposit line.')
@@ -1222,7 +1230,10 @@ class InvoiceWizardService(BaseWizardService):
         # Either way qty × effective_rate == the computed amount exactly, and
         # it matches what _uniform_money_bundle produces for the same task
         # (task-owned-money Phase 1 — no RateScheme lookup).
-        if task.rate is not None:
+        # A parent's rate may be None (derived from children — spec §9 rule
+        # 4) yet still price correctly through effective_rate(); is_parent
+        # widens the same gate own-rate would normally satisfy.
+        if task.rate is not None or task.is_parent:
             return task.get_actual_qty(), task.effective_rate()
         return Decimal('1'), total_price
 

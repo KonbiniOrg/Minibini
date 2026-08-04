@@ -469,8 +469,25 @@ class Task(TaskBase):
 
     def effective_rate(self):
         """Per-unit rate: own ``rate`` plus own ``active_modifiers``
-        surcharges (task-owned-money Phase 1 — no RateScheme lookup)."""
+        surcharges (task-owned-money Phase 1 — no RateScheme lookup).
+
+        Spec §9 rule 4 (Phase 4 Task 2): when ``rate`` is NULL and this task
+        IS a parent, the rate is derived from its children instead of
+        defaulting to zero — ``derived_unit_price()``. An explicit
+        ``rate`` on a parent always overrides the derivation (set it to
+        price the structure directly instead of aggregating children). A
+        childless task with no rate of its own still prices at 0.00 — a
+        money-less flat task has nothing to derive from.
+
+        Both the estimate side (``compute_estimate_amount`` = ``est_qty ×
+        effective_rate()``, where a parent's own ``est_qty`` IS the
+        structure quantity) and the actual side (``compute_amount`` =
+        ``get_actual_qty() × effective_rate()``, where an entered-qty
+        parent's actual qty is the completion-time "quantity made") flow
+        through this one rate — no separate parent-pricing path exists."""
         if self.rate is None:
+            if self.is_parent:
+                return self.derived_unit_price()
             return Decimal('0.00')
         pct = Decimal('0')
         for m in (self.active_modifiers or []):
