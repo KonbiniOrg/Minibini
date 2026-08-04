@@ -77,6 +77,20 @@ class BaseWizardService:
         """Override to reject atoms that aren't in a billable lifecycle state."""
         return None
 
+    @classmethod
+    def _resolve_fallback_category(cls):
+        """Hook: called at most once per line composition, and only when
+        the shared-category rule below resolved to null *because* at
+        least one contributing atom's own accounting category is null
+        (task-owned-money Phase 3). Return the category to stamp on the
+        line instead, or raise ValidationError to block the compose.
+
+        Default: no-op (returns None, so the line's category stays null).
+        This is what keeps the estimate side unstamped — only
+        InvoiceWizardService overrides this to apply the configured
+        fallback_accounting_category."""
+        return None
+
     # ── shared atom helpers ────────────────────────────────────────────
     @classmethod
     def _atom_computed_amount(cls, atom_instance):
@@ -237,7 +251,18 @@ class BaseWizardService:
             Decimal('0.00'),
         )
         categories = {cls._atom_category(i) for i in instances}
+        # An atom with no accounting category of its own contributes None
+        # to the set. If the shared-category rule below lands on None
+        # *because* of that (either every atom is null, or a null mixes
+        # with a real category), give the fallback hook a chance to
+        # substitute a stamped category (task-owned-money Phase 3,
+        # invoice-only). A None landed purely from two DIFFERENT real
+        # categories (no null atom involved) is untouched — that's the
+        # pre-existing "pick manually" behavior.
+        has_null_atom = None in categories
         category = categories.pop() if len(categories) == 1 else None
+        if category is None and has_null_atom:
+            category = cls._resolve_fallback_category()
 
         # Single atom: copy over description/units/qty/price from the atom.
         # Multi-atom: summarize a uniform-money task bundle, else fall

@@ -40,6 +40,33 @@ class InvoiceService:
                 f'deposit category.']})
 
     @staticmethod
+    def _resolve_fallback_category():
+        """The configured fallback accounting category — the line-local
+        stamp applied at invoice compose time when a source atom's
+        effective AC is null (task-owned-money Phase 3, spec §4). Atoms
+        themselves are never touched; only the created/copied LINE gets
+        this category. Raises a plain-sentence (operation-error-shaped)
+        ValidationError naming the settings key when unconfigured, or a
+        coaching error if the configured id no longer resolves."""
+        from apps.core.models import AccountingCategory, Configuration
+        cfg = Configuration.objects.filter(
+            key='fallback_accounting_category').first()
+        pk = (cfg.value or '').strip() if cfg else ''
+        if not pk:
+            raise ValidationError(
+                'No fallback accounting category is configured. Set the '
+                'fallback_accounting_category setting in Settings before '
+                'billing an item with no accounting category.'
+            )
+        try:
+            return AccountingCategory.objects.get(pk=pk)
+        except (AccountingCategory.DoesNotExist, ValueError, TypeError):
+            raise ValidationError(
+                f'The configured fallback accounting category ({pk!r}) '
+                f'does not exist.'
+            )
+
+    @staticmethod
     def add_line_item(invoice_pk, deposit=False, **kwargs):
         """Add a manual line item to a draft invoice. deposit=True stamps
         the configured default deposit accounting category."""
@@ -261,8 +288,25 @@ class InvoiceService:
 
         from apps.invoicing.models import InvoiceLineItemSource
 
+        # An estimate line with a null AC (an atom-backed line whose task
+        # never got one — task-owned-money Phase 3) gets the same
+        # line-local fallback stamp applied at compose time. Adjustment
+        # lines are exempt (their AC provenance is the adjustment
+        # RateScheme, never a billable atom) — looked up ONCE for the
+        # whole copy, and only if actually needed, so a fully-categorized
+        # estimate never touches the setting or errors when unconfigured.
+        fallback_category = None
+        if any(
+            line.get('accounting_category_id') is None and not line.get('is_adjustment')
+            for line in lines
+        ):
+            fallback_category = InvoiceService._resolve_fallback_category()
+
         with transaction.atomic():
             for line_number, line in enumerate(lines, start=1):
+                ac_id = line.get('accounting_category_id')
+                if ac_id is None and not line.get('is_adjustment'):
+                    ac_id = fallback_category.pk
                 li = InvoiceLineItem(
                     invoice=invoice,
                     line_number=line_number,
@@ -270,7 +314,7 @@ class InvoiceService:
                     qty=line['qty'],
                     price=line['price'],
                     units=line['units'],
-                    accounting_category_id=line.get('accounting_category_id'),
+                    accounting_category_id=ac_id,
                 )
                 if line.get('is_adjustment') and line.get('adjustment_service_id'):
                     li.adjustment_service_id = line['adjustment_service_id']
@@ -1096,6 +1140,16 @@ class InvoiceWizardService(BaseWizardService):
         if isinstance(atom_instance, InvoiceLineItem):
             return (-atom_instance.total_amount).quantize(Decimal('0.01'))
         return super()._atom_computed_amount(atom_instance)
+
+    @classmethod
+    def _resolve_fallback_category(cls):
+        """Invoice-side override of the BaseWizardService hook: stamp the
+        configured fallback_accounting_category onto a compose line whose
+        shared category resolved to null because a source atom (a task
+        with no AC of its own) had none — task-owned-money Phase 3.
+        Raises if no fallback is configured. The estimate wizard does NOT
+        override this, so estimate-side compose stays unstamped."""
+        return InvoiceService._resolve_fallback_category()
 
     @classmethod
     def _atom_category(cls, atom_instance):

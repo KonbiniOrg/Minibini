@@ -56,6 +56,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
     sources = InvoiceLineItemSourceSerializer(many=True, read_only=True)
     adjustment_service_detail = serializers.SerializerMethodField()
     is_deposit = serializers.SerializerMethodField()
+    used_fallback_ac = serializers.SerializerMethodField()
 
     class Meta:
         model = InvoiceLineItem
@@ -65,7 +66,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
             'accounting_category', 'accounting_category_name',
                         'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail',
-            'sources', 'is_deposit',
+            'sources', 'is_deposit', 'used_fallback_ac',
         ]
         read_only_fields = ['line_item_id']
 
@@ -73,6 +74,24 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
         if obj.accounting_category:
             return obj.accounting_category.name
         return None
+
+    def get_used_fallback_ac(self, obj):
+        """True when this line's accounting category IS the currently
+        configured fallback_accounting_category (task-owned-money Phase 3)
+        — the wizard badges these lines "Uncategorized -> <fallback name>"
+        as a prompt for the biller to correct or accept. Config read is a
+        single PK lookup (Configuration.key is the primary key), same cost
+        class as InvoiceService._resolve_deposit_category / the AC-picker
+        exclusion filter."""
+        if not obj.accounting_category_id:
+            return False
+        from apps.core.models import Configuration
+        cfg = Configuration.objects.filter(
+            key='fallback_accounting_category').first()
+        fallback_pk = (cfg.value or '').strip() if cfg else ''
+        if not fallback_pk:
+            return False
+        return str(obj.accounting_category_id) == fallback_pk
 
     def get_is_deposit(self, obj):
         return obj.is_deposit_line
