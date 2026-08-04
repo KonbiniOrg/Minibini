@@ -17,6 +17,17 @@ class Deliverable(models.Model):
     qty_ordered = models.DecimalField(max_digits=10, decimal_places=2)
     units = models.CharField(max_length=50)
     sort_order = models.PositiveIntegerField(default=0)
+    # Provenance ONLY (spec §9 rule 7, task-owned-money Phase 4 Task 1) —
+    # the Task an "Add as deliverable" copy action minted this row from.
+    # Same invariant family as Task.source_scheme: nothing computes through
+    # it, nothing syncs. SET_NULL so deleting the task never blocks on a
+    # deliverable it seeded; the copied description/qty_ordered/units fields
+    # are this row's own permanent values, never re-read from the task.
+    source_task = models.ForeignKey(
+        'jobs.Task',
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='sourced_deliverables',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

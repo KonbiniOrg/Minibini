@@ -1,0 +1,321 @@
+"""§9 quantity structure — Phase 4 Task 1.
+
+Covers the binding rules from docs/plans/2026-08-03-task-owned-money-phase4-plan.md
+(rules 1-4 + 8, and the Task 1 section): the blessed multiplier
+(`Task._parent_multiplier()` / `expected_qty()` / `expected_worker_time()`),
+`Task.derived_unit_price()`, non-startable enforcement (start/blep/assign
+rejection on a parent, first-subtask-on-a-started-task rejection, parent
+completion offered-not-auto with a children-terminal gate, parent cancel
+requiring children individually handled), and schedule bar derivation
+(parent draws no bar; a child's bar duration is the derived expectation,
+not its raw per-unit estimate).
+"""
+from datetime import timedelta
+from decimal import Decimal
+
+from django.core.exceptions import ValidationError
+from django.utils import timezone
+
+from apps.contacts.models import Contact
+from apps.core.models import AccountingCategory, User
+from apps.jobs.models import Job, RateScheme, Task
+from apps.jobs.services import BlepService, TaskLifecycleService, TaskService
+from apps.schedule.services import ScheduleService
+from tests.base import BaseTestCase
+
+
+class QuantityStructureTestBase(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.ac = AccountingCategory.objects.get_or_create(
+            code='QTYSTR', defaults={'name': 'Quantity structure test AC'},
+        )[0]
+        self.contact = Contact.objects.create(first_name='Q', last_name='Struct')
+        self.job = Job.objects.create(
+            job_number=f'QS-{timezone.now().timestamp()}',
+            contact=self.contact,
+        )
+        self.user = User.objects.create_user(username='qs_worker', password='pass')
+
+    def _scheme(self, name, *, algorithm=RateScheme.ENTERED_QTY,
+                unit_label='ea', rate=Decimal('10.00')):
+        return RateScheme.objects.create(
+            name=name, algorithm=algorithm, rate=rate, unit_label=unit_label,
+            accounting_category=self.ac,
+        )
+
+    def _task(self, name, *, parent=None, scheme=None, est_qty=None,
+              est_worker_time=None, qty_scales_with_parent=True,
+              status=Task.STATUS_PENDING, assignee=None):
+        scheme = scheme or self._scheme(f'{name} scheme')
+        task = Task(
+            job=self.job, name=name, parent_task=parent, status=status,
+            assignee=assignee, qty_scales_with_parent=qty_scales_with_parent,
+        )
+        task.stamp_from_scheme(scheme)
+        task.est_qty = est_qty
+        task.est_worker_time = est_worker_time
+        task.save()
+        return task
+
+
+# ─────────────────────────── multiplier math ───────────────────────────
+
+class ParentMultiplierTest(QuantityStructureTestBase):
+    """Task._parent_multiplier() / expected_qty() / expected_worker_time() —
+    the ONE blessed derivation (rule 3)."""
+
+    def test_flag_true_multiplies_by_parent_qty(self):
+        parent = self._task('Batch of boards', est_qty=Decimal('500'))
+        child = self._task(
+            'Mill per board', parent=parent, qty_scales_with_parent=True,
+            est_qty=Decimal('20'), est_worker_time=timedelta(minutes=20),
+        )
+        self.assertEqual(child.expected_qty(), Decimal('10000'))
+        self.assertEqual(child.expected_worker_time(), timedelta(minutes=10000))
+
+    def test_flag_false_multiplier_is_one_regardless_of_parent_qty(self):
+        parent = self._task('Batch', est_qty=Decimal('500'))
+        child = self._task(
+            'Batch setup', parent=parent, qty_scales_with_parent=False,
+            est_qty=Decimal('30'), est_worker_time=timedelta(minutes=45),
+        )
+        self.assertEqual(child.expected_qty(), Decimal('30'))
+        self.assertEqual(child.expected_worker_time(), timedelta(minutes=45))
+
+    def test_top_level_task_multiplier_is_inert(self):
+        # Flag true but no parent at all — must not multiply by anything.
+        top = self._task('Standalone', est_qty=Decimal('7'),
+                         qty_scales_with_parent=True)
+        self.assertEqual(top.expected_qty(), Decimal('7'))
+
+    def test_flag_true_child_of_parent_with_no_est_qty_falls_back_to_one(self):
+        parent = self._task('No qty yet', est_qty=None)
+        child = self._task(
+            'Per unit', parent=parent, qty_scales_with_parent=True,
+            est_qty=Decimal('4'),
+        )
+        self.assertEqual(child.expected_qty(), Decimal('4'))
+
+    def test_expected_qty_none_when_own_est_qty_none(self):
+        top = self._task('No estimate', est_qty=None)
+        self.assertIsNone(top.expected_qty())
+
+    def test_expected_worker_time_none_when_own_field_none(self):
+        top = self._task('No worker time', est_qty=Decimal('1'),
+                         est_worker_time=None)
+        self.assertIsNone(top.expected_worker_time())
+
+    def test_is_parent_true_only_with_subtasks(self):
+        parent = self._task('Has children', est_qty=Decimal('1'))
+        self.assertFalse(parent.is_parent)
+        self._task('Child', parent=parent, est_qty=Decimal('1'))
+        parent.refresh_from_db()
+        self.assertTrue(parent.is_parent)
+
+
+# ─────────────────────────── derived unit price ───────────────────────────
+
+class DerivedUnitPriceTest(QuantityStructureTestBase):
+    """Task.derived_unit_price() (rule 4) — parent effective per-unit price
+    aggregated from its children."""
+
+    def test_not_a_parent_returns_none(self):
+        leaf = self._task('Leaf', est_qty=Decimal('1'))
+        self.assertIsNone(leaf.derived_unit_price())
+
+    def test_mixed_flags_sum_correctly(self):
+        parent = self._task('Widget', est_qty=Decimal('10'))
+        self._task(
+            'Per-unit labor', parent=parent, qty_scales_with_parent=True,
+            est_qty=Decimal('2'),
+            scheme=self._scheme('per-unit-rate', rate=Decimal('3.00')),
+        )
+        self._task(
+            'Batch setup', parent=parent, qty_scales_with_parent=False,
+            est_qty=Decimal('100'),
+            scheme=self._scheme('batch-rate', rate=Decimal('0.50')),
+        )
+        # flag-true: 2 * 3.00 = 6.00 (already per-unit, adds straight in)
+        # flag-false: 100 * 0.50 = 50.00 total / parent qty 10 = 5.00/unit
+        # total = 11.00
+        self.assertEqual(parent.derived_unit_price(), Decimal('11.00'))
+
+    def test_quantizes_to_cents_at_the_end(self):
+        parent = self._task('Widget3', est_qty=Decimal('3'))
+        self._task(
+            'Batch only', parent=parent, qty_scales_with_parent=False,
+            est_qty=Decimal('10.00'),
+            scheme=self._scheme('div3-rate', rate=Decimal('1.00')),
+        )
+        # 10.00 / 3 = 3.3333... -> quantized to 3.33
+        self.assertEqual(parent.derived_unit_price(), Decimal('3.33'))
+
+    def test_falsy_parent_est_qty_treats_flag_false_divisor_as_one(self):
+        parent = self._task('No qty parent', est_qty=None)
+        self._task(
+            'Batch only 2', parent=parent, qty_scales_with_parent=False,
+            est_qty=Decimal('4.00'),
+            scheme=self._scheme('divfallback-rate', rate=Decimal('2.50')),
+        )
+        # batch total = 4.00 * 2.50 = 10.00; parent est_qty falsy -> /1
+        self.assertEqual(parent.derived_unit_price(), Decimal('10.00'))
+
+
+# ─────────────────────────── non-startable enforcement ───────────────────
+
+class NonStartableEnforcementTest(QuantityStructureTestBase):
+    """A task with ≥1 subtask cannot start/blep/assign; PM functions live on
+    the children (rule 1)."""
+
+    def _parent_with_child(self, parent_status=Task.STATUS_PENDING):
+        parent = self._task('Parent', est_qty=Decimal('5'), status=parent_status)
+        child = self._task('Child', parent=parent, est_qty=Decimal('1'))
+        parent.refresh_from_db()
+        return parent, child
+
+    def test_start_work_rejects_parent(self):
+        parent, _child = self._parent_with_child()
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.start_work(parent.pk, self.user)
+
+    def test_create_historical_blep_rejects_parent(self):
+        parent, _child = self._parent_with_child()
+        now = timezone.now()
+        with self.assertRaises(ValidationError):
+            BlepService.create_historical(
+                self.user, parent, now - timedelta(hours=1), now,
+            )
+
+    def test_assign_rejects_parent(self):
+        parent, _child = self._parent_with_child()
+        with self.assertRaises(ValidationError):
+            TaskService.assign(parent, self.user.pk,
+                               est_worker_time=timedelta(hours=1))
+
+    def test_first_subtask_rejected_on_in_progress_parent(self):
+        leaf = self._task('Started leaf', est_qty=Decimal('1'))
+        TaskLifecycleService.start_work(leaf.pk, self.user)
+        leaf.refresh_from_db()
+        self.assertEqual(leaf.status, Task.STATUS_IN_PROGRESS)
+        with self.assertRaises(ValidationError):
+            TaskService.create_direct(
+                self.job, 'Child of started',
+                rate_scheme_id=self._scheme('cos-scheme').pk,
+                parent_task_id=leaf.pk,
+            )
+        self.assertFalse(Task.objects.filter(parent_task=leaf).exists())
+
+    def test_first_subtask_rejected_on_complete_parent(self):
+        leaf = self._task('Complete leaf', est_qty=None)
+        TaskLifecycleService.complete_task(leaf.pk, add_qty=Decimal('1'))
+        leaf.refresh_from_db()
+        self.assertEqual(leaf.status, Task.STATUS_COMPLETE)
+        with self.assertRaises(ValidationError):
+            TaskService.create_direct(
+                self.job, 'Child of complete',
+                rate_scheme_id=self._scheme('coc-scheme').pk,
+                parent_task_id=leaf.pk,
+            )
+
+    def test_first_subtask_allowed_on_blocked_parent(self):
+        leaf = self._task('Blocked leaf', est_qty=Decimal('1'))
+        TaskLifecycleService.block_task(leaf.pk, reason='waiting', user=self.user)
+        leaf.refresh_from_db()
+        self.assertEqual(leaf.status, Task.STATUS_BLOCKED)
+        child = TaskService.create_direct(
+            self.job, 'Child of blocked',
+            rate_scheme_id=self._scheme('cob-scheme').pk,
+            parent_task_id=leaf.pk,
+        )
+        self.assertEqual(child.parent_task_id, leaf.pk)
+
+    def test_first_subtask_allowed_on_pending_parent(self):
+        leaf = self._task('Pending leaf', est_qty=Decimal('1'))
+        child = TaskService.create_direct(
+            self.job, 'Child of pending',
+            rate_scheme_id=self._scheme('cop-scheme').pk,
+            parent_task_id=leaf.pk,
+        )
+        self.assertEqual(child.parent_task_id, leaf.pk)
+
+
+class ParentCompletionAndCancelTest(QuantityStructureTestBase):
+    """Parent completion is OFFERED (not automatic) once every child is
+    terminal; parent cancel does not cascade — every child must be handled
+    individually first (rule 1)."""
+
+    def test_parent_completion_rejected_with_open_children_listed(self):
+        parent = self._task('Parent A', est_qty=Decimal('2'))
+        self._task('Child A1', parent=parent, est_qty=Decimal('1'))
+        self._task('Child A2', parent=parent, est_qty=Decimal('1'))
+        with self.assertRaises(ValidationError) as ctx:
+            TaskLifecycleService.complete_task(parent.pk, add_qty=Decimal('2'))
+        message = str(ctx.exception)
+        self.assertIn('Child A1', message)
+        self.assertIn('Child A2', message)
+
+    def test_parent_completion_offered_once_children_terminal(self):
+        parent = self._task('Parent B', est_qty=Decimal('2'))
+        child1 = self._task('Child B1', parent=parent, est_qty=Decimal('1'))
+        child2 = self._task('Child B2', parent=parent, est_qty=Decimal('1'))
+        TaskLifecycleService.complete_task(child1.pk, add_qty=Decimal('1'))
+        TaskLifecycleService.cancel_task(child2.pk)
+        result = TaskLifecycleService.complete_task(parent.pk, add_qty=Decimal('2'))
+        self.assertEqual(result.status, Task.STATUS_COMPLETE)
+
+    def test_parent_cancel_rejected_with_open_children_listed(self):
+        parent = self._task('Parent C', est_qty=Decimal('2'))
+        self._task('Child C1', parent=parent, est_qty=Decimal('1'))
+        with self.assertRaises(ValidationError) as ctx:
+            TaskLifecycleService.cancel_task(parent.pk)
+        self.assertIn('Child C1', str(ctx.exception))
+
+    def test_parent_cancel_succeeds_once_children_terminal(self):
+        parent = self._task('Parent D', est_qty=Decimal('2'))
+        child = self._task('Child D1', parent=parent, est_qty=Decimal('1'))
+        TaskLifecycleService.cancel_task(child.pk)
+        result = TaskLifecycleService.cancel_task(parent.pk)
+        self.assertEqual(result.status, Task.STATUS_CANCELLED)
+
+
+# ─────────────────────────── schedule bar derivation ───────────────────
+
+class ScheduleBarDerivationTest(QuantityStructureTestBase):
+    """Rule 8: a parent (non-startable) draws no bar once it has children;
+    a child's bar duration is the derived expectation, not its raw
+    per-unit estimate."""
+
+    def setUp(self):
+        super().setUp()
+        # Work-active job status so planned work forecasts.
+        for status in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                       Job.STATUS_IN_PROGRESS):
+            self.job.status = status
+            self.job.save()
+
+    def test_parent_draws_no_bar_child_bar_uses_expected_worker_time(self):
+        # The parent carries an assignee directly (bypassing
+        # TaskService.assign(), which now rejects this) to exercise the
+        # ScheduleService-level exclusion defensively, not just rely on the
+        # assign() guard never having let this state happen.
+        parent = self._task(
+            'Widget run', est_qty=Decimal('5'),
+            est_worker_time=timedelta(hours=1),
+            status=Task.STATUS_PENDING, assignee=self.user,
+        )
+        child = self._task(
+            'Per-unit step', parent=parent, qty_scales_with_parent=True,
+            est_qty=Decimal('20'), est_worker_time=timedelta(minutes=6),
+            status=Task.STATUS_PENDING, assignee=self.user,
+        )
+        result = ScheduleService.get_schedule(now=timezone.now())
+        lane = next(
+            w for w in result['workers'] if w['user']['id'] == self.user.pk
+        )
+        bars = lane['bars']
+        self.assertFalse(any(b['task_id'] == parent.pk for b in bars))
+        child_bars = [b for b in bars if b['task_id'] == child.pk]
+        self.assertTrue(child_bars, 'expected at least one bar for the child task')
+        # 6 min/unit * 5 units (parent est_qty) = 30 expected minutes.
+        self.assertEqual(child_bars[0]['est_minutes'], 30)

@@ -339,6 +339,11 @@ class BlepService:
                 "Cannot log time on a complete task. Create a new task for "
                 "additional work."
             )
+        if task.is_parent:
+            raise ValidationError(
+                'Cannot log time on a parent task — it delegates work to '
+                'its subtasks. Log time on a subtask instead.'
+            )
         if end_time < start_time:
             raise ValidationError("end_time must be >= start_time.")
         if end_time > timezone.now() + BlepService._CLOCK_SKEW_BUFFER:
@@ -1113,6 +1118,16 @@ class TaskService:
                 raise ValidationError({'parent_task': [
                     'Subtasks cannot have their own subtasks — '
                     'one level of subtasks only.']})
+            # Spec §9 rule 1: a started task's time is its own — decompose
+            # BEFORE starting. Applies to the first subtask (converting a
+            # leaf into a parent) and to every later one too: once a task
+            # has subtasks it's non-startable, so its status can only have
+            # advanced past pending/blocked if something bypassed that
+            # guard — reject defensively either way.
+            if parent.status not in (Task.STATUS_PENDING, Task.STATUS_BLOCKED):
+                raise ValidationError({'parent_task': [
+                    f"Cannot add a subtask to a task that is "
+                    f"'{parent.status}' — decompose before starting."]})
         est_qty, est_worker_time = hours_pair_fill(scheme.unit_label, est_qty, est_worker_time)
         # A type _coerce_duration can't parse (e.g. a raw JSON int from this
         # endpoint's unserialized POST) would otherwise reach Task.save()'s
@@ -1299,6 +1314,11 @@ class TaskService:
         falsy) has no such requirement.
         """
         _assert_job_not_on_hold(task.job, "change this task's assignment")
+        if assignee_id and task.is_parent:
+            raise ValidationError(
+                'Cannot assign a parent task — PM functions live on its '
+                'subtasks. Assign the subtasks instead.'
+            )
         if assignee_id and est_worker_time is None and not task.est_worker_time:
             raise TaskWorkerTimeRequired()
         task.assignee_id = assignee_id or None
@@ -1521,6 +1541,20 @@ class TaskLifecycleService:
                     f"Cannot complete task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
+            if task.is_parent:
+                # Spec §9 rule 1: parent completion is OFFERED — never
+                # automatic — and only once every child is terminal
+                # (complete or cancelled). Otherwise reject, listing what's
+                # still open, same shape as the material-blockers list below.
+                open_children = list(task.subtasks.exclude(
+                    status__in=(Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
+                ))
+                if open_children:
+                    names = ', '.join(c.name for c in open_children[:5])
+                    raise ValidationError(
+                        f'Cannot complete: subtask(s) not yet finished — '
+                        f'{names}. Complete or cancel every subtask first.'
+                    )
             if task.qty_source == Task.QTY_ENTERED:
                 if add_qty is None:
                     raise TaskActualQtyRequired(
@@ -1689,6 +1723,18 @@ class TaskLifecycleService:
                     f"Cannot cancel task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
+            if task.is_parent:
+                # Spec §9 rule 1: cancel does NOT cascade — every child must
+                # be individually handled (terminal) first.
+                open_children = list(task.subtasks.exclude(
+                    status__in=(Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
+                ))
+                if open_children:
+                    names = ', '.join(c.name for c in open_children[:5])
+                    raise ValidationError(
+                        f'Cannot cancel: subtask(s) still open — {names}. '
+                        f'Complete or cancel every subtask first.'
+                    )
             if (user is not None and not prior_qty_handled
                     and task.qty_source == Task.QTY_ENTERED
                     and Blep.objects.filter(
@@ -1814,6 +1860,11 @@ class TaskLifecycleService:
                 raise ValidationError(
                     f"Cannot start work: task status is '{task.status}', "
                     f"must be 'pending' or 'in_progress'."
+                )
+            if task.is_parent:
+                raise ValidationError(
+                    'Cannot start work on a parent task — it delegates work '
+                    'to its subtasks. Start work on a subtask instead.'
                 )
             # Evaluated before the active_worker conflict below: the old
             # session gets settled before join/takeover on the new task.

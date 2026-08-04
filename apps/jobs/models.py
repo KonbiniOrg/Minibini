@@ -367,6 +367,24 @@ class Task(TaskBase):
     )
     # est_qty inherited from TaskBase (nullable on Task).
 
+    # Quantity structure (spec §9, task-owned-money Phase 4 Task 1): only
+    # functional on a subtask (parent_task set) — inert on a top-level row,
+    # and rendered only on subtask forms. DB default True; the unit-keyed
+    # default (True when the parent's unit_label == 'ea', else False) is
+    # applied at subtask-CREATION time by the service layer, not here — this
+    # is just the column's fallback for rows that bypass that path.
+    qty_scales_with_parent = models.BooleanField(
+        default=True,
+        help_text=(
+            "Subtask only: when true, this task's raw est_qty/"
+            "est_worker_time are PER-UNIT and multiply by the parent's "
+            "est_qty to get the expected total (Task.expected_qty() / "
+            "expected_worker_time()). When false, the raw values are "
+            "already a per-batch total (multiplier 1). Inert on a "
+            "top-level task (no parent)."
+        ),
+    )
+
     class Meta:
         db_table = 'tasks'
 
@@ -497,6 +515,80 @@ class Task(TaskBase):
         BillableAtom interface.
         """
         return ((self.est_qty or Decimal('0')) * self.effective_rate()).quantize(Decimal('0.01'))
+
+    @property
+    def is_parent(self):
+        """True when this task has ≥1 subtask — the non-startable state
+        (spec §9 rule 1). Delegates PM functions (start/blep/assign) to its
+        children; only the children's own bleps/status move."""
+        return self.subtasks.exists()
+
+    def _parent_multiplier(self):
+        """The ONE multiplier used by both `expected_qty()` and
+        `expected_worker_time()` — no other code may re-derive it (spec §9
+        rule 3).
+
+        1 for a top-level task (no parent — the flag is inert there) and for
+        a flag-false subtask (its raw estimate is already a per-batch
+        total). For a flag-true subtask, the parent's own `est_qty` — the
+        parent IS the entered quantity and the multiplier is unit-agnostic
+        (no 'ea' requirement, spec §9 rule 2). A flag-true subtask whose
+        parent has no `est_qty` yet stamped falls back to 1 (nothing to
+        multiply by yet) rather than raising or propagating None.
+        """
+        if self.parent_task_id is None or not self.qty_scales_with_parent:
+            return Decimal('1')
+        return self.parent_task.est_qty or Decimal('1')
+
+    def expected_qty(self):
+        """Expected total quantity: raw `est_qty` × `_parent_multiplier()`
+        (spec §9 rules 2/3). None when this task carries no `est_qty` of its
+        own — there's nothing to expect."""
+        if self.est_qty is None:
+            return None
+        return self.est_qty * self._parent_multiplier()
+
+    def expected_worker_time(self):
+        """Expected total worker time: raw `est_worker_time` ×
+        `_parent_multiplier()`. Schedule bars, expected-vs-logged displays,
+        and estimate composition all read the expectation through here —
+        never through raw `est_worker_time` directly (spec §9 rule 3). None
+        when this task carries no `est_worker_time` of its own."""
+        if self.est_worker_time is None:
+            return None
+        return self.est_worker_time * float(self._parent_multiplier())
+
+    def derived_unit_price(self):
+        """Parent's per-unit price derived from its children (spec §9 rule
+        4): Σ flag-true children (`est_qty` × `effective_rate()`) — already
+        per-unit, so they add straight in — plus Σ flag-false children
+        (`est_qty` × `effective_rate()`), a per-batch total, divided by this
+        parent's own `est_qty` to spread it per unit. Quantized to cents
+        only at the very end (child amounts are NOT individually
+        quantized first).
+
+        Returns None when this task is not a parent (no subtasks) — there
+        is nothing to derive.
+
+        Decision (documented per plan, not left implicit): when the
+        flag-false sum is non-zero but this parent's own `est_qty` is
+        falsy (None or 0), the divisor is treated as 1 rather than raising
+        or returning None — there's no unit count yet to spread the batch
+        total over, so the raw flag-false total stands as-is until the
+        parent gets an `est_qty`.
+        """
+        if not self.is_parent:
+            return None
+        per_unit_total = Decimal('0')
+        batch_total = Decimal('0')
+        for child in self.subtasks.all():
+            child_amount = (child.est_qty or Decimal('0')) * child.effective_rate()
+            if child.qty_scales_with_parent:
+                per_unit_total += child_amount
+            else:
+                batch_total += child_amount
+        divisor = self.est_qty or Decimal('1')
+        return (per_unit_total + batch_total / divisor).quantize(Decimal('0.01'))
 
 
 class Blep(models.Model):

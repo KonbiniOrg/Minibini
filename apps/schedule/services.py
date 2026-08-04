@@ -365,7 +365,7 @@ class ScheduleService:
             # A running blep also reserves room for its estimate projection
             # (the active bar's light layer), same single-day guard.
             if running:
-                est = (b.task.est_worker_time or timedelta(0)) if b.task_id else timedelta(0)
+                est = (b.task.expected_worker_time() or timedelta(0)) if b.task_id else timedelta(0)
                 proj_end = start + est
                 if proj_end.date() == start.date() and proj_end.time() > latest:
                     latest = proj_end.time()
@@ -413,6 +413,7 @@ class ScheduleService:
         tasks are included when a blep ended inside that window. See
         docs/designs/schedule.md §3 for the algorithm contract.
         """
+        from django.db.models import Exists, OuterRef
         from apps.jobs.models import Task, Job, Blep
 
         relevant_statuses = [
@@ -451,8 +452,17 @@ class ScheduleService:
         ).values_list('task_id', flat=True))
         task_ids = planned_ids | history_ids | blepped_ids
 
+        # A parent (has subtasks) is non-startable and draws no bar of its
+        # own — its status/assignee are vestigial once it has children, and
+        # the schedule reflects the work that's actually happening on the
+        # children (spec §9 rule 8). Excluded at the query level rather than
+        # relying on TaskService.assign()'s guard alone, since a task can
+        # become a parent (subtask added) after already carrying stale
+        # planning state from before it had children.
         tasks_qs = Task.objects.filter(
             pk__in=task_ids,
+        ).exclude(
+            Exists(Task.objects.filter(parent_task_id=OuterRef('pk')))
         ).select_related('job').order_by('worker_queue', 'pk')
 
         # Pure worker_queue order — exactly the job board's order. Actual
@@ -509,7 +519,7 @@ class ScheduleService:
             # actuals only.
             if is_assignee and task.pk in planned_ids and can_forecast:
                 worked = ScheduleService._elapsed_worktime(bleps, local_now, env)
-                remaining = (task.est_worker_time or timedelta(0)) - worked
+                remaining = (task.expected_worker_time() or timedelta(0)) - worked
                 forecast_bars, cursor = ScheduleService._emit_forecast(
                     task, cursor, env, buffer_minutes,
                     duration=max(remaining, MIN_FORECAST),
@@ -539,7 +549,7 @@ class ScheduleService:
         positive duration there's no bar, but the cursor still steps past the
         buffer. Forecast segments split at envelope gaps as well as
         overnights — same zigzag mechanism."""
-        est = duration if duration is not None else task.est_worker_time
+        est = duration if duration is not None else task.expected_worker_time()
         start = next_workable_moment(cursor, env)
         buf = timedelta(minutes=buffer_minutes)
         if not est or est <= timedelta(0):
@@ -583,7 +593,7 @@ class ScheduleService:
         continues when it was clipped at the axis edge OR has a sibling on
         that side (multi-piece splits)."""
         est_minutes = int(
-            (task.est_worker_time or timedelta(0)).total_seconds() // 60
+            (task.expected_worker_time() or timedelta(0)).total_seconds() // 60
         )
         seg_dicts = []
         for seg in segments:

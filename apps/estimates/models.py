@@ -362,6 +362,16 @@ class WorkTemplate(models.Model):
 
     created_date = models.DateTimeField(auto_now_add=True)
 
+    # Quantity structure (spec §9 rule 6, task-owned-money Phase 4): opts a
+    # template into product-structure stamping — applying it with a
+    # quantity N creates ONE parent task (est_qty=N) plus per-unit subtasks
+    # from the template's items, instead of today's flat per-item task list.
+    # Default False keeps every existing template's flat generation
+    # unchanged; ad-hoc structure building (Add Task, then Add Subtask)
+    # remains primary and needs no template at all. The stamping logic
+    # itself is out of scope for this task (Phase 4 Task 3+).
+    is_product_structure = models.BooleanField(default=False)
+
     class Meta:
         db_table = 'work_templates'
 
