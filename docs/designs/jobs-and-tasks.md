@@ -731,7 +731,7 @@ bleps, and no actuals; it is **always billable**.
 | `fee_id` | AutoField PK | |
 | `job` | FK → Job (CASCADE, `related_name='fees'`) | |
 | `description` | CharField(255), blank | |
-| `quantity` | Decimal(10,2), default `1.00` | |
+| `quantity` | Decimal(10,2), default `1.00` | **required to be positive** — `quantity <= 0` rejected (enforced in `FeeService._reject_non_positive_quantity`, not the model) |
 | `unit_rate` | Decimal(10,2) | **required, never zero** — negative is a valid credit (enforced in `FeeService`, not the model) |
 | `accounting_category` | FK → AccountingCategory (PROTECT) | **required, NOT NULL** |
 | `sort_order` | PositiveInteger, default 0 | |

@@ -35,7 +35,7 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 | Job overview | `/jobs/:id` | Job-Overview.md | — |
 | Estimate & work authoring | `/jobs/:id/estimate`, task-list Add Work, wizard | Add-Line-and-Work-Authoring.md | `add-line-and-work-authoring/` |
 | Change orders | `/jobs/:id/change-order/:coId`, `/change-orders/:id/send` | Change-Orders.md | — |
-| Invoice seeding & send | `/jobs/:id/invoice`, `/invoices/*` | Invoice-Seeding-and-Send.md | — |
+| Invoice seeding & send | `/jobs/:id/invoice`, `/invoices/*` | Invoice-Seeding-and-Send.md | `invoice-seeding-and-send/`, `invoicing/` (fallback-AC only — §6a) |
 | Bills & payments | `/bills/*` | Bills.md | — |
 | Expenses & reimbursements | `/expenses`, `/reimbursements/:id` | Expenses.md | `expenses/` (§1 only) |
 | Inventory | `/catalog`, `/catalog/earmarks` (§7 only) | Inventory.md | — |

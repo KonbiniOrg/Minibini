@@ -138,6 +138,16 @@ three explicit buttons — **Add Task**, **Add Material**, **Add Fee**.
   money field). The stamp lands on the task server-side either way; a
   manager can edit the task's own rate afterward without disturbing the
   Scheme provenance chip. E2E: `e2e/specs/add-line-and-work-authoring/stamped-task-money.spec.js`.
+- [ ] **A task's accounting category can be left unset (task-owned-money
+  Phase 3).** The manager/PM/financials-only Accounting Category dropdown in
+  `WorkItemForm` includes a **"— none (categorize at invoicing) —"** option;
+  picking it creates/leaves the task with no AC. On `TaskDetailPage` a
+  null-category task shows "—". This is not an error state — it's resolved
+  later, when the task is composed onto an invoice (fallback stamping — see
+  `Invoice-Seeding-and-Send.md` §6a). Clearing an *existing* stamped task's AC
+  to null is gated the same as setting any other money field. Estimate/CO
+  hand-lines (Work/Fee-Credit, §1–§2 above) are a different, unrelated field
+  and still require an AC at entry — this "none" option is Task-only.
 
 ## 4. Acceptance — hand-lines crystallize
 

@@ -318,6 +318,88 @@ per-unit price).
 
 The line's taxability is whatever `accounting_category.taxable` says at push time (no per-line override field exists — removed 2026-07-21).
 
+**"Uniform-or-null" and the null case.** The "Accounting category" column above resolves to null in two distinct situations, only one of which the fallback (below) touches: (a) a genuine mismatch — two or more atoms with *different*, non-null categories — is left null, untouched by the fallback, exactly as before; (b) a null caused by an atom with **no AC of its own** (a task-owned-money Phase 3 null-AC Task) triggers the fallback stamp instead of landing on the line as null. See "Fallback accounting category" below.
+
+### Fallback accounting category (task-owned-money Phase 3)
+
+A `Task` may carry no `accounting_category` of its own — "categorize at
+invoicing" (`estimates-and-prices.md` §10). The invoice side is where
+that gets resolved:
+
+- **Compose-time stamping.** `InvoiceWizardService`/`InvoiceService`
+  override `BaseWizardService._resolve_fallback_category`
+  (`apps/core/wizard.py`) — called at most once per line composition,
+  and only when the shared-category rule above lands on null *because*
+  a contributing atom's own AC is null. The hook reads the
+  `fallback_accounting_category` Configuration key
+  (`InvoiceService._resolve_fallback_category`, `apps/invoicing/services.py`)
+  and returns that category to stamp onto the **new/updated line item
+  only** — the source Task/Material is never written to, so the atom
+  itself stays uncategorized for every other consumer (the estimate
+  side, `validate_data`, a future invoice). If the key is unset (or
+  points at a stale/deleted category), the compose call raises a plain
+  `ValidationError` naming the `fallback_accounting_category` setting
+  rather than silently landing the line on null.
+- **`copy_from_estimate` stamps too.** Any copied line whose source
+  estimate line has a null `accounting_category_id` (and isn't an
+  adjustment line) gets the same fallback, resolved once for the whole
+  copy and only if actually needed — a fully-categorized estimate never
+  touches the setting.
+- **The estimate side is deliberately NOT stamped** — see
+  `estimates-and-prices.md` §10.1a. This keeps the fallback strictly an
+  invoice-compose concern.
+- **`used_fallback_ac`** (`InvoiceLineItemSerializer`, computed
+  `SerializerMethodField`) is `true` iff the line's current
+  `accounting_category_id` equals the *currently configured* fallback
+  category — a read-time comparison against Configuration, not a stored
+  flag, so re-pointing the fallback setting later changes which
+  existing lines read as "used the fallback" without touching their
+  stored AC.
+- **Settings.** `FallbackAccountingCategorySetting.svelte` (Settings →
+  Accounting, "Uncategorized lines" fieldset) is a `<select>` +
+  explicit **Save** (never auto-committed). `-- None --` clears the key
+  (legal — "no fallback configured", which then makes an unresolved
+  null-AC compose raise instead of stamping). The dropdown only offers
+  **active, non-deposit** categories (`PATCH /api/settings/` rejects
+  anything else, same validation as `default_deposit_accounting_category`
+  and `default_material_accounting_category`) and fetches
+  `?include_fallback=true` so the currently-designated category still
+  shows in its own picker even though it's excluded from every normal
+  one (`AccountingCategoryViewSet.get_queryset` — see
+  `data-constraints.md` §1.1).
+- **Wizard badge.** A composed line with `used_fallback_ac: true`
+  renders an amber **"Uncategorized → `<fallback name>` ·
+  `<taxable/non-taxable>`"** badge (`LineItemTable.svelte`,
+  `.fallback-badge`) — a prompt to correct, not a block. It shows in the
+  default lines view (not inside reconcile mode).
+- **Correcting it.** Opening the line's **Edit** modal
+  (`LineItemModal.svelte`) and picking a different category (the
+  fallback category is excluded from that picker, same exclusion as
+  everywhere else) and saving clears the badge — no manual reload; the
+  panel's own refetch picks it up.
+- **Targeted-adjustment warning banner.** A percentage adjustment with a
+  **non-empty** `adjustment_target_categories` set (a "targeted"
+  adjustment) by construction never includes the fallback category in
+  its target picker, so a targeted adjustment and a fallback-flagged
+  line always coexist — but that combination is worth flagging, since
+  the adjustment's math silently skips the fallback-flagged line either
+  way. `InvoicePanel.svelte` shows a `.fallback-warning-notice` banner
+  ("This invoice has a targeted percentage adjustment, but targeted
+  adjustments never include uncategorized lines. Review the flagged
+  line(s) below.") in the lines view whenever the invoice has both a
+  targeted adjustment line and at least one `used_fallback_ac` line.
+  Not status-gated — it can appear on a sent invoice too (informative,
+  not actionable, since a sent invoice's lines aren't editable).
+- **Send gate.** A fallback-stamped line has a real (non-null)
+  `accounting_category` — it passes `allLinesHaveCategory` and the
+  server-side send gate exactly like a manually-categorized line. The
+  badge is a *correction prompt*, not a send blocker.
+- **QBO push.** Backstopped by a guard in the invoice-push builder
+  (`apps/qbo/services.py`) that raises a clear error on any line with a
+  still-null AC — unreachable in normal operation since compose-time
+  stamping and the send-time gate both run first. See
+  `quickbooks-integration.md`.
+
 ### In-sync vs. override
 
 Per the estimate wizard's rule (see estimates doc) — derived from data equality, no flag stored. The invoice version defines "in sync" as `line_item.price == round(sum_of_atom_amounts / line_item.qty, 2)` (rounding-safe). When atoms are added/removed:
@@ -1310,7 +1392,6 @@ The Job P&L view consumes invoices, expenses, and bleps to compute revenue and c
 - **Spending dashboards** — vendor totals, category totals over time.
 - **QBO → Minibini reverse sync** for Purchases entered directly in QBO. CDC-based polling is the recommended path; research in the appendix below.
 - **History coverage on `Expense`.** The `Expense` model is not decorated with `@history`. Edits do not write `HistoryEntry` rows. Reimbursement state changes also live outside the audit log.
-- **`accounting_category` required on `InvoiceLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.
 
 ---
 

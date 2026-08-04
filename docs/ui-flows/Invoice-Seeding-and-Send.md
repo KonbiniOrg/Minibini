@@ -23,6 +23,8 @@ points), then hand-edited freely:
 
 - **Financials** — `can_manage_financials`. Creates invoices, seeds/edits lines, sends. All
   the actions below need this atom (or superuser).
+- **Config** — `can_manage_config`. Only needed for §6a's Settings step (designating the
+  fallback accounting category); not needed for anything else in this doc.
 - **Everyone else** — read-only on invoices; none of the buttons below appear.
 
 ## Prerequisites (test-data setup)
@@ -138,6 +140,49 @@ tax and break the QBO item mapping).
 - [ ] **Read-only invoices don't flag.** On a sent/paid invoice (not editable), a missing
   category renders as "—" with no flag (nothing to fix there).
 
+## 6a. Fallback accounting category (task-owned-money Phase 3)
+
+A `Task` may be created with **no accounting category** ("categorize at invoicing" — see
+`Add-Line-and-Work-Authoring.md`). Composing that task onto an invoice doesn't leave the line
+flagged "needs category" like §6 above — it auto-stamps a configured **fallback** category
+instead, with its own amber badge and a distinct correction path. This section is about that
+different flag; §6's "needs category" flag still applies to a genuinely mismatched multi-atom
+join or an uncategorized freeform line.
+
+Entry: **Settings → Accounting**, then the invoice's **Reconcile** mode.
+
+- [ ] **Designating the fallback (Config persona).** Settings → Accounting shows an
+  "Uncategorized lines" fieldset with a **Fallback accounting category** dropdown (`-- None --`
+  plus every active, non-deposit category) and its own **Save** button (explicit — not
+  auto-committed on select). Saving shows "Fallback accounting category saved." and persists
+  server-side.
+- [ ] **The designated category disappears from normal pickers.** Once saved, the fallback
+  category no longer appears in the ordinary accounting-category dropdowns across the app
+  (line-item Edit modals, the AC manager's own list) — including its own fieldset's dropdown
+  reads it back via a separate "show the current pick too" path, so re-opening Settings still
+  shows the right selection.
+- [ ] **Creating a task with no category.** On the task-list "Add Work" → "Add Task" form, the
+  **Accounting Category** dropdown includes a **"— none (categorize at invoicing) —"** option;
+  picking it and saving creates a task with a null category.
+- [ ] **The composed line wears the fallback badge.** Reconcile the null-category task onto a
+  draft invoice (check it, "Add Here") → back in the lines view, that line shows an amber
+  **"Uncategorized → `<fallback category name>` · `<taxable/non-taxable>`"** badge.
+- [ ] **Correcting it.** Open the flagged line's **Edit** — the category dropdown does **not**
+  offer the fallback category itself (nothing to "leave as fallback"); picking any other
+  category and saving clears the badge immediately, no manual reload.
+- [ ] **A second fallback-flagged line behaves the same way** — composing another null-category
+  task shows its own badge independently of the first (now-corrected) line.
+- [ ] **The fallback-stamped line still passes the send gate.** Unlike a genuinely uncategorized
+  line (§6), a fallback-stamped line carries a real (non-null) category — Send Invoice stays
+  enabled and no "needs category" note appears while the badge is showing.
+- [ ] **Targeted-adjustment coexistence warning.** If the invoice also carries a **targeted**
+  percentage adjustment (one with specific target categories checked, not "all"), a banner
+  appears: "This invoice has a targeted percentage adjustment, but targeted adjustments never
+  include uncategorized lines. Review the flagged line(s) below." — the fallback category is
+  never offered as an adjustment target, so this combination can't be resolved by re-targeting;
+  it's a review prompt, not a block. Not status-gated — it can still show on a sent invoice
+  (informative only; nothing there is editable).
+
 ## 7. Tax note (current behavior)
 
 - [ ] A merged/joined line takes the **single** category you assign it; that category's
@@ -159,3 +204,4 @@ tax and break the QBO item mapping).
 | Adjustments | panel lists accepted estimate's adjustments · Added/dedup (copy-from-estimate auto-brings; panel marks Added) · Apply-everything leaves to panel · Add Adjustment by hand |
 | Category flag | null category flagged "needs category" when editable · not flagged when read-only |
 | Send-gate | Send disabled + note while any line uncategorized · assigning category enables Send · server rejects (400) a category-less send |
+| Fallback AC (§6a) | Config Save designates fallback · excluded from normal pickers · task creation offers "none (categorize at invoicing)" · composed null-AC task shows fallback badge · Edit-modal correction clears badge (fallback excluded from that picker too) · second flagged line independent of corrected first · fallback-stamped line passes send gate · targeted-adjustment coexistence warning banner |

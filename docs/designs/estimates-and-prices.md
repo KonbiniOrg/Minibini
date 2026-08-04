@@ -366,7 +366,7 @@ in `docs/designs/jobs-and-tasks.md` §4.4. Recap of the billing fields:
 | `qty_source` | own field | `'elapsed_time'` / `'entered_qty'` (`Task.QTY_ELAPSED` / `QTY_ENTERED`); copied from `scheme.algorithm` at stamp time. Never `'percentage'` — percentage schemes can't stamp a task. |
 | `rate` | own field | Decimal, nullable. `effective_rate()` returns `0.00` when `None` (e.g. a task cloned or built without a scheme). |
 | `unit_label` | own field | CharField, default `'none'` |
-| `accounting_category` | own field | FK → `AccountingCategory` (PROTECT), nullable at the DB level but required by the API serializer (§10) |
+| `accounting_category` | own field | FK → `AccountingCategory` (PROTECT), **nullable end-to-end** (DB and API — task-owned-money Phase 3): a stamp-only create still fills it from the preset (`RateScheme.accounting_category` is itself required), but a manual/flat task may be created or edited with none — "categorize at invoicing" (§10). Writing or clearing it is gated by `MONEY_FIELDS` (§10.1). |
 | `active_modifiers` | own field | JSON list of `{key, label, percent}` **snapshot** dicts — resolved at stamp time, not live scheme keys (§2.3) |
 | `source_scheme` | own field | FK → `RateScheme` (`SET_NULL`, `related_name='stamped_tasks'`) — **provenance only**, never read for money math |
 | `est_qty` | inherited from `TaskBase` | nullable on Task |
@@ -783,23 +783,19 @@ taxability reads `accounting_category.taxable` directly). Declared in
   (Task 4) — the old silent bare-line default of `Fee` no longer applies
   to new writes; only legacy rows may carry `NULL`. **Immutable after
   creation** — `update_line_item` rejects any attempt to change an
-  already-set kind (`ValidationError` on `freeform_kind`), whether sent
-  directly or via the `is_material` alias below; re-sending the same
-  value is a no-op.
-  The retired `is_material` boolean survives only as a **write-side
-  input alias** on `EstimateService`/`ChangeOrderService`. The model
-  field and the SPA are both `is_material`-free as of Task 7/8 (the
-  estimate/CO footer sends `freeform_kind` directly, never `is_material`)
-  — the alias is now purely a backend compatibility shim for any
-  legacy caller still POSTing the old boolean, kept alive intentionally
-  and marked for later removal (`EstimateService._apply_is_material_alias`'s
-  own docstring flags it). `is_material=True` → `freeform_kind='material'`, `=False` →
-  `'fee'` — but a directly-supplied `freeform_kind` in the same call
-  wins over an absent/`False` alias value (only an explicit
-  `is_material=True` conflicting with a *different* direct kind 400s).
-  Invalid (with either spelling) on a line that already has an
-  `inventory_item`/`service_item` (already knows its type) or an
-  `adjustment_service` (document-only adjustments can't carry a kind).
+  already-set kind (`ValidationError` on `freeform_kind`); re-sending the
+  same value is a no-op.
+  The `is_material` boolean is **fully retired, not just SPA-free** — the
+  compatibility alias that used to translate it into `freeform_kind` at
+  the service boundary was itself removed (task-owned-money Phase 3,
+  Task 6): `EstimateService._reject_is_material_field` (shared by
+  `ChangeOrderService`) now 400s any `add_line_item`/`update_line_item`
+  payload that still carries an `is_material` key at all —
+  `{'is_material': ['Retired field — send freeform_kind directly
+  ("work", "material", or "fee").']}` — rather than translating it or
+  silently ignoring it. There is no longer any live path (SPA or API)
+  that accepts `is_material`; every caller must send `freeform_kind`
+  directly.
   A hand-line's **sign/zero rules** (Task 4, enforced by
   `EstimateService._validate_price`, shared with `ChangeOrderService`):
   negative `price` is allowed only when `freeform_kind='fee'` (a
@@ -923,7 +919,7 @@ No `Task` is created at authoring time. The Task is created at acceptance by `on
 
 **`_apply_material_ac_default`.** Bare `freeform_kind='material'` lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. `work` and `fee` hand-lines get no default — both still require an explicit AC at entry (the generic hand-line AC-required check, unconditional on kind — no atom source and not an adjustment means an AC is mandatory). The key is editable via a "Default material category" picker (`DefaultMaterialCategorySetting.svelte`, extracted out of `AccountingCategories.svelte`), rendered in both Settings' Accounting and Pricing tabs; `PATCH /api/settings/` validates it as blank-or-active-category-id (`data-constraints.md` §1.1).
 
-**Kind required at entry (Task 4).** A bare `add_line_item` payload (Estimate, or a CO line with `action='add'` — REPLACE/REMOVE carry no kind requirement of their own, since REPLACE mirrors the target's current atom type) must resolve to a determinate `freeform_kind` — via the `is_material` alias or a direct `freeform_kind` — or the call 400s with `{'freeform_kind': [...]}`. `update_line_item` never re-requires a kind (an untouched line keeps its persisted one); it only rejects an attempt to *change* an already-set kind.
+**Kind required at entry (Task 4).** A bare `add_line_item` payload (Estimate, or a CO line with `action='add'` — REPLACE/REMOVE carry no kind requirement of their own, since REPLACE mirrors the target's current atom type) must carry a direct `freeform_kind` or the call 400s with `{'freeform_kind': [...]}` (Task 6 removed the `is_material` alias entirely — an `is_material` key in the payload now 400s on its own, above, rather than resolving a kind). `update_line_item` never re-requires a kind (an untouched line keeps its persisted one); it only rejects an attempt to *change* an already-set kind.
 
 **API endpoint:**
 
@@ -1257,34 +1253,97 @@ receiver-by-receiver behavior.
 ## 10. AccountingCategory pass-through
 
 `AccountingCategory` (`apps/core/models.py`) is required on
-`RateScheme` (NOT NULL). `Task` carries its **own** `accounting_category`
-(stamped from the preset at creation, then permanent — nullable at the
-DB level, but required by the API serializer, §4). `ServiceItem` still
-reads AC live off its `RateScheme` FK. Every other billable concept
-carries AC directly (Materials with no PLI; Expenses).
+`RateScheme` (NOT NULL) and on `Fee` (NOT NULL). `Task` carries its
+**own** `accounting_category` — stamped from the preset at creation,
+then a permanent field the task owns — and, since **task-owned-money
+Phase 3**, it is **nullable end-to-end**: nullable at the DB level *and*
+optional in the API (`TaskSerializer.accounting_category` is
+`required=False, allow_null=True`). A stamp-only creation (picking a
+`RateScheme` via `rate_scheme`) still fills it from the preset, because
+`RateScheme.accounting_category` is itself required — a task only ends
+up with no AC when someone deliberately leaves it blank (a manual/flat
+task with no preset) or a manager/financials write clears an
+already-stamped one. `ServiceItem` still reads AC live off its
+`RateScheme` FK. Every other billable concept carries AC directly
+(Materials with no PLI; Expenses; Fees — required).
+
+A null-AC Task is not an error state — it's **"categorize at
+invoicing"**: composing it onto an invoice line stamps the configured
+**fallback accounting category** onto the *line* (never the Task
+itself) — see §10.1a and `invoicing-and-expenses.md`'s "Fallback
+accounting category" section for the full mechanic, and
+`data-constraints.md` §1.1 for the `fallback_accounting_category`
+Configuration key.
 
 ### 10.1 Where AC comes from
 
 | Object | AC source |
 |---|---|
 | `RateScheme` | own field, required |
-| `Task` | own field — stamped from `scheme.accounting_category` by `Task.stamp_from_scheme` at creation (§3.1); `Task.effective_accounting_category` returns it directly, no FK traversal. Nullable at the DB level; the API's `TaskSerializer` makes it `required=True`, pre-filled from the picked preset for stamp-only creation. |
+| `Task` | own field — stamped from `scheme.accounting_category` by `Task.stamp_from_scheme` at creation (§3.1) when a preset is picked; `Task.effective_accounting_category` returns it directly, no FK traversal. **Nullable end-to-end** (task-owned-money Phase 3) — a manual/flat task may be created or edited with no AC ("categorize at invoicing", above). Writing it — including *clearing* an existing value to null — is gated by `TaskSerializer.MONEY_FIELDS`: only `CanManageJobOrPM` or `can_manage_financials` may set/clear it; everyone else's stamp-only creates get the preset's AC with no override (`users-and-permissions.md` "Task money-field writes"). |
 | `ServiceItem` | `template.rate_scheme.accounting_category` (via `ServiceItem.effective_accounting_category`) — still a live FK read; ServiceItem doesn't stamp |
 | `Material` (PLI-linked) | `material.inventory_item.accounting_category` (copy/derivation; materials doc owns this) |
 | `Material` (freeform) | direct on the material |
 | `Fee` | own field, required (NOT NULL) |
-| `EstimateLineItem` from atom | derived from the atom's effective AC at line-item creation; snapshot |
+| `EstimateLineItem` from atom | derived from the atom's effective AC at line-item creation; snapshot. **May be null** if the source Task itself has none — the estimate side never stamps a fallback (§10.1a); the line stays null until a human sets one. |
 | `EstimateLineItem` service-line | snapshotted from `service_item.effective_accounting_category` at `add_line_item_from_service` |
 | `EstimateLineItem` bare `freeform_kind='material'` hand-line | `Configuration['default_material_accounting_category']` if no explicit AC supplied (see §6.4); required if the key is absent |
-| `EstimateLineItem` bare `freeform_kind='work'` hand-line | user-entered; required at entry (no config default); carried onto the crystallized flat Task's own `accounting_category` at acceptance |
-| `EstimateLineItem` bare `freeform_kind='fee'`/`NULL` hand-line | user-entered; required before send; carried onto the crystallized `Fee` at acceptance |
+| `EstimateLineItem` bare `freeform_kind='work'` hand-line | user-entered; **required at entry** (no config default) — `EstimateService.add_line_item`/`update_line_item` 400 a bare hand-line with no AC and no `adjustment_service`; carried onto the crystallized flat Task's own `accounting_category` at acceptance |
+| `EstimateLineItem` bare `freeform_kind='fee'`/`NULL` hand-line | user-entered; **required at entry**, same guard as above; carried onto the crystallized `Fee` at acceptance |
+| `InvoiceLineItem` from atom | derived from the atom's effective AC at compose time, **or the configured fallback** if the atom's own AC is null (§10.1a) |
+| `InvoiceLineItem` via `copy_from_estimate` | copied from the estimate line's AC, **or the fallback** if the estimate line's AC is null (§10.1a) |
+| `InvoiceLineItem` freeform (Add Line Item) | user-entered; **not required at entry** by `InvoiceService.add_line_item` itself (unlike the estimate side — see `docs/designs/LATER.md`); the SPA validates it client-side and the send-time gate (§10.2) blocks an uncategorized line from reaching a customer regardless |
+
+Note the asymmetry: **hand-lines require an AC at entry only on the
+estimate/CO side.** A `work`/`fee` hand-line with no explicit category
+and no atom source 400s immediately; this is unchanged by task-owned-money
+Phase 3 and gets no config default the way `material` hand-lines do. The
+invoice side never had this entry-time requirement — it's covered by
+compose-time fallback stamping and the send-time gate instead.
 
 `ServiceItem.effective_accounting_category` exposes AC for serializers
 and the wizard's pool building. Wizard single-atom line-item creation
 pulls `category` from the atom's effective AC (for a Task, its own
-field); multi-atom creation only sets `category` if all atoms share one.
+field); multi-atom creation only sets `category` if all atoms share
+one — two DIFFERENT real categories (no null atom involved) still land
+on a null line-item category, untouched by the fallback (§10.1a's
+fallback path only fires when the mismatch traces back to a null atom).
 
-### 10.2 What changes when AC moves
+### 10.1a Fallback stamping at invoice compose (task-owned-money Phase 3)
+
+The **estimate side never stamps a fallback.** A null-AC Task composed
+onto an estimate line (or reached via `revise_estimate`) stays null — a
+human has to set one, and the only automatic backstop on that side is
+the send-time hand-line gate (§10.2), which doesn't apply to atom-backed
+lines at all. So an atom-backed estimate line whose Task has no AC can
+legally go out to a customer uncategorized.
+
+The **invoice side stamps.** `InvoiceWizardService`/`InvoiceService`
+override the shared wizard's `_resolve_fallback_category` hook
+(`BaseWizardService`, `apps/core/wizard.py`) to read the
+`fallback_accounting_category` Configuration key and apply it —
+**line-local only**, never written back to the Task/Material atom —
+whenever composing a line whose shared category resolves to null
+*because* a contributing atom has no AC of its own.
+`InvoiceService.copy_from_estimate` applies the identical fallback to
+any copied line whose source estimate line has a null AC (adjustment
+lines are exempt — their AC provenance is the adjustment `RateScheme`,
+not a billable atom). If no fallback is configured, either path raises
+a `ValidationError` naming the `fallback_accounting_category` setting
+rather than silently leaving the line uncategorized.
+
+The stamped-or-not state is exposed read-time as `used_fallback_ac` on
+`InvoiceLineItem` (true iff the line's current AC equals the
+*currently* configured fallback — a computed comparison, not a stored
+flag) and surfaced in the wizard as an "Uncategorized → `<name>` ·
+`<taxability>`" badge, correctable via the line edit modal. See
+`invoicing-and-expenses.md`'s "Fallback accounting category" section
+for the badge/correction/warning-banner mechanics, and
+`quickbooks-integration.md` for the QBO push-time guard that backstops
+this (defense-in-depth — normal operation never reaches it, since
+compose-time stamping and the send-time gate both run first).
+
+### 10.2 What changes when AC moves / send-time AC gates
 
 Editing `RateScheme.accounting_category` is unrestricted — presets are
 freely editable (§3) — but it only affects *future* stampings: a task's
@@ -1295,6 +1354,23 @@ an already-stamped task's AC.
 For line items, AC is **snapshotted** at line-item creation time —
 it's a field on `BaseLineItem`, not derived live. Once the estimate
 is sent (out of draft), the snapshot is permanent.
+
+**Send-time AC gates (hand-lines only).**
+`EstimateService.assert_all_hand_lines_have_ac` blocks `draft → open`
+while any hand-line (no atom source, not an adjustment) lacks an AC;
+`ChangeOrderService.assert_all_bare_add_lines_have_ac` is the CO
+parallel, gating a bare `add` line at send. Neither gate touches
+atom-backed lines — see the asymmetry note in §10.1. The
+`validate_data` management command mirrors the estimate-side gate as a
+data-integrity check (`check_estimate_hand_line_categorization`): a
+hand-line with no AC on a `draft` estimate is a WARNING (legitimately
+reachable pre-send); on anything past draft it's an ERROR (the gate
+should already have caught it). It has the parallel invoice-side check
+(`check_invoice_line_categorization`) too, same WARN/ERROR split keyed
+on `Invoice.status == draft`. It does **not** yet have an analogous
+check for `ChangeOrderLineItem` bare-add lines — a pre-existing
+coverage gap, tracked in `docs/designs/LATER.md`. See
+`data-constraints.md` §1.13/§1.13a/§1.16 for field-level detail.
 
 ### 10.3 Adjustment-line percent snapshot
 

@@ -141,6 +141,25 @@ The CO surface and its estimate-parallel code.
   _Done when:_ the clean() check exists with a test, and the replace semantics
   note lives in estimates-and-prices §14.11.
 
+- **`validate_data` has no AC-nullability check for `ChangeOrderLineItem` bare-add lines.** — _added 2026-08-03 (task-owned-money Phase 3, Task 7 carry-note)_
+  Task 7 added `validate_data.check_estimate_hand_line_categorization` and
+  `check_invoice_line_categorization` — WARN on a `draft` document, ERROR
+  once past draft — mirroring the real send-time gates
+  (`EstimateService.assert_all_hand_lines_have_ac`,
+  `InvoiceEmailService._assert_all_lines_categorized`). The CO side has
+  the analogous send-time gate
+  (`ChangeOrderService.assert_all_bare_add_lines_have_ac`,
+  `apps/estimates/change_order_service.py`, wired into both
+  `ChangeOrder.clean()`'s draft-exit guard and
+  `ChangeOrderEmailService._validate_send`) but **no** `validate_data`
+  mirror was added for it — a pre-existing gap, not a regression; a bare
+  `add` `ChangeOrderLineItem` with no `accounting_category` is invisible
+  to `validate_data` regardless of the CO's status.
+  _Done when:_ `validate_data` gains a
+  `check_co_bare_add_line_categorization` (or similarly named) check with
+  the same WARN(draft)/ERROR(past-draft) split as its estimate/invoice
+  siblings, and a test pins it.
+
 - **Expose *estimate* claims somewhere after acceptance.** — _added 2026-07-20 (RM)_
   `EstimateLineItemSource` (what the agreement SOLD per line) is invisible in
   the daily UI once the estimate is accepted and the estimate wizard is gone —

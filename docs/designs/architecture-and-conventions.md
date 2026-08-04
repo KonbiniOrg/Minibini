@@ -1697,11 +1697,17 @@ Concrete items, smallest first:
   mistakes. Concern is shared across the subclasses since it lives
   on `BaseLineItem`.
 
-- **`accounting_category` required on the line-item subclasses
-  (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`).**
-  Currently nullable (inherited from
-  `BaseLineItem`); a null AC falls back to silently tax-exempt at QBO
-  push time. Should become NOT NULL after existing rows are backfilled.
-  One project-wide migration across the subclasses — the change
-  lives in `apps/core/models.py` (`BaseLineItem`) plus a backfill step
-  per subclass.
+- **~~`accounting_category` required on the line-item subclasses~~ —
+  superseded by task-owned-money Phase 3, not pursued.** This entry
+  used to propose a NOT-NULL migration across `EstimateLineItem`,
+  `InvoiceLineItem`, `PurchaseOrderLineItem` (`BaseLineItem.accounting_category`
+  stays nullable, inherited by all three). Phase 3 went the other way
+  instead: `Task.accounting_category` itself became nullable
+  end-to-end ("categorize at invoicing"), and the invoice-compose step
+  resolves a null-AC atom by stamping a configured **fallback
+  accounting category** onto the line rather than requiring one
+  up-front — see `estimates-and-prices.md` §10/§10.1a and
+  `invoicing-and-expenses.md`'s "Fallback accounting category" section.
+  Estimate/CO **hand-lines** (no atom source) still require an AC at
+  entry — unchanged, unrelated to this note. `PurchaseOrderLineItem` AC
+  nullability is untouched by Phase 3 either way.
