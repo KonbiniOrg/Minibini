@@ -123,6 +123,12 @@ during implementation review.
       never appear), priced at the derived per-unit price
 - [ ] Detach a subtask — works when the parent isn't claimed by a
       non-draft document; blocked with a clear error when it is
+- [ ] Derive-from-children pricing: `PATCH /api/tasks/{id}/` with
+      `{"rate": null}` on a structured parent (own task ID from the
+      detail page URL) — confirm the parent's price re-derives from its
+      children's per-unit money instead of a stored rate. **There is no
+      UI gesture for this today** (no Edit-Task control clears a parent's
+      rate) — API-only, product decision pending (see §10)
 - [ ] Materials section on a parent task: try "Move" and note the known
       papercut — it still offers subtask radios as targets even though
       the server now rejects moving a material onto a subtask (400)
@@ -192,6 +198,10 @@ during implementation review.
 - [ ] The fallback/targeted-adjustment warning banner is not status-gated
       and still shows on already-sent invoices — intended, or should it
       hide post-send?
+- [ ] No UI gesture exists to null a parent's rate and force
+      derive-from-children pricing — only reachable via API PATCH today
+      (see §6); worth a first-class "derive from children" control on the
+      task form, or leave API-only?
 - [ ] Under-run billing on a per-batch subtask: complete a child with
       actual qty less than its estimate and check you're comfortable with
       the resulting parent unit price (this is the spec's own formula,
