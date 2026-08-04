@@ -18,7 +18,7 @@ import TaskDetailPage from '@/routes/jobs/TaskDetailPage.svelte';
 // gates its edit-task / assign affordances on task.can_manage alone (not the
 // global atom). These tests set the global atom to false (worker) to prove the
 // per-object flag is what drives the affordances.
-function mockApi(taskOverrides = {}) {
+function mockApi(taskOverrides = {}, deliverables = []) {
   const task = {
     task_id: 7, name: 'Mill', status: 'pending', job: { id: 3 },
     assignee_name: null, est_qty: '2', effective_rate: '25', unit_label: 'hr',
@@ -31,6 +31,9 @@ function mockApi(taskOverrides = {}) {
       if (url.includes('/subtasks')) return Promise.resolve([]);
       return Promise.resolve(task);
     }
+    // Checked before the generic '/api/jobs/3/' branch below — that prefix
+    // would otherwise also swallow this more specific deliverables path.
+    if (url.startsWith('/api/jobs/3/deliverables/')) return Promise.resolve(deliverables);
     if (url.startsWith('/api/jobs/3/')) return Promise.resolve({ job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress' });
     if (url.startsWith('/api/bleps/')) return Promise.resolve([]);
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
@@ -339,6 +342,88 @@ describe('TaskDetailPage action band', () => {
   });
 });
 
+// Deliverables bridge (spec §9 rule 7, task-owned-money Phase 4 Task 5):
+// "Add as deliverable" copies this task's name/est_qty/unit_label into a new
+// Deliverable. Top-level, quantity-bearing tasks only — hidden for subtasks
+// (structures export from their parent) and once a link already exists
+// (checked against the job's deliverables list, since the task payload
+// itself carries no linked-deliverable indicator — Task 3 exposed none).
+describe('TaskDetailPage add-as-deliverable bridge', () => {
+  it('shows the button for a top-level, quantity-bearing, unlinked task', async () => {
+    mockApi({ can_manage: true, parent_task: null, est_qty: '5' }, []);
+    const { findByRole, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByRole('button', { name: 'Add as Deliverable' })).toBeInTheDocument();
+  });
+
+  it('hides the button on a subtask', async () => {
+    mockApi({ can_manage: true, parent_task: 4, parent_task_name: 'Parent', est_qty: '5' }, []);
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: 'Add as Deliverable' })).toBeNull();
+  });
+
+  it('hides the button when the task carries no est_qty', async () => {
+    mockApi({ can_manage: true, parent_task: null, est_qty: null }, []);
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: 'Add as Deliverable' })).toBeNull();
+  });
+
+  it('hides the button once a deliverable already links to this task', async () => {
+    mockApi(
+      { can_manage: true, parent_task: null, est_qty: '5' },
+      [{ id: 1, source_task: 7, description: 'Mill', qty_ordered: '5', units: 'ea' }],
+    );
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: 'Add as Deliverable' })).toBeNull();
+  });
+
+  it('does not hide the button for a deliverable linked to a DIFFERENT task', async () => {
+    mockApi(
+      { can_manage: true, parent_task: null, est_qty: '5' },
+      [{ id: 1, source_task: 99, description: 'Other', qty_ordered: '1', units: 'ea' }],
+    );
+    const { findByRole, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByRole('button', { name: 'Add as Deliverable' })).toBeInTheDocument();
+  });
+
+  it('hides the button when the task is not manageable by this user', async () => {
+    mockApi({ can_manage: false, parent_task: null, est_qty: '5' }, []);
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: 'Add as Deliverable' })).toBeNull();
+  });
+
+  it('posts to add-as-deliverable and refreshes the deliverables list on click', async () => {
+    mockApi({ can_manage: true, parent_task: null, est_qty: '5' }, []);
+    api.post.mockReset();
+    api.post.mockResolvedValue({ id: 1, source_task: 7 });
+    const { findByRole, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    await fireEvent.click(getByRole('button', { name: 'Add as Deliverable' }));
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/7/add-as-deliverable/', {});
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith(expect.stringContaining('/api/jobs/3/deliverables/'));
+    });
+  });
+
+  it('shows the global error overlay when the bridge call fails', async () => {
+    mockApi({ can_manage: true, parent_task: null, est_qty: '5' }, []);
+    api.post.mockReset();
+    api.post.mockRejectedValue({ data: { detail: 'Already linked.' }, message: 'Already linked.' });
+    const { findByRole, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    await fireEvent.click(getByRole('button', { name: 'Add as Deliverable' }));
+    await waitFor(() => {
+      expect(get(overlayMessage)).toMatchObject({ kind: 'error', text: 'Already linked.' });
+    });
+    clearMessage();
+  });
+});
+
 describe('TaskDetailPage section order', () => {
   it('runs Description → Subtasks → Materials → Work Sessions, with Add Entry available', async () => {
     mockApi({ description: 'Cut the panels' });
@@ -472,7 +557,7 @@ describe('TaskDetailPage does not refetch in a loop', () => {
 });
 
 // Local mock allowing job overrides (on_hold) and subtasks.
-function mockApiWithJob(taskOverrides = {}, jobOverrides = {}, subtasks = []) {
+function mockApiWithJob(taskOverrides = {}, jobOverrides = {}, subtasks = [], deliverables = []) {
   const task = {
     task_id: 7, name: 'Mill', status: 'pending', job: { id: 3 },
     assignee_name: null, est_qty: '2', effective_rate: '25', unit_label: 'hr',
@@ -489,6 +574,9 @@ function mockApiWithJob(taskOverrides = {}, jobOverrides = {}, subtasks = []) {
       if (url.includes('/materials')) return Promise.resolve([]);
       return Promise.resolve({});
     }
+    // Checked before the generic '/api/jobs/3/' branch below — that prefix
+    // would otherwise also swallow this more specific deliverables path.
+    if (url.startsWith('/api/jobs/3/deliverables/')) return Promise.resolve(deliverables);
     if (url.startsWith('/api/jobs/3/')) {
       return Promise.resolve({
         job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress',

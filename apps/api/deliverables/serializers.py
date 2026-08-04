@@ -24,18 +24,29 @@ class DeliverableSerializer(JobScopedCanManageMixin, serializers.ModelSerializer
     # never client-settable directly, only via the two bridge endpoints.
     source_task_name = serializers.CharField(
         source='source_task.name', read_only=True, default=None)
+    # Phase 4 Task 5 (frontend bridge): the passive mismatch badge (task
+    # est_qty vs this deliverable's qty_ordered — deliberately NOT actuals)
+    # needs the linked task's est_qty on the wire. Riding the same
+    # source_task FK access as source_task_name above costs no extra query
+    # (the related object is cached after the first attribute read) —
+    # cheaper than a per-row task fetch from the frontend.
+    source_task_est_qty = serializers.DecimalField(
+        source='source_task.est_qty', max_digits=10, decimal_places=2,
+        read_only=True, default=None,
+    )
 
     class Meta:
         model = Deliverable
         fields = [
             'id', 'job', 'description', 'qty_ordered', 'units', 'sort_order',
             'qty_picked_up', 'qty_prepped', 'qty_remaining',
-            'source_task', 'source_task_name',
+            'source_task', 'source_task_name', 'source_task_est_qty',
             'can_manage', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'job', 'created_at', 'updated_at',
                             'qty_picked_up', 'qty_prepped', 'qty_remaining',
-                            'source_task', 'source_task_name']
+                            'source_task', 'source_task_name',
+                            'source_task_est_qty']
 
     def _fulfillment(self, obj):
         if not hasattr(obj, '_cached_fulfillment'):

@@ -80,6 +80,42 @@ describe('TasksPanel per-job can_manage', () => {
   });
 });
 
+// Structure stamping (spec §9 rule 6, task-owned-money Phase 4 Task 5):
+// "Apply Template" is convenience only — gated the same as
+// populate-from-template's own CanManageJobOrPM (job.can_manage), unlike Add
+// Work which is open to any authenticated user.
+describe('TasksPanel — Apply Template', () => {
+  it('shows Apply Template when can_manage is true', async () => {
+    mockApi();
+    const { findByRole } = render(TasksPanel, { props: { job: makeJob({ can_manage: true }) } });
+    expect(await findByRole('button', { name: 'Apply Template' })).toBeInTheDocument();
+  });
+
+  it('hides Apply Template when can_manage is false', async () => {
+    mockApi();
+    const { findByRole, queryByRole } = render(TasksPanel, { props: { job: makeJob({ can_manage: false }) } });
+    await findByRole('button', { name: /add work/i });
+    expect(queryByRole('button', { name: 'Apply Template' })).toBeNull();
+  });
+
+  it('hides Apply Template while the job is on hold', async () => {
+    mockApi();
+    const { findByRole, queryByRole } = render(
+      TasksPanel, { props: { job: makeJob({ can_manage: true, on_hold: true }) } },
+    );
+    await findByRole('button', { name: /add expense/i });
+    expect(queryByRole('button', { name: 'Apply Template' })).toBeNull();
+  });
+
+  it('opens the Apply Template modal on click', async () => {
+    mockApi();
+    const { findByRole, getByRole } = render(TasksPanel, { props: { job: makeJob({ can_manage: true } ) } });
+    await fireEvent.click(await findByRole('button', { name: 'Apply Template' }));
+    await waitFor(() => expect(getByRole('dialog')).toBeInTheDocument());
+    expect(within(getByRole('dialog')).getByText('Apply Template')).toBeInTheDocument();
+  });
+});
+
 describe('TasksPanel — Add Work picker → FeeModal path', () => {
   it('shows the Add Work toolbar button', async () => {
     mockApi();

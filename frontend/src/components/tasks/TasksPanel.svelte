@@ -13,6 +13,7 @@
   import AssignModal from '../AssignModal.svelte';
   import PriceListPicker from '../PriceListPicker.svelte';
   import Modal from '../Modal.svelte';
+  import ApplyTemplateModal from './ApplyTemplateModal.svelte';
 
   let { job, onJobChange = () => {} } = $props();
 
@@ -54,6 +55,7 @@
 
   // Picker state
   let pickerOpen = $state(false);
+  let applyTemplateOpen = $state(false);
   let taskPresetTemplateId = $state(null);
   let taskPresetServiceItem = $state(null); // full picked object — see handleChoose
   let taskPresetName = $state('');
@@ -397,6 +399,12 @@
     {#if !jobLocked}
       {#if !job?.on_hold}
         <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
+        <!-- Structure stamping (spec §9 rule 6): convenience only — ad-hoc
+             Add Task / Add Subtask needs no template at all; gated the same
+             as populate-from-template's own CanManageJobOrPM (job.can_manage). -->
+        {#if job?.can_manage}
+          <button type="button" onclick={() => { applyTemplateOpen = true; }}>Apply Template</button>
+        {/if}
       {/if}
       <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
     {/if}
@@ -483,6 +491,13 @@
   />
 
   <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} taskSurface={true} />
+
+  <ApplyTemplateModal
+    open={applyTemplateOpen}
+    jobId={job.job_id}
+    onSaved={() => { applyTemplateOpen = false; reload(); }}
+    onClose={() => { applyTemplateOpen = false; }}
+  />
 
   <ExpenseModal
     open={expenseModalOpen}

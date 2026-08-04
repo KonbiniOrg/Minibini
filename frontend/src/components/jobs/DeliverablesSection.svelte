@@ -1,13 +1,28 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { link } from 'svelte-spa-router';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
+  import { canManageFinancials } from '../../stores/permissions.js';
   import DeliverablesEditModal from './DeliverablesEditModal.svelte';
 
-  let { jobId, canManage = false } = $props();
+  // jobOnHold mirrors the "Create work structure" endpoint's own
+  // _assert_job_not_on_hold gate — avoids a guaranteed 400 round trip.
+  let { jobId, canManage = false, jobOnHold = false } = $props();
 
   let deliverables = $state([]);
   let editability = $state({ editable: false, reason: null });
   let loading = $state(true);
   let modalOpen = $state(false);
+  // Busy-per-row: keyed by deliverable id, guards the create-work-structure
+  // action button against a double-click double-post.
+  let structureBusy = $state({});
+
+  // Deliverables bridge (spec §9 rule 7, task-owned-money Phase 4 Task 5):
+  // "Create work structure" mints a money-LESS Task (rate/AC both null), so
+  // the API gates it on (CanManageJobOrPM | CanManageFinancials) — broader
+  // than plain `canManage` (the job-scoped CanManageJobOrPM equivalent this
+  // panel's Edit link already uses), matching apps/api/deliverables/views.py.
+  const canCreateStructure = $derived(canManage || $canManageFinancials);
 
   async function load() {
     loading = true;
@@ -44,6 +59,28 @@
     const n = Number(value);
     return Number.isFinite(n) ? n.toString() : String(value);
   }
+
+  // Passive mismatch badge (spec §9 rule 7): task est_qty vs THIS
+  // deliverable's qty_ordered — deliberately est vs ordered, NOT actuals.
+  // Silent (no badge) when unlinked or when the linked task carries no
+  // est_qty of its own (nothing to compare).
+  function mismatched(d) {
+    if (d.source_task_est_qty == null) return false;
+    return Number(d.source_task_est_qty) !== Number(d.qty_ordered);
+  }
+
+  async function createWorkStructure(d) {
+    structureBusy = { ...structureBusy, [d.id]: true };
+    try {
+      await api.post(`/api/jobs/${jobId}/deliverables/${d.id}/create-work-structure/`, {});
+      await load();
+    } catch (e) {
+      // Plain action button, no form of its own: the global overlay is the venue.
+      showError(errorMessage(e, 'Could not create a work structure.'));
+    } finally {
+      structureBusy = { ...structureBusy, [d.id]: false };
+    }
+  }
 </script>
 
 <div class="panel deliverables-panel">
@@ -70,7 +107,24 @@
             <tr>
               <td class="num">{fmtQty(d.qty_ordered)}</td>
               <td class="units">{d.units}</td>
-              <td class="preserve-breaks">{d.description}</td>
+              <td class="preserve-breaks">
+                {d.description}
+                {#if d.source_task}
+                  <span class="provenance">
+                    from <a href={`/jobs/${jobId}/tasks/${d.source_task}`} use:link>{d.source_task_name}</a>
+                    {#if mismatched(d)}
+                      <span class="mismatch-badge"
+                        title={`Task estimates ${fmtQty(d.source_task_est_qty)}; this deliverable orders ${fmtQty(d.qty_ordered)}.`}
+                      >mismatch</span>
+                    {/if}
+                  </span>
+                {:else if canCreateStructure && !jobOnHold}
+                  <button type="button" class="panel-link structure-btn"
+                    onclick={() => createWorkStructure(d)} disabled={!!structureBusy[d.id]}>
+                    {structureBusy[d.id] ? 'Creating…' : 'Create work structure'}
+                  </button>
+                {/if}
+              </td>
             </tr>
           {/each}
         </tbody>
@@ -122,6 +176,27 @@
     border: none;
     padding: 6px 16px 6px 0;
     vertical-align: baseline;
+  }
+  .provenance {
+    display: block;
+    font-size: 12px;
+    color: #666;
+  }
+  .structure-btn {
+    margin-left: 0;
+  }
+  .mismatch-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 3px;
+    background: #fff1f0;
+    color: #a8071a;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    cursor: help;
   }
   table.simple-list td:last-child {
     padding-right: 0;

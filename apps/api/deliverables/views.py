@@ -36,9 +36,12 @@ class DeliverableViewSet(JobScopedPermissionMixin, JSONDestroyMixin, ModelViewSe
         return [IsAuthenticated(), CanManageJobOrPM()]
 
     def get_queryset(self):
+        # select_related('source_task'): source_task_name/source_task_est_qty
+        # both dot through the FK — without the join, a job with several
+        # linked deliverables would issue one query per row (Phase 4 Task 5).
         return Deliverable.objects.filter(
             job_id=self.kwargs['job_id'],
-        ).order_by('sort_order')
+        ).select_related('source_task').order_by('sort_order')
 
     def get_object(self):
         try:

@@ -1078,6 +1078,44 @@ class DeliverableSourceTaskSerializerTest(QuantityStructureTestBase):
         self.assertIsNone(body['source_task'])
         self.assertIsNone(body['source_task_name'])
 
+    def test_source_task_est_qty_exposed_for_mismatch_badge(self):
+        # Phase 4 Task 5 (frontend bridge): the passive mismatch badge (task
+        # est_qty vs deliverable qty_ordered) needs the linked task's est_qty
+        # on the wire — added alongside source_task_name rather than making
+        # the frontend fetch every linked task separately.
+        task = self._task('Widget task', est_qty=Decimal('7'))
+        from apps.deliverables.models import Deliverable
+        d = Deliverable.objects.create(
+            job=self.job, description='Widget', qty_ordered=Decimal('5'),
+            units='ea', source_task=task,
+        )
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/jobs/{self.job.pk}/deliverables/{d.pk}/')
+        body = r.json()
+        self.assertEqual(body['source_task_est_qty'], '7.00')
+
+    def test_source_task_est_qty_null_when_unlinked(self):
+        from apps.deliverables.models import Deliverable
+        d = Deliverable.objects.create(
+            job=self.job, description='Stool', qty_ordered=Decimal('1'), units='ea',
+        )
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/jobs/{self.job.pk}/deliverables/{d.pk}/')
+        body = r.json()
+        self.assertIsNone(body['source_task_est_qty'])
+
+    def test_source_task_est_qty_null_when_source_task_has_no_est_qty(self):
+        task = self._task('No-qty task', est_qty=None)
+        from apps.deliverables.models import Deliverable
+        d = Deliverable.objects.create(
+            job=self.job, description='Widget', qty_ordered=Decimal('5'),
+            units='ea', source_task=task,
+        )
+        self.client.force_login(self.user)
+        r = self.client.get(f'/api/jobs/{self.job.pk}/deliverables/{d.pk}/')
+        body = r.json()
+        self.assertIsNone(body['source_task_est_qty'])
+
 
 class AddAsDeliverableEndpointTest(QuantityStructureTestBase):
     """POST /api/tasks/{id}/add-as-deliverable/ — permission matches

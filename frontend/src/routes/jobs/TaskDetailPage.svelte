@@ -29,6 +29,7 @@
   let task = $state(null);
   let job = $state(null);
   let contact = $state(null);
+  let deliverables = $state([]);
   let loading = $state(true);
   let error = $state('');
   let conflict = $state(null);
@@ -200,9 +201,48 @@
           contact = null;
         }
       }
+      await loadDeliverables(jobId);
     } catch (e) {
       job = null;
       contact = null;
+    }
+  }
+
+  // Deliverables bridge (spec §9 rule 7, task-owned-money Phase 4 Task 5):
+  // the task payload carries no linked-deliverable indicator (Task 3 exposed
+  // none), so "already linked?" is answered from the job's deliverables list
+  // instead — already fetchable per-job with no new endpoint.
+  async function loadDeliverables(jobId) {
+    try {
+      const resp = await api.get(`/api/jobs/${jobId}/deliverables/`);
+      // Defends against a URL-prefix collision in older test doubles that
+      // answer every '/api/jobs/{id}/...' call with the job object — the
+      // real endpoint always returns a bare array.
+      deliverables = Array.isArray(resp) ? resp : [];
+    } catch (e) {
+      deliverables = [];
+    }
+  }
+
+  const linkedDeliverable = $derived(
+    deliverables.find((d) => d.source_task === task?.task_id) || null
+  );
+
+  // Top-level, quantity-bearing, unlinked, and manageable by this user
+  // (matches the endpoint's CanManageJobOrPM gate via task.can_manage).
+  const canAddAsDeliverable = $derived(
+    !!task && !task.parent_task && task.est_qty != null
+    && !linkedDeliverable && !!task.can_manage
+  );
+
+  async function addAsDeliverable() {
+    if (!task) return;
+    try {
+      await api.post(`/api/tasks/${task.task_id}/add-as-deliverable/`, {});
+      if (task.job?.id) await loadDeliverables(task.job.id);
+    } catch (e) {
+      // Plain action button, no form: the global overlay is the venue.
+      showError(errorMessage(e, 'Could not add as a deliverable.'));
     }
   }
 
@@ -587,6 +627,9 @@
       />
       {#if !taskIsTerminal && (task.can_edit ?? true)}
         <button type="button" class="quiet" onclick={() => { editTaskOpen = true; }}>Edit Task</button>
+      {/if}
+      {#if canAddAsDeliverable}
+        <button type="button" class="quiet" onclick={addAsDeliverable}>Add as Deliverable</button>
       {/if}
     </div>
     {#if isParentTask && !taskIsTerminal && !childrenReady}
