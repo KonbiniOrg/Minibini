@@ -1245,6 +1245,7 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
     """
     sort_order = start_sort
     last_toplevel_pk = None
+    last_toplevel_unit = None
     for item in items:
         # The 'Picked up/Delivered' marker drives Shipments, not Tasks.
         if _is_pickup_marker(item['text']):
@@ -1272,9 +1273,20 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
             'sort_order':       sort_order,
         }
         fields.update(_stamp_money_block(c, scheme_pk))
+        # Spec §9 rule 2 — mirrors TaskService.create_direct's unit-keyed
+        # default: true iff the PARENT's unit_label == 'ea', else false.
+        # Stamped explicitly even on a top-level task (where it is inert),
+        # because a fixture that OMITS the field falls through to the model's
+        # DB default of True — which on a subtask silently multiplies its
+        # est_qty / est_worker_time by the parent's est_qty (assign_est_
+        # quantities gives every task one). jobs migration 0062's backfill
+        # can't undo that: it runs before any loaddata.
+        fields['qty_scales_with_parent'] = (
+            last_toplevel_unit == 'ea' if parent_pk is not None else True)
         c.add_fixture('jobs.task', task_pk, fields)
         if not item['is_subtask']:
             last_toplevel_pk = task_pk
+            last_toplevel_unit = fields['unit_label']
         if base_ref not in c.cut_task and 'cut' in name.lower():
             c.cut_task[base_ref] = task_pk
     return sort_order
@@ -1349,6 +1361,10 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
             'sort_order':       sort_order,
         }
         fields.update(_stamp_money_block(c, scheme_pk, active_modifiers))
+        # Always top-level here (parent_task is None above), so the flag is
+        # inert — but stamped rather than left to the model's DB default, the
+        # same posture as TaskService.create_direct and _build_checklist_tasks.
+        fields['qty_scales_with_parent'] = True
         c.add_fixture('jobs.task', task_pk, fields)
         if base_ref not in c.cut_task and 'cut' in name.lower():
             c.cut_task[base_ref] = task_pk
@@ -2275,6 +2291,20 @@ def build_bleps_and_shifts(c):
     complete.sort(key=lambda f: (f['fields']['job'],
                                  f['fields'].get('sort_order') or 0, f['pk']))
 
+    # Task ids that are themselves a PARENT (have ≥1 subtask). Spec §9 rule 1
+    # makes a parent non-startable: BlepService.log_time and TaskService.assign
+    # both hard-reject one, because work (and the time it logs) belongs to the
+    # children. Task.get_actual_qty() rolls every child's bleps up into an
+    # elapsed_time parent, so the parent still bills the full time without
+    # owning a blep of its own. Same exclusion assign_queued_tasks applies to
+    # the assignment pool — see its note there on which passes exclude parents
+    # vs. children. A parent is skipped for blep/assignee purposes only, AFTER
+    # the actual_qty stamp below, which it still needs.
+    parent_ids = {
+        f['fields']['parent_task'] for f in c.fixture_data
+        if f['model'] == 'jobs.task' and f['fields'].get('parent_task') is not None
+    }
+
     rotation = list(c.rotation_user_pks)
     if not rotation:                       # no seed users (degenerate) → mint one
         rotation.append(_mint_user(c))
@@ -2326,6 +2356,14 @@ def build_bleps_and_shifts(c):
                     if fields.get('est_qty') not in (None, '') else Decimal('1'))
             actual = (base * P.thirds_factor(counter)).quantize(Decimal('0.01'))
             fields['actual_qty'] = f'{actual:.2f}'
+
+        # A parent keeps its actual_qty stamp above (get_actual_qty() rolls up
+        # children only for elapsed_time — an entered_qty parent reads its own,
+        # so dropping it would invoice at zero) but never gets a blep or the
+        # assignee one implies. Its children are in this same list and get
+        # theirs.
+        if tf['pk'] in parent_ids:
+            continue
 
         lower, eff_upper = _window(tf)
 

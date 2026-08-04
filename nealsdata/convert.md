@@ -274,7 +274,16 @@ record of "we estimated this; the customer never accepted."
 Tasks come from two sources:
 
 1. **Kanban Checklist (preferred).** Each `[ ]`/`[x]` line becomes one
-   `jobs.task`. Indented lines become subtasks. Two exceptions:
+   `jobs.task`. Indented lines become subtasks of the preceding top-level
+   line, and carry an explicit **`qty_scales_with_parent`** — spec §9 rule 2,
+   mirroring `TaskService.create_direct`'s unit-keyed default: true iff the
+   **parent's** `unit_label == 'ea'`, else false. It is stamped on top-level
+   tasks too (inert there, always `True`), because a fixture that *omits* the
+   field falls through to the model's DB default of `True`, which on a subtask
+   silently multiplies its `est_qty` / `est_worker_time` by the parent's
+   `est_qty` (`assign_est_quantities` gives every task one). `jobs` migration
+   0062's backfill cannot rescue that — it runs before any `loaddata`. Two
+   exceptions:
    - `Picked up/Delivered` markers are consumed by the Shipments builder
      instead (`_is_pickup_marker`).
    - Board status-markers are dropped entirely (`_is_dropped_checklist_line`,
@@ -360,6 +369,17 @@ case.)
   `est_worker_time × {1.0, 1.10, 0.95}` on a deterministic ⅓-rotation index
   (`P.thirds_factor`), floored to whole minutes. The task's **`assignee`** is set
   to the blep's user (the worker who logged the time).
+- **Parent tasks are excluded** (spec §9 rule 1): a task with ≥1 subtask is
+  non-startable — `BlepService.log_time` and `TaskService.assign` both
+  hard-reject one — so it gets neither a blep nor the `assignee` one implies.
+  Its children are in the same pass and get theirs, and
+  `Task.get_actual_qty()` rolls every child's bleps up into an `elapsed_time`
+  parent, so the parent still bills the full time without owning a blep. This
+  is the same exclusion `assign_queued_tasks` applies to the assignment pool,
+  and the inverse of the one the source-row passes apply (those exclude the
+  *children* — billing does not delegate downward; assignment does). A parent
+  is skipped for blep/assignee purposes **only after** its `entered_qty`
+  actual is stamped (last bullet), which it still needs.
 - **Scope invariant**: every complete Task on a **current** job — *unfinished*
   (no `completed_date`: in_progress / work_complete / on_hold) **or** *finished
   within the horizon* (`completed_date ≥ horizon`) — always gets a blep. Only a
@@ -391,9 +411,13 @@ case.)
 - **entered_qty actuals**: a complete task on an `entered_qty` scheme gets an
   `actual_qty = est_qty × {thirds}` (fallback base `1` when `est_qty` is null)
   so it doesn't invoice at zero. This is set for **every** complete task — even
-  ones too old for a blep under the horizon — so historical work never invoices
-  at zero. `elapsed_time` tasks derive qty from their bleps and need no
-  explicit actual (fixed charges are Fee atoms with no actuals at all).
+  ones too old for a blep under the horizon, and parent tasks excluded from
+  blep placement above — so historical work never invoices at zero.
+  `get_actual_qty()` rolls children up only for `elapsed_time`; an
+  `entered_qty` parent reads its **own** `actual_qty`, so dropping its stamp
+  would invoice it at zero. `elapsed_time` tasks derive qty from their bleps
+  and need no explicit actual (fixed charges are Fee atoms with no actuals at
+  all).
 
 `assign_current_work` (after `build_bleps_and_shifts`) then populates **current**
 work: each rotation worker (excludes `system` + minted users) gets up to three

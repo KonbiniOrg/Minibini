@@ -1881,7 +1881,7 @@ class BlepShiftSynthesisTest(unittest.TestCase):
         })
 
     def _add_task(self, c, pk, job, status='complete', scheme=10,
-                  ewt='02:00:00', est_qty=None, sort_order=1):
+                  ewt='02:00:00', est_qty=None, sort_order=1, parent=None):
         c.add_fixture('jobs.task', pk, {
             'job': job, 'source_scheme': scheme,
             'qty_source': self._SCHEME_ALGO[scheme], 'rate': None,
@@ -1889,7 +1889,7 @@ class BlepShiftSynthesisTest(unittest.TestCase):
             'name': f't{pk}', 'description': '',
             'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
             'active_modifiers': [], 'status': status, 'blocked_reason': '',
-            'worker_queue': None, 'assignee': None, 'parent_task': None,
+            'worker_queue': None, 'assignee': None, 'parent_task': parent,
             'sort_order': sort_order,
         })
 
@@ -2002,6 +2002,105 @@ class BlepShiftSynthesisTest(unittest.TestCase):
         self.assertIsNotNone(by_pk[20]['actual_qty'])
         self.assertIsNotNone(by_pk[21]['actual_qty'])
         self.assertIsNone(by_pk[22]['actual_qty'])
+
+    def test_parent_task_gets_no_blep_and_no_assignee(self):
+        # Spec §9 rule 1: a parent is non-startable — BlepService.log_time and
+        # TaskService.assign both hard-reject one, and Task.get_actual_qty()
+        # rolls its children's bleps up for it. So the blep (and the assignee
+        # it implies) belongs on the child, never on the parent.
+        c = self._converter()
+        self._add_job(c, 1)
+        self._add_task(c, 10, 1, status='complete', sort_order=1)
+        self._add_task(c, 11, 1, status='complete', sort_order=2, parent=10)
+        build.build_bleps_and_shifts(c)
+        self.assertEqual([b['fields']['task'] for b in self._m(c, 'jobs.blep')],
+                         [11])
+        by_pk = {f['pk']: f['fields'] for f in self._m(c, 'jobs.task')}
+        self.assertIsNone(by_pk[10]['assignee'])
+        self.assertIsNotNone(by_pk[11]['assignee'])
+
+    def test_entered_qty_parent_still_gets_actual_qty(self):
+        # Excluding parents from blep placement must NOT cost them their
+        # actual_qty stamp: Task.get_actual_qty() rolls children up only for
+        # elapsed_time — an entered_qty parent reads its OWN actual_qty
+        # (apps/jobs/models.py), so dropping it would invoice at zero.
+        c = self._converter()
+        self._add_job(c, 1)
+        self._add_task(c, 20, 1, scheme=11, est_qty='4.00', sort_order=1)
+        self._add_task(c, 21, 1, scheme=11, est_qty='2.00', sort_order=2,
+                       parent=20)
+        build.build_bleps_and_shifts(c)
+        by_pk = {f['pk']: f['fields'] for f in self._m(c, 'jobs.task')}
+        self.assertIsNotNone(by_pk[20]['actual_qty'])
+        self.assertNotIn(20, [b['fields']['task']
+                              for b in self._m(c, 'jobs.blep')])
+
+
+class ChecklistSubtaskScalingTest(unittest.TestCase):
+    """The task builders stamp qty_scales_with_parent explicitly (spec §9
+    rule 2), mirroring TaskService.create_direct's unit-keyed default: true
+    iff the PARENT's unit_label == 'ea', else false.
+
+    A fixture that omits the field falls through to the model's DB default
+    (True), which would silently multiply a subtask's est_qty/est_worker_time
+    by its parent's est_qty — the same money distortion jobs migration 0062's
+    backfill exists to prevent for pre-Phase-4 rows. That migration cannot
+    rescue converter output: it runs before any loaddata.
+    """
+
+    # 'assemble frame' -> 'Shop labor'; 'cut the parts' -> 'CNC routing'
+    # (P.checklist_scheme_name). Giving the two schemes different unit_labels
+    # proves the flag reads the PARENT's unit_label, not the subtask's own.
+    def _converter(self, parent_unit='hour', child_unit='ea'):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.scheme_by_name = {'Shop labor': 90, 'CNC routing': 91}
+        c.scheme_fields_by_pk = {
+            90: {'name': 'Shop labor', 'algorithm': 'elapsed_time',
+                 'rate': '85.00', 'unit_label': parent_unit,
+                 'accounting_category': 1, 'modifiers': []},
+            91: {'name': 'CNC routing', 'algorithm': 'elapsed_time',
+                 'rate': '95.00', 'unit_label': child_unit,
+                 'accounting_category': 1, 'modifiers': []},
+        }
+        return c
+
+    _ITEMS = [
+        {'text': 'assemble frame', 'completed': True,  'is_subtask': False},
+        {'text': 'cut the parts',  'completed': False, 'is_subtask': True},
+    ]
+
+    def _tasks(self, c):
+        return {f['fields']['name']: f['fields']
+                for f in c.fixture_data if f['model'] == 'jobs.task'}
+
+    def test_subtask_of_non_each_parent_does_not_scale(self):
+        c = self._converter(parent_unit='hour', child_unit='ea')
+        build._build_checklist_tasks(c, 'ref', 1, self._ITEMS)
+        self.assertIs(self._tasks(c)['cut the parts']['qty_scales_with_parent'],
+                      False)
+
+    def test_subtask_of_each_parent_scales(self):
+        c = self._converter(parent_unit='ea', child_unit='hour')
+        build._build_checklist_tasks(c, 'ref', 1, self._ITEMS)
+        self.assertIs(self._tasks(c)['cut the parts']['qty_scales_with_parent'],
+                      True)
+
+    def test_toplevel_checklist_task_stamps_the_flag_explicitly(self):
+        # Inert on a top-level task, but stamped rather than left implicit —
+        # same posture as TaskService.create_direct.
+        c = self._converter()
+        build._build_checklist_tasks(c, 'ref', 1, self._ITEMS)
+        self.assertIs(self._tasks(c)['assemble frame']['qty_scales_with_parent'],
+                      True)
+
+    def test_line_item_task_stamps_the_flag_explicitly(self):
+        c = self._converter()
+        line = {'description': 'cut a panel', 'qty': Decimal('2.00'),
+                'price': Decimal('190.00'), 'item_type': 'Time',
+                'units': 'hour', 'line_item_pk': 1}
+        build._build_line_item_tasks(c, 'ref', 1, [line])
+        self.assertIs(self._tasks(c)['cut a panel']['qty_scales_with_parent'],
+                      True)
 
 
 class EstQuantityHeuristicTest(unittest.TestCase):
