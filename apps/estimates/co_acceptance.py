@@ -191,9 +191,21 @@ class ChangeOrderAcceptanceService:
             return None
         source_type, atom, claiming_kind = atoms[0]
         if source_type == 'task':
+            fields = atom.copy_fields()
+            # I2 review finding: a parent atom with no explicit rate prices
+            # via derived_unit_price() (§4a.3, effective_rate()'s parent
+            # fallback) — copy_fields() carries `rate` verbatim (None), and
+            # the mirrored replacement is a fresh, childless Task, so
+            # without this snapshot it would have nothing left to derive
+            # from and would price at 0.00. Snapshot the LIVE derived rate
+            # here, at mirror-build time (before the old atom is retired),
+            # into the copy so the replacement bills at the same effective
+            # rate the retiring parent was actually charging.
+            if fields['rate'] is None and atom.is_parent:
+                fields['rate'] = atom.derived_unit_price()
             return {
                 'type': 'task',
-                'copy_fields': atom.copy_fields(),
+                'copy_fields': fields,
                 'assignee_id': atom.assignee_id,
                 'worker_queue': atom.worker_queue,
             }
@@ -446,6 +458,21 @@ class ChangeOrderAcceptanceService:
                     raise ValidationError(
                         'Cannot retire a work task with consumed materials via '
                         'change order. Cancel it instead.'
+                    )
+                # I3 review finding: this branch deletes the atom directly
+                # (not via TaskService.delete_task), so it needs the same
+                # children guard that path enforces — a flat work task CAN
+                # have subtasks (nothing stops one from being decomposed
+                # after crystallization), and the CASCADE from
+                # Task.parent_task would otherwise wipe them out unchecked.
+                from apps.jobs.services import TaskService
+                blockers = TaskService.child_delete_blockers(atom)
+                if blockers:
+                    names = ', '.join(blockers[:5])
+                    raise ValidationError(
+                        f'Cannot retire work task "{atom.name}" via change '
+                        f'order — subtask(s) block deletion: {names}. '
+                        f'Cancel it instead.'
                     )
                 atom.delete()  # Task.delete() purges its source rows
                 counts['work_tasks_removed'] += 1

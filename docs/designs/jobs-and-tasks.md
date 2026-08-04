@@ -412,11 +412,14 @@ returns `{job_id}` at HTTP 201. Permission: `CanManageJobs`.
   `name`, `description`, `sort_order`, `est_worker_time`, `est_qty`,
   the task's own money block (`qty_source`, `rate`, `unit_label`,
   `accounting_category`) copied directly (no RateScheme re-lookup),
-  `active_modifiers` (deep-copied via `copy_active_modifiers`), and
+  `active_modifiers` (deep-copied via `copy_active_modifiers`),
   `service_item_id` (catalog identity, not provenance — survives cloning
-  so a QBO push can resolve the clone's Item). **Not** carried:
-  `source_scheme` — provenance is deliberately not cloned; the copy has
-  no stamping event of its own.
+  so a QBO push can resolve the clone's Item), and `qty_scales_with_parent`
+  (final-review finding I1 — inert on a top-level task, but load-bearing
+  money on a subtask: omitting it silently reset a duplicated per-batch
+  child back to per-unit scaling, changing what the duplicate bills).
+  **Not** carried: `source_scheme` — provenance is deliberately not
+  cloned; the copy has no stamping event of its own.
 - **Materials** carry `description`, `quantity`, `units`, `unit_cost`,
   `sell_price`, `inventory_item`, `accounting_category`, and their task
   attachment (task-less materials stay loose). Inventory state is fully
@@ -810,7 +813,7 @@ children:
 |---|---|---|
 | Start work | `TaskLifecycleService.start_work` | Rejected: *"Cannot start work on a parent task — it delegates work to its subtasks. Start work on a subtask instead."* |
 | Log a historical time entry | `BlepService.create_historical` | Same rejection message, "Log time..." variant |
-| Assign to a worker | `TaskService.assign` | Rejected (only when `assignee_id` is truthy — unassigning is fine): *"Cannot assign a parent task — PM functions live on its subtasks. Assign the subtasks instead."* |
+| Assign to a worker | `TaskService.assign` (and `TaskService.update_task`'s own assignee-write branch — final-review finding M: the generic PATCH path enforces the same guard, not just the dedicated assign action) | Rejected (only when `assignee_id` is truthy — unassigning is fine): *"Cannot assign a parent task — PM functions live on its subtasks. Assign the subtasks instead."* |
 | Add a **first** subtask | `TaskService.create_direct` | Rejected unless the parent's own status is `pending` or `blocked`: *"Cannot add a subtask to a task that is '{status}' — decompose before starting."* The check runs on every subtask add, not just a detected "first" one — equivalent in practice, since a parent can only still be pending/blocked once it already has subtasks if the earlier guards held. |
 | Complete | `TaskLifecycleService.complete_task` | Rejected while any child is non-terminal, listing up to 5 by name: *"Cannot complete: subtask(s) not yet finished — {names}. Complete or cancel every subtask first."* Once every child is `complete`/`cancelled`, completion is **offered** (not automatic) and the parent's own `qty_source == QTY_ENTERED` settle-up prompt (§4.5) applies exactly as it does to a leaf task — the gate is checked first, then the normal entered-qty flow runs. |
 | Cancel | `TaskLifecycleService.cancel_task` | Same shape as Complete — any non-terminal child blocks cancel (listed by name); cancel does **not** cascade to children, each must be individually handled first. |
@@ -851,6 +854,18 @@ caller always wins. The field is freely editable after creation too,
 on create and edit alike, same as `est_qty` — not a `MONEY_FIELDS`
 member, so any authenticated user with edit access to the task can
 change it (subject to the normal C1 editability matrix, §4.0).
+
+**Historical backfill.** The column-adding migration
+(`jobs/0062_task_qty_scales_with_parent`) carries a `RunPython` step
+(`apps/jobs/subtask_scale_backfill.py`) that sets
+`qty_scales_with_parent=False` for every row that already had a
+`parent_task_id` at migration time — those subtasks predate the flag
+entirely, so their `est_qty`/`est_worker_time` were authored as plain
+per-batch totals; the column's own `AddField` default (`True`) would
+otherwise silently start multiplying them by their parent's `est_qty`.
+Subtasks created after the migration runs are unaffected — they go
+through `create_direct`'s unit-keyed default above, not this one-shot
+backfill.
 
 **`Task._parent_multiplier()`** (private, `apps/jobs/models.py`) is the
 **one** blessed multiplier on the backend — no server-side code re-derives
@@ -960,6 +975,24 @@ way a leaf's entered-qty completion prompt works, §4a.1). See
 `estimates-and-prices.md` §4.1a for the full aggregation write-up and
 its interaction with the wizard.
 
+**Elapsed-parent hours rollup** (final-review finding C1). For a
+QTY_ELAPSED task, `get_actual_qty()` sums its **own bleps PLUS every
+child's bleps** — regardless of the child's own
+`qty_scales_with_parent` flag or `qty_source` ("hours are hours": a
+worker's clocked time on a subtask counts toward the elapsed parent's
+total no matter how that subtask itself bills). This is the *only*
+rollup exception to "children never bill directly" (§4a.3 above) —
+hours flow up for completion-gating and actual-amount purposes even
+though the child atom itself is never claimable. Without this, a
+QTY_ELAPSED task decomposed while pending has (usually) zero bleps of
+its own and can never satisfy `TaskLifecycleService.complete_task`'s
+`TaskTimeRequired` gate (children do all the work); and a task with
+pre-decomposition bleps of its own would silently drop every child's
+logged hours from the invoice-side `compute_amount()`. A leaf task
+(no children) is unaffected — the child-blep loop is a no-op. Est-side
+math (`compute_estimate_amount()`) never reads `get_actual_qty()`, so
+it is untouched by this rollup.
+
 **Pools exclude children, everywhere, including direct claims.** A
 subtask never appears in an estimate or invoice source pool
 (`get_source_pool` filters `parent_task__isnull=True` on both sides),
@@ -985,6 +1018,34 @@ document is fine (same "draft still editable" doctrine used everywhere
 else in the claims system). Error: *"Cannot detach from '{parent
 name}' — it is claimed by a sent estimate, change order, or invoice.
 Detach is only allowed while the claiming document is still a draft."*
+
+**Reparent-into-a-new-parent guards** (final-review finding C2). Setting
+`parent_task` to a **non-`None`, different-from-current** target on an
+existing task runs the same first-subtask guards
+`TaskService.create_direct` applies (§4a.1's "Add a first subtask" row):
+same job, the target isn't itself a subtask (one-level law), and the
+target is `pending`/`blocked` ("decompose before starting"). Two more
+guards are unique to moving an *existing* task (create_direct never has
+to consider them, since a brand-new task can't already violate them):
+the moving task can't itself already be a parent (no nesting from the
+other side), and it can't be claimed by **any** estimate/CO/invoice
+source row — draft or not (stricter than the detach guard above, which
+tolerates a draft-only claim on the *old* parent: a claim must never
+resolve to a *child*, since subtask atoms are excluded from every
+billing pool, above). Error: *"Cannot make this task a subtask — it is
+claimed by an estimate, change order, or invoice line. Release the
+claim first."*
+
+**Parent delete/retire guard** (final-review finding I3). Deleting a
+parent Task cascades (`Task.parent_task` is `on_delete=CASCADE`) —
+every subtask goes with it, with none of THEIR OWN delete guards
+consulted. `TaskService.delete_task` and the CO `KIND_WORK` retire path
+(`apps.estimates.co_acceptance`, which also deletes a Task directly)
+both refuse when any child is non-terminal, or when a *terminal* child
+still carries bleps or consumed materials — real recorded work/inventory
+history that a bare CASCADE would otherwise wipe out unremarked (cancel's
+own children-terminal gate doesn't cover this: cancel never deletes
+rows, only delete does). Shared helper: `TaskService.child_delete_blockers(task)`.
 
 **Materials on a subtask.** A structure's materials belong to the
 parent — the unit of billing — not to an individual subtask:

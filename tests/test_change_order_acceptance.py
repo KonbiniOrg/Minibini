@@ -422,6 +422,62 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         self.assertEqual(new_task.description, 'Cutting labor (more)')
         self.assertEqual(new_task.status, Task.STATUS_PENDING)
 
+    def test_bare_replace_of_claimed_derived_price_parent_prices_at_derived_rate(self):
+        # Final-review finding I2: a bare CO replace mirroring a parent Task
+        # whose own rate is None (derived from its children — §4a.3)
+        # previously copied rate=None verbatim via copy_fields(), minting a
+        # $0 replacement task — the replacement isn't itself a parent, so
+        # its effective_rate() has nothing to derive from and falls back to
+        # 0.00. Fix: snapshot the retiring parent's derived_unit_price()
+        # into the mirrored rate before creating the replacement.
+        parent = Task(job=self.job, name='Structure', est_qty=Decimal('10'))
+        parent.stamp_from_scheme(self.scheme)
+        parent.rate = None
+        parent.save()
+        child_scheme = RateScheme.objects.create(
+            name='Per-unit labor', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('5.00'), unit_label='ea', accounting_category=self.cat,
+        )
+        child = Task(
+            job=self.job, name='Per-unit step', parent_task=parent,
+            est_qty=Decimal('2'), qty_scales_with_parent=True,
+        )
+        child.stamp_from_scheme(child_scheme)
+        child.save()
+        parent.refresh_from_db()
+        derived = parent.derived_unit_price()  # 2 * 5.00 = 10.00
+        self.assertEqual(derived, Decimal('10.00'))
+        # Cancel the child first — the OLD parent's own cancel-on-retire
+        # (unrelated finding I3, covered separately) requires every child
+        # terminal; derived_unit_price() still sums a cancelled child (it
+        # iterates ALL subtasks regardless of status), so this doesn't
+        # disturb the snapshot above.
+        from apps.jobs.services import TaskLifecycleService
+        TaskLifecycleService.cancel_task(child.pk)
+
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=9,
+            description='Structure', qty=parent.est_qty, price=derived,
+            units='ea', accounting_category=self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=line,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=parent.pk,
+        )
+        co = self._make_co()
+        li = self._replace_line(
+            co, line, description='Structure (more)', qty=Decimal('12'),
+            price=derived, units='ea',
+        )
+        self._accept(co)
+
+        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
+        new_task = Task.objects.get(pk=src.source_pk)
+        self.assertEqual(new_task.rate, derived)
+        self.assertEqual(new_task.effective_rate(), derived)
+        self.assertEqual(new_task.est_qty, Decimal('12'))
+
     def test_replace_material_line_inherits_inventory_item(self):
         line, old_material = self._material_backed_line(qty=Decimal('7'))
         co = self._make_co()

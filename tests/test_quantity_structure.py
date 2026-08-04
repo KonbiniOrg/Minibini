@@ -29,6 +29,7 @@ from apps.inventory.models import Material
 from apps.inventory.services import MaterialService
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.invoicing.services import InvoiceWizardService
+from apps.core.units import HOUR_UNIT
 from apps.jobs.models import Job, RateScheme, Task
 from apps.jobs.services import BlepService, JobService, TaskLifecycleService, TaskService
 from apps.schedule.services import ScheduleService
@@ -1381,3 +1382,226 @@ class WorkTemplateSerializerProductStructureFieldsTest(QuantityStructureTestBase
         body = r.json()
         self.assertTrue(body['is_product_structure'])
         self.assertEqual(body['base_price'], '25.00')
+
+
+# ═══════════ Final-review fix wave finding C1: elapsed-parent rollup ═══════════
+# Task.get_actual_qty() on a QTY_ELAPSED task previously summed ONLY its own
+# bleps. A decomposed elapsed task (subtasks added) delegates all work to its
+# children (§4a.1) and typically logs zero bleps of its own — so it could
+# NEVER satisfy the completion time-gate (TaskLifecycleService.complete_task's
+# TaskTimeRequired check), and — even with pre-decomposition bleps of its
+# own — it would bill only those, silently excluding every child's hours from
+# the invoice-side actual (compute_amount()). Fix: own bleps + every child's
+# bleps, regardless of the child's own qty_scales_with_parent flag or
+# qty_source ("hours are hours" — a worker's clocked time counts toward the
+# elapsed parent's total no matter how the child itself bills).
+
+class ElapsedParentRollupTest(QuantityStructureTestBase):
+    def _elapsed_scheme(self, name, rate=Decimal('50.00')):
+        return self._scheme(
+            name, algorithm=RateScheme.ELAPSED_TIME, unit_label=HOUR_UNIT, rate=rate,
+        )
+
+    def _blep(self, task, hours, user=None):
+        from apps.jobs.models import Blep
+        now = timezone.now()
+        return Blep.objects.create(
+            task=task, user=user or self.user,
+            start_time=now - timedelta(hours=float(hours)), end_time=now,
+        )
+
+    def test_leaf_elapsed_task_unaffected_by_rollup(self):
+        # Regression guard: a plain leaf task (no children) must keep
+        # summing only its own bleps.
+        task = self._task('Leaf labor', scheme=self._elapsed_scheme('leaf-elapsed'))
+        self._blep(task, 2)
+        self.assertEqual(task.get_actual_qty(), Decimal('2.00'))
+
+    def test_parent_with_no_own_bleps_sums_children_of_either_flag_state(self):
+        parent = self._task('Structure', scheme=self._elapsed_scheme('parent-elapsed'))
+        child_true = self._task(
+            'Child true', parent=parent, qty_scales_with_parent=True,
+            scheme=self._elapsed_scheme('child-true-elapsed'),
+        )
+        child_false = self._task(
+            'Child false', parent=parent, qty_scales_with_parent=False,
+            scheme=self._elapsed_scheme('child-false-elapsed'),
+        )
+        self._blep(child_true, 2)
+        self._blep(child_false, Decimal('1.5'))
+        parent.refresh_from_db()
+        self.assertEqual(parent.get_actual_qty(), Decimal('3.50'))
+
+    def test_parent_sums_own_bleps_plus_children_bleps(self):
+        parent = self._task('Structure2', scheme=self._elapsed_scheme('parent2-elapsed'))
+        self._blep(parent, 1)
+        child = self._task(
+            'Child2', parent=parent, qty_scales_with_parent=False,
+            scheme=self._elapsed_scheme('child2-elapsed'),
+        )
+        self._blep(child, 2)
+        parent.refresh_from_db()
+        self.assertEqual(parent.get_actual_qty(), Decimal('3.00'))
+
+    def test_elapsed_parent_completion_offered_with_only_child_time(self):
+        # An elapsed parent decomposed while pending, with zero own bleps —
+        # before the fix this could NEVER complete (TaskTimeRequired forever).
+        parent = self._task('Decomposed', scheme=self._elapsed_scheme('dparent-elapsed'))
+        child = self._task(
+            'Sub-labor', parent=parent, qty_scales_with_parent=False,
+            scheme=self._elapsed_scheme('dchild-elapsed'),
+        )
+        self._blep(child, 1)
+        TaskLifecycleService.complete_task(child.pk)
+        child.refresh_from_db()
+        self.assertEqual(child.status, Task.STATUS_COMPLETE)
+        result = TaskLifecycleService.complete_task(parent.pk)
+        self.assertEqual(result.status, Task.STATUS_COMPLETE)
+
+    def test_elapsed_parent_with_no_time_anywhere_still_raises(self):
+        from apps.jobs.services import TaskTimeRequired
+        parent = self._task('No time', scheme=self._elapsed_scheme('ntparent-elapsed'))
+        child = self._task(
+            'No time child', parent=parent, qty_scales_with_parent=False,
+            scheme=self._elapsed_scheme('ntchild-elapsed'),
+        )
+        TaskLifecycleService.cancel_task(child.pk)
+        with self.assertRaises(TaskTimeRequired):
+            TaskLifecycleService.complete_task(parent.pk)
+
+    def test_compute_amount_bills_child_hours_on_the_elapsed_parent(self):
+        # Invoice-side actual: compute_amount() = get_actual_qty() ×
+        # effective_rate() — child hours must flow through to the parent's
+        # billed amount, not vanish.
+        parent = self._task('Billable structure', scheme=self._elapsed_scheme(
+            'bparent-elapsed', rate=Decimal('50.00')))
+        child = self._task(
+            'Billable child', parent=parent, qty_scales_with_parent=False,
+            scheme=self._elapsed_scheme('bchild-elapsed'),
+        )
+        self._blep(child, 3)
+        parent.refresh_from_db()
+        self.assertEqual(parent.get_actual_qty(), Decimal('3.00'))
+        self.assertEqual(parent.compute_amount(), Decimal('150.00'))
+
+    def test_compute_estimate_amount_unaffected_by_rollup(self):
+        # Estimate side bills est_qty, never get_actual_qty() — the rollup
+        # must not leak into estimate math.
+        parent = self._task(
+            'Estimate side', est_qty=Decimal('4'),
+            scheme=self._elapsed_scheme('eparent-elapsed', rate=Decimal('20.00')),
+        )
+        child = self._task(
+            'Estimate side child', parent=parent, qty_scales_with_parent=False,
+            scheme=self._elapsed_scheme('echild-elapsed'),
+        )
+        self._blep(child, 10)  # large child rollup that must NOT touch est side
+        parent.refresh_from_db()
+        self.assertEqual(parent.compute_estimate_amount(), Decimal('80.00'))
+
+
+# ═══════════ Final-review fix wave finding C2: reparent guards ═══════════
+# TaskService.update_task's parent_task handling only guarded the OLD
+# parent (the detach-while-claimed guard, DetachGuardTest above). A
+# non-None NEW parent target needs the same guards create_direct applies
+# at first-subtask-creation time (same job, not itself a subtask, parent
+# pending/blocked), plus two guards unique to reparenting an EXISTING task:
+# the moving task can't itself be a parent (no nesting from the other
+# side), and it can't be claimed by ANY document source row (a claim must
+# never resolve to a child — subtask atoms are excluded from every billing
+# pool, §4a.3).
+
+class ReparentIntoNewParentGuardTest(QuantityStructureTestBase):
+    def setUp(self):
+        super().setUp()
+        self.loose = self._task('Loose task', est_qty=Decimal('1'))
+
+    def test_reparent_rejects_new_parent_in_different_job(self):
+        other_job = Job.objects.create(
+            job_number=f'QS-OTHER-{timezone.now().timestamp()}',
+            contact=self.contact,
+        )
+        other_parent = Task(
+            job=other_job, name='Other job parent', status=Task.STATUS_PENDING,
+        )
+        other_parent.stamp_from_scheme(self._scheme('other-job-scheme'))
+        other_parent.est_qty = Decimal('1')
+        other_parent.save()
+        with self.assertRaises(ValidationError):
+            TaskService.update_task(self.loose.pk, parent_task=other_parent)
+
+    def test_reparent_rejects_new_parent_that_is_itself_a_subtask(self):
+        top = self._task('Top', est_qty=Decimal('1'))
+        sub = self._task('Sub', parent=top, est_qty=Decimal('1'))
+        with self.assertRaises(ValidationError):
+            TaskService.update_task(self.loose.pk, parent_task=sub)
+
+    def test_reparent_rejects_new_parent_not_pending_or_blocked(self):
+        parent = self._task('Started parent', est_qty=Decimal('1'))
+        TaskLifecycleService.start_work(parent.pk, self.user)
+        parent.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            TaskService.update_task(self.loose.pk, parent_task=parent)
+
+    def test_reparent_allows_new_parent_that_is_blocked(self):
+        parent = self._task('Blocked parent', est_qty=Decimal('1'))
+        TaskLifecycleService.block_task(parent.pk, reason='waiting', user=self.user)
+        parent.refresh_from_db()
+        updated = TaskService.update_task(self.loose.pk, parent_task=parent)
+        self.assertEqual(updated.parent_task_id, parent.pk)
+
+    def test_reparent_rejects_moving_task_that_is_itself_a_parent(self):
+        parent = self._task('New parent', est_qty=Decimal('1'))
+        movant = self._task('Movant', est_qty=Decimal('1'))
+        self._task('Movant child', parent=movant, est_qty=Decimal('1'))
+        movant.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            TaskService.update_task(movant.pk, parent_task=parent)
+
+    def test_reparent_rejects_moving_task_claimed_by_a_document(self):
+        parent = self._task('Claim target parent', est_qty=Decimal('1'))
+        estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-RPG-1', version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=estimate, qty=Decimal('1'), units='ea',
+            price=Decimal('10'), description='', accounting_category=self.ac,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=self.loose.pk,
+        )
+        with self.assertRaises(ValidationError):
+            TaskService.update_task(self.loose.pk, parent_task=parent)
+
+    def test_reparent_succeeds_when_all_guards_clear(self):
+        parent = self._task('Clean parent', est_qty=Decimal('1'))
+        updated = TaskService.update_task(self.loose.pk, parent_task=parent)
+        self.assertEqual(updated.parent_task_id, parent.pk)
+
+
+# ═══════════ Final-review fix wave finding M: assignee PATCH bypass ═══════════
+# TaskService.assign() rejects assigning a parent task, but update_task's own
+# assignee-write branch (the PATCH /api/jobs/{id}/tasks/{id}/ path) never
+# checked is_parent at all — a client could set an assignee on a parent task
+# by going through the generic update endpoint instead of the assign action.
+
+class UpdateTaskAssigneeParentGuardTest(QuantityStructureTestBase):
+    def test_update_task_rejects_assignee_on_a_parent(self):
+        parent = self._task('Parent', est_qty=Decimal('5'))
+        self._task('Child', parent=parent, est_qty=Decimal('1'))
+        parent.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            TaskService.update_task(
+                parent.pk, assignee=self.user,
+                est_worker_time=timedelta(hours=1),
+            )
+
+    def test_update_task_still_allows_assignee_on_a_leaf(self):
+        leaf = self._task('Leaf', est_qty=Decimal('1'))
+        updated = TaskService.update_task(
+            leaf.pk, assignee=self.user, est_worker_time=timedelta(hours=1),
+        )
+        self.assertEqual(updated.assignee_id, self.user.pk)

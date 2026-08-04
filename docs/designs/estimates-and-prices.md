@@ -2210,6 +2210,17 @@ transiently empties the live work set and trips the auto-advance to
   Fee target a new Fee (AC inherited from the old fee if absent on the
   line).
 
+  **A bare replace mirroring a derived-price parent snapshots its
+  rate** (final-review finding I2). When the mirrored Task is a **parent**
+  (`is_parent`) with its own `rate` `None` — priced via
+  `derived_unit_price()`, `jobs-and-tasks.md` §4a.3 — `copy_fields()`
+  alone would carry that `None` verbatim, and the replacement (a fresh,
+  childless Task) has no children to derive from: it would silently
+  price at `0.00`. `_mirror_of` snapshots the LIVE `derived_unit_price()`
+  into the copied `rate` at mirror-build time (before the old parent is
+  retired), so the replacement bills at the same effective rate the
+  retiring structure was actually charging.
+
   **A bare replace mirroring a flat work Task "promotes" it.** The new
   Task is claimed by the *bare* replace line, whose own `freeform_kind`
   is `NULL` — so a later remove/replace targeting *this* replacement

@@ -214,6 +214,27 @@ def _task_claimed_by_non_draft_document(task_pk):
     )
 
 
+def _task_claimed_by_any_document(task_pk):
+    """True when ANY estimate/CO/invoice source row currently claims the
+    Task, regardless of the claiming document's status.
+
+    The reparent-into-subtask guard's claim check (final-review finding
+    C2): unlike `_task_claimed_by_non_draft_document` above (which the
+    detach guard uses, and which tolerates a draft-only claim on the OLD
+    parent — the draft is still editable), a claim on the task being
+    MOVED must never resolve to a child once it lands under a new parent
+    — subtask atoms are excluded from every billing pool (§4a.3) — so
+    even a draft-only claim blocks the move.
+    """
+    from apps.estimates.claims import atom_is_claimed
+    from apps.invoicing.models import InvoiceLineItemSource
+    if atom_is_claimed('task', task_pk):
+        return True
+    return InvoiceLineItemSource.objects.filter(
+        source_type=InvoiceLineItemSource.SOURCE_TASK, source_pk=task_pk,
+    ).exists()
+
+
 class BlepService:
     """All Blep (time entry) writes flow through this service.
 
@@ -1285,6 +1306,14 @@ class TaskService:
         # Explicit assignment must be schedulable (invariant lives here and
         # on assign/create_direct, not Task.clean — auto-assign is exempt).
         if kwargs.get('assignee'):
+            # Mirrors TaskService.assign's parent guard (final-review
+            # finding M) — the generic PATCH path must not be a back door
+            # around it: PM functions live on a parent's subtasks, never
+            # on the parent itself.
+            if task.is_parent:
+                raise ValidationError({'assignee': [
+                    'Cannot assign a parent task — PM functions live on '
+                    'its subtasks. Assign the subtasks instead.']})
             est = kwargs.get('est_worker_time', task.est_worker_time)
             if not est:
                 raise ValidationError({'est_worker_time': [
@@ -1310,11 +1339,72 @@ class TaskService:
                         f'invoice. Detach is only allowed while the '
                         f'claiming document is still a draft.'
                     ]})
+            # Reparent-into-NEW-parent guards (final-review finding C2):
+            # create_direct's first-subtask guards (same job, not itself a
+            # subtask, parent pending/blocked — "decompose before
+            # starting") apply equally to an EXISTING task moving under a
+            # new parent, plus two guards unique to moving an existing
+            # task: it can't itself already be a parent (no nesting from
+            # the other side — a task with subtasks can't become a
+            # subtask), and it can't be claimed by ANY document source row
+            # (draft or not) — a claim must never resolve to a child, since
+            # subtask atoms are excluded from every billing pool (§4a.3).
+            if new_parent_id is not None and new_parent_id != old_parent_id:
+                if new_parent.job_id != task.job_id:
+                    raise ValidationError({'parent_task': [
+                        'Parent task belongs to a different job.']})
+                if new_parent.parent_task_id is not None:
+                    raise ValidationError({'parent_task': [
+                        'Subtasks cannot have their own subtasks — '
+                        'one level of subtasks only.']})
+                if new_parent.status not in (Task.STATUS_PENDING, Task.STATUS_BLOCKED):
+                    raise ValidationError({'parent_task': [
+                        f"Cannot add a subtask to a task that is "
+                        f"'{new_parent.status}' — decompose before starting."]})
+                if task.is_parent:
+                    raise ValidationError({'parent_task': [
+                        'Cannot make this task a subtask — it already has '
+                        'its own subtasks (one level of subtasks only).']})
+                if _task_claimed_by_any_document(task.pk):
+                    raise ValidationError({'parent_task': [
+                        'Cannot make this task a subtask — it is claimed '
+                        'by an estimate, change order, or invoice line. '
+                        'Release the claim first.']})
         for field, value in kwargs.items():
             setattr(task, field, value)
         task.full_clean()
         task.save()
         return task
+
+    @staticmethod
+    def child_delete_blockers(task):
+        """Children that would be silently destroyed by cascading a parent
+        Task delete (final-review finding I3): the DB CASCADE from
+        `Task.parent_task` deletes every subtask right along with the
+        parent, with none of THEIR OWN delete guards consulted — a
+        non-terminal child (still doing work), or a terminal child that
+        still carries bleps or consumed materials (real recorded
+        work/inventory history), would be wiped out from under itself.
+        Cancel's own children-terminal gate (`cancel_task`) doesn't cover
+        this: cancel never deletes rows, only delete does. Returns a list
+        of human-readable blocker strings (empty when every child is
+        terminal, blep-free, and consumed-material-free — safe to
+        cascade). Shared by `delete_task` and the CO KIND_WORK retire path
+        (`apps.estimates.co_acceptance`), which also deletes a Task
+        directly.
+        """
+        from apps.inventory.models import Material
+        terminal = (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
+        blockers = []
+        for child in task.subtasks.all():
+            if child.status not in terminal:
+                blockers.append(f'{child.name} (still {child.status})')
+            elif Blep.objects.filter(task=child).exists():
+                blockers.append(f'{child.name} (has time entries)')
+            elif child.materials.filter(
+                    consumption_state=Material.CONSUMPTION_STATE_CONSUMED).exists():
+                blockers.append(f'{child.name} (has consumed materials)')
+        return blockers
 
     @staticmethod
     def delete_task(task_pk):
@@ -1331,6 +1421,9 @@ class TaskService:
           deleted (cancel instead) — Rule 1: once the claiming document has
           been sent, the task is part of a promise. Draft claims stay
           deletable (release them by removing the line/atoms first).
+        - A PARENT task with any non-terminal child, or any terminal child
+          that still carries bleps or consumed materials, cannot be
+          deleted — see `child_delete_blockers` (final-review finding I3).
         """
         from apps.estimates.claims import atom_claimed_by_non_draft_document
         from apps.inventory.models import Material
@@ -1367,6 +1460,14 @@ class TaskService:
             raise ValidationError(
                 "Cannot delete a task on a sent estimate, change order, or "
                 "invoice. Cancel it instead."
+            )
+        blockers = TaskService.child_delete_blockers(task)
+        if blockers:
+            names = ', '.join(blockers[:5])
+            raise ValidationError(
+                f"Cannot delete: subtask(s) block deletion — {names}. "
+                f"Complete/cancel every subtask and clear their time "
+                f"entries and consumed materials first."
             )
 
         task.delete()

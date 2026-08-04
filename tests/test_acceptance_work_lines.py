@@ -373,6 +373,28 @@ class CORemoveWorkLineTest(ChangeOrderWorkLineTestBase):
 
         self.assertTrue(Task.objects.filter(pk=task.pk).exists())
 
+    def test_remove_work_task_with_open_subtask_refuses(self):
+        # Final-review finding I3: the KIND_WORK retire branch deletes the
+        # atom directly (not via TaskService.delete_task), so it needs the
+        # same children guard — a flat work task can be decomposed after
+        # crystallization, and the CASCADE from Task.parent_task would
+        # otherwise wipe an open subtask out unchecked.
+        line, task = self._work_task_backed_line()
+        Task.objects.create(
+            job=self.job, name='Subtask of work task', parent_task=task,
+            qty_source=Task.QTY_ENTERED, est_qty=Decimal('1'),
+            unit_label='ea', accounting_category=self.cat,
+            qty_scales_with_parent=False,
+        )
+        co = self._make_co()
+        self._remove_line(co, line)
+
+        with self.assertRaises(ValidationError):
+            self._accept(co)
+
+        self.assertTrue(Task.objects.filter(pk=task.pk).exists())
+        self.assertTrue(Task.objects.filter(parent_task=task).exists())
+
     def test_remove_invoiced_work_task_is_left_alone(self):
         from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
         line, task = self._work_task_backed_line()

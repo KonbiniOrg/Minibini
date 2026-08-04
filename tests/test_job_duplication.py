@@ -144,6 +144,21 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         # hierarchy remapped to the NEW build task (not the source's)
         self.assertEqual(finish.parent_task_id, build.task_id)
 
+    def test_copies_qty_scales_with_parent_flag_verbatim(self):
+        # Final-review finding I1: copy_fields() previously omitted
+        # qty_scales_with_parent, so a duplicated per-batch subtask
+        # (flag False — its est values are already a per-batch total)
+        # silently reset to the model's DB default (True, per-unit) on
+        # the copy, a real money distortion — e.g. a $100 batch-setup
+        # child under a 10-ea parent would contribute $10/ea in the
+        # duplicate instead of the source's flat $100.
+        self.task_b.qty_scales_with_parent = False
+        self.task_b.save()
+        new_job = JobService.duplicate_job(
+            self.source, contact=self.contact, path='approved')
+        finish = Task.objects.get(job=new_job, name='Finish')
+        self.assertFalse(finish.qty_scales_with_parent)
+
     def test_copies_materials_with_task_links_and_reset_state(self):
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='approved')

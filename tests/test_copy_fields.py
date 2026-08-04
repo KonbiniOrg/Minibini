@@ -52,6 +52,10 @@ class TaskBaseCopyFieldsTest(TestCase):
             'accounting_category_id': ac.pk,
             'service_item_id': None,
             'active_modifiers': mods,
+            # final-review finding I1: qty_scales_with_parent is now
+            # carried too — inert on a top-level task (this Task has no
+            # parent_task) but load-bearing on a copied subtask.
+            'qty_scales_with_parent': True,
         })
 
     def test_copy_fields_deep_copies_active_modifiers(self):

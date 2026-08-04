@@ -273,7 +273,12 @@ class TaskBase(models.Model):
         straight into ``Task.objects.create()``-style callers; Django's
         ``.objects.create()`` accepts the ``_id`` form too. ``active_modifiers``
         is deep-copied here to keep raw-create callers safe from
-        shared-reference bugs.
+        shared-reference bugs. ``qty_scales_with_parent`` IS included
+        (final-review finding I1): it is inert on a top-level task (matches
+        the model's own DB default there) but load-bearing money on a
+        subtask — omitting it silently reset a duplicated per-batch
+        (flag-``False``) subtask back to per-unit scaling, changing what the
+        duplicate actually bills.
         """
         return dict(
             name=self.name,
@@ -287,6 +292,7 @@ class TaskBase(models.Model):
             accounting_category_id=self.accounting_category_id,
             service_item_id=self.service_item_id,
             active_modifiers=copy_active_modifiers(self.active_modifiers),
+            qty_scales_with_parent=self.qty_scales_with_parent,
         )
 
 
@@ -501,10 +507,24 @@ class Task(TaskBase):
 
     def get_actual_qty(self):
         """Resolve actual quantity from own qty_source (task-owned-money
-        Phase 1 — no RateScheme lookup)."""
+        Phase 1 — no RateScheme lookup).
+
+        Rollup rule (spec §9, final-review finding C1): for a QTY_ELAPSED
+        task this is own bleps PLUS every child's bleps, regardless of the
+        child's own `qty_scales_with_parent` flag or `qty_source` — hours
+        are hours, and a decomposed elapsed task delegates all its work to
+        its subtasks (§4a.1), so counting only its own (usually zero)
+        bleps would make it permanently uncompletable and would drop every
+        child's logged time from the invoice-side actual. A leaf task
+        (no children) is unaffected — `self.subtasks.all()` is empty.
+        See `docs/designs/jobs-and-tasks.md` §4a.3.
+        """
         if self.qty_source == self.QTY_ELAPSED:
+            bleps = list(self.blep_set.all())
+            for child in self.subtasks.all():
+                bleps.extend(child.blep_set.all())
             total = sum(
-                (b.elapsed for b in self.blep_set.all() if b.elapsed is not None),
+                (b.elapsed for b in bleps if b.elapsed is not None),
                 timedelta(),
             )
             # Quantize to 2 places: a raw seconds/3600 division is
