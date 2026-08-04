@@ -41,6 +41,8 @@ Per-model field checks:
                    E  negative rate
                    E  active_modifiers must be a list of {key, percent} dicts
                    E  subtask of a subtask (one level only)
+                   W  parent (has subtasks) carries its own assignee
+                      (tolerated pre-parenthood history)
                    -  qty_scales_with_parent on a parentless (top-level) row:
                       no check — inert by design, never read there
   Blep             E  task is pending but has a blep
@@ -386,6 +388,21 @@ class Command(BaseCommand):
                 f'Task {t.pk} ({t.name}): subtask of a subtask '
                 f'(parent {t.parent_task_id} already has a parent) — '
                 f'one level of subtasks only'
+            )
+        # A parent task (≥1 subtask) is non-startable going forward — spec §9
+        # rule 1 (task-owned-money Phase 4 Task 1) delegates assignment to
+        # its children, and TaskService.assign hard-rejects assigning a
+        # parent. But an assignee set BEFORE the task grew its first subtask
+        # is legitimate history the gate can't retroactively erase (mirrors
+        # the parent-bleps tolerance in check_bleps_and_shifts above): WARN,
+        # not ERROR.
+        for t in Task.objects.filter(
+            subtasks__isnull=False, assignee__isnull=False
+        ).distinct():
+            self.warnings.append(
+                f'Task {t.pk} ({t.name}): is a parent (has subtasks) but '
+                f'carries its own assignee — non-startable now prevents new '
+                f'assignment; tolerated as pre-parenthood history'
             )
         # NO check for qty_scales_with_parent on parentless (top-level) rows,
         # by design. The field is DB-default True and functional ONLY on a

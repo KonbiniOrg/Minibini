@@ -2436,13 +2436,26 @@ def assign_current_work(c):
         f['pk'] for f in c.fixture_data
         if f['model'] == 'jobs.job' and f['fields'].get('status') == 'in_progress'
     }
+    # Task ids that are themselves a PARENT (have ≥1 subtask): a checklist
+    # parent is otherwise a valid candidate below, but TaskService.assign
+    # hard-rejects assigning a parent — PM functions (including assignment)
+    # live on its children, spec §9 rule 1 — so parents must be excluded
+    # from the pool. Note this is the INVERSE of the exclusion applied in
+    # build_synthetic_estimate_sources / build_invoice_line_item_sources
+    # (those exclude the CHILDREN; this excludes the PARENTS — assignment
+    # delegates to children, billing does not).
+    parent_ids = {
+        f['fields']['parent_task'] for f in c.fixture_data
+        if f['model'] == 'jobs.task' and f['fields'].get('parent_task') is not None
+    }
     candidates = sorted(
         (f for f in c.fixture_data
          if f['model'] == 'jobs.task'
          and f['fields'].get('job') in in_progress_jobs
          and f['fields'].get('status') == 'pending'
          and f['fields'].get('assignee') is None
-         and f['fields'].get('est_worker_time')),
+         and f['fields'].get('est_worker_time')
+         and f['pk'] not in parent_ids),
         key=lambda f: f['pk'],
     )
     random.shuffle(candidates)

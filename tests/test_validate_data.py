@@ -1321,3 +1321,61 @@ class ValidateDataParentBlepTest(TestCase):
         Blep.objects.create(task=child, user=self.user, start_time=timezone.now())
         output = self._run()
         self.assertNotIn('own blep', output)
+
+
+class ValidateDataParentAssigneeTest(TestCase):
+    """Tests for the parent-task-with-own-assignee WARN (task-owned-money
+    Phase 4 Task 6 review follow-up): a parent (≥1 subtask) is non-startable
+    going forward (spec §9 rule 1) and TaskService.assign hard-rejects
+    assigning one, but an assignee set BEFORE the task grew its first
+    subtask is legitimate history the gate can't retroactively erase.
+    Tolerated as WARN, not ERROR — mirrors ValidateDataParentBlepTest."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='ParAssign', code='PARASSIGN')
+        self.contact = Contact.objects.create(first_name='Par', last_name='Assign')
+        self.job = Job.objects.create(
+            job_number='J-VPA-001', name='Parent Assignee Job', contact=self.contact,
+        )
+        self.rs = RateScheme.objects.create(
+            name='RS-ParAssign', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('20.00'), unit_label='each', accounting_category=self.ac,
+        )
+        self.user = User.objects.create_user(username='parassign-worker', password='x')
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _task(self, parent=None, name='T', assignee=None):
+        return Task.objects.create(
+            name=name, job=self.job, parent_task=parent, assignee=assignee,
+            **_task_scheme_fields(self.rs),
+        )
+
+    def test_parent_with_own_assignee_is_warned(self):
+        # A direct .create() with assignee set is a legal model state
+        # (TaskService.assign's parent-rejection is a service-layer guard,
+        # not a model clean() check — no QuerySet.update() bypass needed).
+        parent = self._task(name='Parent', assignee=self.user)
+        self._task(parent=parent, name='Child')
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'Task {parent.pk}' in l and 'own assignee' in l)
+        self.assertIn('[WARN]', line)
+        self.assertIn('pre-parenthood history', line)
+
+    def test_childless_task_with_assignee_not_flagged(self):
+        self._task(name='Solo', assignee=self.user)
+        output = self._run()
+        self.assertNotIn('own assignee', output)
+
+    def test_child_task_with_assignee_not_flagged_as_parent(self):
+        """The subtask itself carrying an assignee is normal (assignment
+        delegates to children) — only the PARENT carrying its own assignee
+        is the tolerated-historical case."""
+        parent = self._task(name='Parent')
+        self._task(parent=parent, name='Child', assignee=self.user)
+        output = self._run()
+        self.assertNotIn('own assignee', output)
