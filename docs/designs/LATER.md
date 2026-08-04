@@ -323,6 +323,47 @@ Billing mechanics and money-record lifecycle.
   AC-required guard (mirroring the estimate side), or a recorded decision that
   the frontend validation + send gate is the intended (sufficient) coverage.
 
+- **Fallback-AC settings/display polish (final review of task-owned-money Phase 3).** — _added 2026-08-03_
+  Four small gaps found alongside the final-review fix wave (Findings 1–3 fixed
+  same session — settings management list now fetches `include_fallback=true`;
+  `_resolve_fallback_category` now rechecks `is_active`/`is_deposit`):
+  1. **`update_accounting_category` (`apps/core/services.py`) has no
+     designation-aware guard.** PATCHing the currently-designated fallback AC's
+     `is_active` to `false`, or `is_deposit` to `true`, silently leaves the
+     `fallback_accounting_category` Configuration key pointing at a category
+     that no longer qualifies — the dangling pointer is now caught at
+     invoice-compose time (via the `_resolve_fallback_category` recheck) but
+     not at edit time. `ConfigurationService.update_rate_scheme` has the
+     analogous precedent for `default_rate_scheme`
+     (`apps/core/services.py` ~L1208–1227: `was_active`/`is_active` check +
+     `_clear_default_rate_scheme_if_matches` clears the Configuration key when
+     a PATCH flips the designated default inactive) — `update_accounting_category`
+     wants the same shape for the fallback (and arguably deposit) designation.
+  2. **`TaskDetailPage.svelte:228` and `TasksPanel.svelte:170`
+     (`WorkItemForm`'s categories source) fetch `/api/accounting-categories/`
+     without `include_fallback=true`.** If a Task's `accounting_category`
+     is ever the designated fallback, the categories list used for
+     name-lookup (`categories.find(...)`) won't contain it, so the UI renders
+     the bare `#id` instead of the category's name — same display-bug shape
+     Finding 1 fixed for the settings management table, on a different
+     surface (a lookup-for-display, not a picker, so no exclusion logic
+     needed — just the fetch param).
+  3. **`FallbackAccountingCategorySetting.svelte` fetches with no `page_size`**
+     (`api.get('/api/accounting-categories/?include_fallback=true')`), so its
+     dropdown silently truncates at the default page size (25) once a shop
+     has more categories than that — the invoice/estimate panels already pass
+     `page_size=100` alongside `include_fallback=true` for the same endpoint;
+     this setting picker should match.
+  4. **No in-use hint when designating an already-referenced AC as the
+     fallback.** Nothing in `FallbackAccountingCategorySetting.svelte` or its
+     backend warns the user if the category they're about to designate is
+     already referenced by existing lines/materials/services — not incorrect,
+     just a missed opportunity to flag a potentially confusing choice (a
+     heavily-referenced "real" category doing double duty as the universal
+     fallback).
+  _Done when:_ all four are addressed (or explicitly deferred further with a
+  recorded reason per item).
+
 ## Purchasing & inventory
 
 (The procurement-machinery items moved into the freeform-materials plan

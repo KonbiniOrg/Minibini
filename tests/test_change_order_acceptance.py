@@ -569,6 +569,27 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         # Refused: the old fee survives untouched, nothing new minted.
         self.assertTrue(Fee.objects.filter(pk=old_fee.pk).exists())
 
+    def test_bare_replace_of_fee_line_with_zero_qty_raises(self):
+        """Final review of task-owned-money Phase 3, Finding 2: the qty
+        twin of test_bare_replace_of_fee_line_with_zero_price_raises. A bare
+        (freeform_kind=None) CO replace line skips
+        EstimateService._validate_qty's fee-kind check the same way it
+        skips the zero-price check, so a qty left at its model default
+        (0.00) would otherwise silently coerce to 1 via `_crystallize`'s
+        `qty = li.qty or Decimal('1')` fallback and mint a FULL-PRICE Fee
+        the customer never saw a nonzero amount for."""
+        line, old_fee = self._fee_backed_line()
+        co = self._make_co()
+        self._replace_line(
+            co, line, description='Rush handling (no qty)', price=Decimal('90.00'),
+        )
+
+        with self.assertRaises(ValidationError):
+            self._accept(co)
+
+        # Refused: the old fee survives untouched, nothing new minted.
+        self.assertTrue(Fee.objects.filter(pk=old_fee.pk).exists())
+
     def test_second_co_replace_resolves_through_first_replacement(self):
         line, original_task = self._task_backed_line(est_qty=Decimal('10'))
         co1 = self._make_co()

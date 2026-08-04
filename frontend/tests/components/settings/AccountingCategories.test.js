@@ -17,7 +17,7 @@ beforeEach(() => {
   // categories load resolves; QBO accounts rejects → qboAccounts stays null;
   // settings load resolves with no default set unless overridden per-test.
   api.get.mockImplementation((url) => {
-    if (url === '/api/accounting-categories/') return Promise.resolve({ results: [CAT, INACTIVE_CAT] });
+    if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [CAT, INACTIVE_CAT] });
     if (url === '/api/settings/') return Promise.resolve({});
     return Promise.reject({ status: 404 });
   });
@@ -30,6 +30,23 @@ describe('AccountingCategories', () => {
   it('loads and lists categories', async () => {
     const { findByRole } = render(AccountingCategories);
     expect(await findByRole('cell', { name: 'Labor' })).toBeInTheDocument();
+  });
+
+  it('fetches with include_fallback=true so a designated fallback stays manageable', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/accounting-categories/')) {
+        return Promise.resolve({ results: [
+          { id: 1, code: 'C1', name: 'Labor', taxable: true, is_active: true,
+            default_description: '' },
+          { id: 3, code: 'FALL', name: 'Fallback Category', taxable: true,
+            is_active: true, is_referenced: true, default_description: '' },
+        ] });
+      }
+      return Promise.resolve({ results: [] });
+    });
+    const { findByRole } = render(AccountingCategories);
+    expect(await findByRole('cell', { name: 'Fallback Category' })).toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?include_fallback=true');
   });
 
   it('creates a new category', async () => {
@@ -130,7 +147,7 @@ describe('AccountingCategories', () => {
         'Delete category "Unreferenced"? This cannot be undone.');
       expect(api.delete).toHaveBeenCalledWith('/api/accounting-categories/2/');
       // reload after delete
-      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/');
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?include_fallback=true');
     });
 
     it('does not call delete when confirm is cancelled', async () => {

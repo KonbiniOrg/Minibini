@@ -358,10 +358,26 @@ class ChangeOrderAcceptanceService:
                 f'Change order line "{li.description or "(no description)"}" '
                 f'would crystallize a Fee with a zero rate. Set a non-zero price.'
             )
+        # Final review (task-owned-money Phase 3), Finding 2: the same bare-
+        # replace/legacy-NULL-kind path that needed the zero-rate guard above
+        # also needs a quantity guard — `qty` (this function's shared
+        # fallback var, `li.qty or Decimal('1')`) would otherwise silently
+        # coerce a blank/zero qty on a fee-kind line to 1, crystallizing a
+        # FULL-PRICE Fee the customer never saw a nonzero amount for. This
+        # branch calls Fee.objects.create() directly, bypassing
+        # FeeService.create_on_job's own `_reject_non_positive_quantity`
+        # guard, so it is re-applied here. A typed negative qty is rejected
+        # too, not just zero.
+        if li.qty is None or li.qty <= 0:
+            raise ValidationError(
+                f'Change order line "{li.description or "(no description)"}" '
+                f'would crystallize a Fee with a zero or negative quantity. '
+                f'Set a quantity greater than zero.'
+            )
         fee = Fee.objects.create(
             job=job,
             description=li.description or '',
-            quantity=qty,
+            quantity=li.qty,
             unit_rate=unit_rate,
             accounting_category=accounting_category,
             sort_order=li.line_number or 0,

@@ -383,6 +383,8 @@ Both fields live on `apps.core.models.AccountingCategory`. Both are `CharField(m
 
 Both methods are live fetches against QBO — there is no caching layer and no "refresh accounts" endpoint, just `GET /api/qbo/accounts/`.
 
+**Bootstrap note:** the designated fallback accounting category (`Configuration['fallback_accounting_category']` — see `invoicing-and-expenses.md` §"Fallback accounting category") needs its `qbo_item_id` mapped here like any other category. This management table fetches with `?include_fallback=true` specifically so the designated fallback stays visible and editable here once designated (it's excluded from ordinary AC pickers elsewhere in the app) — but a fallback-stamped invoice line still needs a real `ItemRef` to push to QBO, so mapping it is part of first-connect setup, not optional.
+
 ## Payment polling
 
 Polling is the *only* mechanism for learning about payments — there are no webhooks.

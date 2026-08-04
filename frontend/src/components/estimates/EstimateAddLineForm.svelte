@@ -169,6 +169,16 @@
         fieldErrs = { price: ['A Fee/Credit line must not have a zero price.'] };
         return;
       }
+      // A Fee/Credit line's quantity must be > 0 — mirrors
+      // EstimateService._validate_qty (a blank qty falls back to '0' in the
+      // payload below, same as the zero-price case above; a zero or
+      // negative qty renders/crystallizes a fee the customer never saw a
+      // nonzero amount for).
+      const qtyNum = qty === '' ? NaN : Number(qty);
+      if (isFee && (qty === '' || Number.isNaN(qtyNum) || qtyNum <= 0)) {
+        fieldErrs = { qty: ['A Fee/Credit line must have a quantity greater than zero.'] };
+        return;
+      }
       payload = {
         description,
         qty: qty || '0',
@@ -217,6 +227,7 @@
         <p><label>Description<br><input type="text" bind:value={description} style="width:100%;box-sizing:border-box;"></label></p>
       {/if}
       <p><label>Quantity<br><input type="number" step="0.01" min="0" value={qty} oninput={(e) => qty = e.target.value}>{#if !isFreeform && baseUnits}<span class="qty-units">{baseUnits}</span>{/if}</label></p>
+      <FieldError errors={fieldErrs} field="qty" />
 
       {#if isWork}
         <p><label>Units<br><UnitsSelect bind:value={units} /></label></p>

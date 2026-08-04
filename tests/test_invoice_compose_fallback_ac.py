@@ -234,6 +234,40 @@ class NoFallbackConfiguredTest(FallbackStampingBaseSetup):
         self.assertIsNone(line_item.accounting_category_id)
 
 
+class RetiredOrDepositFallbackTest(FallbackStampingBaseSetup):
+    """Final review of task-owned-money Phase 3, Finding 3:
+    InvoiceService._resolve_fallback_category rechecks is_active/is_deposit
+    on every call (mirrors _resolve_deposit_category's sibling recheck) — a
+    fallback AC that's since been retired, or flipped to a deposit category,
+    must produce the same coaching error as a fallback that no longer
+    resolves at all, not an opaque IntegrityError or a wrongly-typed line."""
+
+    def test_retired_fallback_raises_clear_error(self):
+        self.fallback_cat.is_active = False
+        self.fallback_cat.save()
+        task = self._make_task('Flat work', None)
+        with self.assertRaises(ValidationError) as ctx:
+            InvoiceWizardService.add_atoms_to_new_line_item(
+                self.invoice, [{'type': 'task', 'id': task.pk}],
+            )
+        msg = str(ctx.exception)
+        self.assertIn('fallback_accounting_category', msg)
+        self.assertFalse(hasattr(ctx.exception, 'message_dict'))
+
+    def test_deposit_flipped_fallback_raises_clear_error(self):
+        self.fallback_cat.is_deposit = True
+        self.fallback_cat.taxable = False
+        self.fallback_cat.save()
+        task = self._make_task('Flat work', None)
+        with self.assertRaises(ValidationError) as ctx:
+            InvoiceWizardService.add_atoms_to_new_line_item(
+                self.invoice, [{'type': 'task', 'id': task.pk}],
+            )
+        msg = str(ctx.exception)
+        self.assertIn('fallback_accounting_category', msg)
+        self.assertFalse(hasattr(ctx.exception, 'message_dict'))
+
+
 class ReleaseAndReAddRegeneratesFlagTest(FallbackStampingBaseSetup):
     def test_delete_then_readd_restamps_and_reflags(self):
         task = self._make_task('Flat work', None)

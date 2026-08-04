@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from apps.contacts.models import Contact
@@ -137,3 +138,23 @@ class AcceptanceCrystallizesFeesTest(TestCase):
         EstimateAcceptanceService.on_accept(self.estimate)
         earmark = Earmark.objects.get(job=self.job, inventory_item=self.pli)
         self.assertEqual(earmark.quantity, Decimal('7'))
+
+    def test_zero_qty_legacy_hand_line_raises_not_crystallized(self):
+        """Final review of task-owned-money Phase 3, Finding 2: a hand-line
+        with no explicit freeform_kind (legacy default, None — see the
+        freeform_kind field's own docstring) skips EstimateService._validate_qty
+        at entry the same way it skips the zero-price check, since
+        `is_fee`/the fee-kind check requires freeform_kind == KIND_FEE. This
+        line is built directly via the ORM (bypassing the service layer
+        entirely, as this whole file's fixtures do) with qty=0 to exercise
+        that gap. Acceptance's direct Fee.objects.create() call must refuse
+        to mint a zero-quantity Fee rather than silently coercing it to 1."""
+        self.hand_line.qty = Decimal('0.00')
+        self.hand_line.save()
+
+        with self.assertRaises(ValidationError):
+            EstimateAcceptanceService.on_accept(self.estimate)
+
+        self.assertFalse(
+            Fee.objects.filter(job=self.job, description='Rush handling').exists()
+        )

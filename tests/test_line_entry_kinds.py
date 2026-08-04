@@ -237,6 +237,75 @@ class EstimatePriceSignTest(LineEntryKindsSetup):
         self.assertEqual(updated.price, Decimal('-15.00'))
 
 
+class EstimateQtySignTest(LineEntryKindsSetup):
+    """Final review of task-owned-money Phase 3, Finding 2: a fee/credit
+    line's qty must be > 0 — mirrors EstimatePriceSignTest's zero-price rule
+    (amount = qty * price, so a zero/negative qty is just as much a
+    billed-money bug as a zero/negative price)."""
+
+    def test_zero_qty_rejected_on_fee_line(self):
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.add_line_item(
+                self.estimate.pk, description='Free', qty=Decimal('0.00'),
+                price=Decimal('25.00'), accounting_category=self.cat.pk,
+                freeform_kind=EstimateLineItem.KIND_FEE,
+            )
+        self.assertIn('qty', ctx.exception.message_dict)
+
+    def test_negative_qty_rejected_on_fee_line(self):
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.add_line_item(
+                self.estimate.pk, description='Rush', qty=Decimal('-1.00'),
+                price=Decimal('25.00'), accounting_category=self.cat.pk,
+                freeform_kind=EstimateLineItem.KIND_FEE,
+            )
+        self.assertIn('qty', ctx.exception.message_dict)
+
+    def test_zero_qty_allowed_on_work_line(self):
+        # The qty>0 rule is scoped to fee/credit lines — other kinds are a
+        # pre-existing, separately-scoped concern.
+        li = EstimateService.add_line_item(
+            self.estimate.pk, description='Cutting', qty=Decimal('0.00'),
+            price=Decimal('50.00'), accounting_category=self.cat.pk,
+            freeform_kind=EstimateLineItem.KIND_WORK,
+        )
+        self.assertEqual(li.qty, Decimal('0.00'))
+
+    def test_update_bare_fee_line_to_zero_qty_rejected(self):
+        li = EstimateService.add_line_item(
+            self.estimate.pk, description='Credit', qty=Decimal('1'),
+            price=Decimal('-10.00'), accounting_category=self.cat.pk,
+            freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.update_line_item(li.pk, qty=Decimal('0.00'))
+        self.assertIn('qty', ctx.exception.message_dict)
+
+    def test_update_sourced_zero_qty_line_succeeds(self):
+        """A wizard-composed line built from atoms is exempt from the
+        qty>0 rule meant for hand-authored lines — same exemption
+        EstimatePriceSignTest.test_update_sourced_negative_line_description_succeeds
+        exercises for price."""
+        from apps.estimates.models import EstimateLineItemSource
+        from apps.jobs.models import Fee
+
+        fee = Fee.objects.create(
+            job=self.job, description='Bundled credit', quantity=Decimal('1'),
+            unit_rate=Decimal('-15.00'), accounting_category=self.cat,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, description='Bundle', qty=Decimal('1'),
+            price=Decimal('-15.00'), accounting_category=self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_FEE,
+            source_pk=fee.pk,
+        )
+        updated = EstimateService.update_line_item(li.pk, qty=Decimal('0.00'))
+        self.assertEqual(updated.qty, Decimal('0.00'))
+
+
 class EstimateFeeWorkACRequiredTest(LineEntryKindsSetup):
 
     def test_fee_line_without_ac_raises(self):
@@ -407,6 +476,29 @@ class ChangeOrderPriceSignTest(LineEntryKindsSetup):
                 accounting_category=self.cat.pk, freeform_kind=ChangeOrderLineItem.KIND_FEE,
             )
         self.assertIn('price', ctx.exception.message_dict)
+
+
+class ChangeOrderQtySignTest(LineEntryKindsSetup):
+    """CO twin of EstimateQtySignTest — ChangeOrderService.add_line_item /
+    update_line_item share EstimateService._validate_qty."""
+
+    def test_zero_qty_rejected_on_fee_add_line(self):
+        with self.assertRaises(ValidationError) as ctx:
+            ChangeOrderService.add_line_item(
+                self.co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+                description='Free', qty=Decimal('0.00'), price=Decimal('25.00'),
+                accounting_category=self.cat.pk, freeform_kind=ChangeOrderLineItem.KIND_FEE,
+            )
+        self.assertIn('qty', ctx.exception.message_dict)
+
+    def test_negative_qty_rejected_on_fee_add_line(self):
+        with self.assertRaises(ValidationError) as ctx:
+            ChangeOrderService.add_line_item(
+                self.co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+                description='Rush', qty=Decimal('-1.00'), price=Decimal('25.00'),
+                accounting_category=self.cat.pk, freeform_kind=ChangeOrderLineItem.KIND_FEE,
+            )
+        self.assertIn('qty', ctx.exception.message_dict)
 
 
 class ChangeOrderKindImmutableOnUpdateTest(LineEntryKindsSetup):

@@ -28,7 +28,10 @@
   async function loadCategories() {
     loadingCategories = true;
     try {
-      const catData = await api.get('/api/accounting-categories/');
+      // This is the management surface (not a picker) — it must include the
+      // designated fallback AC so it stays editable and its QBO Item mapping
+      // stays reachable (task-owned-money Phase 3 final review, Finding 1).
+      const catData = await api.get('/api/accounting-categories/?include_fallback=true');
       categories = catData.results || catData;
     } catch (e) {
       if (e.status !== 403) {

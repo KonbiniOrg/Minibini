@@ -281,6 +281,44 @@ class EstimateService:
             ]})
 
     @staticmethod
+    def _validate_qty(li):
+        """Fee/Credit lines must have qty > 0 (final review of the
+        task-owned-money Phase 3 branch, Finding 2). `_validate_price`
+        already forbids a zero *price* on a Fee line, but amount = qty *
+        price — a blanked/zero qty renders the line at $0.00 just the same,
+        and acceptance used to coerce a falsy qty to 1 (`li.qty or
+        Decimal('1')` in apps/estimates/acceptance.py and
+        apps/estimates/co_acceptance.py), which would crystallize a
+        FULL-PRICE Fee the customer never saw a nonzero amount for. That
+        coercion is removed in favor of this entry-time guard plus a mirrored
+        defensive check at acceptance. A typed negative qty would otherwise
+        pass through verbatim and sign-flip the Fee, so this rejects <= 0,
+        not just == 0.
+
+        Same exemptions as `_validate_price`: adjustment lines and sourced
+        (atom-backed) lines are untouched — their qty derives from the atoms
+        they claim, not a freeform_kind the caller chose. Non-fee lines
+        (work/material/catalog/service) are untouched too — qty <= 0 on
+        those is a pre-existing, separately-scoped concern."""
+        if getattr(li, 'adjustment_service_id', None) is not None:
+            return
+        if li.pk is not None and li.sources.exists():
+            return
+        if li.freeform_kind != li.KIND_FEE:
+            return
+        if li.qty is None:
+            return
+        from decimal import Decimal, InvalidOperation
+        try:
+            qty = Decimal(str(li.qty))
+        except (InvalidOperation, TypeError, ValueError):
+            return
+        if qty <= 0:
+            raise ValidationError({'qty': [
+                'A Fee/Credit line must have a quantity greater than zero.'
+            ]})
+
+    @staticmethod
     def _reject_freeform_kind_on_non_bare_line(li):
         """`freeform_kind` is a real writable model field now (both line-item
         serializers expose it, and the generic `LineItemMixin` passes raw
@@ -501,6 +539,7 @@ class EstimateService:
                 )}
             )
         EstimateService._validate_price(li)
+        EstimateService._validate_qty(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li
@@ -529,6 +568,7 @@ class EstimateService:
             accounting_category=pli.accounting_category,
         )
         EstimateService._validate_price(li)
+        EstimateService._validate_qty(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li
@@ -565,6 +605,7 @@ class EstimateService:
             accounting_category=service_item.effective_accounting_category,
         )
         EstimateService._validate_price(li)
+        EstimateService._validate_qty(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li
@@ -614,6 +655,7 @@ class EstimateService:
                 )}
             )
         EstimateService._validate_price(li)
+        EstimateService._validate_qty(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li

@@ -197,9 +197,11 @@ rejected — deposits have their own dedicated key above and their own
 semantics). The designated fallback category is **excluded from every
 normal `GET /api/accounting-categories/` list** (`AccountingCategoryViewSet
 .get_queryset`) so it can't be hand-picked as an ordinary category; pass
-`?include_fallback=true` to include it (the fallback-setting picker and the
+`?include_fallback=true` to include it (the fallback-setting picker, the
 invoice/estimate AC pickers that must still render an already-fallback-stamped
-line's category name use this). `InvoiceLineItem.used_fallback_ac`
+line's category name, and the Settings → Accounting Categories management
+table — which must keep the designated fallback editable and its QBO Item
+mapping reachable once designated — all use this). `InvoiceLineItem.used_fallback_ac`
 (serializer `SerializerMethodField`) is `true` iff a line's *current* AC
 equals the *currently configured* fallback — a read-time comparison, not a
 stored flag. See `estimates-and-prices.md` §10.1a and

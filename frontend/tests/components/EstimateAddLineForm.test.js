@@ -186,6 +186,42 @@ describe('EstimateAddLineForm', () => {
       expect(api.post).not.toHaveBeenCalled();
       expect(await findByText(/must not have a zero price/i)).toBeInTheDocument();
     });
+
+    it('rejects a zero quantity with a field error', async () => {
+      const choice = { type: 'freeform', kind: 'fee', typed: 'Rush charge' };
+      const { getByLabelText, getByRole, findByText } = render(EstimateAddLineForm, {
+        props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
+      });
+      await fireEvent.input(getByLabelText(/quantity/i), { target: { value: '0' } });
+      await fireEvent.input(getByLabelText(/amount/i), { target: { value: '50' } });
+      await fireEvent.change(getByLabelText(/accounting category/i), { target: { value: '7' } });
+      await fireEvent.click(getByRole('button', { name: /add/i }));
+      expect(api.post).not.toHaveBeenCalled();
+      expect(await findByText(/quantity greater than zero/i)).toBeInTheDocument();
+    });
+
+    it('rejects an empty quantity as zero for a fee line', async () => {
+      const choice = { type: 'freeform', kind: 'fee', typed: 'Rush charge' };
+      const { getByLabelText, getByRole, findByText } = render(EstimateAddLineForm, {
+        props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
+      });
+      await fireEvent.input(getByLabelText(/quantity/i), { target: { value: '' } });
+      await fireEvent.input(getByLabelText(/amount/i), { target: { value: '50' } });
+      await fireEvent.change(getByLabelText(/accounting category/i), { target: { value: '7' } });
+      await fireEvent.click(getByRole('button', { name: /add/i }));
+      expect(api.post).not.toHaveBeenCalled();
+      expect(await findByText(/quantity greater than zero/i)).toBeInTheDocument();
+    });
+
+    // No "negative quantity" case here: the Quantity input carries a
+    // pre-existing `min="0"` attribute, so a real submit-button click never
+    // reaches our JS at all for a typed negative value — the browser's own
+    // HTML5 constraint validation blocks the form's submit event first (and
+    // shows its own native message). The `qtyNum <= 0` guard in save() still
+    // rejects a negative value defensively (matching the backend's <=0
+    // semantics) for any path that isn't native-validated, but there's no
+    // reachable-via-click DOM state to assert here — zero is the only value
+    // `min="0"` lets through to our own zero-quantity message above.
   });
 
   describe('kind=work', () => {

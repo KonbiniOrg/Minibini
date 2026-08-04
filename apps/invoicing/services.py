@@ -59,11 +59,14 @@ class InvoiceService:
                 'billing an item with no accounting category.'
             )
         try:
-            return AccountingCategory.objects.get(pk=pk)
+            return AccountingCategory.objects.get(
+                pk=pk, is_active=True, is_deposit=False)
         except (AccountingCategory.DoesNotExist, ValueError, TypeError):
             raise ValidationError(
                 f'The configured fallback accounting category ({pk!r}) '
-                f'does not exist.'
+                f'does not exist, is inactive, or is a deposit category. '
+                f'Update the fallback_accounting_category setting in '
+                f'Settings.'
             )
 
     @staticmethod

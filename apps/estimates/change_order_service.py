@@ -416,6 +416,7 @@ class ChangeOrderService:
         # if not supplied — same default the estimate side applies at authoring.
         EstimateService._apply_material_ac_default(li)
         EstimateService._validate_price(li)
+        EstimateService._validate_qty(li)
         li.full_clean()
         li.save()
         return li
@@ -447,6 +448,7 @@ class ChangeOrderService:
             accounting_category=pli.accounting_category,
         )
         EstimateService._validate_price(li)
+        EstimateService._validate_qty(li)
         li.save()
         return li
 
@@ -495,6 +497,7 @@ class ChangeOrderService:
         )
         from apps.estimates.services import EstimateService
         EstimateService._validate_price(li)
+        EstimateService._validate_qty(li)
         li.full_clean()
         li.save()
         return li
@@ -534,6 +537,7 @@ class ChangeOrderService:
             li.freeform_kind = original_kind
         EstimateService._apply_material_ac_default(li)
         EstimateService._validate_price(li)
+        EstimateService._validate_qty(li)
         li.full_clean()
         li.save()
         return li

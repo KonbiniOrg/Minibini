@@ -166,10 +166,28 @@ class EstimateAcceptanceService:
                     f'has no accounting category. All hand-line items must have '
                     f'an accounting category before the estimate can be accepted.'
                 )
+            # Final review (task-owned-money Phase 3), Finding 2: this branch
+            # calls Fee.objects.create() directly, bypassing
+            # FeeService.create_on_job's own `_reject_non_positive_quantity`
+            # guard. Entry-time validation (EstimateService._validate_qty)
+            # keeps a zero/negative qty off a fee-kind line for lines added
+            # through the current entry points, but a legacy NULL-freeform_kind
+            # row (see the freeform_kind field's own docstring) skips that
+            # check the same way it skips the zero-price check — so this
+            # mirrors the guard defensively rather than silently coercing a
+            # blank/zero qty to 1 (`li.qty or Decimal('1')`), which would
+            # crystallize a FULL-PRICE Fee the customer never saw a nonzero
+            # amount for.
+            if li.qty is None or li.qty <= 0:
+                raise ValidationError(
+                    f'Estimate line "{li.description or "(no description)"}" '
+                    f'would crystallize a Fee with a zero or negative '
+                    f'quantity. Set a quantity greater than zero.'
+                )
             fee = Fee.objects.create(
                 job=job,
                 description=li.description or '',
-                quantity=li.qty or Decimal('1'),
+                quantity=li.qty,
                 unit_rate=li.price or Decimal('0'),
                 accounting_category=li.accounting_category,
                 sort_order=li.line_number or 0,
