@@ -245,6 +245,28 @@
     }
   }
 
+  // Display-only category list (task-owned-money Phase 3, Task 4 follow-up):
+  // `categories` (above) deliberately EXCLUDES the Configuration-designated
+  // fallback category — it feeds the LineItemModal/AdjustmentModal pickers,
+  // which must never offer the fallback as something a human manually
+  // assigns. But LineItemTable's categoryName()/categoryTaxable()/
+  // fallbackBadgeText() are read-only lookups, not pickers — using the
+  // excluded list there made a fallback-stamped line's own badge unable to
+  // name its own category ("Uncategorized → —" instead of "Uncategorized →
+  // <name>"), and would do the same to any other line/RateScheme that
+  // happens to reference whatever category is currently the fallback.
+  // include_fallback=true keeps the lookup complete without touching the
+  // picker lists.
+  let displayCategories = $state([]);
+  async function loadDisplayCategories() {
+    try {
+      const resp = await api.get('/api/accounting-categories/?page_size=100&include_fallback=true');
+      displayCategories = resp.results || resp;
+    } catch (_) {
+      displayCategories = [];
+    }
+  }
+
   $effect(() => {
     if (invoiceId) {
       loadInvoice();
@@ -259,6 +281,7 @@
     if (jobId) {
       loadInvoices();
       loadCategories();
+      loadDisplayCategories();
     }
   });
 
@@ -497,7 +520,7 @@
 
   <LineItemTable
     {lineItems}
-    {categories}
+    categories={displayCategories}
     showSource={true}
     canEdit={canEditLineItems}
     actions={canEditLineItems ? actionsSnippet : null}

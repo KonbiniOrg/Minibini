@@ -199,6 +199,22 @@
     }
   }
 
+  // Display-only category list, same reasoning as InvoicePanel's twin
+  // (task-owned-money Phase 3, Task 4 follow-up): `categories` excludes the
+  // Configuration-designated fallback category so pickers (EstimateAddLineForm,
+  // LineItemModal, AdjustmentModal) never offer it, but LineItemTable's
+  // read-only categoryName()/categoryTaxable() lookups need every category
+  // nameable, including whichever one is currently the fallback.
+  let displayCategories = $state([]);
+  async function loadDisplayCategories() {
+    try {
+      const resp = await api.get('/api/accounting-categories/?page_size=100&include_fallback=true');
+      displayCategories = resp.results || resp;
+    } catch (_) {
+      displayCategories = [];
+    }
+  }
+
   async function loadSettings() {
     try {
       const s = await api.get('/api/settings/');
@@ -213,6 +229,7 @@
     if (estimateId) {
       loadEstimate();
       loadCategories();
+      loadDisplayCategories();
       loadSettings();
     }
   });
@@ -418,7 +435,7 @@
 
   <LineItemTable
     {lineItems}
-    {categories}
+    categories={displayCategories}
     showSource={true}
     canEdit={canEdit}
     actions={canEdit ? actionsSnippet : null}

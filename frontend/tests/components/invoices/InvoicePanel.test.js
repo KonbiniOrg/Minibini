@@ -60,7 +60,14 @@ function makeLine(overrides = {}) {
   };
 }
 
-function mockApi(invoice, { invoices = null, categories = [] } = {}) {
+// `categories` (picker list, e.g. LineItemModal/AdjustmentModal) and
+// `displayCategories` (LineItemTable's read-only lookup list) default to the
+// same array — matching the backend's real behavior when no fallback AC is
+// configured. Pass them separately to simulate a configured fallback: the
+// real `/api/accounting-categories/` excludes it unless the caller adds
+// `include_fallback=true` (see InvoicePanel's loadCategories() vs
+// loadDisplayCategories()).
+function mockApi(invoice, { invoices = null, categories = [], displayCategories = categories } = {}) {
   const invoiceList = invoices ?? (invoice ? [invoice] : []);
   api.get.mockReset();
   api.get.mockImplementation((url) => {
@@ -70,7 +77,11 @@ function mockApi(invoice, { invoices = null, categories = [] } = {}) {
     if (url.startsWith('/api/invoices/?job=')) {
       return Promise.resolve({ results: invoiceList });
     }
-    if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: categories });
+    if (url.startsWith('/api/accounting-categories/')) {
+      return Promise.resolve({
+        results: url.includes('include_fallback=true') ? displayCategories : categories,
+      });
+    }
     if (url.includes('rate-schemes')) return Promise.resolve({ results: [ADJ_SERVICE] });
     return Promise.resolve({});
   });
@@ -1017,5 +1028,29 @@ describe('InvoicePanel targeted-adjustment + fallback-AC warning', () => {
     const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Line Items');
     expect(queryByText(/targeted adjustments never include uncategorized lines/i)).not.toBeInTheDocument();
+  });
+
+  it('names the fallback category on the badge even though the picker list excludes it', async () => {
+    // Regression: the fallback category (id 10 here) is excluded from the
+    // real /api/accounting-categories/ response unless include_fallback=true
+    // is passed. LineItemTable's categoryName() lookup must still resolve
+    // "Service" for the badge -- InvoicePanel fetches a second
+    // (include_fallback=true) list specifically for that read-only lookup,
+    // separate from the `categories` picker list AdjustmentModal/
+    // LineItemModal receive.
+    user.set({ permissions: ['can_manage_financials'] });
+    const inv = makeInvoice({
+      status: 'draft',
+      line_items: [makeFlaggedLine()],
+    });
+    mockApi(inv, {
+      categories: [{ id: 1, code: 'MTL', name: 'Material', taxable: true }], // fallback (10) excluded
+      displayCategories: [
+        { id: 1, code: 'MTL', name: 'Material', taxable: true },
+        { id: 10, code: 'SVC', name: 'Service', taxable: false },
+      ],
+    });
+    const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    expect(await findByText('Uncategorized → Service · non-taxable')).toBeInTheDocument();
   });
 });
