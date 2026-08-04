@@ -635,6 +635,94 @@ describe('TaskDetailPage subtask tree (A3/B3)', () => {
   });
 });
 
+// Regression guard (task-owned-money Phase 4 Task 8 review): adding a
+// subtask can flip THIS task's own `is_parent` (its first child) and
+// `derived_unit_price`/`effective_rate` (every child) — all read off
+// `task`, not `subtasks`. handleSubtaskSaved used to call loadSubtasks()
+// only, leaving `task` stale until a manual page reload: Start Work stayed
+// visible and the Rate chip kept showing the pre-structure value right
+// after adding the very subtask that was supposed to change both.
+describe('TaskDetailPage subtask-saved refresh (is_parent/derived state must not go stale)', () => {
+  it('refetches the task (not just subtasks) after Add Subtask saves, and the UI reflects the new is_parent/derived-rate state without a reload', async () => {
+    const scheme = {
+      rate_scheme_id: 1, name: 'Laser preset', rate: '2.00', unit_label: 'min',
+      accounting_category: null, modifiers: [],
+    };
+    // Flips once the subtask POST resolves — the mocked GET for the task
+    // reflects "before" or "after" off this flag, the same way the real
+    // backend would once the subtask actually exists.
+    let subtaskAdded = false;
+    const taskPayload = () => ({
+      task_id: 7, name: 'Widgets', status: 'pending', job: { id: 3 },
+      assignee_name: null, est_qty: '10', unit_label: 'ea', can_manage: true,
+      rate: null,
+      ...(subtaskAdded
+        ? { is_parent: true, effective_rate: '34.00', derived_unit_price: '34.00' }
+        : { is_parent: false, effective_rate: null, derived_unit_price: null }),
+    });
+
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url === '/api/tasks/7/') return Promise.resolve(taskPayload());
+      if (url.startsWith('/api/tasks/7/materials')) return Promise.resolve([]);
+      if (url.startsWith('/api/tasks/7/subtasks')) return Promise.resolve([]);
+      if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [scheme] });
+      if (url.startsWith('/api/settings/')) return Promise.resolve({});
+      if (url.startsWith('/api/jobs/3/deliverables/')) return Promise.resolve([]);
+      if (url.startsWith('/api/jobs/3/')) {
+        return Promise.resolve({ job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress' });
+      }
+      if (url.startsWith('/api/bleps/')) return Promise.resolve([]);
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
+      if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
+      if (url.startsWith('/api/contacts/')) return Promise.resolve({});
+      return Promise.resolve([]);
+    });
+    api.post.mockReset();
+    api.post.mockImplementation((url) => {
+      if (url === '/api/tasks/7/subtasks/') {
+        subtaskAdded = true;
+        return Promise.resolve({ task_id: 20, name: 'Laser cutting', parent_task: 7 });
+      }
+      return Promise.resolve({});
+    });
+
+    const { findByRole, getByRole, findByLabelText, getByLabelText, queryByRole }
+      = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findByRole('heading', { name: 'Widgets' });
+    // Before: is_parent is false — Start Work is offered, no Rate chip yet.
+    expect(getByRole('button', { name: 'Start Work' })).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Unassigned' })).toBeInTheDocument();
+
+    const taskCallsBeforeSave = api.get.mock.calls.filter((c) => c[0] === '/api/tasks/7/').length;
+
+    await fireEvent.click(getByRole('button', { name: /add subtask/i }));
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '1' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Laser cutting' } });
+    await fireEvent.click(getByRole('button', { name: 'Save', exact: true }));
+
+    // The reload call: handleSubtaskSaved must issue an ADDITIONAL
+    // /api/tasks/7/ fetch beyond whatever the dialog itself already caused
+    // (WorkItemForm fetches the parent for its own preview) — this is the
+    // exact call the pre-fix code skipped.
+    await waitFor(() => {
+      const after = api.get.mock.calls.filter((c) => c[0] === '/api/tasks/7/').length;
+      expect(after).toBeGreaterThan(taskCallsBeforeSave);
+    });
+
+    // The rerender: Start Work disappears and the Rate chip picks up the
+    // derived price — in place, with no page reload.
+    await waitFor(() => expect(queryByRole('button', { name: 'Start Work' })).toBeNull());
+    await waitFor(() => {
+      const rateHeader = Array.from(document.querySelectorAll('.stat-chip-header'))
+        .find((el) => el.textContent === 'Rate');
+      expect(rateHeader).toBeTruthy();
+      expect(rateHeader.closest('.stat-chip').querySelector('.stat-chip-body'))
+        .toHaveTextContent('derived from children: $34.00/ea');
+    });
+  });
+});
+
 describe('TaskDetailPage can_edit gating (C1)', () => {
   it('hides Edit Task when can_edit is false', async () => {
     mockApiWithJob({ status: 'in_progress', can_manage: false, can_edit: false });
@@ -744,6 +832,33 @@ describe('TaskDetailPage parent view — derived pricing', () => {
     const chip = header.closest('.stat-chip');
     expect(chip.querySelector('.stat-chip-body')).not.toHaveTextContent(/derived from children/i);
     expect(chip.querySelector('.stat-chip-body')).toHaveTextContent('$99.00/ea');
+  });
+
+  // Regression guard: the template's trailing space in "derived from
+  // children: " sits right at an {#if}/{/if} boundary, which Svelte's
+  // whitespace-collapsing compiler can trim away entirely (it did, until
+  // fixed with a &nbsp;) rather than merely collapsing a run of whitespace
+  // — producing "derived from children:$12.50/ea" with NO space at all.
+  // The two assertions above check "contains /derived from children/" and
+  // "contains '$12.50/ea'" SEPARATELY, so neither one notices the missing
+  // space between them; this test checks the two phrases adjacently, in a
+  // single toHaveTextContent call, which fails if the space is gone.
+  it('keeps a real space between "derived from children:" and the rate (adjacency, not just presence)', async () => {
+    mockApi({
+      status: 'pending', rate: null, is_parent: true,
+      derived_unit_price: '12.50', effective_rate: '12.50', unit_label: 'ea',
+    });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const header = getByText('Rate');
+    const chip = header.closest('.stat-chip');
+    // jest-dom's default normalizer collapses any run of Unicode whitespace
+    // (which includes &nbsp;/ ) to a single ' ' before comparing, so
+    // this passes with the &nbsp; fix and fails if the space is missing
+    // entirely (as it was pre-fix): "children:$12.50" contains neither
+    // "children: $12.50" nor a lone space between the two phrases.
+    expect(chip.querySelector('.stat-chip-body'))
+      .toHaveTextContent('derived from children: $12.50/ea');
   });
 });
 
