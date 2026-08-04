@@ -930,6 +930,166 @@ class ValidateDataFreeformKindConsistencyTest(TestCase):
         self.assertNotIn('freeform_kind', output)
 
 
+class ValidateDataEstimateHandLineCategorizationTest(TestCase):
+    """Tests for check_estimate_hand_line_categorization() (Phase 3 Task 7):
+    a hand-line (no atom source, not a percentage adjustment) missing an
+    accounting_category is a WARNING while the estimate is still draft
+    (legitimate pre-send state, or a bypass of the write-time service
+    guard), and an ERROR once the estimate has left draft (the send-time
+    gate — EstimateService.assert_all_hand_lines_have_ac — must already
+    have passed, so the state is unreachable through normal means)."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='EHLC', code='EHLC')
+        self.contact = Contact.objects.create(first_name='Ehl', last_name='Cee')
+        self.job = Job.objects.create(
+            job_number='J-EHLC-001', name='EHLC Job', contact=self.contact,
+        )
+        self.rs = RateScheme.objects.create(
+            name='RS-EHLC', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.00'), unit_label='each', accounting_category=self.ac,
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _estimate(self, status=Estimate.STATUS_DRAFT, number='EST-EHLC-001'):
+        return Estimate.objects.create(
+            job=self.job, estimate_number=number, version=1, status=status,
+        )
+
+    def test_draft_hand_line_missing_ac_is_warning(self):
+        estimate = self._estimate()
+        li = EstimateLineItem.objects.create(
+            estimate=estimate, line_number=1, description='No-cat charge',
+            qty=Decimal('1'), price=Decimal('10.00'),
+            freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+        output = self._run()
+        line = next(l for l in output.splitlines() if f'EstimateLineItem {li.pk}' in l)
+        self.assertIn('[WARN]', line)
+        self.assertIn('hand-line has no accounting_category', line)
+
+    def test_open_hand_line_missing_ac_is_error(self):
+        estimate = self._estimate(status=Estimate.STATUS_OPEN, number='EST-EHLC-002')
+        li = EstimateLineItem.objects.create(
+            estimate=estimate, line_number=1, description='No-cat charge',
+            qty=Decimal('1'), price=Decimal('10.00'),
+            freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+        output = self._run()
+        line = next(l for l in output.splitlines() if f'EstimateLineItem {li.pk}' in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('hand-line has no accounting_category', line)
+        self.assertIn('past the send-time AC gate', line)
+
+    def test_hand_line_with_ac_not_flagged(self):
+        estimate = self._estimate(number='EST-EHLC-003')
+        li = EstimateLineItem.objects.create(
+            estimate=estimate, line_number=1, description='Categorized charge',
+            qty=Decimal('1'), price=Decimal('10.00'), accounting_category=self.ac,
+            freeform_kind=EstimateLineItem.KIND_FEE,
+        )
+        output = self._run()
+        self.assertNotIn(f'EstimateLineItem {li.pk}', output)
+
+    def test_atom_backed_line_missing_ac_not_flagged(self):
+        """A line with an EstimateLineItemSource row is atom-backed, not a
+        hand-line — exempt regardless of AC, same as
+        EstimateService.assert_all_hand_lines_have_ac."""
+        estimate = self._estimate(status=Estimate.STATUS_OPEN, number='EST-EHLC-004')
+        task = Task.objects.create(name='T', job=self.job, **_task_scheme_fields(self.rs))
+        li = EstimateLineItem.objects.create(
+            estimate=estimate, line_number=1, description='Setup labor',
+            qty=Decimal('2'), price=Decimal('200.00'),
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+        output = self._run()
+        self.assertNotIn(f'EstimateLineItem {li.pk}', output)
+
+    def test_adjustment_line_missing_ac_not_flagged(self):
+        """An adjustment line (adjustment_service set) is exempt regardless
+        of AC, same as EstimateService.assert_all_hand_lines_have_ac."""
+        estimate = self._estimate(status=Estimate.STATUS_OPEN, number='EST-EHLC-005')
+        adj_scheme = RateScheme.objects.create(
+            name='Rush 10%', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10'), unit_label='%', accounting_category=self.ac,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=estimate, line_number=1, description='Rush surcharge',
+            qty=Decimal('1'), price=Decimal('50.00'),
+            adjustment_service=adj_scheme, adjustment_percent=adj_scheme.rate,
+        )
+        output = self._run()
+        self.assertNotIn(f'EstimateLineItem {li.pk}', output)
+
+
+class ValidateDataInvoiceLineCategorizationTest(TestCase):
+    """Tests for check_invoice_line_categorization() (Phase 3 Task 7): an
+    InvoiceLineItem missing an accounting_category is a WARNING while the
+    invoice is still draft (compose always stamps a category — the live gap
+    is a freeform line added directly via the API, bypassing the frontend's
+    client-side check), and an ERROR once the invoice has left draft (the
+    send-time gate — InvoiceEmailService._assert_all_lines_categorized —
+    must already have passed, so the state is unreachable through normal
+    means)."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='IHLC', code='IHLC')
+        self.contact = Contact.objects.create(first_name='Ihl', last_name='Cee')
+        self.job = Job.objects.create(
+            job_number='J-IHLC-001', name='IHLC Job', contact=self.contact,
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _invoice(self, status=Invoice.STATUS_DRAFT, number='INV-IHLC-001'):
+        return Invoice.objects.create(
+            job=self.job, invoice_number=number, status=status,
+        )
+
+    def test_draft_line_missing_ac_is_warning(self):
+        invoice = self._invoice()
+        li = InvoiceLineItem.objects.create(
+            invoice=invoice, line_number=1, description='No-cat charge',
+            qty=Decimal('1'), price=Decimal('10.00'),
+        )
+        output = self._run()
+        line = next(l for l in output.splitlines() if f'InvoiceLineItem {li.pk}' in l)
+        self.assertIn('[WARN]', line)
+        self.assertIn('no accounting_category', line)
+
+    def test_open_line_missing_ac_is_error(self):
+        invoice = self._invoice(status=Invoice.STATUS_OPEN, number='INV-IHLC-002')
+        li = InvoiceLineItem.objects.create(
+            invoice=invoice, line_number=1, description='No-cat charge',
+            qty=Decimal('1'), price=Decimal('10.00'),
+        )
+        output = self._run()
+        line = next(l for l in output.splitlines() if f'InvoiceLineItem {li.pk}' in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('no accounting_category', line)
+        self.assertIn('past the send-time AC gate', line)
+
+    def test_line_with_ac_not_flagged(self):
+        invoice = self._invoice(number='INV-IHLC-003')
+        li = InvoiceLineItem.objects.create(
+            invoice=invoice, line_number=1, description='Categorized charge',
+            qty=Decimal('1'), price=Decimal('10.00'), accounting_category=self.ac,
+        )
+        output = self._run()
+        self.assertNotIn(f'InvoiceLineItem {li.pk}', output)
+
+
 class ValidateDataNegativePriceFeeExemptionTest(TestCase):
     """check_line_items() (M1 review finding): a negative price is
     legitimate on a fee/credit line — bare freeform_kind='fee' hand-lines,

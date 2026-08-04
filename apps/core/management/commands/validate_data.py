@@ -32,6 +32,9 @@ Per-model field checks:
                    E  draft: must not have sent_date or closed_date
                    W  open: missing sent_date
                    W  accepted/rejected/superseded/expired: missing closed_date
+                   W  draft hand-line missing accounting_category
+                   E  non-draft hand-line missing accounting_category (past
+                      the send-time AC gate — unreachable through normal means)
   Task             E  must belong to a Job
                    E  valid status value
                    E  valid qty_source value
@@ -51,6 +54,9 @@ Per-model field checks:
                    E  cannot link to draft PO
                    E  non-draft must have at least one line item
   Invoice          E  valid status value
+                   W  draft line missing accounting_category
+                   E  non-draft line missing accounting_category (past the
+                      send-time AC gate — unreachable through normal means)
   Deliverable      E  must belong to a Job; qty_ordered must be positive
                    W  missing units
   Shipment         E  valid status value
@@ -122,6 +128,8 @@ class Command(BaseCommand):
         self.check_materials()
         self.check_line_items()
         self.check_freeform_kind_consistency()
+        self.check_estimate_hand_line_categorization()
+        self.check_invoice_line_categorization()
         self.check_purchase_orders()
         self.check_invoices()
         self.check_deliverables()
@@ -568,6 +576,89 @@ class Command(BaseCommand):
                         'an inventory_item delete or merge SET_NULL\'d this line\'s '
                         'reference without repointing it first)'
                     )
+
+    # ── Estimate hand-line categorization (Phase 3) ──────────────
+
+    def check_estimate_hand_line_categorization(self):
+        """A hand-line (no atom source, not a percentage adjustment) must
+        carry an accounting_category — enforced at write time by
+        EstimateService.add_line_item / update_line_item, and again at
+        send time by EstimateService.assert_all_hand_lines_have_ac
+        (mark_open). Same exemption predicate as that guard: a line is
+        exempt if it has any EstimateLineItemSource row (atom-backed —
+        covers inventory_item/service_item lines too, since those are only
+        ever created already source-linked) or is a percentage adjustment
+        (adjustment_service set).
+
+        Severity mirrors the invoice-line check below: a DRAFT estimate's
+        hand-line can legitimately still lack an AC (pre-send, or built via
+        a bypass path — fixture/ORM/loaddata predating the write-time
+        guard) — WARNING. Once an estimate has left draft,
+        assert_all_hand_lines_have_ac must already have passed on the
+        draft->open transition, so a null-AC hand-line there is an
+        unreachable state through normal means — ERROR."""
+        from django.db.models import Exists, OuterRef
+        from apps.estimates.models import EstimateLineItem, EstimateLineItemSource, Estimate
+
+        qs = EstimateLineItem.objects.select_related('estimate').annotate(
+            has_source=Exists(
+                EstimateLineItemSource.objects.filter(estimate_line_item=OuterRef('pk'))
+            )
+        ).filter(
+            has_source=False,
+            adjustment_service__isnull=True,
+            accounting_category__isnull=True,
+        )
+        for li in qs:
+            label = li.description or f'line {li.line_number}'
+            msg = (
+                f'EstimateLineItem {li.pk} ({label}) on estimate '
+                f'{li.estimate.estimate_number} v{li.estimate.version}: '
+                f'hand-line has no accounting_category'
+            )
+            if li.estimate.status == Estimate.STATUS_DRAFT:
+                self.warnings.append(msg)
+            else:
+                self.errors.append(
+                    f'{msg} (estimate status is "{li.estimate.status}", past '
+                    f'the send-time AC gate)'
+                )
+
+    # ── Invoice line categorization (Phase 3) ────────────────────
+
+    def check_invoice_line_categorization(self):
+        """Compose (Phase 3 Task 3) stamps the configured fallback
+        accounting_category onto every atom-derived line whose source
+        atom(s) carry a null AC, so a line reaching that route is
+        unreachable with a null category. The one live, documented gap:
+        a freeform line added directly via
+        POST /api/invoices/{id}/line-items/ bypasses the frontend's
+        client-side AC requirement (a manual InvoiceService.add_line_item
+        call never required one) — legal, if undesirable, on a draft
+        invoice: WARNING.
+        InvoiceEmailService._assert_all_lines_categorized blocks send
+        (draft -> open) while any line lacks an AC, so once an invoice has
+        left draft, a null-AC line is an unreachable state through normal
+        means — ERROR."""
+        from apps.invoicing.models import InvoiceLineItem, Invoice
+
+        qs = InvoiceLineItem.objects.select_related('invoice').filter(
+            accounting_category__isnull=True,
+        )
+        for li in qs:
+            label = li.description or f'line {li.line_number}'
+            msg = (
+                f'InvoiceLineItem {li.pk} ({label}) on invoice '
+                f'{li.invoice.invoice_number or li.invoice.pk}: '
+                f'no accounting_category'
+            )
+            if li.invoice.status == Invoice.STATUS_DRAFT:
+                self.warnings.append(msg)
+            else:
+                self.errors.append(
+                    f'{msg} (invoice status is "{li.invoice.status}", past '
+                    f'the send-time AC gate)'
+                )
 
     # ── Purchase Orders ───────────────────────────────────────
 
