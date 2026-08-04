@@ -27,11 +27,17 @@ class POLineItemSerializer(serializers.ModelSerializer):
             'accounting_category',
             'qty_received', 'received_by', 'received_by_name',
             'received_date', 'receipt_note', 'qty_cancelled',
+            'final_price', 'invoice_only',
         ]
         read_only_fields = [
             'line_item_id', 'qty_received', 'received_by', 'received_by_name',
             'received_date', 'receipt_note', 'qty_cancelled',
             'effective_job_id', 'effective_job_number', 'material',
+            # `final_price` and `invoice_only` are reconciliation-owned
+            # (task-owned-money Phase 5, spec §7 rule 3) — the sanctioned
+            # write path is PurchaseOrderService.reconcile(), not a bare
+            # line create/update. `task` stays writable (spec §7 rule 1).
+            'final_price', 'invoice_only',
         ]
 
     def get_received_by_name(self, obj):
@@ -72,6 +78,8 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
     business_name = serializers.CharField(source='business.business_name', read_only=True)
     contact_name = serializers.SerializerMethodField()
     po_total = serializers.SerializerMethodField()
+    awaiting_reconciliation = serializers.SerializerMethodField()
+    variance = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseOrder
@@ -80,8 +88,15 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             'po_number', 'status',
             'created_date', 'requested_date', 'issued_date',
             'received_date', 'cancel_date', 'line_items', 'po_total',
+            'bill_total', 'vendor_invoice_ref', 'reconciled', 'reconciled_date',
+            'awaiting_reconciliation', 'variance',
         ]
-        read_only_fields = ['po_id', 'po_number', 'created_date']
+        read_only_fields = [
+            'po_id', 'po_number', 'created_date',
+            # Reconciliation fields are written only via the `reconcile`
+            # action (PurchaseOrderService.reconcile) — not a bare PATCH.
+            'bill_total', 'vendor_invoice_ref', 'reconciled', 'reconciled_date',
+        ]
 
     def get_contact_name(self, obj):
         if obj.contact:
@@ -90,3 +105,12 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
 
     def get_po_total(self, obj):
         return str(obj.po_total.quantize(Decimal('0.01')))
+
+    def get_awaiting_reconciliation(self, obj):
+        return obj.is_awaiting_reconciliation
+
+    def get_variance(self, obj):
+        variance = obj.variance
+        if variance is None:
+            return None
+        return str(variance.quantize(Decimal('0.01')))

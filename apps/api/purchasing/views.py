@@ -74,6 +74,9 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         po_status = self.request.query_params.get('status')
         if po_status:
             qs = qs.filter(status=po_status)
+        awaiting = self.request.query_params.get('awaiting_reconciliation')
+        if awaiting is not None and awaiting.lower() in ('true', '1', 'yes'):
+            qs = qs.awaiting_reconciliation()
         search = self.request.query_params.get('search', '').strip()
         if search:
             qs = qs.filter(
@@ -134,8 +137,9 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         has_manual_fields = data.get('description') or data.get('price')
         job = data.pop('job', None)
         material_id = data.pop('material_id', None)
-        # Strip `task` — reserved field; ignored by this feature
-        data.pop('task', None)
+        # `task` is writable (task-owned-money Phase 5, spec §7 rule 1):
+        # cost→sell link. Model-level `clean()` rejects a subtask link
+        # (400, field-shaped) and requires the task be job-bearing.
 
         try:
             if pli_id and not has_manual_fields:
@@ -405,3 +409,48 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
             )
         serializer = self.get_serializer(po)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='reconcile', url_name='reconcile')
+    def reconcile(self, request, pk=None):
+        """Record vendor-bill reconciliation data against this PO (spec §7
+        rule 3; CanManageFinancials, via the default `get_permissions()`
+        gate below — reconcile isn't in the IsAuthenticated-only action
+        list). Body: `bill_total`, `vendor_invoice_ref`, `line_finals`
+        ({line_item_id: Decimal}), `appended_lines` (invoice_only lines —
+        append-only mirror of the bill; see
+        `PurchaseOrderService.reconcile` docstring for drop/replace/keep
+        semantics).
+
+        Response is the updated PO plus `rate_prompts` (spec §7 rule 4) —
+        this endpoint never mutates a task; the client offers each prompt
+        and, on accept, PATCHes the task itself through the existing
+        money-gated path.
+        """
+        po = self.get_object()
+        bill_total = request.data.get('bill_total')
+        vendor_invoice_ref = request.data.get('vendor_invoice_ref', '')
+        raw_line_finals = request.data.get('line_finals') or {}
+        appended_lines = request.data.get('appended_lines') or []
+
+        try:
+            line_finals = {int(k): v for k, v in raw_line_finals.items()}
+        except (ValueError, TypeError, AttributeError):
+            return Response(
+                {'line_finals': ['Must be an object keyed by line item id.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            po = PurchaseOrderService.reconcile(
+                po.pk, bill_total=bill_total, vendor_invoice_ref=vendor_invoice_ref,
+                line_finals=line_finals, appended_lines=appended_lines,
+            )
+        except NotFoundError:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        rate_prompts, markup_applied = PurchaseOrderService.compute_rate_prompts(po)
+        serializer = self.get_serializer(po)
+        data = serializer.data
+        data['rate_prompts'] = rate_prompts
+        data['markup_applied'] = markup_applied
+        return Response(data)

@@ -92,11 +92,24 @@ class PurchaseOrderService:
 
         `appended_lines`: a list of PurchaseOrderLineItem field kwargs
         (same shape as `add_line_item`, task may be included for optional
-        attribution) for NEW lines this call creates with
-        `invoice_only=True` — e.g. freight or other vendor-invoice-only
-        charges that were never ordered/received. Each goes through the
-        model's normal `full_clean()`, including the task-link validation
-        in `PurchaseOrderLineItem.clean()`.
+        attribution) for the `invoice_only=True` lines this call's vendor
+        bill carries — e.g. freight or other vendor-invoice-only charges
+        that were never ordered/received.
+
+        APPEND-ONLY MIRROR, not additive (task-owned-money Phase 5, Task 2
+        carry-note requirement): each reconcile call is the complete,
+        current statement of the bill's invoice_only detail, mirroring the
+        vendor bill wholesale the same way `line_finals` does for ordered
+        lines' `final_price`. Each dict may carry an optional
+        `line_item_id` key to target an existing invoice_only line on this
+        PO for an in-place update; omit it to create a new one. Any
+        invoice_only line already on the PO whose id is NOT present in
+        this call's `appended_lines` is DELETED via
+        `LineItemService.delete_line_item_with_renumber` (repo law: never
+        `.delete()` a line item directly — see CLAUDE.md). Every entry
+        (new or updated) goes through the model's normal `full_clean()`,
+        including the task-link validation in
+        `PurchaseOrderLineItem.clean()`.
         """
         from apps.core.services import LineItemService
 
@@ -123,6 +136,20 @@ class PurchaseOrderService:
                 for line_id in sorted(missing)
             ]})
 
+        existing_invoice_only = {
+            pk: li for pk, li in all_lines_by_id.items() if li.invoice_only
+        }
+        appended_ids = {
+            int(entry['line_item_id']) for entry in appended_lines
+            if entry.get('line_item_id') is not None
+        }
+        bad_ids = appended_ids - set(existing_invoice_only.keys())
+        if bad_ids:
+            raise ValidationError({'appended_lines': [
+                f'Invoice-only line {line_id} does not belong to PO {po.po_number}.'
+                for line_id in sorted(bad_ids)
+            ]})
+
         with transaction.atomic():
             for li in all_lines_by_id.values():
                 if li.pk in line_finals:
@@ -142,13 +169,32 @@ class PurchaseOrderService:
                 li.full_clean()
                 li.save()
 
+            seen_invoice_only_ids = set()
             for line_data in appended_lines:
                 data = dict(line_data)
+                line_id = data.pop('line_item_id', None)
                 data['invoice_only'] = True
                 data = LineItemService.normalize_fk_kwargs(PurchaseOrderLineItem, data)
-                li = PurchaseOrderLineItem(purchase_order=po, **data)
-                li.full_clean()
-                li.save()
+                if line_id is not None:
+                    line_id = int(line_id)
+                    li = existing_invoice_only[line_id]
+                    for field, value in data.items():
+                        setattr(li, field, value)
+                    li.full_clean()
+                    li.save()
+                    seen_invoice_only_ids.add(line_id)
+                else:
+                    li = PurchaseOrderLineItem(purchase_order=po, **data)
+                    li.full_clean()
+                    li.save()
+
+            # Append-only mirror: any previously-appended invoice_only line
+            # not re-sent this call exists only on a stale prior statement
+            # of the bill — drop it, per-line via the repo's mandated
+            # renumbering delete path (never raw QuerySet/.delete()).
+            for pk, li in existing_invoice_only.items():
+                if pk not in seen_invoice_only_ids:
+                    LineItemService.delete_line_item_with_renumber(li)
 
             po.bill_total = (
                 None if bill_total is None
@@ -162,6 +208,79 @@ class PurchaseOrderService:
             po.save()
 
         return po
+
+    @staticmethod
+    def _default_markup_percent():
+        """The system's one "default markup" Configuration row. Named
+        `default_material_markup_percent` (materials app) and used
+        elsewhere to derive InventoryItem `selling_price` from
+        `purchase_price` — but it's already reused beyond that literal
+        scope (`MaterialService.establish_reverse_markup` uses it to price
+        a bare-material hand-line at crystallization), so it functions as
+        the codebase's one generic cost→sell markup rather than something
+        InventoryItem-exclusive. No task/service-specific markup
+        Configuration key exists anywhere in the codebase (verified by
+        grep) — this is the config `compute_rate_prompts` below reuses for
+        spec §7 rule 4's "final × markup" task-rate suggestion.
+
+        Returns (percent: Decimal | None, found: bool).
+        """
+        from apps.core.models import Configuration
+        try:
+            raw = Configuration.objects.get(key='default_material_markup_percent').value
+        except Configuration.DoesNotExist:
+            return None, False
+        try:
+            return Decimal(raw), True
+        except Exception:
+            return None, False
+
+    @staticmethod
+    def compute_rate_prompts(po):
+        """Task-rate prompt support (spec §7 rule 4, task-owned-money Phase
+        5 Task 2): for each PO line with a clean (non-null) `final_price`
+        whose linked task is not yet on a live invoice, suggest updating
+        that task's rate. NEVER mutates anything — purely a read: the
+        client offers the prompt and, on accept, PATCHes the task itself
+        through the existing money-gated path (no endpoint here accepts
+        the suggestion).
+
+        suggested_rate = final_price × (1 + markup/100) when
+        `default_material_markup_percent` exists (see
+        `_default_markup_percent`); otherwise suggested_rate = final_price
+        and the caller should surface `markup_applied=False`.
+
+        Returns (prompts: list[dict], markup_applied: bool). Each prompt:
+        {'task_id', 'task_name', 'current_rate', 'suggested_rate'}.
+        """
+        from apps.invoicing.claims import InvoiceClaimService
+        from apps.invoicing.models import InvoiceLineItemSource
+
+        markup_percent, markup_applied = PurchaseOrderService._default_markup_percent()
+
+        prompts = []
+        lines = (
+            PurchaseOrderLineItem.objects
+            .filter(purchase_order=po, final_price__isnull=False, task__isnull=False)
+            .select_related('task')
+        )
+        for li in lines:
+            task = li.task
+            if InvoiceClaimService.is_invoiced(InvoiceLineItemSource.SOURCE_TASK, task.pk):
+                continue
+            if markup_applied:
+                suggested = (
+                    li.final_price * (Decimal('1') + markup_percent / Decimal('100'))
+                ).quantize(Decimal('0.01'))
+            else:
+                suggested = li.final_price
+            prompts.append({
+                'task_id': task.pk,
+                'task_name': task.name,
+                'current_rate': task.rate,
+                'suggested_rate': suggested,
+            })
+        return prompts, markup_applied
 
     @staticmethod
     def _sever_line_material(li, sever_decision):

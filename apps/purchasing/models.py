@@ -228,6 +228,29 @@ class PurchaseOrder(models.Model):
                     for li in self.purchaseorderlineitem_set.all()),
                    Decimal('0.00'))
 
+    @property
+    def ordered_total(self):
+        """Sum of qty*price across ORDERED lines only (task-owned-money
+        Phase 5, Task 2) — excludes `invoice_only` lines appended at
+        reconcile time (freight, etc. that were never ordered). This is
+        the "ordered total" half of `variance` below; `po_total` above is
+        left as-is (all lines, including invoice_only) since it's an
+        existing property other call sites may depend on."""
+        return sum(
+            (li.total_amount for li in self.purchaseorderlineitem_set.all()
+             if not li.invoice_only),
+            Decimal('0.00'),
+        )
+
+    @property
+    def variance(self):
+        """bill_total − ordered_total (spec §7 rule 3: display only, no
+        proration). None when no bill has been recorded yet — nothing to
+        compare against."""
+        if self.bill_total is None:
+            return None
+        return self.bill_total - self.ordered_total
+
     class Meta:
         db_table = 'pos'
 
