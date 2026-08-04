@@ -140,7 +140,8 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
     def test_accepting_estimate_creates_earmarks(self):
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Test item',
-            price=Decimal('100.00'), accounting_category=self.category,
+            price=Decimal('100.00'), qty=Decimal('1'),
+            accounting_category=self.category,
         )
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
@@ -261,7 +262,8 @@ class PreApprovalNoEarmarkTest(TestCase):
         # call EstimateAcceptanceService.on_accept → create_earmarks_for_job.
         EstimateLineItem.objects.create(
             estimate=estimate, description='Hand line',
-            price=Decimal('200.00'), accounting_category=self.category,
+            price=Decimal('200.00'), qty=Decimal('1'),
+            accounting_category=self.category,
         )
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()

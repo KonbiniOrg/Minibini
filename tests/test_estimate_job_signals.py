@@ -32,7 +32,8 @@ class EstimateSentJobSubmittedTest(TestCase):
         )
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Test item',
-            price=Decimal('100.00'), accounting_category=self.cat,
+            price=Decimal('100.00'), qty=Decimal('1'),
+            accounting_category=self.cat,
         )
 
     def test_job_moves_to_submitted_when_estimate_sent(self):

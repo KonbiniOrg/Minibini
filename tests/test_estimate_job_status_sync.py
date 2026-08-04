@@ -52,7 +52,8 @@ class EstimateJobStatusSyncTest(TestCase):
         from apps.estimates.models import EstimateLineItem
         EstimateLineItem.objects.create(
             estimate=estimate, description='Test item',
-            price=Decimal('100.00'), accounting_category=self.cat,
+            price=Decimal('100.00'), qty=Decimal('1'),
+            accounting_category=self.cat,
         )
 
     def test_only_one_approved_estimate_per_job(self):
