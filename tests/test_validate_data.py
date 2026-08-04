@@ -2,7 +2,8 @@ from decimal import Decimal
 from io import StringIO
 from django.test import TestCase
 from django.core.management import call_command
-from apps.core.models import AccountingCategory
+from django.utils import timezone
+from apps.core.models import AccountingCategory, User
 from apps.jobs.models import RateScheme, Job, Task, Fee
 from apps.contacts.models import Contact
 from apps.estimates.models import (
@@ -1150,3 +1151,173 @@ class ValidateDataNegativePriceFeeExemptionTest(TestCase):
         )
         output = self._run()
         self.assertIn(f'EstimateLineItem {li.pk}: negative price', output)
+
+
+class ValidateDataSubtaskBillingInvariantTest(TestCase):
+    """Tests for check_subtask_billing_invariant() (task-owned-money Phase 4
+    Task 6): a subtask (Task with parent_task set) never bills independently
+    — the parent is the sole unit of billing (spec §9 rule 5). The wizard
+    pool builders already exclude parent_task_id-set tasks from being
+    claimable, so a source row on one can only arise via a bypass path;
+    planted directly here (a plain .create() on the source join table has
+    no guard against this — the exclusion lives in the pool builder, not a
+    model/service check on the source table itself), matching the file's
+    established pattern of exercising invariants the service layer doesn't
+    reach."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='SubBill', code='SUBBILL')
+        self.contact = Contact.objects.create(first_name='Sub', last_name='Bill')
+        self.job = Job.objects.create(
+            job_number='J-VSB-001', name='Subtask Billing Job', contact=self.contact,
+        )
+        self.rs = RateScheme.objects.create(
+            name='RS-SubBill', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.00'), unit_label='each', accounting_category=self.ac,
+        )
+        self.parent = Task.objects.create(
+            name='Parent', job=self.job, **_task_scheme_fields(self.rs),
+        )
+        self.child = Task.objects.create(
+            name='Child', job=self.job, parent_task=self.parent,
+            **_task_scheme_fields(self.rs),
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def test_estimate_source_on_subtask_is_error(self):
+        estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-VSB-001', version=1,
+        )
+        li = EstimateLineItem.objects.create(estimate=estimate)
+        source = EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=self.child.pk,
+        )
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'EstimateLineItemSource {source.pk}' in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('subtask', line)
+        self.assertIn('never bill independently', line)
+
+    def test_change_order_source_on_subtask_is_error(self):
+        estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-VSB-002', version=1,
+        )
+        co = ChangeOrder.objects.create(job=self.job, estimate=estimate)
+        co_li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+        )
+        source = ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=co_li,
+            source_type=ChangeOrderLineItemSource.SOURCE_TASK,
+            source_pk=self.child.pk,
+        )
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'ChangeOrderLineItemSource {source.pk}' in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('subtask', line)
+
+    def test_invoice_source_on_subtask_is_error(self):
+        # Terminal status so the unrelated "not billable" check
+        # (check_invoice_source_job_consistency) doesn't also fire on this
+        # same source row and shadow the assertion below.
+        Task.objects.filter(pk=self.child.pk).update(status=Task.STATUS_COMPLETE)
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VSB-001')
+        ili = InvoiceLineItem.objects.create(invoice=invoice)
+        source = InvoiceLineItemSource.objects.create(
+            invoice_line_item=ili,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.child.pk,
+        )
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'InvoiceLineItemSource {source.pk}' in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('subtask', line)
+
+    def test_estimate_source_on_top_level_task_not_flagged(self):
+        """Clean path: a top-level (parentless) task claimed as usual is
+        exactly what pools are supposed to allow — never flagged."""
+        estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-VSB-003', version=1,
+        )
+        li = EstimateLineItem.objects.create(estimate=estimate)
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=self.parent.pk,
+        )
+        output = self._run()
+        self.assertNotIn('never bill independently', output)
+
+
+class ValidateDataParentBlepTest(TestCase):
+    """Tests for the parent-task-with-own-bleps WARN (task-owned-money
+    Phase 4 Task 6): a parent (≥1 subtask) is non-startable going forward
+    (spec §9 rule 1), so a NEW blep can't land on it — but a blep logged
+    BEFORE the task grew its first subtask is legitimate history the gate
+    can't retroactively erase. Tolerated as WARN, not ERROR."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='ParBlep', code='PARBLEP')
+        self.contact = Contact.objects.create(first_name='Par', last_name='Blep')
+        self.job = Job.objects.create(
+            job_number='J-VPB-001', name='Parent Blep Job', contact=self.contact,
+        )
+        self.rs = RateScheme.objects.create(
+            name='RS-ParBlep', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('30.00'), unit_label='hour', accounting_category=self.ac,
+        )
+        self.user = User.objects.create_user(username='parblep-worker', password='x')
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _task(self, status=Task.STATUS_IN_PROGRESS, parent=None, name='T'):
+        task = Task.objects.create(
+            name=name, job=self.job, parent_task=parent,
+            **_task_scheme_fields(self.rs),
+        )
+        if status != Task.STATUS_PENDING:
+            Task.objects.filter(pk=task.pk).update(status=status)
+            task.refresh_from_db()
+        return task
+
+    def test_parent_with_own_blep_is_warned(self):
+        from apps.jobs.models import Blep
+        parent = self._task(name='Parent')
+        self._task(parent=parent, name='Child')
+        # Open blep (no end_time) — avoids tripping the unrelated
+        # enclosure check, which only applies to closed bleps.
+        Blep.objects.create(task=parent, user=self.user, start_time=timezone.now())
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'Task {parent.pk}' in l and 'own blep' in l)
+        self.assertIn('[WARN]', line)
+        self.assertIn('pre-parenthood history', line)
+
+    def test_childless_task_with_blep_not_flagged(self):
+        from apps.jobs.models import Blep
+        solo = self._task(name='Solo')
+        Blep.objects.create(task=solo, user=self.user, start_time=timezone.now())
+        output = self._run()
+        self.assertNotIn('own blep', output)
+
+    def test_child_task_with_blep_not_flagged_as_parent(self):
+        """The subtask itself carrying a blep is normal — only the PARENT
+        carrying its own blep is the tolerated-historical case."""
+        from apps.jobs.models import Blep
+        parent = self._task(name='Parent')
+        child = self._task(parent=parent, name='Child')
+        Blep.objects.create(task=child, user=self.user, start_time=timezone.now())
+        output = self._run()
+        self.assertNotIn('own blep', output)

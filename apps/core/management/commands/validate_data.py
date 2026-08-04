@@ -40,6 +40,14 @@ Per-model field checks:
                    E  valid qty_source value
                    E  negative rate
                    E  active_modifiers must be a list of {key, percent} dicts
+                   E  subtask of a subtask (one level only)
+                   -  qty_scales_with_parent on a parentless (top-level) row:
+                      no check — inert by design, never read there
+  Blep             E  task is pending but has a blep
+                   E  not enclosed by a shift of the same user
+                   E  overlaps another blep of the same user
+                   W  task is a parent (has subtasks) but carries its own
+                      bleps directly (tolerated pre-parenthood history)
   Material         E  must have description or inventory_item
                    E  negative quantity
                    W  has PLI but empty description (--fix: auto-fill)
@@ -87,6 +95,9 @@ Cross-model relationship checks:
   Earmark/Job      W  earmark on completed/cancelled/rejected job
   Invoice/Job      W  invoice on draft/submitted/rejected job
                    E  cancelled job's invoices must also be cancelled
+  Subtask billing  E  a subtask (parent_task set) is claimed by an
+                      Estimate/ChangeOrder/Invoice line source — subtasks
+                      never bill independently, only the parent may
 """
 from decimal import Decimal, InvalidOperation
 from django.core.management.base import BaseCommand
@@ -147,6 +158,7 @@ class Command(BaseCommand):
         self.check_job_work_complete_gate()
         self.check_estimate_source_job_consistency()
         self.check_invoice_source_job_consistency()
+        self.check_subtask_billing_invariant()
 
         # Report
         self.stdout.write('')
@@ -237,6 +249,26 @@ class Command(BaseCommand):
             if b.task.status == Task.STATUS_PENDING:
                 self.errors.append(
                     f'Blep {b.pk}: task {b.task.pk} is pending but has a blep')
+
+        # A parent task (≥1 subtask) is non-startable going forward — spec §9
+        # rule 1 (task-owned-money Phase 4 Task 1) routes start/blep/assign
+        # to its children, so a NEW blep can no longer land on the parent
+        # itself. But a blep logged BEFORE the task grew its first subtask is
+        # legitimate history the gate can't retroactively erase, so this is
+        # tolerated as WARN, not ERROR, and reported once per task.
+        parent_ids = set(
+            Task.objects.filter(parent_task__isnull=False)
+            .values_list('parent_task_id', flat=True).distinct()
+        )
+        warned_parent_ids = set()
+        for b in bleps:
+            if b.task_id in parent_ids and b.task_id not in warned_parent_ids:
+                warned_parent_ids.add(b.task_id)
+                self.warnings.append(
+                    f'Task {b.task_id} ({b.task.name}): is a parent (has '
+                    f'subtasks) but has its own blep(s) — non-startable now '
+                    f'prevents new ones; tolerated as pre-parenthood history'
+                )
 
         shifts_by_user = defaultdict(list)
         for s in Shift.objects.all():
@@ -355,6 +387,15 @@ class Command(BaseCommand):
                 f'(parent {t.parent_task_id} already has a parent) — '
                 f'one level of subtasks only'
             )
+        # NO check for qty_scales_with_parent on parentless (top-level) rows,
+        # by design. The field is DB-default True and functional ONLY on a
+        # subtask (spec §9 rule 2, task-owned-money Phase 4 Task 1) — on a
+        # top-level task it is simply never read (Task._parent_multiplier()
+        # short-circuits on `parent_task_id is None` before ever looking at
+        # the flag). Any value — True, False, a stale leftover from a
+        # detach — is equally inert there, so there is nothing to validate:
+        # this is the SAME "provenance-only, never checked" shape as
+        # source_scheme above, not an oversight.
         # ServiceItems stamp Tasks at generate-time and still store plain
         # modifier-key lists (not the {key, percent} snapshot shape Tasks
         # use) — default_active_modifiers just needs to be a list.
@@ -1083,4 +1124,49 @@ class Command(BaseCommand):
                     f'InvoiceLineItemSource {source.pk} (task:{source.source_pk}): '
                     f'task status "{atom.status}" is not billable '
                     f'(terminal statuses only)'
+                )
+
+    def check_subtask_billing_invariant(self):
+        """Billing invariant (spec §9 rule 5, task-owned-money Phase 4 Task
+        2): the parent is the sole unit of billing — a subtask (Task with
+        parent_task set) never appears in a wizard source pool, claimed or
+        otherwise. `EstimateService`/`InvoiceService`'s pool builders already
+        exclude `parent_task_id`-set tasks outright, and `ChangeOrderService`
+        shares the estimate pool, so a source row pointing at one can only
+        arise via a bypass path (fixture/converter authoring, a bulk write,
+        or a service-layer regression) — not normal app usage. ERROR: a
+        claimed subtask means the parent's aggregated `derived_unit_price()`
+        and the child's own claim would double-count the same work.
+
+        Checks all three polymorphic join tables — EstimateLineItemSource,
+        ChangeOrderLineItemSource, InvoiceLineItemSource — for
+        source_type='task' rows whose source_pk resolves to a subtask.
+        """
+        from apps.jobs.models import Task
+        from apps.estimates.models import (
+            EstimateLineItemSource, ChangeOrderLineItemSource,
+        )
+        from apps.invoicing.models import InvoiceLineItemSource
+
+        child_ids = set(
+            Task.objects.filter(parent_task__isnull=False)
+            .values_list('pk', flat=True)
+        )
+        if not child_ids:
+            return
+
+        source_tables = [
+            ('EstimateLineItemSource', EstimateLineItemSource),
+            ('ChangeOrderLineItemSource', ChangeOrderLineItemSource),
+            ('InvoiceLineItemSource', InvoiceLineItemSource),
+        ]
+        for name, model in source_tables:
+            for source in model.objects.filter(
+                source_type=model.SOURCE_TASK, source_pk__in=child_ids
+            ):
+                self.errors.append(
+                    f'{name} {source.pk}: source_pk={source.source_pk} is a '
+                    f'subtask (has a parent_task) — subtasks never bill '
+                    f'independently; only the parent may be claimed by a '
+                    f'line item'
                 )

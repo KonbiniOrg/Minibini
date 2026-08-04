@@ -1793,6 +1793,14 @@ def build_synthetic_estimate_sources(c):
     (source_type='fee'); this pass only places Tasks, and it skips Tasks already
     claimed and estimate lines that already carry a source (so a line that owns
     a Fee isn't double-sourced with a Task).
+
+    Excludes subtasks (parent_task set): task-owned-money Phase 4 §9 rule 5
+    makes the parent the sole unit of billing — a subtask never appears in a
+    wizard source pool, claimed or otherwise, so this synthesis pass must
+    only place TOP-LEVEL Tasks. _build_checklist_tasks mints subtasks for
+    indented checklist lines (a pre-Phase-4 hierarchy, unrelated to the
+    quantity-scaling parent/child concept) and those must stay unclaimed
+    here or validate_data's check_subtask_billing_invariant flags them.
     """
     claimed_tasks = {
         f['fields']['source_pk']
@@ -1807,7 +1815,9 @@ def build_synthetic_estimate_sources(c):
     }
     tasks_by_job = {}
     for f in c.fixture_data:
-        if f['model'] == 'jobs.task' and f['pk'] not in claimed_tasks:
+        if (f['model'] == 'jobs.task'
+                and f['pk'] not in claimed_tasks
+                and f['fields'].get('parent_task') is None):
             tasks_by_job.setdefault(f['fields']['job'], []).append(f)
 
     est_to_job = {
@@ -1911,8 +1921,14 @@ def build_invoice_line_item_sources(c):
                 f['fields']['invoice'], []).append(f)
     tasks_by_job = {}
     for f in c.fixture_data:
+        # Excludes subtasks (parent_task set): task-owned-money Phase 4 §9
+        # rule 5 makes the parent the sole unit of billing — the app's
+        # invoice wizard pool never offers a subtask, so this cosmetic
+        # claiming pass must not either (see build_synthetic_estimate_sources
+        # for the estimate-side analog of this same exclusion).
         if (f['model'] == 'jobs.task'
-                and f['fields'].get('status') == 'complete'):
+                and f['fields'].get('status') == 'complete'
+                and f['fields'].get('parent_task') is None):
             tasks_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
     materials_by_job = {}
     for f in c.fixture_data:
