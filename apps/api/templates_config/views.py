@@ -133,6 +133,25 @@ class AccountingCategoryViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     lookup_field = 'pk'
     destroy_response_message = 'Accounting category deleted.'
 
+    def get_queryset(self):
+        qs = AccountingCategory.objects.all()
+        if self.action == 'list':
+            include_fallback = self.request.query_params.get('include_fallback') == 'true'
+            if not include_fallback:
+                # The designated fallback AC has special semantics (Phase 3
+                # task-owned-money: null-AC atoms stamp to it at invoice
+                # compose) and must not be offered by normal pickers.
+                # Detail GET stays reachable — this is a list-only filter,
+                # mirroring rate-schemes' include_inactive.
+                try:
+                    fallback_pk = Configuration.objects.get(
+                        key='fallback_accounting_category').value
+                except Configuration.DoesNotExist:
+                    fallback_pk = ''
+                if fallback_pk:
+                    qs = qs.exclude(pk=fallback_pk)
+        return qs
+
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
@@ -280,6 +299,22 @@ def settings_view(request):
                 return Response(
                     {'default_deposit_accounting_category':
                      'unknown, inactive, or not a deposit category'},
+                    status=400)
+    if 'fallback_accounting_category' in request.data:
+        raw = request.data['fallback_accounting_category']
+        raw = '' if raw is None else str(raw).strip()
+        if raw != '':
+            try:
+                pk = int(raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {'fallback_accounting_category': 'must be a category id'},
+                    status=400)
+            if not AccountingCategory.objects.filter(
+                    pk=pk, is_active=True, is_deposit=False).exists():
+                return Response(
+                    {'fallback_accounting_category':
+                     'unknown, inactive, or a deposit category'},
                     status=400)
     if 'default_rate_scheme' in request.data:
         raw = request.data['default_rate_scheme']

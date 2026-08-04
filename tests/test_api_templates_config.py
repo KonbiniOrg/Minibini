@@ -188,6 +188,107 @@ class ConfigurationAPITest(BaseTestCase):
             Configuration.objects.get(
                 key='default_material_accounting_category').value, '')
 
+    def test_fallback_accounting_category_roundtrip(self):
+        cat = AccountingCategory.objects.create(
+            name='Uncategorized income', is_active=True, code='FALLBK')
+        resp = self.client.patch('/api/settings/',
+                                 {'fallback_accounting_category': str(cat.pk)},
+                                 format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(
+            Configuration.objects.get(
+                key='fallback_accounting_category').value, str(cat.pk))
+
+    def test_fallback_accounting_category_rejects_unknown(self):
+        resp = self.client.patch('/api/settings/',
+                                 {'fallback_accounting_category': '999999'},
+                                 format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('fallback_accounting_category', resp.data)
+
+    def test_fallback_accounting_category_rejects_inactive(self):
+        cat = AccountingCategory.objects.create(
+            name='Old fallback', is_active=False, code='OLDFALLBK')
+        resp = self.client.patch('/api/settings/',
+                                 {'fallback_accounting_category': str(cat.pk)},
+                                 format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('fallback_accounting_category', resp.data)
+
+    def test_fallback_accounting_category_rejects_deposit_category(self):
+        dep = AccountingCategory.objects.create(
+            name='Deposits', is_active=True, is_deposit=True,
+            taxable=False, code='FALLBKDEP')
+        resp = self.client.patch('/api/settings/',
+                                 {'fallback_accounting_category': str(dep.pk)},
+                                 format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('fallback_accounting_category', resp.data)
+
+    def test_fallback_accounting_category_blank_clears(self):
+        Configuration.objects.update_or_create(
+            key='fallback_accounting_category', defaults={'value': '5'})
+        resp = self.client.patch('/api/settings/',
+                                 {'fallback_accounting_category': ''},
+                                 format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            Configuration.objects.get(
+                key='fallback_accounting_category').value, '')
+
+
+class FallbackAccountingCategoryListExclusionTest(BaseTestCase):
+    """The designated fallback AC (Configuration key
+    fallback_accounting_category) must not appear in normal AC pickers.
+    The list endpoint excludes it by default and includes it only with
+    ?include_fallback=true. Detail GET remains reachable regardless
+    (mirrors rate-schemes' include_inactive: exclusion is list-only)."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+        self.fallback = AccountingCategory.objects.create(
+            name='Uncategorized income', is_active=True, code='FBEXCL')
+        self.other = AccountingCategory.objects.create(
+            name='Service', is_active=True, code='FBEXCLSVC')
+        Configuration.objects.update_or_create(
+            key='fallback_accounting_category',
+            defaults={'value': str(self.fallback.pk)})
+
+    def _ids(self, resp):
+        data = resp.data
+        rows = data['results'] if isinstance(data, dict) else data
+        return {row['id'] for row in rows}
+
+    def test_list_excludes_fallback_by_default(self):
+        resp = self.client.get('/api/accounting-categories/')
+        self.assertEqual(resp.status_code, 200)
+        ids = self._ids(resp)
+        self.assertNotIn(self.fallback.pk, ids)
+        self.assertIn(self.other.pk, ids)
+
+    def test_list_includes_fallback_with_param(self):
+        resp = self.client.get('/api/accounting-categories/?include_fallback=true')
+        self.assertEqual(resp.status_code, 200)
+        ids = self._ids(resp)
+        self.assertIn(self.fallback.pk, ids)
+        self.assertIn(self.other.pk, ids)
+
+    def test_detail_get_of_fallback_still_accessible(self):
+        resp = self.client.get(f'/api/accounting-categories/{self.fallback.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['id'], self.fallback.pk)
+
+    def test_no_exclusion_when_no_fallback_configured(self):
+        Configuration.objects.filter(key='fallback_accounting_category').delete()
+        resp = self.client.get('/api/accounting-categories/')
+        self.assertEqual(resp.status_code, 200)
+        ids = self._ids(resp)
+        self.assertIn(self.fallback.pk, ids)
+        self.assertIn(self.other.pk, ids)
+
 
 class PercentageServiceServiceItemRejectionTest(BaseTestCase):
     """A RateScheme with algorithm=PERCENTAGE must be rejected when assigning
