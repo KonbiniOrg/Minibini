@@ -85,6 +85,19 @@
     lineItems.every(li => li.accounting_category != null)
   );
 
+  // task-owned-money Phase 3, Task 4 — display-level warning only (no
+  // computation change): a targeted percentage adjustment (non-empty
+  // adjustment_target_categories) can never have applied to a fallback-
+  // stamped line, because the fallback AC is excluded from AC pickers and
+  // so can never appear in a target set. Surfacing this tells the biller
+  // to check whether a flagged (used_fallback_ac) line's amount should
+  // actually have been included in that adjustment's base.
+  let hasTargetedAdjustment = $derived(
+    lineItems.some((li) => li.adjustment_service && (li.adjustment_target_categories?.length ?? 0) > 0)
+  );
+  let hasFallbackFlaggedLine = $derived(lineItems.some((li) => li.used_fallback_ac));
+  let showFallbackAdjustmentWarning = $derived(hasTargetedAdjustment && hasFallbackFlaggedLine);
+
   async function applyEverything() {
     try {
       await api.post(`/api/invoices/${invoice.invoice_id}/apply-everything/`, {});
@@ -448,6 +461,11 @@
       {/each}
     </div>
   {/if}
+  {#if showFallbackAdjustmentWarning}
+    <div class="fallback-warning-notice">
+      This invoice has a targeted percentage adjustment, but targeted adjustments never include uncategorized lines. Review the flagged line(s) below.
+    </div>
+  {/if}
   <h3>Line Items</h3>
   {#if canEditLineItems}
     {#if lineItems.length === 0}
@@ -594,5 +612,18 @@
   }
   .deposit-credit-row + .deposit-credit-row {
     margin-top: 6px; padding-top: 6px; border-top: 1px solid #fdba74;
+  }
+  /* Targeted-adjustment + fallback-AC warning (task-owned-money Phase 3,
+     Task 4) — display-level only, same boxed-banner vocabulary as
+     .deposit-credit-notice but a distinct (red-leaning) palette since this
+     is a caution rather than an actionable-but-benign notice. */
+  .fallback-warning-notice {
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    color: #991b1b;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    margin: 14px 0 4px;
   }
 </style>

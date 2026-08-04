@@ -944,3 +944,78 @@ describe('InvoicePanel unapplied deposit credit notice', () => {
     });
   });
 });
+
+// ─── Fallback-AC + targeted-adjustment warning (task-owned-money Phase 3, Task 4) ──
+
+function makeFlaggedLine(overrides = {}) {
+  return makeLine({
+    line_item_id: 701, line_number: 1, description: 'Flat task', qty: 1, price: '50.00',
+    units: 'none', accounting_category: 10, used_fallback_ac: true,
+    adjustment_service: null, adjustment_target_categories: [], sources: [],
+    ...overrides,
+  });
+}
+
+function makeTargetedAdjustmentLine(overrides = {}) {
+  return makeLine({
+    line_item_id: 702, line_number: 2, description: 'Rush 15%', qty: 1, price: '7.50',
+    units: 'none', accounting_category: 10, used_fallback_ac: false,
+    adjustment_service: 5, adjustment_target_categories: [10], sources: [],
+    ...overrides,
+  });
+}
+
+describe('InvoicePanel targeted-adjustment + fallback-AC warning', () => {
+  it('shows a warning banner when a targeted adjustment line coexists with a fallback-flagged line', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const inv = makeInvoice({
+      status: 'draft',
+      line_items: [makeFlaggedLine(), makeTargetedAdjustmentLine()],
+    });
+    mockApi(inv);
+    const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    expect(await findByText(/targeted adjustments never include uncategorized lines/i)).toBeInTheDocument();
+  });
+
+  it('does NOT show the warning when the adjustment is untargeted (empty target-AC set)', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const inv = makeInvoice({
+      status: 'draft',
+      line_items: [
+        makeFlaggedLine(),
+        makeTargetedAdjustmentLine({ adjustment_target_categories: [] }),
+      ],
+    });
+    mockApi(inv);
+    const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Line Items');
+    expect(queryByText(/targeted adjustments never include uncategorized lines/i)).not.toBeInTheDocument();
+  });
+
+  it('does NOT show the warning when there is a targeted adjustment but no fallback-flagged line', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const inv = makeInvoice({
+      status: 'draft',
+      line_items: [
+        makeFlaggedLine({ used_fallback_ac: false }),
+        makeTargetedAdjustmentLine(),
+      ],
+    });
+    mockApi(inv);
+    const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Line Items');
+    expect(queryByText(/targeted adjustments never include uncategorized lines/i)).not.toBeInTheDocument();
+  });
+
+  it('does NOT show the warning when there is a fallback-flagged line but no adjustment at all', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const inv = makeInvoice({
+      status: 'draft',
+      line_items: [makeFlaggedLine()],
+    });
+    mockApi(inv);
+    const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Line Items');
+    expect(queryByText(/targeted adjustments never include uncategorized lines/i)).not.toBeInTheDocument();
+  });
+});

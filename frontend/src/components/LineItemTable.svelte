@@ -32,6 +32,21 @@
     return c.taxable ? 'Yes' : 'No';
   }
 
+  /** task-owned-money Phase 3, Task 4: `used_fallback_ac` (backend-computed,
+   *  Task 3) flags an invoice line whose AC was auto-stamped from the
+   *  Configuration-designated fallback because its source atom had no AC of
+   *  its own. AC name + taxability are resolved from the existing
+   *  `categories` prop (same lookup as the plain category/taxable columns) —
+   *  no separate payload needed. Correction path is the existing Edit action
+   *  (LineItemModal, which already offers the line AC editor for invoices);
+   *  the flag itself is recomputed server-side, so it clears on the next
+   *  refresh once the line's AC is changed away from the fallback. */
+  function fallbackBadgeText(li) {
+    const name = categoryName(li.accounting_category);
+    const taxableWord = categoryById[li.accounting_category]?.taxable ? 'taxable' : 'non-taxable';
+    return `Uncategorized → ${name} · ${taxableWord}`;
+  }
+
   let subtotal = $derived(
     (lineItems || []).reduce((s, li) => s + lineTotal(li), 0)
   );
@@ -85,8 +100,11 @@
           <td
             class:needs-category={canEdit && li.accounting_category == null && !allowNullCategory}
             class:uncategorized={li.accounting_category == null && allowNullCategory}
+            class:fallback-flag={li.used_fallback_ac}
           >
-            {#if li.accounting_category == null && allowNullCategory}
+            {#if li.used_fallback_ac}
+              <span class="fallback-badge">{fallbackBadgeText(li)}</span>
+            {:else if li.accounting_category == null && allowNullCategory}
               Uncategorized
             {:else if canEdit && li.accounting_category == null}
               needs category
@@ -192,4 +210,18 @@
   .kind-work { background: #e0e7ff; color: #3730a3; }
   .kind-material { background: #d1fae5; color: #065f46; }
   .kind-fee { background: #ffedd5; color: #9a3412; }
+  /* Fallback-AC badge (task-owned-money Phase 3, Task 4) — same alert
+     vocabulary as .needs-category (amber = "needs a look"), but a pill
+     rather than cell shading since the line DOES have a category, just an
+     auto-stamped one the biller may want to correct. */
+  .fallback-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
 </style>
