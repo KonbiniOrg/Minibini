@@ -703,3 +703,40 @@ describe('WorkItemForm subtask mode — qty_scales_with_parent', () => {
     expect('qty_scales_with_parent' in call[1]).toBe(false);
   });
 });
+
+// Drift tripwire (reviewer finding): expectedPreview re-implements
+// Task._parent_multiplier() (apps/jobs/models.py) client-side for an
+// unsaved-input preview — the same established pattern as
+// RateSchemeManager.svelte's previewTotal (re-implements Task.
+// effective_rate() the same way, since task-owned-money Phase 1). Anchor
+// the preview against the BACKEND's own recorded numbers for these exact
+// inputs — tests/test_quantity_structure.py's
+// test_flag_true_multiplies_by_parent_qty (parent est_qty=500, child
+// est_qty=20 -> expected_qty=10000) and the API-layer assertion that
+// TaskSerializer actually renders that as expected_qty: '10000.00'. If
+// `_parent_multiplier()`'s math ever changes (rounding, clamping, a
+// different fallback), this is the test that goes red first.
+describe('WorkItemForm subtask preview matches the backend\'s own expected_qty (drift tripwire)', () => {
+  const PARENT_BATCH = { task_id: 70, name: 'Batch of boards', unit_label: 'ea', est_qty: '500' };
+  // apps/jobs/models.py Task._parent_multiplier()/expected_qty() for these
+  // exact inputs, as TaskSerializer.get_expected_qty() actually renders it.
+  const API_EXPECTED_QTY = '10000.00';
+
+  it('the live preview equals the API-provided expected_qty for the same parent/child inputs', async () => {
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [EACH_SCHEME] });
+      if (url.startsWith('/api/settings/')) return Promise.resolve({});
+      if (url === `/api/tasks/${PARENT_BATCH.task_id}/`) return Promise.resolve(PARENT_BATCH);
+      return Promise.resolve({});
+    });
+    const { findByLabelText, getByLabelText, findByText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'subtask', contextId: PARENT_BATCH.task_id },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '8' } });
+    await fireEvent.input(getByLabelText(/Estimated qty/), { target: { value: '20' } });
+    expect(await findByText(
+      new RegExp(`${Number(API_EXPECTED_QTY)} expected`)
+    )).toBeInTheDocument();
+  });
+});

@@ -734,6 +734,62 @@ describe('TaskDetailPage children table (expected vs logged)', () => {
     expect(table).toHaveTextContent('20'); // expected (derived)
     expect(table).toHaveTextContent('6');  // logged/actual
   });
+
+  // Reviewer finding: Task._parent_multiplier() silently falls back to ×1
+  // when a flag-true child's parent has no est_qty yet — the children
+  // table must disclose that fallback (same carry-note WorkItemForm
+  // already honors), never render a bare number that looks authoritative.
+  it('discloses the ×1 fallback when a scaling child\'s parent has no est_qty', async () => {
+    const child = {
+      task_id: 8, name: 'Per-widget polish', status: 'in_progress', parent_task: 7,
+      est_qty: '2', expected_qty: '2', unit_label: 'ea', qty_source: 'entered_qty',
+      actual_qty: '0', qty_scales_with_parent: true,
+    };
+    mockApiWithJob({ status: 'in_progress', is_parent: true, est_qty: null }, {}, [child]);
+    const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const table = await waitFor(() => {
+      const t = container.querySelector('.children-table');
+      expect(t).not.toBeNull();
+      return t;
+    });
+    expect(table).toHaveTextContent(/parent quantity not set/i);
+    expect(table).toHaveTextContent(/treated as ×1/i);
+  });
+
+  it('does not disclose anything for a flag-false (batch) child, even with no parent est_qty', async () => {
+    const child = {
+      task_id: 8, name: 'Batch cleanup', status: 'in_progress', parent_task: 7,
+      est_qty: '5', expected_qty: '5', unit_label: 'ea', qty_source: 'entered_qty',
+      actual_qty: '0', qty_scales_with_parent: false,
+    };
+    mockApiWithJob({ status: 'in_progress', is_parent: true, est_qty: null }, {}, [child]);
+    const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const table = await waitFor(() => {
+      const t = container.querySelector('.children-table');
+      expect(t).not.toBeNull();
+      return t;
+    });
+    expect(table).not.toHaveTextContent(/parent quantity not set/i);
+  });
+
+  it('does not disclose anything when the parent DOES have an est_qty', async () => {
+    const child = {
+      task_id: 8, name: 'Per-widget polish', status: 'in_progress', parent_task: 7,
+      est_qty: '2', expected_qty: '20', unit_label: 'ea', qty_source: 'entered_qty',
+      actual_qty: '0', qty_scales_with_parent: true,
+    };
+    mockApiWithJob({ status: 'in_progress', is_parent: true, est_qty: '10' }, {}, [child]);
+    const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const table = await waitFor(() => {
+      const t = container.querySelector('.children-table');
+      expect(t).not.toBeNull();
+      return t;
+    });
+    expect(table).not.toHaveTextContent(/parent quantity not set/i);
+  });
 });
 
 describe('TaskDetailPage materials use the shared task-list row (full action set)', () => {

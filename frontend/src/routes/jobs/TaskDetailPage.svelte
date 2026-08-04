@@ -335,9 +335,24 @@
   // expected_worker_time()'s job, the ONE place it's computed). Falls back
   // to the worker-time expectation for a scheme with no quantity of its own
   // (e.g. elapsed_time), then to a dash.
+  //
+  // Task._parent_multiplier() silently falls back to ×1 when a flag-true
+  // child's parent has no est_qty yet — that's the right math (nothing to
+  // multiply by), but a bare number here would repeat the exact anti-
+  // pattern the carry-note forbids in WorkItemForm (Task 1 -> Task 4): a
+  // silently-computed ×1 total. `task` (the parent, already loaded at page
+  // scope) tells us when that fallback fired, so disclose it — same
+  // wording as WorkItemForm's inline expectation line.
   function childExpectedDisplay(sub) {
-    if (sub.expected_qty != null) return `${sub.expected_qty} ${sub.unit_label || ''}`.trim();
-    if (sub.expected_worker_time) return fmtWorkerTime(sub.expected_worker_time);
+    const scaledButParentQtyUnset = !!sub.qty_scales_with_parent && !task?.est_qty;
+    const disclosure = scaledButParentQtyUnset
+      ? ' (parent quantity not set — treated as ×1)' : '';
+    if (sub.expected_qty != null) {
+      return `${sub.expected_qty} ${sub.unit_label || ''}`.trim() + disclosure;
+    }
+    if (sub.expected_worker_time) {
+      return fmtWorkerTime(sub.expected_worker_time) + disclosure;
+    }
     return '-';
   }
 

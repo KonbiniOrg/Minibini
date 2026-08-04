@@ -348,6 +348,16 @@
   // parent est_qty ALSO falls back to ×1, but the template below renders
   // that case as an explicit "not set" state rather than a bare number
   // (carried reviewer note, Task 1 -> Task 4 — never a silent x1).
+  //
+  // This IS a client-side reimplementation of that backend formula, for an
+  // unsaved input a fetch round-trip can't preview — the same established
+  // pattern as RateSchemeManager.svelte's `previewTotal`, which has
+  // re-implemented Task.effective_rate() the same way since task-owned-
+  // money Phase 1. Both carry the same risk: a backend rounding/clamping
+  // change (quantization, a future minimum, whatever) can drift silently
+  // out from under either preview. Anchored against the backend's own
+  // fixture numbers by a Vitest "drift tripwire" below — if you change
+  // `_parent_multiplier()`'s math, that test is the one to go re-check.
   const expectedPreview = $derived.by(() => {
     if (childQtyPreview == null) return null;
     if (!qtyScalesWithParent || parentEstQtyPreview == null) return childQtyPreview;
