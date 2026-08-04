@@ -157,6 +157,30 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         self.assertEqual(attached.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         self.assertIsNone(attached.po_line_item_id)
 
+    def test_child_attached_material_remaps_to_structures_parent(self):
+        """A material attached to a SUBTASK on the source job (the Material
+        model itself carries no subtask guard — that lives in
+        MaterialService.assign_task/create_on_job, so a historical row or a
+        direct .create() can still land one here) must not throw
+        create_on_job's subtask guard when duplicated and fail the whole
+        copy. _copy_work_to_job remaps it onto the structure's PARENT in
+        the new job — same doctrine as the invoice pool's defensive
+        Q(task__parent_task=task) fallback (spec §9 rule 4/5, Phase 4
+        Task 2 follow-up)."""
+        planted = Material.objects.create(
+            job=self.source, task=self.task_b, inventory_item=self.screws,
+            quantity=Decimal('3.00'), unit_cost=Decimal('8.00'),
+            sell_price=Decimal('12.00'),
+        )
+        new_job = JobService.duplicate_job(
+            self.source, contact=self.contact, path='approved')
+        new_build = Task.objects.get(job=new_job, name='Build')
+        new_finish = Task.objects.get(job=new_job, name='Finish')
+        copy = Material.objects.get(
+            job=new_job, inventory_item=self.screws, quantity=Decimal('3.00'))
+        self.assertEqual(copy.task_id, new_build.task_id)
+        self.assertNotEqual(copy.task_id, new_finish.task_id)
+
     def test_creates_earmarks(self):
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='approved')

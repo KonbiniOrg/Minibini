@@ -426,6 +426,19 @@ class WorkTemplate(models.Model):
                 paired_t = None
                 if assoc.template_task_association_id is not None:
                     paired_t = pairing.get((assoc.template_task_association_id, instance))
+                if paired_t is not None and paired_t.parent_task_id is not None:
+                    # Defensive remap (spec §9 rule 4/5), disarmed in advance
+                    # of Task 3: no WorkTemplate can stamp a
+                    # subtask-producing structure yet (that's
+                    # is_product_structure's future job), so `paired_t`
+                    # can't actually be a subtask today — but once it can,
+                    # pairing a material straight onto it would throw
+                    # MaterialService.create_on_job's subtask guard and fail
+                    # the whole generation. Land it on the structure's
+                    # PARENT instead, same doctrine as the pool's
+                    # Q(task__parent_task=task) fallback and
+                    # JobService._copy_work_to_job's remap.
+                    paired_t = paired_t.parent_task
                 MaterialService.create_on_job(
                     job=job, task=paired_t,
                     quantity=assoc.quantity,

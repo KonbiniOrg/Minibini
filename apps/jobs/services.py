@@ -997,6 +997,7 @@ class JobService:
 
         source_tasks = list(
             Task.objects.filter(job=source_job).order_by('sort_order', 'pk'))
+        source_task_by_id = {t.pk: t for t in source_tasks}
         task_map = {}  # source task_id -> new Task
         for task in source_tasks:
             new_task = Task.objects.create(
@@ -1017,9 +1018,22 @@ class JobService:
         for material in Material.objects.filter(job=source_job).exclude(
             consumption_state=Material.CONSUMPTION_STATE_RELEASED,
         ).order_by('pk'):
+            dest_task_id = material.task_id
+            source_task = source_task_by_id.get(dest_task_id)
+            if source_task is not None and source_task.parent_task_id is not None:
+                # Defensive remap (spec §9 rule 4/5): a source material
+                # attached to a SUBTASK (a historical/pre-guard row, or a
+                # QuerySet.update() bypass — MaterialService.assign_task /
+                # create_on_job's guard is the primary defense against this
+                # happening at all) would otherwise throw that same guard
+                # here, failing the whole duplicate. Land it on the
+                # structure's PARENT instead — materials belong to the
+                # structure, same doctrine as the invoice pool's
+                # Q(task__parent_task=task) fallback.
+                dest_task_id = source_task.parent_task_id
             MaterialService.create_on_job(
                 job=new_job,
-                task=task_map.get(material.task_id),
+                task=task_map.get(dest_task_id),
                 **material.copy_fields(),
             )
 
