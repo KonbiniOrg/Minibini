@@ -221,7 +221,7 @@ class ScheduleService:
         window_bleps = list(Blep.objects.filter(
             user_id__in=worker_ids,
             start_time__lt=horizon_end,
-        ).filter(in_window).select_related('task'))
+        ).filter(in_window).select_related('task', 'task__parent_task'))
 
         # Resolve every displayed worker's envelope once; the page axis is
         # the union of their working hours over the visible days, widened by
@@ -459,11 +459,15 @@ class ScheduleService:
         # relying on TaskService.assign()'s guard alone, since a task can
         # become a parent (subtask added) after already carrying stale
         # planning state from before it had children.
+        # select_related('parent_task') too: expected_worker_time() (used by
+        # every bar this task emits, and by the remaining-time calc below)
+        # dereferences task.parent_task for a flag-true subtask — without
+        # this, that's an N+1 query per task in the lane.
         tasks_qs = Task.objects.filter(
             pk__in=task_ids,
         ).exclude(
             Exists(Task.objects.filter(parent_task_id=OuterRef('pk')))
-        ).select_related('job').order_by('worker_queue', 'pk')
+        ).select_related('job', 'parent_task').order_by('worker_queue', 'pk')
 
         # Pure worker_queue order — exactly the job board's order. Actual
         # pieces are wall-clock-anchored and forecasts always start at/after

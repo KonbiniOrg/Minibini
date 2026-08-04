@@ -319,3 +319,63 @@ class ScheduleBarDerivationTest(QuantityStructureTestBase):
         self.assertTrue(child_bars, 'expected at least one bar for the child task')
         # 6 min/unit * 5 units (parent est_qty) = 30 expected minutes.
         self.assertEqual(child_bars[0]['est_minutes'], 30)
+
+
+class ScheduleQueryBudgetTest(QuantityStructureTestBase):
+    """Regression guard: Task.expected_worker_time() dereferences
+    self.parent_task for a flag-true subtask, where the old plain
+    `est_worker_time` field read touched no relation. ScheduleService's
+    querysets whose tasks flow into expected_worker_time() must
+    select_related('parent_task') (directly, or via 'task__parent_task' for
+    Blep querysets) so that N children sharing one parent don't each trigger
+    a separate query to re-fetch that same parent row."""
+
+    def setUp(self):
+        super().setUp()
+        for status in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                       Job.STATUS_IN_PROGRESS):
+            self.job.status = status
+            self.job.save()
+        self.parent = self._task(
+            'Query-budget parent', est_qty=Decimal('3'),
+            status=Task.STATUS_PENDING,
+        )
+
+    def _add_child(self, name):
+        return self._task(
+            name, parent=self.parent, qty_scales_with_parent=True,
+            est_qty=Decimal('1'), est_worker_time=timedelta(minutes=10),
+            status=Task.STATUS_PENDING, assignee=self.user,
+        )
+
+    def test_schedule_build_query_count_does_not_scale_with_child_count(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self._add_child('Child 1')
+        with CaptureQueriesContext(connection) as ctx_one:
+            ScheduleService.get_schedule(now=timezone.now())
+        count_one_child = len(ctx_one.captured_queries)
+
+        self._add_child('Child 2')
+        self._add_child('Child 3')
+        with CaptureQueriesContext(connection) as ctx_three:
+            ScheduleService.get_schedule(now=timezone.now())
+        count_three_children = len(ctx_three.captured_queries)
+
+        added_children = 2
+        added_queries = count_three_children - count_one_child
+        # Each additional same-parent child legitimately adds a small,
+        # bounded number of its own queries (its blep_set lookup, its own
+        # bar(s)) — generous budget of 2 queries/child. Without
+        # select_related('parent_task'), each child would ALSO trigger a
+        # fresh SELECT to re-fetch the shared parent row, pushing this over
+        # budget as more children are added.
+        self.assertLessEqual(
+            added_queries, added_children * 2,
+            f'schedule build queries grew by {added_queries} for '
+            f'{added_children} more same-parent children '
+            f'({count_one_child} -> {count_three_children}) — check '
+            f"select_related('parent_task') on the querysets whose tasks "
+            f'flow into Task.expected_worker_time().'
+        )
