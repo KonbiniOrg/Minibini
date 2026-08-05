@@ -540,6 +540,22 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
     }));
   });
 
+  it('lays Rate/per/Unit out as one non-wrapping row (RM note 4 follow-up: dropdown landed but still line-wrapped)', async () => {
+    mockGet({ schemes: [MOD_SCHEME] });
+    const { findByLabelText, getByText } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+        item: STAMPED_ITEM, categories: CATEGORIES,
+      },
+    });
+    const rateInput = await findByLabelText(/^Rate/);
+    const unitSelect = await findByLabelText(/^Unit/);
+    const row = rateInput.closest('.rate-unit-row');
+    expect(row).not.toBeNull();
+    expect(row).toContainElement(unitSelect);
+    expect(row).toContainElement(getByText('per'));
+  });
+
   it('changing the Unit dropdown round-trips the new value to the PATCH payload', async () => {
     mockGet({ schemes: [MOD_SCHEME] });
     const { findByLabelText, getByRole } = render(WorkItemForm, {

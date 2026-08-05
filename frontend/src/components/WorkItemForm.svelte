@@ -630,13 +630,15 @@
                before the task exists. -->
           {#if effectiveCanManage}
             <p>
-              <label><strong>Rate</strong><br>
-                <input type="number" step="0.01" bind:value={editRate}>
-              </label>
-              <span class="rate-per">per</span>
-              <label><strong>Unit</strong><br>
-                <UnitsSelect bind:value={editUnitLabel} />
-              </label>
+              <span class="rate-unit-row">
+                <label><strong>Rate</strong><br>
+                  <input type="number" step="0.01" bind:value={editRate} style="width:80px;">
+                </label>
+                <span class="rate-per">per</span>
+                <label><strong>Unit</strong><br>
+                  <UnitsSelect bind:value={editUnitLabel} />
+                </label>
+              </span>
               <FieldError errors={fieldErrs} field="rate" />
               <FieldError errors={fieldErrs} field="unit_label" />
             </p>
@@ -800,4 +802,11 @@
 
 <style>
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  /* "Rate [input] per [unit]" on one line, controls bottom-aligned —
+     matches RateSchemeManager's .rate-row. Rate input is fixed-width
+     (matches the price-input convention used elsewhere, e.g.
+     PurchaseOrderDetail/ReconciliationSection) so the row actually fits
+     the modal instead of line-wrapping between "Rate" and "per". */
+  .rate-unit-row { display: inline-flex; align-items: flex-end; gap: 8px; flex-wrap: nowrap; }
+  .rate-unit-row .rate-per { padding-bottom: 3px; }
 </style>
