@@ -197,6 +197,15 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     invoice = serializers.SerializerMethodField()
     claimed = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
+    # RM browser-testing note 6: `can_manage` (JobScopedCanManageMixin) is
+    # the can_manage_jobs-atom-or-PM test — it does NOT include
+    # can_manage_financials, so it under-covers who may actually write
+    # MONEY_FIELDS (see `_can_write_money` above, which the SPA's edit-task
+    # money-field gating must match exactly: a financials-only caller can
+    # write money server-side but `can_manage` alone would report False).
+    # This field reuses `_can_write_money()` directly so the SAME test
+    # drives both the server's write-gate and the UI's enable/grey signal.
+    can_write_money = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -213,7 +222,7 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             'effective_rate', 'computed_charge',
             'actual_hours',
             'has_active_blep', 'active_worker_count', 'has_bleps',
-            'can_manage', 'can_edit',
+            'can_manage', 'can_write_money', 'can_edit',
             'invoice',
             'claimed',
         ]
@@ -312,7 +321,15 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             return self.instance.job
         return self.context.get('job')
 
-    def _can_write_money(self):
+    def _can_write_money(self, job=None):
+        """`job=None` (the validate() write path) resolves via
+        `_resolve_job()`, which reads `self.instance` — correct there since
+        a PATCH/POST always serializes a single instance. `get_can_write_money`
+        (a read-path SerializerMethodField, possibly rendering a LIST of
+        tasks through one shared child serializer) must NOT rely on
+        `self.instance` — DRF's ListSerializer never sets it per-row — so it
+        passes the row's own `job` explicitly instead, same pattern as
+        `JobScopedCanManageMixin.get_can_manage`."""
         request = self.context.get('request')
         user = getattr(request, 'user', None) if request else None
         if not user or not user.is_authenticated:
@@ -320,7 +337,8 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         if user.has_perm('core.can_manage_financials'):
             return True
         from apps.jobs.services import JobService
-        return JobService.user_can_manage(user, self._resolve_job())
+        return JobService.user_can_manage(
+            user, job if job is not None else self._resolve_job())
 
     def validate(self, attrs):
         # Gate on the RAW keys the client actually sent — not
@@ -360,6 +378,9 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         filled = dict(data)
         filled['accounting_category'] = scheme.accounting_category_id
         return filled
+
+    def get_can_write_money(self, obj):
+        return self._can_write_money(job=obj.job)
 
     def get_assignee_name(self, obj):
         if obj.assignee:

@@ -453,6 +453,118 @@ class TaskMoneyPermissionTest(TestCase):
         self.assertEqual(resp.status_code, 403, resp.content)
 
 
+class CanWriteMoneyFieldTest(TestCase):
+    """RM browser-testing note 6: the SPA's edit-task-modal money-field
+    gating (Rate Scheme dropdown, rate, unit, accounting category,
+    modifiers) must derive from the SAME test the server actually enforces
+    on write (`TaskSerializer._can_write_money`) — not `can_manage`
+    (JobScopedCanManageMixin's can_manage_jobs-atom-or-PM test), which
+    under-covers a financials-only caller. `can_write_money` is a
+    read-only SerializerMethodField that reuses `_can_write_money()`
+    directly, so this is the standard matrix confirming the field's VALUE
+    through the serializer for every principal in TaskMoneyPermissionTest's
+    matrix — same fixtures/setUp, mirrored here rather than shared, so each
+    test class stays self-contained."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+
+        self.ac = AccountingCategory.objects.create(code='CWM1', name='CanWriteMoney1')
+        self.scheme = RateScheme.objects.create(
+            name='CanWriteMoney Scheme',
+            algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('42.00'),
+            unit_label='piece',
+            accounting_category=self.ac,
+        )
+
+        contact = Contact.objects.create(
+            first_name='CanWriteMoney', last_name='Job', email='cwm-job@test.example')
+        self.job = Job.objects.create(
+            name='CanWriteMoney Job', contact=contact, job_number='JOB-CWM-001',
+        )
+        other_contact = Contact.objects.create(
+            first_name='CanWriteMoney', last_name='Other', email='cwm-other@test.example')
+        self.other_job = Job.objects.create(
+            name='CanWriteMoney Other Job', contact=other_contact, job_number='JOB-CWM-002',
+        )
+
+        self.worker = User.objects.create_user(
+            username='cwm_worker', password='testpass')
+        self.manager = User.objects.create_user(
+            username='cwm_mgr', password='testpass')
+        self.manager.user_permissions.add(
+            Permission.objects.get(codename='can_manage_jobs'))
+        self.manager = User.objects.get(pk=self.manager.pk)
+        self.financials = User.objects.create_user(
+            username='cwm_fin', password='testpass')
+        self.financials.user_permissions.add(
+            Permission.objects.get(codename='can_manage_financials'))
+        self.financials = User.objects.get(pk=self.financials.pk)
+        self.pm = User.objects.create_user(username='cwm_pm', password='testpass')
+        self.job.project_manager = self.pm
+        self.job.save(update_fields=['project_manager'])
+        self.other_pm = User.objects.create_user(
+            username='cwm_other_pm', password='testpass')
+        self.other_job.project_manager = self.other_pm
+        self.other_job.save(update_fields=['project_manager'])
+
+        self.task = _stamp_task(self.job, self.scheme, 'Billable work')
+
+    def _task_detail_url(self):
+        return f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/'
+
+    def test_manager_atom_can_write_money_true(self):
+        self.client.force_login(self.manager)
+        resp = self.client.get(self._task_detail_url())
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(resp.data['can_write_money'])
+
+    def test_pm_of_this_job_can_write_money_true(self):
+        self.client.force_login(self.pm)
+        resp = self.client.get(self._task_detail_url())
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(resp.data['can_write_money'])
+
+    def test_pm_of_a_different_job_can_write_money_false(self):
+        self.client.force_login(self.other_pm)
+        resp = self.client.get(self._task_detail_url())
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertFalse(resp.data['can_write_money'])
+
+    def test_financials_atom_can_write_money_true(self):
+        """The whole point of this field: can_manage (can_manage_jobs atom
+        or PM) would report False for a financials-only caller, but the
+        server's actual write-gate accepts them — can_write_money must
+        report True so the SPA doesn't grey out fields the server would
+        happily accept."""
+        self.client.force_login(self.financials)
+        resp = self.client.get(self._task_detail_url())
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertFalse(resp.data['can_manage'])
+        self.assertTrue(resp.data['can_write_money'])
+
+    def test_worker_can_write_money_false(self):
+        self.client.force_login(self.worker)
+        resp = self.client.get(self._task_detail_url())
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertFalse(resp.data['can_write_money'])
+
+    def test_can_write_money_true_in_job_task_list(self):
+        """List context — DRF's ListSerializer never sets `self.instance`
+        per row on the shared child serializer, so `can_write_money` MUST
+        resolve the job from the row (`obj.job`), not `self._resolve_job()`
+        (which would silently fall back to None/context and misreport for
+        every row but the last). Regression guard for that list-vs-detail
+        trap."""
+        self.client.force_login(self.pm)
+        resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        rows = resp.data['results'] if isinstance(resp.data, dict) else resp.data
+        row = next(r for r in rows if r['task_id'] == self.task.pk)
+        self.assertTrue(row['can_write_money'])
+
+
 class TaskMoneyFieldShapeValidationTest(TestCase):
     """Review finding (code review, task-owned-money Phase 1 final wave):
     the active_modifiers contract is asymmetric by design — CREATE takes a

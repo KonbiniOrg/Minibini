@@ -441,6 +441,47 @@ leaves the quoted rate untouched, and nothing about the decline is
 persisted. Full mechanics — qualifying-line rule, the markup config,
 accept/decline — live in `materials-inventory-and-purchasing.md` §10a.
 
+### 3.6b Edit-task money-field gating uses `can_write_money`, not `can_manage` (RM browser-testing note 6)
+
+`WorkItemForm.svelte`'s edit-mode money-field gating (the Rate Scheme
+dropdown, Rate/Unit, Accounting Category, and modifier checkboxes — every
+`{#if effectiveCanWriteMoney}`/`disabled={!effectiveCanWriteMoney}` site)
+reads `item.can_write_money`, **not** `item.can_manage`. The two look
+similar but test different things: `can_manage`
+(`JobScopedCanManageMixin`, §3 of `users-and-permissions.md`) is the
+`can_manage_jobs`-atom-or-PM test only, while the server's actual
+money-write gate (`TaskSerializer._can_write_money`, §"Task money-field
+writes" in `users-and-permissions.md`) additionally accepts the
+`can_manage_financials` atom. A financials-only caller (no
+`can_manage_jobs`, not the job's PM) therefore has `can_manage=False` but
+`can_write_money=True` — gating the UI on `can_manage` disabled/greyed
+fields the server would happily accept the write for.
+
+`can_write_money` is a read-only `SerializerMethodField` on
+`TaskSerializer` that calls `_can_write_money()` directly, so it is
+*literally* the same predicate the server enforces on write — not a
+second, independently-maintained approximation of it. `_can_write_money`
+takes an optional `job` argument: the `validate()` write path calls it
+with no argument (resolves via `self.instance`/context, correct for a
+single-instance POST/PATCH); `get_can_write_money` passes `obj.job`
+explicitly, because DRF's `ListSerializer` never sets `self.instance`
+per-row on a shared child serializer — reading `self.instance` there
+would silently misreport for every row in a task list (e.g.
+`GET /api/jobs/{id}/tasks/`), not just the detail view. Same pattern
+`JobScopedCanManageMixin.get_can_manage` already uses for `can_manage`.
+
+Create mode has no `item` yet, so it keeps reading the `canManage` prop
+(a caller override, default `true`) — there's no server-computed
+create-time equivalent to fetch ahead of the POST; the server's own
+create-time `MONEY_FIELDS` gate is enforced independently by
+`TaskSerializer.validate()` regardless of what the create form renders.
+
+`can_manage` on the Task serializer keeps its original job-management
+meaning unchanged (non-money task affordances, e.g. the manager-only
+actions in `users-and-permissions.md` §3) — this was purely a matter of
+routing the *money-field* gate to the field that actually matches the
+server's money-write test.
+
 ---
 
 ## 4. Task billing (and the Fee atom)

@@ -31,10 +31,13 @@
     // IsAuthenticated-only overall, but as of Task 12b it 403s on the mere
     // presence of `active_modifiers` in the payload unless the caller can
     // manage the job's money — same CanManageJobOrPM/can_manage_financials
-    // rule, gating that one field. In edit mode, item.can_manage
-    // (JobScopedCanManageMixin, already resolved server-side for this task's
-    // job) wins when present; this prop is the fallback for create (no item
-    // yet) and the override if a caller ever needs one.
+    // rule, gating that one field. In edit mode, item.can_write_money (RM
+    // browser-testing note 6 — a SerializerMethodField reusing the server's
+    // own TaskSerializer._can_write_money() gate, NOT item.can_manage,
+    // which is the can_manage_jobs-atom-or-PM test only and misses
+    // financials-only callers) wins when present; this prop is the
+    // fallback for create (no item yet) and the override if a caller ever
+    // needs one.
     canManage = true,
     categories = [], // AccountingCategory list, for the edit-mode category select/label
     onSaved = () => {},
@@ -278,13 +281,24 @@
   // Task-owned money (Phase 1): whether THIS user may write money fields
   // (rate/unit_label/accounting_category/qty_source/active_modifiers) —
   // MONEY_FIELDS on the Task serializer, CanManageJobOrPM or
-  // can_manage_financials. In edit mode item.can_manage (already resolved
-  // server-side for this task's job) wins when present; the canManage prop
-  // covers create (no item yet) or a caller override. Also drives the
+  // can_manage_financials. RM browser-testing note 6: this must read
+  // item.can_write_money, NOT item.can_manage — can_manage
+  // (JobScopedCanManageMixin) is the can_manage_jobs-atom-or-PM test only
+  // and EXCLUDES can_manage_financials, so a financials-only caller would
+  // see money fields disabled/greyed here even though the server's own
+  // write-gate (TaskSerializer._can_write_money) would accept the write.
+  // can_write_money is a SerializerMethodField that reuses that exact gate
+  // server-side, so this is the SAME test driving both the server's accept/
+  // reject and the SPA's enable/grey signal — never two independently-
+  // maintained tests that can drift apart. In edit mode item.can_write_money
+  // (already resolved server-side for this task's job) wins when present;
+  // the canManage prop covers create (no item yet, no such field to read —
+  // create's own equivalent test lives server-side in the same place, see
+  // TaskSerializer.validate) or a caller override. Also drives the
   // template-mode modifier gate (Task 12b: add-from-template's
   // `active_modifiers` key).
-  const effectiveCanManage = $derived(
-    (isEdit && item && typeof item.can_manage === 'boolean') ? item.can_manage : canManage
+  const effectiveCanWriteMoney = $derived(
+    (isEdit && item && typeof item.can_write_money === 'boolean') ? item.can_write_money : canManage
   );
 
   // Modifier CHECKBOX DEFINITIONS: in edit mode these track the CURRENTLY
@@ -383,7 +397,7 @@
           est_qty: estQtyValue,
           est_worker_time: estWorkerTimeISO,
         };
-        if (effectiveCanManage) {
+        if (effectiveCanWriteMoney) {
           editPayload.rate = editRate;
           editPayload.unit_label = editUnitLabel;
           editPayload.accounting_category = editAccountingCategory;
@@ -426,7 +440,7 @@
           est_qty: estQtyValue,
           est_worker_time: estWorkerTimeISO,
         };
-        if (effectiveCanManage) {
+        if (effectiveCanWriteMoney) {
           payload.active_modifiers = activeModifiers;
         }
         await api.post(url, payload);
@@ -446,7 +460,7 @@
           est_qty: estQtyValue,
           est_worker_time: estWorkerTimeISO,
         };
-        if (effectiveCanManage) {
+        if (effectiveCanWriteMoney) {
           payload.active_modifiers = activeModifiers;
         }
         let url;
@@ -522,7 +536,7 @@
                genuinely different scheme fires the restamp $effect above.
                Non-managers get the same read-only name they always did —
                no dropdown, no restamp. -->
-          {#if effectiveCanManage}
+          {#if effectiveCanWriteMoney}
             <p>
               <label><strong>Rate Scheme</strong><br>
                 <select bind:value={editSourceSchemeId}>
@@ -582,7 +596,7 @@
                category from the chosen preset regardless of what's
                submitted, so there's nothing for an editable field to do
                before the task exists. -->
-          {#if effectiveCanManage}
+          {#if effectiveCanWriteMoney}
             <p>
               <span class="rate-unit-row">
                 <label><strong>Rate</strong><br>
@@ -620,7 +634,7 @@
                     <input
                       type="checkbox"
                       checked={activeModifiers.includes(m.key)}
-                      disabled={!effectiveCanManage}
+                      disabled={!effectiveCanWriteMoney}
                       onchange={(e) => toggleModifier(m.key, e.target.checked)}
                     />
                     {m.label} (+{m.percent}%)
@@ -657,7 +671,7 @@
                     <input
                       type="checkbox"
                       checked={activeModifiers.includes(m.key)}
-                      disabled={!effectiveCanManage}
+                      disabled={!effectiveCanWriteMoney}
                       onchange={(e) => toggleModifier(m.key, e.target.checked)}
                     />
                     {m.label} (+{m.percent}%)
