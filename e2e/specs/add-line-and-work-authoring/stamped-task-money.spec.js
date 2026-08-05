@@ -35,6 +35,24 @@ async function makeJobAndScheme(name) {
   return { job, scheme };
 }
 
+// A second, freestanding preset with a DELIBERATELY different rate/unit
+// than makeJobAndScheme's (which always posts rate '18' on the same
+// first-unit-in-the-list) — needed so a restamp test can positively assert
+// the money fields actually moved, not just that a save round-tripped.
+async function makeOtherScheme(name) {
+  const configApi = await apiAs(personas.configtime);
+  const cats = await configApi.get('/api/accounting-categories/');
+  const units = await configApi.get('/api/settings/units/');
+  const unit = units.find((u) => u !== 'none' && u !== 'hour') || units[0];
+  const scheme = await configApi.post('/api/rate-schemes/', {
+    name, description: '', algorithm: 'entered_qty', rate: '43.50',
+    unit_label: unit, accounting_category: (cats.results || cats)[0].id,
+    modifiers: [],
+  });
+  await configApi.dispose();
+  return scheme;
+}
+
 const schemeChipOf = (page) => page.locator('.stat-chip', {
   has: page.locator('.stat-chip-header', { hasText: 'Scheme' }),
 });
@@ -139,7 +157,53 @@ test.describe('PM edits the stamped rate', () => {
     // The task's own rate moved...
     await expect(rateChipOf(page)).toContainText(`$${newRate}/${scheme.unit_label}`);
     // ...but the provenance chip still names the original preset — editing
-    // a task's stamped money never re-points or clears source_scheme.
+    // a plain money field (not the Rate Scheme dropdown itself) never
+    // re-points or clears source_scheme. See "PM restamps by picking a
+    // different scheme" below for the dropdown's own re-pick flow.
     await expect(schemeChipOf(page)).toContainText(scheme.name);
+  });
+});
+
+// RM browser-testing note 5: the edit-task modal's Rate Scheme becomes
+// changeable with a client-side restamp. This is the one real-browser,
+// real-API round trip for the new dropdown — the fine-grained cases
+// (disabled retired/null placeholder options, none-checked modifier swap,
+// A -> B -> A landing on A's fresh values, same-select no-op, payload
+// omitting source_scheme when unchanged) are already exercised at the
+// component level (frontend/tests/components/WorkItemForm.test.js) against
+// a mocked API; this spec only needs to prove the happy path — picking a
+// different scheme in the real dropdown actually restamps the task and
+// re-points its provenance — survives the real backend's validation and
+// serialization.
+test.describe('PM restamps by picking a different scheme (RM note 5)', () => {
+  test.use({ storageState: personas.finjobs.storageState });
+
+  test('picking a different Rate Scheme in Edit Task restamps rate/unit and re-points the Scheme chip', async ({ page }) => {
+    const { job, scheme: schemeA } = await makeJobAndScheme(`${stamp}-restamp-a`);
+    const schemeB = await makeOtherScheme(`${stamp}-restamp-b`);
+
+    const api = await apiAs(personas.finjobs);
+    const taskName = `${stamp} restamp task`;
+    const task = await api.post(`/api/jobs/${job.job_id}/tasks/`, {
+      name: taskName, description: '', rate_scheme: schemeA.rate_scheme_id,
+    });
+    await api.dispose();
+
+    await page.goto(`/#/jobs/${job.job_id}/tasks/${task.task_id}`);
+    await expect(page.getByRole('heading', { name: taskName })).toBeVisible();
+    await expect(schemeChipOf(page)).toContainText(schemeA.name);
+    await expect(rateChipOf(page)).toContainText(`$${schemeA.rate}/${schemeA.unit_label}`);
+
+    await page.getByRole('button', { name: 'Edit Task' }).click();
+    await page.getByRole('dialog').getByLabel('Rate Scheme').selectOption({ label: schemeB.name });
+    // The restamp prefills Rate/Unit from schemeB's own list data —
+    // confirm before saving, same as a real user would see it happen.
+    await expect(page.getByLabel('Rate', { exact: true })).toHaveValue(schemeB.rate);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    // Both the money (Rate chip) and the provenance (Scheme chip) moved.
+    await expect(rateChipOf(page)).toContainText(`$${schemeB.rate}/${schemeB.unit_label}`);
+    await expect(schemeChipOf(page)).toContainText(schemeB.name);
   });
 });

@@ -798,6 +798,24 @@ Valid transitions:
   `related_name='stamped_tasks'`). **Provenance only** — the preset this
   task was stamped from; never read for money math, so a null value
   (preset deleted after stamping) is legal and requires no validator check.
+  **Write rule** (RM browser-testing note 5): read-only-by-rejection on
+  CREATE — `TaskSerializer.validate_source_scheme` 400s it whenever
+  `self.instance is None`, so create keeps its `rate_scheme` server-stamp
+  trigger as the only way to set initial provenance. Client-writable on
+  **UPDATE** — joined `TaskSerializer.MONEY_FIELDS`, so the key's mere
+  presence in a PATCH gates on `CanManageJobOrPM`/`can_manage_financials`
+  exactly like `accounting_category` above. Validated the same as
+  create's `rate_scheme`: must resolve to an existing RateScheme,
+  `is_active=True`, non-percentage — all field-shaped 400s, no
+  `allow_inactive_scheme` escape hatch on this path (a restamp is always
+  a deliberate pick from the currently-offered target list, never a
+  historical replay). The server does not re-derive
+  `rate`/`unit_label`/`accounting_category`/`active_modifiers` from the
+  new `source_scheme` on this write — the client sends the full restamped
+  money block in the same PATCH (the edit-task Rate Scheme dropdown's
+  client-side restamp — `estimates-and-prices.md` §3.6a); a mismatch
+  between the new pointer and the money fields isn't rejected, it's
+  provenance drift, which is the point of keeping the pointer at all.
 - **est_qty** (inherited from `TaskBase`): nullable on Task — both at the DB
   level and the application layer. `Task.clean()` does **not** reject null.
   Drives the **estimate** lens (`Task.compute_estimate_amount`).
