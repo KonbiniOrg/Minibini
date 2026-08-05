@@ -324,17 +324,31 @@ Permissions: read is `IsAuthenticated`; all write actions require
 Create/update/delete/retire/reactivate route through
 `ConfigurationService.{create,update,delete,retire,reactivate}_rate_scheme`
 (`apps/core/services.py`). The serializer exposes `reference_counts`
-(display only, §2.5) and validates `unit_label` against the configured
-units list (`apps/core/units.get_units_list`).
+(display only, §2.5) and `is_default` (§3.4, computed) and validates
+`unit_label` against the configured units list
+(`apps/core/units.get_units_list`).
 
 ### 3.4 Default preset
 
 The `default_rate_scheme` Configuration key (string-encoded `RateScheme`
 pk, or `''` — see `data-constraints.md` §1.1) preselects the CREATE
-dropdown on the manual task-creation form (`WorkItemForm`) for every
-user, manager or worker alike. Set via the RateSchemeManager's default
-preset picker (`PATCH /api/settings/` with `default_rate_scheme`,
-explicit Save — not auto-committed on change).
+dropdown on the manual task-creation form (`WorkItemForm`) and the
+freeform-work preset dropdowns (`EstimateAddLineForm`, `COAddLineForm`)
+for every user, manager or worker alike. Set via the RateSchemeManager's
+default preset picker (`PATCH /api/settings/` with `default_rate_scheme`,
+explicit Save — not auto-committed on change) — that endpoint stays
+`CanManageConfig`-gated.
+
+Everywhere else, the default's *identity* is read from `is_default`, a
+computed field on `RateSchemeSerializer` (`True` iff the row's pk equals
+the configured `default_rate_scheme`, one Configuration read per
+response via serializer-context caching, never per row). The list/
+retrieve endpoints are `IsAuthenticated`-only, so this is how a
+permissionless worker's create-task/add-line forms preselect the
+default — they never call `/api/settings/` for it. (RM browser-testing
+note 3: they used to, and a worker's fetch there 403'd silently, so the
+dropdown never preselected and submitting without picking one hit the
+required-`rate_scheme` validation error.)
 
 - `PATCH /api/settings/` rejects a value that isn't blank or an
   **active** RateScheme id.
@@ -1029,7 +1043,7 @@ On the **estimate detail page** (`EstimatePanel.svelte`, hosted at `#/jobs/:jobI
 
 | `kind` | Subform |
 |---|---|
-| `work` | An optional **preset dropdown** (`GET /api/rate-schemes/?task_applicable=true`, same active/non-percentage list as `WorkItemForm`'s manual-mode dropdown; `default_rate_scheme` from `/api/settings/` preselects it when present in the list) — picking a preset only **stamps** its `rate`/`unit_label`/`accounting_category` into the editable local fields client-side; no scheme id is ever sent. Plus description/qty/units/rate/AC (AC required). Payload: `freeform_kind: 'work'` + plain description/qty/units/price/accounting_category. |
+| `work` | An optional **preset dropdown** (`GET /api/rate-schemes/?task_applicable=true`, same active/non-percentage list as `WorkItemForm`'s manual-mode dropdown; the row flagged `is_default` — §3.4 — preselects it) — picking a preset only **stamps** its `rate`/`unit_label`/`accounting_category` into the editable local fields client-side; no scheme id is ever sent. Plus description/qty/units/rate/AC (AC required). Payload: `freeform_kind: 'work'` + plain description/qty/units/price/accounting_category. |
 | `material` | The pre-existing form: description/qty/units/price/AC (AC prefills from `default_material_accounting_category`, overridable, and is optional — the backend fills it if blank). Payload: `freeform_kind: 'material'`. |
 | `fee` | description/qty (default 1)/signed amount/AC (required) — a negative amount shows an in-form "This will appear as a credit" note. Payload: `freeform_kind: 'fee'`. |
 

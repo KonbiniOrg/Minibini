@@ -59,15 +59,16 @@
     try {
       const resp = await api.get('/api/rate-schemes/?task_applicable=true');
       schemes = resp.results || resp;
+      // The shop's configured default preset, read off the `is_default`
+      // flag on this (already IsAuthenticated-only) list rather than
+      // /api/settings/ (CanManageConfig-gated — a permissionless worker's
+      // fetch there 403s silently, so the dropdown never preselected; RM
+      // browser-testing note 3).
+      const defaultRow = schemes.find((s) => s.is_default);
+      defaultSchemeId = defaultRow ? defaultRow.rate_scheme_id : '';
     } catch (e) {
       // Best-effort: a failed scheme fetch shouldn't block manual entry —
       // the preset dropdown just renders empty.
-    }
-    try {
-      const settings = await api.get('/api/settings/');
-      defaultSchemeId = settings.default_rate_scheme || '';
-    } catch (e) {
-      defaultSchemeId = '';
     }
   });
 

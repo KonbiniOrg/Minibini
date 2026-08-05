@@ -15,14 +15,14 @@ const HOUR_UNIT_SCHEME = { rate_scheme_id: 7, name: 'CNC Hourly', algorithm: 'el
 const EACH_SCHEME = { rate_scheme_id: 8, name: 'Widget', algorithm: 'entered_qty', rate: '10', unit_label: 'ea', modifiers: [] };
 const CATEGORIES = [{ id: 3, code: 'LABOR', name: 'Labor' }, { id: 4, code: 'MATL', name: 'Materials' }];
 
-// Routes api.get by URL prefix so the two parallel fetches (schemes,
-// settings) each get the right shape — a single blanket mockResolvedValue
-// no longer works now that onMount fires both.
-function mockGet({ schemes = [HOURLY_SCHEME, FLAT_FEE_SCHEME], defaultRateScheme = '' } = {}) {
+// Routes api.get by URL prefix. The default preset comes from the
+// `is_default` flag on the rate-scheme list itself (RM browser-testing
+// note 3) — the form no longer reads /api/settings/ at all, so no route
+// for it here; a stray call would just fall through to the catch-all.
+function mockGet({ schemes = [HOURLY_SCHEME, FLAT_FEE_SCHEME] } = {}) {
   api.get.mockReset();
   api.get.mockImplementation((url) => {
     if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: schemes });
-    if (url.startsWith('/api/settings/')) return Promise.resolve({ default_rate_scheme: defaultRateScheme });
     return Promise.resolve({});
   });
 }
@@ -278,14 +278,13 @@ describe('WorkItemForm with a pre-selected rateScheme', () => {
   });
 });
 
-// Task-owned money (Phase 1): the preset dropdown prefills from the shop's
-// configured default (/api/settings/ default_rate_scheme), but only when
-// that id is actually present in the fetched task-applicable list — a
-// default naming a percentage/retired scheme must not preselect a value the
-// dropdown doesn't offer.
+// Task-owned money (Phase 1); RM browser-testing note 3 (frontend half): the
+// preset dropdown prefills from the `is_default` flag embedded on the
+// already-fetched task-applicable list — never from /api/settings/, which
+// is CanManageConfig-gated and 403s silently for a permissionless worker.
 describe('WorkItemForm preset dropdown default', () => {
-  it('preselects the configured default when it is in the task-applicable list', async () => {
-    mockGet({ schemes: [HOURLY_SCHEME, FLAT_FEE_SCHEME], defaultRateScheme: '1' });
+  it('preselects the row flagged is_default in the task-applicable list', async () => {
+    mockGet({ schemes: [{ ...HOURLY_SCHEME, is_default: true }, FLAT_FEE_SCHEME] });
     const { findByLabelText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5 },
     });
@@ -293,8 +292,8 @@ describe('WorkItemForm preset dropdown default', () => {
     await waitFor(() => expect(select.value).toBe('1'));
   });
 
-  it('leaves the dropdown unselected when the default is absent from the list', async () => {
-    mockGet({ schemes: [HOURLY_SCHEME], defaultRateScheme: '999' });
+  it('leaves the dropdown unselected when no row is flagged is_default', async () => {
+    mockGet({ schemes: [HOURLY_SCHEME, FLAT_FEE_SCHEME] });
     const { findByLabelText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5 },
     });
@@ -302,13 +301,17 @@ describe('WorkItemForm preset dropdown default', () => {
     expect(select.value).toBe('');
   });
 
-  it('leaves the dropdown unselected when no default is configured', async () => {
-    mockGet({ schemes: [HOURLY_SCHEME], defaultRateScheme: '' });
+  it('preselects the default for a permissionless user without ever calling /api/settings/', async () => {
+    // The exact scenario RM hit: a worker with no permission atoms (canManage
+    // false is the default prop) opens the create-task form. Preselection
+    // must work off the rate-scheme list alone.
+    mockGet({ schemes: [{ ...HOURLY_SCHEME, is_default: true }, FLAT_FEE_SCHEME] });
     const { findByLabelText } = render(WorkItemForm, {
-      props: { open: true, mode: 'manual', context: 'job', contextId: 5 },
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, canManage: false },
     });
     const select = await findByLabelText(/Rate Scheme/);
-    expect(select.value).toBe('');
+    await waitFor(() => expect(select.value).toBe('1'));
+    expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining('/api/settings/'));
   });
 });
 
@@ -586,7 +589,6 @@ describe('WorkItemForm subtask mode — qty_scales_with_parent', () => {
     api.get.mockReset();
     api.get.mockImplementation((url) => {
       if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: schemes });
-      if (url.startsWith('/api/settings/')) return Promise.resolve({});
       if (url === `/api/tasks/${parent.task_id}/`) return Promise.resolve(parent);
       return Promise.resolve({});
     });
@@ -726,7 +728,6 @@ describe('WorkItemForm subtask preview matches the backend\'s own expected_qty (
     api.get.mockReset();
     api.get.mockImplementation((url) => {
       if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [EACH_SCHEME] });
-      if (url.startsWith('/api/settings/')) return Promise.resolve({});
       if (url === `/api/tasks/${PARENT_BATCH.task_id}/`) return Promise.resolve(PARENT_BATCH);
       return Promise.resolve({});
     });

@@ -61,7 +61,7 @@
   // TaskSerializer's docstring), so it's sent unconditionally, never
   // gated on effectiveCanManage. parentInfo is this form's own fetch of
   // the parent task (unit_label/est_qty) — self-contained, same pattern
-  // as the onMount scheme/settings fetches above — so no caller needs to
+  // as the onMount scheme fetch above — so no caller needs to
   // thread the parent object through.
   let qtyScalesWithParent = $state(true);
   let parentInfo = $state(null);
@@ -87,24 +87,26 @@
 
   let schemes = $state([]);
   let loading = $state(true);
-  let defaultSchemeId = $state(''); // Configuration `default_rate_scheme`, preselects the CREATE dropdown
+  // The shop's configured default preset, preselects the CREATE dropdown.
+  // Read straight off the `is_default` flag on the already-fetched
+  // task-applicable list (RM browser-testing note 3): the old approach hit
+  // /api/settings/ for this, which is CanManageConfig-gated and 403s
+  // silently for a permissionless worker, so the dropdown never preselected
+  // and submit hit the required-scheme error. The list itself is
+  // IsAuthenticated-only, so this now works for every user who can open
+  // this form at all.
+  let defaultSchemeId = $state('');
 
   onMount(async () => {
     try {
       const resp = await api.get('/api/rate-schemes/?task_applicable=true');
       schemes = resp.results || resp;
+      const defaultRow = schemes.find((s) => s.is_default);
+      defaultSchemeId = defaultRow ? defaultRow.rate_scheme_id : '';
     } catch (e) {
       formError = e.message || 'Could not load rate schemes.';
     } finally {
       loading = false;
-    }
-    // Best-effort: a settings-fetch failure shouldn't block the form from
-    // loading its (more important) rate-scheme list.
-    try {
-      const settings = await api.get('/api/settings/');
-      defaultSchemeId = settings.default_rate_scheme || '';
-    } catch (e) {
-      defaultSchemeId = '';
     }
   });
 
@@ -197,7 +199,7 @@
   const isSubtaskForm = $derived(parentTaskId != null);
 
   // Self-contained fetch of the parent task (unit_label + est_qty) — same
-  // fetch-on-open pattern as onMount's scheme/settings loads, just keyed on
+  // fetch-on-open pattern as onMount's scheme load, just keyed on
   // parentTaskId instead of mount. Refetches only when the parent identity
   // actually changes (not on every keystroke).
   $effect(() => {

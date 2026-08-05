@@ -18,7 +18,6 @@ const SCHEMES = [
 function mockNoSettings() {
   api.get.mockImplementation((url) => {
     if (url.includes('/api/rate-schemes/')) return Promise.resolve({ results: SCHEMES });
-    if (url.includes('/api/settings/')) return Promise.resolve({});
     return Promise.resolve({});
   });
 }
@@ -233,10 +232,13 @@ describe('COAddLineForm', () => {
       expect(await findByRole('option', { name: 'CNC Routing' })).toBeInTheDocument();
     });
 
-    it('preselects the configured default preset when it is in the list, and stamps its fields', async () => {
+    it('preselects the row flagged is_default in the fetched list, and stamps its fields', async () => {
+      // RM browser-testing note 3: the default preset comes from the
+      // `is_default` flag embedded on the (IsAuthenticated-only)
+      // rate-scheme list — never from CanManageConfig-gated /api/settings/.
+      const schemesWithDefault = [SCHEMES[0], { ...SCHEMES[1], is_default: true }];
       api.get.mockImplementation((url) => {
-        if (url.includes('/api/rate-schemes/')) return Promise.resolve({ results: SCHEMES });
-        if (url.includes('/api/settings/')) return Promise.resolve({ default_rate_scheme: '2' });
+        if (url.includes('/api/rate-schemes/')) return Promise.resolve({ results: schemesWithDefault });
         return Promise.resolve({});
       });
       const choice = { type: 'freeform', kind: 'work', typed: 'Custom milling' };
@@ -248,14 +250,14 @@ describe('COAddLineForm', () => {
       expect(select).toHaveValue('2');
       expect(await findByRole('spinbutton', { name: /rate/i })).toHaveValue(40);
       expect(getByLabelText(/accounting category/i)).toHaveValue('9');
+      // Exact match, not stringContaining: UnitsSelect legitimately hits
+      // /api/settings/units/ (IsAuthenticated) for the units list — only the
+      // gated settings_view endpoint (/api/settings/ exactly) is forbidden here.
+      expect(api.get).not.toHaveBeenCalledWith('/api/settings/');
     });
 
-    it('does not preselect a default that is absent from the list', async () => {
-      api.get.mockImplementation((url) => {
-        if (url.includes('/api/rate-schemes/')) return Promise.resolve({ results: SCHEMES });
-        if (url.includes('/api/settings/')) return Promise.resolve({ default_rate_scheme: '999' });
-        return Promise.resolve({});
-      });
+    it('does not preselect anything when no row is flagged is_default', async () => {
+      mockNoSettings();
       const choice = { type: 'freeform', kind: 'work', typed: 'Custom milling' };
       const { findByRole } = render(COAddLineForm, {
         props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },

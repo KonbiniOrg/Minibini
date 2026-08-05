@@ -83,6 +83,33 @@ test.describe('worker creates a stamped task — no money inputs', () => {
     await expect(schemeChipOf(page)).toContainText(scheme.name);
     await expect(rateChipOf(page)).toContainText(`$${scheme.rate}/${scheme.unit_label}`);
   });
+
+  // RM browser-testing note 3: a worker with no permission atoms opened this
+  // exact form and the Rate Scheme dropdown never preselected the shop's
+  // configured default — /api/settings/ (where default_rate_scheme lives) is
+  // CanManageConfig-gated, so the worker's fetch 403'd silently. The fix
+  // rides the default's identity on the (IsAuthenticated) rate-scheme list's
+  // `is_default` flag instead. specs/settings/rate-scheme-presets.spec.js
+  // already covers this preselection for the configtime persona (who could
+  // always read /api/settings/ and so never hit the bug); this is the
+  // permissionless-persona case.
+  test('the shop-configured default preset preselects here too, without needing settings access', async ({ page }) => {
+    const { job, scheme } = await makeJobAndScheme(`${stamp}-worker-default`);
+    const configApi = await apiAs(personas.configtime);
+    await configApi.patch('/api/settings/', { default_rate_scheme: String(scheme.rate_scheme_id) });
+    await configApi.dispose();
+
+    try {
+      await page.goto(`/#/jobs/${job.job_id}/tasks`);
+      await page.getByRole('button', { name: 'Add Work' }).click();
+      await page.getByLabel('Add line').getByRole('button', { name: 'Add Task' }).click();
+      await expect(page.getByLabel('Rate Scheme *')).toHaveValue(String(scheme.rate_scheme_id));
+    } finally {
+      const cleanupApi = await apiAs(personas.configtime);
+      await cleanupApi.patch('/api/settings/', { default_rate_scheme: '' });
+      await cleanupApi.dispose();
+    }
+  });
 });
 
 test.describe('PM edits the stamped rate', () => {
