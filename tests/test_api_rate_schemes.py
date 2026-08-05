@@ -9,6 +9,7 @@ service-layer (ConfigurationService) coverage of retire/reactivate/delete.
 """
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -190,10 +191,14 @@ class DefaultRateSchemeSettingsTest(TestCase):
         self.assertEqual(resp.data['default_rate_scheme'], '')
 
 
-class RetireClearsDefaultRateSchemeTest(TestCase):
-    """Retiring the scheme that is the current default_rate_scheme must
-    clear the key — an inactive preset can never linger as the default
-    offered on new work (task-owned-money Phase 1, Task 7)."""
+class RetireDefaultRateSchemeGuardTest(TestCase):
+    """RM browser-testing fix: retiring the scheme that is the current
+    default_rate_scheme must be REJECTED, not silently clear the key — an
+    inactive preset used to be able to linger as the default with no signal
+    to the user (task-owned-money Phase 1, Task 7 originally auto-cleared
+    the key on retire; RM found that gave no warning at all). REWRITTEN
+    from the old RetireClearsDefaultRateSchemeTest, which asserted the
+    clear-on-retire behavior this fix replaces."""
 
     def setUp(self):
         self.admin = grant_atoms(
@@ -209,43 +214,71 @@ class RetireClearsDefaultRateSchemeTest(TestCase):
             rate=Decimal('20'), unit_label='ea', accounting_category=self.ac,
         )
 
-    def test_retiring_the_default_clears_the_key_via_service(self):
+    def test_retiring_the_default_is_rejected_via_service(self):
         ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
-        ConfigurationService.retire_rate_scheme(self.scheme.pk)
-        self.assertEqual(
-            Configuration.objects.get(key='default_rate_scheme').value, '')
-
-    def test_retiring_the_default_clears_the_key_via_api(self):
-        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
-        resp = _client(self.admin).post(
-            f'/api/rate-schemes/{self.scheme.pk}/retire/')
-        self.assertEqual(resp.status_code, 200, resp.data)
-        self.assertEqual(
-            Configuration.objects.get(key='default_rate_scheme').value, '')
-
-    def test_retiring_a_non_default_scheme_leaves_the_key_untouched(self):
-        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
-        ConfigurationService.retire_rate_scheme(self.other.pk)
+        with self.assertRaises(ValidationError):
+            ConfigurationService.retire_rate_scheme(self.scheme.pk)
+        self.scheme.refresh_from_db()
+        self.assertTrue(self.scheme.is_active)
         self.assertEqual(
             Configuration.objects.get(key='default_rate_scheme').value,
             str(self.scheme.pk))
 
-    def test_retiring_when_no_default_is_set_does_not_create_the_key(self):
+    def test_retiring_the_default_is_rejected_via_api(self):
+        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
+        resp = _client(self.admin).post(
+            f'/api/rate-schemes/{self.scheme.pk}/retire/')
+        self.assertEqual(resp.status_code, 400, resp.data)
+        self.assertIn('change the default first', resp.data['detail'])
+        self.scheme.refresh_from_db()
+        self.assertTrue(self.scheme.is_active)
+        self.assertEqual(
+            Configuration.objects.get(key='default_rate_scheme').value,
+            str(self.scheme.pk))
+
+    def test_deleting_the_default_is_rejected_via_api(self):
+        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
+        resp = _client(self.admin).delete(
+            f'/api/rate-schemes/{self.scheme.pk}/')
+        self.assertEqual(resp.status_code, 400, resp.data)
+        self.assertIn('change the default first', resp.data['detail'])
+        self.assertTrue(RateScheme.objects.filter(pk=self.scheme.pk).exists())
+
+    def test_retiring_a_non_default_scheme_still_succeeds(self):
+        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
+        ConfigurationService.retire_rate_scheme(self.other.pk)
+        self.other.refresh_from_db()
+        self.assertFalse(self.other.is_active)
+        self.assertEqual(
+            Configuration.objects.get(key='default_rate_scheme').value,
+            str(self.scheme.pk))
+
+    def test_retiring_when_no_default_is_set_still_succeeds(self):
         ConfigurationService.retire_rate_scheme(self.scheme.pk)
-        self.assertFalse(
-            Configuration.objects.filter(key='default_rate_scheme').exists())
+        self.scheme.refresh_from_db()
+        self.assertFalse(self.scheme.is_active)
+
+    def test_changing_the_default_away_then_retiring_the_old_default_succeeds(self):
+        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
+        ConfigurationService.set('default_rate_scheme', str(self.other.pk))
+        ConfigurationService.retire_rate_scheme(self.scheme.pk)
+        self.scheme.refresh_from_db()
+        self.assertFalse(self.scheme.is_active)
 
 
-class GenericUpdateIsActiveBypassTest(TestCase):
-    """Code review finding (post-implementation): RateSchemeSerializer
-    exposes is_active as a normal writable field, and the generic PATCH
-    path (RateSchemeViewSet.update -> ConfigurationService.update_rate_scheme)
-    did a plain setattr/save with no default-clearing logic. So
-    PATCH /api/rate-schemes/{id}/ {"is_active": false} could flip the flag
-    without going through retire_rate_scheme, leaving default_rate_scheme
-    pointing at a now-inactive scheme. update_rate_scheme now shares the
-    same clearing check retire_rate_scheme uses whenever is_active
-    transitions True -> False, regardless of entry point."""
+class GenericUpdateIsActiveGuardTest(TestCase):
+    """Code review finding (post-implementation, task-owned-money Phase 1):
+    RateSchemeSerializer exposes is_active as a normal writable field, and
+    the generic PATCH path (RateSchemeViewSet.update ->
+    ConfigurationService.update_rate_scheme) did a plain setattr/save with
+    no default-scheme check at all. So PATCH /api/rate-schemes/{id}/
+    {"is_active": false} could flip the flag without going through
+    retire_rate_scheme, leaving default_rate_scheme pointing at a
+    now-inactive scheme. update_rate_scheme now shares the same
+    reject-if-default guard retire_rate_scheme uses whenever is_active
+    transitions True -> False, regardless of entry point. REWRITTEN from
+    GenericUpdateIsActiveBypassTest (asserted the old clear-the-key
+    behavior; now asserts rejection)."""
 
     def setUp(self):
         self.admin = grant_atoms(
@@ -257,23 +290,25 @@ class GenericUpdateIsActiveBypassTest(TestCase):
             rate=Decimal('10'), unit_label='ea', accounting_category=self.ac,
         )
 
-    def test_patch_is_active_false_clears_the_default_via_api(self):
+    def test_patch_is_active_false_on_the_default_is_rejected_via_api(self):
         ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
         resp = _client(self.admin).patch(
             f'/api/rate-schemes/{self.scheme.pk}/',
             {'is_active': False}, format='json')
-        self.assertEqual(resp.status_code, 200, resp.data)
-        self.assertFalse(resp.data['is_active'])
+        self.assertEqual(resp.status_code, 400, resp.data)
+        self.assertIn('change the default first', resp.data['detail'])
         self.scheme.refresh_from_db()
-        self.assertFalse(self.scheme.is_active)
+        self.assertTrue(self.scheme.is_active)
         self.assertEqual(
-            Configuration.objects.get(key='default_rate_scheme').value, '')
+            Configuration.objects.get(key='default_rate_scheme').value,
+            str(self.scheme.pk))
 
-    def test_update_rate_scheme_service_clears_the_default_on_deactivate(self):
+    def test_update_rate_scheme_service_rejects_deactivating_the_default(self):
         ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
-        ConfigurationService.update_rate_scheme(self.scheme, is_active=False)
-        self.assertEqual(
-            Configuration.objects.get(key='default_rate_scheme').value, '')
+        with self.assertRaises(ValidationError):
+            ConfigurationService.update_rate_scheme(self.scheme, is_active=False)
+        self.scheme.refresh_from_db()
+        self.assertTrue(self.scheme.is_active)
 
     def test_update_rate_scheme_service_leaves_default_alone_when_is_active_untouched(self):
         ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
@@ -282,10 +317,12 @@ class GenericUpdateIsActiveBypassTest(TestCase):
             Configuration.objects.get(key='default_rate_scheme').value,
             str(self.scheme.pk))
 
-    def test_update_rate_scheme_service_reactivating_does_not_touch_default(self):
-        # Flipping True -> False -> True shouldn't resurrect a cleared key.
+    def test_update_rate_scheme_service_reactivating_after_guard_rejection_is_unaffected(self):
+        # The rejected deactivate attempt must not have partially applied.
         ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
-        ConfigurationService.update_rate_scheme(self.scheme, is_active=False)
-        ConfigurationService.update_rate_scheme(self.scheme, is_active=True)
-        self.assertEqual(
-            Configuration.objects.get(key='default_rate_scheme').value, '')
+        with self.assertRaises(ValidationError):
+            ConfigurationService.update_rate_scheme(self.scheme, is_active=False)
+        ConfigurationService.update_rate_scheme(self.scheme, rate=Decimal('12'))
+        self.scheme.refresh_from_db()
+        self.assertTrue(self.scheme.is_active)
+        self.assertEqual(self.scheme.rate, Decimal('12'))

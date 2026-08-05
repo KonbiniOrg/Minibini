@@ -314,9 +314,9 @@ anything.
 | `GET /api/rate-schemes/{id}/` | Retrieve any entry |
 | `POST /api/rate-schemes/` | Create — `CanManageConfig` |
 | `PUT/PATCH /api/rate-schemes/{id}/` | Edit any field directly — `CanManageConfig`. No 409, no frozen-fields rejection, referenced or not. |
-| `POST /api/rate-schemes/{id}/retire/` | Flip `is_active` to `False` — `CanManageConfig`. Clears the `default_rate_scheme` Configuration key if this was it (§3.4). |
+| `POST /api/rate-schemes/{id}/retire/` | Flip `is_active` to `False` — `CanManageConfig`. Rejected (400) if this scheme is the current `default_rate_scheme` (§3.4). |
 | `POST /api/rate-schemes/{id}/reactivate/` | Flip `is_active` back to `True` — `CanManageConfig` |
-| `DELETE /api/rate-schemes/{id}/` | Delete — allowed even with stamped tasks (`Task.source_scheme` is `SET_NULL`); blocked (409 via `ProtectedError`) only while a `ServiceItem` still references it (`ServiceItem.rate_scheme` is `PROTECT`) |
+| `DELETE /api/rate-schemes/{id}/` | Delete — allowed even with stamped tasks (`Task.source_scheme` is `SET_NULL`); blocked (409 via `ProtectedError`) while a `ServiceItem` still references it (`ServiceItem.rate_scheme` is `PROTECT`), and rejected (400) if this scheme is the current `default_rate_scheme` (§3.4) |
 
 Permissions: read is `IsAuthenticated`; all write actions require
 `CanManageConfig`.
@@ -338,12 +338,22 @@ explicit Save — not auto-committed on change).
 
 - `PATCH /api/settings/` rejects a value that isn't blank or an
   **active** RateScheme id.
-- `ConfigurationService._clear_default_rate_scheme_if_matches` is the
-  single gate that clears the key to `''` whenever the current default
-  preset transitions `is_active: True → False` — called from both
-  `retire_rate_scheme` and the general `update_rate_scheme` path (a
-  plain field-level `PATCH {"is_active": false}` can't strand the
-  default pointing at an inactive preset either).
+- Retiring or deleting the current default preset is **rejected outright**
+  (`ValidationError`, "This Rate Scheme is the default for new tasks —
+  change the default first."), not silently cleared — an RM browser-testing
+  finding: the old auto-clear-on-retire behavior gave no warning that the
+  scheme being retired was the default. `ConfigurationService.
+  _raise_if_default_rate_scheme` is the single gate, called from
+  `retire_rate_scheme`, `delete_rate_scheme`, and the general
+  `update_rate_scheme` path whenever `is_active` transitions
+  `True → False` (a plain field-level `PATCH {"is_active": false}` goes
+  through the same guard, not just `retire()`). The caller must change
+  `default_rate_scheme` to something else (or blank) first.
+- RateSchemeManager (the Settings → Pricing UI) doesn't wait for the
+  server rejection: the row matching the current default renders a
+  greyed-out "default" note in place of the Retire/Delete buttons
+  entirely, so the guard is mostly unreachable from the SPA — it's a
+  backstop for any other caller.
 
 ### 3.5 Picker filtering
 

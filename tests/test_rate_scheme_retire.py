@@ -106,6 +106,28 @@ class RetireFlagTest(RateSchemeRetireTestBase):
         self.assertEqual(task.source_scheme_id, scheme.pk)
 
 
+class DefaultRateSchemeGuardTest(RateSchemeRetireTestBase):
+    """RM browser-testing fix: retire/delete of the current
+    `default_rate_scheme` is rejected outright rather than silently
+    clearing the Configuration key (see tests/test_api_rate_schemes.py for
+    the API-level + PATCH-is_active-bypass coverage of the same guard)."""
+
+    def test_retire_rejects_the_current_default(self):
+        scheme = self._scheme()
+        ConfigurationService.set('default_rate_scheme', str(scheme.pk))
+        with self.assertRaises(ValidationError):
+            ConfigurationService.retire_rate_scheme(scheme.pk)
+        scheme.refresh_from_db()
+        self.assertTrue(scheme.is_active)
+
+    def test_delete_rejects_the_current_default(self):
+        scheme = self._scheme()
+        ConfigurationService.set('default_rate_scheme', str(scheme.pk))
+        with self.assertRaises(ValidationError):
+            ConfigurationService.delete_rate_scheme(scheme)
+        self.assertTrue(RateScheme.objects.filter(pk=scheme.pk).exists())
+
+
 class DeleteWithStampedTasksTest(RateSchemeRetireTestBase):
     def test_delete_scheme_with_stamped_tasks_succeeds(self):
         scheme = self._scheme()

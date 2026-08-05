@@ -1214,17 +1214,20 @@ class ConfigurationService:
         it. No frozen fields, no referenced-freeze refusal.
 
         `is_active` is a normal field here too (PATCH can flip it directly,
-        not just via retire()/reactivate()) — so the default-scheme clear
+        not just via retire()/reactivate()) — so the default-scheme guard
         has to be checked here as well as in retire_rate_scheme, or a plain
-        PATCH {"is_active": false} would leave `default_rate_scheme`
-        pointing at an inactive preset (Task 7 review finding)."""
+        PATCH {"is_active": false} would silently deactivate the scheme
+        `default_rate_scheme` points at (Task 7 review finding; the guard
+        itself is the RM browser-testing fix that replaced the old
+        clear-on-retire behavior)."""
         was_active = scheme.is_active
+        is_active_after = fields.get('is_active', was_active)
+        if was_active and not is_active_after:
+            ConfigurationService._raise_if_default_rate_scheme(scheme.pk)
         for field, value in fields.items():
             setattr(scheme, field, value)
         scheme.full_clean()
         scheme.save()
-        if was_active and not scheme.is_active:
-            ConfigurationService._clear_default_rate_scheme_if_matches(scheme.pk)
         return scheme
 
     @staticmethod
@@ -1232,20 +1235,33 @@ class ConfigurationService:
         """Deleting a scheme with stamped tasks is allowed — Task.source_scheme
         is SET_NULL, and the task's own money fields are unaffected. A scheme
         still referenced by a ServiceItem can't be deleted: ServiceItem.rate_scheme
-        is PROTECT at the DB level, so that raises ProtectedError uncaught."""
+        is PROTECT at the DB level, so that raises ProtectedError uncaught.
+
+        A scheme that's the current `default_rate_scheme` can't be deleted
+        either — same guard as retire (§ below)."""
+        ConfigurationService._raise_if_default_rate_scheme(scheme.pk)
         scheme.delete()
 
+    DEFAULT_RATE_SCHEME_GUARD_MESSAGE = (
+        'This Rate Scheme is the default for new tasks — change the '
+        'default first.'
+    )
+
     @staticmethod
-    def _clear_default_rate_scheme_if_matches(pk):
-        """Shared by retire_rate_scheme and update_rate_scheme: whenever a
-        scheme transitions is_active True -> False, and it's the current
-        `default_rate_scheme` Configuration key, clear the key to '' — an
-        inactive preset must never linger as the default offered on new
-        work. This is the single gate for that invariant regardless of
-        which code path flipped the flag."""
+    def _raise_if_default_rate_scheme(pk):
+        """Shared by retire_rate_scheme, delete_rate_scheme, and
+        update_rate_scheme's active->inactive transition: reject the
+        operation outright when the target is the current
+        `default_rate_scheme` Configuration key, rather than silently
+        clearing the key out from under the setting (RM browser-testing
+        finding — retiring the default gave no signal that it was the
+        default, and left the picker pointing at nothing). The caller must
+        change the default first."""
         default = Configuration.objects.filter(key='default_rate_scheme').first()
         if default is not None and default.value == str(pk):
-            ConfigurationService.set('default_rate_scheme', '')
+            raise ValidationError(
+                ConfigurationService.DEFAULT_RATE_SCHEME_GUARD_MESSAGE,
+                code='is_default')
 
     @staticmethod
     def retire_rate_scheme(pk):
@@ -1253,18 +1269,18 @@ class ConfigurationService:
         task-creation paths (SchemeInactiveError) — stamped tasks and their
         money fields are untouched.
 
-        If this scheme is the current `default_rate_scheme` Configuration
-        key (the Settings-page default preset for task creation), clear the
-        key to '' — an inactive preset must never linger as the default
-        offered on new work."""
+        Rejected outright if this scheme is the current `default_rate_scheme`
+        Configuration key (the Settings-page default preset for task
+        creation) — the caller must change the default first rather than
+        have it silently cleared."""
         from apps.jobs.models import RateScheme
         try:
             scheme = RateScheme.objects.get(pk=pk)
         except RateScheme.DoesNotExist:
             raise NotFoundError(f'RateScheme {pk} not found')
+        ConfigurationService._raise_if_default_rate_scheme(pk)
         scheme.is_active = False
         scheme.save()
-        ConfigurationService._clear_default_rate_scheme_if_matches(pk)
         return scheme
 
     @staticmethod
