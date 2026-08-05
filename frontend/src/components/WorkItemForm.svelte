@@ -7,6 +7,7 @@
   import FieldError from './FieldError.svelte';
   import FormMessage from './FormMessage.svelte';
   import Modal from './Modal.svelte';
+  import UnitsSelect from './UnitsSelect.svelte';
 
   let {
     open = false,
@@ -135,9 +136,17 @@
       editUnitLabel = item.unit_label ?? '';
       editAccountingCategory = item.accounting_category ?? '';
       estQty = item.est_qty ?? '';
+      // Seeded from the item snapshot's OWN unit_label, not the live
+      // `isHourUnit` derived — that derived reads editUnitLabel, which this
+      // same effect writes two lines up. Reading it here would make the
+      // effect depend on the field it just set, so editing the Unit
+      // dropdown (which changes editUnitLabel, which changes isHourUnit)
+      // would re-trigger this whole populate block and stomp the user's
+      // pick right back to item.unit_label — the Unit field would look
+      // editable but silently snap back on every change.
       estWorkerTime = item.est_worker_time
         ? formatDuration(item.est_worker_time)
-        : (isHourUnit ? (item.est_qty ?? '') : '');
+        : (item.unit_label === 'hour' ? (item.est_qty ?? '') : '');
       templateId = '';
       // Subtask forms only (item.parent_task set) — read the flag straight
       // off the task, matching the fill-once-then-freely-editable pattern
@@ -626,7 +635,7 @@
               </label>
               <span class="rate-per">per</span>
               <label><strong>Unit</strong><br>
-                <input type="text" bind:value={editUnitLabel}>
+                <UnitsSelect bind:value={editUnitLabel} />
               </label>
               <FieldError errors={fieldErrs} field="rate" />
               <FieldError errors={fieldErrs} field="unit_label" />
