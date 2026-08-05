@@ -266,6 +266,64 @@ class RetireDefaultRateSchemeGuardTest(TestCase):
         self.assertFalse(self.scheme.is_active)
 
 
+class RateSchemeIsDefaultFlagTest(TestCase):
+    """RM browser-testing note 3: a worker with no permission atoms tried
+    to add a task to an in-progress job and the RateScheme dropdown never
+    preselected the default — WorkItemForm read `default_rate_scheme` via
+    /api/settings/, which is CanManageConfig-gated, so the fetch 403s
+    silently for a permissionless user and submit then hits the
+    required-scheme validation error. The fix: expose the default's
+    identity as a computed `is_default` flag on the (already
+    IsAuthenticated-only) rate-scheme list, so the frontend can preselect
+    from data it already has instead of a gated endpoint."""
+
+    def setUp(self):
+        self.plain = User.objects.create_user(username='rsd_plain', password='x')
+        self.ac = AccountingCategory.objects.create(code='RSD', name='RSD')
+        self.scheme = RateScheme.objects.create(
+            name='S-rsd', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10'), unit_label='ea', accounting_category=self.ac,
+        )
+        self.other = RateScheme.objects.create(
+            name='S-rsd-other', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('20'), unit_label='ea', accounting_category=self.ac,
+        )
+
+    def test_is_default_true_only_on_configured_row(self):
+        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
+        resp = _client(self.plain).get('/api/rate-schemes/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        flags = {r['rate_scheme_id']: r['is_default']
+                 for r in resp.json()['results']}
+        self.assertTrue(flags[self.scheme.pk])
+        self.assertFalse(flags[self.other.pk])
+
+    def test_is_default_false_when_no_default_configured(self):
+        resp = _client(self.plain).get('/api/rate-schemes/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertTrue(
+            all(not r['is_default'] for r in resp.json()['results']))
+
+    def test_permissionless_user_sees_is_default_via_task_applicable_list(self):
+        """The permission gap RM hit: a worker (IsAuthenticated only, no
+        atoms) reads the task-applicable list when opening the create-task
+        form. They must see is_default=true on the configured row."""
+        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
+        resp = _client(self.plain).get(
+            '/api/rate-schemes/?task_applicable=true')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        row = next(r for r in resp.json()['results']
+                   if r['rate_scheme_id'] == self.scheme.pk)
+        self.assertTrue(row['is_default'])
+
+    def test_is_default_survives_retrieve(self):
+        ConfigurationService.set('default_rate_scheme', str(self.scheme.pk))
+        resp = _client(self.plain).get(
+            f'/api/rate-schemes/{self.scheme.pk}/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertTrue(resp.data['is_default'])
+
+
 class GenericUpdateIsActiveGuardTest(TestCase):
     """Code review finding (post-implementation, task-owned-money Phase 1):
     RateSchemeSerializer exposes is_active as a normal writable field, and

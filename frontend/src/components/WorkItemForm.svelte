@@ -63,24 +63,26 @@
 
   let schemes = $state([]);
   let loading = $state(true);
-  let defaultSchemeId = $state(''); // Configuration `default_rate_scheme`, preselects the CREATE dropdown
+  // The shop's configured default preset, preselects the CREATE dropdown.
+  // Read straight off the `is_default` flag on the already-fetched
+  // task-applicable list (RM browser-testing note 3): the old approach hit
+  // /api/settings/ for this, which is CanManageConfig-gated and 403s
+  // silently for a permissionless worker, so the dropdown never preselected
+  // and submit hit the required-scheme error. The list itself is
+  // IsAuthenticated-only, so this now works for every user who can open
+  // this form at all.
+  let defaultSchemeId = $state('');
 
   onMount(async () => {
     try {
       const resp = await api.get('/api/rate-schemes/?task_applicable=true');
       schemes = resp.results || resp;
+      const defaultRow = schemes.find((s) => s.is_default);
+      defaultSchemeId = defaultRow ? defaultRow.rate_scheme_id : '';
     } catch (e) {
       formError = e.message || 'Could not load rate schemes.';
     } finally {
       loading = false;
-    }
-    // Best-effort: a settings-fetch failure shouldn't block the form from
-    // loading its (more important) rate-scheme list.
-    try {
-      const settings = await api.get('/api/settings/');
-      defaultSchemeId = settings.default_rate_scheme || '';
-    } catch (e) {
-      defaultSchemeId = '';
     }
   });
 
