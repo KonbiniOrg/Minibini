@@ -699,6 +699,21 @@ class SourceSchemeRestampTest(TestCase):
         self.manager.user_permissions.add(
             Permission.objects.get(codename='can_manage_jobs'))
         self.manager = User.objects.get(pk=self.manager.pk)
+        # This job's PM — no atom. CanManageJobOrPM scopes the atom-less PM
+        # to THEIR OWN job's tasks (JobService.user_can_manage), same gate
+        # _can_write_money reads for every MONEY_FIELDS entry including
+        # source_scheme now — mirrors TaskMoneyPermissionTest's pm/other_pm
+        # split above.
+        self.pm = User.objects.create_user(username='ss_pm', password='testpass')
+        self.job.project_manager = self.pm
+        self.job.save(update_fields=['project_manager'])
+        other_contact = Contact.objects.create(
+            first_name='SS', last_name='Other', email='ss-other-job@test.example')
+        self.other_job = Job.objects.create(
+            name='SS Other Job', contact=other_contact, job_number='JOB-SS-002')
+        self.other_pm = User.objects.create_user(username='ss_other_pm', password='testpass')
+        self.other_job.project_manager = self.other_pm
+        self.other_job.save(update_fields=['project_manager'])
         self.task = _stamp_task(self.job, self.scheme_a, 'Restampable')
 
     def _url(self, task=None):
@@ -762,6 +777,39 @@ class SourceSchemeRestampTest(TestCase):
 
     def test_worker_patch_source_scheme_returns_403(self):
         self.client.force_login(self.worker)
+        resp = self.client.patch(self._url(), data={
+            'source_scheme': self.scheme_b.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 403, resp.content)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.source_scheme_id, self.scheme_a.pk)
+
+    # --- PM-of-this-job vs PM-of-a-different-job (RM follow-up: "don't
+    # forget to allow PMs to make this edit") — mirrors
+    # TaskMoneyPermissionTest's pm/other_pm split for every other
+    # MONEY_FIELDS entry; source_scheme goes through the identical
+    # _can_write_money -> JobService.user_can_manage gate, no atom required
+    # for the job's OWN PM. ---
+
+    def test_pm_of_this_job_can_patch_source_scheme(self):
+        self.client.force_login(self.pm)
+        resp = self.client.patch(self._url(), data={
+            'source_scheme': self.scheme_b.pk,
+            'rate': str(self.scheme_b.rate),
+            'unit_label': self.scheme_b.unit_label,
+            'accounting_category': self.ac2.pk,
+            'active_modifiers': [],
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.source_scheme_id, self.scheme_b.pk)
+        self.assertEqual(self.task.rate, self.scheme_b.rate)
+
+    def test_pm_of_a_different_job_cannot_patch_source_scheme(self):
+        """Being *a* job's PM doesn't grant money-write on every job's
+        tasks — only CanManageJobOrPM's own-job scoping (same assertion
+        TaskMoneyPermissionTest makes for rate/unit_label/etc.)."""
+        self.client.force_login(self.other_pm)
         resp = self.client.patch(self._url(), data={
             'source_scheme': self.scheme_b.pk,
         }, content_type='application/json')
