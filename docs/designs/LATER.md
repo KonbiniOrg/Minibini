@@ -889,3 +889,20 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the cleanup lands with bucket (a) re-authored, fresh
   `migrate` + full suite green from an empty DB, and the e2e seed still
   loads.
+
+
+- **Unstyled `<select>` elements read as "greyed out / disabled" on
+  Chrome-on-macOS (and likely other browser/OS combos).** — _added
+  2026-08-04_
+  The app has no `select` styling anywhere (`app.css` has none;
+  components render bare selects), so every dropdown gets the native
+  chrome — on Chrome/macOS that's a grey rounded button, which sits
+  next to white `<input>` fields and misreads as a permission-disabled
+  control. RM hit exactly this on the task edit modal (Rate Scheme /
+  Unit / Accounting Category selects beside the white Rate input) and
+  confirmed the controls were fully functional. Decision for now:
+  change nothing; *maybe* adopt an app-wide default select style (white
+  field look matching inputs — border/background/padding) later.
+  _Done when:_ either an app-wide `select` rule lands in `app.css`
+  (matching the input look, checked across the major pages), or the
+  team decides native chrome is acceptable and this entry is closed.
