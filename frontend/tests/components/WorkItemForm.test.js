@@ -14,15 +14,19 @@ const FLAT_FEE_SCHEME = { rate_scheme_id: 2, name: 'Quick Fix', algorithm: 'perc
 const HOUR_UNIT_SCHEME = { rate_scheme_id: 7, name: 'CNC Hourly', algorithm: 'elapsed_time', rate: '90', unit_label: 'hour', modifiers: [] };
 const EACH_SCHEME = { rate_scheme_id: 8, name: 'Widget', algorithm: 'entered_qty', rate: '10', unit_label: 'ea', modifiers: [] };
 const CATEGORIES = [{ id: 3, code: 'LABOR', name: 'Labor' }, { id: 4, code: 'MATL', name: 'Materials' }];
+const UNITS = ['none', 'ea', 'hour', 'min', 'sheet', 'sq ft', 'ft', 'yd', 'm'];
 
 // Routes api.get by URL prefix. The default preset comes from the
 // `is_default` flag on the rate-scheme list itself (RM browser-testing
 // note 3) — the form no longer reads /api/settings/ at all, so no route
 // for it here; a stray call would just fall through to the catch-all.
+// /api/settings/units/ is a separate (IsAuthenticated) endpoint — the edit-
+// mode Unit field's UnitsSelect (RM browser-testing note 4) hits it.
 function mockGet({ schemes = [HOURLY_SCHEME, FLAT_FEE_SCHEME] } = {}) {
   api.get.mockReset();
   api.get.mockImplementation((url) => {
     if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: schemes });
+    if (url.startsWith('/api/settings/units/')) return Promise.resolve(UNITS);
     return Promise.resolve({});
   });
 }
@@ -465,6 +469,13 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
     const rateInput = await findByLabelText(/^Rate/);
     expect(rateInput).toHaveValue(12.5);
     expect(rateInput).not.toBeDisabled();
+    // RM browser-testing note 4: the Unit field next to Rate is the standard
+    // UnitsSelect dropdown, not a stray text input — same "Unit" label,
+    // prefilled from the task's own stamped unit_label.
+    const unitSelect = await findByLabelText(/^Unit/);
+    expect(unitSelect.tagName).toBe('SELECT');
+    expect(unitSelect).toHaveValue('ea');
+    expect(unitSelect).not.toBeDisabled();
     await fireEvent.input(rateInput, { target: { value: '15' } });
     const checkbox = getByText(/Rush/).closest('label').querySelector('input[type="checkbox"]');
     expect(checkbox.checked).toBe(true);
@@ -474,6 +485,26 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
       unit_label: 'ea',
       accounting_category: 3,
       active_modifiers: [{ key: 'rush', label: 'Rush', percent: 15 }],
+    }));
+  });
+
+  it('changing the Unit dropdown round-trips the new value to the PATCH payload', async () => {
+    mockGet({ schemes: [MOD_SCHEME] });
+    const { findByLabelText, getByRole } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+        item: STAMPED_ITEM, categories: CATEGORIES,
+      },
+    });
+    const unitSelect = await findByLabelText(/^Unit/);
+    // UnitsSelect loads its option list from /api/settings/units/ async —
+    // wait for the target option to actually be selectable before firing
+    // change (a native select ignores a change to a not-yet-rendered value).
+    await waitFor(() => expect(unitSelect.querySelector('option[value="hour"]')).toBeInTheDocument());
+    await fireEvent.change(unitSelect, { target: { value: 'hour' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/tasks/42/', expect.objectContaining({
+      unit_label: 'hour',
     }));
   });
 
@@ -488,6 +519,10 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
     });
     await findByText(/CNC Cutting/);
     expect(queryByLabelText(/^Rate/)).not.toBeInTheDocument();
+    // Unit dropdown is likewise absent for a non-manager — the read-only
+    // "$rate/unit" text line stands in for it instead.
+    expect(queryByLabelText(/^Unit/)).not.toBeInTheDocument();
+    expect(await findByText(/\$12\.50\/ea/)).toBeInTheDocument();
     // Existing modifier still visible, just not interactive.
     expect(await findByText(/Rush/)).toBeInTheDocument();
     await fireEvent.click(getByRole('button', { name: 'Save' }));
