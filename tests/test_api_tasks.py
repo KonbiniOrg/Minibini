@@ -651,3 +651,150 @@ class InactiveSchemeTaskCreateTest(TestCase):
         }, content_type='application/json')
         self.assertEqual(resp.status_code, 409, resp.content)
         self.assertIn('detail', resp.json())
+
+
+class SourceSchemeRestampTest(TestCase):
+    """RM browser-testing note 5: edit-task modal Rate Scheme becomes
+    changeable with CLIENT-SIDE restamp. TaskSerializer.source_scheme is
+    now writable on UPDATE (still read-only-by-rejection on create — see
+    validate_source_scheme) and joined MONEY_FIELDS, so the mere presence
+    of the key in a PATCH gates on CanManageJobOrPM/financials same as
+    rate/unit_label/accounting_category/active_modifiers. The server
+    doesn't re-derive the money block from the new source_scheme — the
+    client sends the full restamped block in the same PATCH; this test
+    class only exercises the provenance-write contract itself."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+        from django.contrib.auth.models import Permission
+
+        self.ac = AccountingCategory.objects.create(code='SS1', name='Scheme1')
+        self.ac2 = AccountingCategory.objects.create(code='SS2', name='Scheme2')
+        self.scheme_a = RateScheme.objects.create(
+            name='Scheme A', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.00'), unit_label='piece',
+            accounting_category=self.ac,
+        )
+        self.scheme_b = RateScheme.objects.create(
+            name='Scheme B', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('25.00'), unit_label='hour',
+            accounting_category=self.ac2,
+        )
+        self.inactive_scheme = RateScheme.objects.create(
+            name='Retired Scheme', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('5.00'), unit_label='piece',
+            accounting_category=self.ac, is_active=False,
+        )
+        self.pct_scheme = RateScheme.objects.create(
+            name='Pct Scheme', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.ac,
+        )
+        contact = Contact.objects.create(
+            first_name='SS', last_name='Job', email='ss-job@test.example')
+        self.job = Job.objects.create(
+            name='SS Job', contact=contact, job_number='JOB-SS-001')
+        self.worker = User.objects.create_user(username='ss_worker', password='testpass')
+        self.manager = User.objects.create_user(username='ss_mgr', password='testpass')
+        self.manager.user_permissions.add(
+            Permission.objects.get(codename='can_manage_jobs'))
+        self.manager = User.objects.get(pk=self.manager.pk)
+        self.task = _stamp_task(self.job, self.scheme_a, 'Restampable')
+
+    def _url(self, task=None):
+        t = task or self.task
+        return f'/api/jobs/{self.job.pk}/tasks/{t.pk}/'
+
+    def test_manager_patch_source_scheme_updates_provenance(self):
+        self.client.force_login(self.manager)
+        resp = self.client.patch(self._url(), data={
+            'source_scheme': self.scheme_b.pk,
+            'rate': str(self.scheme_b.rate),
+            'unit_label': self.scheme_b.unit_label,
+            'accounting_category': self.ac2.pk,
+            'active_modifiers': [],
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.source_scheme_id, self.scheme_b.pk)
+        self.assertEqual(self.task.rate, self.scheme_b.rate)
+        self.assertEqual(self.task.unit_label, self.scheme_b.unit_label)
+        self.assertEqual(self.task.accounting_category_id, self.ac2.pk)
+
+    def test_patch_nonexistent_source_scheme_returns_400(self):
+        self.client.force_login(self.manager)
+        resp = self.client.patch(self._url(), data={
+            'source_scheme': 999999,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('source_scheme', resp.json())
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.source_scheme_id, self.scheme_a.pk)
+
+    def test_patch_inactive_source_scheme_returns_400(self):
+        self.client.force_login(self.manager)
+        resp = self.client.patch(self._url(), data={
+            'source_scheme': self.inactive_scheme.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('source_scheme', resp.json())
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.source_scheme_id, self.scheme_a.pk)
+
+    def test_patch_percentage_source_scheme_returns_400(self):
+        self.client.force_login(self.manager)
+        resp = self.client.patch(self._url(), data={
+            'source_scheme': self.pct_scheme.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('source_scheme', resp.json())
+
+    def test_post_source_scheme_on_create_returns_400(self):
+        """create keeps its rate_scheme server-stamp contract untouched —
+        source_scheme is UPDATE only."""
+        self.client.force_login(self.manager)
+        resp = self.client.post(f'/api/jobs/{self.job.pk}/tasks/', {
+            'name': 'x', 'rate_scheme': self.scheme_a.pk,
+            'source_scheme': self.scheme_b.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('source_scheme', resp.json())
+
+    def test_worker_patch_source_scheme_returns_403(self):
+        self.client.force_login(self.worker)
+        resp = self.client.patch(self._url(), data={
+            'source_scheme': self.scheme_b.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 403, resp.content)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.source_scheme_id, self.scheme_a.pk)
+
+    def test_patch_source_scheme_on_parent_task_makes_rate_explicit(self):
+        """Existing rule (spec §9 rule 4, unchanged by this note):
+        rate=None on a parent derives its price from children
+        (derived_unit_price()); a restamp PATCH sends an explicit rate
+        that overrides the derivation, same as any other money-field PATCH
+        on a parent — this just confirms source_scheme rides along
+        correctly on that same request."""
+        self.client.force_login(self.manager)
+        parent = _stamp_task(self.job, self.scheme_a, 'Parent')
+        parent.rate = None
+        parent.est_qty = Decimal('5')
+        parent.save()
+        child = Task(job=self.job, name='Child', parent_task=parent,
+                     qty_scales_with_parent=True, est_qty=Decimal('1'))
+        child.stamp_from_scheme(self.scheme_a)
+        child.save()
+        self.assertIsNone(parent.rate)
+        resp = self.client.patch(self._url(parent), data={
+            'source_scheme': self.scheme_b.pk,
+            'rate': str(self.scheme_b.rate),
+            'unit_label': self.scheme_b.unit_label,
+            'accounting_category': self.ac2.pk,
+            'active_modifiers': [],
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        parent.refresh_from_db()
+        self.assertEqual(parent.source_scheme_id, self.scheme_b.pk)
+        self.assertEqual(parent.rate, self.scheme_b.rate)
+        self.assertEqual(parent.effective_rate(), self.scheme_b.rate)

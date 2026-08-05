@@ -57,10 +57,25 @@
 
   // Edit-mode money fields: the task's OWN stamped values (task-owned money
   // Phase 1 — rate_scheme is a create-only trigger, never re-forwarded on
-  // PATCH, so editing works directly off the task, not a re-pick dropdown).
+  // PATCH). RM browser-testing note 5 added a SEPARATE re-pick mechanism,
+  // source_scheme, for edit mode only: picking a different scheme in the
+  // dropdown below client-side RESTAMPS these three fields (plus
+  // activeModifiers) from the new scheme's list data — see the restamp
+  // $effect below. Editing continues to work directly off these fields
+  // either way; the dropdown is just a fast way to reseed them.
   let editRate = $state('');
   let editUnitLabel = $state('');
   let editAccountingCategory = $state('');
+  // Edit mode: the Rate Scheme dropdown's current selection — starts as the
+  // task's original source_scheme (preselected, see the populate effect
+  // below) and moves to whatever the user picks next.
+  let editSourceSchemeId = $state('');
+  // Guards the restamp effect below: only actually restamp when
+  // editSourceSchemeId is a DIFFERENT value than what was last restamped
+  // from — mirrors lastFilledSchemeId's fill-once guard pattern, but (unlike
+  // that one-time default) fires again on every distinct value, since a
+  // restamp is a deliberate re-pick each time, not a one-shot default.
+  let lastRestampedSchemeId = $state('');
 
   let schemes = $state([]);
   let loading = $state(true);
@@ -111,6 +126,22 @@
       editRate = item.rate ?? '';
       editUnitLabel = item.unit_label ?? '';
       editAccountingCategory = item.accounting_category ?? '';
+      // Preselect the Rate Scheme dropdown to the task's CURRENT provenance
+      // (RM browser-testing note 5). lastRestampedSchemeId is synced to the
+      // same value in this same synchronous block so the restamp $effect
+      // below sees them already equal on its first run and does NOT fire —
+      // the money fields above are already seeded from the task's own
+      // persisted values, not from re-deriving the current scheme's
+      // (possibly since-edited) list data. Recomputed from `item.source_scheme`
+      // independently rather than as `= editSourceSchemeId` — reading the
+      // state var back here would make THIS effect depend on
+      // editSourceSchemeId itself, so a later user pick (which writes that
+      // same state var) would re-trigger this populate effect and snap the
+      // selection right back to the task's original scheme. Same bug class
+      // as the RM note 4 estWorkerTime/isHourUnit fix above — see that
+      // comment for the general shape of the trap.
+      editSourceSchemeId = item.source_scheme ?? '';
+      lastRestampedSchemeId = item.source_scheme ?? '';
       estQty = item.est_qty ?? '';
       // Seeded from the item snapshot's OWN unit_label, not the live
       // `isHourUnit` derived — that derived reads editUnitLabel, which this
@@ -128,6 +159,7 @@
       name = (mode === 'manual' ? (presetName || '') : ''); description = '';
       activeModifiers = [];
       editRate = ''; editUnitLabel = ''; editAccountingCategory = '';
+      editSourceSchemeId = ''; lastRestampedSchemeId = '';
       estQty = ''; estWorkerTime = '';
       // Keep numeric so it matches the numeric <option value={tmpl.template_id}>
       // (Svelte 5 selects match option values with strict ===; String() here left
@@ -201,6 +233,48 @@
       : (schemes.find(s => s.rate_scheme_id === Number(rateSchemeId)) || null)
   );
 
+  // Edit mode: the scheme currently selected in the Rate Scheme dropdown
+  // (RM browser-testing note 5) — starts pointing at the task's original
+  // source_scheme (see the populate effect above) and moves to whatever the
+  // user picks next. Looked up in the same task-applicable `schemes` list
+  // the create dropdown uses, so it resolves to null for either placeholder
+  // state (a retired current scheme, or a null current scheme) — those
+  // aren't selectable targets, so this derived never needs to represent
+  // them as anything but "nothing to restamp from".
+  const editSelectedScheme = $derived(
+    (mode === 'manual' && isEdit)
+      ? (schemes.find(s => String(s.rate_scheme_id) === String(editSourceSchemeId)) || null)
+      : null
+  );
+
+  // Client-side restamp (RM browser-testing note 5): fires only on a
+  // genuine CHANGE of the edit-mode Rate Scheme dropdown — re-selecting the
+  // CURRENT scheme is naturally a no-op (editSourceSchemeId doesn't change
+  // value, so this effect's dependency doesn't dirty and it never reruns;
+  // no same-value reset path to build, deliberately, per RM). Prefills
+  // rate/unit_label/accounting_category from the new scheme's list data and
+  // replaces the modifier checkboxes WHOLESALE with the new scheme's
+  // definitions, none checked — the user re-ticks before saving. Everything
+  // stays editable and nothing persists until Save (explicit-save
+  // doctrine).
+  //
+  // The blessed "reset" path is A -> B -> A: each hop is a real value
+  // change and restamps, so landing back on A restamps to A's OWN current
+  // list values — which may differ from what the task was originally
+  // stamped with, if A's preset has been edited since. That's correct: a
+  // fresh pick of A means exactly A's current data, not a memory of the
+  // task's pre-edit state.
+  $effect(() => {
+    if (mode !== 'manual' || !isEdit) return;
+    if (editSourceSchemeId === lastRestampedSchemeId) return;
+    lastRestampedSchemeId = editSourceSchemeId;
+    if (!editSelectedScheme) return; // disabled placeholder options can't actually be picked; defensive only
+    editRate = editSelectedScheme.rate;
+    editUnitLabel = editSelectedScheme.unit_label;
+    editAccountingCategory = editSelectedScheme.accounting_category ?? '';
+    activeModifiers = [];
+  });
+
   // Task-owned money (Phase 1): whether THIS user may write money fields
   // (rate/unit_label/accounting_category/qty_source/active_modifiers) —
   // MONEY_FIELDS on the Task serializer, CanManageJobOrPM or
@@ -213,19 +287,16 @@
     (isEdit && item && typeof item.can_manage === 'boolean') ? item.can_manage : canManage
   );
 
-  // In edit mode there's no re-pick dropdown (rate_scheme is create-only —
-  // see the effect above), so modifier CHECKBOX DEFINITIONS come from the
-  // task's original source scheme, looked up in the same task-applicable
-  // list the create dropdown uses. Absent (retired/deleted preset, or a
-  // legacy task with no source_scheme) means no definitions to build
-  // checkboxes from — the existing snapshot stays display-only and untouched
-  // on save.
+  // Modifier CHECKBOX DEFINITIONS: in edit mode these track the CURRENTLY
+  // SELECTED scheme in the Rate Scheme dropdown (editSelectedScheme —
+  // RM browser-testing note 5), which starts at the task's original
+  // source_scheme and moves with the user's pick (see the restamp effect
+  // above); in create mode, the picked preset as before. Null (retired/null
+  // current scheme never re-picked, or nothing picked yet in create) means
+  // no definitions to build checkboxes from — the existing snapshot stays
+  // display-only and untouched on save.
   const modifierScheme = $derived(
-    (mode === 'manual' && isEdit)
-      ? (item?.source_scheme != null
-          ? (schemes.find(s => String(s.rate_scheme_id) === String(item.source_scheme)) || null)
-          : null)
-      : selectedScheme
+    (mode === 'manual' && isEdit) ? editSelectedScheme : selectedScheme
   );
 
   const showMoneyFields = $derived((mode === 'manual' && isEdit) || !!selectedScheme);
@@ -326,6 +397,16 @@
             editPayload.active_modifiers = (modifierScheme.modifiers || [])
               .filter((m) => activeModifiers.includes(m.key))
               .map((m) => ({ key: m.key, label: m.label, percent: m.percent }));
+          }
+          // source_scheme (RM browser-testing note 5): only sent when it
+          // actually changed from the task's original provenance — its
+          // mere presence is what TaskSerializer.MONEY_FIELDS gates on, and
+          // an unchanged re-select never fires the restamp effect in the
+          // first place (see above), so there's nothing new to report. The
+          // rate/unit_label/accounting_category/active_modifiers above ARE
+          // the restamp; the server just records this pointer alongside them.
+          if (String(editSourceSchemeId) !== String(item.source_scheme ?? '')) {
+            editPayload.source_scheme = editSourceSchemeId;
           }
         }
         const url = `/api/jobs/${contextId}/tasks/${item.task_id}/`;
@@ -428,11 +509,38 @@
         {/if}
 
         {#if mode === 'manual' && isEdit}
-          <!-- rate_scheme is a create-only stamping trigger (write-only,
-               never re-forwarded on PATCH) — no re-pick dropdown here. This
-               names the preset the task was originally stamped from;
-               editable money fields are below. -->
-          <p><strong>Scheme:</strong> {item?.source_scheme_name || '—'}</p>
+          <!-- rate_scheme (the write-only CREATE trigger prop) stays
+               create-only — never re-forwarded on PATCH. RM browser-testing
+               note 5 adds a SEPARATE edit-only re-pick: source_scheme,
+               preselected to the task's current preset. A currently-retired
+               scheme (not present in the task-applicable `schemes` list,
+               since that fetch is is_active=True/non-percentage only) or a
+               null source_scheme each render as a disabled placeholder
+               option — informational only, never a selectable TARGET; real
+               options are only active, non-percentage, task-applicable
+               schemes, same list the create dropdown uses. Picking a
+               genuinely different scheme fires the restamp $effect above.
+               Non-managers get the same read-only name they always did —
+               no dropdown, no restamp. -->
+          {#if effectiveCanManage}
+            <p>
+              <label><strong>Rate Scheme</strong><br>
+                <select bind:value={editSourceSchemeId}>
+                  {#if item?.source_scheme != null && !schemes.some((s) => String(s.rate_scheme_id) === String(item.source_scheme))}
+                    <option value={item.source_scheme} disabled>{item.source_scheme_name || 'Unknown'} (retired)</option>
+                  {:else if item?.source_scheme == null}
+                    <option value="" disabled>—</option>
+                  {/if}
+                  {#each schemes as s (s.rate_scheme_id)}
+                    <option value={s.rate_scheme_id}>{s.name}</option>
+                  {/each}
+                </select>
+              </label>
+              <FieldError errors={fieldErrs} field="source_scheme" />
+            </p>
+          {:else}
+            <p><strong>Scheme:</strong> {item?.source_scheme_name || '—'}</p>
+          {/if}
         {:else if mode === 'manual'}
           {#if rateScheme}
             <p><strong>Rate Scheme:</strong> {rateScheme.name}</p>

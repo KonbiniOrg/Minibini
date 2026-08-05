@@ -362,6 +362,85 @@ non-percentage only). The RateSchemeManager (outdated-schemes /
 retirement UI) defaults to active-only and reveals the full set via
 `?include_inactive=true`.
 
+### 3.6 Post-stamp rate changes
+
+Once stamped, a task's `rate` is an ordinary money-gated field — a
+manager/PM or `can_manage_financials` user can edit it directly at any
+time (`PATCH .../tasks/{id}/ {rate: ...}`), same as any other
+`MONEY_FIELDS` entry. `source_scheme` provenance stays put on an
+ordinary field-level edit like that one — it only moves via the
+edit-task Rate Scheme **dropdown**, a separate, deliberate re-pick
+described next (§3.6a).
+
+### 3.6a Edit-task restamp (RM browser-testing note 5)
+
+The edit-task form (`WorkItemForm.svelte`, edit mode) offers a **Rate
+Scheme** dropdown fed by the same `?task_applicable=true` list the
+create-mode dropdown uses (active, non-percentage presets), preselected
+to the task's current `source_scheme`:
+
+- A currently-**retired** `source_scheme` (absent from the
+  task-applicable list) renders as a disabled placeholder option labeled
+  with its name + "(retired)".
+- A **null** `source_scheme` renders as a disabled "—" placeholder.
+- Neither placeholder is a selectable **target** — real options are only
+  active, non-percentage, task-applicable schemes, same as create mode.
+
+Picking a **different** scheme (a genuine `change` event — re-selecting
+the current value is naturally a no-op, nothing to build a same-value
+reset path for) triggers a **client-side restamp**: the form prefills
+`rate`/`unit_label`/`accounting_category` from the newly-picked scheme's
+already-fetched list data, and replaces the modifier checkboxes
+**wholesale** with the new scheme's definitions, none checked — the
+user re-ticks before saving. Nothing persists until Save (explicit-save
+doctrine); the reset path back to the original scheme's values is
+A → B → A, each hop a real change that restamps — landing back on A
+restamps to A's *own current* list data, not a memory of the task's
+pre-edit values (a fresh pick of A means exactly A's current data, even
+if A's preset has since been edited).
+
+On Save, the PATCH carries the same full money block edit mode always
+sends (`rate`/`unit_label`/`accounting_category`/`active_modifiers`,
+money-gated as ever) **plus** `source_scheme` — but only when the
+selection actually differs from the task's original provenance; an
+unchanged re-select never adds the key.
+
+**Backend:** `TaskSerializer.source_scheme` is writable on **UPDATE
+only** — create keeps its `rate_scheme` server-stamp contract untouched
+(`validate_source_scheme` rejects the field outright when there's no
+instance yet, i.e. on create). `source_scheme` joined `MONEY_FIELDS`
+(§10.1 in `jobs-and-tasks.md`), so the key's mere presence in a PATCH
+gates on `CanManageJobOrPM`/`can_manage_financials` like every other
+money field. Validation on write mirrors create's `rate_scheme` rules —
+must exist, `is_active=True`, non-percentage — as field-shaped 400s
+(no `allow_inactive_scheme` escape hatch here; a restamp is always a
+deliberate pick from the CURRENTLY-offered target list). The server
+does **not** re-derive the money block from the new `source_scheme` —
+it just records the pointer; the client's `rate`/`unit_label`/
+`accounting_category`/`active_modifiers` values in the same request
+ARE the restamp (same precedent as the estimate Work-form's
+client-computed stamp). A write where the money fields don't actually
+match the new scheme's current data isn't rejected — it shows up as
+drift on the task, which is the provenance pointer doing its job as an
+audit trail, not a bug for the serializer to guard against.
+
+A restamp PATCH reaches a **parent** task the same as any other
+money-field edit: if the parent's own `rate` was `None` (deriving its
+price from children, §4.1a), the restamp sets an explicit `rate` that
+overrides the derivation — the existing rule, not new behavior.
+
+**Outsourced work (task-owned-money Phase 5)** is the one *suggested*
+path to that same edit: a flat task linked to a PO line
+(`materials-inventory-and-purchasing.md` §10a) can be the target of a
+**task-rate prompt** once that PO is reconciled with a per-line final
+cost that differs from what was ordered — "update the selling rate to
+final × markup?" A human must explicitly accept it; accepting issues
+the exact same `PATCH .../tasks/{id}/ {rate: ...}` call described
+above, so nothing here is a second money-writing code path. Declining
+leaves the quoted rate untouched, and nothing about the decline is
+persisted. Full mechanics — qualifying-line rule, the markup config,
+accept/decline — live in `materials-inventory-and-purchasing.md` §10a.
+
 ---
 
 ## 4. Task billing (and the Fee atom)

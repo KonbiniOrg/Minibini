@@ -129,13 +129,33 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     can_manage_jobs atom or the task's job's project_manager) or the
     can_manage_financials atom; everyone else gets stamp-only creation
     (``rate_scheme`` alone) and non-money edits — see ``validate()``.
+
+    RM browser-testing note 5 (client-side restamp): ``source_scheme`` is
+    now also client-settable, but UPDATE ONLY — create keeps its
+    ``rate_scheme`` server-stamp contract untouched (``validate_source_scheme``
+    rejects it when ``self.instance is None``). On update, the SPA's
+    edit-task dropdown lets a manager/PM/financials caller re-pick which
+    preset a task is stamped from; the client computes the restamp
+    (rate/unit_label/accounting_category/active_modifiers, all already
+    independently editable MONEY_FIELDS) from the newly-picked scheme's
+    already-fetched list data and sends the whole money block in the SAME
+    PATCH. The server does NOT re-derive those fields from the new
+    ``source_scheme`` — it just records the provenance pointer, validated
+    with the same rules as create's ``rate_scheme`` (must exist, active,
+    non-percentage). A client write where the money fields don't actually
+    match the new scheme's current data is not rejected — it shows up as
+    drift on the task, which is the provenance pointer doing its job as an
+    audit trail, not a bug for this serializer to guard against.
     """
     can_manage_job_path = 'job'
     invoice_source_type = 'task'
 
     # Money fields requiring CanManageJobOrPM / can_manage_financials to
     # WRITE (read is open to everyone, same as the rest of the task).
-    MONEY_FIELDS = {'rate', 'unit_label', 'qty_source', 'accounting_category', 'active_modifiers'}
+    MONEY_FIELDS = {
+        'rate', 'unit_label', 'qty_source', 'accounting_category',
+        'active_modifiers', 'source_scheme',
+    }
 
     assignee_name = serializers.SerializerMethodField()
     parent_task_name = serializers.CharField(
@@ -156,9 +176,17 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     accounting_category = serializers.PrimaryKeyRelatedField(
         queryset=AccountingCategory.objects.all(), required=True,
     )
-    # Provenance only — read-only. Set exclusively via stamp_from_scheme
-    # (triggered by `rate_scheme` on create), never directly through the API.
-    source_scheme = serializers.PrimaryKeyRelatedField(read_only=True)
+    # Provenance pointer. CREATE: set exclusively via stamp_from_scheme
+    # (triggered by `rate_scheme`) — never client-settable on create, see
+    # validate_source_scheme. UPDATE (RM browser-testing note 5): a
+    # manager/PM/financials caller MAY set this directly, to re-pick which
+    # preset the task is stamped from — the client-side restamp described
+    # in the class docstring. required=False: an edit PATCH that doesn't
+    # touch the scheme just omits the key, same as any other MONEY_FIELDS
+    # entry.
+    source_scheme = serializers.PrimaryKeyRelatedField(
+        queryset=RateScheme.objects.all(), required=False,
+    )
     source_scheme_name = serializers.CharField(
         source='source_scheme.name', read_only=True, default=None)
     effective_rate = serializers.SerializerMethodField()
@@ -201,6 +229,30 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     def validate_rate(self, value):
         if value is not None and value < 0:
             raise serializers.ValidationError('Rate cannot be negative.')
+        return value
+
+    def validate_source_scheme(self, value):
+        """UPDATE only (RM browser-testing note 5) — mirrors
+        validate_rate_scheme's percentage rejection plus an explicit
+        is_active check. Create-time's equivalent lives in
+        TaskService.create_direct (SchemeInactiveError, with an
+        allow_inactive_scheme escape hatch reserved for worksheet
+        carry-over); there is no such escape hatch here — a restamp is
+        always a deliberate pick of a CURRENTLY-offered target (the SPA's
+        edit-mode dropdown only lists active, non-percentage,
+        task-applicable schemes as selectable targets in the first
+        place), so an inactive/percentage value here always means a
+        malformed or stale client request, never a legitimate carry-over."""
+        if self.instance is None:
+            raise serializers.ValidationError(
+                'source_scheme cannot be set on create — use rate_scheme.'
+            )
+        if not value.is_active:
+            raise serializers.ValidationError('Selected RateScheme is inactive.')
+        if value.algorithm == RateScheme.PERCENTAGE:
+            raise serializers.ValidationError(
+                'Percentage services are document adjustments and cannot bill a task.'
+            )
         return value
 
     def validate_active_modifiers(self, value):

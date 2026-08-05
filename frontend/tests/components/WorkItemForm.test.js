@@ -446,16 +446,150 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
   };
   const MOD_SCHEME = {
     rate_scheme_id: 9, name: 'CNC Cutting', algorithm: 'entered_qty',
-    rate: '12.50', unit_label: 'ea', modifiers: [{ key: 'rush', label: 'Rush', percent: 15 }],
+    // Deliberately drifted from STAMPED_ITEM's own rate/unit_label/AC
+    // (99.00 vs 12.50, ea vs ea-but-different-AC) — a Rate Scheme's list
+    // data can legitimately move after a task stamped from it (task-owned
+    // money Phase 1: stamping is a one-time copy). Using drifted values here
+    // makes it possible to positively assert "no restamp happened" (same-
+    // select no-op) vs. "restamp did happen" (genuine change) rather than
+    // the two cases coincidentally producing identical numbers.
+    rate: '99.00', unit_label: 'ea', accounting_category: 3,
+    modifiers: [{ key: 'rush', label: 'Rush', percent: 15 }],
+  };
+  const OTHER_SCHEME = {
+    rate_scheme_id: 10, name: 'Laser Cutting', algorithm: 'entered_qty',
+    rate: '20.00', unit_label: 'hour', accounting_category: 4,
+    modifiers: [{ key: 'expedite', label: 'Expedite', percent: 8 }],
   };
 
-  it('shows the provenance line from source_scheme_name, not a re-pick dropdown', async () => {
-    mockGet({ schemes: [MOD_SCHEME] });
-    const { findByText, queryByLabelText } = render(WorkItemForm, {
+  it('a manager sees the Rate Scheme dropdown preselected to the current scheme', async () => {
+    mockGet({ schemes: [MOD_SCHEME, OTHER_SCHEME] });
+    const { findByLabelText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true, item: STAMPED_ITEM },
+    });
+    const select = await findByLabelText(/Rate Scheme/);
+    expect(select.tagName).toBe('SELECT');
+    expect(select).toHaveValue('9');
+    expect(select).not.toBeDisabled();
+  });
+
+  it('a non-manager still sees the read-only provenance line, no dropdown', async () => {
+    mockGet({ schemes: [MOD_SCHEME, OTHER_SCHEME] });
+    const worker_item = { ...STAMPED_ITEM, can_manage: false };
+    const { findByText, queryByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true, item: worker_item },
     });
     expect(await findByText(/CNC Cutting/)).toBeInTheDocument();
     expect(queryByLabelText(/Rate Scheme/)).not.toBeInTheDocument();
+  });
+
+  it('a retired current scheme (absent from the task-applicable list) renders as a disabled "(retired)" option', async () => {
+    // MOD_SCHEME (id 9, the task's current source_scheme) is NOT in the
+    // fetched list — simulating retirement (task_applicable=true excludes
+    // inactive presets server-side).
+    mockGet({ schemes: [OTHER_SCHEME] });
+    const { findByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true, item: STAMPED_ITEM },
+    });
+    const select = await findByLabelText(/Rate Scheme/);
+    expect(select).toHaveValue('9');
+    const opt = select.querySelector('option[value="9"]');
+    expect(opt).not.toBeNull();
+    expect(opt.disabled).toBe(true);
+    expect(opt.textContent).toMatch(/CNC Cutting/);
+    expect(opt.textContent).toMatch(/retired/i);
+  });
+
+  it('a null source_scheme renders as a disabled "—" placeholder option', async () => {
+    mockGet({ schemes: [MOD_SCHEME, OTHER_SCHEME] });
+    const null_item = { ...STAMPED_ITEM, source_scheme: null, source_scheme_name: null };
+    const { findByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true, item: null_item },
+    });
+    const select = await findByLabelText(/Rate Scheme/);
+    expect(select).toHaveValue('');
+    const opt = select.querySelector('option[value=""]');
+    expect(opt).not.toBeNull();
+    expect(opt.disabled).toBe(true);
+  });
+
+  it('changing the Rate Scheme dropdown restamps rate/unit/category and swaps modifier definitions to none-checked', async () => {
+    mockGet({ schemes: [MOD_SCHEME, OTHER_SCHEME] });
+    const { findByLabelText, getByLabelText, getByText, queryByText } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+        item: STAMPED_ITEM, categories: CATEGORIES,
+      },
+    });
+    const schemeSelect = await findByLabelText(/Rate Scheme/);
+    await fireEvent.change(schemeSelect, { target: { value: '10' } });
+    expect(await findByLabelText(/^Rate$/)).toHaveValue(20);
+    expect(getByLabelText(/^Unit/)).toHaveValue('hour');
+    expect(getByLabelText(/Accounting Category/)).toHaveValue('4');
+    // Old scheme's modifier ("Rush") is gone; new scheme's ("Expedite") is
+    // present and unchecked — the set replaced wholesale, none checked.
+    expect(queryByText(/Rush/)).not.toBeInTheDocument();
+    const expediteCheckbox = getByText(/Expedite/).closest('label').querySelector('input[type="checkbox"]');
+    expect(expediteCheckbox.checked).toBe(false);
+  });
+
+  it('A -> B -> A ends with A\'s fresh list values, not the task\'s original stamped values', async () => {
+    mockGet({ schemes: [MOD_SCHEME, OTHER_SCHEME] });
+    const { findByLabelText, getByLabelText, getByText, queryByText } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+        item: STAMPED_ITEM, categories: CATEGORIES,
+      },
+    });
+    const schemeSelect = await findByLabelText(/Rate Scheme/);
+    await fireEvent.change(schemeSelect, { target: { value: '10' } }); // A -> B
+    await fireEvent.change(schemeSelect, { target: { value: '9' } });  // B -> A
+    // A's CURRENT list rate (99.00), not the task's original stamped rate
+    // (12.50) — a fresh pick of A means A's current data.
+    expect(await findByLabelText(/^Rate$/)).toHaveValue(99);
+    expect(getByLabelText(/^Unit/)).toHaveValue('ea');
+    expect(getByLabelText(/Accounting Category/)).toHaveValue('3');
+    expect(queryByText(/Expedite/)).not.toBeInTheDocument();
+    const rushCheckbox = getByText(/Rush/).closest('label').querySelector('input[type="checkbox"]');
+    expect(rushCheckbox.checked).toBe(false); // restamped, not carried over checked
+  });
+
+  it('re-selecting the current scheme is a no-op — no restamp, task\'s original values stand', async () => {
+    mockGet({ schemes: [MOD_SCHEME, OTHER_SCHEME] });
+    const { findByLabelText, getByLabelText } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+        item: STAMPED_ITEM, categories: CATEGORIES,
+      },
+    });
+    const schemeSelect = await findByLabelText(/Rate Scheme/);
+    await fireEvent.change(schemeSelect, { target: { value: '9' } }); // same as current
+    // Task's own stamped rate (12.50), NOT MOD_SCHEME's drifted list rate
+    // (99.00) — proves no restamp fired.
+    expect(getByLabelText(/^Rate$/)).toHaveValue(12.5);
+    expect(getByLabelText(/^Unit/)).toHaveValue('ea');
+    expect(getByLabelText(/Accounting Category/)).toHaveValue('3');
+  });
+
+  it('the PATCH payload includes source_scheme only when it actually changed', async () => {
+    mockGet({ schemes: [MOD_SCHEME, OTHER_SCHEME] });
+    const { findByLabelText, getByRole } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+        item: STAMPED_ITEM, categories: CATEGORIES,
+      },
+    });
+    await findByLabelText(/Rate Scheme/);
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    let call = api.patch.mock.calls.find((c) => c[0] === '/api/jobs/5/tasks/42/');
+    expect('source_scheme' in call[1]).toBe(false);
+
+    api.patch.mockClear();
+    const schemeSelect = await findByLabelText(/Rate Scheme/);
+    await fireEvent.change(schemeSelect, { target: { value: '10' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    call = api.patch.mock.calls.find((c) => c[0] === '/api/jobs/5/tasks/42/');
+    expect(call[1].source_scheme).toBe(10);
   });
 
   it('a manager (item.can_manage) gets editable rate/unit/category inputs prefilled from the task, and PATCHes snapshot-dict modifiers', async () => {
@@ -466,7 +600,7 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
         item: STAMPED_ITEM, categories: CATEGORIES,
       },
     });
-    const rateInput = await findByLabelText(/^Rate/);
+    const rateInput = await findByLabelText(/^Rate$/);
     expect(rateInput).toHaveValue(12.5);
     expect(rateInput).not.toBeDisabled();
     // RM browser-testing note 4: the Unit field next to Rate is the standard
@@ -496,7 +630,7 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
         item: STAMPED_ITEM, categories: CATEGORIES,
       },
     });
-    const rateInput = await findByLabelText(/^Rate/);
+    const rateInput = await findByLabelText(/^Rate$/);
     const unitSelect = await findByLabelText(/^Unit/);
     const row = rateInput.closest('.rate-unit-row');
     expect(row).not.toBeNull();
@@ -534,7 +668,7 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
       },
     });
     await findByText(/CNC Cutting/);
-    expect(queryByLabelText(/^Rate/)).not.toBeInTheDocument();
+    expect(queryByLabelText(/^Rate$/)).not.toBeInTheDocument();
     // Unit dropdown is likewise absent for a non-manager — the read-only
     // "$rate/unit" text line stands in for it instead.
     expect(queryByLabelText(/^Unit/)).not.toBeInTheDocument();
