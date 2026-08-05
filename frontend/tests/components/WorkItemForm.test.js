@@ -61,7 +61,7 @@ describe('WorkItemForm', () => {
   it('does not show "Save to catalog" when editing', async () => {
     const { queryByLabelText, findByLabelText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
-        item: { name: 'X', active_modifiers: [], est_qty: '1', rate: '25', unit_label: 'hour', can_manage: true } },
+        item: { name: 'X', active_modifiers: [], est_qty: '1', rate: '25', unit_label: 'hour', can_manage: true, can_write_money: true } },
     });
     expect(queryByLabelText(/save to catalog/i)).not.toBeInTheDocument();
     // HOURLY_SCHEME (the shop's most common scheme) is hour-unit: a single
@@ -487,14 +487,18 @@ describe('WorkItemForm modifier checkboxes and money-field gating (template crea
 // stamping trigger (never re-forwarded on PATCH — apps/api/mixins.py pops
 // it), so editing shows the task's own stamped rate/unit/accounting
 // category directly instead of a re-pick dropdown, editable only when the
-// caller says this user can manage money for the task's job (item.can_manage
-// when present, else the canManage prop).
+// caller says this user may write money for the task's job (item.can_write_money
+// when present, else the canManage prop). RM browser-testing note 6:
+// gating moved from item.can_manage to item.can_write_money — a dedicated
+// SerializerMethodField mirroring TaskSerializer._can_write_money() —
+// because can_manage (can_manage_jobs atom or PM) under-covers a
+// financials-only caller, who the server's own write-gate DOES accept.
 describe('WorkItemForm editing an existing task\'s money fields', () => {
   const STAMPED_ITEM = {
     task_id: 42, name: 'Mill panel', active_modifiers: [{ key: 'rush', label: 'Rush', percent: 15 }],
     est_qty: '3', est_worker_time: null,
     rate: '12.50', unit_label: 'ea', accounting_category: 3,
-    source_scheme: 9, source_scheme_name: 'CNC Cutting', can_manage: true,
+    source_scheme: 9, source_scheme_name: 'CNC Cutting', can_manage: true, can_write_money: true,
   };
   const MOD_SCHEME = {
     rate_scheme_id: 9, name: 'CNC Cutting', algorithm: 'entered_qty',
@@ -527,7 +531,7 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
 
   it('a non-manager still sees the read-only provenance line, no dropdown', async () => {
     mockGet({ schemes: [MOD_SCHEME, OTHER_SCHEME] });
-    const worker_item = { ...STAMPED_ITEM, can_manage: false };
+    const worker_item = { ...STAMPED_ITEM, can_manage: false, can_write_money: false };
     const { findByText, queryByLabelText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true, item: worker_item },
     });
@@ -674,6 +678,35 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
     }));
   });
 
+  it('a financials-only caller (item.can_manage=false, item.can_write_money=true) still gets editable, non-greyed rate/unit/category inputs — RM browser-testing note 6', async () => {
+    // The exact bug this note fixed: can_manage (can_manage_jobs atom or
+    // PM) is false for a financials-only caller, but the server's actual
+    // write-gate (TaskSerializer._can_write_money, which can_write_money
+    // mirrors) accepts them. The SPA must gate on can_write_money, not
+    // can_manage, or this caller sees fields the server would accept
+    // rendered disabled/read-only.
+    mockGet({ schemes: [MOD_SCHEME] });
+    const financialsItem = { ...STAMPED_ITEM, can_manage: false, can_write_money: true };
+    const { findByLabelText, getByRole, getByText } = render(WorkItemForm, {
+      props: {
+        open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+        item: financialsItem, categories: CATEGORIES,
+      },
+    });
+    const rateInput = await findByLabelText(/^Rate$/);
+    expect(rateInput).not.toBeDisabled();
+    expect(rateInput.className).not.toMatch(/muted|disabled|readonly/i);
+    const unitSelect = await findByLabelText(/^Unit/);
+    expect(unitSelect).not.toBeDisabled();
+    const checkbox = getByText(/Rush/).closest('label').querySelector('input[type="checkbox"]');
+    expect(checkbox).not.toBeDisabled();
+    await fireEvent.input(rateInput, { target: { value: '20' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/tasks/42/', expect.objectContaining({
+      rate: 20,
+    }));
+  });
+
   it('lays Rate/per/Unit out as one non-wrapping row (RM note 4 follow-up: dropdown landed but still line-wrapped)', async () => {
     mockGet({ schemes: [MOD_SCHEME] });
     const { findByLabelText, getByText } = render(WorkItemForm, {
@@ -710,9 +743,9 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
     }));
   });
 
-  it('a non-manager (item.can_manage=false) sees read-only rate/unit/category and the PATCH omits every money field', async () => {
+  it('a worker (item.can_write_money=false) sees read-only rate/unit/category and the PATCH omits every money field', async () => {
     mockGet({ schemes: [MOD_SCHEME] });
-    const worker_item = { ...STAMPED_ITEM, can_manage: false };
+    const worker_item = { ...STAMPED_ITEM, can_manage: false, can_write_money: false };
     const { findByText, queryByLabelText, getByRole } = render(WorkItemForm, {
       props: {
         open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
@@ -862,7 +895,7 @@ describe('WorkItemForm subtask mode — qty_scales_with_parent', () => {
     const subtaskItem = {
       task_id: 60, name: 'Per-unit sand', parent_task: PARENT_EA.task_id,
       active_modifiers: [], est_qty: '1', est_worker_time: null,
-      rate: '5', unit_label: 'ea', qty_scales_with_parent: false, can_manage: true,
+      rate: '5', unit_label: 'ea', qty_scales_with_parent: false, can_manage: true, can_write_money: true,
     };
     const { findByLabelText, getByRole } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true, item: subtaskItem },
@@ -879,7 +912,7 @@ describe('WorkItemForm subtask mode — qty_scales_with_parent', () => {
   it('omits qty_scales_with_parent when editing a top-level (non-subtask) task', async () => {
     const item = {
       task_id: 61, name: 'Flat task', parent_task: null, active_modifiers: [],
-      est_qty: '1', est_worker_time: null, can_manage: true,
+      est_qty: '1', est_worker_time: null, can_manage: true, can_write_money: true,
     };
     const { findByLabelText, getByRole } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true, item },
