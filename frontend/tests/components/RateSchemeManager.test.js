@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
 
@@ -309,7 +309,7 @@ describe('RateSchemeManager', () => {
       return Promise.resolve({ results: [] });
     });
     const { findByLabelText } = render(RateSchemeManager);
-    const select = await findByLabelText('Default preset');
+    const select = await findByLabelText('Default Rate Scheme');
     expect(select.value).toBe('1');
   });
 
@@ -325,7 +325,7 @@ describe('RateSchemeManager', () => {
     const { findByRole, findByText, findByLabelText } = render(RateSchemeManager);
     await fireEvent.click(await findByRole('checkbox', { name: /Show inactive/ }));
     await findByText('Retired Rate'); // wait for the reload to land
-    const select = await findByLabelText('Default preset');
+    const select = await findByLabelText('Default Rate Scheme');
     const optionLabels = Array.from(select.options).map((o) => o.textContent);
     expect(optionLabels).toContain('Hourly');
     expect(optionLabels).not.toContain('Retired Rate');
@@ -336,16 +336,56 @@ describe('RateSchemeManager', () => {
   // explicit-Save flow, not an auto-PATCH-on-change variant.
   it('does not PATCH settings from selecting alone — only an explicit Save', async () => {
     const { findByLabelText } = render(RateSchemeManager);
-    const select = await findByLabelText('Default preset');
+    const select = await findByLabelText('Default Rate Scheme');
     await fireEvent.change(select, { target: { value: '1' } });
     expect(api.patch).not.toHaveBeenCalled();
   });
 
   it('PATCHes settings with the new default when Save is clicked after selecting', async () => {
     const { findByLabelText, getByRole } = render(RateSchemeManager);
-    const select = await findByLabelText('Default preset');
+    const select = await findByLabelText('Default Rate Scheme');
     await fireEvent.change(select, { target: { value: '1' } });
-    await fireEvent.click(getByRole('button', { name: 'Save default preset' }));
+    await fireEvent.click(getByRole('button', { name: 'Save default Rate Scheme' }));
     expect(api.patch).toHaveBeenCalledWith('/api/settings/', { default_rate_scheme: '1' });
+  });
+
+  // RM browser-testing fix: retiring/deleting the default preset used to be
+  // possible with no warning (server silently cleared the default). Now
+  // Retire/Delete are withheld from the default row entirely, replaced by a
+  // greyed-out "default" note — the server-side rejection is a backstop,
+  // not the primary UX (the buttons are gone, so the SPA can't trigger it).
+  it('shows a greyed-out "default" note in place of Retire/Delete on the row that is the current default, and leaves other rows unchanged', async () => {
+    const other = { ...SCHEME, rate_scheme_id: 3, name: 'Other Rate' };
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME, other] });
+      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
+      if (url === '/api/settings/') return Promise.resolve(mockSettings({ default_rate_scheme: '1' }));
+      return Promise.resolve({ results: [] });
+    });
+    const { findByRole, getByRole, findByText, getAllByRole } = render(RateSchemeManager);
+
+    // Default row ('Hourly'): the note appears, no Retire/Delete for it.
+    const defaultRow = (await findByRole('cell', { name: 'Hourly' })).closest('tr');
+    expect(await findByText('default')).toBeInTheDocument();
+    expect(within(defaultRow).queryByRole('button', { name: 'Retire' })).not.toBeInTheDocument();
+    expect(within(defaultRow).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    // Edit stays available on the default row — only Retire/Delete are withheld.
+    expect(within(defaultRow).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+
+    // Non-default row ('Other Rate'): unchanged — Retire/Delete both present.
+    const otherRow = getByRole('cell', { name: 'Other Rate' }).closest('tr');
+    expect(within(otherRow).getByRole('button', { name: 'Retire' })).toBeInTheDocument();
+    expect(within(otherRow).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+
+    // Exactly one Retire button total (the non-default row's).
+    expect(getAllByRole('button', { name: 'Retire' })).toHaveLength(1);
+  });
+
+  it('shows Retire/Delete normally, with no "default" note, when no default preset is set', async () => {
+    const { findByRole, queryByText } = render(RateSchemeManager);
+    expect(await findByRole('button', { name: 'Retire' })).toBeInTheDocument();
+    expect(await findByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    expect(queryByText('default')).not.toBeInTheDocument();
   });
 });

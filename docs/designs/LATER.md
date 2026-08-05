@@ -334,11 +334,13 @@ Billing mechanics and money-record lifecycle.
      that no longer qualifies — the dangling pointer is now caught at
      invoice-compose time (via the `_resolve_fallback_category` recheck) but
      not at edit time. `ConfigurationService.update_rate_scheme` has the
-     analogous precedent for `default_rate_scheme`
-     (`apps/core/services.py` ~L1208–1227: `was_active`/`is_active` check +
-     `_clear_default_rate_scheme_if_matches` clears the Configuration key when
-     a PATCH flips the designated default inactive) — `update_accounting_category`
-     wants the same shape for the fallback (and arguably deposit) designation.
+     analogous precedent for `default_rate_scheme` (`apps/core/services.py`:
+     `was_active`/`is_active` check + `_raise_if_default_rate_scheme` rejects
+     the PATCH outright when it would flip the designated default inactive,
+     rather than silently clearing the Configuration key — RM browser-testing
+     fix, 2026-08-04) — `update_accounting_category` wants the same
+     reject-don't-silently-clear shape for the fallback (and arguably
+     deposit) designation.
   2. **`TaskDetailPage.svelte:228` and `TasksPanel.svelte:170`
      (`WorkItemForm`'s categories source) fetch `/api/accounting-categories/`
      without `include_fallback=true`.** If a Task's `accounting_category`

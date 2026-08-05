@@ -124,6 +124,69 @@ test('retiring a preset hides it from the task-create dropdown', async ({ page }
   });
 });
 
+// RM browser-testing fix: retiring/deleting the current default preset used
+// to silently clear default_rate_scheme with no warning. Now Retire/Delete
+// are withheld from the default row (a greyed-out "default" note stands in),
+// and the server backstops with a 400 if reached any other way.
+test('the default preset cannot be retired — no button, greyed-out note, guard clears once the default moves', async ({ page }) => {
+  const configApi = await apiAs(personas.configtime);
+  const cats = await configApi.get('/api/accounting-categories/');
+  const scheme = await configApi.post('/api/rate-schemes/', {
+    name: `${stamp}-guarded`, description: '', algorithm: 'entered_qty', rate: '9',
+    unit_label: await anEnteredQtyUnit(configApi), modifiers: [],
+    accounting_category: (cats.results || cats)[0].id,
+  });
+  await configApi.dispose();
+
+  try {
+    await test.step('Set it as the default preset', async () => {
+      await openPricingTab(page);
+      await page.locator('#default-rate-scheme').selectOption({ label: scheme.name });
+      await page.getByRole('button', { name: 'Save default Rate Scheme' }).click();
+      await expect(page.getByText('Default Rate Scheme saved.')).toBeVisible();
+    });
+
+    await test.step('Its row shows a "default" note, not Retire/Delete', async () => {
+      const row = page.locator('tr', { hasText: scheme.name });
+      await expect(row.getByText('default')).toBeVisible();
+      await expect(row.getByRole('button', { name: 'Retire' })).toHaveCount(0);
+      await expect(row.getByRole('button', { name: 'Delete' })).toHaveCount(0);
+      // Edit stays available — only Retire/Delete are withheld.
+      await expect(row.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
+    });
+
+    await test.step('Server-side backstop: a direct retire call is rejected', async () => {
+      const api = await apiAs(personas.configtime);
+      const resp = await api.postRaw(
+        `/api/rate-schemes/${scheme.rate_scheme_id}/retire/`, {});
+      expect(resp.status()).toBe(400);
+      const body = await resp.json();
+      expect(body.detail).toContain('change the default first');
+      const stillActive = await api.get(`/api/rate-schemes/${scheme.rate_scheme_id}/`);
+      expect(stillActive.is_active).toBe(true);
+      await api.dispose();
+    });
+
+    await test.step('Change the default away, then Retire reappears and works', async () => {
+      await openPricingTab(page);
+      await page.locator('#default-rate-scheme').selectOption({ label: '-- None --' });
+      await page.getByRole('button', { name: 'Save default Rate Scheme' }).click();
+      await expect(page.getByText('Default Rate Scheme saved.')).toBeVisible();
+
+      // Keep the (about to be inactive) row visible after the toggle.
+      await page.getByLabel('Show inactive rate schemes').check();
+      const row = page.locator('tr', { hasText: scheme.name });
+      await expect(row.getByRole('button', { name: 'Retire' })).toBeVisible();
+      await row.getByRole('button', { name: 'Retire' }).click();
+      await expect(row.getByRole('button', { name: 'Reactivate' })).toBeVisible();
+    });
+  } finally {
+    const cleanupApi = await apiAs(personas.configtime);
+    await cleanupApi.patch('/api/settings/', { default_rate_scheme: '' });
+    await cleanupApi.dispose();
+  }
+});
+
 test('setting the default preset preselects it on new-task create', async ({ page }) => {
   const configApi = await apiAs(personas.configtime);
   const cats = await configApi.get('/api/accounting-categories/');
@@ -139,8 +202,8 @@ test('setting the default preset preselects it on new-task create', async ({ pag
     await test.step('Set the default preset in Settings → Pricing', async () => {
       await openPricingTab(page);
       await page.locator('#default-rate-scheme').selectOption({ label: scheme.name });
-      await page.getByRole('button', { name: 'Save default preset' }).click();
-      await expect(page.getByText('Default preset saved.')).toBeVisible();
+      await page.getByRole('button', { name: 'Save default Rate Scheme' }).click();
+      await expect(page.getByText('Default Rate Scheme saved.')).toBeVisible();
     });
 
     await test.step('A new Add Task form opens with it preselected', async () => {

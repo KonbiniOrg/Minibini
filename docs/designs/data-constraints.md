@@ -163,11 +163,15 @@ task-creation form (`WorkItemForm`) for every user, worker or manager
 (task-owned-money Phase 1, §1.7). Set via the RateSchemeManager's
 default-preset picker, `PATCH /api/settings/` (explicit Save). The
 settings API rejects a value that isn't blank or an existing **active**
-RateScheme id. Retiring the current default preset — via
-`POST /api/rate-schemes/{id}/retire/` or a direct
-`PATCH {"is_active": false}` — clears the key to `''`
-(`ConfigurationService._clear_default_rate_scheme_if_matches`, the
-single gate for both paths). See `estimates-and-prices.md` §3.4.
+RateScheme id. Retiring or deleting the current default preset — via
+`POST /api/rate-schemes/{id}/retire/`, `DELETE /api/rate-schemes/{id}/`,
+or a direct `PATCH {"is_active": false}` — is **rejected** (400,
+"change the default first") rather than silently clearing the key
+(`ConfigurationService._raise_if_default_rate_scheme`, the single gate
+for all three paths); the caller must repoint `default_rate_scheme`
+first. The RateSchemeManager UI withholds Retire/Delete on the default
+row entirely (a greyed-out "default" note stands in). See
+`estimates-and-prices.md` §3.4.
 
 Deposits: `default_deposit_accounting_category` (unset) — string-encoded
 `AccountingCategory` PK stamped server-side onto a deposit line created via

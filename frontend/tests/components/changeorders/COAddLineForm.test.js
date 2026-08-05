@@ -228,7 +228,7 @@ describe('COAddLineForm', () => {
       const { findByRole } = render(COAddLineForm, {
         props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
       });
-      const select = await findByRole('combobox', { name: /preset/i });
+      const select = await findByRole('combobox', { name: /rate scheme/i });
       expect(select).toBeInTheDocument();
       expect(await findByRole('option', { name: 'CNC Routing' })).toBeInTheDocument();
     });
@@ -244,7 +244,7 @@ describe('COAddLineForm', () => {
         props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
       });
       await findByRole('option', { name: 'Hand Finishing' });
-      const select = await findByRole('combobox', { name: /preset/i });
+      const select = await findByRole('combobox', { name: /rate scheme/i });
       expect(select).toHaveValue('2');
       expect(await findByRole('spinbutton', { name: /rate/i })).toHaveValue(40);
       expect(getByLabelText(/accounting category/i)).toHaveValue('9');
@@ -260,7 +260,7 @@ describe('COAddLineForm', () => {
       const { findByRole } = render(COAddLineForm, {
         props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
       });
-      const select = await findByRole('combobox', { name: /preset/i });
+      const select = await findByRole('combobox', { name: /rate scheme/i });
       expect(select).toHaveValue('');
     });
 
@@ -270,12 +270,12 @@ describe('COAddLineForm', () => {
       const { findByRole, getByLabelText, getByRole } = render(COAddLineForm, {
         props: { open: true, choice, coId: 42, categories: cats, onSaved },
       });
-      const select = await findByRole('combobox', { name: /preset/i });
+      const select = await findByRole('combobox', { name: /rate scheme/i });
       await fireEvent.change(select, { target: { value: '1' } });
-      expect(getByLabelText(/rate/i)).toHaveValue(75);
+      expect(getByLabelText('Rate')).toHaveValue(75);
       expect(getByLabelText(/accounting category/i)).toHaveValue('9');
       // User edits the stamped rate before submitting.
-      await fireEvent.input(getByLabelText(/rate/i), { target: { value: '80' } });
+      await fireEvent.input(getByLabelText('Rate'), { target: { value: '80' } });
       await fireEvent.input(getByLabelText(/quantity/i), { target: { value: '4' } });
       await fireEvent.click(getByRole('button', { name: /add/i }));
       expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items/', {
@@ -290,7 +290,7 @@ describe('COAddLineForm', () => {
       const { getByLabelText, getByRole, findByText } = render(COAddLineForm, {
         props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
       });
-      await fireEvent.input(getByLabelText(/rate/i), { target: { value: '50' } });
+      await fireEvent.input(getByLabelText('Rate'), { target: { value: '50' } });
       await fireEvent.click(getByRole('button', { name: /add/i }));
       expect(api.post).not.toHaveBeenCalled();
       expect(await findByText(/accounting category is required/i)).toBeInTheDocument();
@@ -301,7 +301,7 @@ describe('COAddLineForm', () => {
       const { getByLabelText, getByRole, findByText } = render(COAddLineForm, {
         props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
       });
-      await fireEvent.input(getByLabelText(/rate/i), { target: { value: '-10' } });
+      await fireEvent.input(getByLabelText('Rate'), { target: { value: '-10' } });
       await fireEvent.change(getByLabelText(/accounting category/i), { target: { value: '9' } });
       await fireEvent.click(getByRole('button', { name: /add/i }));
       expect(api.post).not.toHaveBeenCalled();

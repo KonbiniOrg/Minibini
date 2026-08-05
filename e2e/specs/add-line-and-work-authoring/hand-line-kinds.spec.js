@@ -68,8 +68,8 @@ test('estimate hand-lines: Work preset prefill, negative Fee/Credit, crystalliza
     await picker.getByRole('button', { name: 'Add Work' }).click();
 
     const dialog = page.getByRole('dialog');
-    await expect(dialog.getByLabel('Preset')).toBeVisible();
-    await dialog.getByLabel('Preset').selectOption({ label: scheme.name });
+    await expect(dialog.getByLabel('Rate Scheme')).toBeVisible();
+    await dialog.getByLabel('Rate Scheme').selectOption({ label: scheme.name });
 
     // Picking the preset stamps its rate/unit into the still-editable fields
     // (EstimateAddLineForm's effect on rateSchemeId) — no scheme id is sent
@@ -96,7 +96,7 @@ test('estimate hand-lines: Work preset prefill, negative Fee/Credit, crystalliza
 
     const dialog = page.getByRole('dialog');
     // Preset picking is a Work-only affordance.
-    await expect(dialog.getByLabel('Preset')).toHaveCount(0);
+    await expect(dialog.getByLabel('Rate Scheme')).toHaveCount(0);
     await dialog.getByLabel('Description').fill(feeDesc);
     const amountField = dialog.getByLabel('Amount (negative for a credit)');
     await expect(dialog.getByText('This will appear as a credit.')).toHaveCount(0);

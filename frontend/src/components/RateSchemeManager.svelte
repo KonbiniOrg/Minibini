@@ -197,7 +197,7 @@
     defaultSuccess = '';
     try {
       await api.patch('/api/settings/', { default_rate_scheme: defaultSchemeId });
-      defaultSuccess = 'Default preset saved.';
+      defaultSuccess = 'Default Rate Scheme saved.';
       setTimeout(() => defaultSuccess = '', 3000);
     } catch (e) {
       const t = triageError(e);
@@ -257,7 +257,7 @@
     </label>
   </p>
   <p>
-    <label for="default-rate-scheme"><strong>Default preset</strong></label><br>
+    <label for="default-rate-scheme"><strong>Default Rate Scheme</strong></label><br>
     <select id="default-rate-scheme" bind:value={defaultSchemeId}>
       <option value="">-- None --</option>
       {#each activeSchemes as s (s.rate_scheme_id)}
@@ -272,7 +272,7 @@
     <!-- Distinct label from the add/edit modal's "Save" button, which can be
          open at the same time this control is on screen. -->
     <button type="button" onclick={saveDefaultScheme} disabled={defaultSaving}>
-      {defaultSaving ? 'Saving...' : 'Save default preset'}
+      {defaultSaving ? 'Saving...' : 'Save default Rate Scheme'}
     </button>
   </p>
   <table class="data-table">
@@ -294,11 +294,19 @@
           <td>{s.is_active ? 'Yes' : 'No'}</td>
           <td>
             <button type="button" onclick={() => startEdit(s)}>Edit</button>
-            <button type="button" onclick={() => remove(s)}>Delete</button>
-            {#if s.is_active}
-              <button type="button" onclick={() => retire(s)}>Retire</button>
+            {#if String(s.rate_scheme_id) === defaultSchemeId && defaultSchemeId !== ''}
+              <!-- The default preset can't be retired or deleted without
+                   first pointing default_rate_scheme elsewhere — the server
+                   rejects both (ValidationError: "change the default
+                   first"). Don't even offer the buttons; say why instead. -->
+              <span class="rs-default-note">default</span>
             {:else}
-              <button type="button" onclick={() => reactivate(s)}>Reactivate</button>
+              <button type="button" onclick={() => remove(s)}>Delete</button>
+              {#if s.is_active}
+                <button type="button" onclick={() => retire(s)}>Retire</button>
+              {:else}
+                <button type="button" onclick={() => reactivate(s)}>Reactivate</button>
+              {/if}
             {/if}
           </td>
         </tr>
@@ -404,4 +412,8 @@
   /* "Rate [input] per [unit]" on one line, controls bottom-aligned. */
   .rate-row { display: inline-flex; align-items: flex-end; gap: 8px; }
   .rate-row .rate-per { padding-bottom: 3px; }
+  /* Stands in for Retire/Delete on the row that's the current default
+     preset — matches the app's muted-grey convention (e.g. MaterialRow's
+     consumed/released rows) rather than inventing a new tone. */
+  .rs-default-note { color: #9ca3af; font-style: italic; }
 </style>

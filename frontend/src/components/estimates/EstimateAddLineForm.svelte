@@ -212,7 +212,7 @@
 
       {#if isWork}
         <p>
-          <label><strong>Preset</strong><br>
+          <label><strong>Rate Scheme</strong><br>
             <select bind:value={rateSchemeId}>
               <option value="">-- none (enter manually) --</option>
               {#each schemes as s (s.rate_scheme_id)}
