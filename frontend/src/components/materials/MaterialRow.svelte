@@ -128,11 +128,17 @@
   {#if taskAligned && showAssignee}<td></td>{/if}
   {#if taskAligned}<td></td>{/if}
   {#if showStatus}<td>{@render matStatusChip(material)}{#if material.invoice} <a class="badge-invoiced" href={`#/invoices/${material.invoice.id}`} use:link title="Billed on this invoice">INVOICED</a>{/if}</td>{/if}
-  <td class="text-right">{material.quantity}</td>
+  <!-- taskAligned hosts (TaskTree) dropped their Units and Unit Cost
+       columns (RM, 2026-08-06): the unit rides inline beside the qty and
+       the cost-unconfirmed ⚠ moves to Sell Price. The materials-only
+       table (task detail page) keeps both columns. -->
+  <td class="text-right">{material.quantity}{taskAligned && material.units && material.units !== 'none' ? ` ${material.units}` : ''}</td>
   {#if taskAligned}<td class="text-right">-</td>{/if}
-  <td class="text-right">{material.units === 'none' ? '-' : material.units}</td>
-  <td class="text-right">{fmt(material.unit_cost)}{#if costUnconfirmed(material)}<span class="cost-warn" title="Cost unconfirmed — placeholder from estimate markup">⚠</span>{/if}</td>
-  <td class="text-right">{fmt(material.sell_price)}</td>
+  {#if !taskAligned}
+    <td class="text-right">{material.units === 'none' ? '-' : material.units}</td>
+    <td class="text-right">{fmt(material.unit_cost)}{#if costUnconfirmed(material)}<span class="cost-warn" title="Cost unconfirmed — placeholder from estimate markup">⚠</span>{/if}</td>
+  {/if}
+  <td class="text-right">{fmt(material.sell_price)}{#if taskAligned && costUnconfirmed(material)}<span class="cost-warn" title="Cost unconfirmed — placeholder from estimate markup">⚠</span>{/if}</td>
   <td class="text-right">{fmt(materialTotal(material))}</td>
   {#if actionable}
     <td class="actions-cell row-actions">

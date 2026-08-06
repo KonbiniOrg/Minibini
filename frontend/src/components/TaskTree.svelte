@@ -89,7 +89,7 @@
     return total;
   });
 
-  const colCount = $derived(8 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1) + (readonly || jobLocked ? 0 : 1));
+  const colCount = $derived(6 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1) + (readonly || jobLocked ? 0 : 1));
 
   // Row rendering lives in the shared TaskRow / MaterialRow fragments —
   // the same components every surface uses.
@@ -115,8 +115,6 @@
     {#if showStatus}<td>{#if exp.invoice}{@render invoicedLink(exp.invoice)}{/if}</td>{/if}
     <td class="text-right">-</td>
     <td class="text-right">-</td>
-    <td class="text-right">-</td>
-    <td></td>
     <td></td>
     <td class="text-right">{fmt(exp.amount)}</td>
     {#if !readonly}
@@ -138,12 +136,10 @@
       {#if !readonly && !jobLocked}<th class="move-cell" aria-label="Move target"></th>{/if}
       <th>Name</th>
       {#if showAssignee}<th>Assignee</th>{/if}
-      <th class="text-right">Scheduled Time</th>
+      <th class="text-right">Est Time</th>
       {#if showStatus}<th>Status</th>{/if}
       <th class="text-right">Est Qty</th>
       <th class="text-right">Actual</th>
-      <th class="text-right">Units</th>
-      <th class="text-right">Unit Cost</th>
       <th class="text-right">Sell Price</th>
       <th class="text-right"><span class="est-label">(Est)</span><br>Total</th>
       {#if !readonly}<th>Actions</th>{/if}
@@ -229,8 +225,6 @@
           <td></td>
           {#if showStatus}<td>{#if fee.invoice}{@render invoicedLink(fee.invoice)}{/if}</td>{/if}
           <td class="text-right">{fee.quantity ?? '-'}</td>
-          <td class="text-right">-</td>
-          <td class="text-right">-</td>
           <td class="text-right">-</td>
           <td class="text-right">{fmt(fee.unit_rate)}</td>
           <td class="text-right">{fmt(feeTotal(fee))}</td>
