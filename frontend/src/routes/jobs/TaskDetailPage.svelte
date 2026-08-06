@@ -21,7 +21,7 @@
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobShell from '../../components/jobs/JobShell.svelte';
-  import { formatDuration, durationToHours } from '../../lib/format.js';
+  import { formatDuration } from '../../lib/format.js';
 
   let { params = {} } = $props();
 
@@ -79,20 +79,6 @@
   );
   // The add-qty widget takes new production entries; a blocked task takes none.
   const canAddQty = $derived(!taskIsTerminal && task?.status !== 'blocked');
-
-  // For an elapsed_time (hour-unit) scheme, est_qty and est_worker_time are
-  // the same underlying value (backend pair-fills them — Task 8) — showing
-  // both chips restates one number twice. Suppress the Est Qty chip only
-  // when it's a literal duplicate; a legacy row where they've diverged
-  // (pre-pair-fill data) still shows both, same as today. Inputs are
-  // minute-grained in practice (est_worker_time), so durationToHours is safe
-  // here — this comparison must NOT be reused for blep-derived elapsed
-  // values, which carry seconds and would double-round.
-  const estQtyIsDuplicate = $derived(
-    task?.unit_label === 'hour'
-    && task?.est_worker_time
-    && Number(task?.est_qty) === durationToHours(task.est_worker_time)
-  );
 
   // Same lock the job task list uses: terminal jobs freeze everything.
   const jobLocked = $derived(
@@ -423,7 +409,10 @@
             <div class="stat-chip-body">{formatDuration(task.est_worker_time)}</div>
           </div>
         {/if}
-        {#if task.rate != null && task.est_qty && !estQtyIsDuplicate}
+        <!-- Hour-unit tasks show this chip too, even though it restates Est
+             Time (pair-filled) — a blank read as missing data (RM 2026-08-06;
+             the old duplicate-suppression exception is gone). -->
+        {#if task.rate != null && task.est_qty}
           <div class="stat-chip">
             <div class="stat-chip-header">Est Qty</div>
             <div class="stat-chip-body">{task.est_qty} {task.unit_label}</div>

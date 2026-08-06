@@ -187,17 +187,20 @@ describe('TaskDetailPage stat chips', () => {
     expect(chip.querySelector('.stat-chip-body')).toHaveTextContent('—');
   });
 
-  it('suppresses the duplicate Est Qty chip when it restates the worker time (hour-unit scheme)', async () => {
+  it('shows the Est Qty chip even when it restates the worker time (hour-unit scheme)', async () => {
+    // The old duplicate-suppression exception read as missing data (RM
+    // 2026-08-06) — hour-unit tasks show the chip like every other unit.
     mockApi({
       status: 'pending', est_worker_time: '2:00:00', est_qty: '2',
       source_scheme_name: 'Milling', qty_source: 'elapsed_time',
       unit_label: 'hour', rate: '25', effective_rate: '25',
     });
-    const { findByRole, getByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
     expect(getByText('Est Time')).toBeInTheDocument();
     expect(getByText('2h 0m')).toBeInTheDocument();
-    expect(queryByText('Est Qty')).toBeNull();
+    expect(getByText('Est Qty')).toBeInTheDocument();
+    expect(getByText(/2 hour/)).toBeInTheDocument();
   });
 
   it('shows both Est Time and Est Qty chips for a legacy row where they diverge', async () => {
