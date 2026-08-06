@@ -660,23 +660,22 @@ describe('TaskRow hides assign on a parent task', () => {
   });
 });
 
-describe('TaskRow Est Qty duplicate suppression', () => {
-  // Same dedupe as TaskDetailPage's Est Qty chip: for an hour-unit scheme,
-  // est_qty restates est_worker_time (backend pair-fills them, Task 8) — the
-  // Scheduled Time column already shows the number, so the Est Qty cell
-  // becomes redundant and renders '-' instead.
+describe('TaskRow Est Qty on hour-unit tasks', () => {
+  // Hour-unit tasks show Est Qty like every other unit, even though it
+  // restates Est Time (backend pair-fills them) — the old
+  // duplicate-suppression '-' read as missing data (RM 2026-08-06).
   function estQtyCell(container) {
     const row = container.querySelector('tbody tr.task-row');
     return row.querySelectorAll('td')[5];
   }
 
-  it('renders "-" for Est Qty when it duplicates est_worker_time on an hour-unit scheme', () => {
+  it('shows Est Qty even when it duplicates est_worker_time on an hour-unit scheme', () => {
     const t = task({ est_worker_time: '2:00:00', est_qty: '2', unit_label: 'hour' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(estQtyCell(container).textContent.trim()).toBe('-');
+    expect(estQtyCell(container).textContent.trim()).toBe('2 hour');
   });
 
-  it('still shows Est Qty when it diverges from est_worker_time (legacy row)', () => {
+  it('shows Est Qty when it diverges from est_worker_time (legacy row)', () => {
     const t = task({ est_worker_time: '2:00:00', est_qty: '3', unit_label: 'hour' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
     expect(estQtyCell(container).textContent.trim()).toBe('3 hour');

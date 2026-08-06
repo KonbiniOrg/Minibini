@@ -2230,11 +2230,12 @@ Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
    "Unassigned"; the name itself opens `AssignModal` when
    `can_manage`), Est Time (`est_worker_time`), Est Qty, Actual, and
    the money pair Rate + Charge (green-tinted headers; only when the
-   task has a rate scheme). The Est Qty chip is suppressed when the
-   scheme's unit is `'hour'` and `est_qty` equals `est_worker_time` in
-   hours — a hand-edited mismatch still shows both, but the normal
-   pair-filled case (§9.5) would otherwise restate the same number
-   twice; `TaskRow`'s Est Qty column does the same dedupe (shows `-`).
+   task has a rate scheme). The Est Qty chip shows for hour-unit tasks
+   too, even though the normal pair-filled case (§9.5) restates Est
+   Time's number — the old duplicate-suppression exception (chip hidden,
+   `TaskRow` column showing `-`) read as missing data and was removed
+   2026-08-06; `TaskRow`'s Est Qty column likewise always shows the
+   value, with the unit inline (e.g. `2 hour`).
    On ENTERED_QTY tasks the Actual chip
    embeds the signed **+/− Add** input (add-only; Enter or Add commits,
    never blur; hidden when terminal **or blocked**; success briefly

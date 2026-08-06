@@ -9,7 +9,6 @@
   import {
     fmtMoney, fmtWorkerTime, taskTotalInfo, taskTotal, taskActual,
   } from '../../lib/taskTotals.js';
-  import { durationToHours } from '../../lib/format.js';
 
   let {
     task,
@@ -73,24 +72,11 @@
   const displayQty = $derived(task.expected_qty ?? task.est_qty);
   const displayWorkerTime = $derived(task.expected_worker_time ?? task.est_worker_time);
 
-  // Same dedupe as TaskDetailPage's Est Qty chip: for an hour-unit scheme,
-  // est_qty restates est_worker_time (backend pair-fills them) — the Est
-  // Time column already shows the number, so drop the redundant one here.
-  // Inputs are minute-grained in practice; do not reuse this comparison for
-  // blep-derived elapsed values (those carry seconds and would double-round).
-  // unit_label is the task's own money field now (was the RateScheme's
-  // scheme_unit_label echo, retired — task-owned money Phase 1). Compares
-  // the DISPLAYED (expected) values so the dedupe still holds on a scaled
-  // subtask, where expected_qty and expected_worker_time carry the same
-  // multiplier applied to both.
-  const estQtyIsDuplicate = $derived(
-    task.unit_label === 'hour'
-    && displayWorkerTime
-    && Number(displayQty) === durationToHours(displayWorkerTime)
-  );
-
   // The standalone Units column is gone — the unit rides inline beside the
-  // qty values, like Est Time's "h" suffix.
+  // qty values, like Est Time's "h" suffix. Hour-unit tasks show their Est
+  // Qty like every other unit, even though it restates Est Time
+  // (pair-filled) — the old duplicate-suppression exception read as missing
+  // data (RM 2026-08-06).
   function withUnit(val) {
     if (val == null) return '-';
     return task.unit_label ? `${val} ${task.unit_label}` : `${val}`;
@@ -108,7 +94,7 @@
   {#if showAssignee}<td>{task.assignee_name || ''} {#if !readonly && !isTerminal && canManage && !jobOnHold && !task.is_parent}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
   <td class="text-right">{fmtWorkerTime(displayWorkerTime)}</td>
   {#if showStatus}<td>{#if task.invoice}<a class="badge-invoiced" href={`#/invoices/${task.invoice.id}`} title="Billed on this invoice">INVOICED</a>{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
-  <td class="text-right">{estQtyIsDuplicate ? '-' : withUnit(displayQty)}</td>
+  <td class="text-right">{withUnit(displayQty)}</td>
   <td class="text-right">{withUnit(taskActual(task))}</td>
   <td class="text-right">{fmtMoney(task.effective_rate)}</td>
   <td class="text-right" class:est-total={taskTotalInfo(task).isEstimate}>{fmtMoney(taskTotal(task))}</td>
