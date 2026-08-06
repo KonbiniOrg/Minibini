@@ -51,14 +51,16 @@ describe('TaskTree', () => {
     expect(getByText('$30.00')).toBeInTheDocument();
   });
 
-  it('shows material units in the units column, not appended to qty', () => {
+  it('shows material units inline beside the qty (the Units column is gone)', () => {
+    // RM 2026-08-06: the task tree dropped its Units and Unit Cost columns;
+    // the unit rides beside the quantity like Est Time's "h" suffix.
     const t = task({
       materials: [{ material_id: 9, description: 'Steel', quantity: '3', sell_price: '5',
                     units: 'kg', consumption_state: 'pending' }],
     });
     const { getByText, queryByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(getByText('kg')).toBeInTheDocument();       // its own cell
-    expect(queryByText('3 kg')).toBeNull();            // no longer glued to qty
+    expect(getByText('3 kg')).toBeInTheDocument();     // glued to qty
+    expect(queryByText('kg', { exact: true })).toBeNull(); // no standalone cell
   });
 
   it('badges an in-progress task waiting on understocked material', () => {
@@ -619,7 +621,7 @@ describe('TaskRow shows derived expected totals when the API provides them', () 
       })],
     });
     const { container } = render(TaskTree, { props: { tasks: [parent], canManage: true } });
-    expect(estQtyCell(container).textContent.trim()).toBe('20');
+    expect(estQtyCell(container).textContent.trim()).toBe('20 ea');
   });
 
   it('shows expected_worker_time (the scaled total) instead of the raw per-unit est_worker_time', () => {
@@ -637,7 +639,7 @@ describe('TaskRow shows derived expected totals when the API provides them', () 
   it('falls back to the raw est_qty when expected_qty is absent (legacy payload)', () => {
     const t = task({ est_qty: '5', unit_label: 'pcs' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(estQtyCell(container).textContent.trim()).toBe('5');
+    expect(estQtyCell(container).textContent.trim()).toBe('5 pcs');
   });
 });
 
@@ -677,12 +679,12 @@ describe('TaskRow Est Qty duplicate suppression', () => {
   it('still shows Est Qty when it diverges from est_worker_time (legacy row)', () => {
     const t = task({ est_worker_time: '2:00:00', est_qty: '3', unit_label: 'hour' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(estQtyCell(container).textContent.trim()).toBe('3');
+    expect(estQtyCell(container).textContent.trim()).toBe('3 hour');
   });
 
   it('shows Est Qty normally for a non-hour-unit scheme', () => {
     const t = task({ est_worker_time: null, est_qty: '5', unit_label: 'pcs' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(estQtyCell(container).textContent.trim()).toBe('5');
+    expect(estQtyCell(container).textContent.trim()).toBe('5 pcs');
   });
 });

@@ -88,6 +88,13 @@
     && displayWorkerTime
     && Number(displayQty) === durationToHours(displayWorkerTime)
   );
+
+  // The standalone Units column is gone — the unit rides inline beside the
+  // qty values, like Est Time's "h" suffix.
+  function withUnit(val) {
+    if (val == null) return '-';
+    return task.unit_label ? `${val} ${task.unit_label}` : `${val}`;
+  }
 </script>
 
 <tr class:task-row={!isSubtask} class:subtask-row={isSubtask}>
@@ -98,13 +105,11 @@
     <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
     {#if awaitingMaterials}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
   </td>
-  {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal && canManage && !jobOnHold && !task.is_parent}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
+  {#if showAssignee}<td>{task.assignee_name || ''} {#if !readonly && !isTerminal && canManage && !jobOnHold && !task.is_parent}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
   <td class="text-right">{fmtWorkerTime(displayWorkerTime)}</td>
   {#if showStatus}<td>{#if task.invoice}<a class="badge-invoiced" href={`#/invoices/${task.invoice.id}`} title="Billed on this invoice">INVOICED</a>{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
-  <td class="text-right">{estQtyIsDuplicate ? '-' : (displayQty ?? '-')}</td>
-  <td class="text-right">{taskActual(task) ?? '-'}</td>
-  <td class="text-right">{task.unit_label || '-'}</td>
-  <td class="text-right">-</td>
+  <td class="text-right">{estQtyIsDuplicate ? '-' : withUnit(displayQty)}</td>
+  <td class="text-right">{withUnit(taskActual(task))}</td>
   <td class="text-right">{fmtMoney(task.effective_rate)}</td>
   <td class="text-right" class:est-total={taskTotalInfo(task).isEstimate}>{fmtMoney(taskTotal(task))}</td>
   {#if !readonly && !jobLocked}
