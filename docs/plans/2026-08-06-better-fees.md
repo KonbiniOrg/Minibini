@@ -284,10 +284,35 @@ billing as today). The one-draft-per-job constraint
 (`invoicing/0008_unique_draft_invoice_per_job`) composes well with
 auto-seeding — the §5 parking-lot flow (draft invoice holding an ad-hoc
 charge) just means the draft carries its skeleton lines alongside the
-parked hand line until the invoicer prunes and sends. **Deposit invoices
-must be exempt from seeding** (a deposit is a draw before work, not a
-billing of the agreement) — confirm against the deposit flow at
-implementation.
+parked hand line until the invoicer prunes and sends.
+
+**The draw path — one context-relabeled button, never seeded** (RM,
+2026-08-06). The existing three-state "Add Deposit Invoice" affordance
+(`InvoicePanel.svelte`) is retained and extended: with **no live invoice**
+on the job it reads **"Add Deposit Invoice"** (today's flow —
+`DepositInvoiceModal`, creates the draft + deposit line); once **≥1 live
+invoice exists** it reads **"Add Progress Invoice"** and creates an
+**unseeded empty draft** for the invoicer to compose a draw — partial
+pulls via the add-from-agreement picker (which mint reference rows, so
+§7.4 settlement deductions cover them), hand lines, or a further deposit
+line if ever needed (`add_line_item(deposit=True)` remains available;
+the relabel removes no capability). Neither path stores an invoice type:
+"unseeded" is only how the draft was born, and the derived
+Progress-billing label still computes from content — the no-invoice-mode
+principle (§7.4) holds. A deposit and a progress pull are the same
+species — a **draw** at estimated values — but against different things:
+a progress pull draws against a *line* (reference row → family
+arithmetic auto-deducts at settlement), a deposit draws against the
+*job* (line-less; subtracted by the existing document-level
+deposit-credit pull). Two rails, kinship noted in §7.4, unification
+still a later cleanup. Settlement invoices therefore do both: per-line
+deductions appear automatically, and the wizard's "Deposit credits"
+group stays prominent so paid deposits get pulled rather than forgotten.
+Edge for the wireframes: under auto-seeding a fresh regular draft is
+never zero-line on an agreement job, so the old "Make this a deposit
+invoice" state only arises after the invoicer clears a seeded draft —
+and one-draft-per-job means wanting a deposit while a seeded draft
+exists requires clearing it first.
 
 ### 7.3 Est-vs-actual is the display
 
@@ -355,9 +380,11 @@ over-quantity by Σ-qty, and everything else is pricing judgment
 - Billed-to-date comes from the reference rows of live invoices — the
   structural record that early money went out the door. Nothing is
   remembered by hand.
-- The existing deposit-credit machinery (negative pull of paid deposit
-  lines) is the same shape; unification is a later cleanup, not part of
-  this work.
+- A deposit is the same species as a progress pull — a draw at estimated
+  values — but against the *job* rather than a line (§7.2 draw path), so
+  it is subtracted by the existing document-level deposit-credit pull
+  instead of the per-line family arithmetic. Unification of the two
+  deduction rails is a later cleanup, not part of this work.
 - QBO: pushes as ordinary lines; the adopted negative-total send gate
   still applies to the invoice total.
 
@@ -464,9 +491,10 @@ final verification, e2e for user-reachable flows in the same phase.
   if anywhere.
 - Auto-seeding (§7.2) is a **trial decision** — RM wants to live with
   "every invoice starts as the remaining agreement, delete to defer"
-  before committing. Confirm the deposit-invoice exemption; watch for
-  jobs where deleting most of a large skeleton is more work than pulling
-  a few lines would have been.
+  before committing. The two worst friction cases are already routed
+  around it (deposits never seed; "Add Progress Invoice" is the
+  start-empty escape hatch) — watch whether any *regular* invoice still
+  hits delete-most-of-a-large-skeleton in practice.
 
 *(Resolved 2026-08-06: settlement actuals aggregate the whole family's
 atoms — folded into §7.4. Atoms-only-on-final-invoices was considered and
