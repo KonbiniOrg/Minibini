@@ -65,7 +65,8 @@ commercial unit to masquerade as an operational type:
 ## 1. What this changes, in one breath
 
 Subtasks are removed from main. The outcome hand-line stops crystallizing
-into a Fee and gains a become-a-Deliverable gesture. Fee lines dissolve into
+into a Fee and gains a make-a-deliverable button (at authoring, before
+send). Fee lines dissolve into
 plain lines that ride the invoice skeleton; the `Fee` model is deleted
 outright. Invoices start from the agreement skeleton: claim-mirroring for
 backed lines, invoicer-driven atom attachment for plain lines, quantified
@@ -196,15 +197,22 @@ has no remaining territory. Delete:
 
 There is no pure-money atom. Pure money lives on documents.
 
-## 6. Become-a-Deliverable gesture
+## 6. Make-a-Deliverable button
 
-A per-line action on the estimate (draft or accepted — deliverable
-editability rules unchanged): copy this line's description / qty / units
-into a new `Deliverable` on the job, and remember the linkage.
+A per-line **button** on the estimate — "Make a deliverable from this"
+(shorter label TBD at the §9 wireframes) — that **immediately** copies the
+line's description / qty / units into a new `Deliverable` on the job and
+remembers the linkage. It is an authoring-time action, not a flag that
+acts later: **deliverables must exist before the estimate is sent**, since
+the customer approves them as part of the quote, and the send-time
+deliverables snapshot/freeze machinery is untouched. Acceptance creates no
+deliverables (see §8). Availability follows the existing deliverable
+editability rules (`DeliverableService.is_editable`) — in practice, the
+draft estimate before send, and draft COs.
 
 - Available on **any** line, not just plain lines: on an MQ44-type job the
   estimator may spawn the "100× MQ44" deliverable from the backed cutting
-  line, or type deliverables directly as today. The gesture is a
+  line, or type deliverables directly as today. The button is a
   convenience wherever a line happens to correspond to a shippable thing —
   never a classification.
 - Linkage is a provenance FK (`Deliverable.source_line` → EstimateLineItem,
@@ -445,9 +453,10 @@ final price of every line (principle 3).
 
 ## 8. Acceptance and planning
 
-On a hand-line-heavy job, acceptance now produces deliverables (if the
-estimator used the gesture) and an approved job — possibly with few or no
-tasks. That is the honest shape: winning the work and planning the work are
+On a hand-line-heavy job, acceptance now produces an approved job —
+possibly with few or no tasks. (Not deliverables: those were created at
+authoring time — §6 — and frozen at send, so the customer approved them
+with the quote.) That is the honest shape: winning the work and planning the work are
 different acts, and the **Approved → In Progress** transition has always
 existed to hold that gap (planning happens in Approved; releasing to the
 floor means it's set up enough to start). No new mechanism; at most a
@@ -554,7 +563,7 @@ spec). Every item must have a defined shape here:
 
 | # | Item | Shape under this design |
 |---|---|---|
-| 1 | N finished items we manufacture | Plain line ("3 chairs @ $500") + become-a-Deliverable. Work planned as ordinary flat/preset tasks in Approved. Invoice: skeleton line, invoicer attaches the chair-work atoms, est-vs-actual, bill. |
+| 1 | N finished items we manufacture | Plain line ("3 chairs @ $500") + make-a-deliverable button before send. Work planned as ordinary flat/preset tasks in Approved. Invoice: skeleton line, invoicer attaches the chair-work atoms, est-vs-actual, bill. |
 | 2 | Resale material (after cutting parts) | Catalog/bare material line → Material (unchanged). |
 | 3 | N parts from a material | Cutting task(s) (preset, machine-minutes) + material line; deliverable via gesture or typed. |
 | 4 | Setup fee | Service line → **flat task** (it's work). |
