@@ -109,22 +109,39 @@ reconciliation (Phase 5), and the negative-total invoice send gate.
 pool child-exclusions, the deliverables `source_task` bridge), and
 Phase 2's `freeform_kind` migration chain.
 
-## 3. Subtasks removed
+## 3. Subtasks removed — at the code level; the field sleeps
 
-`Task.parent_task` is deleted from main (it predates everything —
-2025-08-13 initial structure). One level of task; if work needs sequencing
-or reference to another task, the user says so in the description and/or
-reorders. Scope of removal:
+Subtask behavior is removed from the UI and backend code, but
+`Task.parent_task` **stays in the model, dormant** (RM, 2026-08-06: this
+area is being redesigned for the second time; no confidence there won't
+be a third — keep the structural option open). One level of task in
+practice; if work needs sequencing or reference to another task, the user
+says so in the description and/or reorders. Scope:
 
-- Model field + migration; **flatten** existing subtask rows to top-level
-  (dev data: 26 rows) rather than delete.
-- ~18 uses across `apps/jobs/services.py`, `apps/schedule/services.py`,
-  `apps/api/tasks/` — audit each; scheduling simplifies (no parent
-  dereference in `expected_worker_time`).
-- `TasksPanel.svelte` tree rendering and `TaskDetailPage.svelte` parent
-  affordances → flat list.
-- The "materials on subtasks?" open question (memory, 2026-08-04) dissolves:
-  parent-only attachment, trivially.
+- **Model:** `parent_task` field retained, no schema migration. Annotate
+  it in `models.py`: dormant since 2026-08, no code may read or write it,
+  see this spec. Add a `validate_data` check that the field is NULL
+  everywhere (a non-null value means some path is still writing it).
+- **Data:** a data migration **flattens** existing subtask rows to
+  top-level (`parent_task = NULL`; dev data: 26 rows). This matters
+  beyond tidiness — the field is `on_delete=CASCADE`, so stale child
+  pointers would let a task deletion silently cascade into tasks the UI
+  no longer shows as related. NULLing makes the dormant field truly
+  inert.
+- **Backend:** ~18 uses across `apps/jobs/services.py`,
+  `apps/schedule/services.py`, `apps/api/tasks/` — remove each;
+  scheduling simplifies (no parent dereference in
+  `expected_worker_time`). Serializers stop exposing the field.
+- **Frontend:** `TasksPanel.svelte` tree rendering and
+  `TaskDetailPage.svelte` parent affordances → flat list.
+- The "materials on subtasks?" open question (memory, 2026-08-04)
+  dissolves: with no code-level hierarchy, materials attach to tasks,
+  period.
+
+Contrast with Fee (§5), which is deleted **wholesale, model included**:
+Fee is recent, and RM's confidence in its removal is high; `parent_task`
+predates everything (2025-08-13 initial structure) and its *shape* may
+yet be wanted by a third design.
 
 ## 4. Line taxonomy: material or plain
 
@@ -390,7 +407,8 @@ Phased, each phase leaving main green:
 1. **Cherry-pick Phase 1** from `feature/fees` (task money, preset
    RateScheme, flat tasks, adjustment snapshots). Fresh-DB suite run
    (house rule after migration changes).
-2. **Subtask removal** (§3): flatten, drop field, simplify services/UI.
+2. **Subtask removal** (§3): flatten data (NULL migration), field stays
+   dormant with comment + validate_data NULL check, simplify services/UI.
 3. **Skeleton + references** (§7): reference schema, agreement-start flow,
    claim mirroring, est-vs-actual display. This is the largest UI phase —
    it opens with the §9 wireframe/prototype review with RM before any
