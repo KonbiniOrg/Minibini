@@ -36,7 +36,7 @@ services:
       - SPA_BASE_URL=http://minibini.me/
       - EMAIL_HOST_USER=minibini.test@gmail.com
       - EMAIL_HOST_PASSWORD=ttsg buza hxik ibit
-      - MINIBINI_VERSION=${VERSION}
+      - MINIBINI_VERSION=0.1.${GITHUB_RUN_NUMBER}
     build:
       context: .
       dockerfile: Dockerfile.django
@@ -67,7 +67,7 @@ services:
       - SPA_BASE_URL=http://minibini.me/
       - EMAIL_HOST_USER=minibini.test@gmail.com
       - EMAIL_HOST_PASSWORD=ttsg buza hxik ibit
-      - MINIBINI_VERSION=${VERSION}
+      - MINIBINI_VERSION=0.1.${GITHUB_RUN_NUMBER}
     # Point the daemon explicitly to the mounted config file
     command: daemon --config /etc/ofelia/config.ini
     volumes:
