@@ -1305,11 +1305,16 @@ The stat then reads **`SHORT`** (red) if anything needs ordering,
 **`WAITING`** (amber) if nothing does but something hasn't arrived, else
 **`OK`** (green); with no materials at all the stat is omitted. `SHORT`
 outranks `WAITING` so the headline always answers "does this job need me
-*right now*", and its sub-line reports both counts
-("1 needs ordering · 2 not yet arrived") so the red headline never hides
-the waiting work. Deliberately *not* one bucket for everything off the
-shelf: a headline that fires on every healthy job awaiting a normal
-delivery stops being read.
+*right now*". Its sub-line **names the needs-ordering materials by
+`description`** (2026-08-07; was a bare count) — up to
+`MATERIAL_SHORT_LIST_MAX` (3), beyond which the tail collapses to
+`"+N more"` — plus the not-yet-arrived count when that bucket is also
+non-empty (`"Bond 17 sheets, Epoxy resin +1 more · 2 not yet arrived"`),
+so the SHORT headline says *which* materials without a click-through. A
+short row with no `description` falls back to `"unnamed material"`.
+Deliberately *not* one bucket for everything off the shelf: a headline
+that fires on every healthy job awaiting a normal delivery stops being
+read.
 
 Any non-`OK` coverage re-heats the block to active. Keying on "not OK"
 rather than "is SHORT" matters for the PO-less cases — a job waiting on a

@@ -4,6 +4,7 @@ import {
   DUE_PRESSURE_WORKING_DAYS,
   PICKUP_CLOCK_WORKING_DAYS,
   INVOICE_ROW_MAX,
+  MATERIAL_SHORT_LIST_MAX,
   scopeBlock,
   workBlock,
   materialsBlock,
@@ -775,8 +776,8 @@ const MAT = {
   inventory_item: 7, cost_source: 'entered', consumption_state: 'pending',
   quantity: '4.00', qty_on_hand: '0.00', po_line_item_id: null, po_number: null,
 };
-const needed = { ...MAT };
-const needsPricing = { ...MAT, inventory_item: null, cost_source: null };
+const needed = { ...MAT, description: 'Bond 17 sheets' };
+const needsPricing = { ...MAT, inventory_item: null, cost_source: null, description: 'Epoxy resin' };
 const ordered = { ...MAT, po_line_item_id: 3, qty_on_order: '4.00', po_number: 'PO-9' };
 const awaitingCustomer = { ...MAT, cost_source: 'customer_supplied' };
 const onHand = { ...MAT, qty_on_hand: '4.00' };
@@ -803,17 +804,29 @@ describe('materialsBlock coverage', () => {
     expect(c.sub).toBeUndefined();
   });
 
-  it('needed → SHORT with the needs-ordering count', () => {
+  it('needed → SHORT listing the material by name', () => {
     const c = coverage(materialsBlock(args([needed, onHand])));
     expect(c.value).toBe('SHORT');
     expect(c.valueTone).toBe('bad');
-    expect(c.sub).toBe('1 needs ordering');
+    expect(c.sub).toBe('Bond 17 sheets');
   });
 
   it('needs-pricing counts as needs-ordering, not as its own bucket', () => {
     const c = coverage(materialsBlock(args([needsPricing, needed])));
     expect(c.value).toBe('SHORT');
-    expect(c.sub).toBe('2 need ordering');
+    expect(c.sub).toBe('Epoxy resin, Bond 17 sheets');
+  });
+
+  it('a short material with no description falls back to a generic label', () => {
+    const noDesc = { ...MAT };
+    const c = coverage(materialsBlock(args([noDesc])));
+    expect(c.sub).toBe('unnamed material');
+  });
+
+  it(`more than ${MATERIAL_SHORT_LIST_MAX} short materials collapses the tail into "+N more"`, () => {
+    const many = ['A', 'B', 'C', 'D', 'E'].map((description) => ({ ...MAT, description }));
+    const c = coverage(materialsBlock(args(many)));
+    expect(c.sub).toBe('A, B, C +2 more');
   });
 
   it('ordered alone → WAITING, amber, not-yet-arrived', () => {
@@ -839,7 +852,7 @@ describe('materialsBlock coverage', () => {
     const c = coverage(materialsBlock(args([needed, ordered, awaitingCustomer, onHand])));
     expect(c.value).toBe('SHORT');
     expect(c.valueTone).toBe('bad');
-    expect(c.sub).toBe('1 needs ordering · 2 not yet arrived');
+    expect(c.sub).toBe('Bond 17 sheets · 2 not yet arrived');
   });
 
   it('a coverage alert re-heats the block even with no POs at all', () => {

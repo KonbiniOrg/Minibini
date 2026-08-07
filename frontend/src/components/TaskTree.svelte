@@ -4,6 +4,7 @@
   import MaterialRow from './materials/MaterialRow.svelte';
   import { fmtMoney as fmt, taskTotal, materialTotal, feeTotal }
     from '../lib/taskTotals.js';
+  import { canManageFinancials } from '../stores/permissions.js';
 
   let {
     tasks = [],
@@ -41,6 +42,8 @@
     onAttachExpense = null,
     expenses = [],
     onEditExpense = () => {},
+    onDeleteExpense = null,
+    onRejectExpense = null,
     fees = [],
     onEditFee = () => {},
     selectedTaskId = $bindable(null),
@@ -121,7 +124,18 @@
     <td class="text-right">{fmt(exp.amount)}</td>
     {#if !readonly}
       <td class="actions-cell row-actions">
-        <button type="button" onclick={() => onEditExpense(exp)}>edit</button>
+        {#if exp.invoice}
+          <span class="locked-note">billed — locked</span>
+        {:else}
+          <button type="button" onclick={() => onEditExpense(exp)}>edit</button>
+          {#if onRejectExpense && $canManageFinancials
+               && exp.payment_method === 'personal' && exp.status === 'submitted'}
+            <button type="button" onclick={() => onRejectExpense(exp)}>reject</button>
+          {/if}
+          {#if onDeleteExpense && $canManageFinancials}
+            <button type="button" onclick={() => onDeleteExpense(exp)}>delete</button>
+          {/if}
+        {/if}
       </td>
     {/if}
   </tr>
@@ -277,4 +291,5 @@
     max-width: 12em;
   }
   /* Buttons in the cell get the shared .row-actions look (app.css). */
+  .locked-note { font-size: 11px; color: #888; font-style: italic; }
 </style>
