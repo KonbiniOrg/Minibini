@@ -268,29 +268,55 @@ yet reflected in any line, and the wizard prompts: bill, fold into a line,
 or consciously absorb. Unreferenced pool billing (T&M jobs, estimate-less
 jobs) works exactly as today.
 
-### 7.4 Progress billing: the deduction line
+### 7.4 Progress billing: per-line lifecycle, family arithmetic, deductions
 
-The cabinets case (10 ordered; 1 billed at pickup at the estimate rate;
-the rest later). Chosen presentation (RM, 2026-08-06): **progress billing
-with an explicit deduction on the settlement invoice**, because the
-customer-facing document then tells the whole story and every est-vs-actual
-comparison stays whole-line.
+**No invoice-level mode.** An invoice has no progress-vs-final identity —
+each *line pull* does. Settlement is a per-agreement-line event: one
+invoice may settle the cabinets line, progress-pull the millwork line, and
+T&M-bill the CAD line in the same document. An invoice consisting only of
+non-settlement pulls may **display a derived "Progress billing" label**
+(customers should know a draw isn't the final accounting); that label is
+presentation computed from the pulls, never a stored type.
 
-- **Progress pull:** a reference at partial qty (1 of 10), billed at the
-  agreement rate. Typically no atoms attached — the work is mid-flight and
-  there is nothing to reconcile against. Counts against Σ-qty.
-- **Settlement pull:** references the line at **full qty**, flagged
-  `settles=True` (exempt from Σ-qty). The line shows the whole-line
-  comparison — estimated 10 × $500 = $5,000 vs. actuals $5,400 — and bills
-  the full amount the invoicer lands on. The wizard **auto-adds one
-  deduction line per prior live pull**: a plain negative line,
-  "Less progress billing INV-0012 — −$500", carrying the **same AC as the
-  parent line** (income nets correctly per category), provenance-linked to
-  the prior invoice line, excluded from Σ-qty. Editable like any line;
-  deleting it is a conscious act the wizard warns about.
-- Billed-to-date is *computed from the reference rows of live invoices* —
-  the structural record that pickup-cabinet money already went out the
-  door. Nothing is remembered by hand.
+Kinds of pull against an agreement line:
+
+- **Progress pull:** partial qty at the agreement rate. Typically no atoms
+  attached — the work is mid-flight. Counts against Σ-qty.
+- **Bill-as-you-go pull (T&M):** claims completed atoms and bills their
+  computed amount. Legitimate on *any* invoice — atoms are deliberately
+  **not** restricted to settlement invoices (monthly T&M billing is
+  atom-billing on non-final invoices and is the most ordinary pattern
+  there is). No enforcement is needed; the family arithmetic below cannot
+  be lied to.
+- **Settlement:** ends the line. Two gestures, chosen per line by the
+  invoicer — a choice about the *customer document*, both netting the same
+  money:
+  - **Settle whole line** — reference at full qty (`settles=True`, exempt
+    from Σ-qty); whole-line est-vs-actual comparison; the wizard
+    auto-adds **one deduction line per prior live pull** ("Less progress
+    billing INV-0012 — −$500"), each carrying the **same AC as the parent
+    line** (income nets correctly per category), provenance-linked to the
+    prior invoice line, excluded from Σ-qty, editable, deletion warned.
+    This re-prices the whole quantity in light of actuals.
+  - **Bill remainder** — remaining qty, no deductions; prior pulls' prices
+    stand as final for their slices (the pickup cabinet's $500 was a
+    sale, not a draw).
+
+**Family arithmetic** (the invariant view over all live pulls against one
+agreement line): `billed-to-date` = Σ reference-row amounts — regardless
+of which mechanism produced each amount; `actuals` = Σ `compute_amount()`
+over atoms claimed by **any** pull in the family; suggested settlement =
+actuals − billed-to-date. Draw-then-settle and bill-as-you-go are the
+*same arithmetic*: in pure T&M each pull bills exactly its own atoms, so
+the settlement suggestion collapses to the newly attached atoms' worth and
+the deductions net out by construction. There is no reachable state where
+the display lies — atom double-billing is blocked by claims, silent
+over-quantity by Σ-qty, and everything else is pricing judgment
+(principle 3) taken with true numbers on screen.
+
+- Billed-to-date comes from the reference rows of live invoices — the
+  structural record that early money went out the door. Nothing is
+  remembered by hand.
 - The existing deposit-credit machinery (negative pull of paid deposit
   lines) is the same shape; unification is a later cleanup, not part of
   this work.
@@ -298,7 +324,7 @@ comparison stays whole-line.
   still applies to the invoice total.
 
 Degenerate cases: a single full pull (the overwhelmingly common case) has
-no prior pulls, so no deduction lines and Σ-qty is trivially satisfied —
+no prior pulls, no deductions, no label, and trivially satisfies Σ-qty —
 the invoicer never sees any of this machinery.
 
 ### 7.5 What stays structural vs. human
@@ -336,6 +362,18 @@ design must pass in implementation review:
 4. **The invoicer never meets** reference rows, Σ-qty, or claim mirroring
    by name — they see est vs. actual per line, billed-to-date on split
    lines, and a pool whose goal state is empty.
+5. **Settlement is one plain-language question** on a split line — "Final
+   bill for this line: re-price the whole quantity (shows deductions for
+   earlier invoices) or bill just the remainder?" — and the "Progress
+   billing" label appears on the document automatically, never as a mode
+   the user sets.
+
+**UI simplification is a first-class workstream, not a polish pass** (RM,
+2026-08-06: the reconcile surface is still super complicated from a user's
+perspective). The §10 phase that builds the skeleton/reconcile UI starts
+with wireframes or a throwaway prototype reviewed with RM *before*
+implementation, with these checkpoints as the acceptance criteria. Default
+posture: hide every mechanism until the job's shape forces it into view.
 
 ## 10. Migration and sequencing
 
@@ -346,7 +384,9 @@ Phased, each phase leaving main green:
    (house rule after migration changes).
 2. **Subtask removal** (§3): flatten, drop field, simplify services/UI.
 3. **Skeleton + references** (§7): reference schema, agreement-start flow,
-   claim mirroring, est-vs-actual display. This is the largest UI phase.
+   claim mirroring, est-vs-actual display. This is the largest UI phase —
+   it opens with the §9 wireframe/prototype review with RM before any
+   implementation.
 4. **Deduction/progress billing** (§7.4) — separable from 3 if needed.
 5. **Crystallization narrowing + Fee deletion** (§4, §5): acceptance/CO
    discriminator change; delete Fee. Existing Fee rows: those claimed by a
@@ -366,18 +406,19 @@ final verification, e2e for user-reachable flows in the same phase.
 ## 11. Open questions
 
 - §7.1 implementation shape: FK-pair-on-line vs. reference-row table.
-- Settlement with **multiple** prior pulls at different rates: one
-  deduction row per prior invoice (current spec) — confirm the customer
-  document reads well with 3+ deductions, or allow an aggregate row.
-- A progress pull **with** atoms attached (some work completed and claimed
-  early): the settlement's actuals figure must aggregate the family's
-  atoms, not just its own line's. Spec says family-level (§7.4
-  billed-to-date is family-level already); implementation must match.
+- Settlement with **multiple** prior pulls: one deduction row per prior
+  invoice (current spec) — confirm the customer document reads well with
+  3+ deductions, or allow an aggregate row.
 - CO replacing a partially-billed agreement line: blocked (§7.1) — is
   "block" right, or should it force a settlement first? Decide when a real
   case appears.
 - Where the draft-invoice-as-charge-parking-lot flow (§5) needs UI help,
   if anywhere.
+
+*(Resolved 2026-08-06: settlement actuals aggregate the whole family's
+atoms — folded into §7.4. Atoms-only-on-final-invoices was considered and
+rejected: T&M billing is atom-billing on non-final invoices; the family
+arithmetic needs no such restriction.)*
 
 ## 12. Acceptance walkthrough — the fifteen items
 
