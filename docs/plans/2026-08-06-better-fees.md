@@ -286,33 +286,50 @@ auto-seeding — the §5 parking-lot flow (draft invoice holding an ad-hoc
 charge) just means the draft carries its skeleton lines alongside the
 parked hand line until the invoicer prunes and sends.
 
-**The draw path — one context-relabeled button, never seeded** (RM,
-2026-08-06). The existing three-state "Add Deposit Invoice" affordance
-(`InvoicePanel.svelte`) is retained and extended: with **no live invoice**
-on the job it reads **"Add Deposit Invoice"** (today's flow —
-`DepositInvoiceModal`, creates the draft + deposit line); once **≥1 live
-invoice exists** it reads **"Add Progress Invoice"** and creates an
-**unseeded empty draft** for the invoicer to compose a draw — partial
-pulls via the add-from-agreement picker (which mint reference rows, so
-§7.4 settlement deductions cover them), hand lines, or a further deposit
-line if ever needed (`add_line_item(deposit=True)` remains available;
-the relabel removes no capability). Neither path stores an invoice type:
-"unseeded" is only how the draft was born, and the derived
-Progress-billing label still computes from content — the no-invoice-mode
-principle (§7.4) holds. A deposit and a progress pull are the same
-species — a **draw** at estimated values — but against different things:
-a progress pull draws against a *line* (reference row → family
-arithmetic auto-deducts at settlement), a deposit draws against the
-*job* (line-less; subtracted by the existing document-level
-deposit-credit pull). Two rails, kinship noted in §7.4, unification
-still a later cleanup. Settlement invoices therefore do both: per-line
-deductions appear automatically, and the wizard's "Deposit credits"
-group stays prominent so paid deposits get pulled rather than forgotten.
-Edge for the wireframes: under auto-seeding a fresh regular draft is
-never zero-line on an agreement job, so the old "Make this a deposit
-invoice" state only arises after the invoicer clears a seeded draft —
-and one-draft-per-job means wanting a deposit while a seeded draft
-exists requires clearing it first.
+**The draw path — job-level draws are the primitive** (RM, 2026-08-06:
+"progress billing is against the job as a whole" — invoicers will write
+"Progress billing $2,500" and must never be asked to hang it on a part
+number, task, or material). A **draw** is money billed in advance of the
+real accounting. Draws come in two granularities, and the *job-level* one
+is the common, human-sense case:
+
+- **Job-level draw** — the primitive. Mechanism: the existing deposit
+  rail, generalized. A line on a **draw-flagged accounting category**
+  (today's `AccountingCategory.is_deposit`; a "Progress billing" category
+  flagged the same way rides the identical machinery — rename to
+  `is_draw` is optional later honesty). Once its invoice is paid, the
+  line surfaces as a pullable **credit** on later invoices, deduction
+  locked to its source — all existing behavior. A deposit is simply the
+  first job-level draw.
+- **Per-line pull** — the deliberate special case (the pickup-cabinet:
+  money that genuinely matches one agreement line). Partial qty via the
+  add-from-agreement picker; reference rows; §7.4 family deductions at
+  settlement. Available, never required.
+
+**The button writes the draw for you.** The existing three-state "Add
+Deposit Invoice" affordance (`InvoicePanel.svelte` /
+`DepositInvoiceModal`) is retained with one relabel: **no live invoice**
+→ "Add Deposit Invoice"; **≥1 live invoice** → "Add Progress Invoice".
+Both are the same gesture — prompt for an amount, create an **unseeded**
+draft with one job-level draw line on the appropriate category
+(`default_deposit_accounting_category`; a parallel
+`default_progress_billing_accounting_category` Configuration key, coached
+like `_resolve_deposit_category`, so the accountant controls whether
+progress draws map to the deposit category or their own). The thing
+invoicers naturally want to type is exactly what the button types.
+Neither path stores an invoice type: "unseeded" is only how the draft was
+born; the derived Progress-billing label computes from content — the
+no-invoice-mode principle (§7.4) holds.
+
+Settlement invoices compose **both rails**: per-line family deductions
+appear automatically, and the wizard's credits group — now "Draw
+credits", covering deposits and progress billings alike — stays prominent
+so paid draws get pulled rather than forgotten. Rail unification remains
+a later cleanup. Edge for the wireframes: under auto-seeding a fresh
+regular draft is never zero-line on an agreement job, so the old "Make
+this a deposit invoice" state only arises after the invoicer clears a
+seeded draft — and one-draft-per-job means wanting a draw invoice while
+a seeded draft exists requires clearing it first.
 
 ### 7.3 Est-vs-actual is the display
 
@@ -348,21 +365,23 @@ nothing ever nets against it. Every invoice line is one of:
 
 | Line | Draw or final | Later subtraction |
 |---|---|---|
-| Agreement pull, non-settlement | draw | family deduction at settlement (reference rows) |
+| Agreement pull, non-settlement | draw (against a line) | family deduction at settlement (reference rows) |
 | Agreement pull, settlement | final | — (it *is* the accounting) |
-| Deposit line | draw (against the job) | deposit-credit pull |
+| Job-level draw line (draw-flagged AC: deposit, progress billing) | draw (against the job) | draw-credit pull |
 | Atom pull (pool, no agreement ref) | final | — (bills actuals, claimed exactly-once) |
-| Hand line (manual, no ref, no atoms) | **final** | — (bills something outside the agreement; exists only here, so nothing can ever double it) |
+| Hand line (manual, no ref, no atoms, ordinary AC) | **final** | — (bills something outside the agreement; exists only here, so nothing can ever double it) |
 | Deduction line | the subtraction itself | — |
 
 Hand lines and atom pulls are final content and suppress the
-Progress-billing label. Corollary the UI must embody: **advance money
-must ride the deposit gesture** — a plain hand line is a declaration
-that the charge is final, and "bill $2,000 on account" typed as a hand
-line would be an untracked draw no rail ever subtracts. (The inverse
-mistake — hand-typing a charge that duplicates an agreement line — is
-shrunk by auto-seeding: the real line is already on the draft, so the
-duplicate sits visibly beside it.)
+Progress-billing label; draw-flagged lines and non-settlement pulls are
+draws and produce it. The "people will type 'progress billing $2,500' as
+a hand line" hazard is answered by making the right way the easy way:
+the §7.2 button mints exactly that line *on the draw rail*, so the
+natural gesture is the tracked one. A plain hand line on an ordinary AC
+remains a declaration that its charge is final. (The inverse mistake —
+hand-typing a charge that duplicates an agreement line — is shrunk by
+auto-seeding: the real line is already on the draft, so the duplicate
+sits visibly beside it.)
 
 Kinds of pull against an agreement line:
 
@@ -403,11 +422,12 @@ over-quantity by Σ-qty, and everything else is pricing judgment
 - Billed-to-date comes from the reference rows of live invoices — the
   structural record that early money went out the door. Nothing is
   remembered by hand.
-- A deposit is the same species as a progress pull — a draw at estimated
-  values — but against the *job* rather than a line (§7.2 draw path), so
-  it is subtracted by the existing document-level deposit-credit pull
-  instead of the per-line family arithmetic. Unification of the two
-  deduction rails is a later cleanup, not part of this work.
+- Job-level draws (deposits, progress billings — §7.2 draw path) are the
+  same species as a per-line pull — money in advance of the accounting —
+  but against the *job* rather than a line, so they are subtracted by
+  the document-level draw-credit pull instead of the per-line family
+  arithmetic. Unification of the two deduction rails is a later cleanup,
+  not part of this work.
 - QBO: pushes as ordinary lines; the adopted negative-total send gate
   still applies to the invoice total.
 
