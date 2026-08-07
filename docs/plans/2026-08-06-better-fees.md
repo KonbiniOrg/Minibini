@@ -34,7 +34,8 @@ commercial unit to masquerade as an operational type:
   `copy_from_estimate` replays agreement lines as bare values and claims only
   the crystallized Fees; task- and material-backed lines arrive with no
   source rows, so the wizard cannot reconcile them against actuals
-  (`apps/invoicing/services.py:282-290`; LATER.md 2026-08-06 entry).
+  (`apps/invoicing/services.py:282-290`). §7 owns this problem outright
+  (it was briefly a LATER.md entry; removed — this spec is its fix).
 
 ## Principles
 
@@ -372,8 +373,15 @@ design must pass in implementation review:
 2026-08-06: the reconcile surface is still super complicated from a user's
 perspective). The §10 phase that builds the skeleton/reconcile UI starts
 with wireframes or a throwaway prototype reviewed with RM *before*
-implementation, with these checkpoints as the acceptance criteria. Default
-posture: hide every mechanism until the job's shape forces it into view.
+implementation, with these checkpoints as the acceptance criteria.
+**The wireframes are a ground-up redesign of the reconcile surface — not
+an increment on the current `ReconcileMode`/wizard UI, which RM rates
+suboptimal.** Improving that surface is in scope for this effort, since
+the skeleton flow digs through the same territory anyway. Reusable pieces
+(claims plumbing, in-sync services) survive underneath; the presentation
+starts from the est-vs-actual reconciliation framing, not from the
+two-column atom-picker. Default posture: hide every mechanism until the
+job's shape forces it into view.
 
 ## 10. Migration and sequencing
 
