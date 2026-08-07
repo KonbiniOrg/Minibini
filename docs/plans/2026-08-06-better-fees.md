@@ -245,12 +245,17 @@ new revision's lines alongside the existing source-row move; a CO
 remove/replace of an agreement line with live references is blocked, same
 family as the can't-retire-invoiced-atoms guard.
 
-### 7.2 Skeleton creation
+### 7.2 Skeleton creation — automatic, delete-to-defer
 
-"Copy from estimate" becomes "start from agreement": one invoice line per
-`compose_agreement` line, carrying the agreement's description / qty /
-units / price as starting values plus the §7.1 reference (default qty =
-remaining). Per-line, at creation:
+**There is no "start from agreement" button — every invoice on a job with
+an agreement starts from it automatically.** *(Provisional — RM
+2026-08-06: "not SURE about this but I want to try it and see." Revisit
+after real use; the fallback is the same seeding behind an explicit
+gesture.)* Creating an invoice seeds one line per **remaining**
+`compose_agreement` line — lines fully billed or settled don't reappear;
+partially billed lines arrive at their remaining qty — each carrying the
+agreement's description / qty / units / price as starting values plus the
+§7.1 reference. Per-line, at seeding:
 
 - **Backed agreement line** → the copy is born with invoice-side claims on
   the same atoms (`InvoiceLineItemSource` rows mirroring the estimate's
@@ -265,9 +270,24 @@ remaining). Per-line, at creation:
 - **Adjustment line** → copies with its snapshot percent; recomputes
   against this invoice's lines (existing behavior).
 
-Partial skeletons are fine: the invoicer can pull individual agreement
-lines instead of the whole document (the cabinets case), and can still add
-atoms directly from the pool or add hand lines, as today.
+**Delete-to-defer:** a line the invoicer isn't billing this time —
+actuals not in yet, customer negotiation, whatever — is simply deleted.
+Deletion releases its reference and mirrored claims, so the line
+reappears (at remaining qty) on the next invoice's seeding. A
+complementary **"add from agreement"** picker restores a deleted line to
+the current draft (mis-deletes, changed minds) — it lists exactly the
+remaining agreement lines not already on this draft. Hand lines and
+direct atom pulls from the pool remain available as today.
+
+Interactions worth naming: estimate-less jobs seed empty (pool-driven
+billing as today). The one-draft-per-job constraint
+(`invoicing/0008_unique_draft_invoice_per_job`) composes well with
+auto-seeding — the §5 parking-lot flow (draft invoice holding an ad-hoc
+charge) just means the draft carries its skeleton lines alongside the
+parked hand line until the invoicer prunes and sends. **Deposit invoices
+must be exempt from seeding** (a deposit is a draw before work, not a
+billing of the agreement) — confirm against the deposit flow at
+implementation.
 
 ### 7.3 Est-vs-actual is the display
 
@@ -374,9 +394,11 @@ design must pass in implementation review:
    checkbox, no "priced deliverable" concept anywhere.
 2. **The estimator's flow is unchanged** on both archetype jobs (chairs and
    MQ44). Nothing new is required at authoring time.
-3. **The common invoice is boring:** start from agreement → every line
-   pre-filled, backed lines pre-claimed → adjust → send. Progress/settlement
-   machinery invisible unless a line is actually split.
+3. **The common invoice is boring:** create invoice → skeleton is just
+   *there* (no button), every remaining line pre-filled, backed lines
+   pre-claimed → delete what's not being billed → adjust → send.
+   Progress/settlement machinery invisible unless a line is actually
+   split.
 4. **The invoicer never meets** reference rows, Σ-qty, or claim mirroring
    by name — they see est vs. actual per line, billed-to-date on split
    lines, and a pool whose goal state is empty.
@@ -440,6 +462,11 @@ final verification, e2e for user-reachable flows in the same phase.
   case appears.
 - Where the draft-invoice-as-charge-parking-lot flow (§5) needs UI help,
   if anywhere.
+- Auto-seeding (§7.2) is a **trial decision** — RM wants to live with
+  "every invoice starts as the remaining agreement, delete to defer"
+  before committing. Confirm the deposit-invoice exemption; watch for
+  jobs where deleting most of a large skeleton is more work than pulling
+  a few lines would have been.
 
 *(Resolved 2026-08-06: settlement actuals aggregate the whole family's
 atoms — folded into §7.4. Atoms-only-on-final-invoices was considered and
