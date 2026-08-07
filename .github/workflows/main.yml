@@ -83,6 +83,7 @@ jobs:
           host: ${{ secrets.DEPLOY_SERVER }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          allenvs: "true""
           script: |
             touch i-was-here.txt
             set > i-was-here.txt
