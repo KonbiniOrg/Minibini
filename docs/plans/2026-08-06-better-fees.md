@@ -337,9 +337,32 @@ jobs) works exactly as today.
 each *line pull* does. Settlement is a per-agreement-line event: one
 invoice may settle the cabinets line, progress-pull the millwork line, and
 T&M-bill the CAD line in the same document. An invoice consisting only of
-non-settlement pulls may **display a derived "Progress billing" label**
-(customers should know a draw isn't the final accounting); that label is
-presentation computed from the pulls, never a stored type.
+**draws** may display a derived "Progress billing" label (customers should
+know a draw isn't the final accounting); that label is presentation
+computed from line content, never a stored type.
+
+**Draw vs. final charge — the full line taxonomy.** A *draw* is money
+billed in advance of the real accounting, so it needs machinery to
+subtract it later; a *final charge* bills something once, now, and
+nothing ever nets against it. Every invoice line is one of:
+
+| Line | Draw or final | Later subtraction |
+|---|---|---|
+| Agreement pull, non-settlement | draw | family deduction at settlement (reference rows) |
+| Agreement pull, settlement | final | — (it *is* the accounting) |
+| Deposit line | draw (against the job) | deposit-credit pull |
+| Atom pull (pool, no agreement ref) | final | — (bills actuals, claimed exactly-once) |
+| Hand line (manual, no ref, no atoms) | **final** | — (bills something outside the agreement; exists only here, so nothing can ever double it) |
+| Deduction line | the subtraction itself | — |
+
+Hand lines and atom pulls are final content and suppress the
+Progress-billing label. Corollary the UI must embody: **advance money
+must ride the deposit gesture** — a plain hand line is a declaration
+that the charge is final, and "bill $2,000 on account" typed as a hand
+line would be an untracked draw no rail ever subtracts. (The inverse
+mistake — hand-typing a charge that duplicates an agreement line — is
+shrunk by auto-seeding: the real line is already on the draft, so the
+duplicate sits visibly beside it.)
 
 Kinds of pull against an agreement line:
 
