@@ -311,12 +311,12 @@ Deposit Invoice" affordance (`InvoicePanel.svelte` /
 `DepositInvoiceModal`) is retained with one relabel: **no live invoice**
 → "Add Deposit Invoice"; **≥1 live invoice** → "Add Progress Invoice".
 Both are the same gesture — prompt for an amount, create an **unseeded**
-draft with one job-level draw line on the appropriate category
-(`default_deposit_accounting_category`; a parallel
-`default_progress_billing_accounting_category` Configuration key, coached
-like `_resolve_deposit_category`, so the accountant controls whether
-progress draws map to the deposit category or their own). The thing
-invoicers naturally want to type is exactly what the button types.
+draft with one job-level draw line on
+`default_deposit_accounting_category` (both variants, for now — RM is
+asking the accountant whether progress billings need their own category;
+if so, add a parallel `default_progress_billing_accounting_category` key
+coached like `_resolve_deposit_category`). The thing invoicers naturally
+want to type is exactly what the button types.
 Neither path stores an invoice type: "unseeded" is only how the draft was
 born; the derived Progress-billing label computes from content — the
 no-invoice-mode principle (§7.4) holds.
@@ -532,6 +532,9 @@ final verification, e2e for user-reachable flows in the same phase.
   case appears.
 - Where the draft-invoice-as-charge-parking-lot flow (§5) needs UI help,
   if anywhere.
+- Whether progress billings need their own accounting category or share
+  the deposit one — RM asking the accountant; until answered, both draw
+  variants use `default_deposit_accounting_category` (§7.2).
 - Auto-seeding (§7.2) is a **trial decision** — RM wants to live with
   "every invoice starts as the remaining agreement, delete to defer"
   before committing. The two worst friction cases are already routed
