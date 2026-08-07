@@ -547,6 +547,87 @@ describe('TaskTree null-guarded task ops (A3/C2), on-hold gating (B2), can_edit 
   });
 });
 
+describe('TaskTree — expense delete/reject', () => {
+  afterEach(() => user.set(null));
+
+  function financialUser() {
+    user.set({ id: 1, permissions: ['can_manage_financials'] });
+  }
+
+  it('offers delete and reject on a personal/submitted expense when wired and permitted', async () => {
+    financialUser();
+    const onDeleteExpense = vi.fn();
+    const onRejectExpense = vi.fn();
+    const exp = { id: 7, material: null, description: 'shipping', amount: '40.00',
+                  payment_method: 'personal', status: 'submitted' };
+    const { getByRole } = render(TaskTree, {
+      props: { tasks: [], expenses: [exp], onDeleteExpense, onRejectExpense },
+    });
+    await fireEvent.click(getByRole('button', { name: 'delete' }));
+    expect(onDeleteExpense).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+    await fireEvent.click(getByRole('button', { name: 'reject' }));
+    expect(onRejectExpense).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+  });
+
+  it('hides reject on a company-paid expense (delete still offered)', () => {
+    financialUser();
+    const exp = { id: 8, material: null, description: 'lumber run', amount: '90.00',
+                  payment_method: 'company', status: 'submitted' };
+    const { queryByRole } = render(TaskTree, {
+      props: { tasks: [], expenses: [exp], onDeleteExpense: vi.fn(), onRejectExpense: vi.fn() },
+    });
+    expect(queryByRole('button', { name: 'reject' })).toBeNull();
+    expect(queryByRole('button', { name: 'delete' })).toBeInTheDocument();
+  });
+
+  it('hides reject on an already-reimbursed expense', () => {
+    financialUser();
+    const exp = { id: 9, material: null, description: 'gas', amount: '20.00',
+                  payment_method: 'personal', status: 'reimbursed' };
+    const { queryByRole } = render(TaskTree, {
+      props: { tasks: [], expenses: [exp], onDeleteExpense: vi.fn(), onRejectExpense: vi.fn() },
+    });
+    expect(queryByRole('button', { name: 'reject' })).toBeNull();
+  });
+
+  it('hides both buttons without can_manage_financials, even when wired', () => {
+    user.set({ id: 1, permissions: [] });
+    const exp = { id: 10, material: null, description: 'shipping', amount: '40.00',
+                  payment_method: 'personal', status: 'submitted' };
+    const { queryByRole } = render(TaskTree, {
+      props: { tasks: [], expenses: [exp], onDeleteExpense: vi.fn(), onRejectExpense: vi.fn() },
+    });
+    expect(queryByRole('button', { name: 'delete' })).toBeNull();
+    expect(queryByRole('button', { name: 'reject' })).toBeNull();
+  });
+
+  it('hides both buttons when their callbacks are not wired (passive surface)', () => {
+    financialUser();
+    const exp = { id: 11, material: null, description: 'shipping', amount: '40.00',
+                  payment_method: 'personal', status: 'submitted' };
+    const { queryByRole } = render(TaskTree, {
+      props: { tasks: [], expenses: [exp] },
+    });
+    expect(queryByRole('button', { name: 'delete' })).toBeNull();
+    expect(queryByRole('button', { name: 'reject' })).toBeNull();
+  });
+
+  it('an invoiced expense locks the whole row — no edit/delete/reject', () => {
+    financialUser();
+    const exp = { id: 12, material: null, description: 'shipping', amount: '40.00',
+                  payment_method: 'personal', status: 'submitted',
+                  invoice: { id: 4, number: 'INV-4' } };
+    const { getByText, queryByRole } = render(TaskTree, {
+      props: { tasks: [], expenses: [exp], onEditExpense: vi.fn(),
+               onDeleteExpense: vi.fn(), onRejectExpense: vi.fn() },
+    });
+    expect(getByText('billed — locked')).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'edit' })).toBeNull();
+    expect(queryByRole('button', { name: 'delete' })).toBeNull();
+    expect(queryByRole('button', { name: 'reject' })).toBeNull();
+  });
+});
+
 describe('TaskTree task rows are one shared fragment (TaskRow)', () => {
   it('badges a subtask waiting on understocked material, same as a top-level task', () => {
     // Drift symptom of the old duplicated subtask-row block: the badge only

@@ -107,6 +107,12 @@ Payment branch:
   includes the material-less expenses.
 - [ ] **Task list** → **"Expenses (no material)"** table (data-table style, with a
   **Purchased-by** column); refreshes after adding via the toolbar.
+- [ ] **Task list inline delete/reject (2026-08-07):** each row (loose or
+  material-nested) offers **edit**, **delete**, and — for a personal/
+  submitted expense — **reject**, gated on `can_manage_financials`;
+  previously this view was edit-only, with no way to remove an expense
+  without navigating to the standalone `/expenses` list. An invoiced row
+  collapses to a **"billed — locked"** note (edit included).
 - [ ] **Job header financials (Spent / Profit):**
   - A **cost expense** raises **Spent** by its `amount` immediately (cost-at-
     purchase). Verify no double-count.
