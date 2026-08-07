@@ -889,3 +889,17 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the cleanup lands with bucket (a) re-authored, fresh
   `migrate` + full suite green from an empty DB, and the e2e seed still
   loads.
+
+- **Invoicing can't see what the estimate said.** — _added 2026-08-06 (RM)_
+  When composing an invoice there is no view of the agreement alongside
+  the atom pool. `InvoiceService.copy_from_estimate` replays
+  `compose_agreement` lines as bare values and claims **only** the
+  crystallized Fees (`apps/invoicing/services.py:282-290`) — task- and
+  material-backed estimate lines are copied without source rows, so the
+  wizard can't reconcile those lines against actuals, and atoms in the
+  pool carry no pointer back to the estimate line/price that promised
+  them. Feeds the Fee/Task/line-item redesign discussion; a likely shape
+  is starting the invoice draft from the agreement skeleton with claims
+  carried through (est values shown, actuals beside).
+  _Done when:_ an invoicer composing against an estimate-backed job can
+  see, per line/atom, what the agreement said versus what actuals are.
