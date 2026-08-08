@@ -436,8 +436,12 @@ class JobListQueryCountTest(TestCase):
         return len(ctx.captured_queries), len(response.data['results'])
 
     def test_list_query_count_does_not_scale_with_jobs(self):
-        # Measure with 2 jobs.
+        # Measure with 2 jobs. First a warm-up request: force_authenticate
+        # reuses one user instance, so the permission cache filled by
+        # serializer has_perm calls (can_write_money etc.) costs +2 auth
+        # queries on the process's first request only.
         self._make_jobs(2)
+        self._list_query_count()
         q2, n2 = self._list_query_count()
         self.assertEqual(n2, 2)
 
@@ -955,6 +959,12 @@ class JobDetailInvoiceFieldTest(TestCase):
 
         # Create one invoice with a task source (one invoiced atom)
         inv = self._invoice_task(self.task)
+
+        # Warm-up request: force_authenticate reuses ONE user instance across
+        # requests, so ModelBackend's permission cache (_perm_cache — filled
+        # by the serializers' has_perm calls, e.g. can_write_money) populates
+        # on the first request only (+2 auth queries). Measure steady state.
+        self.client.get(f'/api/jobs/{self.job.pk}/')
 
         # Measure baseline with one invoiced task
         with CaptureQueriesContext(connection) as ctx_one:

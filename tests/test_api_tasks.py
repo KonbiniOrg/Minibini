@@ -929,32 +929,6 @@ class SourceSchemeRestampTest(TestCase):
         self.task.refresh_from_db()
         self.assertEqual(self.task.source_scheme_id, self.scheme_a.pk)
 
-    def test_patch_source_scheme_on_parent_task_makes_rate_explicit(self):
-        """Existing rule (spec §9 rule 4, unchanged by this note):
-        rate=None on a parent derives its price from children
-        (derived_unit_price()); a restamp PATCH sends an explicit rate
-        that overrides the derivation, same as any other money-field PATCH
-        on a parent — this just confirms source_scheme rides along
-        correctly on that same request."""
-        self.client.force_login(self.manager)
-        parent = _stamp_task(self.job, self.scheme_a, 'Parent')
-        parent.rate = None
-        parent.est_qty = Decimal('5')
-        parent.save()
-        child = Task(job=self.job, name='Child', parent_task=parent,
-                     qty_scales_with_parent=True, est_qty=Decimal('1'))
-        child.stamp_from_scheme(self.scheme_a)
-        child.save()
-        self.assertIsNone(parent.rate)
-        resp = self.client.patch(self._url(parent), data={
-            'source_scheme': self.scheme_b.pk,
-            'rate': str(self.scheme_b.rate),
-            'unit_label': self.scheme_b.unit_label,
-            'accounting_category': self.ac2.pk,
-            'active_modifiers': [],
-        }, content_type='application/json')
-        self.assertEqual(resp.status_code, 200, resp.content)
-        parent.refresh_from_db()
-        self.assertEqual(parent.source_scheme_id, self.scheme_b.pk)
-        self.assertEqual(parent.rate, self.scheme_b.rate)
-        self.assertEqual(parent.effective_rate(), self.scheme_b.rate)
+    # (A feature/fees Phase 4 variant of this test — restamp on a rate-null
+    # parent with derived pricing — was dropped in the better-fees
+    # cherry-pick; derived parent pricing does not exist on this tree.)
