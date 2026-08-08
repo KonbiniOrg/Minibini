@@ -3,7 +3,7 @@ from decimal import Decimal
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import InventoryItem
 from apps.jobs.models import Job, Task, RateScheme
-from apps.estimates.models import Estimate
+from apps.estimates.models import Estimate, EstimateLineItem, ChangeOrder, ChangeOrderLineItem
 from apps.purchasing.models import PurchaseOrder
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory, Configuration
@@ -215,3 +215,73 @@ class InvoiceLineItemModelTest(TestCase):
         line_item.full_clean()  # Should not raise
         self.assertIsNone(line_item.task)
         self.assertEqual(line_item.inventory_item, self.inventory_item)
+
+
+class InvoiceLineAgreementRefTest(TestCase):
+    def setUp(self):
+        # Create basic fixtures: Contact, Job, Estimate, EstimateLineItem, ChangeOrder, ChangeOrderLineItem
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
+        self.job = Job.objects.create(
+            job_number="JOB001",
+            contact=self.contact,
+            description="Test job"
+        )
+        self.invoice = Invoice.objects.create(
+            job=self.job,
+            invoice_number="INV001"
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job,
+            estimate_number="EST001"
+        )
+        self.est_line = EstimateLineItem.objects.create(
+            estimate=self.estimate,
+            line_number=1,
+            description='Test estimate line',
+            qty=Decimal('1'),
+            units='none',
+            price=Decimal('100')
+        )
+        self.change_order = ChangeOrder.objects.create(
+            estimate=self.estimate,
+            job=self.job,
+            change_order_number="CO001"
+        )
+        self.co_line = ChangeOrderLineItem.objects.create(
+            change_order=self.change_order,
+            line_number=1,
+            description='Test CO line',
+            qty=Decimal('1'),
+            units='none',
+            price=Decimal('50'),
+            action=ChangeOrderLineItem.ACTION_ADD
+        )
+
+    def test_reference_fields_exist_and_default_null(self):
+        li = InvoiceLineItem.objects.create(
+            invoice=self.invoice, description='x', qty=1, units='none', price=Decimal('1'))
+        self.assertIsNone(li.agreement_estimate_line)
+        self.assertIsNone(li.agreement_co_line)
+        self.assertIsNone(li.agreement_line)
+
+    def test_agreement_line_property_returns_the_set_estimate_ref(self):
+        li = InvoiceLineItem.objects.create(
+            invoice=self.invoice,
+            agreement_estimate_line=self.est_line,
+            description='x',
+            qty=1,
+            units='none',
+            price=Decimal('1')
+        )
+        self.assertEqual(li.agreement_line, self.est_line)
+
+    def test_agreement_line_property_returns_the_set_co_ref(self):
+        li = InvoiceLineItem.objects.create(
+            invoice=self.invoice,
+            agreement_co_line=self.co_line,
+            description='x',
+            qty=1,
+            units='none',
+            price=Decimal('1')
+        )
+        self.assertEqual(li.agreement_line, self.co_line)

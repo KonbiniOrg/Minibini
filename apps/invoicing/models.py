@@ -176,6 +176,19 @@ class InvoiceLineItem(BaseLineItem):
         'core.AccountingCategory', blank=True, related_name='+',
         help_text='Categories the adjustment applies to; empty = all non-adjustment lines.',
     )
+    # Reference/provenance fields for seeding + backing — which estimate line
+    # or change-order line was the source for this invoice line. Release
+    # semantics live in the service (see docs/designs/invoicing-and-expenses.md
+    # §7.1). On delete=SET_NULL so an invoice line survives its agreement line
+    # vanishing.
+    agreement_estimate_line = models.ForeignKey(
+        'estimates.EstimateLineItem', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='invoice_lines',
+    )
+    agreement_co_line = models.ForeignKey(
+        'estimates.ChangeOrderLineItem', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='invoice_lines',
+    )
 
     class Meta:
         db_table = 'invoice_li'
@@ -186,6 +199,11 @@ class InvoiceLineItem(BaseLineItem):
     def task(self):
         """InvoiceLineItem no longer has a direct task FK. Kept as None for BaseLineItem.clean() compatibility."""
         return None
+
+    @property
+    def agreement_line(self):
+        """Return whichever agreement reference is set: estimate line or change order line."""
+        return self.agreement_estimate_line or self.agreement_co_line
 
     def get_parent_field_name(self):
         """Get the name of the parent field for this line item type."""
