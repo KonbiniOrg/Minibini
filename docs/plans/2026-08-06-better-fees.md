@@ -66,13 +66,15 @@ commercial unit to masquerade as an operational type:
 
 Subtasks are removed from main. The outcome hand-line stops crystallizing
 into a Fee and gains a make-a-deliverable button (at authoring, before
-send). Fee lines dissolve into
-plain lines that ride the invoice skeleton; the `Fee` model is deleted
-outright. Invoices start from the agreement skeleton: claim-mirroring for
-backed lines, invoicer-driven atom attachment for plain lines, quantified
-line references with a Σ-qty invariant, progress billing via explicit
-deduction lines, and est-vs-actual as the wizard's central display. Adopted
-from `feature/fees`: task-owned money + supersession deletion + flat tasks
+send). Fee lines dissolve into plain lines that ride the invoice
+skeleton; the `Fee` model is deleted outright. Invoices start from the
+agreement skeleton: claim-mirroring for backed lines, invoicer-driven
+atom attachment for plain lines, whole-line references (one live invoice
+per agreement line), a backing model where attachment recalculates
+immediately, and advance money in exactly two shapes — deposit lines on
+the existing credit rail, and completed atoms billed finally. Both
+documents get the settled three-mode surface (§9). Adopted from
+`feature/fees`: task-owned money + supersession deletion + flat tasks
 (Phase 1), nullable AC + fallback stamping (Phase 3), outsourced-work PO
 reconciliation (Phase 5), and the negative-total invoice send gate.
 
@@ -232,26 +234,22 @@ The wizard's job changes from "compose lines from a pool of atoms" to
 "reconcile the agreement against the actuals." Both sources remain visible;
 the skeleton leads.
 
-### 7.1 Quantified line references
+### 7.1 Agreement-line references
 
 New provenance on `InvoiceLineItem`: a reference to the agreement line it
-bills — `(agreement_line, qty)` where agreement_line is an EstimateLineItem
-or ChangeOrderLineItem (nullable; hand lines on the invoice have none).
-Implementation shape: either a nullable FK pair + qty column on
-`InvoiceLineItem`, or a reference row table parallel to
-`InvoiceLineItemSource`; pick at implementation time (the row table
-composes better with multiple deduction rows, §7.4).
+bills — an EstimateLineItem or ChangeOrderLineItem (nullable; hand lines
+on the invoice have none). References are **whole-line, always**: partial
+per-line pulls were designed, then deliberately cut (wireframe session
+2026-08-08 — see §7.4), so no qty rides on the reference.
 
-**Invariant (Σ-qty):** across *live* (non-cancelled) invoices, the sum of
-non-settlement reference qtys against one agreement line ≤ that line's qty.
-Enforced in the service under a row lock (NumberGenerationService pattern).
-Over-billing beyond the line's qty is a conscious override (charging more
-than estimated is legitimate), not a hard wall — surfaced, never silent.
-Cancelling an invoice releases its references (mirrors
-`release_estimate_claims`). Estimate revision **moves** references to the
-new revision's lines alongside the existing source-row move; a CO
-remove/replace of an agreement line with live references is blocked, same
-family as the can't-retire-invoiced-atoms guard.
+**Invariant:** an agreement line is referenced by **at most one live
+(non-cancelled) invoice**. Enforced in the service under a row lock.
+Removing the line from a draft releases the reference (and its mirrored
+claims); cancelling an invoice releases all of its references (mirrors
+`release_estimate_claims`). A CO remove/replace of an agreement line with
+a live reference is blocked, same family as the
+can't-retire-invoiced-atoms guard — surfaced as disabled actions with the
+reason ("billed on INV-NNNN"), no new machinery.
 
 ### 7.2 Skeleton creation — automatic, delete-to-defer
 
@@ -294,162 +292,134 @@ auto-seeding — the §5 parking-lot flow (draft invoice holding an ad-hoc
 charge) just means the draft carries its skeleton lines alongside the
 parked hand line until the invoicer prunes and sends.
 
-**The draw path — job-level draws are the primitive** (RM, 2026-08-06:
-"progress billing is against the job as a whole" — invoicers will write
-"Progress billing $2,500" and must never be asked to hang it on a part
-number, task, or material). A **draw** is money billed in advance of the
-real accounting. Draws come in two granularities, and the *job-level* one
-is the common, human-sense case:
+**The deposit path** (RM, 2026-08-06/08: "progress billing is against the
+job as a whole" — invoicers will write "Progress billing $2,500" and must
+never be asked to hang it on a part number, task, or material; the
+backing is called **"deposit" in all cases** — no "draw" vocabulary
+anywhere). A deposit line is a line on the deposit-flagged accounting
+category (`AccountingCategory.is_deposit`); once its invoice is paid, it
+surfaces as a pullable **credit** on later invoices, deduction locked to
+its source — all existing machinery, unchanged. A "progress billing" is
+simply a deposit taken mid-job; the line's *description* tells the
+customer the story ("Progress billing — one chair ready for pickup"),
+the mechanism stays a plain deposit, and the amount is the invoicer's
+judgment.
 
-- **Job-level draw** — the primitive. Mechanism: the existing deposit
-  rail, generalized. A line on a **draw-flagged accounting category**
-  (today's `AccountingCategory.is_deposit`; a "Progress billing" category
-  flagged the same way rides the identical machinery — rename to
-  `is_draw` is optional later honesty). Once its invoice is paid, the
-  line surfaces as a pullable **credit** on later invoices, deduction
-  locked to its source — all existing behavior. A deposit is simply the
-  first job-level draw.
-- **Per-line pull** — the deliberate special case (the pickup-cabinet:
-  money that genuinely matches one agreement line). Partial qty via the
-  add-from-agreement picker; reference rows; §7.4 family deductions at
-  settlement. Available, never required.
-
-**The button writes the draw for you.** The existing three-state "Add
+**The button writes the deposit for you.** The existing three-state "Add
 Deposit Invoice" affordance (`InvoicePanel.svelte` /
 `DepositInvoiceModal`) is retained with one relabel: **no live invoice**
 → "Add Deposit Invoice"; **≥1 live invoice** → "Add Progress Invoice".
 Both are the same gesture — prompt for an amount, create an **unseeded**
-draft with one job-level draw line on
-`default_deposit_accounting_category` (both variants, for now — RM is
-asking the accountant whether progress billings need their own category;
-if so, add a parallel `default_progress_billing_accounting_category` key
-coached like `_resolve_deposit_category`). The thing invoicers naturally
-want to type is exactly what the button types.
-Neither path stores an invoice type: "unseeded" is only how the draft was
-born; the derived Progress-billing label computes from content — the
-no-invoice-mode principle (§7.4) holds.
+draft with one deposit line on `default_deposit_accounting_category`
+(both variants, for now — RM is asking the accountant whether progress
+billings need their own category; if so, add a parallel key coached like
+`_resolve_deposit_category`). Neither path stores an invoice type:
+"unseeded" is only how the draft was born; a derived "Progress billing"
+label on the customer document computes from the content being all
+deposit lines — the no-invoice-mode principle (§7.4) holds.
 
-Settlement invoices compose **both rails**: per-line family deductions
-appear automatically, and the wizard's credits group — now "Draw
-credits", covering deposits and progress billings alike — stays prominent
-so paid draws get pulled rather than forgotten. Rail unification remains
-a later cleanup. Edge for the wireframes: under auto-seeding a fresh
-regular draft is never zero-line on an agreement job, so the old "Make
-this a deposit invoice" state only arises after the invoicer clears a
-seeded draft — and one-draft-per-job means wanting a draw invoice while
-a seeded draft exists requires clearing it first.
+The settlement invoice pulls paid deposits from the **"Deposit credits"**
+group (the existing name and machinery), kept prominent so nothing paid
+in advance is forgotten. Edge already decided: under auto-seeding a
+fresh regular draft is never zero-line on an agreement job, so the old
+"Make this a deposit invoice" state only arises after the invoicer
+clears a seeded draft — and one-draft-per-job means wanting a deposit
+invoice while a seeded draft exists requires clearing it first.
 
-### 7.3 Est-vs-actual is the display
+### 7.3 Backing — actuals by default
 
-For any invoice line with an agreement reference, the wizard shows:
-**estimated** (agreement qty × price), **actuals** (Σ `compute_amount()`
-over the line's claimed atoms), and the stored billing values, with
-"bill actuals / keep estimate / type something else" as the per-line
-gesture. This is the existing in-sync/override machinery presented as the
-point of the page rather than a "⚠ out of sync" warning. Atoms remain
-whole-claim; there is no per-unit atom slicing.
+Every line carries a **backing** (the chip column, both documents): what
+its amount stands on. On the invoice: `estimate` (seeded values, nothing
+attached), `actuals`, `edited`, plus the quiet `actuals = estimate ✓`
+variant, `deposit`, and `deposit credit`.
 
-The **pool** is reframed, not removed: it shows the job's atoms with their
-claim state, and its empty state is "every atom is mapped into an
-agreement line." Leftover atoms are not "extras" — they are actuals not
-yet reflected in any line, and the wizard prompts: bill, fold into a line,
-or consciously absorb. Unreferenced pool billing (T&M jobs, estimate-less
-jobs) works exactly as today.
+**Attachment recalculates immediately** (RM, 2026-08-08 — reversing the
+earlier attachment-never-moves-money position): attaching actuals flips
+the line to the actuals backing and re-derives it on the spot, using the
+existing in-sync presentation rule (price = Σ actuals ÷ qty, e.g.
+3 ea × $680.25). The estimate stays visible as the reference figure
+("est was $1,500.00 · +$540.75"). Backing flips freely — **Use
+estimate** ⇄ (then "Use actuals" appears) ⇄ **Edit** by hand — and while
+on a non-actuals backing, attaching or removing atoms only updates the
+reference figure. This is the existing in-sync/override machinery with
+actuals as the arrival state; consequences: seeded backed lines arrive
+already on actuals (case 1 — the task-backed estimate that went to plan
+— is *genuinely* boring: read and send), and the invoice total moves
+when work attaches, visibly and reversibly, because attachment IS a
+billing decision.
 
-### 7.4 Progress billing: per-line lifecycle, family arithmetic, deductions
+If part of a line's backing work was already final-billed on an earlier
+invoice, the reference figure sums only the atoms attachable now — the
+billed work shows in the pool with its INVOICED state rather than
+inflating the comparison.
 
-**No invoice-level mode.** An invoice has no progress-vs-final identity —
-each *line pull* does. Settlement is a per-agreement-line event: one
-invoice may settle the cabinets line, progress-pull the millwork line, and
-T&M-bill the CAD line in the same document. An invoice consisting only of
-**draws** may display a derived "Progress billing" label (customers should
-know a draw isn't the final accounting); that label is presentation
-computed from line content, never a stored type.
+The **pool** ("Job actuals not on this invoice") is reframed, not
+removed: it is evidence, never a checklist — unbilled actuals are the
+invoicer's call and the section never nags (Option-D rejection, RM
+2026-08-08). Provenance marking in the pool is **positive-only**: a
+"descoped by CO-N" chip where an accepted-document claim was removed by
+a CO (queryable from retained source rows — no new schema); an unmarked
+row means nothing, since hand-line agreements legitimately cover work
+with no task-level claim. Atoms remain whole-claim; there is no per-unit
+atom slicing. Unreferenced pool billing (T&M jobs, estimate-less jobs)
+works exactly as today, via "Bill as its own line".
 
-**Draw vs. final charge — the full line taxonomy.** A *draw* is money
-billed in advance of the real accounting, so it needs machinery to
-subtract it later; a *final charge* bills something once, now, and
-nothing ever nets against it. Every invoice line is one of:
+### 7.4 Advance money: two shapes only
 
-| Line | Draw or final | Later subtraction |
+**No invoice-level mode.** An invoice has no progress-vs-final identity;
+the derived "Progress billing" customer-document label computes from
+content (all deposit lines), never from a stored type.
+
+Advance money comes in exactly **two permitted shapes** (RM, 2026-08-08):
+
+1. **Deposit lines** — against the job, on the deposit rail (§7.2).
+   Subtracted later as deposit credits on the settlement invoice.
+2. **Work-based progress billing** — completed atoms billed as their own
+   lines mid-job ("Bill as its own line"). This is *final* billing, not
+   an advance: the atoms are claimed exactly-once, **no credit ever
+   exists**, and the settlement is smaller *by their absence* — they
+   cannot attach or re-bill (RM confirmed 2026-08-08).
+
+**Per-line partial pulls are deliberately NOT built.** The design existed
+(quantified references, a Σ-qty invariant, family arithmetic, a
+settle-whole vs bill-remainder question, auto-minted deduction rows) and
+was cut in the wireframe session: billing "1 of 3" of an agreement line
+implies an identity the system does not have — it cannot know *which*
+chair that unit is, or how it relates to a deliverable — and the
+machinery existed only to serve that fiction. The pickup-cabinet case is
+served by a deposit line whose description names the event. Revisit only
+after the rest is real and in use.
+
+**Line taxonomy** — every invoice line is one of:
+
+| Line | Advance or final | Later subtraction |
 |---|---|---|
-| Agreement pull, non-settlement | draw (against a line) | family deduction at settlement (reference rows) |
-| Agreement pull, settlement | final | — (it *is* the accounting) |
-| Job-level draw line (draw-flagged AC: deposit, progress billing) | draw (against the job) | draw-credit pull |
-| Atom pull (pool, no agreement ref) | final | — (bills actuals, claimed exactly-once) |
-| Hand line (manual, no ref, no atoms, ordinary AC) | **final** | — (bills something outside the agreement; exists only here, so nothing can ever double it) |
-| Deduction line | the subtraction itself | — |
+| Agreement line (seeded or restored; whole, one live invoice) | final | — (it *is* the accounting) |
+| Deposit line (deposit-flagged AC; deposit or progress billing) | advance (against the job) | deposit-credit pull |
+| Atom billed as its own line (pool) | final | — (claimed exactly-once) |
+| Hand line (manual, no ref, no atoms, ordinary AC) | **final** | — (bills something outside the agreement; exists only here) |
+| Deposit credit (pulled onto the settlement) | the subtraction itself | — |
 
 Hand lines and atom pulls are final content and suppress the
-Progress-billing label; draw-flagged lines and non-settlement pulls are
-draws and produce it. The "people will type 'progress billing $2,500' as
-a hand line" hazard is answered by making the right way the easy way:
-the §7.2 button mints exactly that line *on the draw rail*, so the
-natural gesture is the tracked one. A plain hand line on an ordinary AC
-remains a declaration that its charge is final. (The inverse mistake —
-hand-typing a charge that duplicates an agreement line — is shrunk by
-auto-seeding: the real line is already on the draft, so the duplicate
-sits visibly beside it.)
-
-Kinds of pull against an agreement line:
-
-- **Progress pull:** partial qty at the agreement rate. Typically no atoms
-  attached — the work is mid-flight. Counts against Σ-qty.
-- **Bill-as-you-go pull (T&M):** claims completed atoms and bills their
-  computed amount. Legitimate on *any* invoice — atoms are deliberately
-  **not** restricted to settlement invoices (monthly T&M billing is
-  atom-billing on non-final invoices and is the most ordinary pattern
-  there is). No enforcement is needed; the family arithmetic below cannot
-  be lied to.
-- **Settlement:** ends the line. Two gestures, chosen per line by the
-  invoicer — a choice about the *customer document*, both netting the same
-  money:
-  - **Settle whole line** — reference at full qty (`settles=True`, exempt
-    from Σ-qty); whole-line est-vs-actual comparison; the wizard
-    auto-adds **one deduction line per prior live pull** ("Less progress
-    billing INV-0012 — −$500"), each carrying the **same AC as the parent
-    line** (income nets correctly per category), provenance-linked to the
-    prior invoice line, excluded from Σ-qty, editable, deletion warned.
-    This re-prices the whole quantity in light of actuals.
-  - **Bill remainder** — remaining qty, no deductions; prior pulls' prices
-    stand as final for their slices (the pickup cabinet's $500 was a
-    sale, not a draw).
-
-**Family arithmetic** (the invariant view over all live pulls against one
-agreement line): `billed-to-date` = Σ reference-row amounts — regardless
-of which mechanism produced each amount; `actuals` = Σ `compute_amount()`
-over atoms claimed by **any** pull in the family; suggested settlement =
-actuals − billed-to-date. Draw-then-settle and bill-as-you-go are the
-*same arithmetic*: in pure T&M each pull bills exactly its own atoms, so
-the settlement suggestion collapses to the newly attached atoms' worth and
-the deductions net out by construction. There is no reachable state where
-the display lies — atom double-billing is blocked by claims, silent
-over-quantity by Σ-qty, and everything else is pricing judgment
-(principle 3) taken with true numbers on screen.
-
-- Billed-to-date comes from the reference rows of live invoices — the
-  structural record that early money went out the door. Nothing is
-  remembered by hand.
-- Job-level draws (deposits, progress billings — §7.2 draw path) are the
-  same species as a per-line pull — money in advance of the accounting —
-  but against the *job* rather than a line, so they are subtracted by
-  the document-level draw-credit pull instead of the per-line family
-  arithmetic. Unification of the two deduction rails is a later cleanup,
-  not part of this work.
-- QBO: pushes as ordinary lines; the adopted negative-total send gate
-  still applies to the invoice total.
-
-Degenerate cases: a single full pull (the overwhelmingly common case) has
-no prior pulls, no deductions, no label, and trivially satisfies Σ-qty —
-the invoicer never sees any of this machinery.
+Progress-billing label; deposit lines produce it. The "people will type
+'progress billing $2,500' as a hand line" hazard is answered by making
+the right way the easy way: the §7.2 button mints exactly that line on
+the deposit rail. A plain hand line on an ordinary AC remains a
+declaration that its charge is final. (The inverse mistake — hand-typing
+a charge that duplicates an agreement line — is shrunk by auto-seeding:
+the real line is already on the draft, so the duplicate sits visibly
+beside it.) QBO: everything pushes as ordinary lines; the adopted
+negative-total send gate still applies.
 
 ### 7.5 What stays structural vs. human
 
-Structural: atoms exactly-once (existing claims); agreement-line Σ-qty
-(§7.1); billed-to-date arithmetic (§7.4); mirrored claims for backed lines
-(§7.2). Human, by design: deciding that a given set of atoms "is" a plain
-line's work (declared at reconcile time, with full context on screen); the
-final price of every line (principle 3).
+Structural: atoms exactly-once (existing claims); an agreement line on at
+most one live invoice (§7.1); deposit credits locked to their source
+line (existing machinery); billed-elsewhere work excluded from reference
+figures (§7.3). Human, by design: deciding that a given set of atoms
+"is" a plain line's work (declared at reconcile time, with full context
+on screen); the amount of every deposit; the final price of every line
+(principle 3).
 
 ## 8. Acceptance and planning
 
@@ -463,43 +433,116 @@ floor means it's set up enough to start). No new mechanism; at most a
 UI-clarity pass on the Approved state (out of scope here; LATER.md
 candidate if it stings in practice).
 
-## 9. User-facing complexity checkpoints
+## 9. The settled surface (wireframe session 2026-08-08)
 
-The standing concern is UI complexity, not code complexity. Checks this
-design must pass in implementation review:
+The reconcile-UI wireframes were built and reviewed with RM on
+2026-08-08 (fourteen revisions; the visual record with annotated
+rationale lives at
+https://claude.ai/code/artifact/9e73a22a-b0e2-4cc4-bc9d-816653364fc9).
+This section records the settled shape; the artifact is the picture.
 
-1. **"3 chairs" is one gesture:** type the line. Become-a-Deliverable is
-   one optional click. No kind pickers beyond the existing material
+### 9.1 Shared shape, both documents
+
+- **Three modes, flipped in place** at the same URL (the existing
+  `stores/jobWorkspace.js` per-document mode-memory idiom, vocabulary
+  grown by one): **Edit / Customer / Reorder**. Never a modal for a
+  mode — modals are reserved for editing forms (the per-line Edit).
+- **Customer view** is read-only and collapsed to exactly the outgoing
+  document (renumbered, no backing, no atoms, no struck rows).
+  **Reorder view is the customer view plus an arrows column** —
+  identical rows, so ↑↓ carries no sub-line ambiguity. Line numbers are
+  the document's own (`line_number` + existing renumber service);
+  provenance small-text preserves the estimate-line correspondence.
+- **One editing view**: lines above (each with its backing nested as
+  indented atom rows), the uncovered work/actuals section below.
+  On the ESTIMATE this **merges today's two modes** (lines view +
+  reconcile mode) into one surface. Authoring buttons above the table:
+  "Add line" (unified picker) and "Add adjustment" (estimate and
+  invoice; never on COs — adjustments are estimate-only).
+- **Object-first composition**: checkboxes on the work/actuals rows;
+  while anything is ticked, every line offers **"Add selected here"**
+  (no count in the label) and the table's foot shows the dashed
+  **"＋ New line from selected"** placeholder row — creating the line
+  derives its values (single-atom copy, or the uniform-bundle/blanks
+  rule) and opens its Edit form immediately. Unticked rows keep
+  **"Bill as its own line"** / "Add as its own line". (The
+  task-material Move gesture is NOT the model — RM: it is
+  destination-first, i.e. backwards, and slated for its own fix.)
+- **Per-line actions**: **Edit** (modal — description, qty, units,
+  price; editing price flips backing to `edited`), **Remove** — the
+  word "delete" does not exist on document surfaces. On the estimate,
+  Remove releases backing work untouched; on the invoice, "Remove from
+  invoice" leaves a struck in-place row ("on the estimate, not this
+  invoice", amount parenthesized and excluded) with one-click
+  **Restore**; either way the line reseeds on the next invoice. The
+  restore picker ("add from agreement") lists remaining lines not on
+  the draft — whole lines only.
+- **"→ Deliverable"** per line on the estimate (spec §6's
+  make-a-deliverable button; label wording is RM's to finalize).
+
+### 9.2 Backing chips
+
+The column is **"Backing"** on both documents. Invoice: `estimate` /
+`actuals` / `edited` / `actuals = estimate ✓` / `deposit` /
+`deposit credit`. Estimate (no actuals exist yet): **`planned work`**
+(tasks, or tasks + materials), **`planned materials`** (materials
+only), **`from catalog`** (service items AND catalog inventory items
+not yet on the job as a Material — the two deferred crystallization
+kinds), **`hand line`**, **`edited`** (shows "work totals $X" as the
+reference — today's ⚠ out-of-sync made a first-class chip).
+
+### 9.3 Change orders: amend the agreement in place
+
+The CO editing view is **one table: the agreement as it will read if
+accepted**, CO-authored rows tinted and numbered CO 1, CO 2…:
+
+- Untouched agreement lines carry **"Remove via CO"** / **"Replace…"**;
+  acting strikes the original in place (Undo un-amends). A removal is
+  the strike — it gets no row of its own. Struck amounts are
+  parenthesized and excluded.
+- **"Replace…"** opens the edit modal prefilled from the original, and
+  the replacement **inherits the original's backing** — the claims move
+  to it (the `revise_estimate` move-the-source-rows pattern applied to
+  one line), marked "inherited from line N"; further work attaches
+  normally. Ordinary backing rules apply afterward (a typed price over
+  a work total reads `edited` with the reference).
+- CO add-lines compose exactly like estimate lines (same work section,
+  same placeholder, same chips). No "Add adjustment".
+- An agreement line with a live invoice reference shows both actions
+  disabled with the reason ("billed on INV-NNNN") — §7.1's guard,
+  rendered.
+- Footer: **original / this CO / revised** totals; the revised figure
+  is what invoice seeding draws from after acceptance (CO-origin lines
+  seed with provenance "CO-N line M").
+- Customer view is the conventional delta document (revised lines with
+  delta amounts, removals negative, change total, revised agreement
+  total); reorder covers the CO's own lines only.
+- Downstream: work whose accepted-document claim a CO removed shows a
+  **"descoped by CO-N"** chip in billing's pool (positive-only marking,
+  §7.3) — "we were supposed to do this and there was a CO" at the
+  moment the invoicer decides whether to bill it.
+
+### 9.4 Complexity checkpoints (acceptance criteria)
+
+1. **"3 chairs" is one gesture:** type the line. "→ Deliverable" is one
+   optional click. No kind pickers beyond the existing material
    checkbox, no "priced deliverable" concept anywhere.
-2. **The estimator's flow is unchanged** on both archetype jobs (chairs and
-   MQ44). Nothing new is required at authoring time.
+2. **The estimator's flow is unchanged** on both archetype jobs (chairs
+   and MQ44), and one surface replaces two estimate modes.
 3. **The common invoice is boring:** create invoice → skeleton is just
-   *there* (no button), every remaining line pre-filled, backed lines
-   pre-claimed → delete what's not being billed → adjust → send.
-   Progress/settlement machinery invisible unless a line is actually
-   split.
-4. **The invoicer never meets** reference rows, Σ-qty, or claim mirroring
-   by name — they see est vs. actual per line, billed-to-date on split
-   lines, and a pool whose goal state is empty.
-5. **Settlement is one plain-language question** on a split line — "Final
-   bill for this line: re-price the whole quantity (shows deductions for
-   earlier invoices) or bill just the remainder?" — and the "Progress
-   billing" label appears on the document automatically, never as a mode
-   the user sets.
+   *there* (no button), backed lines pre-claimed and already on
+   actuals → remove what's not being billed → send. Case 1 (estimate
+   went to plan) is read-and-send.
+4. **The invoicer never meets** reference rows or claim mirroring by
+   name — they see backing chips, est-vs-actual references, struck
+   rows, and a pool that never nags.
+5. **The boring case renders as nothing but an invoice** — every
+   mechanism above appears only when the job's shape summons it.
 
-**UI simplification is a first-class workstream, not a polish pass** (RM,
-2026-08-06: the reconcile surface is still super complicated from a user's
-perspective). The §10 phase that builds the skeleton/reconcile UI starts
-with wireframes or a throwaway prototype reviewed with RM *before*
-implementation, with these checkpoints as the acceptance criteria.
-**The wireframes are a ground-up redesign of the reconcile surface — not
-an increment on the current `ReconcileMode`/wizard UI, which RM rates
-suboptimal.** Improving that surface is in scope for this effort, since
-the skeleton flow digs through the same territory anyway. Reusable pieces
-(claims plumbing, in-sync services) survive underneath; the presentation
-starts from the est-vs-actual reconciliation framing, not from the
-two-column atom-picker. Default posture: hide every mechanism until the
-job's shape forces it into view.
+**UI work is a first-class workstream.** The wireframes ARE the design
+(ground-up; the old two-column `ReconcileMode` is retired as a
+presentation — claims plumbing and in-sync services survive
+underneath). Build to the artifact; deviations go back through RM.
 
 ## 10. Migration and sequencing
 
@@ -510,11 +553,12 @@ Phased, each phase leaving main green:
    (house rule after migration changes).
 2. **Subtask removal** (§3): flatten data (NULL migration), field stays
    dormant with comment + validate_data NULL check, simplify services/UI.
-3. **Skeleton + references** (§7): reference schema, agreement-start flow,
-   claim mirroring, est-vs-actual display. This is the largest UI phase —
-   it opens with the §9 wireframe/prototype review with RM before any
-   implementation.
-4. **Deduction/progress billing** (§7.4) — separable from 3 if needed.
+3. **Skeleton + references** (§7): reference schema (one live invoice
+   per agreement line), auto-seeding, claim mirroring, backing model,
+   the three-mode surface for both documents per §9 — the wireframes
+   were settled with RM 2026-08-08; build to the artifact.
+4. **Deposit path** (§7.2/§7.4): the relabeled button, unseeded drafts,
+   deposit-credit prominence. Small — the rail already exists.
 5. **Crystallization narrowing + Fee deletion** (§4, §5): acceptance/CO
    discriminator change; delete Fee. Existing Fee rows: those claimed by a
    live estimate line become nothing (the line is already the record —
@@ -532,29 +576,38 @@ final verification, e2e for user-reachable flows in the same phase.
 
 ## 11. Open questions
 
-- §7.1 implementation shape: FK-pair-on-line vs. reference-row table.
-- Settlement with **multiple** prior pulls: one deduction row per prior
-  invoice (current spec) — confirm the customer document reads well with
-  3+ deductions, or allow an aggregate row.
-- CO replacing a partially-billed agreement line: blocked (§7.1) — is
-  "block" right, or should it force a settlement first? Decide when a real
-  case appears.
+- §7.1 implementation shape: nullable FK pair on `InvoiceLineItem` vs. a
+  reference-row table — simpler now that references are whole-line; pick
+  at implementation time.
+- CO replacing an agreement line referenced by a live invoice: blocked
+  (§7.1, rendered per §9.3) — is "block" right, or should it force
+  removing it from the draft first? Decide when a real case appears.
 - Where the draft-invoice-as-charge-parking-lot flow (§5) needs UI help,
   if anywhere.
 - Whether progress billings need their own accounting category or share
-  the deposit one — RM asking the accountant; until answered, both draw
-  variants use `default_deposit_accounting_category` (§7.2).
+  the deposit one — RM asking the accountant; until answered, both
+  button variants use `default_deposit_accounting_category` (§7.2).
 - Auto-seeding (§7.2) is a **trial decision** — RM wants to live with
-  "every invoice starts as the remaining agreement, delete to defer"
-  before committing. The two worst friction cases are already routed
-  around it (deposits never seed; "Add Progress Invoice" is the
-  start-empty escape hatch) — watch whether any *regular* invoice still
-  hits delete-most-of-a-large-skeleton in practice.
+  "every invoice starts as the remaining agreement, remove to defer"
+  before committing. The worst friction cases are routed around it
+  (deposit/progress invoices never seed) — watch whether any *regular*
+  invoice still hits remove-most-of-a-large-skeleton in practice.
+- "→ Deliverable" button label wording (§9.1) — RM's to pick.
 
-*(Resolved 2026-08-06: settlement actuals aggregate the whole family's
-atoms — folded into §7.4. Atoms-only-on-final-invoices was considered and
-rejected: T&M billing is atom-billing on non-final invoices; the family
-arithmetic needs no such restriction.)*
+**Deferred, deliberately:** per-line partial pulls and everything they
+required — quantified references, Σ-qty, family arithmetic, the
+settlement question, auto-deduction rows (§7.4, cut 2026-08-08).
+Revisit only if real use demands billing part of an agreement line as
+an advance.
+
+*(Resolved 2026-08-08, wireframe session: attachment recalculates
+immediately — attachment IS a billing decision, reversible per line
+(§7.3). Reorder is a page mode, not a modal. Replacements inherit
+backing (§9.3). Provenance marking is positive-only. "Deposit" is the
+universal advance vocabulary; work-based progress billing earns no
+credit. Earlier resolutions 2026-08-06: settlement family arithmetic
+and the atoms-only-on-final restriction — both now moot with per-line
+pulls deferred.)*
 
 ## 12. Acceptance walkthrough — the fifteen items
 
