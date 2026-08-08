@@ -191,7 +191,7 @@ instant and lossless:
   (B2, 2026-07-12): `TaskTree` hides edit/del/cancel/+mat/+sub/assign,
   `TasksPanel` hides Add Work and the work-complete button
   (`canMarkWorkComplete(job)` reads the flag), and `TaskDetailPage`
-  hides its action band, Edit Task, Add Subtask, and Add Material while
+  hides its action band, Edit Task, and Add Material while
   held. The hold rule stated precisely: **plan edits freeze;
   procurement reality stays** — Order, Attach expense, Mark
   on-hand/received (and Add Expense) remain available on a held job.
@@ -433,9 +433,8 @@ auto-creates an `audit` field-diff entry per hop. The `approved`
 transition sets `start_date` (per §3.2), mirroring the
 estimate-acceptance precedent in `apps/estimates/signals.py`.
 
-- Tasks and Materials land directly on the new Job. Subtask hierarchy
-  (`parent_task`) is preserved via a two-pass remap so parent Tasks are
-  created before their children.
+- Tasks and Materials land directly on the new Job (a single flat pass —
+  tasks are one level, better-fees spec §3).
 - Earmarks are created via `InventoryService.create_earmarks_for_job`.
 - No estimate is created. Deliverables remain editable (no estimate →
   editable per `DeliverableService.is_editable`) until they anchor on a
@@ -445,7 +444,7 @@ estimate-acceptance precedent in `apps/estimates/signals.py`.
 
 The new Job stays at `draft`, with the source's `Task`s and `Material`s
 copied directly onto it (same `_copy_work_to_job` core as the approved
-path, including subtask hierarchy). No worksheet and no earmarks are
+path). No worksheet and no earmarks are
 created — the job sits in `draft` ready for re-estimation. The user then
 runs the normal Start Estimate → send → accept flow; the estimate
 projects the new Job's atoms (`estimates-and-prices.md` §7).
@@ -458,16 +457,16 @@ history entries, and bleps are never carried over to the new Job.
 ## 4. Task
 
 `Task` is defined at `apps/jobs/models.py`. Tasks belong to a Job
-via `Task.job = FK('jobs.Job', related_name='tasks')`. Hierarchy is via
-`parent_task` (self-FK; subtasks emerge during work, not planning) and is
-capped at **one level**: a subtask can never itself have subtasks —
-`TaskService.create_direct` rejects a parent that has a parent (and a
-parent from a different job), and the subtask detail page hides its Add
-Subtask affordance. Both creation surfaces (`POST /api/tasks/{id}/subtasks/`
-and the job-nested create with `parent_task`) route through
-`create_direct`, so the on-hold, inactive-scheme, depth, and assignee
-guards — and `mark_work_reopened` — apply identically; pinned by
-`tests/test_subtask_service_guards.py`.
+via `Task.job = FK('jobs.Job', related_name='tasks')`. **Tasks are one
+flat level** (better-fees spec §3, 2026-08): the former subtask hierarchy
+was removed from UI and backend code — sequencing or reference between
+tasks is prose in descriptions plus reordering. The `parent_task` self-FK
+survives in the schema but is **dormant**: no code reads or writes it,
+existing rows were flattened by `jobs/0061`, and `validate_data` errors on
+any non-NULL value (`data-constraints.md` §Task). Creation goes through
+`TaskService.create_direct` (`POST /api/jobs/{id}/tasks/`), so the
+on-hold, inactive-scheme, and assignee guards — and `mark_work_reopened`
+— can't be bypassed.
 
 `Task` IS decorated with `@history(exclude=['task_id', 'worker_queue'])`,
 and every lifecycle transition is history-visible: block / unblock /
@@ -488,8 +487,7 @@ Task work is worker-driven, so most task writes are open to **any
 authenticated user** — with a per-status editability matrix (the C1
 redesign, 2026-07-12):
 
-- **Add** a task (`POST /api/jobs/{id}/tasks/`, the subtasks endpoint) —
-  `IsAuthenticated`.
+- **Add** a task (`POST /api/jobs/{id}/tasks/`) — `IsAuthenticated`.
 - **Edit** (`PATCH /api/jobs/{id}/tasks/{task_pk}/`) — enforced in
   `TaskService.update_task`, surfaced as the serializer's computed
   `can_edit` flag:
@@ -1165,12 +1163,9 @@ list). Tasks within a column are sorted by `worker_queue`. Drag-and-drop assigns
 - `POST /api/tasks/reorder/` — bulk update worker_queue from a list
 
 (Job-task-list reordering — `POST /api/jobs/{id}/reorder-tasks/` — is a
-different axis: it swaps `sort_order` within the task's **peer group**
-(top-level tasks among top-level tasks; subtasks among their siblings —
-the group falls out of `task.parent_task`). The job task list page
-offers arrows on top-level rows only; sibling reordering lives on the
-parent task's detail page, both hitting this same endpoint. B3,
-2026-07-12; pinned by `tests/test_task_reorder_peer_scope.py`.)
+different axis: it swaps `sort_order` within the job's flat task list
+(tasks are one level — better-fees spec §3). Pinned by
+`tests/test_task_reorder_peer_scope.py`.)
 
 ### 8.5 Card composition
 
@@ -1517,14 +1512,11 @@ mount and passed to `MaterialModal` so freeform material lines default to the
 shop's configured material category.
 
 **Row fragments.** `TaskTree` renders no task or material row markup of
-its own: task rows (top-level AND subtask — `isSubtask` carries the
-nested styling and the deliberate no-+sub/no-arrows omissions) come from
-the shared `components/tasks/TaskRow.svelte`, material rows from
+its own: task rows come from the shared
+`components/tasks/TaskRow.svelte`, material rows from
 `components/materials/MaterialRow.svelte`, and the row math/formatting
 both share with the grand-total footer lives in `lib/taskTotals.js` —
-so a row's total and the table's sum cannot diverge, and a subtask row
-is pixel-identical wherever it renders (the old duplicated subtask block
-had already dropped the waiting-on-materials badge). TaskTree itself
+so a row's total and the table's sum cannot diverge. TaskTree itself
 keeps only the fee/expense rows, section headers, and the footer.
 
 **Per-material status & actions.** Each material row carries a derived
@@ -1534,7 +1526,7 @@ customer / On Hand / Consumed / Released** (`materialStatus`,
 `cost_source === 'estimated'`. Rows render through the shared
 `MaterialRow.svelte` fragment, and the **full per-material action set is
 available on every surface that lists materials** (this page, the task
-detail page, the parent-task subtask tree) — the old
+detail page) — the old
 actions-on-this-page-only venue rule was retired 2026-07-13; gating is by
 material status / permissions / job state only. The job overview still
 shows no material rows at all — its Materials block is an aggregate
@@ -1726,10 +1718,9 @@ Worker = any authenticated user. Manager = user with `can_manage_jobs`.
 Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
 
 1. **JobHeader** (shared, unchanged).
-2. **Task header strip** (`.task-head`) — a crumbs line shown only on a
-   subtask (*subtask of &lt;parent&gt;*, linked via the serializer's
-   `parent_task_name`); no job-overview or task-list crumbs — the nav
-   rail's Overview and Tasks links cover those. Then the title row: the **activity pill**
+2. **Task header strip** (`.task-head`) — no crumbs (tasks are one flat
+   level; the nav rail's Overview and Tasks links cover navigation).
+   Then the title row: the **activity pill**
    (`TaskActivityIndicator` with `pill` — INVOICED badge replaces it
    when `task.invoice` is set) to the **left** of the `<h1>` task name,
    with the **stat-chip strip** right-aligned. Chips (shared
@@ -1755,22 +1746,15 @@ Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
    controls here, the yellow band owns stop/cancel while a session
    runs) plus **Edit Task** as a `quiet` peer button (hidden when
    terminal).
-4. Sections: **Description → Subtasks → Materials → Work Sessions**
-   (BlepList, whose **Add Entry** button stays — it is the only way to
-   log forgotten historical time from this page). The **Materials
-   section renders the shared `MaterialRow` fragment with the full
-   action set** (chips, tombstones, Order/receipt dialogs, Move — the
-   subtask rows' radios are the move targets; removal is the release
-   action, not a raw delete). The subtask tree is deliberately
-   **passive for task ops** (A3: `TaskTree` renders a button only when
-   its callback is wired — never a dead no-op button): no
-   edit/del/cancel on subtask rows here — a subtask's own detail page
-   is its editing surface. Wired: the full material action set, and the
-   sibling **reorder arrows** (B3 — subtasks reorder here, not on the
-   job task list; same `reorder-tasks` endpoint, peer-scoped
-   server-side). A subtask's detail page renders **no Subtasks section
-   at all** (one-level rule, §4 — no header, no empty-state, no Add
-   Subtask).
+4. Sections: **Description → Materials → Work Sessions** (BlepList,
+   whose **Add Entry** button stays — it is the only way to log
+   forgotten historical time from this page). The **Materials section
+   renders the shared `MaterialRow` fragment with the full action set**
+   (chips, tombstones, Order/receipt dialogs; removal is the release
+   action, not a raw delete). No move-target radios render on this page,
+   so **Move stays hidden here** (moving a material between tasks
+   happens on the job task list, whose task rows carry the radios) —
+   detach still passes through.
 
 The old toolbar row, details table, and Charge table are gone. The
 table below still governs which controls *exist*.

@@ -1,7 +1,7 @@
 <script>
   // THE material row — one shared fragment for every surface that lists
-  // materials (job task list task/subtask/loose rows, task detail page,
-  // parent-task subtask tree). Ported from TaskTree's triplicated blocks
+  // materials (job task list task/loose rows, task detail page). Ported
+  // from TaskTree's triplicated blocks
   // (2026-07-13). The FULL action set renders wherever a callback is wired
   // (the old task-view-page-only venue rule is gone); gating is by material
   // status, permissions, and the job's held/locked state only.
@@ -163,8 +163,7 @@
      strike the row through so it reads as a tombstone. */
   .material-row.released { color: #9ca3af; text-decoration: line-through; }
   .material-marker { color: #aaa; font-size: 8px; vertical-align: middle; margin-right: 4px; }
-  /* Nesting ladder: parent task 0 → its materials 28 → subtask names 40
-     (TaskRow) → subtask materials 60. */
+  /* Nesting ladder: task 0 → its materials 28. */
   .indent { padding-left: 28px; }
   .indent-2 { padding-left: 60px; }
   /* Headerless radio column — just wide enough for the radio button. */

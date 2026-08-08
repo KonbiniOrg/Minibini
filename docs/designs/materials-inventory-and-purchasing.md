@@ -1258,9 +1258,9 @@ cleared when a PO/expense supplies a real cost.
 Material rows render through ONE shared fragment —
 `components/materials/MaterialRow.svelte` (extracted 2026-07-13 from
 `TaskTree`'s triplicated blocks) — on every surface that lists materials:
-the job task list's task/subtask/loose rows (`TaskTree` inside
-`TasksPanel`), the task detail page's Materials section, and the parent
-task's subtask tree. The **full action set** (Set pricing / Order dialog /
+the job task list's task/loose rows (`TaskTree` inside `TasksPanel`) and
+the task detail page's Materials section. The **full action set** (Set
+pricing / Order dialog /
 Attach expense / Mark on-hand / Mark received / mark used / restock–release
 / draw more / edit / Move–detach / PO link) is available on ALL of those
 surfaces — the old "actions live on the task view page only" venue rule

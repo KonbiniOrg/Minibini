@@ -1,10 +1,6 @@
 <script>
-  // THE task row — one shared fragment for top-level tasks and subtasks
-  // (extracted 2026-07-13 from TaskTree's duplicated task-row/subtask-row
-  // blocks, whose drift had already cost subtasks the waiting-on-materials
-  // badge). isSubtask carries the two deliberate differences: nested
-  // styling, and no +sub / reorder arrows (one-level rule; siblings
-  // reorder on their parent's detail page).
+  // THE task row — one shared fragment for every task (tasks are one flat
+  // level since the better-fees subtask removal, 2026-08).
   import TaskActivityIndicator from './TaskActivityIndicator.svelte';
   import {
     fmtMoney, fmtWorkerTime, taskTotalInfo, taskTotal, taskActual,
@@ -12,9 +8,8 @@
 
   let {
     task,
-    isSubtask = false,
-    // Position among rendered PEERS, for the reorder arrows' disabled state
-    // (the backend swap is peer-scoped to match).
+    // Position among the job's tasks, for the reorder arrows' disabled
+    // state (the backend swap is job-scoped to match).
     taskIdx = 0,
     taskCount = 1,
     readonly = false,
@@ -30,7 +25,6 @@
     onDeleteTask = null,
     onCancelTask = null,
     onAddMaterial = null,
-    onAddSubtask = null,
     onReorder = null,
   } = $props();
 
@@ -73,11 +67,11 @@
   }
 </script>
 
-<tr class:task-row={!isSubtask} class:subtask-row={isSubtask}>
+<tr class="task-row">
   {#if !readonly && !jobLocked}
     <td class="move-cell">{#if !isTerminal}<input type="radio" name="move-target" value={task.task_id} bind:group={selectedTaskId}>{/if}</td>
   {/if}
-  <td class={isSubtask ? 'indent' : ''}>
+  <td>
     <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
     {#if awaitingMaterials}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
   </td>
@@ -95,11 +89,10 @@
         {#if onDeleteTask && !jobOnHold && canDelete && !task.has_bleps}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
         {#if onCancelTask && !jobOnHold && canCancel}<button type="button" onclick={() => onCancelTask(task)}>cancel</button>{/if}
         {#if onAddMaterial && !jobOnHold}<button type="button" onclick={() => onAddMaterial(task)}>+mat</button>{/if}
-        {#if onAddSubtask && !jobOnHold && !isSubtask}<button type="button" onclick={() => onAddSubtask(task)}>+sub</button>{/if}
       {:else if onDeleteTask && !jobOnHold && canDelete && !task.has_bleps}
         <button type="button" onclick={() => onDeleteTask(task)}>del</button>
       {/if}
-      {#if canManage && onReorder && !isSubtask}
+      {#if canManage && onReorder}
         <button type="button" onclick={() => onReorder(task.task_id, 'up')} disabled={taskIdx === 0}>&#9650;</button>
         <button type="button" onclick={() => onReorder(task.task_id, 'down')} disabled={taskIdx === taskCount - 1}>&#9660;</button>
       {/if}
@@ -110,9 +103,7 @@
 </tr>
 
 <style>
-  /* Top-level rows ride the shared .data-table zebra stripe. */
-  .subtask-row { background: #f0f9ff; }
-  .indent { padding-left: 40px; }
+  /* Rows ride the shared .data-table zebra stripe. */
   /* Headerless radio column — just wide enough for the radio button. */
   .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
   .text-right { text-align: right; }

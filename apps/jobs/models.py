@@ -319,6 +319,15 @@ class Task(TaskBase):
     }
 
     task_id = models.AutoField(primary_key=True)
+    # DORMANT since 2026-08 (better-fees spec §3,
+    # docs/plans/2026-08-06-better-fees.md): subtask behavior was removed
+    # from the UI and backend code, but the FIELD stays — this area is on
+    # its second redesign and RM wants the structural option open for a
+    # third. No code may read or write parent_task; existing rows were
+    # flattened to NULL by migration 0061 (the FK is on_delete=CASCADE, so
+    # a stale child pointer would let a task deletion silently cascade), and
+    # validate_data's check_no_parent_task flags any non-NULL value as a
+    # sign some path is still writing it.
     parent_task = models.ForeignKey(
         'self', on_delete=models.CASCADE, null=True, blank=True, related_name='subtasks'
     )

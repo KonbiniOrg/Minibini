@@ -44195,7 +44195,7 @@
       "service_item": null,
       "est_worker_time": "02:06:00",
       "est_qty": "2.10",
-      "parent_task": 35,
+      "parent_task": null,
       "assignee": null,
       "job": 22,
       "status": "pending",
@@ -44220,7 +44220,7 @@
       "service_item": null,
       "est_worker_time": "01:12:00",
       "est_qty": "1.20",
-      "parent_task": 35,
+      "parent_task": null,
       "assignee": null,
       "job": 22,
       "status": "pending",
@@ -46900,7 +46900,7 @@
       "service_item": null,
       "est_worker_time": "01:06:00",
       "est_qty": "1.10",
-      "parent_task": 136,
+      "parent_task": null,
       "assignee": [
         "worker1"
       ],
@@ -46927,7 +46927,7 @@
       "service_item": null,
       "est_worker_time": "02:00:00",
       "est_qty": "2.00",
-      "parent_task": 136,
+      "parent_task": null,
       "assignee": [
         "worker1"
       ],
@@ -46954,7 +46954,7 @@
       "service_item": null,
       "est_worker_time": "01:06:00",
       "est_qty": "1.10",
-      "parent_task": 136,
+      "parent_task": null,
       "assignee": [
         "worker1"
       ],
@@ -46981,7 +46981,7 @@
       "service_item": null,
       "est_worker_time": "03:24:00",
       "est_qty": "3.40",
-      "parent_task": 136,
+      "parent_task": null,
       "assignee": [
         "worker1"
       ],
@@ -47938,7 +47938,7 @@
       "service_item": null,
       "est_worker_time": "03:18:00",
       "est_qty": "3.30",
-      "parent_task": 176,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -47965,7 +47965,7 @@
       "service_item": null,
       "est_worker_time": "03:18:00",
       "est_qty": "3.30",
-      "parent_task": 176,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -49715,7 +49715,7 @@
       "service_item": null,
       "est_worker_time": "03:06:00",
       "est_qty": "3.10",
-      "parent_task": 243,
+      "parent_task": null,
       "assignee": null,
       "job": 69,
       "status": "cancelled",
@@ -52337,7 +52337,7 @@
       "service_item": null,
       "est_worker_time": "01:48:00",
       "est_qty": "1.80",
-      "parent_task": 343,
+      "parent_task": null,
       "assignee": null,
       "job": 90,
       "status": "cancelled",
@@ -52362,7 +52362,7 @@
       "service_item": null,
       "est_worker_time": "03:18:00",
       "est_qty": "3.30",
-      "parent_task": 343,
+      "parent_task": null,
       "assignee": null,
       "job": 90,
       "status": "cancelled",
@@ -52595,7 +52595,7 @@
       "service_item": null,
       "est_worker_time": "03:18:00",
       "est_qty": "3.30",
-      "parent_task": 353,
+      "parent_task": null,
       "assignee": null,
       "job": 91,
       "status": "cancelled",
@@ -52834,7 +52834,7 @@
       "service_item": null,
       "est_worker_time": "03:36:00",
       "est_qty": "3.60",
-      "parent_task": 362,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -52861,7 +52861,7 @@
       "service_item": null,
       "est_worker_time": "01:18:00",
       "est_qty": "1.30",
-      "parent_task": 362,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -52888,7 +52888,7 @@
       "service_item": null,
       "est_worker_time": "00:44:24",
       "est_qty": "0.74",
-      "parent_task": 362,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -52915,7 +52915,7 @@
       "service_item": null,
       "est_worker_time": "00:52:12",
       "est_qty": "0.87",
-      "parent_task": 362,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -52942,7 +52942,7 @@
       "service_item": null,
       "est_worker_time": "01:54:00",
       "est_qty": "1.90",
-      "parent_task": 362,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -52969,7 +52969,7 @@
       "service_item": null,
       "est_worker_time": "02:48:00",
       "est_qty": "2.80",
-      "parent_task": 362,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -52996,7 +52996,7 @@
       "service_item": null,
       "est_worker_time": "02:00:00",
       "est_qty": "2.00",
-      "parent_task": 362,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53023,7 +53023,7 @@
       "service_item": null,
       "est_worker_time": "02:54:00",
       "est_qty": "2.90",
-      "parent_task": 362,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53050,7 +53050,7 @@
       "service_item": null,
       "est_worker_time": "03:24:00",
       "est_qty": "3.40",
-      "parent_task": 362,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53077,7 +53077,7 @@
       "service_item": null,
       "est_worker_time": "03:12:00",
       "est_qty": "3.20",
-      "parent_task": 362,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53104,7 +53104,7 @@
       "service_item": null,
       "est_worker_time": "01:54:00",
       "est_qty": "1.90",
-      "parent_task": 362,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53158,7 +53158,7 @@
       "service_item": null,
       "est_worker_time": "01:12:00",
       "est_qty": "1.20",
-      "parent_task": 374,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53185,7 +53185,7 @@
       "service_item": null,
       "est_worker_time": "02:30:00",
       "est_qty": "2.50",
-      "parent_task": 374,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53212,7 +53212,7 @@
       "service_item": null,
       "est_worker_time": "01:18:00",
       "est_qty": "1.30",
-      "parent_task": 374,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53239,7 +53239,7 @@
       "service_item": null,
       "est_worker_time": "03:06:00",
       "est_qty": "3.10",
-      "parent_task": 374,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53266,7 +53266,7 @@
       "service_item": null,
       "est_worker_time": "00:41:24",
       "est_qty": "0.69",
-      "parent_task": 374,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53293,7 +53293,7 @@
       "service_item": null,
       "est_worker_time": "00:42:00",
       "est_qty": "0.70",
-      "parent_task": 374,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53320,7 +53320,7 @@
       "service_item": null,
       "est_worker_time": "03:18:00",
       "est_qty": "3.30",
-      "parent_task": 374,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53347,7 +53347,7 @@
       "service_item": null,
       "est_worker_time": "03:18:00",
       "est_qty": "3.30",
-      "parent_task": 374,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53374,7 +53374,7 @@
       "service_item": null,
       "est_worker_time": "01:12:00",
       "est_qty": "1.20",
-      "parent_task": 374,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53428,7 +53428,7 @@
       "service_item": null,
       "est_worker_time": "03:24:00",
       "est_qty": "3.40",
-      "parent_task": 384,
+      "parent_task": null,
       "assignee": [
         "schen"
       ],
@@ -53455,7 +53455,7 @@
       "service_item": null,
       "est_worker_time": "01:30:00",
       "est_qty": "1.50",
-      "parent_task": 384,
+      "parent_task": null,
       "assignee": [
         "dev_user"
       ],
@@ -53482,7 +53482,7 @@
       "service_item": null,
       "est_worker_time": "01:24:00",
       "est_qty": "1.40",
-      "parent_task": 384,
+      "parent_task": null,
       "assignee": [
         "jkim"
       ],
@@ -53509,7 +53509,7 @@
       "service_item": null,
       "est_worker_time": "02:48:00",
       "est_qty": "2.80",
-      "parent_task": 384,
+      "parent_task": null,
       "assignee": [
         "tbrooks"
       ],
@@ -53536,7 +53536,7 @@
       "service_item": null,
       "est_worker_time": "01:12:00",
       "est_qty": "1.20",
-      "parent_task": 384,
+      "parent_task": null,
       "assignee": [
         "worker1"
       ],
@@ -53563,7 +53563,7 @@
       "service_item": null,
       "est_worker_time": "03:36:00",
       "est_qty": "3.60",
-      "parent_task": 384,
+      "parent_task": null,
       "assignee": [
         "rmc"
       ],
@@ -53590,7 +53590,7 @@
       "service_item": null,
       "est_worker_time": "02:36:00",
       "est_qty": "2.60",
-      "parent_task": 384,
+      "parent_task": null,
       "assignee": [
         "arivera"
       ],
@@ -53617,7 +53617,7 @@
       "service_item": null,
       "est_worker_time": "03:30:00",
       "est_qty": "3.50",
-      "parent_task": 384,
+      "parent_task": null,
       "assignee": [
         "schen"
       ],
@@ -53671,7 +53671,7 @@
       "service_item": null,
       "est_worker_time": "00:45:00",
       "est_qty": "0.75",
-      "parent_task": 393,
+      "parent_task": null,
       "assignee": [
         "jkim"
       ],
@@ -53698,7 +53698,7 @@
       "service_item": null,
       "est_worker_time": "01:18:00",
       "est_qty": "1.30",
-      "parent_task": 393,
+      "parent_task": null,
       "assignee": [
         "tbrooks"
       ],
@@ -53725,7 +53725,7 @@
       "service_item": null,
       "est_worker_time": "02:24:00",
       "est_qty": "2.40",
-      "parent_task": 393,
+      "parent_task": null,
       "assignee": [
         "worker1"
       ],
@@ -53752,7 +53752,7 @@
       "service_item": null,
       "est_worker_time": "01:30:00",
       "est_qty": "1.50",
-      "parent_task": 393,
+      "parent_task": null,
       "assignee": [
         "rmc"
       ],
@@ -53779,7 +53779,7 @@
       "service_item": null,
       "est_worker_time": "01:36:00",
       "est_qty": "1.60",
-      "parent_task": 393,
+      "parent_task": null,
       "assignee": [
         "arivera"
       ],
@@ -53806,7 +53806,7 @@
       "service_item": null,
       "est_worker_time": "01:54:00",
       "est_qty": "11.00",
-      "parent_task": 393,
+      "parent_task": null,
       "assignee": [
         "schen"
       ],
@@ -53833,7 +53833,7 @@
       "service_item": null,
       "est_worker_time": "00:51:00",
       "est_qty": "0.85",
-      "parent_task": 393,
+      "parent_task": null,
       "assignee": [
         "jkim"
       ],
@@ -53860,7 +53860,7 @@
       "service_item": null,
       "est_worker_time": "01:48:00",
       "est_qty": "1.80",
-      "parent_task": 393,
+      "parent_task": null,
       "assignee": [
         "tbrooks"
       ],
@@ -53914,7 +53914,7 @@
       "service_item": null,
       "est_worker_time": "02:12:00",
       "est_qty": "2.20",
-      "parent_task": 402,
+      "parent_task": null,
       "assignee": [
         "rmc"
       ],
@@ -53941,7 +53941,7 @@
       "service_item": null,
       "est_worker_time": "02:30:00",
       "est_qty": "2.50",
-      "parent_task": 402,
+      "parent_task": null,
       "assignee": [
         "arivera"
       ],
@@ -53968,7 +53968,7 @@
       "service_item": null,
       "est_worker_time": "01:06:00",
       "est_qty": "1.10",
-      "parent_task": 402,
+      "parent_task": null,
       "assignee": [
         "schen"
       ],
@@ -53995,7 +53995,7 @@
       "service_item": null,
       "est_worker_time": "00:49:12",
       "est_qty": "0.82",
-      "parent_task": 402,
+      "parent_task": null,
       "assignee": [
         "jkim"
       ],
@@ -54022,7 +54022,7 @@
       "service_item": null,
       "est_worker_time": "03:48:00",
       "est_qty": "3.80",
-      "parent_task": 402,
+      "parent_task": null,
       "assignee": [
         "tbrooks"
       ],
@@ -54049,7 +54049,7 @@
       "service_item": null,
       "est_worker_time": "03:12:00",
       "est_qty": "16.00",
-      "parent_task": 402,
+      "parent_task": null,
       "assignee": [
         "worker1"
       ],
@@ -54076,7 +54076,7 @@
       "service_item": null,
       "est_worker_time": "02:00:00",
       "est_qty": "2.00",
-      "parent_task": 402,
+      "parent_task": null,
       "assignee": [
         "rmc"
       ],
@@ -54103,7 +54103,7 @@
       "service_item": null,
       "est_worker_time": "01:12:00",
       "est_qty": "1.20",
-      "parent_task": 402,
+      "parent_task": null,
       "assignee": [
         "arivera"
       ],
@@ -54130,7 +54130,7 @@
       "service_item": null,
       "est_worker_time": "01:54:00",
       "est_qty": "1.90",
-      "parent_task": 402,
+      "parent_task": null,
       "assignee": [
         "schen"
       ],
@@ -54157,7 +54157,7 @@
       "service_item": null,
       "est_worker_time": "01:36:00",
       "est_qty": "1.60",
-      "parent_task": 402,
+      "parent_task": null,
       "assignee": [
         "jkim"
       ],
@@ -54184,7 +54184,7 @@
       "service_item": null,
       "est_worker_time": "01:48:00",
       "est_qty": "1.80",
-      "parent_task": 402,
+      "parent_task": null,
       "assignee": [
         "tbrooks"
       ],

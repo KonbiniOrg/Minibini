@@ -211,11 +211,12 @@ The field is populated without N+1:
   In list contexts (where `view.action == 'list'`), the claims map is skipped
   and `invoice` returns `null` to avoid the per-job overhead.
 - **Task-list page atoms** (the `tasklist` view re-fetches per-task children):
-  the flat `TaskViewSet.materials` and `subtasks` GET actions each build
-  `InvoiceClaimService.claims_for_job(task.job)` and pass it as `invoice_claims`
-  context to the tasks-app `MaterialSerializer` / `TaskSerializer`, so materials
-  and subtasks fetched there also carry `invoice`. (The tasks-app
-  `MaterialSerializer` gained the `invoice` field via `InvoiceRefMixin` too.)
+  the flat `TaskViewSet.materials` GET action builds
+  `InvoiceClaimService.claims_for_job(task.job)` and passes it as
+  `invoice_claims` context to the tasks-app `MaterialSerializer`, so
+  materials fetched there also carry `invoice`. (That serializer gained the
+  `invoice` field via `InvoiceRefMixin` too; the subtasks endpoint was
+  removed 2026-08 — better-fees spec §3.)
 - **Expenses** (via `ExpenseViewSet`): `ExpenseViewSet._claims_context_for`
   calls `InvoiceClaimService.claims_for_atoms('expense', pks)` once per list/
   retrieve response and passes the dict as `invoice_claims` context.
@@ -227,15 +228,14 @@ The field is populated without N+1:
   INV-xxxx"** badge appears, linking to that invoice's detail page. The badge is
   absent when the atom is unclaimed.
 - `TaskTree.svelte` (the task-list page) shows an **"INVOICED"** link in the
-  status column: for an invoiced task/subtask it **replaces** the activity/status
+  status column: for an invoiced task it **replaces** the activity/status
   indicator (an invoiced task is necessarily `complete`), and for an invoiced
   material it fills the otherwise-empty status cell. Both link to the invoice.
 - `TaskDetailPage.svelte` (the single-task view) shows the **"INVOICED"** link on
   the Status row (replacing the activity indicator) and beside each invoiced
-  material in its inline materials table; its subtasks render via `TaskTree`, so
-  they inherit the indicator. The task's own `invoice` field is populated by a
-  `retrieve` override on `TaskViewSet` that passes the `claims_for_job` map as
-  context.
+  material in its inline materials table. The task's own `invoice` field is
+  populated by a `retrieve` override on `TaskViewSet` that passes the
+  `claims_for_job` map as context.
 - `ExpenseListPage.svelte` shows an **"INVOICED · INV-xxxx"** badge in the Status
   cell of any billed (loose) expense, and **hides the mutating actions** (edit /
   reject / delete) for it — replacing them with a "billed — locked" note — since

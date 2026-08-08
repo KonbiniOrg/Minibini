@@ -158,13 +158,11 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     }
 
     assignee_name = serializers.SerializerMethodField()
-    parent_task_name = serializers.CharField(
-        source='parent_task.name', read_only=True, default=None)
     actual_hours = serializers.SerializerMethodField()
     # Write-only CREATE trigger — a RateScheme preset id. Stamps qty_source/
     # rate/unit_label/accounting_category/active_modifiers/source_scheme
-    # onto the task server-side (apps.api.mixins.JobTaskMixin.tasks /
-    # apps.api.tasks.views.TaskViewSet.subtasks); never itself a model field.
+    # onto the task server-side (apps.api.mixins.JobTaskMixin.tasks);
+    # never itself a model field.
     rate_scheme = serializers.PrimaryKeyRelatedField(
         queryset=RateScheme.objects.all(), write_only=True,
         required=False, allow_null=True,
@@ -212,7 +210,7 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         fields = [
             'task_id', 'name', 'description', 'sort_order', 'status',
             'blocked_reason',
-            'parent_task', 'parent_task_name', 'assignee', 'assignee_name',
+            'assignee', 'assignee_name',
             'worker_queue',
             'rate_scheme',
             'qty_source', 'rate', 'unit_label', 'accounting_category',

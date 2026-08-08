@@ -536,8 +536,8 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
 class ValidateDataStateInvariantsTest(TestCase):
     """2026-07-12 tasks-refinements invariants: invoice-on-unapproved-job is
     an ERROR (was a warning), work_complete/completed jobs carry only final
-    work, subtasks are one level deep, and invoice sources only point at
-    terminal (billable) tasks."""
+    work, parent_task stays NULL (dormant field), and invoice sources only
+    point at terminal (billable) tasks."""
 
     def setUp(self):
         self.ac = AccountingCategory.objects.create(name='Inv', code='INVAR')
@@ -622,23 +622,23 @@ class ValidateDataStateInvariantsTest(TestCase):
         output = self._run()
         self.assertNotIn('pending material', output)
 
-    # ── one level of subtasks ────────────────────────────────────
+    # ── parent_task is dormant (better-fees spec §3) ─────────────
 
-    def test_grandchild_task_is_an_error(self):
+    def test_non_null_parent_task_is_an_error(self):
         job = self._job('J-VST-007')
-        parent = self._task(job, name='Parent')
-        child = self._task(job, parent=parent, name='Child')
-        self._task(job, parent=child, name='Grandchild')
-        output = self._run()
-        self.assertIn('[ERROR]', output)
-        self.assertIn('subtask of a subtask', output)
-
-    def test_one_level_subtask_not_flagged(self):
-        job = self._job('J-VST-008')
         parent = self._task(job, name='Parent')
         self._task(job, parent=parent, name='Child')
         output = self._run()
-        self.assertNotIn('subtask of a subtask', output)
+        self.assertIn('[ERROR]', output)
+        self.assertIn('parent_task', output)
+        self.assertIn('dormant', output)
+
+    def test_null_parent_task_not_flagged(self):
+        job = self._job('J-VST-008')
+        self._task(job, name='Flat one')
+        self._task(job, name='Flat two')
+        output = self._run()
+        self.assertNotIn('dormant', output)
 
     # ── invoice sources bill only terminal tasks ─────────────────
 

@@ -28,7 +28,7 @@ _inv_earmarked_subq = Coalesce(
 
 
 class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.GenericViewSet):
-    """Flat task endpoints — lifecycle actions, materials, subtasks.
+    """Flat task endpoints — lifecycle actions, materials.
 
     These operations only need the task id; they live at
     /api/tasks/{task_id}/... (tasks are job-scoped via Task.job).
@@ -142,58 +142,6 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         material = MaterialService.update_fields(
             material, propagate_to_pli=propagate, **fields)
         return Response(MaterialSerializer(material).data)
-
-    # --- Subtask CRUD ---
-
-    @action(detail=True, methods=['get', 'post'], url_path='subtasks', url_name='subtasks')
-    def subtasks(self, request, pk=None):
-        from apps.api.tasks.serializers import TaskSerializer
-        task = self.get_object()
-        if request.method == 'GET':
-            from apps.invoicing.claims import InvoiceClaimService
-            children = Task.objects.filter(parent_task=task).order_by('sort_order')
-            serializer = TaskSerializer(
-                children, many=True,
-                context={**self.get_serializer_context(),
-                         'invoice_claims': InvoiceClaimService.claims_for_job(task.job)},
-            )
-            return Response(serializer.data)
-
-        err = self._check_task_mutable(task)
-        if err:
-            return err
-        # Validate the input via the serializer, but CREATE through
-        # TaskService.create_direct — the single gate that enforces the
-        # on-hold, superseded-scheme, depth, and assignee guards and fires
-        # mark_work_reopened (plan A2/B1). Never serializer.save() here.
-        from apps.jobs.services import TaskService
-        from apps.jobs.models import SchemeInactiveError
-        raw_keys = set(request.data.keys())
-        prefilled = TaskSerializer.prefill_accounting_category(request.data)
-        serializer = TaskSerializer(
-            data=prefilled,
-            context={**self.get_serializer_context(), 'job': task.job,
-                      'raw_input_keys': raw_keys},
-        )
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        try:
-            new_task = TaskService.create_direct(
-                task.job,
-                name=data.get('name', ''),
-                rate_scheme_id=data['rate_scheme'].pk if data.get('rate_scheme') else None,
-                active_modifiers=data.get('active_modifiers') or [],
-                est_qty=data.get('est_qty'),
-                est_worker_time=data.get('est_worker_time'),
-                actual_qty=data.get('actual_qty'),
-                description=data.get('description', ''),
-                assignee_id=data['assignee'].pk if data.get('assignee') else None,
-                parent_task_id=task.pk,
-            )
-        except SchemeInactiveError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
-        out = TaskSerializer(new_task, context=self.get_serializer_context())
-        return Response(out.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):

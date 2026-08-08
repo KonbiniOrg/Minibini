@@ -770,10 +770,9 @@ Valid transitions:
   In practice a null `est_qty` can only arise on a task **added directly to
   the Job with the quantity left blank** — specifically the two manual
   direct-create routes, both of which send `est_qty` through unguarded and
-  both of which route through `TaskService.create_direct` (since
-  2026-07-12 the subtasks endpoint no longer bypasses the service):
-    - top-level task — `POST /api/jobs/{id}/tasks/`
-    - subtask — `POST /api/tasks/{id}/subtasks/`
+  which routes through `TaskService.create_direct`:
+    - `POST /api/jobs/{id}/tasks/` (the subtasks endpoint was removed
+      2026-08 — better-fees spec §3)
 
   Template-generation routes guarantee a non-null value:
     - `TaskService.create_from_template` defaults to `Decimal('1')`
@@ -793,10 +792,11 @@ Valid transitions:
 - **assignee** (optional FK → User, SET_NULL): explicit assignment requires
   a non-zero `est_worker_time` (see that field); auto-assign on first
   blep does not
-- **parent_task** (optional FK → self, CASCADE): **one level only** — a
-  task whose `parent_task` is set can never itself be a parent
-  (`TaskService.create_direct` rejects grandchildren and cross-job
-  parents)
+- **parent_task** (optional FK → self, CASCADE): **DORMANT** (better-fees
+  spec §3, 2026-08) — subtask behavior was removed from code; the field
+  survives for a possible future redesign but must be NULL everywhere
+  (flattened by `jobs/0061`; `validate_data.check_tasks` errors on any
+  non-NULL value, since the CASCADE makes stale pointers dangerous)
 - **sort_order**: auto-assigned per Job on save
 - **name** / **description**: text
 

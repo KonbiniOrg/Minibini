@@ -43,9 +43,6 @@
   let matModalMode = $state('create');
   let matModalMaterial = $state(null);
 
-  // Subtasks state
-  let subtasks = $state([]);
-  let subtaskModalOpen = $state(false);
   let assignModalOpen = $state(false);
   // The actual-qty surface is add-only: the running total displays
   // read-only and the input is a signed delta (negative = correction).
@@ -88,7 +85,10 @@
   // Material rows here are the same shared fragment (MaterialRow) the job
   // task list renders, with the same full action set — gating is by
   // material status / permissions / job state, never by which page this is.
-  let selectedTaskId = $state(null);          // Move-target radio (subtask rows)
+  // No move-target radios render on this page (moving a material between
+  // tasks happens on the job task list), so Move stays hidden here and
+  // only detach passes through.
+  let selectedTaskId = $state(null);
   let attachExpenseMaterial = $state(null);
   let fulfillModals = $state(null);           // Order + Mark-received dialogs
 
@@ -218,28 +218,10 @@
     }
   }
 
-  async function loadSubtasks() {
-    try {
-      const rawSubs = await api.get(`/api/tasks/${params.taskId}/subtasks/`);
-      // Enrich each subtask with its materials
-      subtasks = await Promise.all(rawSubs.map(async (sub) => {
-        try {
-          const subMats = await api.get(`/api/tasks/${sub.task_id}/materials/`);
-          return { ...sub, materials: subMats };
-        } catch (e) {
-          return { ...sub, materials: [] };
-        }
-      }));
-    } catch (e) {
-      subtasks = [];
-    }
-  }
-
   async function refresh() {
     await loadTask();
     await loadBleps();
     await loadMaterials();
-    await loadSubtasks();
   }
 
   $effect(() => {
@@ -247,7 +229,6 @@
       loadTask();
       loadBleps();
       loadMaterials();
-      loadSubtasks();
       loadCategories();
       loadTemplates();
     }
@@ -296,69 +277,8 @@
     loadMaterials();
   }
 
-  // Subtask modal handlers
-  function openAddSubtask() {
-    subtaskModalOpen = true;
-  }
-
-  function handleSubtaskSaved() {
-    subtaskModalOpen = false;
-    loadSubtasks();
-  }
-
-  // Subtask tree callbacks
-  function handleSubtaskTaskClick(sub) {
-    if (task && task.job) {
-      window.location.hash = `/jobs/${task.job.id}/tasks/${sub.task_id}`;
-    }
-  }
-
-  function handleSubtaskEditMaterial(material, parentTask) {
-    matModalMaterial = material;
-    matModalMode = 'edit';
-    // Use the subtask's task_id for the material modal
-    matModalOpen = true;
-    // Override taskId to the subtask
-    subtaskMatTaskId = parentTask.task_id;
-  }
-
-  // Subtasks reorder among their siblings here — the job task list page
-  // deliberately offers no subtask reordering (B3). Same endpoint as
-  // top-level reorder; the backend scopes the swap to the peer group.
-  async function handleSubtaskReorder(taskId, direction) {
-    try {
-      await api.post(`/api/jobs/${task.job.id}/reorder-tasks/`, {
-        task_id: taskId,
-        direction,
-      });
-      await loadSubtasks();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not reorder.'));
-    }
-  }
-
-  // Track which task the material modal targets (for subtask materials)
-  let subtaskMatTaskId = $state(null);
-  const effectiveMatTaskId = $derived(subtaskMatTaskId || params.taskId);
-
-  // Reset subtaskMatTaskId when modal closes
   function handleMatModalClose() {
     matModalOpen = false;
-    subtaskMatTaskId = null;
-  }
-
-  function handleSubtaskAddMaterial(parentTask) {
-    matModalMaterial = null;
-    matModalMode = 'create';
-    subtaskMatTaskId = parentTask.task_id;
-    matModalOpen = true;
-  }
-
-  function handleMaterialSavedForSubtask() {
-    matModalOpen = false;
-    matModalMaterial = null;
-    subtaskMatTaskId = null;
-    loadSubtasks();
   }
 </script>
 
@@ -375,13 +295,7 @@
   <JobShell {job} {contact} current="tasks" onJobChange={refresh}>
   <!-- Task header: crumbs, pill + title left, stat chips right -->
   <div class="task-head">
-    <!-- No task-list crumb: the nav rail's Tasks link covers it. The only
-         crumb is the parent link on a subtask. -->
-    {#if task.job && task.parent_task}
-      <div class="crumbs">
-        subtask of <a href={`/jobs/${task.job.id}/tasks/${task.parent_task}`} use:link>{task.parent_task_name}</a>
-      </div>
-    {/if}
+    <!-- No task-list crumb: the nav rail's Tasks link covers it. -->
     <div class="title-row">
       <div class="title-cluster">
         {#if task.invoice}
@@ -503,46 +417,8 @@
   <h3>Description</h3>
   <div class="description preserve-breaks"><LinkifiedText text={task.description || '-'} /></div>
 
-  <!-- Subtasks section — only on top-level tasks: one level of subtasks
-       (B1), so a subtask has no subtasks of its own and no section at all. -->
-  {#if !task.parent_task}
-    <h3>Subtasks</h3>
-    {#if subtasks.length > 0}
-      <!-- Deliberately passive rows (A3): no edit/del/cancel here — a
-           subtask's own detail page is its editing surface. Wired: material
-           add/edit and sibling reorder (B3). -->
-      <TaskTree
-        tasks={subtasks}
-        readonly={taskIsTerminal}
-        {jobLocked}
-        jobOnHold={job?.on_hold ?? false}
-        canManage={task?.can_manage}
-        showStatus={true}
-        showAssignee={true}
-        onTaskClick={handleSubtaskTaskClick}
-        onAddMaterial={handleSubtaskAddMaterial}
-        onEditMaterial={handleSubtaskEditMaterial}
-        onReorder={handleSubtaskReorder}
-        onConsumeMaterial={materialCallbacks.onConsumeMaterial}
-        onRestockMaterial={materialCallbacks.onRestockMaterial}
-        onDrawMoreMaterial={materialCallbacks.onDrawMoreMaterial}
-        onMoveMaterial={materialCallbacks.onMoveMaterial}
-        onOrderMaterial={materialCallbacks.onOrderMaterial}
-        onMarkOnHand={materialCallbacks.onMarkOnHand}
-        onAttachExpense={materialCallbacks.onAttachExpense}
-        bind:selectedTaskId
-      />
-    {:else}
-      <p>No subtasks.</p>
-    {/if}
-    {#if !taskIsTerminal && !job?.on_hold}
-      <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
-    {/if}
-  {/if}
-
   <!-- Materials section — the shared MaterialRow fragment, same status
-       vocabulary and full action set as the job task list (Move targets are
-       the subtask radios above; removal is the release action). -->
+       vocabulary and full action set as the job task list. -->
   <h3>Materials</h3>
   {#if materials.length > 0}
     <table class="materials-table">
@@ -583,9 +459,9 @@
     open={matModalOpen}
     mode={matModalMode}
     material={matModalMaterial}
-    taskId={effectiveMatTaskId}
+    taskId={params.taskId}
     {categories}
-    onSaved={subtaskMatTaskId ? handleMaterialSavedForSubtask : handleMaterialSaved}
+    onSaved={handleMaterialSaved}
     onClose={handleMatModalClose}
   />
 
@@ -598,18 +474,6 @@
     initialMaterial={attachExpenseMaterial}
     onSaved={() => { attachExpenseMaterial = null; refresh(); }}
     onClose={() => { attachExpenseMaterial = null; }}
-  />
-
-  <WorkItemForm
-    open={subtaskModalOpen}
-    mode="manual"
-    context="subtask"
-    contextId={task?.task_id}
-    templates={[]}
-    canManage={job?.can_manage}
-    {categories}
-    onSaved={handleSubtaskSaved}
-    onClose={() => { subtaskModalOpen = false; }}
   />
 
   <WorkItemForm

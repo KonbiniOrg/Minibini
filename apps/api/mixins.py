@@ -336,7 +336,6 @@ class JobTaskMixin:
         validated = serializer.validated_data
         scheme = validated.get('rate_scheme')
         assignee = validated.get('assignee')
-        parent_task = validated.get('parent_task')
         try:
             task = TaskService.create_direct(
                 job,
@@ -347,7 +346,6 @@ class JobTaskMixin:
                 est_worker_time=validated.get('est_worker_time'),
                 actual_qty=validated.get('actual_qty'),
                 description=validated.get('description', ''),
-                parent_task_id=parent_task.pk if parent_task else None,
                 assignee_id=assignee.pk if assignee else None,
             )
         except RateScheme.DoesNotExist:

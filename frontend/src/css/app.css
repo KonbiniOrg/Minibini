@@ -123,7 +123,7 @@ dd {
 .data-table th { text-align: left; font-weight: 600; padding: 8px 16px; background: #f0fdfa; color: #115e59; border-bottom: 2px solid #99f6e4; }
 .data-table td { padding: 8px 16px; }
 /* Subtle zebra striping. `:where()` keeps specificity at zero, so a table's own
- * row classes (e.g. .subtask-row, .material-row) override it without a fight. */
+ * row classes (e.g. .material-row) override it without a fight. */
 :where(.data-table) tbody tr:nth-child(even) { background: #f8f9fa; }
 
 /*

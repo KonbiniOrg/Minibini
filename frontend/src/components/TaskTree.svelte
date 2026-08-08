@@ -20,14 +20,11 @@
     // renders only when its callback was actually wired. A surface that
     // omits a callback gets a passive tree — never a dead button bound to
     // a no-op default. Every current surface wires the FULL material
-    // action set (the old page-based venue rule is gone); TaskDetailPage's
-    // subtask tree stays passive for task ops only (edit/del/cancel live
-    // on the subtask's own page).
+    // action set (the old page-based venue rule is gone).
     onEditTask = null,
     onDeleteTask = null,
     onAddMaterial = null,
     onEditMaterial = null,
-    onAddSubtask = null,
     onReorder = null,
     onTaskClick = () => {},
     onAssignTask = () => {},
@@ -76,9 +73,6 @@
     let total = 0;
     for (const t of tasks) {
       total += taskWithMaterialsTotal(t);
-      for (const sub of (t.subtasks || [])) {
-        total += taskWithMaterialsTotal(sub);
-      }
     }
     for (const m of (jobMaterials || [])) {
       total += materialTotal(m);
@@ -95,7 +89,7 @@
   // the same components every surface uses.
   const taskCallbacks = $derived({
     onTaskClick, onAssignTask, onEditTask, onDeleteTask, onCancelTask,
-    onAddMaterial, onAddSubtask,
+    onAddMaterial,
   });
   const materialCallbacks = $derived({
     onMoveMaterial, onEditMaterial, onConsumeMaterial, onRestockMaterial,
@@ -166,26 +160,6 @@
         />
       {/each}
 
-      <!-- Subtasks for this task -->
-      {#each (task.subtasks || []) as sub}
-        <TaskRow
-          task={sub} isSubtask={true}
-          {readonly} {jobLocked} {jobOnHold} {canManage}
-          {showAssignee} {showStatus}
-          bind:selectedTaskId
-          {...taskCallbacks}
-        />
-
-        <!-- Materials for this subtask -->
-        {#each (sub.materials || []) as mat}
-          <MaterialRow
-            material={mat} ownerTask={sub} ownerTerminal={isTerminal(sub)}
-            indentClass="indent-2" {showAssignee} {showStatus}
-            {readonly} {jobLocked} {jobOnHold} {selectedTaskId}
-            {...materialCallbacks}
-          />
-        {/each}
-      {/each}
     {/each}
     {#if jobMaterials && jobMaterials.length}
       <tr class="job-materials-header">

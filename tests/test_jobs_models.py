@@ -449,14 +449,7 @@ class TaskModelTest(TestCase):
         self.scheme = _make_scheme('tm')
 
     def test_task_creation(self):
-        parent_task = Task(
-            job=self.job,
-            name="Parent Task",
-        )
-        parent_task.stamp_from_scheme(self.scheme)
-        parent_task.save()
         task = Task(
-            parent_task=parent_task,
             assignee=self.user,
             est_worker_time=timedelta(hours=1),
             job=self.job,
@@ -464,7 +457,6 @@ class TaskModelTest(TestCase):
         )
         task.stamp_from_scheme(self.scheme)
         task.save()
-        self.assertEqual(task.parent_task, parent_task)
         self.assertEqual(task.assignee, self.user)
         self.assertEqual(task.job, self.job)
         self.assertEqual(task.name, "Installation Task")
@@ -517,7 +509,6 @@ class TaskModelTest(TestCase):
         )
         task.stamp_from_scheme(self.scheme)
         task.save()
-        self.assertIsNone(task.parent_task)
         self.assertIsNone(task.assignee)
 
     def test_task_requires_job(self):

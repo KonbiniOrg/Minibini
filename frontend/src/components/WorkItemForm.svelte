@@ -12,7 +12,7 @@
   let {
     open = false,
     mode = 'manual', // 'manual' | 'template'
-    context = 'job', // 'job' | 'subtask'
+    context = 'job', // 'job' (subtasks removed 2026-08, better-fees spec §3)
     contextId = null, // job pk, worksheet pk, or parent task pk
     item = null,     // for edit mode; null for create
     isEdit = false,
@@ -463,12 +463,7 @@
         if (effectiveCanWriteMoney) {
           payload.active_modifiers = activeModifiers;
         }
-        let url;
-        if (context === 'subtask') {
-          url = `/api/tasks/${contextId}/subtasks/`;
-        } else {
-          url = `/api/jobs/${contextId}/tasks/`;
-        }
+        const url = `/api/jobs/${contextId}/tasks/`;
         // taskCreated guards a double create if the optional catalog save fails + retry.
         if (!taskCreated) {
           await api.post(url, payload);

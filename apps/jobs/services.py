@@ -969,12 +969,6 @@ class JobService:
                 **task.copy_fields(),
             )
             task_map[task.pk] = new_task
-        # Second pass: wire parent_task hierarchy onto the new tasks.
-        for task in source_tasks:
-            if task.parent_task_id and task.parent_task_id in task_map:
-                new_task = task_map[task.pk]
-                new_task.parent_task = task_map[task.parent_task_id]
-                new_task.save()
         # Materials (task-attached follow their remapped task; task-less stay
         # loose). Released materials are the SOURCE job's "planned it, didn't
         # use it" history — copying them would mint empty qty-0 rows.
@@ -1055,7 +1049,7 @@ class TaskService:
     @staticmethod
     def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
                       est_qty=None, est_worker_time=None, actual_qty=None,
-                      allow_inactive_scheme=False, parent_task_id=None,
+                      allow_inactive_scheme=False,
                       **task_fields):
         """Create Task directly. Requires rate_scheme_id — stamps its billing
         fields onto the Task (task-owned money Phase 1) via
@@ -1066,10 +1060,10 @@ class TaskService:
         which must clone a worksheet faithfully even when its rate scheme has
         since been retired.
 
-        This is the single creation gate for direct tasks AND subtasks (the
-        /api/tasks/{id}/subtasks/ endpoint routes here too) — the on-hold,
-        inactive-scheme, depth, and assignee guards can't be skipped by
-        picking a different endpoint.
+        This is the single creation gate for direct tasks — the on-hold,
+        inactive-scheme, and assignee guards can't be skipped by picking a
+        different endpoint. (Subtasks were removed 2026-08, better-fees
+        spec §3 — tasks are one flat level.)
         """
         from apps.jobs.models import SchemeInactiveError
 
@@ -1085,18 +1079,6 @@ class TaskService:
             raise ValidationError(
                 {'rate_scheme': 'Percentage services are document adjustments and cannot bill a task.'}
             )
-        if parent_task_id:
-            try:
-                parent = Task.objects.get(pk=parent_task_id)
-            except Task.DoesNotExist:
-                raise ValidationError({'parent_task': ['Parent task not found.']})
-            if parent.job_id != job.pk:
-                raise ValidationError(
-                    {'parent_task': ['Parent task belongs to a different job.']})
-            if parent.parent_task_id is not None:
-                raise ValidationError({'parent_task': [
-                    'Subtasks cannot have their own subtasks — '
-                    'one level of subtasks only.']})
         est_qty, est_worker_time = hours_pair_fill(scheme.unit_label, est_qty, est_worker_time)
         # A type _coerce_duration can't parse (e.g. a raw JSON int from this
         # endpoint's unserialized POST) would otherwise reach Task.save()'s
@@ -1119,7 +1101,6 @@ class TaskService:
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
                 actual_qty=actual_qty,
-                parent_task_id=parent_task_id,
                 **task_fields,
             )
             task.stamp_from_scheme(scheme, modifier_keys=active_modifiers)
@@ -1243,14 +1224,9 @@ class TaskService:
 
     @staticmethod
     def reorder_tasks(task_id, direction):
-        """Reorder a task among its PEERS — delegates to BundlingService.
-
-        Peer-scoped (B3): a top-level task swaps only with other top-level
-        tasks, a subtask only with its siblings. The peer group falls out of
-        the task itself (parent_task=None ⇒ top level), so both the job
-        task list (top-level arrows) and the parent task's detail page
-        (sibling arrows) use this same entry point.
-        """
+        """Reorder a task among the job's tasks — delegates to
+        BundlingService. (Tasks are one flat level — better-fees spec §3 —
+        so the peer group is simply the job's task list.)"""
         from apps.core.services import BundlingService
 
         try:
@@ -1259,8 +1235,7 @@ class TaskService:
             raise NotFoundError(f'Task {task_id} not found')
         _assert_job_not_on_hold(task.job, 'reorder tasks on this job')
 
-        items_qs = Task.objects.filter(
-            job=task.job, parent_task=task.parent_task)
+        items_qs = Task.objects.filter(job=task.job)
 
         BundlingService.reorder_container_items(
             items_qs, 'task', task_id, direction,

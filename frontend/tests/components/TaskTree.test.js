@@ -152,7 +152,7 @@ describe('TaskTree', () => {
     const { queryByRole } = render(TaskTree, {
       props: { tasks: [task({ status: 'pending', has_bleps: false })], canManage: false,
                onEditTask: vi.fn(), onDeleteTask: vi.fn(), onCancelTask: vi.fn(),
-               onAddMaterial: vi.fn(), onAddSubtask: vi.fn(), onReorder: vi.fn() },
+               onAddMaterial: vi.fn(), onReorder: vi.fn() },
     });
     // edit/del/cancel open
     expect(queryByRole('button', { name: 'edit' })).toBeInTheDocument();
@@ -162,9 +162,8 @@ describe('TaskTree', () => {
     expect(queryByRole('button', { name: 'assign' })).toBeNull();
     expect(queryByRole('button', { name: '▼' })).toBeNull();
     expect(queryByRole('button', { name: '▲' })).toBeNull();
-    // material/subtask adds still available
+    // material add still available
     expect(queryByRole('button', { name: '+mat' })).toBeInTheDocument();
-    expect(queryByRole('button', { name: '+sub' })).toBeInTheDocument();
   });
 
   it('shows cancel + assign + reorder when canManage is true (cancellable status)', () => {
@@ -332,9 +331,9 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
   });
 
   it('renders NO fulfillment or material-op buttons when callbacks are not wired (passive surface)', () => {
-    // TaskDetailPage's subtask tree passes readonly=false but wires only
-    // onEditMaterial — every other material action must stay hidden, never a
-    // dead button bound to a no-op default.
+    // A surface that wires only onEditMaterial must keep every other
+    // material action hidden — never a dead button bound to a no-op
+    // default.
     user.set({ id: 1, permissions: ['can_manage_financials'] });
     const t = matTask({
       material_id: 8, description: 'Ply', quantity: '4', sell_price: '5', units: 'sheet',
@@ -470,7 +469,7 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
 describe('TaskTree null-guarded task ops (A3/C2), on-hold gating (B2), can_edit (C1)', () => {
   const wired = () => ({
     onEditTask: vi.fn(), onDeleteTask: vi.fn(), onCancelTask: vi.fn(),
-    onAddSubtask: vi.fn(), onAddMaterial: vi.fn(), onReorder: vi.fn(),
+    onAddMaterial: vi.fn(), onReorder: vi.fn(),
   });
 
   it('renders no task-op buttons when their callbacks are not wired', () => {
@@ -486,7 +485,7 @@ describe('TaskTree null-guarded task ops (A3/C2), on-hold gating (B2), can_edit 
     expect(getByText('edit')).toBeInTheDocument();
     expect(getByText('del')).toBeInTheDocument();
     expect(getByText('cancel')).toBeInTheDocument();
-    expect(getByText('+sub')).toBeInTheDocument();
+    expect(getByText('+mat')).toBeInTheDocument();
   });
 
   it('offers cancel to non-managers when wired (C2)', async () => {
@@ -550,37 +549,16 @@ describe('TaskTree null-guarded task ops (A3/C2), on-hold gating (B2), can_edit 
 });
 
 describe('TaskTree task rows are one shared fragment (TaskRow)', () => {
-  it('badges a subtask waiting on understocked material, same as a top-level task', () => {
-    // Drift symptom of the old duplicated subtask-row block: the badge only
-    // rendered on top-level rows, so the same subtask told different
-    // stories on the job list vs its parent's detail page.
-    const parent = task({
-      task_id: 21, name: 'Parent', status: 'in_progress',
-      subtasks: [{
-        task_id: 22, name: 'Starving sub', status: 'in_progress',
-        est_qty: '1', effective_rate: '10', computed_charge: '0',
-        materials: [{ description: 'Ply', quantity: '3', sell_price: '5',
-                      units: 'sheet', consumption_state: 'pending',
-                      inventory_item: 7, qty_on_hand: '1.00' }],
-      }],
+  it('badges a task waiting on understocked material', () => {
+    const t = task({
+      task_id: 22, name: 'Starving task', status: 'in_progress',
+      est_qty: '1', effective_rate: '10', computed_charge: '0',
+      materials: [{ description: 'Ply', quantity: '3', sell_price: '5',
+                    units: 'sheet', consumption_state: 'pending',
+                    inventory_item: 7, qty_on_hand: '1.00' }],
     });
-    const { queryAllByText } = render(TaskTree, { props: { tasks: [parent], canManage: true } });
-    // Parent has no starving materials of its own; the badge must come
-    // from the SUBTASK row.
+    const { queryAllByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
     expect(queryAllByText('waiting on materials').length).toBe(1);
-  });
-
-  it('keeps the deliberate subtask omissions: no +sub, no reorder arrows', () => {
-    const parent = task({
-      task_id: 21, name: 'Parent',
-      subtasks: [task({ task_id: 22, name: 'Sub' })],
-    });
-    const { queryAllByText } = render(TaskTree, {
-      props: { tasks: [parent], canManage: true,
-               onAddSubtask: vi.fn(), onReorder: vi.fn() },
-    });
-    expect(queryAllByText('+sub').length).toBe(1);   // parent row only
-    expect(queryAllByText('▲').length).toBe(1);      // parent row only
   });
 });
 

@@ -46,9 +46,6 @@
 
   let selectedTaskId = $state(null);
 
-  let subtaskModalOpen = $state(false);
-  let subtaskModalParentTaskId = $state(null);
-
   let assignModalOpen = $state(false);
   let assignModalTask = $state(null);
 
@@ -73,11 +70,7 @@
   // "Check Complete" (produces the list) vs "Mark Work Complete".
   const TERMINAL_TASK_STATUSES = ['complete', 'cancelled'];
   const hasWcBlockers = $derived.by(() => {
-    const allTasks = [];
-    for (const t of enrichedTasks) {
-      allTasks.push(t);
-      for (const s of (t.subtasks || [])) allTasks.push(s);
-    }
+    const allTasks = [...enrichedTasks];
     if (allTasks.some((t) => !TERMINAL_TASK_STATUSES.includes(t.status))) return true;
     const mats = [...jobMaterials];
     for (const t of allTasks) mats.push(...(t.materials || []));
@@ -123,19 +116,10 @@
       enrichedTasks = [];
       return;
     }
-    // Only top-level tasks (subtasks are fetched and nested separately)
-    const tasks = (job.tasks || []).filter(t => !t.parent_task);
+    const tasks = job.tasks || [];
     const enriched = await Promise.all(tasks.map(async (task) => {
-      const [materials, subtasks] = await Promise.all([
-        fetchMaterials(task.task_id),
-        fetchSubtasks(task.task_id),
-      ]);
-      // Enrich subtasks with their materials
-      const enrichedSubs = await Promise.all(subtasks.map(async (sub) => {
-        const subMaterials = await fetchMaterials(sub.task_id);
-        return { ...sub, materials: subMaterials };
-      }));
-      return { ...task, materials, subtasks: enrichedSubs };
+      const materials = await fetchMaterials(task.task_id);
+      return { ...task, materials };
     }));
     enrichedTasks = enriched;
   }
@@ -143,14 +127,6 @@
   async function fetchMaterials(taskId) {
     try {
       return await api.get(`/api/tasks/${taskId}/materials/`);
-    } catch (e) {
-      return [];
-    }
-  }
-
-  async function fetchSubtasks(taskId) {
-    try {
-      return await api.get(`/api/tasks/${taskId}/subtasks/`);
     } catch (e) {
       return [];
     }
@@ -336,18 +312,6 @@
     reload();
   }
 
-  // Subtask modal handlers
-  function openAddSubtask(task) {
-    subtaskModalParentTaskId = task.task_id;
-    subtaskModalOpen = true;
-  }
-
-  function handleSubtaskSaved() {
-    subtaskModalOpen = false;
-    subtaskModalParentTaskId = null;
-    reload();
-  }
-
   // Reorder handler
   async function handleReorder(taskId, direction) {
     try {
@@ -424,7 +388,6 @@
     onOrderMaterial={(m) => fulfillModals?.startOrder(m)}
     onMarkOnHand={(m) => fulfillModals?.startReceipt(m)}
     onAttachExpense={openAttachExpense}
-    onAddSubtask={openAddSubtask}
     onReorder={handleReorder}
     onTaskClick={handleTaskClick}
     onAssignTask={(task) => { assignModalTask = task; assignModalOpen = true; }}
@@ -490,18 +453,6 @@
     initialJob={job ? { job_id: job.job_id, job_number: job.job_number } : null}
     onSaved={() => { expenseModalOpen = false; editingExpense = null; reload(); }}
     onClose={() => { expenseModalOpen = false; editingExpense = null; }}
-  />
-
-  <WorkItemForm
-    open={subtaskModalOpen}
-    mode="manual"
-    context="subtask"
-    contextId={subtaskModalParentTaskId}
-    templates={[]}
-    canManage={job?.can_manage}
-    {categories}
-    onSaved={handleSubtaskSaved}
-    onClose={() => { subtaskModalOpen = false; }}
   />
 
   <AssignModal

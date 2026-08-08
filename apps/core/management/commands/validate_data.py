@@ -336,15 +336,15 @@ class Command(BaseCommand):
             if not t.accounting_category_id:
                 self.errors.append(f'Task {t.pk} ({t.name}): missing accounting_category')
             self._check_task_active_modifiers_shape(t)
-        # One level of subtasks only (TaskService.create_direct enforces it;
-        # a grandchild is invisible in the SPA's two-level tree).
-        for t in Task.objects.filter(
-            parent_task__parent_task__isnull=False
-        ).select_related('parent_task'):
+        # parent_task is DORMANT (better-fees spec §3; flattened by
+        # jobs/0061): the field survives in the schema but no code may
+        # write it — a non-NULL value means some path still does, and its
+        # on_delete=CASCADE makes stale pointers actively dangerous.
+        for t in Task.objects.filter(parent_task__isnull=False):
             self.errors.append(
-                f'Task {t.pk} ({t.name}): subtask of a subtask '
-                f'(parent {t.parent_task_id} already has a parent) — '
-                f'one level of subtasks only'
+                f'Task {t.pk} ({t.name}): parent_task={t.parent_task_id} is '
+                f'set — the field is dormant (subtasks removed, better-fees '
+                f'spec §3); some code path is still writing it'
             )
         # ServiceItems stamp Tasks at generate-time and still store plain
         # modifier-key lists (not the {key, percent} snapshot shape Tasks

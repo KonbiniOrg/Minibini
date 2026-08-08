@@ -21,7 +21,7 @@ def _make_scheme(suffix):
 
 
 class DuplicateJobTestBase(BaseTestCase):
-    """Builds a representative source Job: 2 tasks (one a subtask), 2 materials
+    """Builds a representative source Job: 2 tasks, 2 materials
     (one task-attached + inventoried, one task-less + inventoried), 2 deliverables."""
 
     def setUp(self):
@@ -74,7 +74,6 @@ class DuplicateJobTestBase(BaseTestCase):
             job=self.source, name='Finish', description='Sand + seal',
             sort_order=2, est_worker_time=timedelta(hours=2),
             est_qty=Decimal('6'),
-            parent_task=self.task_a,
         )
         self.task_b.stamp_from_scheme(self.scheme)
         self.task_b.save()
@@ -141,8 +140,6 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         self.assertEqual(finish.rate, self.scheme.rate)
         self.assertEqual(finish.qty_source, self.scheme.algorithm)
         self.assertEqual(finish.unit_label, self.scheme.unit_label)
-        # hierarchy remapped to the NEW build task (not the source's)
-        self.assertEqual(finish.parent_task_id, build.task_id)
 
     def test_copies_materials_with_task_links_and_reset_state(self):
         new_job = JobService.duplicate_job(
@@ -253,9 +250,6 @@ class DuplicateEstimateTest(DuplicateJobTestBase):
         self.assertEqual(build.rate, self.scheme.rate)
         self.assertEqual(build.qty_source, self.scheme.algorithm)
         self.assertEqual(build.est_worker_time, timedelta(hours=4))  # carried over
-        # Hierarchy is preserved on the copied tasks.
-        finish = Task.objects.get(job=new_job, name='Finish')
-        self.assertEqual(finish.parent_task_id, build.pk)
 
     def test_copies_materials_preserving_task_attachment(self):
         new_job = JobService.duplicate_job(

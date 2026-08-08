@@ -1204,7 +1204,6 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
     (_is_dropped_checklist_line) do not become Tasks.
     """
     sort_order = start_sort
-    last_toplevel_pk = None
     for item in items:
         # The 'Picked up/Delivered' marker drives Shipments, not Tasks.
         if _is_pickup_marker(item['text']):
@@ -1215,7 +1214,9 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
         sort_order += 1
         name = (item['text'] or 'Task')[:255] or 'Task'
         scheme_pk = _scheme_pk(c, P.checklist_scheme_name(name))
-        parent_pk = last_toplevel_pk if item['is_subtask'] else None
+        # Subtasks removed (better-fees spec §3): checklist sub-items emit
+        # as ordinary flat tasks in checklist order; parent_task is dormant
+        # and always None.
         task_pk = c.next_pk('jobs.task')
         fields = {
             'job':              job_pk,
@@ -1228,13 +1229,11 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
             'blocked_reason':   '',
             'worker_queue':     None,
             'assignee':         None,
-            'parent_task':      parent_pk,
+            'parent_task':      None,
             'sort_order':       sort_order,
         }
         fields.update(_stamp_money_block(c, scheme_pk))
         c.add_fixture('jobs.task', task_pk, fields)
-        if not item['is_subtask']:
-            last_toplevel_pk = task_pk
         if base_ref not in c.cut_task and 'cut' in name.lower():
             c.cut_task[base_ref] = task_pk
     return sort_order

@@ -58,18 +58,8 @@ describe('TaskDetailPage header', () => {
     expect(pill).toHaveTextContent('Ongoing');
   });
 
-  it('links to the parent task when this is a subtask', async () => {
-    mockApi({ parent_task: 4, parent_task_name: 'Build shelving unit' });
-    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    expect(getByText(/subtask of/)).toBeInTheDocument();
-    const parentLink = getByText('Build shelving unit');
-    expect(parentLink.tagName).toBe('A');
-    expect(parentLink.getAttribute('href')).toBe('/jobs/3/tasks/4');
-  });
-
-  it('shows no parent crumb on a top-level task', async () => {
-    mockApi({ parent_task: null, parent_task_name: null });
+  it('shows no parent crumb (tasks are one flat level)', async () => {
+    mockApi({});
     const { findByRole, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
     expect(queryByText(/subtask of/)).toBeNull();
@@ -302,15 +292,14 @@ describe('TaskDetailPage action band', () => {
 });
 
 describe('TaskDetailPage section order', () => {
-  it('runs Description → Subtasks → Materials → Work Sessions, with Add Entry available', async () => {
+  it('runs Description → Materials → Work Sessions, with Add Entry available', async () => {
     mockApi({ description: 'Cut the panels' });
     const { findByRole, getByText, getByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
     const headings = Array.from(container.querySelectorAll('h3')).map((h) => h.textContent);
     const idx = (t) => headings.findIndex((h) => h.includes(t));
     expect(idx('Description')).toBeGreaterThanOrEqual(0);
-    expect(idx('Description')).toBeLessThan(idx('Subtasks'));
-    expect(idx('Subtasks')).toBeLessThan(idx('Materials'));
+    expect(idx('Description')).toBeLessThan(idx('Materials'));
     expect(idx('Materials')).toBeLessThan(idx('Work Sessions'));
     expect(getByText('Cut the panels')).toBeInTheDocument();
     // Logging forgotten historical time stays possible from this page.
@@ -474,38 +463,6 @@ describe('TaskDetailPage on-hold gating (B2)', () => {
   });
 });
 
-describe('TaskDetailPage subtask tree (A3/B3)', () => {
-  const subs = [
-    { task_id: 8, name: 'Sub A', status: 'pending', parent_task: 7 },
-    { task_id: 9, name: 'Sub B', status: 'pending', parent_task: 7 },
-  ];
-
-  it('offers no edit/del/cancel buttons on subtask rows', async () => {
-    mockApiWithJob({ can_manage: true }, {}, subs);
-    const { findByRole, findByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    await findByText('Sub A');
-    expect(queryByText('edit')).toBeNull();
-    expect(queryByText('del')).toBeNull();
-    expect(queryByText('cancel')).toBeNull();
-  });
-
-  it('reorders subtasks via arrows posting to the job reorder endpoint', async () => {
-    mockApiWithJob({ can_manage: true }, {}, subs);
-    api.post.mockReset();
-    api.post.mockResolvedValue({});
-    const { findByRole, findByText, queryAllByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    await findByText('Sub A');
-    const downArrows = queryAllByText('▼');
-    expect(downArrows.length).toBeGreaterThan(0);
-    await fireEvent.click(downArrows[0]);
-    expect(api.post).toHaveBeenCalledWith('/api/jobs/3/reorder-tasks/', {
-      task_id: 8, direction: 'down',
-    });
-  });
-});
-
 describe('TaskDetailPage can_edit gating (C1)', () => {
   it('hides Edit Task when can_edit is false', async () => {
     mockApiWithJob({ status: 'in_progress', can_manage: false, can_edit: false });
@@ -522,54 +479,12 @@ describe('TaskDetailPage can_edit gating (C1)', () => {
   });
 });
 
-describe('TaskDetailPage one-level subtask rule (B1)', () => {
-  it('hides Add Subtask on a subtask (one level only)', async () => {
-    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
-    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    expect(queryByRole('button', { name: /add subtask/i })).toBeNull();
-  });
-
-  it('offers Add Subtask on a top-level task', async () => {
-    mockApiWithJob({ parent_task: null });
-    const { findByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    expect(await findByRole('button', { name: /add subtask/i })).toBeInTheDocument();
-  });
-});
-
-describe('TaskDetailPage subtask section suppression (one-level rule)', () => {
-  it('shows no Subtasks section at all on a subtask', async () => {
-    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
-    const { findByRole, queryByRole, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    expect(queryByRole('heading', { name: /subtasks/i })).toBeNull();
-    expect(queryByText('No subtasks.')).toBeNull();
-  });
-
-  it('keeps the Subtasks section on a top-level task', async () => {
-    mockApiWithJob({ parent_task: null });
-    const { findByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    expect(await findByRole('heading', { name: /subtasks/i })).toBeInTheDocument();
-  });
-});
-
 describe('TaskDetailPage crumbs', () => {
   it('offers no task-list link — the job nav rail covers it', async () => {
     mockApiWithJob({ parent_task: null });
     const { findByRole, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
     expect(queryByText('task list')).toBeNull();
-  });
-
-  it('still links the parent from a subtask crumb', async () => {
-    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
-    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    const parentLink = getByText('Build shelving unit');
-    expect(parentLink.tagName).toBe('A');
-    expect(parentLink.getAttribute('href')).toBe('/jobs/3/tasks/4');
   });
 });
 
