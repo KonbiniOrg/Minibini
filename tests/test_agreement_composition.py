@@ -217,6 +217,34 @@ class ComposeAgreementWithCOTests(FixtureTestCase):
         # Grand total: 200 + 150 + 120 = 470
         self.assertEqual(result['grand_total'], Decimal('470.00'))
 
+    def test_lines_carry_estimate_line_identity(self):
+        """All estimate-origin lines carry estimate_line_id and have co_line_id=None."""
+        from apps.estimates.agreement import compose_agreement
+        co = _make_accepted_co(self.job, self.est)
+        _make_co_line(co, 1, ChangeOrderLineItem.ACTION_ADD,
+                      description='New Service', qty='1', price='200.00')
+
+        lines = compose_agreement(self.job)['lines']
+        est_lines = [l for l in lines if l['origin'] == 'estimate']
+        self.assertTrue(est_lines)
+        for l in est_lines:
+            self.assertIsNotNone(l['estimate_line_id'])
+            self.assertIsNone(l['co_line_id'])
+
+    def test_co_added_lines_carry_co_line_identity(self):
+        """All CO-origin lines (add/replace) carry co_line_id and have estimate_line_id=None."""
+        from apps.estimates.agreement import compose_agreement
+        co = _make_accepted_co(self.job, self.est)
+        _make_co_line(co, 1, ChangeOrderLineItem.ACTION_ADD,
+                      description='New Service', qty='1', price='200.00')
+
+        lines = compose_agreement(self.job)['lines']
+        co_lines = [l for l in lines if l['origin'] == 'change_order']
+        self.assertTrue(co_lines)
+        for l in co_lines:
+            self.assertIsNotNone(l['co_line_id'])
+            self.assertIsNone(l['estimate_line_id'])
+
     def test_non_accepted_co_is_ignored(self):
         """Draft, open, rejected COs must not affect the composition."""
         from apps.estimates.agreement import compose_agreement

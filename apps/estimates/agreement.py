@@ -44,6 +44,8 @@ def _line_dict_from_estimate_item(eli, source_fee_id=None):
             if is_adjustment else []
         ),
         'source_fee_id': source_fee_id,
+        'estimate_line_id': eli.pk,
+        'co_line_id': None,
     }
 
 
@@ -73,6 +75,8 @@ def _line_dict_from_co_item(coli, source_fee_id=None):
         'percent': None,
         'target_category_ids': [],
         'source_fee_id': source_fee_id,
+        'estimate_line_id': None,
+        'co_line_id': coli.pk,
     }
 
 
@@ -80,8 +84,11 @@ def compose_agreement(job):
     """Return the effective agreement = the job's accepted estimate's line items
     with each accepted ChangeOrder's deltas applied, in acceptance order.
 
-    Returns {'lines': [ {description, qty, units, price, amount, origin}, ... ],
+    Returns {'lines': [ {description, qty, units, price, amount, origin,
+                         estimate_line_id, co_line_id, ...}, ... ],
              'grand_total': Decimal}, where origin is 'estimate' or 'change_order'.
+    Each line carries exactly one non-null identity: estimate_line_id (int)
+    for estimate-origin lines, co_line_id (int) for CO-origin lines (add/replace).
     Returns {'lines': [], 'grand_total': Decimal('0')} if the job has no accepted estimate.
     """
     empty = {'lines': [], 'grand_total': Decimal('0')}
