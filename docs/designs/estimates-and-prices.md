@@ -324,8 +324,8 @@ Permissions: read is `IsAuthenticated`; all write actions require
 Create/update/delete/retire/reactivate route through
 `ConfigurationService.{create,update,delete,retire,reactivate}_rate_scheme`
 (`apps/core/services.py`). The serializer exposes `reference_counts`
-(display only, §2.5) and validates `unit_label` against the configured
-units list (`apps/core/units.get_units_list`).
+(display only, §2.5) and `is_default` (§3.4, computed) and validates
+`unit_label` against the configured units list (`apps/core/units.get_units_list`).
 
 ### 3.4 Default preset
 
@@ -334,7 +334,19 @@ pk, or `''` — see `data-constraints.md` §1.1) preselects the CREATE
 dropdown on the manual task-creation form (`WorkItemForm`) for every
 user, manager or worker alike. Set via the RateSchemeManager's default
 preset picker (`PATCH /api/settings/` with `default_rate_scheme`,
-explicit Save — not auto-committed on change).
+explicit Save — not auto-committed on change) — that endpoint stays
+`CanManageConfig`-gated.
+
+Everywhere else, the default's *identity* is read from `is_default`, a
+computed field on `RateSchemeSerializer` (`True` iff the row's pk equals
+the configured `default_rate_scheme`, one Configuration read per
+response via serializer-context caching, never per row). The list/
+retrieve endpoints are `IsAuthenticated`-only, so this is how a
+permissionless worker's create-task form preselects the default — it
+never calls `/api/settings/` for it. (RM browser-testing note 3: it used
+to, and a worker's fetch there 403'd silently, so the dropdown never
+preselected and submitting without picking one hit the
+required-`rate_scheme` validation error.)
 
 - `PATCH /api/settings/` rejects a value that isn't blank or an
   **active** RateScheme id.
