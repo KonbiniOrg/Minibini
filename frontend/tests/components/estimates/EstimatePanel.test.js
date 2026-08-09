@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  errorMessage: (e, fallback) => e?.data?.detail || e?.message || fallback || 'Something went wrong.',
 }));
 vi.mock('svelte-spa-router', () => ({
   link: () => {},
@@ -32,6 +33,7 @@ function makeEstimate(overrides = {}) {
     sent_date: null,
     expiration_date: null,
     closed_date: null,
+    total: '0.00',
     line_items: [],
     ...overrides,
   };
@@ -44,6 +46,9 @@ function mockApi(estimate, { versions = null, changeOrders = [] } = {}) {
     if (estimate && url === `/api/estimates/${estimate.estimate_id}/`) {
       return Promise.resolve({ ...estimate });
     }
+    if (estimate && url === `/api/estimates/${estimate.estimate_id}/source-pool/`) {
+      return Promise.resolve({ atoms: [] });
+    }
     if (url.startsWith('/api/estimates/?job=')) {
       return Promise.resolve({ results: versionList });
     }
@@ -53,6 +58,7 @@ function mockApi(estimate, { versions = null, changeOrders = [] } = {}) {
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
     if (url.startsWith('/api/settings/')) return Promise.resolve({});
     if (url.includes('rate-schemes')) return Promise.resolve({ results: [ADJ_SERVICE] });
+    if (url.includes('source-pool')) return Promise.resolve({ atoms: [] });
     return Promise.resolve({});
   });
 }
@@ -278,8 +284,8 @@ describe('EstimatePanel number/version display', () => {
   });
 });
 
-describe('EstimatePanel vocabulary labels', () => {
-  it('shows the "Show Tasks & Materials" wizard link without a worksheet guard', async () => {
+describe('EstimatePanel mode bar labels', () => {
+  it('offers Edit / Customer / Reorder — no wizard-era wording', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'draft' }));
 
@@ -287,79 +293,57 @@ describe('EstimatePanel vocabulary labels', () => {
       props: { job: JOB, estimateId: 7 },
     });
 
-    expect(await findByText('Show Tasks & Materials')).toBeInTheDocument();
-    expect(queryByText('Plan')).not.toBeInTheDocument();
-    expect(queryByText('Worksheet')).not.toBeInTheDocument();
-    expect(queryByText('Show Worksheet')).not.toBeInTheDocument();
-  });
-});
-
-describe('EstimatePanel out-of-sync indicator', () => {
-  const line = (outOfSync) => ({
-    line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
-    price: outOfSync ? '10' : '5', accounting_category: null,
-    sources: [{ source_id: 9, source_type: 'plan_task', source_pk: 4, description: 'atom', computed_amount: '10' }],
+    await findByText('Line Items');
+    expect(await findByText('Edit')).toBeInTheDocument();
+    expect(await findByText('Customer')).toBeInTheDocument();
+    expect(await findByText('Reorder')).toBeInTheDocument();
+    expect(queryByText('Show Tasks & Materials')).toBeNull();
+    expect(queryByText('Reconcile')).toBeNull();
+    expect(queryByText('Plan')).toBeNull();
+    expect(queryByText('Worksheet')).toBeNull();
   });
 
-  it('flags a line whose price no longer matches its atoms', async () => {
+  it('does not offer Reorder when the estimate is not editable (sent)', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
-    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [line(true)] }));
-    const { findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    expect(await findByText(/out of sync with atoms/)).toBeInTheDocument();
-  });
+    mockApi(makeEstimate({ can_manage: true, status: 'open' }));
 
-  it('does not flag a line that matches its atoms', async () => {
-    user.set({ permissions: ['can_manage_jobs'] });
-    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [line(false)] }));
-    const { findByText, queryByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    await findByText('Cut');
-    expect(queryByText(/out of sync/)).toBeNull();
-  });
+    const { findByText, queryByText } = render(EstimatePanel, {
+      props: { job: JOB, estimateId: 7 },
+    });
 
-  it('does NOT show out-of-sync warning on a non-draft (open) estimate', async () => {
-    user.set({ permissions: ['can_manage_jobs'] });
-    mockApi(makeEstimate({ can_manage: true, status: 'open', line_items: [line(true)] }));
-    const { findByText, queryByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    await findByText('Cut');
-    expect(queryByText(/out of sync/)).toBeNull();
-  });
-
-  it('does NOT show out-of-sync warning for a hand-line (no atom sources)', async () => {
-    user.set({ permissions: ['can_manage_jobs'] });
-    const handLine = {
-      line_item_id: 2, line_number: 1, description: 'Hand entry', qty: '1', units: 'each',
-      price: '999', accounting_category: null, sources: [],
-    };
-    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [handLine] }));
-    const { findByText, queryByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    await findByText('Hand entry');
-    expect(queryByText(/out of sync/)).toBeNull();
+    await findByText('Line Items');
+    expect(await findByText('Customer')).toBeInTheDocument();
+    expect(queryByText('Reorder')).toBeNull();
   });
 });
 
 describe('EstimatePanel line-item actions', () => {
-  it('shows Edit/Delete buttons on line items of a draft estimate', async () => {
+  it('shows Edit/Remove buttons on line items of a draft estimate', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [
       { line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
-        price: '5', accounting_category: null, sources: [] },
+        price: '5', accounting_category: null, sources: [], backing: 'hand', backing_total: null },
     ] }));
-    const { findByText, queryByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const { findByText, container } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     await findByText('Cut');
-    expect(queryByText('Edit')).not.toBeNull();
-    expect(queryByText('Delete')).not.toBeNull();
+    // The mode bar also has an "Edit" label — scope to the line-items table
+    // itself to avoid that ambiguity.
+    const table = within(container.querySelector('table.line-items-table'));
+    expect(table.queryByText('Edit')).not.toBeNull();
+    expect(table.queryByText('Remove')).not.toBeNull();
   });
 
-  it('hides Edit/Delete when the estimate is not editable (sent)', async () => {
+  it('hides Edit/Remove when the estimate is not editable (sent)', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'open', line_items: [
       { line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
-        price: '5', accounting_category: null, sources: [] },
+        price: '5', accounting_category: null, sources: [], backing: 'hand', backing_total: null },
     ] }));
-    const { findByText, queryByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const { findByText, container } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     await findByText('Cut');
-    expect(queryByText('Edit')).toBeNull();
-    expect(queryByText('Delete')).toBeNull();
+    const table = within(container.querySelector('table.line-items-table'));
+    expect(table.queryByText('Edit')).toBeNull();
+    expect(table.queryByText('Remove')).toBeNull();
   });
 
   it('shows a single "Add line" button on a draft estimate', async () => {
@@ -379,88 +363,103 @@ describe('EstimatePanel line-item actions', () => {
     expect(queryByText('Add line')).toBeNull();
   });
 
-  it('Delete on a line calls the line-item delete endpoint', async () => {
+  it('Remove on a line calls the line-item DELETE endpoint (single-phase, no confirm)', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [
       { line_item_id: 42, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
-        price: '5', accounting_category: null, sources: [] },
+        price: '5', accounting_category: null, sources: [], backing: 'hand', backing_total: null },
     ] }));
-    api.delete.mockResolvedValue({ message: 'deleted' });
+    api.delete.mockResolvedValue({ message: 'Line item deleted.' });
     const { findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    const deleteBtn = await findByText('Delete');
-    deleteBtn.click();
+    const removeBtn = await findByText('Remove');
+    await fireEvent.click(removeBtn);
     expect(api.delete).toHaveBeenCalledWith('/api/estimates/7/line-items/42/');
+  });
+
+  it('never renders the word "delete" anywhere in the edit view', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [
+      { line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
+        price: '5', accounting_category: null, sources: [], backing: 'hand', backing_total: null },
+    ] }));
+    const { findByText, queryByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Cut');
+    expect(queryByText(/delete/i)).toBeNull();
   });
 });
 
-describe('EstimatePanel reconcile mode', () => {
+describe('EstimatePanel mode bar', () => {
   beforeEach(() => { localStorage.clear(); });
 
-  function mockReconcile(estimate) {
-    api.get.mockReset();
-    api.get.mockImplementation((url) => {
-      if (url === `/api/estimates/${estimate.estimate_id}/`) return Promise.resolve({ ...estimate });
-      if (url === `/api/estimates/${estimate.estimate_id}/line-items/`) return Promise.resolve({ results: [] });
-      if (url === `/api/estimates/${estimate.estimate_id}/source-pool/`) return Promise.resolve({ atoms: [] });
-      if (url.startsWith('/api/estimates/?job=')) return Promise.resolve({ results: [estimate] });
-      if (url.startsWith('/api/change-orders/?job=')) return Promise.resolve({ results: [] });
-      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
-      if (url.startsWith('/api/settings/')) return Promise.resolve({});
-      return Promise.resolve({});
-    });
-  }
+  const LINE = {
+    line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
+    price: '5', accounting_category: null, sources: [], backing: 'hand', backing_total: null,
+  };
 
-  it('flips to reconcile mode and persists the choice per docId', async () => {
+  it('switches between Edit / Customer / Reorder views in place and persists the choice per docId', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
-    mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft' }));
-    const { findByRole, findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
-    expect(await findByText('Source pool (job atoms)')).toBeInTheDocument();
-    expect(getJobWs(9).modes['est:7']).toBe('reconcile');
-    expect(await findByRole('button', { name: 'Back to lines' })).toBeInTheDocument();
+    mockApi(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft', line_items: [LINE], total: '10.00' }));
+    const { container, findByText, queryByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Cut');
+
+    const modeBar = () => container.querySelector('.doc-mode-bar');
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Customer' }));
+    expect(await findByText('Estimate EST-7-1')).toBeInTheDocument();
+    expect(queryByText('Add line')).toBeNull();
+    expect(getJobWs(9).modes['est:7']).toBe('customer');
+
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Reorder' }));
+    expect(container.querySelectorAll('.doc-reorder-arrows').length).toBeGreaterThan(0);
+    expect(getJobWs(9).modes['est:7']).toBe('reorder');
+
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Edit' }));
+    expect(await findByText('Add line')).toBeInTheDocument();
+    expect(getJobWs(9).modes['est:7']).toBe('edit');
   });
 
-  it('restores reconcile mode on mount for a draft doc when remembered', async () => {
+  it('normalizes a remembered "reconcile" (old wizard toggle) to Edit mode', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     rememberMode(9, 'est:7', 'reconcile');
-    mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft' }));
-    const { findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    expect(await findByText('Source pool (job atoms)')).toBeInTheDocument();
+    mockApi(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft', line_items: [LINE] }));
+    const { container, findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Add line');
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('does NOT restore reconcile from an INVOICE with the same numeric id (namespaced keys)', async () => {
-    // Regression: modes were once keyed by bare docId, so invoice #7 in
-    // reconcile bled into estimate #7 on the same job. Keys are namespaced
-    // (est:/inv:) — the invoice memory must not open the estimate in reconcile.
+  it('normalizes a remembered "lines" (old two-mode panel) to Edit mode', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
-    rememberMode(9, 'inv:7', 'reconcile');
-    mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft' }));
-    const { findByText, queryByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    await findByText('Line Items');
-    expect(queryByText('Source pool (job atoms)')).toBeNull();
+    rememberMode(9, 'est:7', 'lines');
+    mockApi(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft', line_items: [LINE] }));
+    const { container, findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Add line');
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('restores lines (not reconcile) for a SENT doc even when reconcile was remembered', async () => {
+  it('does NOT restore from an INVOICE with the same numeric id (namespaced keys)', async () => {
+    // Regression guard carried over from the old reconcile-toggle memory:
+    // modes are namespaced (est:/inv:) so an invoice's remembered mode
+    // never bleeds into an estimate with the same numeric id.
     user.set({ permissions: ['can_manage_jobs'] });
-    rememberMode(9, 'est:7', 'reconcile');
-    mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'open' }));
-    const { findByText, queryByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    await findByText('Line Items');
-    expect(queryByText('Source pool (job atoms)')).toBeNull();
-    expect(queryByRole('button', { name: 'Reconcile' })).toBeNull();
-    expect(queryByRole('button', { name: 'Back to lines' })).toBeNull();
+    rememberMode(9, 'inv:7', 'reorder');
+    mockApi(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft', line_items: [LINE] }));
+    const { container, findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Add line');
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('reloads the estimate when flipping back to lines', async () => {
+  it('falls back to Edit when "reorder" was remembered but the estimate is no longer editable', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
-    mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft' }));
-    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
-    await findByRole('button', { name: 'Back to lines' });
-    const before = api.get.mock.calls.filter(([u]) => u === '/api/estimates/7/').length;
-    await fireEvent.click(await findByRole('button', { name: 'Back to lines' }));
-    expect(api.get.mock.calls.filter(([u]) => u === '/api/estimates/7/').length).toBeGreaterThan(before);
-    expect(getJobWs(9).modes['est:7']).toBe('lines');
+    rememberMode(9, 'est:7', 'reorder');
+    mockApi(makeEstimate({ estimate_id: 7, can_manage: true, status: 'open', line_items: [LINE] }));
+    const { container, findByText, queryByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Cut');
+    expect(queryByText('Add line')).toBeNull(); // not editable, but still Edit mode
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).queryByRole('button', { name: 'Reorder' })).toBeNull();
   });
 });
 
@@ -501,8 +500,8 @@ describe('EstimatePanel adjustment affordances', () => {
     const adjLine = {
       line_item_id: 99, line_number: 1, description: 'Rush 15%',
       qty: 1, price: '10.00', units: 'none', accounting_category: null,
-      adjustment_service: ADJ_SERVICE, target_categories: [],
-      sources: [],
+      adjustment_service: ADJ_SERVICE.rate_scheme_id, target_categories: [],
+      sources: [], backing: 'adjustment', backing_total: null,
     };
     mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [adjLine] }));
     const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
