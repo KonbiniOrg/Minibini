@@ -5,7 +5,7 @@ from django.core.management import call_command
 from apps.core.models import AccountingCategory
 from apps.jobs.models import RateScheme, Job, Task, Fee
 from apps.contacts.models import Contact
-from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource
+from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource, ChangeOrder, ChangeOrderLineItem
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.inventory.models import Material
 
@@ -702,14 +702,14 @@ class ValidateDataAgreementLineInvoicesTest(TestCase):
         call_command('validate_data', stdout=out, stderr=out)
         return out.getvalue()
 
-    def test_agreement_line_on_two_live_invoices_is_an_error(self):
+    def test_agreement_estimate_line_on_two_live_invoices_is_an_error(self):
         """When the same estimate line is referenced by two open invoices,
-        that's an error."""
-        # Create first invoice and set its line to reference the estimate line
-        inv1 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-001')
+        that's an error. One invoice has invoice_number; one is a draft (None)."""
+        # Create first invoice as draft (no invoice_number — pre-QBO-push state)
+        inv1 = Invoice.objects.create(job=self.job)
         ili1 = InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
 
-        # Transition first invoice to open, then create second invoice
+        # Transition first invoice to open, then create second invoice with number
         Invoice.objects.filter(pk=inv1.pk).update(status=Invoice.STATUS_OPEN)
         inv2 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-002')
         ili2 = InvoiceLineItem.objects.create(invoice=inv2, agreement_estimate_line=self.estimate_line)
@@ -717,9 +717,37 @@ class ValidateDataAgreementLineInvoicesTest(TestCase):
         output = self._run()
         self.assertIn('[ERROR]', output)
         self.assertIn('referenced by more than one live invoice', output)
-        # Both invoice numbers should be named in the error
-        self.assertIn('INV-AGRLNE-001', output)
+        # display_number should be used, so we'll see the job number for the draft
+        self.assertIn('J-AGRLNE-001', output)
         self.assertIn('INV-AGRLNE-002', output)
+
+    def test_agreement_co_line_on_two_live_invoices_is_an_error(self):
+        """When the same change-order line is referenced by two open invoices,
+        that's an error."""
+        # Create a change order with a line item
+        co = ChangeOrder.objects.create(
+            job=self.job,
+            estimate=self.estimate,
+        )
+        co_line = ChangeOrderLineItem.objects.create(
+            change_order=co,
+            action=ChangeOrderLineItem.ACTION_ADD,
+        )
+
+        # Create first invoice (draft, no invoice_number)
+        inv1 = Invoice.objects.create(job=self.job)
+        ili1 = InvoiceLineItem.objects.create(invoice=inv1, agreement_co_line=co_line)
+
+        # Transition first invoice to open, then create second invoice
+        Invoice.objects.filter(pk=inv1.pk).update(status=Invoice.STATUS_OPEN)
+        inv2 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-CO-002')
+        ili2 = InvoiceLineItem.objects.create(invoice=inv2, agreement_co_line=co_line)
+
+        output = self._run()
+        self.assertIn('[ERROR]', output)
+        self.assertIn('referenced by more than one live invoice', output)
+        self.assertIn('J-AGRLNE-001', output)
+        self.assertIn('INV-AGRLNE-CO-002', output)
 
     def test_reference_on_cancelled_invoice_not_flagged(self):
         """A cancelled invoice's reference to an agreement line should not
