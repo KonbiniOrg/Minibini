@@ -584,3 +584,53 @@ class EstimateLineBackingAPITest(BaseTestCase):
         row = self._row(li)
         self.assertEqual(row['backing'], 'hand')
         self.assertIsNone(row['backing_total'])
+
+    def test_backing_falls_through_to_hand_when_all_sources_dangling(self):
+        """A line's sources ALL dangling (their atoms already deleted, a
+        legal pre-purge state) is treated as having no sources at all —
+        GET succeeds (200, not 500) and backing falls through to 'hand',
+        with a null backing_total and null per-row detail fields."""
+        from apps.estimates.services import EstimateWizardService
+        from apps.inventory.models import Material
+
+        m1 = self._material('Dangle-Steel', '2', '5.00')
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'material', 'id': m1.pk}])
+        self.assertEqual(li.sources.count(), 1)
+
+        # Simulate pre-purge dangling data: bulk-delete bypasses
+        # Material.delete()'s source-row purge (CLAUDE.md's own warning
+        # against QuerySet.delete() bypassing custom delete() — used here
+        # deliberately to reproduce the dangling state).
+        Material.objects.filter(pk=m1.pk).delete()
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'hand')
+        self.assertIsNone(row['backing_total'])
+        src_row = row['sources'][0]
+        self.assertIsNone(src_row['description'])
+        self.assertIsNone(src_row['computed_amount'])
+        self.assertIsNone(src_row['qty'])
+        self.assertIsNone(src_row['units'])
+        self.assertIsNone(src_row['rate'])
+
+    def test_backing_total_and_edited_when_sources_partially_dangling(self):
+        """A partially-dangling line sums/classifies only what still
+        resolves: with one of two material sources deleted, backing_total
+        reflects only the survivor and the now-stale stored price reads
+        as 'edited' rather than crashing."""
+        from apps.estimates.services import EstimateWizardService
+        from apps.inventory.models import Material
+
+        m1 = self._material('Dangle-Steel-1', '2', '5.00')  # 10.00
+        m2 = self._material('Dangle-Bolts-1', '3', '1.00')  # 3.00
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate,
+            [{'type': 'material', 'id': m1.pk}, {'type': 'material', 'id': m2.pk}])
+        self.assertEqual(li.sources.count(), 2)
+
+        Material.objects.filter(pk=m2.pk).delete()
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'edited')
+        self.assertEqual(Decimal(row['backing_total']), Decimal('10.00'))

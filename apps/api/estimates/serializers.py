@@ -6,6 +6,25 @@ from apps.core.units import UnitsField
 from apps.api.mixins import JobScopedCanManageMixin
 
 
+def _resolve_sources(line):
+    """Resolve every source row on a line, skipping any dangling row (its
+    atom already deleted out from under the claim — legal pre-purge state,
+    see estimates-and-prices.md §6.2) rather than letting `resolve()`
+    raise ObjectDoesNotExist. A line whose sources are ALL dangling
+    resolves to an empty list, so callers treat it exactly as if the line
+    had no sources at all; a partially-dangling line yields only the
+    resolvable instances. Used by both `derive_estimate_backing` and
+    `get_backing_total` so a line's sources are read from the DB once."""
+    from django.core.exceptions import ObjectDoesNotExist
+    resolved = []
+    for src in line.sources.all():
+        try:
+            resolved.append(src.resolve())
+        except ObjectDoesNotExist:
+            continue
+    return resolved
+
+
 def derive_estimate_backing(line):
     """Classify how an estimate line's price is currently backed. Same
     "derive on every read, never store" style as InvoiceLineItemSerializer's
@@ -18,12 +37,18 @@ def derive_estimate_backing(line):
     2. `service_item_id` or `inventory_item_id` set -> 'from_catalog'. A
        bare `is_material=True` line with no `inventory_item` does NOT
        count — it stays 'hand' until crystallization narrows it further.
-    3. Has claimed source rows:
+    3. Has RESOLVABLE claimed source rows (via `_resolve_sources`, which
+       skips any dangling row — its atom already deleted, a legal
+       pre-purge state — rather than 500ing; a line whose sources are
+       ALL dangling is treated as having none, falling through to rule 4;
+       a partially-dangling line sums/classifies only what still
+       resolves):
        - not in sync with the source sum (price != round(sum/qty, 2)) ->
          'edited', regardless of source kind.
        - in sync, any task among the sources -> 'planned_work'.
        - in sync, materials only -> 'planned_materials'.
-    4. Otherwise (no adjustment, no catalog ref, no sources) -> 'hand'.
+    4. Otherwise (no adjustment, no catalog ref, no resolvable sources) ->
+       'hand'.
 
     `backing` is designed for DRAFT authoring surfaces (the estimate
     wizard's chip labels), not as a general-purpose lifecycle indicator.
@@ -50,20 +75,17 @@ def derive_estimate_backing(line):
     if line.service_item_id is not None or line.inventory_item_id is not None:
         return 'from_catalog'
 
-    sources = list(line.sources.all())
-    if sources:
-        sum_value = EstimateWizardService._sum_sources(line)
+    resolved = _resolve_sources(line)
+    if resolved:
+        sum_value = sum(
+            (EstimateWizardService._atom_computed_amount(i) for i in resolved),
+            Decimal('0.00'),
+        )
         if not EstimateWizardService._is_in_sync(line, sum_value):
             return 'edited'
-        from django.core.exceptions import ObjectDoesNotExist
         from apps.jobs.models import Task
-        for src in sources:
-            try:
-                instance = src.resolve()
-            except ObjectDoesNotExist:
-                continue
-            if isinstance(instance, Task):
-                return 'planned_work'
+        if any(isinstance(i, Task) for i in resolved):
+            return 'planned_work'
         return 'planned_materials'
 
     return 'hand'
@@ -174,12 +196,17 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
     def get_backing_total(self, obj):
         """Sum of source compute_estimate_amount()/compute_amount() — the
         "work totals $X" reference figure; null when the line has no
-        sources at all (independent of `backing`: an out-of-sync 'edited'
-        sourced line still reports its total)."""
-        sources = list(obj.sources.all())
-        if not sources:
+        resolvable sources (no source rows at all, OR every source row is
+        dangling — see `_resolve_sources`). Independent of `backing`: an
+        out-of-sync 'edited' sourced line still reports its total; a
+        partially-dangling line sums only the resolvable sources."""
+        resolved = _resolve_sources(obj)
+        if not resolved:
             return None
-        total = EstimateWizardService._sum_sources(obj)
+        total = sum(
+            (EstimateWizardService._atom_computed_amount(i) for i in resolved),
+            Decimal('0.00'),
+        )
         return str(total.quantize(Decimal('0.01')))
 
     def get_adjustment_service_detail(self, obj):

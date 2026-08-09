@@ -51,6 +51,23 @@ def _agreement_ref_payload(line):
     }
 
 
+def _resolve_sources(line):
+    """Resolve every source row on a line, skipping any dangling row (its
+    atom already deleted out from under the claim — legal pre-purge
+    state) rather than letting `resolve()` raise ObjectDoesNotExist. A
+    line whose sources are ALL dangling resolves to an empty list, so
+    callers treat it exactly as if the line had no sources at all; a
+    partially-dangling line yields only the resolvable instances."""
+    from django.core.exceptions import ObjectDoesNotExist
+    resolved = []
+    for src in line.sources.all():
+        try:
+            resolved.append(src.resolve())
+        except ObjectDoesNotExist:
+            continue
+    return resolved
+
+
 def derive_backing(line):
     """Classify how a line's price is currently backed. Never stored —
     recomputed on every read from the line's own state (the CO surface
@@ -59,23 +76,31 @@ def derive_backing(line):
 
     1. `is_deposit_line` -> 'deposit'; `is_deposit_deduction` -> 'deposit_credit'
        (invoice-only properties; default False when the line type lacks them).
-    2. Has claimed source rows AND is in sync with them (the wizard's own
-       `price == round(sum(sources) / qty, 2)` rule) -> 'actuals'.
+    2. Has RESOLVABLE claimed source rows (via `_resolve_sources`, which
+       skips any dangling row — its atom already deleted, a legal
+       pre-purge state — rather than 500ing; a line whose sources are ALL
+       dangling is treated as having none; a partially-dangling line sums
+       only what still resolves) AND is in sync with them (the wizard's
+       own `price == round(sum(sources) / qty, 2)` rule) -> 'actuals'.
     3. Has an agreement_ref AND qty/price still equal the ref's stored
        qty/price -> 'estimate'.
-    4. Has an agreement_ref or sources, but matched neither rule above
-       (hand-edited since seeding, or a claimed-but-out-of-sync line) ->
-       'edited'.
-    5. Otherwise (a plain hand line) -> None.
+    4. Has an agreement_ref or resolvable sources, but matched neither
+       rule above (hand-edited since seeding, or a claimed-but-out-of-sync
+       line) -> 'edited'.
+    5. Otherwise (a plain hand line, including one whose sources are ALL
+       dangling and has no agreement_ref) -> None.
     """
     if getattr(line, 'is_deposit_line', False):
         return 'deposit'
     if getattr(line, 'is_deposit_deduction', False):
         return 'deposit_credit'
 
-    sources = list(line.sources.all())
-    if sources:
-        sum_value = BaseWizardService._sum_sources(line)
+    resolved = _resolve_sources(line)
+    if resolved:
+        sum_value = sum(
+            (BaseWizardService._atom_computed_amount(i) for i in resolved),
+            Decimal('0.00'),
+        )
         if BaseWizardService._is_in_sync(line, sum_value):
             return 'actuals'
 
@@ -83,7 +108,7 @@ def derive_backing(line):
     if ref is not None and line.qty == ref.qty and line.price == ref.price:
         return 'estimate'
 
-    if ref is not None or sources:
+    if ref is not None or resolved:
         return 'edited'
 
     return None

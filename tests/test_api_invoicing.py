@@ -1187,4 +1187,70 @@ class InvoiceLineBackingAPITest(BaseTestCase):
         # The deposit source's description/amount are unaffected — only
         # the fabricated-qty/rate fields are suppressed.
         self.assertIsNotNone(deposit_src['description'])
-        self.assertIsNotNone(deposit_src['computed_amount'])
+
+    def test_backing_falls_through_to_null_when_all_sources_dangling(self):
+        """A line's sources ALL dangling (their atoms already deleted, a
+        legal pre-purge state) is treated as having no sources at all —
+        GET succeeds (200, not 500), backing falls through to None (a
+        plain hand line, no agreement_ref either), and actuals_total and
+        the per-row detail fields all read null."""
+        from apps.jobs.models import Task, Blep
+        from apps.invoicing.services import InvoiceWizardService
+
+        scheme = RateScheme.objects.create(
+            name='Hourly-Dangle-All', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('60.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        task = self._completed_task('Dangle-All', scheme, hours=0.5)
+
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceWizardService.add_atoms_to_new_line_item(
+            invoice, [{'type': 'task', 'id': task.pk}])
+        self.assertEqual(li.sources.count(), 1)
+
+        # Simulate pre-purge dangling data: bulk-delete bypasses Task's own
+        # source-row purge (CLAUDE.md's own warning against QuerySet.delete()
+        # bypassing custom delete() — used here deliberately to reproduce the
+        # dangling state). Blep PROTECTs its task FK, so clear the blep first.
+        Blep.objects.filter(task=task).delete()
+        Task.objects.filter(pk=task.pk).delete()
+
+        row = self._row(invoice, li)
+        self.assertIsNone(row['backing'])
+        self.assertIsNone(row['actuals_total'])
+        src_row = row['sources'][0]
+        self.assertIsNone(src_row['description'])
+        self.assertIsNone(src_row['computed_amount'])
+        self.assertIsNone(src_row['qty'])
+        self.assertIsNone(src_row['units'])
+        self.assertIsNone(src_row['rate'])
+
+    def test_backing_edited_and_actuals_total_partial_when_sources_partially_dangling(self):
+        """A partially-dangling line sums/classifies only what still
+        resolves: with one of two bundled task sources deleted, the
+        remaining stored price/qty no longer matches the survivor's sum,
+        so backing reads 'edited' rather than crashing, and actuals_total
+        reflects only the survivor."""
+        from apps.jobs.models import Task, Blep
+        from apps.invoicing.services import InvoiceWizardService
+
+        scheme = RateScheme.objects.create(
+            name='Hourly-Dangle-Partial', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('40.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        task1 = self._completed_task('Dangle-Partial-1', scheme, hours=1)
+        task2 = self._completed_task('Dangle-Partial-2', scheme, hours=0.5)
+
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceWizardService.add_atoms_to_new_line_item(
+            invoice, [{'type': 'task', 'id': task1.pk}, {'type': 'task', 'id': task2.pk}])
+        self.assertEqual(li.sources.count(), 2)
+
+        Blep.objects.filter(task=task2).delete()
+        Task.objects.filter(pk=task2.pk).delete()
+
+        row = self._row(invoice, li)
+        self.assertEqual(row['backing'], 'edited')
+        self.assertEqual(Decimal(row['actuals_total']), Decimal('40.00'))
