@@ -1,12 +1,22 @@
 // docs/ui-flows/Invoice-Seeding-and-Send.md §4 — the "struck from agreement"
-// badge in Show Billables (2026-07-20): an atom whose claiming estimate line
-// an ACCEPTED change order removed/replaced, while the atom itself stayed
-// live (complete task, consumed material), is badged in the invoice wizard
-// pool so the biller chooses consciously. Untouched atoms carry no badge.
+// badge on an uncovered-work row (2026-07-20): an atom whose claiming
+// estimate line an ACCEPTED change order removed/replaced, while the atom
+// itself stayed live (complete task, consumed material), is badged in the
+// invoice's uncovered-work pool so the biller chooses consciously. Untouched
+// atoms carry no badge.
 // (The cancelled-task suppression — "cancelled — work done" wins over the
 // struck badge — is a one-flag render rule covered by the unit tests:
 // frontend/tests/components/wizards/WizardAtomRow.test.js and
 // tests/test_co_struck_badge.py; not re-raced here.)
+//
+// UPDATED for the better-fees skeleton phase: the old "Show Billables"
+// wizard toggle is retired (Task 13) — the invoice's Edit view always shows
+// an "Uncovered work" section inline. A fresh draft also now auto-seeds
+// from the agreement by default (Task 4: InvoiceWizardService.open_for_job,
+// seed=True) — the CO stripped the "strike" line from the current
+// agreement, so its task lands in Uncovered work (still badged); the
+// "control" line is untouched, so it seeds straight onto the invoice as a
+// normal claimed line instead of appearing in the pool at all.
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { loadBackdrop } from '../../fixtures/lookups.js';
@@ -82,21 +92,31 @@ test('§4 "Struck from agreement" badge in Show Billables', async ({ page }) => 
     expect(task.status).toBe('complete');
   });
 
-  // A draft invoice hosts the wizard.
+  // A draft invoice hosts the doc — auto-seeded from the (now CO-amended)
+  // agreement by default, so the untouched "control" line arrives already
+  // claimed and the struck line does not.
   const invoice = await api.post('/api/invoices/', { job: job.job_id });
   await api.dispose();
 
-  await test.step('Show Billables: the struck atom row wears the badge', async () => {
+  await test.step('Uncovered work: the struck atom row wears the badge', async () => {
     await page.goto(`/#/jobs/${job.job_id}/invoice/${invoice.invoice_id}`);
-    await page.getByRole('button', { name: 'Show Billables' }).click();
-    const strikeRow = page.locator('label').filter({ hasText: strike.task.name }).first();
+    await expect(page.getByRole('heading', { name: 'Uncovered work' })).toBeVisible();
+    const strikeRow = page.locator('.uncovered-work-section tr').filter({ hasText: strike.task.name });
     await expect(strikeRow).toBeVisible();
     await expect(strikeRow.getByText('struck from agreement')).toBeVisible();
   });
 
-  await test.step('An untouched atom row carries no badge', async () => {
-    const controlRow = page.locator('label').filter({ hasText: control.task.name }).first();
-    await expect(controlRow).toBeVisible();
-    await expect(controlRow.getByText('struck from agreement')).toHaveCount(0);
+  await test.step('The untouched line seeded straight onto the invoice carries no badge', async () => {
+    // Still part of the agreement, so it was auto-seeded as a real claimed
+    // line — it never enters the uncovered-work pool at all, and a normal
+    // line row (or its nested AtomChildRow — the seeded line may bundle
+    // more than one task, so the task's own name is only guaranteed to
+    // show up on its AtomChildRow, not necessarily the parent's own
+    // description) has no "struck" concept to badge.
+    await expect(page.locator('.uncovered-work-section tr').filter({ hasText: control.task.name }))
+      .toHaveCount(0);
+    const controlRows = page.locator('table.line-items-table tr').filter({ hasText: control.task.name });
+    await expect(controlRows.first()).toBeVisible();
+    await expect(controlRows.getByText('struck from agreement')).toHaveCount(0);
   });
 });

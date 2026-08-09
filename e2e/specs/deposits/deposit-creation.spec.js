@@ -14,37 +14,39 @@
 // the deposit line lands on the draft already being viewed.
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
-import { loadBackdrop } from '../../fixtures/lookups.js';
 import { personas } from '../../fixtures/personas.js';
 
 test.use({ storageState: personas.finjobs.storageState });
 
-let jobs;
+const stamp = `e2e-deposit-${Date.now().toString(36)}`;
 
-test.beforeAll(async () => {
-  jobs = await loadBackdrop();
-});
-
-// Same shape as the invoice-seeding-and-send specs: an invoice-less billable
-// job. The seeded deposit job (08026) already carries INV-E2E-DEP-1, so it's
-// naturally excluded here.
-async function findInvoicelessJob(statuses) {
+// State 2 needs "Start Invoice" to land on a genuinely EMPTY draft — but a
+// fresh invoice now auto-seeds from the job's agreement by default (Task 4:
+// InvoiceWizardService.open_for_job, seed=True), so a billable job that
+// carries an accepted estimate would already have lines the moment the
+// draft exists, and "Make this a deposit invoice" (draftHasLines-gated)
+// would never appear. No seeded job is both billable/invoice-less AND
+// estimate-less, so this builds one via the hand-approval path (same
+// precedent as add-line-and-work-authoring/estimate-gate-and-live-
+// picker.spec.js's quoting-phase-gate job): draft -> submitted -> approved,
+// no estimate ever created, so compose_agreement (and therefore seeding)
+// is guaranteed empty.
+async function makeInvoicelessEstimatelessJob() {
   const api = await apiAs(personas.finjobs);
   try {
-    for (const job of jobs.filter((j) => statuses.includes(j.status) && !j.on_hold)) {
-      const resp = await api.get(`/api/invoices/?job=${job.job_id}`);
-      const list = resp?.results || resp || [];
-      if (list.length === 0) return job;
-    }
-    return null;
+    const contact = (await api.get('/api/contacts/?page_size=1')).results[0];
+    const job = await api.post('/api/jobs/', {
+      name: `${stamp} job`, contact: contact.contact_id,
+    });
+    await api.patch(`/api/jobs/${job.job_id}/`, { status: 'submitted' });
+    return await api.patch(`/api/jobs/${job.job_id}/`, { status: 'approved' });
   } finally {
     await api.dispose();
   }
 }
 
 test('§1 Creating a deposit invoice: states 1→2→3', async ({ page }) => {
-  const job = await findInvoicelessJob(['approved', 'in_progress']);
-  test.skip(!job, 'seed gap: no invoice-less billable job');
+  const job = await makeInvoicelessEstimatelessJob();
 
   await test.step('State 1 (no draft): Add Deposit Invoice is offered next to Start Invoice', async () => {
     await page.goto(`/#/jobs/${job.job_id}/invoice`);
@@ -79,7 +81,10 @@ test('§1 Creating a deposit invoice: states 1→2→3', async ({ page }) => {
     expect(hashBeforeCreate()).toBe(hashBefore);
     const row = page.locator('tr', { hasText: `Deposit on ${job.job_number}` });
     await expect(row).toBeVisible();
-    await expect(row).toContainText('Customer Deposits');
+    // The merged Edit view's line row has no Category-name column (only a
+    // Backing column) — assert the deposit BackingChip instead of the old
+    // lines table's category-name text.
+    await expect(row.locator('.backing-chip')).toHaveText('deposit');
     await expect(row).toContainText('$2500.00');
   });
 

@@ -232,6 +232,9 @@
     if (atom.task_cancelled) {
       return { label: 'cancelled — work done', cls: 'edited' };
     }
+    if (atom.struck_from_agreement) {
+      return { label: 'struck from agreement', cls: 'edited' };
+    }
     return undefined;
   }
 
