@@ -139,6 +139,7 @@ class Command(BaseCommand):
         self.check_job_work_complete_gate()
         self.check_estimate_source_job_consistency()
         self.check_invoice_source_job_consistency()
+        self.check_agreement_line_invoice_exclusivity()
 
         # Report
         self.stdout.write('')
@@ -868,4 +869,45 @@ class Command(BaseCommand):
                     f'InvoiceLineItemSource {source.pk} (task:{source.source_pk}): '
                     f'task status "{atom.status}" is not billable '
                     f'(terminal statuses only)'
+                )
+
+    def check_agreement_line_invoice_exclusivity(self):
+        """Each estimate line and change-order line may be referenced by at
+        most one live invoice. A live invoice is every status except cancelled."""
+        from apps.invoicing.models import InvoiceLineItem
+        from collections import defaultdict
+
+        # Find all live invoice line items (where invoice is not cancelled)
+        live_ilis = InvoiceLineItem.objects.exclude(
+            invoice__status=Invoice.STATUS_CANCELLED
+        ).select_related('invoice', 'agreement_estimate_line', 'agreement_co_line')
+
+        # Group by agreement_estimate_line
+        by_estimate_line = defaultdict(list)
+        for ili in live_ilis:
+            if ili.agreement_estimate_line_id:
+                by_estimate_line[ili.agreement_estimate_line_id].append(ili)
+
+        # Group by agreement_co_line
+        by_co_line = defaultdict(list)
+        for ili in live_ilis:
+            if ili.agreement_co_line_id:
+                by_co_line[ili.agreement_co_line_id].append(ili)
+
+        # Check estimate lines: count > 1 is an error
+        for estimate_line_id, ilis in by_estimate_line.items():
+            if len(ilis) > 1:
+                invoice_numbers = sorted(set(ili.invoice.invoice_number for ili in ilis))
+                self.errors.append(
+                    f'EstimateLineItem {estimate_line_id}: referenced by more than one live invoice: '
+                    f'{", ".join(invoice_numbers)}'
+                )
+
+        # Check change-order lines: count > 1 is an error
+        for co_line_id, ilis in by_co_line.items():
+            if len(ilis) > 1:
+                invoice_numbers = sorted(set(ili.invoice.invoice_number for ili in ilis))
+                self.errors.append(
+                    f'ChangeOrderLineItem {co_line_id}: referenced by more than one live invoice: '
+                    f'{", ".join(invoice_numbers)}'
                 )

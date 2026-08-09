@@ -676,3 +676,87 @@ class ValidateDataStateInvariantsTest(TestCase):
             )
         output = self._run()
         self.assertNotIn('not billable', output)
+
+
+class ValidateDataAgreementLineInvoicesTest(TestCase):
+    """Tests for check_agreement_line_invoice_exclusivity() — each estimate
+    line and change-order line may be referenced by at most one live invoice.
+    A live invoice is every status except cancelled."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='Agreement', code='AGR')
+        self.contact = Contact.objects.create(first_name='Agr', last_name='Test')
+        self.job = Job.objects.create(
+            job_number='J-AGRLNE-001', name='Agreement Line Job', contact=self.contact,
+        )
+        # Estimate with a line item
+        self.estimate = Estimate.objects.create(
+            job=self.job,
+            estimate_number='EST-AGRLNE-001',
+            version=1,
+        )
+        self.estimate_line = EstimateLineItem.objects.create(estimate=self.estimate)
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def test_agreement_line_on_two_live_invoices_is_an_error(self):
+        """When the same estimate line is referenced by two open invoices,
+        that's an error."""
+        # Create first invoice and set its line to reference the estimate line
+        inv1 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-001')
+        ili1 = InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+
+        # Transition first invoice to open, then create second invoice
+        Invoice.objects.filter(pk=inv1.pk).update(status=Invoice.STATUS_OPEN)
+        inv2 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-002')
+        ili2 = InvoiceLineItem.objects.create(invoice=inv2, agreement_estimate_line=self.estimate_line)
+
+        output = self._run()
+        self.assertIn('[ERROR]', output)
+        self.assertIn('referenced by more than one live invoice', output)
+        # Both invoice numbers should be named in the error
+        self.assertIn('INV-AGRLNE-001', output)
+        self.assertIn('INV-AGRLNE-002', output)
+
+    def test_reference_on_cancelled_invoice_not_flagged(self):
+        """A cancelled invoice's reference to an agreement line should not
+        trigger the one-per-live-invoice check."""
+        # Create first invoice as cancelled
+        inv1 = Invoice.objects.create(
+            job=self.job, invoice_number='INV-AGRLNE-003',
+            status=Invoice.STATUS_CANCELLED
+        )
+        ili1 = InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+
+        # Create a second, open invoice referencing the same estimate line
+        inv2 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-004')
+        ili2 = InvoiceLineItem.objects.create(invoice=inv2, agreement_estimate_line=self.estimate_line)
+
+        output = self._run()
+        # Should not error because inv1 is cancelled
+        self.assertNotIn('referenced by more than one live invoice', output)
+
+    def test_multiple_live_invoices_different_agreement_lines_not_flagged(self):
+        """Two live invoices referencing different estimate lines is OK."""
+        estimate_line_2 = EstimateLineItem.objects.create(estimate=self.estimate)
+
+        inv1 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-005')
+        ili1 = InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+
+        Invoice.objects.filter(pk=inv1.pk).update(status=Invoice.STATUS_OPEN)
+        inv2 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-006')
+        ili2 = InvoiceLineItem.objects.create(invoice=inv2, agreement_estimate_line=estimate_line_2)
+
+        output = self._run()
+        self.assertNotIn('referenced by more than one live invoice', output)
+
+    def test_single_live_invoice_with_reference_not_flagged(self):
+        """A single live invoice referencing an estimate line is OK."""
+        inv1 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-007')
+        ili1 = InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+
+        output = self._run()
+        self.assertNotIn('referenced by more than one live invoice', output)
