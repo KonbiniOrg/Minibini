@@ -570,6 +570,16 @@ Cross-cutting UI/API conventions and shared components.
   rewritten to wait on the right condition instead of a fixed render
   assumption), and the spec passes reliably solo and in the full suite.
 
+- **Two more intermittently-flaky e2e specs, catalogued 2026-08-08 (skeleton-phase final verification).**
+  `production-lifecycle/completion.spec.js` §6 (a timing flake around the
+  work-complete cascade) and `deposits/deposit-creation.spec.js` (a
+  `.deposit-pill` list-timing race; failed once in a full run, passes in
+  isolation and passed earlier full runs). Both pre-date and are
+  untouched by the `feature/better-fees` skeleton phase; evidence in that
+  phase's task reports. Same treatment as the contacts flake above.
+  _Done when:_ each spec waits on its real condition and passes reliably
+  solo and in the full suite.
+
 - **Convert the remaining local-state tab pages to per-tab routes.** — _added 2026-07-05 (RM, during the Catalog-area design)_
   The Catalog area set the pattern: real routes per tab (bookmarks, refresh, and
   back-button land on the right tab; the tab strip is `<a use:link>`). Settings
