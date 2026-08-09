@@ -487,6 +487,31 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         co.refresh_from_db()
         self.assertEqual(co.status, ChangeOrder.STATUS_ACCEPTED)
 
+    def test_typed_replace_of_fee_backed_line_accepts_cleanly(self):
+        # A TYPED replace (own descriptor: is_material here) targeting a
+        # legacy fee-sourced estimate line must never resolve the target's
+        # mirror — the descriptor wins, so acceptance crystallizes per the
+        # descriptor and the legacy Fee is simply left alone (no ValueError
+        # from the explicit mirror dispatch).
+        line, fee = self._fee_backed_line()
+        co = self._make_co()
+        li = self._replace_line(
+            co, line, description='Rush handling as material', qty=Decimal('2'),
+            price=Decimal('90.00'), units='ea', is_material=True,
+            accounting_category=self.mat_cat.pk,
+        )
+        self._accept(co)  # must not raise
+
+        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
+        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_MATERIAL)
+        mat = Material.objects.get(pk=src.source_pk)
+        self.assertEqual(mat.quantity, Decimal('2'))
+        # The legacy Fee and its source row survive untouched.
+        self.assertTrue(Fee.objects.filter(pk=fee.pk).exists())
+        self.assertTrue(line.sources.exists())
+        co.refresh_from_db()
+        self.assertEqual(co.status, ChangeOrder.STATUS_ACCEPTED)
+
     def test_mirror_of_unknown_source_type_raises(self):
         # The mirror dispatch is explicit: task and material only. Any other
         # source_type (a future atom kind, or the retired 'fee') must raise,

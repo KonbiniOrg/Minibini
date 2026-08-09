@@ -80,12 +80,17 @@ class ChangeOrderAcceptanceService:
             if li.sources.exists():
                 continue
             atoms = ChangeOrderAcceptanceService._current_atoms(li.target_line_item)
-            mirror = ChangeOrderAcceptanceService._mirror_of(atoms)
-            # Document-only target (adjustment line / already-retired atom) and
-            # no descriptor on the CO line: the delta stays document-only.
             has_descriptor = (li.service_item_id is not None
                               or li.inventory_item_id is not None
                               or li.is_material)
+            # The mirror only exists to type a BARE replace — a CO line with
+            # its own descriptor crystallizes per that descriptor, so the
+            # target's mirror is never resolved for it (a legacy fee-sourced
+            # target would make _mirror_of raise). Document-only target
+            # (adjustment line / already-retired atom) and no descriptor:
+            # the delta stays document-only.
+            mirror = (None if has_descriptor
+                      else ChangeOrderAcceptanceService._mirror_of(atoms))
             if mirror is not None or has_descriptor:
                 ChangeOrderAcceptanceService._crystallize(job, li, mirror=mirror, counts=counts)
             for source_type, atom in atoms:
