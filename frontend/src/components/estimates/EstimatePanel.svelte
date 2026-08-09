@@ -310,7 +310,7 @@
   {:else if estimate}
   <div class="page-body">
   <div class="toolbar">
-    <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</span>
+    <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}-{estimate.version}</span>
     {#if canManageJobs && validNextStatuses.length > 0}
       <span class="status-select-wrapper">
         <!-- value-controlled like JobHeader's pill: selects keep their
@@ -354,31 +354,31 @@
     {/if}
   </div>
 
-  <table class="data-table" class:superseded={isSuperseded}>
-    <tbody>
-      <tr><th>Field</th><th>Value</th></tr>
-      <tr><td>Estimate Number</td><td>{estimate.estimate_number}-{estimate.version}
-        {#if estimate.parent}
-          (<a href={`/estimates/${estimate.parent}`} use:link>Parent</a>)
-        {/if}
-      </td></tr>
-      <tr>
-        <td>Job</td>
-        <td>
-          {#if job}
-            <a href={`/jobs/${estimate.job}`} use:link>{job.job_number}{job.name ? `: ${job.name}` : ''}</a>
-          {:else}
-            <a href={`/jobs/${estimate.job}`} use:link>Job #{estimate.job}</a>
-          {/if}
-        </td>
-      </tr>
-      <tr><td>Status</td><td>{estimate.status}</td></tr>
-      <tr><td>Created Date</td><td>{fmtDate(estimate.created_date)}</td></tr>
-      <tr><td>Sent Date</td><td>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'Not sent yet'}</td></tr>
-      <tr><td>Expiration Date</td><td>{estimate.expiration_date ? fmtDate(estimate.expiration_date) : 'Not set'}</td></tr>
-      <tr><td>Closed Date</td><td>{estimate.closed_date ? fmtDate(estimate.closed_date) : 'Not closed yet'}</td></tr>
-    </tbody>
-  </table>
+  <!-- Compact stat chips (RM 2026-08-09): number/job/status live in the
+       header and surrounding context; the parent-revision link is covered by
+       the DocSubnav version pills. Only the dates remain. -->
+  <div class="stat-chips doc-stat-chips" class:superseded={isSuperseded}>
+    <div class="stat-chip">
+      <div class="stat-chip-header">Created</div>
+      <div class="stat-chip-body">{fmtDate(estimate.created_date)}</div>
+    </div>
+    <div class="stat-chip">
+      <div class="stat-chip-header">Sent</div>
+      <div class="stat-chip-body"><span class:muted={!estimate.sent_date}>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'not sent'}</span></div>
+    </div>
+    {#if estimate.expiration_date}
+      <div class="stat-chip">
+        <div class="stat-chip-header">Expires</div>
+        <div class="stat-chip-body">{fmtDate(estimate.expiration_date)}</div>
+      </div>
+    {/if}
+    {#if estimate.closed_date}
+      <div class="stat-chip">
+        <div class="stat-chip-header">Closed</div>
+        <div class="stat-chip-body">{fmtDate(estimate.closed_date)}</div>
+      </div>
+    {/if}
+  </div>
 
   {#if isSuperseded}
     <p><em>This estimate has been superseded and cannot be modified.</em></p>

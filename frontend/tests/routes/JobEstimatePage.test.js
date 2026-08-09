@@ -48,7 +48,7 @@ describe('JobEstimatePage document resolution', () => {
       props: { params: { jobId: '3', docId: '7' } },
     });
 
-    expect(await findByText('Estimate: EST-7')).toBeInTheDocument();
+    expect(await findByText(/Estimate: EST-7-\d/)).toBeInTheDocument();
   });
 
   it('falls back to the remembered doc on a bare route', async () => {
@@ -61,7 +61,7 @@ describe('JobEstimatePage document resolution', () => {
       props: { params: { jobId: '3' } },
     });
 
-    expect(await findByText('Estimate: EST-7')).toBeInTheDocument();
+    expect(await findByText(/Estimate: EST-7-\d/)).toBeInTheDocument();
   });
 
   it('falls back to the latest version when nothing is remembered', async () => {
@@ -73,7 +73,7 @@ describe('JobEstimatePage document resolution', () => {
       props: { params: { jobId: '3' } },
     });
 
-    expect(await findByText('Estimate: EST-8')).toBeInTheDocument();
+    expect(await findByText(/Estimate: EST-8-\d/)).toBeInTheDocument();
   });
 
   it('ignores a remembered doc id that is no longer in the job\'s estimate list', async () => {
@@ -86,7 +86,7 @@ describe('JobEstimatePage document resolution', () => {
       props: { params: { jobId: '3' } },
     });
 
-    expect(await findByText('Estimate: EST-8')).toBeInTheDocument();
+    expect(await findByText(/Estimate: EST-8-\d/)).toBeInTheDocument();
   });
 
   it('normalizes the URL to the resolved doc via replaceState on a bare route', async () => {
@@ -120,12 +120,12 @@ describe('JobEstimatePage doc-subnav navigation (no job-context refetch)', () =>
     const { findByText, rerender } = render(JobEstimatePage, {
       props: { params: { jobId: 3, docId: '7' } },
     });
-    expect(await findByText('Estimate: EST-7')).toBeInTheDocument();
+    expect(await findByText(/Estimate: EST-7-\d/)).toBeInTheDocument();
 
     // Fresh params object, same jobId — this is what svelte-spa-router hands
     // the still-mounted component on every doc-subnav navigation.
     await rerender({ params: { jobId: 3, docId: '8' } });
-    expect(await findByText('Estimate: EST-8')).toBeInTheDocument();
+    expect(await findByText(/Estimate: EST-8-\d/)).toBeInTheDocument();
 
     const jobFetches = api.get.mock.calls.filter(([url]) => url === '/api/jobs/3/');
     const estimateListFetches = api.get.mock.calls.filter(([url]) => url.startsWith('/api/estimates/?job='));

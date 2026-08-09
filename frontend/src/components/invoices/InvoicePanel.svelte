@@ -377,24 +377,43 @@
     {/if}
   </div>
 
-  <table class="data-table">
-    <tbody>
-      <tr><th>Field</th><th>Value</th></tr>
-      <tr><td>Invoice Number</td><td>{invoice.display_number}</td></tr>
-      <tr><td>Status</td><td>{invoice.status}</td></tr>
-      <tr><td>Created Date</td><td>{fmtDate(invoice.created_date)}</td></tr>
-      <tr><td>Sent Date</td><td>{invoice.sent_date ? fmtDate(invoice.sent_date) : 'Not sent yet'}</td></tr>
-      <tr><td>Due Date</td><td>{invoice.due_date ? fmtDate(invoice.due_date) : '—'}{#if invoice.is_late} <span class="late-flag">(late)</span>{/if}</td></tr>
-      <tr><td>Closed Date</td><td>{invoice.closed_date ? fmtDate(invoice.closed_date) : 'Not closed yet'}</td></tr>
-      {#if invoice.qbo_id}
-        <tr><td>QBO ID</td><td>{invoice.qbo_id}</td></tr>
-        <tr><td>QBO Payment Status</td><td>{invoice.qbo_payment_status || 'Pending'}</td></tr>
-        {#if invoice.qbo_amount_paid}
-          <tr><td>Amount Paid</td><td>${Number(invoice.qbo_amount_paid).toFixed(2)}</td></tr>
-        {/if}
+  <!-- Compact stat chips (RM 2026-08-09): number/status live in the header;
+       dates + payment facts remain. QBO id rides as a hover title rather than
+       burning a chip on a raw id. -->
+  <div class="stat-chips doc-stat-chips">
+    <div class="stat-chip">
+      <div class="stat-chip-header">Created</div>
+      <div class="stat-chip-body">{fmtDate(invoice.created_date)}</div>
+    </div>
+    <div class="stat-chip">
+      <div class="stat-chip-header">Sent</div>
+      <div class="stat-chip-body"><span class:muted={!invoice.sent_date}>{invoice.sent_date ? fmtDate(invoice.sent_date) : 'not sent'}</span></div>
+    </div>
+    {#if invoice.due_date}
+      <div class="stat-chip">
+        <div class="stat-chip-header">Due</div>
+        <div class="stat-chip-body">{fmtDate(invoice.due_date)}{#if invoice.is_late} <span class="late-flag">(late)</span>{/if}</div>
+      </div>
+    {/if}
+    {#if invoice.closed_date}
+      <div class="stat-chip">
+        <div class="stat-chip-header">Closed</div>
+        <div class="stat-chip-body">{fmtDate(invoice.closed_date)}</div>
+      </div>
+    {/if}
+    {#if invoice.qbo_id}
+      <div class="stat-chip" title={`QBO ID ${invoice.qbo_id}`}>
+        <div class="stat-chip-header">QBO</div>
+        <div class="stat-chip-body">{invoice.qbo_payment_status || 'Pending'}</div>
+      </div>
+      {#if invoice.qbo_amount_paid}
+        <div class="stat-chip money" title={`QBO ID ${invoice.qbo_id}`}>
+          <div class="stat-chip-header">Paid</div>
+          <div class="stat-chip-body">${Number(invoice.qbo_amount_paid).toFixed(2)}</div>
+        </div>
       {/if}
-    </tbody>
-  </table>
+    {/if}
+  </div>
 
   {#if invoice.status === 'draft' && unappliedCredits.length > 0}
     <div class="deposit-credit-notice">

@@ -80,7 +80,7 @@ describe('EstimatePanel version subnav', () => {
       props: { job: JOB, estimateId: 8 },
     });
 
-    await findByText('Estimate: EST-7');
+    await findByText(/Estimate: EST-7-\d/);
     const links = Array.from(container.querySelectorAll('.doc-subnav a'));
     expect(links).toHaveLength(2);
     expect(links[0]).toHaveAttribute('href', '#/jobs/9/estimate/7');
@@ -101,7 +101,7 @@ describe('EstimatePanel version subnav', () => {
       props: { job: JOB, estimateId: 7 },
     });
 
-    await findByText('Estimate: EST-7');
+    await findByText(/Estimate: EST-7-\d/);
     const links = Array.from(container.querySelectorAll('.doc-subnav a'));
     expect(links).toHaveLength(2);
     expect(links[1]).toHaveAttribute('href', '#/jobs/9/change-order/3');
@@ -125,7 +125,7 @@ describe('EstimatePanel toolbar actions', () => {
     const est = makeEstimate({ estimate_id: 7, status: 'accepted' });
     mockApi(est, { versions: [est] });
     const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    await findByText('Estimate: EST-7');
+    await findByText(/Estimate: EST-7-\d/);
     expect(queryByRole('button', { name: /create change order/i })).toBeNull();
   });
 
@@ -145,7 +145,7 @@ describe('EstimatePanel toolbar actions', () => {
     const est = makeEstimate({ estimate_id: 7, status: 'open' });
     mockApi(est, { versions: [est] });
     const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    await findByText('Estimate: EST-7');
+    await findByText(/Estimate: EST-7-\d/);
     expect(queryByRole('button', { name: /create change order/i })).toBeNull();
   });
 
@@ -159,7 +159,7 @@ describe('EstimatePanel toolbar actions', () => {
       changeOrders: [{ change_order_id: 3, change_order_number: 'CO-3', status: 'draft' }],
     });
     const { findByText, queryByRole } = render(EstimatePanel, { props: { job: { ...JOB, on_hold: true }, estimateId: 7 } });
-    await findByText('Estimate: EST-7');
+    await findByText(/Estimate: EST-7-\d/);
     expect(queryByRole('button', { name: /create change order/i })).toBeNull();
   });
 });
@@ -272,14 +272,16 @@ describe('EstimatePanel per-object can_manage gating', () => {
 });
 
 describe('EstimatePanel number/version display', () => {
-  it('appends the version to the estimate number with a dash and drops the Version row', async () => {
+  it('shows the dash-joined number-version in the title (field table is gone)', async () => {
     user.set({ permissions: [] });
     mockApi(makeEstimate({ estimate_number: 'EST-7', version: 2 }));
     const { container, findByText, queryByText } = render(EstimatePanel, {
       props: { job: JOB, estimateId: 7 },
     });
-    await findByText('Estimate Number');
+    await findByText('Created');
     expect(container.textContent).toContain('EST-7-2');
+    // the two-column field table is retired — chips carry the dates
+    expect(queryByText('Estimate Number')).toBeNull();
     expect(queryByText('Version')).toBeNull();
   });
 });
