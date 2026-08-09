@@ -387,6 +387,26 @@ class ChangeOrderService:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _assert_target_not_billed(target_line_item):
+        """Block remove/replace against an agreement (estimate) line that a
+        live (non-cancelled) invoice line already references — amending or
+        removing the CO's target out from under an invoice that already
+        billed it would silently desync the two documents. Mirrors the
+        "live" definition InvoiceService.remaining_agreement_lines /
+        _assert_agreement_line_unclaimed use (every invoice status except
+        cancelled — see LIVE_INVOICE_STATUSES in apps/invoicing/services.py)."""
+        from apps.invoicing.models import Invoice, InvoiceLineItem
+        ref = (InvoiceLineItem.objects
+               .filter(agreement_estimate_line=target_line_item)
+               .exclude(invoice__status=Invoice.STATUS_CANCELLED)
+               .select_related('invoice')
+               .first())
+        if ref is not None:
+            raise ValidationError({'target_line_item': [
+                f'Billed on {ref.invoice.display_number} — remove it from '
+                f'that invoice before amending this line.']})
+
+    @staticmethod
     def _assert_is_material_only_on_bare_line(li):
         """`is_material` is meaningful only on a bare line — a line with an
         inventory_item or service_item already knows its crystallization type.
@@ -421,6 +441,9 @@ class ChangeOrderService:
         EstimateService._apply_material_ac_default(li)
         ChangeOrderService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
+        if (li.action in (ChangeOrderLineItem.ACTION_REMOVE, ChangeOrderLineItem.ACTION_REPLACE)
+                and li.target_line_item_id):
+            ChangeOrderService._assert_target_not_billed(li.target_line_item)
         li.save()
         return li
 
@@ -515,6 +538,9 @@ class ChangeOrderService:
         EstimateService._apply_material_ac_default(li)
         ChangeOrderService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
+        if (li.action in (ChangeOrderLineItem.ACTION_REMOVE, ChangeOrderLineItem.ACTION_REPLACE)
+                and li.target_line_item_id):
+            ChangeOrderService._assert_target_not_billed(li.target_line_item)
         li.save()
         return li
 
