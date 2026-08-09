@@ -114,8 +114,10 @@ class EstimateClaimService:
 #   rejected / expired  — the document died; nothing was promised, so its
 #                         atoms return to the pool.
 #   accepted            — NO. The claims ARE the agreement record (what was
-#                         sold on which line); compose_agreement and
-#                         ChangeOrderService.struck_atom_keys read them.
+#                         sold on which line); compose_agreement reads them,
+#                         and ChangeOrderAcceptanceService._current_atoms
+#                         walks them (through the replace chain) to resolve
+#                         a remove/replace target's current atom.
 #   superseded          — already holds none: EstimateService.revise_estimate
 #                         re-points the rows onto the new revision.
 #

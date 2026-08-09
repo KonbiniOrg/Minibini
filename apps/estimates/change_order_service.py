@@ -88,35 +88,6 @@ class ChangeOrderService:
         return est
 
     @staticmethod
-    def struck_atom_keys(job):
-        """Keys ('task'|'material', pk) of atoms an ACCEPTED change
-        order's remove/replace struck from the agreement. Derived, never
-        stored — the chain crystallization walked persists: accepted CO line
-        → target estimate line → its EstimateLineItemSource claim rows →
-        atom. An atom in this set that is still live in the pool is exactly
-        the "struck from agreement, work remains" case (crystallization
-        deliberately skips consumed/complete/expense-bound/PO-linked/invoiced
-        atoms — physical or billed reality is not unwound by a document).
-        Consumers: the invoice wizard pool's 'struck from agreement' badge;
-        any future SCOPE reconciliation surface (see estimates-and-prices
-        §14.11 decision record). Later accepted COs replacing the same
-        estimate line add nothing new — targets always point at estimate
-        lines, so the union over accepted COs is already chain-complete."""
-        from apps.estimates.models import EstimateLineItemSource
-        target_line_ids = ChangeOrderLineItem.objects.filter(
-            change_order__job=job,
-            change_order__status=ChangeOrder.STATUS_ACCEPTED,
-            action__in=(ChangeOrderLineItem.ACTION_REMOVE,
-                        ChangeOrderLineItem.ACTION_REPLACE),
-            target_line_item__isnull=False,
-        ).values_list('target_line_item', flat=True)
-        return set(
-            EstimateLineItemSource.objects.filter(
-                estimate_line_item__in=list(target_line_ids),
-            ).values_list('source_type', 'source_pk')
-        )
-
-    @staticmethod
     def assert_all_bare_add_lines_have_ac(co):
         """A bare add line (no service/inventory descriptor) needs an
         accounting category to travel on documents — the category rides the

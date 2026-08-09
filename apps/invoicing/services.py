@@ -984,13 +984,6 @@ class InvoiceWizardService(BaseWizardService):
             .exclude(invoice_line_item__invoice__status=Invoice.STATUS_CANCELLED)
             .select_related('invoice_line_item', 'invoice_line_item__invoice__job')
         )
-        # Atoms an accepted change order struck from the agreement but
-        # crystallization left live (consumed/complete/expense-bound/…).
-        # They bill normally, but the biller must choose consciously — same
-        # doctrine as the cancelled-task badge.
-        from apps.estimates.change_order_service import ChangeOrderService
-        struck = ChangeOrderService.struck_atom_keys(job)
-
         claims = {}
         for src in claimed_sources:
             li = src.invoice_line_item
@@ -1042,6 +1035,7 @@ class InvoiceWizardService(BaseWizardService):
 
         tasks = (
             Task.objects.filter(job=job)
+            .select_related('descoped_by')
             .order_by('sort_order', 'pk')
         )
         task_list = []
@@ -1063,16 +1057,21 @@ class InvoiceWizardService(BaseWizardService):
                 # Cancelled tasks stay billable (work done before the stop)
                 # but the biller must choose consciously — flag the row.
                 'task_cancelled': task.status == Task.STATUS_CANCELLED,
+                'descoped_by_co_number': (
+                    task.descoped_by.change_order_number
+                    if task.descoped_by_id else None),
                 # Suppressed on cancelled tasks: one amber badge is a prompt,
                 # two is noise, and cancelled already forces the choice.
                 'struck_from_agreement': (
-                    key in struck and task.status != Task.STATUS_CANCELLED),
+                    task.descoped_by_id is not None
+                    and task.status != Task.STATUS_CANCELLED),
                 **state_info,
             })
 
             # Material atoms
             materials = (
                 Material.objects.filter(task=task, quantity__gt=0)
+                .select_related('descoped_by')
                 .order_by('pk')
             )
             for mat in materials:
@@ -1088,7 +1087,10 @@ class InvoiceWizardService(BaseWizardService):
                     'rate': detail['rate'],
                     'units': detail['units'],
                     'amount': detail['amount'],
-                    'struck_from_agreement': key in struck,
+                    'descoped_by_co_number': (
+                        mat.descoped_by.change_order_number
+                        if mat.descoped_by_id else None),
+                    'struck_from_agreement': mat.descoped_by_id is not None,
                     **state_info,
                 })
 
@@ -1102,6 +1104,7 @@ class InvoiceWizardService(BaseWizardService):
         # "Materials (no task)" group - task-less Materials with quantity > 0
         loose = (
             Material.objects.filter(job=job, task__isnull=True, quantity__gt=0)
+            .select_related('descoped_by')
             .order_by('pk')
         )
         loose_atoms = []
@@ -1118,7 +1121,10 @@ class InvoiceWizardService(BaseWizardService):
                 'rate': detail['rate'],
                 'units': detail['units'],
                 'amount': detail['amount'],
-                'struck_from_agreement': key in struck,
+                'descoped_by_co_number': (
+                    mat.descoped_by.change_order_number
+                    if mat.descoped_by_id else None),
+                'struck_from_agreement': mat.descoped_by_id is not None,
                 **state_info,
             })
         task_list.append({
