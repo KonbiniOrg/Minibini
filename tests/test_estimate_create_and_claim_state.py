@@ -3,7 +3,7 @@ Task 3.4 — Create an Estimate on a Job (no worksheet); expose per-atom claim s
 
 Tests:
   - POST /api/estimates/ {job} creates a draft Estimate directly on the job.
-  - Task / Material / Fee in the job detail each expose ``claimed: bool``.
+  - Task / Material in the job detail each expose ``claimed: bool``.
   - ``claimed`` is True iff an EstimateLineItemSource on a *non-superseded*
     estimate references the atom; False otherwise (including when the only
     referencing estimate is SUPERSEDED).
@@ -19,7 +19,7 @@ from apps.contacts.models import Contact
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstimateLineItemSource,
 )
-from apps.jobs.models import Fee, Job, RateScheme, Task
+from apps.jobs.models import Job, RateScheme, Task
 from apps.inventory.models import Material
 
 
@@ -111,7 +111,7 @@ class EstimateCreateOnJobTest(TestCase):
 # ---------------------------------------------------------------------------
 
 class AtomClaimStateTest(TestCase):
-    """Job detail endpoint exposes claimed: bool on Task, Material, and Fee atoms."""
+    """Job detail endpoint exposes claimed: bool on Task and Material atoms."""
 
     def setUp(self):
         self.user = _make_manager('acs')
@@ -147,13 +147,6 @@ class AtomClaimStateTest(TestCase):
             sell_price=Decimal('20.00'),
             accounting_category=self.cat,
         )
-        self.fee = Fee.objects.create(
-            job=self.job,
-            description='ACS Fee',
-            quantity=Decimal('1.00'),
-            unit_rate=Decimal('50.00'),
-            accounting_category=self.cat,
-        )
         # A non-superseded (draft) estimate on the same job
         self.estimate = Estimate.objects.create(
             job=self.job,
@@ -180,12 +173,6 @@ class AtomClaimStateTest(TestCase):
             m for m in resp.data['materials'] if m['material_id'] == self.material.pk
         )
         self.assertFalse(mat_data['claimed'])
-
-    def test_fee_unclaimed_initially(self):
-        resp = self._job_detail()
-        self.assertEqual(resp.status_code, 200)
-        fee_data = next(f for f in resp.data['fees'] if f['fee_id'] == self.fee.pk)
-        self.assertFalse(fee_data['claimed'])
 
     # ---- claimed after source row created ----
 
@@ -217,20 +204,6 @@ class AtomClaimStateTest(TestCase):
             if m['material_id'] == self.material.pk
         )
         self.assertTrue(mat_data['claimed'])
-
-    def test_fee_claimed_after_source_row(self):
-        """Fee becomes claimed once EstimateLineItemSource references it."""
-        li = _make_estimate_line(self.estimate, self.cat, description='Fee Line',
-                                 price=Decimal('50.00'))
-        EstimateLineItemSource.objects.create(
-            estimate_line_item=li,
-            source_type=EstimateLineItemSource.SOURCE_FEE,
-            source_pk=self.fee.pk,
-        )
-        fee_data = next(
-            f for f in self._job_detail().data['fees'] if f['fee_id'] == self.fee.pk
-        )
-        self.assertTrue(fee_data['claimed'])
 
     def test_superseded_estimate_source_does_not_count_as_claimed(self):
         """An atom on a SUPERSEDED estimate shows claimed=False — superseded estimates

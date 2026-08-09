@@ -4,8 +4,6 @@ Doctrine (docs/plans/2026-07-03-deletion-doctrine-named-events.md): hard
 deletion is mistake correction and is legitimate only while nothing references
 the row. Committed records are retired by named events instead:
 
-- Fee: refuse while claimed (any lens) or invoiced — the removal of an agreed
-  charge is a change order, not a delete.
 - Task: refuse while claimed by a NON-DRAFT document or invoiced; draft claims
   stay deletable ("remove it from the line first" remains available).
 - Blep: refuse when the blep's task is invoiced — billed actuals are frozen.
@@ -29,8 +27,8 @@ from apps.expenses.services import ExpenseService
 from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import MaterialService
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
-from apps.jobs.models import Blep, Fee, Job, RateScheme, Task
-from apps.jobs.services import BlepService, FeeService, JobService, TaskService
+from apps.jobs.models import Blep, Job, RateScheme, Task
+from apps.jobs.services import BlepService, JobService, TaskService
 
 
 class DeletionGuardBase(TestCase):
@@ -79,12 +77,6 @@ class DeletionGuardBase(TestCase):
         return InvoiceLineItemSource.objects.create(
             invoice_line_item=inv_li, source_type=source_type, source_pk=pk)
 
-    def _fee(self):
-        return Fee.objects.create(
-            job=self.job, description='fee', quantity=Decimal('1'),
-            unit_rate=Decimal('25.00'), accounting_category=self.cat,
-        )
-
     def _task(self):
         t = Task(
             job=self.job, name='Cutting',
@@ -93,28 +85,6 @@ class DeletionGuardBase(TestCase):
         t.stamp_from_scheme(self.scheme)
         t.save()
         return t
-
-
-class FeeDeletionGuardTests(DeletionGuardBase):
-
-    def test_unreferenced_fee_deletes(self):
-        fee = self._fee()
-        FeeService.delete(fee.pk)
-        self.assertFalse(Fee.objects.filter(pk=fee.pk).exists())
-
-    def test_estimate_claimed_fee_refuses_even_on_draft(self):
-        fee = self._fee()
-        self._claim(self._estimate(), EstimateLineItemSource.SOURCE_FEE, fee.pk)
-        with self.assertRaises(ValidationError) as ctx:
-            FeeService.delete(fee.pk)
-        self.assertIn('change order', str(ctx.exception).lower())
-        self.assertTrue(Fee.objects.filter(pk=fee.pk).exists())
-
-    def test_invoiced_fee_refuses(self):
-        fee = self._fee()
-        self._invoice_claim(InvoiceLineItemSource.SOURCE_FEE, fee.pk)
-        with self.assertRaises(ValidationError):
-            FeeService.delete(fee.pk)
 
 
 class TaskDeletionGuardTests(DeletionGuardBase):

@@ -133,8 +133,9 @@ class FeeDeletePurgesSourceRowsTest(AtomDeletePurgeBase):
         self.assertFalse(self.line.sources.exists())
 
     def test_delete_purges_invoice_source_row(self):
-        # FeeService.delete has no invoiced-guard, so the invoice lens must be
-        # purged too — same invariant, third table.
+        # Fee.delete() (model-level; the write API and FeeService are gone,
+        # Task 5) must purge the invoice lens too — same invariant, third
+        # table. This coverage dies with the model in Task 6.
         from apps.invoicing.models import (
             Invoice, InvoiceLineItem, InvoiceLineItemSource,
         )

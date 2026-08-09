@@ -14,7 +14,7 @@ from django.db.models import Q, Prefetch
 from django.utils import timezone
 from django.utils.dateparse import parse_duration
 
-from apps.jobs.models import Job, Task, Blep, Fee, RateScheme
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.estimates.models import (
     Estimate, WorkTemplate, ServiceItem,
     EstimateLineItem,
@@ -1270,85 +1270,6 @@ class TaskService:
                     task.unit_label, None, est_worker_time)
         task.save()
         return task
-
-
-class FeeService:
-    """Service for Fee (job-owned billable atom) writes.
-
-    A Fee is a fixed charge owned by the Job — a pure pricing decision, not a
-    record of work. Mirrors the create/update/delete shape of TaskService and
-    respects the on-hold guard like the other job atoms.
-    """
-
-    @staticmethod
-    def _next_sort_order(job):
-        from django.db.models import Max
-        current_max = Fee.objects.filter(job=job).aggregate(m=Max('sort_order'))['m']
-        return (current_max or 0) + 1
-
-    @staticmethod
-    def create_on_job(job, *, description='', quantity=Decimal('1.00'),
-                      unit_rate=None, accounting_category=None, task=None,
-                      sort_order=None):
-        """Create a Fee on `job`. `accounting_category` and `unit_rate` are
-        required by the model — a missing one surfaces as a ValidationError
-        (→ 400) via full_clean, never a 500."""
-        _assert_job_not_on_hold(job, 'add a fee to this job')
-        with transaction.atomic():
-            if sort_order is None:
-                sort_order = FeeService._next_sort_order(job)
-            fee = Fee(
-                job=job, task=task,
-                description=description or '',
-                quantity=quantity if quantity is not None else Decimal('1.00'),
-                unit_rate=unit_rate,
-                accounting_category=accounting_category,
-                sort_order=sort_order,
-            )
-            fee.full_clean()
-            fee.save()
-        return fee
-
-    @staticmethod
-    def update(fee_pk, **kwargs):
-        try:
-            fee = Fee.objects.get(pk=fee_pk)
-        except Fee.DoesNotExist:
-            raise NotFoundError(f'Fee {fee_pk} not found')
-        _assert_job_not_on_hold(fee.job, 'edit this fee')
-        for field, value in kwargs.items():
-            setattr(fee, field, value)
-        fee.full_clean()
-        fee.save()
-        return fee
-
-    @staticmethod
-    def delete(fee_pk):
-        """Delete a fee — but only while nothing references it (Rule 1).
-
-        A claimed fee is part of an agreement's story: removing an agreed
-        charge is a change order, not a delete. An invoiced fee is billed
-        money. Unreferenced fees (setup scratch, mistakes) delete freely.
-        """
-        from apps.estimates.claims import atom_is_claimed
-        from apps.invoicing.claims import InvoiceClaimService
-        from apps.invoicing.models import InvoiceLineItemSource
-        try:
-            fee = Fee.objects.get(pk=fee_pk)
-        except Fee.DoesNotExist:
-            raise NotFoundError(f'Fee {fee_pk} not found')
-        _assert_job_not_on_hold(fee.job, 'delete this fee')
-        if atom_is_claimed('fee', fee.pk):
-            raise ValidationError(
-                'This fee backs an estimate or change-order line. To stop '
-                'charging it, remove the line (draft) or issue a change order.'
-            )
-        if InvoiceClaimService.is_invoiced(
-                InvoiceLineItemSource.SOURCE_FEE, fee.pk):
-            raise ValidationError(
-                'This fee is on an invoice; remove it from the invoice first.'
-            )
-        fee.delete()
 
 
 class TaskLifecycleService:

@@ -117,7 +117,6 @@ class Command(BaseCommand):
         self.check_jobs()
         self.check_rate_schemes()
         self.check_estimates()
-        self.check_fees()
         self.check_tasks()
         self.check_bleps_and_shifts()
         self.check_materials()
@@ -779,35 +778,13 @@ class Command(BaseCommand):
                 f'quantity {m.quantity} on {m.job.status} job {m.job.job_number}'
             )
 
-    def check_fees(self):
-        """For each Fee, validate unit_rate > 0, quantity >= 0,
-        and (if task is set) task.job_id == fee.job_id.
-        (accounting_category is NOT NULL on the model; no need to check it here.)"""
-        from apps.jobs.models import Fee
-        for fee in Fee.objects.select_related('task', 'job').all():
-            if fee.unit_rate <= 0:
-                self.errors.append(
-                    f'Fee {fee.pk} ({fee.description!r}): unit_rate must be positive '
-                    f'(got {fee.unit_rate})'
-                )
-            if fee.quantity < 0:
-                self.errors.append(
-                    f'Fee {fee.pk} ({fee.description!r}): negative quantity {fee.quantity}'
-                )
-            if fee.task_id and fee.task.job_id != fee.job_id:
-                self.errors.append(
-                    f'Fee {fee.pk} ({fee.description!r}): task {fee.task_id} belongs to '
-                    f'job {fee.task.job_id} but Fee belongs to job {fee.job_id}'
-                )
-
     def check_estimate_source_job_consistency(self):
-        """For each EstimateLineItemSource (task/material/fee), the atom's job_id
+        """For each EstimateLineItemSource (task/material), the atom's job_id
         must match the owning estimate's job_id."""
         from apps.estimates.models import EstimateLineItemSource
         atom_source_types = {
             EstimateLineItemSource.SOURCE_TASK,
             EstimateLineItemSource.SOURCE_MATERIAL,
-            EstimateLineItemSource.SOURCE_FEE,
         }
         for source in EstimateLineItemSource.objects.select_related(
             'estimate_line_item__estimate__job'
@@ -830,13 +807,12 @@ class Command(BaseCommand):
                 )
 
     def check_invoice_source_job_consistency(self):
-        """For each InvoiceLineItemSource (task/material/fee), the atom's job_id
+        """For each InvoiceLineItemSource (task/material), the atom's job_id
         must match the owning invoice's job_id."""
         from apps.invoicing.models import InvoiceLineItemSource
         atom_source_types = {
             InvoiceLineItemSource.SOURCE_TASK,
             InvoiceLineItemSource.SOURCE_MATERIAL,
-            InvoiceLineItemSource.SOURCE_FEE,
         }
         for source in InvoiceLineItemSource.objects.select_related(
             'invoice_line_item__invoice__job'

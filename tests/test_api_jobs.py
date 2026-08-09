@@ -398,6 +398,43 @@ class JobSerializerNestingTest(TestCase):
         self.assertEqual(len(response.data['tasks']), 2)
         self.assertNotIn('template', response.data)
 
+    def test_retrieve_has_no_fees_key(self):
+        """Fee removal (Task 5): the job detail payload no longer carries a
+        `fees` key — Fees have no read surface."""
+        response = self.client.get(f'/api/jobs/{self.job.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('fees', response.data)
+
+
+class FeeRoutesGoneTest(TestCase):
+    """Fee removal (Task 5): the /api/jobs/{id}/fees/ routes are gone."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = _make_admin('feeroutes_admin')
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='F', last_name='G')
+        self.job = Job.objects.create(
+            job_number='FEE-GONE-001', name='Fee Routes Gone', contact=self.contact,
+        )
+
+    def test_create_fee_is_404(self):
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/fees/',
+            {'description': 'x', 'quantity': '1', 'unit_rate': '10.00'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_fee_detail_is_404(self):
+        self.assertEqual(
+            self.client.patch(f'/api/jobs/{self.job.pk}/fees/1/',
+                              {'description': 'y'}, format='json').status_code,
+            404)
+        self.assertEqual(
+            self.client.delete(f'/api/jobs/{self.job.pk}/fees/1/').status_code,
+            404)
+
 
 class JobListQueryCountTest(TestCase):
     """GET /api/jobs/ should not fire N+1 queries for tasks."""
@@ -1000,8 +1037,10 @@ class JobDetailInvoiceFieldTest(TestCase):
         # Absolute pin: guard against flat per-request regressions that the
         # comparative assertion above cannot catch.  N=16 (was 15 before the
         # job-overview redesign's spend_breakdown refactor 2026-07-09):
-        # +1 for the `fees` prefetch query, +1 for EstimateClaimService.claimed_set_for_job
+        # +1 for EstimateClaimService.claimed_set_for_job
         # (one query per job-detail to build the estimate-claim set).
+        # (The `fees` prefetch briefly added +1 here — removed with the Fee
+        # read surface in the Fee-deletion phase, Task 5 2026-08-09.)
         # (`nav_targets` briefly added 3 more queries here — latest estimate / invoice /
         # PO for the job nav rail — but that field was retired 2026-07-08 once the rail
         # switched to job-scoped section routes, dropping the count back to 15.)
@@ -1017,7 +1056,7 @@ class JobDetailInvoiceFieldTest(TestCase):
         # If the jobs viewset gains new prefetches/annotations this number may need
         # updating — update it together with a comment explaining why the count changed.
         self.assertEqual(
-            count_one, 17,
-            f'Absolute query count for job-detail changed: expected 17, got {count_one}. '
+            count_one, 16,
+            f'Absolute query count for job-detail changed: expected 16, got {count_one}. '
             f'Update this pin if the viewset legitimately changed (add a comment explaining why).',
         )

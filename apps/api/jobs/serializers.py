@@ -1,6 +1,6 @@
 from rest_framework import serializers
-from apps.jobs.models import Job, Fee
-from apps.api.mixins import JobScopedCanManageMixin, InvoiceRefMixin
+from apps.jobs.models import Job
+from apps.api.mixins import JobScopedCanManageMixin
 
 
 class JobSummarySerializer(serializers.ModelSerializer):
@@ -21,40 +21,12 @@ class JobSearchSerializer(serializers.ModelSerializer):
                   'description', 'customer_po_number', 'contact_name']
 
 
-class FeeSerializer(InvoiceRefMixin, serializers.ModelSerializer):
-    """Read-only serializer for Fee atoms embedded in the job detail.
-
-    Exposes:
-      - ``invoice``: via InvoiceRefMixin — ``{'id', 'number'}`` or ``None``.
-      - ``claimed``: True iff a non-superseded Estimate on this job has an
-        EstimateLineItemSource pointing at this Fee.
-    """
-    invoice_source_type = 'fee'
-    invoice = serializers.SerializerMethodField()
-    claimed = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Fee
-        fields = [
-            'fee_id', 'task', 'description', 'quantity', 'unit_rate',
-            'accounting_category', 'sort_order',
-            'invoice', 'claimed',
-        ]
-        read_only_fields = fields
-
-    def get_claimed(self, obj):
-        """True iff a non-superseded estimate on this job has claimed this fee."""
-        claims = self.context.get('estimate_claims') or frozenset()
-        return ('fee', obj.pk) in claims
-
-
 class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     can_manage_job_path = 'self'
     contact_name = serializers.SerializerMethodField()
     project_manager_name = serializers.SerializerMethodField()
     tasks = serializers.SerializerMethodField()
     materials = serializers.SerializerMethodField()
-    fees = serializers.SerializerMethodField()
     latest_change_request = serializers.SerializerMethodField()
     has_estimates = serializers.SerializerMethodField()
     estimated_amount = serializers.SerializerMethodField()
@@ -71,7 +43,7 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'can_manage',
             'customer_po_number', 'description',
             'created_date', 'start_date', 'due_date', 'completed_date',
-            'tasks', 'materials', 'fees', 'latest_change_request',
+            'tasks', 'materials', 'latest_change_request',
             'has_estimates',
             'estimated_amount', 'spent_amount', 'invoiced_amount', 'profit_amount',
         ]
@@ -193,7 +165,7 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         return cache[obj.pk]
 
     def _atom_context(self, obj):
-        """Shared context dict injected into atom serializers (Task/Material/Fee)."""
+        """Shared context dict injected into atom serializers (Task/Material)."""
         return {
             **self.context,
             'invoice_claims': self._invoice_claims(obj),
@@ -215,9 +187,3 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         if not hasattr(obj, '_prefetched_objects_cache') or 'materials' not in obj._prefetched_objects_cache:
             materials = materials.order_by('pk')
         return MaterialSerializer(materials, many=True, context=self._atom_context(obj)).data
-
-    def get_fees(self, obj):
-        fees = obj.fees.all()
-        if not hasattr(obj, '_prefetched_objects_cache') or 'fees' not in obj._prefetched_objects_cache:
-            fees = fees.order_by('sort_order')
-        return FeeSerializer(fees, many=True, context=self._atom_context(obj)).data

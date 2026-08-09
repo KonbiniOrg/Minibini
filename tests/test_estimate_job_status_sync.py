@@ -30,8 +30,7 @@ class EstimateJobStatusSyncTest(TestCase):
             password='testpass123'
         )
 
-        # Accounting category for line items (Fee crystallization on accept
-        # requires the hand-line's accounting_category to be set).
+        # Accounting category for line items.
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
 
         # Create a test contact

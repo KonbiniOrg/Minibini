@@ -62,12 +62,10 @@ def derive_estimate_backing(line):
       'from_catalog' means "this line is a catalog descriptor" for the
       line's whole life, not "not yet crystallized". This is intentional,
       not a staleness bug.
-    - A hand line crystallized into a Fee source (Fee is transitional —
-      slated for removal in the Fee-deletion phase) falls through the
-      task-detection loop (Fee is neither Task nor Material) to
-      'planned_materials'. That is a known, temporary mislabel, confined
-      to accepted (read-only) estimates, where the draft-only wizard chip
-      surface never renders it anyway.
+    - A legacy hand line crystallized into a fee source (pre-Fee-removal
+      data) falls through the task-detection loop to 'planned_materials'.
+      That is a known mislabel, confined to accepted (read-only) estimates,
+      where the draft-only wizard chip surface never renders it anyway.
     """
     if line.adjustment_service_id is not None:
         return 'adjustment'
@@ -118,7 +116,7 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return instance.name
-        return instance.description  # Material / Fee
+        return instance.description  # Material
 
     def get_computed_amount(self, obj):
         instance = self._resolve_or_none(obj)
@@ -126,18 +124,15 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
             return None
         # Estimate line items project the ESTIMATE quote (est_qty), not actuals.
         # A Task bills actuals via compute_amount() — $0 until it's worked — so the
-        # estimate must use compute_estimate_amount() instead; Material / Fee have
-        # only compute_amount() (no est/actual split) and fall through.
+        # estimate must use compute_estimate_amount() instead; Material has
+        # only compute_amount() (no est/actual split) and falls through.
         amount_fn = getattr(instance, 'compute_estimate_amount', instance.compute_amount)
         return str(amount_fn().quantize(Decimal('0.01')))
 
-    # qty/units/rate mirror InvoiceWizardService._atom_detail's per-type
-    # branches (Task/Material/Fee) rather than EstimateWizardService's —
-    # the latter has no Fee case (Fees never appear in the estimate source
-    # pool) and would AttributeError on a crystallized Fee source. Values
-    # here are display-only, purely derived from the resolved instance, and
-    # feed a doc-surface's nested atom-row (never re-summed into the line's
-    # own total — that stays `computed_amount`/`backing_total`).
+    # qty/units/rate values here are display-only, purely derived from the
+    # resolved instance, and feed a doc-surface's nested atom-row (never
+    # re-summed into the line's own total — that stays
+    # `computed_amount`/`backing_total`).
     def get_qty(self, obj):
         instance = self._resolve_or_none(obj)
         if instance is None:
@@ -145,28 +140,24 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return str(instance.est_qty if instance.est_qty is not None else Decimal('0'))
-        return str(instance.quantity)  # Material / Fee
+        return str(instance.quantity)  # Material
 
     def get_units(self, obj):
         instance = self._resolve_or_none(obj)
         if instance is None:
             return None
-        from apps.jobs.models import Task, Fee
+        from apps.jobs.models import Task
         if isinstance(instance, Task):
             return instance.unit_label or 'none'
-        if isinstance(instance, Fee):
-            return 'none'
         return instance.units or 'none'  # Material
 
     def get_rate(self, obj):
         instance = self._resolve_or_none(obj)
         if instance is None:
             return None
-        from apps.jobs.models import Task, Fee
+        from apps.jobs.models import Task
         if isinstance(instance, Task):
             return str(instance.effective_rate())
-        if isinstance(instance, Fee):
-            return str(instance.unit_rate.quantize(Decimal('0.01')))
         return str(instance.sell_price)  # Material
 
 
