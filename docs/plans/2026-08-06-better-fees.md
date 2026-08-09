@@ -585,12 +585,44 @@ final verification, e2e for user-reachable flows in the same phase.
 
 ## 11. Open questions
 
+**CO-surface decisions (RM, 2026-08-09 session — settled for the CO
+amend-in-place phase):**
+
+1. **Backing inheritance moves at ACCEPTANCE, not authoring.** Drafts
+   stay side-effect-free; the draft view derives the inherited-backing
+   preview through `ChangeOrderLineItem.target_line_item` (which already
+   exists — nothing new to remember). Abandoning/rejecting a draft CO
+   therefore costs nothing. At acceptance the claims move to the
+   replacement line (revise_estimate move-the-source-rows pattern,
+   applied per line).
+2. **The amended-agreement view is composed SERVER-SIDE** (a
+   compose_agreement variant applying the draft CO), so interrupted work
+   isn't lost and the footer's revised total, seeding, and the view can
+   never disagree.
+3. **Descope provenance is STORED, not derived** — stamped at acceptance
+   (schema isn't stable anyway; stored is safer than deriving from
+   struck_atom_keys walks). Feeds the billing pool's "descoped by CO-N"
+   chip.
+4. **COs can change adjustment lines**: Remove-via-CO (discount
+   rescinded) and Replace (rush fee lowered — the Replace modal gets an
+   adjustment variant editing the percent, not qty/price). Adjustments
+   carry no claims, so no inheritance mechanics apply. "Add adjustment"
+   stays absent from COs.
+5. **Single CO per job for now.** Multi-CO chaining (parent/version)
+   stays in the model but the surface scopes to one CO; don't build the
+   chain view.
+6. **"→ Deliverable" button deferred to the cycle after the CO surface.**
+   Post-acceptance readability unchanged: the CO tab in the estimates
+   area is the record; the original estimate stays visible as-was with
+   the "amended" badge.
+
 - §7.1 implementation shape: nullable FK pair on `InvoiceLineItem` vs. a
   reference-row table — simpler now that references are whole-line; pick
   at implementation time.
 - CO replacing an agreement line referenced by a live invoice: blocked
   (§7.1, rendered per §9.3) — is "block" right, or should it force
-  removing it from the draft first? Decide when a real case appears.
+  removing it from the draft first? Ship the block; decide when a real
+  case appears.
 - Where the draft-invoice-as-charge-parking-lot flow (§5) needs UI help,
   if anywhere.
 - Whether progress billings need their own accounting category or share
