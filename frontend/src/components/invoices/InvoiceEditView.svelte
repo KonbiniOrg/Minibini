@@ -13,6 +13,7 @@
   import AdjustmentModal from '../AdjustmentModal.svelte';
   import LineItemModal from '../LineItemModal.svelte';
   import PriceListPicker from '../PriceListPicker.svelte';
+  import Modal from '../Modal.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
   import InvoiceAddLineForm from './InvoiceAddLineForm.svelte';
   import AgreementAdjustmentsPanel from './AgreementAdjustmentsPanel.svelte';
@@ -38,6 +39,51 @@
 
   const apiBase = $derived(`/api/invoices/${invoice.invoice_id}`);
 
+  // ── Add from agreement… — the restore picker (spec §7.2's "arriving
+  // referenced but unclaimed" fallback needs a way back onto the invoice
+  // beyond the session-only struck-row Restore below, which is lost on a
+  // mode flip or reload). Loaded once canEdit is known (only a financials
+  // manager may hit the endpoint) and refreshed after any gesture that adds
+  // or removes an agreement-line reference. ────────────────────────────────
+  let remainingLines = $state([]);
+  let agreementPickerOpen = $state(false);
+  let addingLineKey = $state(null);
+
+  async function loadRemaining() {
+    if (!canEdit) { remainingLines = []; return; }
+    try {
+      const resp = await api.get(`${apiBase}/remaining-agreement-lines/`);
+      remainingLines = resp.lines || [];
+    } catch (_) {
+      remainingLines = [];
+    }
+  }
+
+  $effect(() => {
+    if (invoice?.invoice_id && canEdit) loadRemaining();
+  });
+
+  function agreementLineKey(line) {
+    return line.estimate_line_id != null
+      ? `e:${line.estimate_line_id}` : `c:${line.co_line_id}`;
+  }
+
+  async function addFromAgreement(line) {
+    addingLineKey = agreementLineKey(line);
+    try {
+      const payload = line.estimate_line_id != null
+        ? { estimate_line_id: line.estimate_line_id }
+        : { co_line_id: line.co_line_id };
+      await api.post(`${apiBase}/restore-line/`, payload);
+      await loadRemaining();
+      onChanged();
+    } catch (e) {
+      await handleMutationError(e, 'Could not add this agreement line to the invoice.');
+    } finally {
+      addingLineKey = null;
+    }
+  }
+
   // ── Add line / Add adjustment (unchanged flows) ──────────────────────────
   let pickerOpen = $state(false);
   let addChoice = $state(null);
@@ -59,6 +105,10 @@
   async function applyEverything() {
     try {
       await api.post(`${apiBase}/apply-everything/`, {});
+      // Not awaited: the remaining-agreement-lines refresh is a local
+      // freshness nicety for the picker button, not something onChanged's
+      // caller (InvoicePanel's own refresh) should wait on.
+      loadRemaining();
       onChanged();
     } catch (e) {
       showError(errorMessage(e, 'Could not apply everything.'));
@@ -67,6 +117,7 @@
   async function copyFromEstimate() {
     try {
       await api.post(`${apiBase}/copy-from-estimate/`, {});
+      loadRemaining();
       onChanged();
     } catch (e) {
       showError(errorMessage(e, 'Could not copy from the estimate.'));
@@ -111,6 +162,7 @@
           amount: lineAmount(li),
         }];
       }
+      loadRemaining();
       onChanged();
     } catch (e) {
       showError(errorMessage(e, 'Could not remove this line from the invoice.'));
@@ -124,6 +176,7 @@
         : { co_line_id: entry.line_id };
       await api.post(`${apiBase}/restore-line/`, payload);
       removedRefs = removedRefs.filter((r) => r !== entry);
+      loadRemaining();
       onChanged();
     } catch (e) {
       showError(errorMessage(e, 'Could not restore this line.'));
@@ -135,7 +188,11 @@
     return li.agreement_ref != null && li.backing !== 'estimate';
   }
   function showUseActuals(li) {
-    return (li.backing === 'estimate' || li.backing === 'edited') && li.actuals_total != null;
+    // qty === 0 is excluded: useActuals() divides by qty to derive a
+    // per-unit price, so a zero-qty line has nothing to solve for and the
+    // button would silently no-op when clicked.
+    return (li.backing === 'estimate' || li.backing === 'edited')
+      && li.actuals_total != null && Number(li.qty) !== 0;
   }
   function isSynced(li) {
     return li.backing === 'actuals' && li.agreement_ref != null
@@ -399,6 +456,9 @@
   <p>
     <button type="button" onclick={() => { pickerOpen = true; }}>Add Line Item</button>
     <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
+    {#if remainingLines.length > 0}
+      <button type="button" onclick={() => { agreementPickerOpen = true; }}>Add from agreement&hellip;</button>
+    {/if}
   </p>
 {/if}
 
@@ -538,6 +598,41 @@
 
 <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />
 
+<Modal open={agreementPickerOpen} onCancel={() => { agreementPickerOpen = false; }} label="Add from agreement">
+  <div class="aap-header">
+    <strong>Add from agreement</strong>
+    <button type="button" onclick={() => { agreementPickerOpen = false; }}>Close</button>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Description</th>
+        <th class="text-right">Qty</th>
+        <th class="text-right">Price</th>
+        <th class="text-right">Amount</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {#each remainingLines as line (agreementLineKey(line))}
+        <tr>
+          <td>{line.description}</td>
+          <td class="text-right">{formatQtyUnits(line.qty, line.units)}</td>
+          <td class="text-right">{fmtMoney(line.price)}</td>
+          <td class="text-right">{fmtMoney(Number(line.qty) * Number(line.price))}</td>
+          <td>
+            <button
+              type="button"
+              onclick={() => addFromAgreement(line)}
+              disabled={addingLineKey === agreementLineKey(line)}
+            >{addingLineKey === agreementLineKey(line) ? 'Adding…' : 'Add to this invoice'}</button>
+          </td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+</Modal>
+
 <InvoiceAddLineForm
   open={addChoice != null}
   choice={addChoice}
@@ -573,4 +668,10 @@
      send-time error). */
   .needs-category { background-color: #fff8e1; color: #b45309; font-style: italic; }
   .deposit-credits-section { margin-top: 20px; }
+  /* Add-from-agreement picker modal header — same shell vocabulary as
+     PriceListPicker's .plp-header (bleed to the box edges, divider below). */
+  .aap-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 0 -16px; padding: 0 16px 10px; border-bottom: 1px solid #eee;
+  }
 </style>

@@ -403,4 +403,79 @@ describe('InvoiceEditView', () => {
     await findByText('Cut parts');
     expect(queryByText('Apply everything')).toBeNull();
   });
+
+  it('does not offer "Use actuals" when qty is 0 (the button would divide by zero and silently no-op)', async () => {
+    const line = seededLine({ backing: 'estimate', actuals_total: '51.10', qty: '0' });
+    const { findByText, queryByRole } = render(InvoiceEditView, { props: baseProps({ lineItems: [line] }) });
+    await findByText('Cut parts');
+    expect(queryByRole('button', { name: 'Use actuals' })).toBeNull();
+  });
+
+  describe('Add from agreement picker', () => {
+    const REMAINING_LINE = {
+      estimate_line_id: 77, co_line_id: null,
+      description: 'Misc hand line', qty: '1', units: 'ea', price: '25.00',
+    };
+
+    it('fetches the remaining list and hides the button when it is empty', async () => {
+      api.get.mockResolvedValue({ lines: [] });
+      const { findByText, queryByText } = render(InvoiceEditView, { props: baseProps() });
+      await findByText('Cut parts');
+      await vi.waitFor(() =>
+        expect(api.get).toHaveBeenCalledWith('/api/invoices/5/remaining-agreement-lines/'));
+      expect(queryByText(/Add from agreement/)).toBeNull();
+    });
+
+    it('does not fetch or render the button when canEdit is false', async () => {
+      api.get.mockResolvedValue({ lines: [REMAINING_LINE] });
+      const { findByText, queryByText } = render(InvoiceEditView, {
+        props: baseProps({ canEdit: false }),
+      });
+      await findByText('Cut parts');
+      expect(queryByText(/Add from agreement/)).toBeNull();
+      expect(api.get).not.toHaveBeenCalled();
+    });
+
+    it('renders remaining lines in the picker and adding one calls restore-line then refreshes', async () => {
+      api.get.mockResolvedValue({ lines: [REMAINING_LINE] });
+      api.post.mockResolvedValue({});
+      const onChanged = vi.fn();
+      const { findByRole, findByText } = render(InvoiceEditView, {
+        props: baseProps({ onChanged }),
+      });
+      await findByText('Cut parts');
+
+      const openBtn = await findByRole('button', { name: /add from agreement/i });
+      await fireEvent.click(openBtn);
+      await findByText('Misc hand line');
+
+      const addBtn = await findByRole('button', { name: /add to this invoice/i });
+      await fireEvent.click(addBtn);
+
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/invoices/5/restore-line/', { estimate_line_id: 77 });
+      await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
+      // Refreshed the remaining list too (second GET after the POST).
+      expect(api.get.mock.calls.filter(
+        (c) => c[0] === '/api/invoices/5/remaining-agreement-lines/').length,
+      ).toBeGreaterThanOrEqual(2);
+    });
+
+    it('routes a restore-line failure through handleMutationError (overlay, no crash)', async () => {
+      api.get.mockResolvedValue({ lines: [REMAINING_LINE] });
+      api.post.mockRejectedValueOnce(
+        Object.assign(new Error('nope'), { status: 400, data: { detail: 'nope' } }));
+      const { findByRole, findByText } = render(InvoiceEditView, { props: baseProps() });
+      await findByText('Cut parts');
+
+      const openBtn = await findByRole('button', { name: /add from agreement/i });
+      await fireEvent.click(openBtn);
+      await findByText('Misc hand line');
+
+      const addBtn = await findByRole('button', { name: /add to this invoice/i });
+      await fireEvent.click(addBtn);
+
+      await vi.waitFor(() => expect(get(overlayMessage)?.text).toMatch(/nope|could not add/i));
+    });
+  });
 });
