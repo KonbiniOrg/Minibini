@@ -498,6 +498,28 @@ class EstimateLineBackingAPITest(BaseTestCase):
         row = self._row(li)
         self.assertEqual(row['backing'], 'from_catalog')
 
+    def test_backing_stays_from_catalog_after_service_line_acceptance(self):
+        """Consequence (1) of the precedence order (see derive_estimate_backing's
+        docstring): a service-item line keeps 'from_catalog' even after
+        acceptance crystallizes it into a live Task source on that same line
+        — rule 2 (catalog ref) fires before the sources rules, for the
+        line's whole life, not just pre-crystallization."""
+        from apps.estimates.models import ServiceItem
+        from apps.estimates.services import EstimateService
+        from apps.estimates.acceptance import EstimateAcceptanceService
+
+        si = ServiceItem.objects.create(
+            template_name='Accept-Catalog Service', rate_scheme=self.scheme,
+        )
+        li = EstimateService.add_line_item_from_service(self.estimate.pk, si.pk, qty=2)
+
+        EstimateAcceptanceService.on_accept(self.estimate)
+        li.refresh_from_db()
+        self.assertTrue(li.sources.exists())  # now crystallized to a Task source
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'from_catalog')
+
     def test_backing_from_catalog_on_inventory_item_line(self):
         """A line pointing at a catalog InventoryItem -> 'from_catalog'."""
         from apps.inventory.models import InventoryItem

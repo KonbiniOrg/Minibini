@@ -24,6 +24,25 @@ def derive_estimate_backing(line):
        - in sync, any task among the sources -> 'planned_work'.
        - in sync, materials only -> 'planned_materials'.
     4. Otherwise (no adjustment, no catalog ref, no sources) -> 'hand'.
+
+    `backing` is designed for DRAFT authoring surfaces (the estimate
+    wizard's chip labels), not as a general-purpose lifecycle indicator.
+    Two consequences of rule 2 firing before rule 3 fall out of that scope
+    deliberately and are worth spelling out:
+
+    - Post-acceptance, a service-item or inventory-item line KEEPS
+      'from_catalog' even after `EstimateAcceptanceService.on_accept`
+      crystallizes it into a live Task/Material source on that same line
+      (see apps/estimates/acceptance.py) — rule 2 still fires first, so
+      'from_catalog' means "this line is a catalog descriptor" for the
+      line's whole life, not "not yet crystallized". This is intentional,
+      not a staleness bug.
+    - A hand line crystallized into a Fee source (Fee is transitional —
+      slated for removal in the Fee-deletion phase) falls through the
+      task-detection loop (Fee is neither Task nor Material) to
+      'planned_materials'. That is a known, temporary mislabel, confined
+      to accepted (read-only) estimates, where the draft-only wizard chip
+      surface never renders it anyway.
     """
     if line.adjustment_service_id is not None:
         return 'adjustment'
