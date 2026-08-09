@@ -275,3 +275,142 @@ class InvoiceSeedingTestCase(TestCase):
         # opposite of what a restore picker or seed_from_agreement needs.)
         self._seeded()  # a single draft now holds all three agreement lines
         self.assertEqual(InvoiceService.remaining_agreement_lines(self.job), [])
+
+    # ── arrive-on-actuals re-derivation (spec §7.3) ──────────────────────
+    # A seeded/restored backed line does not just mirror the agreement's
+    # estimate-time snapshot: once it has ≥1 claimed atom, its price is
+    # re-derived from those atoms' current actuals (the house in-sync rule,
+    # price = round(Σ compute_amount / qty, 2)) so the line arrives already
+    # on the actuals basis, not the (possibly stale) estimate basis.
+
+    def _make_drift_backed_line(self, line_number=4, category=None):
+        """A 4th agreement line whose complete task's actuals compute to
+        MORE than the estimate snapshot: est 2 hr @ $100 = $200.00,
+        actual 2.4 hr @ $100 = $240.00."""
+        drift_task = Task(
+            job=self.job, name='Drift', status=Task.STATUS_COMPLETE,
+            actual_qty=Decimal('2.4'),
+        )
+        drift_task.stamp_from_scheme(self.scheme)
+        drift_task.save()
+        drift_line = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=line_number, qty=Decimal('2'),
+            units='hour', description='Drift labor', price=Decimal('100.00'),
+            accounting_category=category or self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=drift_line,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=drift_task.pk,
+        )
+        return drift_line, drift_task
+
+    def test_seeded_backed_line_rederives_price_from_actuals_on_drift(self):
+        """A backed line whose complete task's actuals differ from the
+        estimate snapshot seeds priced from actuals ($240.00 amount,
+        $120.00/hr), not the stale estimate ($200.00 / $100.00/hr) — and
+        the API reports it as 'actuals' backing, not 'estimate'."""
+        from apps.api.invoicing.serializers import derive_backing
+
+        drift_line, _drift_task = self._make_drift_backed_line()
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceService.seed_from_agreement(inv)
+
+        li = inv.invoicelineitem_set.get(agreement_estimate_line=drift_line)
+        self.assertEqual(li.qty, Decimal('2'))  # qty stays from the agreement
+        self.assertEqual(li.price, Decimal('120.00'))
+        self.assertEqual(li.total_amount, Decimal('240.00'))
+        self.assertEqual(derive_backing(li), 'actuals')
+
+    def test_seeded_line_price_derives_only_from_billable_claimed_subset(self):
+        """Partial billability: an agreement line with two task atoms,
+        only one of them complete, seeds claiming (and pricing from) only
+        the billable one — the in-progress task is never mirrored and
+        never contributes to the re-derived price."""
+        billable_task = Task(
+            job=self.job, name='Billable', status=Task.STATUS_COMPLETE,
+            actual_qty=Decimal('1'),
+        )
+        billable_task.stamp_from_scheme(self.scheme)
+        billable_task.save()
+        pending_task = Task(
+            job=self.job, name='Pending', status=Task.STATUS_IN_PROGRESS,
+            actual_qty=Decimal('5'),
+        )
+        pending_task.stamp_from_scheme(self.scheme)
+        pending_task.save()
+
+        partial_line = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=4, qty=Decimal('1'),
+            units='hour', description='Partial labor', price=Decimal('150.00'),
+            accounting_category=self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=partial_line,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=billable_task.pk,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=partial_line,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=pending_task.pk,
+        )
+
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceService.seed_from_agreement(inv)
+
+        li = inv.invoicelineitem_set.get(agreement_estimate_line=partial_line)
+        self.assertEqual(li.sources.count(), 1)  # only the complete task claimed
+        # billable_task alone: 1 hr * $100/hr = $100.00 -> price = 100/1
+        self.assertEqual(li.price, Decimal('100.00'))
+
+    def test_hand_line_still_seeds_at_estimate_values(self):
+        """A hand line (no claimable atoms) acquires zero claims, so it
+        stays on the agreement's estimate values — there is no completed
+        work yet to price from — and the API reports 'estimate' backing."""
+        from apps.api.invoicing.serializers import derive_backing
+
+        inv = self._seeded()
+        li = inv.invoicelineitem_set.get(agreement_estimate_line=self.hand_line)
+        self.assertEqual(li.price, self.hand_line.price)
+        self.assertEqual(derive_backing(li), 'estimate')
+
+    def test_restored_backed_line_rederives_price_from_actuals_on_drift(self):
+        """restore_agreement_line applies the same re-derivation as
+        seed_from_agreement."""
+        from apps.api.invoicing.serializers import derive_backing
+
+        drift_line, _drift_task = self._make_drift_backed_line()
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceService.restore_agreement_line(
+            inv, estimate_line_id=drift_line.pk)
+
+        self.assertEqual(li.qty, Decimal('2'))
+        self.assertEqual(li.price, Decimal('120.00'))
+        self.assertEqual(li.total_amount, Decimal('240.00'))
+        self.assertEqual(derive_backing(li), 'actuals')
+
+    def test_adjustment_line_computes_against_rederived_actuals_not_estimate(self):
+        """A percentage-adjustment line targeting a drifted backed line's
+        category computes its percent off the RE-DERIVED (actuals)
+        amount, not the estimate snapshot -- proving the reprice step
+        runs BEFORE the deferred adjustment-recompute pass."""
+        drift_cat = AccountingCategory.objects.create(
+            code='DRIFT-SEED', name='Drift-Seed', taxable=False)
+        drift_line, _drift_task = self._make_drift_backed_line(
+            line_number=4, category=drift_cat)
+        drift_adj = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=5, qty=Decimal('1'),
+            units='%', description='Rush on drift 10%', price=Decimal('0.00'),
+            adjustment_service=self.rush_svc,
+            adjustment_percent=self.rush_svc.rate,
+        )
+        drift_adj.adjustment_target_categories.set([drift_cat])
+
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceService.seed_from_agreement(inv)
+
+        li = inv.invoicelineitem_set.get(agreement_estimate_line=drift_adj)
+        # Against the estimate snapshot this would be 200.00 * 10% = 20.00;
+        # against the re-derived actuals amount it is 240.00 * 10% = 24.00.
+        self.assertEqual(li.price, Decimal('24.00'))

@@ -493,6 +493,44 @@ class InvoiceService:
             )
 
     @staticmethod
+    def _rederive_price_from_actuals(li):
+        """After `_mirror_agreement_claims` has populated `li.sources`,
+        re-derive the line's price from those claimed atoms' actuals so a
+        seeded/restored backed line arrives already on the actuals basis
+        (spec §7.3: "seeded backed lines arrive already on the actuals
+        basis") rather than the (possibly stale) estimate snapshot
+        compose_agreement supplied.
+
+        Skips adjustment lines (their price comes from
+        recompute_adjustments, not source atoms) and lines that acquired
+        zero claims (hand lines, or every claimable atom failed the
+        billability gate) — those correctly stay on the agreement's
+        estimate values, since there's no completed work yet to price
+        from.
+
+        Reuses InvoiceWizardService._sum_sources /
+        BaseWizardService._expected_per_unit — the exact same
+        Σ-compute_amount / qty rounding the wizard's own in-sync rule
+        uses — rather than hand-rolling new rounding, so `derive_backing`
+        (apps/api/invoicing/serializers.py) reads the result as 'actuals'.
+
+        qty/units/description are left untouched (still the agreement's
+        3 ea / hand-typed description); only price moves.
+
+        Caller must plain-`.save()` `li` first (this does not itself
+        save) — mirrors the surrounding loop's "plain save, one deferred
+        recompute_adjustments pass at the end" pattern so this never
+        fires a premature per-line adjustment recompute.
+        """
+        if li.adjustment_service_id is not None:
+            return
+        if not li.sources.exists():
+            return
+        new_sum = InvoiceWizardService._sum_sources(li)
+        li.price = InvoiceWizardService._expected_per_unit(new_sum, li.qty)
+        li.save()
+
+    @staticmethod
     def _build_agreement_line_item(invoice, line, line_number):
         """Construct (unsaved) an InvoiceLineItem from one compose_agreement
         line dict — shared by seed_from_agreement and restore_agreement_line."""
@@ -517,10 +555,17 @@ class InvoiceService:
         """Create one InvoiceLineItem per *remaining* agreement line (see
         remaining_agreement_lines) on a draft invoice.
 
-        Values (description/qty/units/price/accounting category) come
-        straight from the compose_agreement dict. An estimate-origin or
-        CO-origin line's billable source atoms are mirrored onto the new
-        line (InvoiceLineItemSource) so the wizard pool shows them claimed.
+        Values (description/qty/units/price/accounting category) start
+        from the compose_agreement dict. An estimate-origin or CO-origin
+        line's billable source atoms are mirrored onto the new line
+        (InvoiceLineItemSource) so the wizard pool shows them claimed —
+        and once a (non-adjustment) line has ≥1 such claim, its price is
+        immediately re-derived from those atoms' actuals
+        (_rederive_price_from_actuals), so it arrives already on the
+        actuals basis (spec §7.3) rather than the estimate snapshot.
+        Hand lines and lines whose only claimable atoms fail the
+        billability gate acquire zero claims and stay on the agreement's
+        estimate values — there's no completed work yet to price from.
 
         Returns the number of lines created.
         """
@@ -556,10 +601,16 @@ class InvoiceService:
                     li.adjustment_target_categories.set(line['target_category_ids'])
 
                 InvoiceService._mirror_agreement_claims(li, line)
+                InvoiceService._rederive_price_from_actuals(li)
 
                 created += 1
 
             if created:
+                # Deferred until every line in the batch is priced (est OR
+                # re-derived actuals, per _rederive_price_from_actuals
+                # above) so a percentage adjustment computes against its
+                # siblings' FINAL amounts, not their stale estimate
+                # snapshots.
                 recompute_adjustments(
                     InvoiceLineItem.objects.filter(invoice=invoice))
 
@@ -569,7 +620,8 @@ class InvoiceService:
     def restore_agreement_line(invoice, *, estimate_line_id=None, co_line_id=None):
         """Re-add a single agreement line (previously removed from this
         draft, or never seeded) as a new line on `invoice`, mirroring claims
-        the same way seed_from_agreement does.
+        and re-deriving price from actuals the same way seed_from_agreement
+        does (see its docstring / spec §7.3).
 
         Exactly one of estimate_line_id / co_line_id must be given.
         """
@@ -620,7 +672,10 @@ class InvoiceService:
                 li.adjustment_target_categories.set(line['target_category_ids'])
 
             InvoiceService._mirror_agreement_claims(li, line)
+            InvoiceService._rederive_price_from_actuals(li)
 
+            # Deferred until li is priced (est OR re-derived actuals) —
+            # see the matching comment in seed_from_agreement.
             recompute_adjustments(InvoiceLineItem.objects.filter(invoice=invoice))
 
         return li

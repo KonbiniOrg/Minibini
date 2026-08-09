@@ -368,15 +368,33 @@ UI button that calls it a second way (the older "Apply everything" /
    belong to a `paid` invoice; Fee and Expense atoms have no gate and
    always pass. An atom that fails the gate is simply **skipped** (not
    fatal) — "referenced but unclaimed", claimable later once ready; the
-   uncovered-work pool still shows it. Returns the number of lines
-   created.
+   uncovered-work pool still shows it.
+5. **Actuals re-derivation** (`_rederive_price_from_actuals`): for a
+   non-adjustment line that just acquired ≥1 claim in step 4, price is
+   immediately recomputed from those claimed atoms — the same
+   `price = round(Σ compute_amount / qty, 2)` rule the wizard's own
+   in-sync check uses (`InvoiceWizardService._sum_sources` +
+   `BaseWizardService._expected_per_unit`) — and saved with another
+   plain `.save()`. Qty/units/description stay the agreement's values;
+   only price moves. A line with zero claims (a hand line, or every
+   claimable atom failed step 4's billability gate) is left on the
+   agreement's estimate values — there's no completed work yet to price
+   from. This step runs for every line in the batch **before** the
+   batch's single deferred `recompute_adjustments` pass (step 3's
+   "single pass after the whole batch"), so a percentage-adjustment line
+   targeting a re-derived sibling computes its percentage off the
+   sibling's actuals amount, not its stale estimate snapshot.
+
+Returns the number of lines created.
 
 A backed agreement line therefore arrives **already on `actuals`**
-(§"Backing model" below) whenever its work is ready — case 1 of the
-design doc's acceptance criteria ("the estimate went to plan") is
-genuinely boring: read and send. A plain agreement line arrives with no
-claims — reconciling it is the invoicer pulling the relevant atoms *in*,
-same "Add selected here" gesture as any uncovered-work row.
+(§"Backing model" below) whenever its work is ready, and priced from
+that work's actuals rather than the estimate snapshot if the two have
+drifted — case 1 of the design doc's acceptance criteria ("the estimate
+went to plan") is genuinely boring: read and send. A plain agreement
+line arrives with no claims, still on its estimate values — reconciling
+it is the invoicer pulling the relevant atoms *in*, same "Add selected
+here" gesture as any uncovered-work row.
 
 ### `restore_agreement_line(invoice, *, estimate_line_id=None, co_line_id=None)`
 
@@ -385,10 +403,11 @@ to a draft — exactly one of the two kwargs is required
 (`ValidationError` otherwise). Looks the line up in
 `compose_agreement(invoice.job)['lines']` (`ValidationError('Agreement
 line not found.')` if absent), re-checks the invariant, and builds/
-mirrors the line the same way `seed_from_agreement` does for one line.
-This is the **"add from agreement"** picker's backing call — it lists
-exactly the remaining lines not already on the draft (see the
-struck-row UI below).
+mirrors/re-derives the line the same way `seed_from_agreement` does for
+one line (steps 3-5 above, including the actuals re-derivation). This is
+the **"add from agreement"** picker's backing call — it lists exactly
+the remaining lines not already on the draft (see the struck-row UI
+below).
 
 ### `remove_line(invoice, line_item)`
 
