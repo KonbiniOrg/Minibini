@@ -559,6 +559,9 @@ Phased, each phase leaving main green:
    were settled with RM 2026-08-08; build to the artifact.
 4. **Deposit path** (§7.2/§7.4): the relabeled button, unseeded drafts,
    deposit-credit prominence. Small — the rail already exists.
+   *(LANDED 2026-08-09: live-invoice-keyed relabel + progress-billing line
+   description, and the all-deposit draft withholds uncovered work / Add
+   from agreement per RM's review note.)*
 5. **Crystallization narrowing + Fee deletion** (§4, §5): acceptance/CO
    discriminator change; delete Fee. Existing Fee rows: those claimed by a
    live estimate line become nothing (the line is already the record —

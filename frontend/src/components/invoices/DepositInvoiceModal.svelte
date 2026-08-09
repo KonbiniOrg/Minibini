@@ -26,7 +26,17 @@
     job,
     onCreated = () => {},
     onClose = () => {},
+    // 'deposit' | 'progress' — words only (spec §7.2 relabel): a progress
+    // billing IS a deposit taken mid-job, so both variants create the same
+    // unseeded draft + deposit-rail line; the title and the line's default
+    // description are what tell the customer the story.
+    variant = 'deposit',
   } = $props();
+
+  let title = $derived(variant === 'progress' ? 'Add Progress Invoice' : 'Add Deposit Invoice');
+  let lineDescription = $derived(variant === 'progress'
+    ? `Progress billing on ${job?.job_number}`
+    : `Deposit on ${job?.job_number}`);
 
   let amount = $state('');
   let busy = $state(false);
@@ -68,7 +78,7 @@
     try {
       await api.post(`/api/invoices/${invoiceId}/line-items/`, {
         deposit: true,
-        description: `Deposit on ${job.job_number}`,
+        description: lineDescription,
         qty: '1',
         units: 'none',
         price: amount,
@@ -96,9 +106,9 @@
   }
 </script>
 
-<Modal {open} onCancel={onClose} label="Add Deposit Invoice">
+<Modal {open} onCancel={onClose} label={title}>
 <form onsubmit={(e) => { e.preventDefault(); if (!busy) submit(); }}>
-  <h3>Add Deposit Invoice</h3>
+  <h3>{title}</h3>
   <p>
     <label>Amount<br>
       <!-- svelte-ignore a11y_autofocus -- intentional: sole input in a

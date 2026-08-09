@@ -411,6 +411,38 @@ describe('InvoiceEditView', () => {
     expect(queryByRole('button', { name: 'Use actuals' })).toBeNull();
   });
 
+  describe('deposit invoice — agreement machinery withheld (RM 2026-08-09)', () => {
+    // A deposit/progress invoice is derived from content, never stored
+    // (spec §7.4 no-invoice-mode): every line is a deposit line. Advance
+    // money bills against the job as a whole, so the agreement offerings
+    // (uncovered work, Add from agreement) must not appear on it.
+    const depositLine = (overrides = {}) => handLine({
+      line_item_id: 9, line_number: 1, description: 'Deposit on JOB-9',
+      is_deposit: true, backing: 'deposit', ...overrides,
+    });
+
+    it('withholds uncovered work and Add from agreement on an all-deposit draft', async () => {
+      api.get.mockResolvedValue({ lines: [{ estimate_line_id: 77, co_line_id: null, description: 'Chair', qty: '1', units: 'ea', price: '25.00' }] });
+      const { findByText, queryByText } = render(InvoiceEditView, {
+        props: baseProps({ lineItems: [depositLine()], sourcePool: poolWith([{ task_id: 7, name: 'Build', atoms: [AVAILABLE_ATOM] }]) }),
+      });
+      await findByText('Deposit on JOB-9');
+      expect(queryByText('Uncovered work')).toBeNull();
+      expect(queryByText(/Add from agreement/)).toBeNull();
+      expect(queryByText('Sand edges')).toBeNull();
+    });
+
+    it('still offers both on a mixed invoice (deposit line alongside a regular line)', async () => {
+      api.get.mockResolvedValue({ lines: [{ estimate_line_id: 77, co_line_id: null, description: 'Chair', qty: '1', units: 'ea', price: '25.00' }] });
+      const { findByText, queryByText } = render(InvoiceEditView, {
+        props: baseProps({ lineItems: [depositLine(), seededLine({ line_item_id: 10, line_number: 2 })], sourcePool: poolWith([{ task_id: 7, name: 'Build', atoms: [AVAILABLE_ATOM] }]) }),
+      });
+      await findByText('Deposit on JOB-9');
+      expect(queryByText('Uncovered work')).not.toBeNull();
+      expect(await findByText(/Add from agreement/)).toBeInTheDocument();
+    });
+  });
+
   describe('Add from agreement picker', () => {
     const REMAINING_LINE = {
       estimate_line_id: 77, co_line_id: null,

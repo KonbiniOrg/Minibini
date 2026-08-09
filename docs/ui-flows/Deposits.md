@@ -64,6 +64,17 @@ Both placements are gated the same way Start Invoice is (billable job status
 + `can_manage`), and — in states 1/2 — disabled with a "Set a deposit
 category in Settings first" hint when no active deposit category exists.
 
+- [ ] **Deposit→progress relabel.** Once the job carries a **live invoice**
+  (any status but cancelled; the empty draft being converted doesn't
+  count), states 1/2 read **"Add Progress Invoice"** / **"Make this a
+  progress invoice"** instead, the modal retitles to match, and the line
+  description defaults to **"Progress billing on {job_number}"**. Same
+  gesture and same deposit-rail line underneath — words only.
+- [ ] **No agreement offerings on a deposit invoice.** A draft whose lines
+  are all deposit lines shows **no "Uncovered work" pool and no "Add from
+  agreement…" button** — advance money bills against the job as a whole.
+  (A mixed draft keeps both.)
+
 - [ ] **Modal.** Clicking it opens a small "Add Deposit Invoice" modal with
   one **Amount** field (required, > 0) and Create/Cancel.
 - [ ] **Create** does the two-step create in one action: opens (or reuses)

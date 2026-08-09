@@ -963,6 +963,27 @@ as the single-invoice GET):
    as a *fresh* deposit-invoice starting point once the draft has any
    content.
 
+**Deposit→progress relabel (spec §7.2, landed 2026-08-09):** once the job
+carries a **live invoice** — any status but `cancelled`, mirroring the
+backend's `LIVE_INVOICE_STATUSES`; the zero-line draft the modal would
+convert doesn't count, since converting it is still the job's first
+advance — states 1 and 2 swap their wording to **"Add Progress Invoice"**
+/ **"Make this a progress invoice"**, and the modal retitles and prefills
+the line description **`"Progress billing on {job_number}"`** instead of
+`"Deposit on {job_number}"`. Words only: a progress billing *is* a
+deposit taken mid-job, so both variants run the identical two-step create
+below (unseeded draft + deposit-rail line) and no invoice type is stored
+(`InvoicePanel`'s `depositVariant`, passed to the modal as `variant`).
+
+**Agreement machinery withheld on a deposit invoice (RM 2026-08-09):** in
+`InvoiceEditView`, an invoice whose lines are **all deposit lines** (≥1;
+derived per render from the line serializer's `is_deposit` — content,
+never a stored type, per the no-invoice-mode principle) hides the
+**Uncovered work** pool and the **Add from agreement…** picker button —
+advance money bills against the job as a whole, never against atoms. A
+mixed invoice (deposit line alongside ordinary lines) keeps both
+offerings. The Deposit credits section is unaffected.
+
 All three states share Start Invoice's gates (`jobBillable`,
 `job.can_manage`) and, in states 1/2, are additionally disabled with a "Set
 a deposit category in Settings first" title when `hasDepositCategory` is

@@ -295,6 +295,15 @@
     return undefined;
   }
 
+  // A deposit/progress invoice — every line is a deposit line (and there is
+  // at least one). Derived from content, never stored (spec §7.4
+  // no-invoice-mode). Advance money bills against the job as a whole, so the
+  // agreement machinery (uncovered work, Add from agreement) is withheld on
+  // it — RM 2026-08-09. A mixed invoice keeps both offerings.
+  let isDepositInvoice = $derived(
+    lineItems.length > 0 && lineItems.every((li) => li.is_deposit)
+  );
+
   let uncoveredRows = $derived(
     (sourcePool?.tasks || [])
       .filter((t) => t.name !== 'Deposit credits')
@@ -456,7 +465,7 @@
   <p>
     <button type="button" onclick={() => { pickerOpen = true; }}>Add Line Item</button>
     <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
-    {#if remainingLines.length > 0}
+    {#if remainingLines.length > 0 && !isDepositInvoice}
       <button type="button" onclick={() => { agreementPickerOpen = true; }}>Add from agreement&hellip;</button>
     {/if}
   </p>
@@ -552,15 +561,17 @@
 </table>
 
 {#if canEdit}
-  <UncoveredWorkSection
-    title="Uncovered work"
-    subtitle="Tasks, materials, expenses, and fees from this job not yet on this invoice."
-    rows={uncoveredRows}
-    bind:selected
-    directLabel="Bill as its own line"
-    onDirect={billDirect}
-    emptyText="No uncovered billable items."
-  />
+  {#if !isDepositInvoice}
+    <UncoveredWorkSection
+      title="Uncovered work"
+      subtitle="Tasks, materials, expenses, and fees from this job not yet on this invoice."
+      rows={uncoveredRows}
+      bind:selected
+      directLabel="Bill as its own line"
+      onDirect={billDirect}
+      emptyText="No uncovered billable items."
+    />
+  {/if}
 
   {#if depositCreditAtoms.length > 0}
     <section class="deposit-credits-section">

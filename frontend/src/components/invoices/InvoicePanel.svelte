@@ -280,8 +280,20 @@
   let draftInvoice = $derived((invoices || []).find((i) => i.status === 'draft'));
   let draftHasLines = $derived((draftInvoice?.line_items?.length ?? 0) > 0);
   let showDepositButton = $derived(jobBillable && job?.can_manage && !draftHasLines);
+  // Spec §7.2 relabel: with no live invoice the advance is the job's deposit;
+  // once one exists ("live" = any status but cancelled, mirroring the
+  // backend's LIVE_INVOICE_STATUSES) the same gesture reads "progress". The
+  // zero-line draft the modal would convert doesn't count — converting it is
+  // still the job's first advance. Words only: both variants create the same
+  // unseeded draft + deposit-rail line, no invoice type is stored.
+  let hasLiveOtherInvoice = $derived((invoices || []).some(
+    (i) => i.status !== 'cancelled' && i.invoice_id !== draftInvoice?.invoice_id
+  ));
+  let depositVariant = $derived(hasLiveOtherInvoice ? 'progress' : 'deposit');
   let depositButtonLabel = $derived(
-    draftInvoice ? 'Make this a deposit invoice' : 'Add Deposit Invoice'
+    draftInvoice
+      ? `Make this a ${depositVariant} invoice`
+      : (depositVariant === 'progress' ? 'Add Progress Invoice' : 'Add Deposit Invoice')
   );
 
   let startingInvoice = $state(false);
@@ -490,6 +502,7 @@
 <DepositInvoiceModal
   open={depositModalOpen}
   {job}
+  variant={depositVariant}
   onCreated={handleDepositCreated}
   onClose={() => { depositModalOpen = false; }}
 />

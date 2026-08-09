@@ -350,15 +350,38 @@ describe('InvoicePanel Add Deposit Invoice — state 1 (no draft)', () => {
     expect(await findByRole('heading', { name: /add deposit invoice/i })).toBeInTheDocument();
   });
 
-  it('offers Add Deposit Invoice next to "+ New invoice" on the version bar (non-empty state, no draft)', async () => {
+  it('relabels to "Add Progress Invoice" next to "+ New invoice" once a live invoice exists (spec §7.2)', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     const sent = makeInvoice({ invoice_id: 5, invoice_number: 'INV-5', display_number: 'INV-5', status: 'sent' });
+    mockApi(sent, { invoices: [sent], categories: DEP_CAT });
+    const { findByRole, queryByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 5 },
+    });
+    expect(await findByRole('button', { name: /new invoice/i })).toBeInTheDocument();
+    expect(await findByRole('button', { name: /^add progress invoice$/i })).toBeInTheDocument();
+    expect(queryByRole('button', { name: /^add deposit invoice$/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps "Add Deposit Invoice" when the job\'s only other invoice is cancelled (not live)', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const cancelled = makeInvoice({ invoice_id: 5, status: 'cancelled' });
+    mockApi(cancelled, { invoices: [cancelled], categories: DEP_CAT });
+    const { findByRole, queryByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 5 },
+    });
+    expect(await findByRole('button', { name: /^add deposit invoice$/i })).toBeInTheDocument();
+    expect(queryByRole('button', { name: /^add progress invoice$/i })).not.toBeInTheDocument();
+  });
+
+  it('clicking Add Progress Invoice opens the modal with the progress heading', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const sent = makeInvoice({ invoice_id: 5, status: 'sent' });
     mockApi(sent, { invoices: [sent], categories: DEP_CAT });
     const { findByRole } = render(InvoicePanel, {
       props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 5 },
     });
-    expect(await findByRole('button', { name: /new invoice/i })).toBeInTheDocument();
-    expect(await findByRole('button', { name: /^add deposit invoice$/i })).toBeInTheDocument();
+    await fireEvent.click(await findByRole('button', { name: /^add progress invoice$/i }));
+    expect(await findByRole('heading', { name: /add progress invoice/i })).toBeInTheDocument();
   });
 
   it('Create posts, navigates to the newly created draft, and refreshes the invoices list', async () => {
@@ -442,7 +465,19 @@ describe('InvoicePanel Add Deposit Invoice — state 2 (draft, zero lines)', () 
     expect(window.location.hash).toBe('#/jobs/9/invoice/5');
   });
 
-  it('Create while viewing a DIFFERENT doc navigates to the draft (as before)', async () => {
+  it('relabels to "Make this a progress invoice" when a live invoice exists besides the empty draft', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const sent = makeInvoice({ invoice_id: 9001, invoice_number: 'INV-9001', display_number: 'INV-9001', status: 'sent' });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
+    mockApi(draft, { invoices: [sent, draft], categories: DEP_CAT });
+    const { findByRole, queryByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 5 },
+    });
+    expect(await findByRole('button', { name: /make this a progress invoice/i })).toBeInTheDocument();
+    expect(queryByRole('button', { name: /make this a deposit invoice/i })).not.toBeInTheDocument();
+  });
+
+  it('Create while viewing a DIFFERENT doc navigates to the draft (as before; progress variant here)', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     const sent = makeInvoice({ invoice_id: 9001, invoice_number: 'INV-9001', display_number: 'INV-9001', status: 'sent' });
     const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
@@ -456,13 +491,13 @@ describe('InvoicePanel Add Deposit Invoice — state 2 (draft, zero lines)', () 
       props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 9001 },
     });
 
-    await fireEvent.click(await findByRole('button', { name: /make this a deposit invoice/i }));
+    await fireEvent.click(await findByRole('button', { name: /make this a progress invoice/i }));
     await fireEvent.input(getByLabelText(/amount/i), { target: { value: '2500' } });
     await fireEvent.click(await findByRole('button', { name: /^create$/i }));
 
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith('/api/invoices/5/line-items/', {
-        deposit: true, description: 'Deposit on JOB-9', qty: '1', units: 'none', price: '2500',
+        deposit: true, description: 'Progress billing on JOB-9', qty: '1', units: 'none', price: '2500',
       });
     });
     await waitFor(() => expect(window.location.hash).toBe('#/jobs/9/invoice/5'));

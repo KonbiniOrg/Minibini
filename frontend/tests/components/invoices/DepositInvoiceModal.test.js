@@ -45,6 +45,27 @@ describe('DepositInvoiceModal', () => {
     });
   });
 
+  it('progress variant retitles the modal and posts a progress-billing line description (spec §7.2 relabel)', async () => {
+    api.post.mockImplementation((url) => {
+      if (url === '/api/invoices/') return Promise.resolve({ invoice_id: 42 });
+      return Promise.resolve({ line_item_id: 1 });
+    });
+    const onCreated = vi.fn();
+    const { getByLabelText, getByRole } = render(DepositInvoiceModal, {
+      props: { open: true, job: JOB, onCreated, variant: 'progress' },
+    });
+    expect(getByRole('heading', { name: /add progress invoice/i })).toBeInTheDocument();
+    await fireEvent.input(getByLabelText(/amount/i), { target: { value: '2500' } });
+    await fireEvent.click(getByRole('button', { name: /create/i }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(42));
+    // Still an unseeded draft with a deposit-rail line — only the words change.
+    expect(api.post).toHaveBeenNthCalledWith(1, '/api/invoices/', { job: 9, seed: false });
+    expect(api.post).toHaveBeenNthCalledWith(2, '/api/invoices/42/line-items/', {
+      deposit: true, description: 'Progress billing on JOB-9', qty: '1', units: 'none', price: '2500',
+    });
+  });
+
   it('Cancel posts nothing', async () => {
     const onClose = vi.fn();
     const { getByLabelText, getByRole } = render(DepositInvoiceModal, {
