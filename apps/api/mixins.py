@@ -287,6 +287,21 @@ class LineItemMixin:
             qs = qs.select_related('adjustment_service')
         if 'adjustment_target_categories' in field_names:
             qs = qs.prefetch_related('adjustment_target_categories')
+        # derive_backing / agreement_ref (invoice lines; the CO surface's
+        # equivalent fields reuse the same names) read the agreement
+        # reference and accounting_category per row — avoid the N+1.
+        related_field_names = (
+            'agreement_estimate_line', 'agreement_co_line',
+            'accounting_category',
+        )
+        select_related_fields = [
+            f for f in related_field_names if f in field_names
+        ]
+        if select_related_fields:
+            qs = qs.select_related(*select_related_fields)
+        # derive_backing / actuals_total iterate `sources` per row.
+        if 'sources' in field_names:
+            qs = qs.prefetch_related('sources')
         return qs
 
     def _get_line_item_or_404(self, parent, item_id):

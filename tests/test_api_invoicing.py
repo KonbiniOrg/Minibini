@@ -852,3 +852,210 @@ class InvoiceAutoSeedAPITest(BaseTestCase):
             for l in InvoiceService.remaining_agreement_lines(self.job)
         ]
         self.assertIn(estimate_line_id, remaining_ids)
+
+
+class InvoiceLineBackingAPITest(BaseTestCase):
+    """derive_backing / agreement_ref / actuals_total on
+    GET /api/invoices/{id}/line-items/ (InvoiceLineItemSerializer)."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+
+        from apps.contacts.models import Contact
+        from apps.core.models import AccountingCategory
+        from apps.estimates.models import Estimate, EstimateLineItem
+
+        self.contact = Contact.objects.create(
+            first_name='Backing', last_name='Test',
+            email='backing@test.com', mobile_number='555-0300',
+        )
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-BACK', name='Labor-Backing', taxable=False,
+        )
+        self.dep_cat = AccountingCategory.objects.create(
+            code='DEP-BACK', name='Deposits-Backing', taxable=False,
+            is_deposit=True,
+        )
+        self.job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_APPROVED,
+            job_number='JOB-BACK-0001',
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-BACK-1', version=1,
+            status=Estimate.STATUS_ACCEPTED,
+        )
+        self.est_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1,
+            qty=Decimal('2'), units='hour',
+            description='Labor', price=Decimal('50.00'),
+            accounting_category=self.cat,
+        )
+
+    def _row(self, invoice, line_item):
+        resp = self.client.get(f'/api/invoices/{invoice.pk}/line-items/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        return next(r for r in resp.data if r['line_item_id'] == line_item.pk)
+
+    def _completed_task(self, name, scheme, hours):
+        from datetime import timedelta
+        from django.utils import timezone
+        from apps.jobs.models import Task, Blep
+
+        task = Task(job=self.job, name=name)
+        task.stamp_from_scheme(scheme)
+        task.save()
+        now = timezone.now()
+        Blep.objects.create(
+            task=task, user=self.user,
+            start_time=now - timedelta(hours=hours), end_time=now,
+        )
+        task.status = Task.STATUS_COMPLETE
+        task.save()
+        return task
+
+    def test_backing_estimate_on_untouched_seeded_line(self):
+        """A seeded, untouched agreement-backed line: agreement_ref set, no
+        sources, qty/price match the referenced estimate line -> 'estimate'."""
+        from apps.invoicing.services import InvoiceService
+
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceService.seed_from_agreement(invoice)
+        li = invoice.invoicelineitem_set.get()
+
+        row = self._row(invoice, li)
+        self.assertEqual(row['backing'], 'estimate')
+        self.assertIsNotNone(row['agreement_ref'])
+        self.assertEqual(row['agreement_ref']['kind'], 'estimate')
+        self.assertEqual(row['agreement_ref']['line_id'], self.est_line.pk)
+        self.assertEqual(Decimal(row['agreement_ref']['est_qty']), Decimal('2.00'))
+        self.assertEqual(Decimal(row['agreement_ref']['est_price']), Decimal('50.00'))
+        self.assertEqual(Decimal(row['agreement_ref']['est_amount']), Decimal('100.00'))
+        self.assertIsNone(row['actuals_total'])
+
+    def test_backing_actuals_on_in_sync_claimed_line(self):
+        """A plain (non-agreement) wizard line whose price is still in sync
+        with its claimed atoms -> 'actuals'."""
+        from apps.jobs.models import RateScheme
+        from apps.invoicing.services import InvoiceWizardService
+
+        scheme = RateScheme.objects.create(
+            name='Hourly-Back', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('60.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        task = self._completed_task('Build-Back', scheme, hours=0.5)
+
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceWizardService.add_atoms_to_new_line_item(
+            invoice, [{'type': 'task', 'id': task.pk}])
+
+        row = self._row(invoice, li)
+        self.assertEqual(row['backing'], 'actuals')
+        self.assertIsNone(row['agreement_ref'])
+        self.assertEqual(Decimal(row['actuals_total']), Decimal('30.00'))
+
+    def test_backing_edited_after_price_override(self):
+        """A seeded agreement line whose price was hand-overridden no longer
+        matches its agreement_ref -> 'edited'."""
+        from apps.invoicing.services import InvoiceService
+
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceService.seed_from_agreement(invoice)
+        li = invoice.invoicelineitem_set.get()
+        li.price = Decimal('75.00')
+        li.save()
+
+        row = self._row(invoice, li)
+        self.assertEqual(row['backing'], 'edited')
+        self.assertIsNotNone(row['agreement_ref'])
+
+    def test_backing_deposit_and_credit(self):
+        """A deposit charge line -> 'deposit'; the deduction claiming it on
+        another job's invoice -> 'deposit_credit' (takes precedence over the
+        other rules even though it has a claimed source)."""
+        from apps.invoicing.models import InvoiceLineItemSource
+
+        dep_invoice = Invoice.objects.create(
+            job=self.job, status=Invoice.STATUS_DRAFT)
+        dep_line = InvoiceLineItem.objects.create(
+            invoice=dep_invoice, line_number=1, description='Deposit',
+            qty=Decimal('1'), price=Decimal('500.00'),
+            accounting_category=self.dep_cat,
+        )
+
+        other_job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_APPROVED,
+            job_number='JOB-BACK-0002',
+        )
+        credit_invoice = Invoice.objects.create(
+            job=other_job, status=Invoice.STATUS_DRAFT)
+        credit_line = InvoiceLineItem.objects.create(
+            invoice=credit_invoice, line_number=1, description='Less deposit',
+            qty=Decimal('1'), price=Decimal('-500.00'),
+            accounting_category=self.dep_cat,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=credit_line,
+            source_type=InvoiceLineItemSource.SOURCE_DEPOSIT,
+            source_pk=dep_line.pk,
+        )
+
+        dep_row = self._row(dep_invoice, dep_line)
+        self.assertEqual(dep_row['backing'], 'deposit')
+
+        credit_row = self._row(credit_invoice, credit_line)
+        self.assertEqual(credit_row['backing'], 'deposit_credit')
+
+    def test_backing_null_on_plain_hand_line(self):
+        """A bare hand line — no agreement_ref, no sources -> null."""
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceLineItem.objects.create(
+            invoice=invoice, line_number=1, description='Misc',
+            qty=Decimal('1'), price=Decimal('20.00'),
+            accounting_category=self.cat,
+        )
+
+        row = self._row(invoice, li)
+        self.assertIsNone(row['backing'])
+        self.assertIsNone(row['agreement_ref'])
+        self.assertIsNone(row['actuals_total'])
+
+    def test_actuals_total_sums_claimed_atoms_only(self):
+        """actuals_total sums compute_amount() over claimed atoms regardless
+        of whether the line is still in sync; null when a line has no
+        sources at all."""
+        from apps.jobs.models import RateScheme
+        from apps.invoicing.services import InvoiceWizardService
+
+        scheme = RateScheme.objects.create(
+            name='Hourly-Sum', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('40.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        task1 = self._completed_task('T1-Back', scheme, hours=1)
+        task2 = self._completed_task('T2-Back', scheme, hours=0.5)
+
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceWizardService.add_atoms_to_new_line_item(
+            invoice, [{'type': 'task', 'id': task1.pk},
+                      {'type': 'task', 'id': task2.pk}])
+        # Override the price so the line is no longer in sync — proves
+        # actuals_total is independent of the backing derivation.
+        li.price = Decimal('999.00')
+        li.save()
+
+        plain_li = InvoiceLineItem.objects.create(
+            invoice=invoice, line_number=99, description='Plain',
+            qty=Decimal('1'), price=Decimal('5.00'),
+            accounting_category=self.cat,
+        )
+
+        row = self._row(invoice, li)
+        self.assertEqual(row['backing'], 'edited')
+        self.assertEqual(Decimal(row['actuals_total']), Decimal('60.00'))
+
+        plain_row = self._row(invoice, plain_li)
+        self.assertIsNone(plain_row['actuals_total'])

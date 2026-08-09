@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.core.units import UnitsField
+from apps.core.wizard import BaseWizardService
 
 
 # Net days for invoice due-date calculation. Hardcoded for now; revisit when
@@ -16,6 +17,64 @@ UNPAID_STATUSES = {
     Invoice.STATUS_PARTLY_PAID,
     Invoice.STATUS_DEFAULTED,
 }
+
+
+def _agreement_ref_payload(line):
+    """The `agreement_ref` field: null, or {kind, line_id, est_qty,
+    est_price, est_amount} sourced from the referenced agreement line's own
+    stored qty/price — never from the invoice line's current values."""
+    ref = getattr(line, 'agreement_estimate_line', None)
+    kind = 'estimate'
+    if ref is None:
+        ref = getattr(line, 'agreement_co_line', None)
+        kind = 'change_order'
+    if ref is None:
+        return None
+    return {
+        'kind': kind,
+        'line_id': ref.pk,
+        'est_qty': ref.qty,
+        'est_price': ref.price,
+        'est_amount': (ref.qty * ref.price).quantize(Decimal('0.01')),
+    }
+
+
+def derive_backing(line):
+    """Classify how a line's price is currently backed. Never stored —
+    recomputed on every read from the line's own state (the CO surface
+    reuses this for ChangeOrderLineItem/EstimateLineItem, so it is written
+    duck-typed rather than importing InvoiceLineItem specifics):
+
+    1. `is_deposit_line` -> 'deposit'; `is_deposit_deduction` -> 'deposit_credit'
+       (invoice-only properties; default False when the line type lacks them).
+    2. Has claimed source rows AND is in sync with them (the wizard's own
+       `price == round(sum(sources) / qty, 2)` rule) -> 'actuals'.
+    3. Has an agreement_ref AND qty/price still equal the ref's stored
+       qty/price -> 'estimate'.
+    4. Has an agreement_ref or sources, but matched neither rule above
+       (hand-edited since seeding, or a claimed-but-out-of-sync line) ->
+       'edited'.
+    5. Otherwise (a plain hand line) -> None.
+    """
+    if getattr(line, 'is_deposit_line', False):
+        return 'deposit'
+    if getattr(line, 'is_deposit_deduction', False):
+        return 'deposit_credit'
+
+    sources = list(line.sources.all())
+    if sources:
+        sum_value = BaseWizardService._sum_sources(line)
+        if BaseWizardService._is_in_sync(line, sum_value):
+            return 'actuals'
+
+    ref = getattr(line, 'agreement_line', None)
+    if ref is not None and line.qty == ref.qty and line.price == ref.price:
+        return 'estimate'
+
+    if ref is not None or sources:
+        return 'edited'
+
+    return None
 
 
 class InvoiceLineItemSourceSerializer(serializers.Serializer):
@@ -56,6 +115,9 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
     sources = InvoiceLineItemSourceSerializer(many=True, read_only=True)
     adjustment_service_detail = serializers.SerializerMethodField()
     is_deposit = serializers.SerializerMethodField()
+    agreement_ref = serializers.SerializerMethodField()
+    backing = serializers.SerializerMethodField()
+    actuals_total = serializers.SerializerMethodField()
 
     class Meta:
         model = InvoiceLineItem
@@ -66,6 +128,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
                         'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail',
             'sources', 'is_deposit',
+            'agreement_ref', 'backing', 'actuals_total',
         ]
         read_only_fields = ['line_item_id']
 
@@ -76,6 +139,36 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
 
     def get_is_deposit(self, obj):
         return obj.is_deposit_line
+
+    def get_agreement_ref(self, obj):
+        return _agreement_ref_payload(obj)
+
+    def get_backing(self, obj):
+        return derive_backing(obj)
+
+    def get_actuals_total(self, obj):
+        """Sum of compute_amount() over claimed work atoms — null when the
+        line has no such sources. Independent of `backing`: an out-of-sync
+        ('edited') claimed line still reports its actuals total as the
+        est-vs-actual reference figure. A SOURCE_DEPOSIT claim resolves to
+        another InvoiceLineItem (no compute_amount — it isn't a work atom,
+        just a credit against a deposit charge) and is skipped, same as a
+        dangling/unresolvable source."""
+        total = Decimal('0.00')
+        found = False
+        for src in obj.sources.all():
+            from django.core.exceptions import ObjectDoesNotExist
+            try:
+                instance = src.resolve()
+            except ObjectDoesNotExist:
+                instance = None
+            if instance is None or not hasattr(instance, 'compute_amount'):
+                continue
+            found = True
+            total += BaseWizardService._atom_computed_amount(instance)
+        if not found:
+            return None
+        return str(total.quantize(Decimal('0.01')))
 
     def get_adjustment_service_detail(self, obj):
         if obj.adjustment_service_id is None:
