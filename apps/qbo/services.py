@@ -382,7 +382,7 @@ class QBOInvoiceSyncService:
                 if not material.inventory_item_id:
                     return None
                 entities.add(('inventory', material.inventory_item_id))
-            else:  # expense / fee — no catalog identity
+            else:  # expense — no catalog identity
                 return None
         if len(entities) != 1:
             return None

@@ -126,8 +126,8 @@ class InvoiceLineItemSourceSerializer(serializers.Serializer):
     rate = serializers.SerializerMethodField()
 
     def _resolve_or_none(self, obj):
-        # A dangling row (atom deleted out from under the claim — pre-purge
-        # data, or a race) must render as null, never 500 the list endpoint.
+        # A dangling row (atom deleted out from under the claim — a race)
+        # must render as null, never 500 the list endpoint.
         from django.core.exceptions import ObjectDoesNotExist
         try:
             return obj.resolve()
@@ -152,11 +152,11 @@ class InvoiceLineItemSourceSerializer(serializers.Serializer):
         """The {qty, rate, units, amount} breakdown for the nested atom row
         — the same helper the source pool itself uses
         (InvoiceWizardService._atom_detail: real task actual-qty ×
-        effective_rate, material quantity × sell_price, fee quantity ×
-        unit_rate). None for a dangling source AND for a deposit-credit
-        claim — that resolves to another InvoiceLineItem, not a real work
-        atom (get_actuals_total skips it the same way), so a fabricated
-        qty/rate would be misleading rather than informative."""
+        effective_rate, material quantity × sell_price). None for a
+        dangling source AND for a deposit-credit claim — that resolves to
+        another InvoiceLineItem, not a real work atom (get_actuals_total
+        skips it the same way), so a fabricated qty/rate would be
+        misleading rather than informative."""
         from apps.invoicing.models import InvoiceLineItem
         from apps.invoicing.services import InvoiceWizardService
         instance = self._resolve_or_none(obj)
@@ -173,9 +173,9 @@ class InvoiceLineItemSourceSerializer(serializers.Serializer):
         return detail['units'] if detail else None
 
     def get_rate(self, obj):
-        # detail['rate'] is None for a LEGACY resolved fee source (no
-        # sell_price — see BaseWizardService._atom_detail): render null,
-        # never the string 'None'.
+        # BaseWizardService._atom_detail reads rate defensively (getattr on
+        # sell_price) and can yield None: render null, never the string
+        # 'None'.
         detail = self._atom_detail_or_none(obj)
         if detail is None or detail['rate'] is None:
             return None

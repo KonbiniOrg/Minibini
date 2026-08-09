@@ -155,8 +155,8 @@ class EstimateService:
         `default_material_accounting_category` Configuration value (a string
         AccountingCategory pk). An explicitly-supplied AC is respected. Raises
         if the marker is set, no AC was supplied, and no default is configured.
-        Fees (is_material=False) are untouched — they still hit the hand-line
-        AC-required rule downstream."""
+        Plain hand-lines (is_material=False) are untouched — they still hit
+        the hand-line AC-required rule downstream."""
         if not li.is_material or li.accounting_category_id is not None:
             return
         from apps.core.models import AccountingCategory, Configuration

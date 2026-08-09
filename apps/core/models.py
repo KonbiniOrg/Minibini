@@ -320,7 +320,7 @@ class AccountingCategory(models.Model):
 
     def is_referenced(self):
         """True if any row (line items, expenses, inventory, materials,
-        rate schemes, fees) points at this category."""
+        rate schemes) points at this category."""
         for rel in self._meta.related_objects:
             if rel.hidden:
                 # related_name='+' relations have no usable reverse accessor;
