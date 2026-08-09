@@ -405,7 +405,16 @@ class InvoiceService:
         pk) that no live invoice already references this agreement line —
         closes the race between reading remaining_agreement_lines and
         writing the new reference. Raises ValidationError naming the
-        invoice that already holds it."""
+        invoice that already holds it.
+
+        exclude_invoice=None means "the current draft's own existing
+        reference also counts" — restore_agreement_line's call, since it
+        reads the raw compose_agreement line rather than
+        remaining_agreement_lines and so has no earlier filter that already
+        dropped lines the current draft holds. seed_from_agreement passes
+        its own invoice here instead: remaining_agreement_lines has already
+        excluded anything the current draft holds, so this call is purely
+        the race check against *other* invoices."""
         from apps.estimates.models import EstimateLineItem, ChangeOrderLineItem
 
         if line['estimate_line_id'] is not None:
@@ -435,11 +444,27 @@ class InvoiceService:
         claims) onto the new invoice line — skipping atoms that fail the
         billability gate (task not complete, material not consumed). An
         unbillable atom is simply not claimed yet; the source pool still
-        offers it. Fee atoms have no completion gate and always pass."""
+        offers it. Fee atoms have no completion gate and always pass.
+
+        Also skips (rather than erroring) two edge cases that would
+        otherwise abort the whole seed:
+        - an atom already claimed by a live invoice (InvoiceClaimService)
+          — e.g. a deferred line's atom was billed directly on an earlier
+          invoice. The atom-level unique constraint on InvoiceLineItemSource
+          would raise IntegrityError if we tried to claim it again; instead
+          the new line simply arrives referenced but unclaimed for that
+          atom, matching the designed fallback (spec §7.2).
+        - a dangling EstimateLineItemSource/ChangeOrderLineItemSource whose
+          atom was deleted before its source row was purged — src.resolve()
+          raises ObjectDoesNotExist, same tolerance the estimate/CO source
+          serializers already apply to this pre-existing data shape.
+        """
+        from django.core.exceptions import ObjectDoesNotExist
         from apps.estimates.models import (
             EstimateLineItemSource, ChangeOrderLineItemSource,
         )
         from apps.invoicing.models import InvoiceLineItemSource
+        from apps.invoicing.claims import InvoiceClaimService
 
         if line['estimate_line_id'] is not None:
             sources = EstimateLineItemSource.objects.filter(
@@ -451,7 +476,12 @@ class InvoiceService:
             return
 
         for src in sources:
-            instance = src.resolve()
+            if InvoiceClaimService.is_invoiced(src.source_type, src.source_pk):
+                continue
+            try:
+                instance = src.resolve()
+            except ObjectDoesNotExist:
+                continue
             try:
                 InvoiceWizardService._assert_atom_billable(instance)
             except ValidationError:
@@ -564,8 +594,15 @@ class InvoiceService:
             if line is None:
                 raise ValidationError('Agreement line not found.')
 
+            # exclude_invoice=None (not `invoice`): unlike seed_from_agreement,
+            # this line came straight from compose_agreement rather than
+            # remaining_agreement_lines, so it has NOT already been checked
+            # against the current draft's own held references. Excluding the
+            # current invoice here would let a line already on this draft be
+            # restored a second time (double-click Restore -> duplicate
+            # reference) — see test_invoice_seeding.py.
             InvoiceService._assert_agreement_line_unclaimed(
-                line, exclude_invoice=invoice)
+                line, exclude_invoice=None)
 
             max_ln = (InvoiceLineItem.objects.filter(invoice=invoice)
                       .aggregate(Max('line_number'))['line_number__max'] or 0)

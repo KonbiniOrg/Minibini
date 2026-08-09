@@ -175,6 +175,65 @@ class InvoiceSeedingTestCase(TestCase):
         li = inv.invoicelineitem_set.get(agreement_estimate_line=self.adj_line)
         self.assertEqual(li.price, Decimal('20.00'))
 
+    def test_seed_skips_atom_already_claimed_by_another_live_invoice(self):
+        # A backed line's task atom was billed directly on an earlier
+        # invoice (e.g. the defer -> bill-the-atom-directly -> next-invoice
+        # path). Seeding a later draft from the agreement must not try to
+        # re-claim it: InvoiceLineItemSource is globally unique on
+        # (source_type, source_pk), so a naive re-claim would IntegrityError
+        # and abort the whole seed. The line still arrives (referenced) but
+        # unclaimed for that atom — the designed fallback.
+        other_inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_OPEN)
+        other_li = InvoiceLineItem.objects.create(
+            invoice=other_inv, line_number=1, qty=Decimal('2'), units='hour',
+            description='Billed directly', price=Decimal('100.00'),
+            accounting_category=self.cat,
+        )
+        from apps.invoicing.models import InvoiceLineItemSource
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=other_li,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk,
+        )
+
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        n = InvoiceService.seed_from_agreement(inv)
+        self.assertEqual(n, 3)
+        li = inv.invoicelineitem_set.get(agreement_estimate_line=self.backed_line)
+        self.assertFalse(li.sources.filter(source_type='task').exists())
+
+    def test_seed_skips_dangling_source_row(self):
+        # An EstimateLineItemSource whose atom was deleted before its row
+        # was purged (bad pre-existing data, same shape covered by
+        # tests.test_source_row_purge_on_atom_delete's serializer tests)
+        # must not 500 the seed — src.resolve() raises ObjectDoesNotExist
+        # and that source is simply skipped.
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=self.backed_line,
+            source_type=EstimateLineItemSource.SOURCE_MATERIAL,
+            source_pk=999999,
+        )
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        n = InvoiceService.seed_from_agreement(inv)
+        self.assertEqual(n, 3)
+        li = inv.invoicelineitem_set.get(agreement_estimate_line=self.backed_line)
+        self.assertFalse(li.sources.filter(source_pk=999999).exists())
+
+    # ── restore_agreement_line double-click guard ───────────────────────
+
+    def test_restoring_the_same_line_twice_raises_without_duplicating(self):
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceService.restore_agreement_line(
+            inv, estimate_line_id=self.hand_line.pk)
+        with self.assertRaises(ValidationError):
+            InvoiceService.restore_agreement_line(
+                inv, estimate_line_id=self.hand_line.pk)
+        self.assertEqual(
+            inv.invoicelineitem_set.filter(
+                agreement_estimate_line=self.hand_line).count(),
+            1,
+        )
+
     # ── remove_line ──────────────────────────────────────────────────────
 
     def test_remove_line_releases_reference_and_claims(self):
