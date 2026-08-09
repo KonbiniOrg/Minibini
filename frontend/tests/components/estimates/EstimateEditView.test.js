@@ -6,7 +6,9 @@ vi.mock('@/lib/api.js', () => ({
   errorMessage: (e, fallback) => e?.data?.detail || e?.message || fallback || 'Something went wrong.',
 }));
 
+import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
+import { overlayMessage, clearMessage } from '@/stores/messages.js';
 import EstimateEditView from '@/components/estimates/EstimateEditView.svelte';
 
 const ESTIMATE = { estimate_id: 7, estimate_number: 'EST-7', version: 1, status: 'draft' };
@@ -30,7 +32,8 @@ function backedLine(overrides = {}) {
     backing: 'planned_work',
     backing_total: '50.00',
     sources: [
-      { source_id: 55, source_type: 'task', source_pk: 9, description: 'Cutting task', computed_amount: '50.00' },
+      { source_id: 55, source_type: 'task', source_pk: 9, description: 'Cutting task',
+        computed_amount: '50.00', qty: '2', units: 'hour', rate: '25.00' },
     ],
     ...overrides,
   };
@@ -82,19 +85,33 @@ function baseProps(overrides = {}) {
   };
 }
 
+function conflictError() {
+  return Object.assign(new Error('Some atoms were claimed by another estimate.'), {
+    status: 409,
+    data: { detail: 'Some atoms were claimed by another estimate.', code: 'atoms_already_claimed', atom_ids: [41] },
+  });
+}
+
 beforeEach(() => {
   api.get.mockReset();
   api.post.mockReset();
   api.patch.mockReset();
   api.delete.mockReset();
+  clearMessage();
 });
 
 describe('EstimateEditView', () => {
-  it('renders a backed line with its atom nest and chip', async () => {
-    const { findByText } = render(EstimateEditView, { props: baseProps() });
+  it('renders a backed line with its atom nest and chip, including the atom\'s real qty/rate', async () => {
+    const { findByText, container } = render(EstimateEditView, { props: baseProps() });
     await findByText('Cut parts');
     expect(await findByText('Cutting task')).toBeInTheDocument();
     expect(await findByText('planned work')).toBeInTheDocument();
+    // The nested atom row's qty/rate come from the source's own fields now
+    // (not blanked to '-') — Task 6's serializer addition. Scoped to the
+    // row itself since "$25.00"/"$50.00" also appear on the parent line.
+    const atomRow = container.querySelector('tr.doc-atom-row');
+    expect(atomRow.textContent).toContain('2 hour');
+    expect(atomRow.textContent).toContain('$25.00');
   });
 
   it('ticking a pool row makes every line grow "Add selected here" and the placeholder row appears', async () => {
@@ -217,5 +234,95 @@ describe('EstimateEditView', () => {
     const btn = await findByText(/Deliverable/);
     await fireEvent.click(btn);
     expect(onMakeDeliverable).toHaveBeenCalled();
+  });
+
+  it('shows a "needs category" marker on an editable line with no accounting_category', async () => {
+    const { findByText } = render(EstimateEditView, {
+      props: baseProps({ lineItems: [handLine({ accounting_category: null })] }),
+    });
+    expect(await findByText('needs category')).toBeInTheDocument();
+  });
+
+  it('does not show "needs category" once the line has an accounting_category', async () => {
+    const { findByText, queryByText } = render(EstimateEditView, {
+      props: baseProps({ lineItems: [handLine({ accounting_category: 3 })] }),
+    });
+    await findByText('Hand entry');
+    expect(queryByText('needs category')).toBeNull();
+  });
+
+  it('does not show "needs category" when canEdit is false', async () => {
+    const { findByText, queryByText } = render(EstimateEditView, {
+      props: baseProps({ canEdit: false, lineItems: [handLine({ accounting_category: null })] }),
+    });
+    await findByText('Hand entry');
+    expect(queryByText('needs category')).toBeNull();
+  });
+
+  it('labels the direct-bill action with estimate vocabulary, not the invoice kit default', async () => {
+    const { findByText, queryByText } = render(EstimateEditView, {
+      props: baseProps({ sourcePool: poolWith([AVAILABLE_ATOM]) }),
+    });
+    expect(await findByText('Add as its own line')).toBeInTheDocument();
+    expect(queryByText('Bill as its own line')).toBeNull();
+  });
+
+  it('offers the next line number as max(line_number)+1, not the line count', async () => {
+    const { findByText, container } = render(EstimateEditView, {
+      props: baseProps({
+        sourcePool: poolWith([AVAILABLE_ATOM]),
+        // Two lines, but the higher line_number is 5 (a gap) — length+1
+        // would wrongly say "line 3".
+        lineItems: [backedLine({ line_number: 1 }), handLine({ line_number: 5 })],
+      }),
+    });
+    await findByText('Sand edges');
+    const checkbox = container.querySelector('input[type="checkbox"]');
+    await fireEvent.click(checkbox);
+    expect(container.textContent).toContain('line 6');
+    expect(container.textContent).not.toContain('line 3');
+  });
+
+  it('a 409 on "Add selected here" clears selection, refreshes via onChanged, and shows a clear conflict message', async () => {
+    api.post.mockRejectedValueOnce(conflictError());
+    const onChanged = vi.fn();
+    const { findByText, findAllByText, container } = render(EstimateEditView, {
+      props: baseProps({
+        sourcePool: poolWith([AVAILABLE_ATOM]),
+        lineItems: [backedLine()],
+        onChanged,
+      }),
+    });
+    await findByText('Sand edges');
+    const checkbox = container.querySelector('input[type="checkbox"]');
+    await fireEvent.click(checkbox);
+    const [addHereBtn] = await findAllByText('Add selected here');
+    await fireEvent.click(addHereBtn);
+
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(get(overlayMessage)?.kind).toBe('error');
+    expect(get(overlayMessage)?.text).toMatch(/claimed/i);
+  });
+
+  it('a 409 on "New line from selected" refreshes via onChanged and shows a clear conflict message', async () => {
+    api.post.mockRejectedValueOnce(conflictError());
+    const onChanged = vi.fn();
+    const { findByRole, findByText, container } = render(EstimateEditView, {
+      props: baseProps({
+        sourcePool: poolWith([AVAILABLE_ATOM]),
+        lineItems: [backedLine()],
+        onChanged,
+      }),
+    });
+    await findByText('Sand edges');
+    const checkbox = container.querySelector('input[type="checkbox"]');
+    await fireEvent.click(checkbox);
+    const createBtn = await findByRole('button', { name: /create line/i });
+    await fireEvent.click(createBtn);
+
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(get(overlayMessage)?.text).toMatch(/claimed/i);
+    // The conflict path must not also open the edit modal (there is no new line).
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 });

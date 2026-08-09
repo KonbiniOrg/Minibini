@@ -66,4 +66,21 @@ describe('AtomChildRow', () => {
     await fireEvent.click(getByText('Remove'));
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
+
+  it('renders colspanAfter empty cells between the content cells and onRemove', () => {
+    const onRemove = vi.fn();
+    const { container } = renderRow({ colspanAfter: 1, onRemove });
+    const tds = container.querySelectorAll('tr.doc-atom-row td');
+    // description, qty, rate, amount, +1 padding, +1 remove cell = 6
+    expect(tds).toHaveLength(6);
+    expect(tds[4].textContent.trim()).toBe('');
+    expect(tds[5].querySelector('button')).not.toBeNull();
+  });
+
+  it('renders no extra cells when colspanAfter is 0 (default)', () => {
+    const { container } = renderRow();
+    const tds = container.querySelectorAll('tr.doc-atom-row td');
+    // description, qty, rate, amount = 4, no onRemove cell
+    expect(tds).toHaveLength(4);
+  });
 });

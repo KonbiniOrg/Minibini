@@ -76,6 +76,9 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
     source_pk = serializers.IntegerField(read_only=True)
     description = serializers.SerializerMethodField()
     computed_amount = serializers.SerializerMethodField()
+    qty = serializers.SerializerMethodField()
+    units = serializers.SerializerMethodField()
+    rate = serializers.SerializerMethodField()
 
     def _resolve_or_none(self, obj):
         # A dangling row (atom deleted out from under the claim — pre-purge
@@ -96,7 +99,6 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         return instance.description  # Material / Fee
 
     def get_computed_amount(self, obj):
-        from decimal import Decimal
         instance = self._resolve_or_none(obj)
         if instance is None:
             return None
@@ -106,6 +108,44 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         # only compute_amount() (no est/actual split) and fall through.
         amount_fn = getattr(instance, 'compute_estimate_amount', instance.compute_amount)
         return str(amount_fn().quantize(Decimal('0.01')))
+
+    # qty/units/rate mirror InvoiceWizardService._atom_detail's per-type
+    # branches (Task/Material/Fee) rather than EstimateWizardService's —
+    # the latter has no Fee case (Fees never appear in the estimate source
+    # pool) and would AttributeError on a crystallized Fee source. Values
+    # here are display-only, purely derived from the resolved instance, and
+    # feed a doc-surface's nested atom-row (never re-summed into the line's
+    # own total — that stays `computed_amount`/`backing_total`).
+    def get_qty(self, obj):
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
+        from apps.jobs.models import Task
+        if isinstance(instance, Task):
+            return str(instance.est_qty if instance.est_qty is not None else Decimal('0'))
+        return str(instance.quantity)  # Material / Fee
+
+    def get_units(self, obj):
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
+        from apps.jobs.models import Task, Fee
+        if isinstance(instance, Task):
+            return instance.unit_label or 'none'
+        if isinstance(instance, Fee):
+            return 'none'
+        return instance.units or 'none'  # Material
+
+    def get_rate(self, obj):
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
+        from apps.jobs.models import Task, Fee
+        if isinstance(instance, Task):
+            return str(instance.effective_rate())
+        if isinstance(instance, Fee):
+            return str(instance.unit_rate.quantize(Decimal('0.01')))
+        return str(instance.sell_price)  # Material
 
 
 class EstimateLineItemSerializer(serializers.ModelSerializer):

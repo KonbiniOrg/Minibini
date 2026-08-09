@@ -12,11 +12,18 @@
   import AdjustmentModal from '../AdjustmentModal.svelte';
   import LineItemModal from '../LineItemModal.svelte';
   import PriceListPicker from '../PriceListPicker.svelte';
+  import LinkifiedText from '../LinkifiedText.svelte';
   import EstimateAddLineForm from './EstimateAddLineForm.svelte';
   import BackingChip from '../docsurface/BackingChip.svelte';
   import AtomChildRow from '../docsurface/AtomChildRow.svelte';
   import UncoveredWorkSection from '../docsurface/UncoveredWorkSection.svelte';
   import NewLineFromSelectedRow from '../docsurface/NewLineFromSelectedRow.svelte';
+
+  // Atom rows carry # (colspanBefore=1) + description/qty/rate/amount (4) +
+  // this many blank cells before the onRemove cell — one for the Backing
+  // column that always sits between Amount and Actions in the main table,
+  // so Remove lands under Actions, not Backing.
+  const ATOM_ROW_COLSPAN_AFTER = 1;
 
   let {
     estimate,
@@ -105,6 +112,19 @@
       }))
   );
 
+  // A claim conflict (another line/estimate grabbed an atom between the pool
+  // load and this POST) can't be resolved by retrying blind — refresh so the
+  // pool/lines reflect reality, and say so, instead of the generic overlay.
+  async function handleMutationError(e, fallback) {
+    if (e?.status === 409) {
+      selected = [];
+      await onChanged();
+      showError(errorMessage(e, 'Some of those atoms were claimed elsewhere in the meantime — refreshed.'));
+    } else {
+      showError(errorMessage(e, fallback));
+    }
+  }
+
   async function addSelectedToLine(li) {
     try {
       await api.post(`${apiBase}/line-items/${li.line_item_id}/add-atoms/`, {
@@ -113,8 +133,20 @@
       selected = [];
       onChanged();
     } catch (e) {
-      showError(errorMessage(e, 'Could not add the selected atoms to this line.'));
+      await handleMutationError(e, 'Could not add the selected atoms to this line.');
     }
+  }
+
+  // Waits for the parent's (silent) refresh so `lineItems` reflects the
+  // server's authoritative copy of the just-created line, then opens the
+  // edit modal against THAT object — falling back to the raw POST response
+  // if the refreshed list doesn't contain it for some reason. Opening the
+  // modal only after the refresh resolves (never before) is what keeps this
+  // reliable now that EstimatePanel's refresh no longer unmounts this view.
+  async function openModalForCreatedLine(newLine) {
+    await onChanged();
+    modalItem = lineItems.find((li) => li.line_item_id === newLine.line_item_id) || newLine;
+    modalOpen = true;
   }
 
   async function createLineFromSelected() {
@@ -123,11 +155,9 @@
         atoms: parseSelected(selected),
       });
       selected = [];
-      onChanged();
-      modalItem = newLine;
-      modalOpen = true;
+      await openModalForCreatedLine(newLine);
     } catch (e) {
-      showError(errorMessage(e, 'Could not create a line from the selected atoms.'));
+      await handleMutationError(e, 'Could not create a line from the selected atoms.');
     }
   }
 
@@ -136,11 +166,9 @@
       const newLine = await api.post(`${apiBase}/line-items-from-atoms/`, {
         atoms: parseSelected([rowId]),
       });
-      onChanged();
-      modalItem = newLine;
-      modalOpen = true;
+      await openModalForCreatedLine(newLine);
     } catch (e) {
-      showError(errorMessage(e, 'Could not create a line from this atom.'));
+      await handleMutationError(e, 'Could not create a line from this atom.');
     }
   }
 
@@ -151,7 +179,7 @@
       });
       onChanged();
     } catch (e) {
-      showError(errorMessage(e, 'Could not remove this atom from the line.'));
+      await handleMutationError(e, 'Could not remove this atom from the line.');
     }
   }
 
@@ -159,10 +187,21 @@
     return Number(li.qty || 0) * Number(li.price || 0);
   }
 
+  // Next number offered by "New line from selected" — the highest existing
+  // line_number + 1, not the array length (lines can carry gaps in theory,
+  // and this is only ever a hint text, never sent to the server).
+  let nextLineNumber = $derived(
+    lineItems.length > 0
+      ? Math.max(...lineItems.map((li) => li.line_number || 0)) + 1
+      : 1
+  );
+
   // Small provenance caption under the description — where a catalog or
   // adjustment line's price actually comes from. Sourced (planned_work /
   // planned_materials / edited) lines already carry their nested
-  // AtomChildRows for that; hand lines have nothing to add.
+  // AtomChildRows for that; hand lines have nothing to add. A bare
+  // inventory_item ref with no nested detail has nothing displayable (just
+  // a raw PK) — say nothing rather than show that.
   function provenanceText(li) {
     if (li.adjustment_service != null) {
       const detail = li.adjustment_service_detail;
@@ -172,7 +211,6 @@
       return `${sign}${pct}% ${detail.name}`;
     }
     if (li.service_item_detail) return `Catalog: ${li.service_item_detail.name}`;
-    if (li.inventory_item != null) return `Catalog item #${li.inventory_item}`;
     return '';
   }
 </script>
@@ -202,8 +240,11 @@
     {#each lineItems as li (li.line_item_id)}
       <tr>
         <td>{li.line_number}</td>
-        <td>
-          {li.description}
+        <td class="preserve-breaks">
+          <LinkifiedText text={li.description || 'No description'} />
+          {#if canEdit && li.accounting_category == null}
+            <br><small class="needs-category">needs category</small>
+          {/if}
           {#if provenanceText(li)}<br><small>{provenanceText(li)}</small>{/if}
         </td>
         <td class="text-right">{formatQtyUnits(li.qty, li.units)}</td>
@@ -235,11 +276,12 @@
           atom={{
             kind: source.source_type === 'task' ? 'task' : 'material',
             description: source.description ?? '(removed)',
-            qty_display: '',
-            rate: '',
+            qty_display: formatQtyUnits(source.qty, source.units),
+            rate: source.rate,
             amount: source.computed_amount,
           }}
           colspanBefore={1}
+          colspanAfter={ATOM_ROW_COLSPAN_AFTER}
           onRemove={canEdit ? () => removeAtomFromLine(li, source) : null}
         />
       {/each}
@@ -247,7 +289,7 @@
     {#if canEdit}
       <NewLineFromSelectedRow
         visible={selected.length > 0}
-        nextNumber={String(lineItems.length + 1)}
+        nextNumber={String(nextLineNumber)}
         onCreate={createLineFromSelected}
       />
     {/if}
@@ -260,6 +302,7 @@
     subtitle="Tasks and materials from this job not yet on this estimate."
     rows={uncoveredRows}
     bind:selected
+    directLabel="Add as its own line"
     onDirect={billDirect}
     emptyText="No uncovered tasks or materials."
   />
@@ -300,4 +343,8 @@
 <style>
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
+  /* Matches the old LineItemTable's needs-category marker (send is blocked
+     without an accounting_category — the estimator must see this before the
+     send-time error). */
+  .needs-category { background-color: #fff8e1; color: #b45309; font-style: italic; }
 </style>

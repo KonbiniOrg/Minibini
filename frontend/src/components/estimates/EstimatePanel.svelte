@@ -137,15 +137,29 @@
     rememberMode(job?.job_id, `est:${estimateId}`, next);
   }
 
-  async function loadEstimate() {
-    docLoading = true;
-    error = '';
+  // `silent`: post-gesture refreshes from EstimateEditView (add-atoms,
+  // create-a-line, remove, adjustments...) must NOT flip docLoading — that
+  // would swap the `{#if docLoading}` branch to "Loading…", destroying and
+  // remounting EstimateEditView on every single gesture and losing its local
+  // state (the just-opened edit modal, the in-progress atom selection). A
+  // silent failure doesn't blank the surface either — it reports through the
+  // global overlay and leaves the last-good doc on screen, same as any other
+  // form-less background refresh.
+  async function loadEstimate({ silent = false } = {}) {
+    if (!silent) {
+      docLoading = true;
+      error = '';
+    }
     try {
       estimate = await api.get(`/api/estimates/${estimateId}/`);
     } catch (e) {
-      error = e.message || 'Could not load estimate.';
+      if (silent) {
+        showError(errorMessage(e, 'Could not refresh the estimate.'));
+      } else {
+        error = e.message || 'Could not load estimate.';
+      }
     } finally {
-      docLoading = false;
+      if (!silent) docLoading = false;
     }
   }
 
@@ -159,9 +173,12 @@
 
   // EstimateEditView is presentation + gestures only — every mutation it
   // makes (add/remove atoms, add/edit/remove a line, adjustments) calls back
-  // here so the doc and the uncovered-work pool stay in sync.
+  // here so the doc and the uncovered-work pool stay in sync. Silent: see
+  // loadEstimate's comment above — EstimateEditView awaits this to look up
+  // the fresh copy of a just-created line, so it must resolve without ever
+  // tearing the view down mid-gesture.
   async function handleEditChanged() {
-    await Promise.all([loadEstimate(), loadSourcePool()]);
+    await Promise.all([loadEstimate({ silent: true }), loadSourcePool()]);
   }
 
   // Value-keyed: the glue (JobEstimatePage) assigns a new `job` object on
