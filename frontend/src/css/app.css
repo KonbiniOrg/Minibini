@@ -449,6 +449,12 @@ dd {
 .doc-offdoc td { color:#6b6e71; border-bottom:1px dashed #d8d6d0;
   background:repeating-linear-gradient(-45deg, transparent 0 8px, #f0efec 8px 16px); }
 .doc-newline td { border-top:2px dashed #d8d6d0; border-bottom:2px dashed #d8d6d0; }
+/* Edit tables interleave atom/struck child rows, so nth-child zebra parity is
+   meaningless there (a line's stripe depends on how many child rows precede
+   it). Suppress the global .data-table zebra; visual grouping comes from the
+   child-row tints instead. Customer/reorder views keep the zebra — their rows
+   are homogeneous. */
+.doc-edit-table tbody tr:nth-child(even) { background: transparent; }
 .doc-newline .cta { color:#2e6e73; font-weight:600; }
 .doc-mode-bar button { padding:6px 12px; border:1px solid #ccc; background:#f5f5f5;
   color:#333; border-radius:4px; cursor:pointer; font-size:14px; }

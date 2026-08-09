@@ -224,7 +224,7 @@
   </p>
 {/if}
 
-<table class="data-table line-items-table">
+<table class="data-table doc-edit-table line-items-table">
   <thead>
     <tr>
       <th>#</th>
