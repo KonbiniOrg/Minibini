@@ -8,13 +8,13 @@ from apps.estimates.models import (
     Estimate, EstimateLineItem, EstimateLineItemSource,
 )
 from apps.inventory.models import Earmark, InventoryItem, Material
-from apps.jobs.models import Fee, Job, RateScheme, Task
+from apps.jobs.models import Job, RateScheme, Task
 
 
 class AcceptancePlainLinesTest(TestCase):
     """Acceptance crystallizes only typed hand-lines (service_item → Task,
     inventory_item / is_material → Material). Plain hand-lines — bare lines with
-    no atom type — stay document-only: no Fee, no EstimateLineItemSource row.
+    no atom type — stay document-only: no atom, no EstimateLineItemSource row.
     Atom-backed lines (with a source) are already on the job; adjustment lines
     are document-only."""
 
@@ -88,13 +88,7 @@ class AcceptancePlainLinesTest(TestCase):
     def test_plain_hand_line_crystallizes_nothing(self):
         result = EstimateAcceptanceService.on_accept(self.estimate)
 
-        # No Fee, no source row of any kind for the plain line.
-        self.assertEqual(Fee.objects.filter(job=self.job).count(), 0)
-        self.assertEqual(
-            EstimateLineItemSource.objects.filter(
-                source_type=EstimateLineItemSource.SOURCE_FEE).count(),
-            0,
-        )
+        # No source row of any kind for the plain line.
         self.assertFalse(self.hand_line.sources.exists())
 
         # The line itself is untouched — still present on the document.
@@ -112,21 +106,19 @@ class AcceptancePlainLinesTest(TestCase):
         EstimateAcceptanceService.on_accept(self.estimate)
         result = EstimateAcceptanceService.on_accept(self.estimate)
 
-        self.assertEqual(Fee.objects.filter(job=self.job).count(), 0)
         self.assertFalse(self.hand_line.sources.exists())
         self.assertEqual(result['materials_created'], 0)
         self.assertEqual(result['tasks_created'], 0)
 
     def test_plain_hand_line_without_ac_is_skipped_not_rejected(self):
-        # The acceptance-time AC guard existed only because Fee.accounting_category
-        # was NOT NULL. With no Fee created, a null-AC plain line (bad historical
-        # data — entry-time send guard normally prevents it) is simply skipped.
-        EstimateLineItem.objects.create(
+        # A null-AC plain line (bad historical data — entry-time send guard
+        # normally prevents it) is simply skipped: nothing crystallizes.
+        no_cat = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=4, description='No-cat charge',
             qty=Decimal('1'), price=Decimal('10.00'), accounting_category=None,
         )
         result = EstimateAcceptanceService.on_accept(self.estimate)
-        self.assertEqual(Fee.objects.filter(job=self.job).count(), 0)
+        self.assertFalse(no_cat.sources.exists())
         self.assertEqual(result['materials_created'], 0)
 
     def test_catalog_hand_line_becomes_a_material(self):
@@ -158,7 +150,6 @@ class AcceptancePlainLinesTest(TestCase):
 
     def test_atom_backed_and_adjustment_lines_crystallize_nothing(self):
         EstimateAcceptanceService.on_accept(self.estimate)
-        self.assertEqual(Fee.objects.filter(job=self.job).count(), 0)
         # Only the atom_line's pre-existing source row exists; the adjustment
         # line gained nothing.
         self.assertFalse(self.adj_line.sources.exists())

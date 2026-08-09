@@ -253,13 +253,11 @@ class InvoiceLineItemSource(models.Model):
     SOURCE_MATERIAL = 'material'
     SOURCE_TASK = 'task'
     SOURCE_EXPENSE = 'expense'
-    SOURCE_FEE = 'fee'
     SOURCE_DEPOSIT = 'deposit'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_MATERIAL, 'Material'),
         (SOURCE_TASK, 'Task'),
         (SOURCE_EXPENSE, 'Expense'),
-        (SOURCE_FEE, 'Fee'),
         (SOURCE_DEPOSIT, 'Deposit'),
     ]
 
@@ -287,9 +285,6 @@ class InvoiceLineItemSource(models.Model):
         if self.source_type == self.SOURCE_EXPENSE:
             from apps.expenses.models import Expense
             return Expense.objects.get(pk=self.source_pk)
-        if self.source_type == self.SOURCE_FEE:
-            from apps.jobs.models import Fee
-            return Fee.objects.get(pk=self.source_pk)
         if self.source_type == self.SOURCE_DEPOSIT:
             return InvoiceLineItem.objects.filter(pk=self.source_pk).first()
         raise ValueError(f'Unknown source_type: {self.source_type}')

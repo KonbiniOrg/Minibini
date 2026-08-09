@@ -52,10 +52,9 @@ def purge_source_rows_for_atom(source_type, source_pk):
 
     Invariant: no EstimateLineItemSource / ChangeOrderLineItemSource /
     InvoiceLineItemSource row may outlive its atom — a dangling row breaks
-    resolve() consumers (serializers, compose_agreement's fee maps, wizard
-    bundle math). Called from Material.delete(), Fee.delete(), and
-    Task.delete(), so every deletion path (restock-to-zero, PO sever,
-    fee/task delete, CO retirement) upholds it. Paths that must NOT delete a
+    resolve() consumers (serializers, wizard bundle math). Called from
+    Material.delete() and Task.delete(), so every deletion path
+    (restock-to-zero, PO sever, task delete, CO retirement) upholds it. Paths that must NOT delete a
     billed atom guard *before* deleting (e.g. _assert_not_invoiced, the CO
     retirement skips); this purge is the consistency backstop, not the guard.
     """

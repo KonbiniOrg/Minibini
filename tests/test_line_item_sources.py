@@ -1,10 +1,10 @@
 """
 Task 1.2: EstimateLineItemSource and InvoiceLineItemSource resolve
-Task / Material / Fee atoms.
+Task / Material atoms.
 
 Asserts:
-  - EstimateLineItemSource.resolve() for source_type in {'task', 'material', 'fee'}
-  - InvoiceLineItemSource.resolve() for source_type == 'fee'
+  - EstimateLineItemSource.resolve() for source_type in {'task', 'material'}
+  - InvoiceLineItemSource.resolve() for source_type == 'material'
   - unique_together still blocks a second claim of the same (source_type, source_pk)
 """
 from decimal import Decimal
@@ -16,11 +16,11 @@ from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource
 from apps.inventory.models import InventoryItem, Material
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
-from apps.jobs.models import Fee, Job, RateScheme, Task
+from apps.jobs.models import Job, RateScheme, Task
 
 
 class EstimateLineItemSourceAtomTest(TestCase):
-    """EstimateLineItemSource resolves Task, Material, and Fee atoms."""
+    """EstimateLineItemSource resolves Task and Material atoms."""
 
     def setUp(self):
         Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
@@ -55,11 +55,6 @@ class EstimateLineItemSourceAtomTest(TestCase):
             quantity=Decimal('5'), sell_price=Decimal('20'),
             inventory_item=inv_item,
         )
-        self.fee = Fee.objects.create(
-            job=self.job, description='Setup charge',
-            quantity=Decimal('1'), unit_rate=Decimal('150'),
-            accounting_category=self.cat,
-        )
         self.estimate = Estimate.objects.create(
             job=self.job, status=Estimate.STATUS_DRAFT,
             estimate_number='EST-2026-0001',
@@ -89,14 +84,6 @@ class EstimateLineItemSourceAtomTest(TestCase):
         )
         self.assertEqual(src.resolve(), self.material)
 
-    def test_resolve_returns_fee(self):
-        src = EstimateLineItemSource.objects.create(
-            estimate_line_item=self.line_item,
-            source_type=EstimateLineItemSource.SOURCE_FEE,
-            source_pk=self.fee.pk,
-        )
-        self.assertEqual(src.resolve(), self.fee)
-
     # ------------------------------------------------------------------
     # unique_together still enforces whole-atom claim
     # ------------------------------------------------------------------
@@ -119,11 +106,11 @@ class EstimateLineItemSourceAtomTest(TestCase):
                     source_pk=self.task.pk,
                 )
 
-    def test_double_claim_fee_raises_integrity_error(self):
+    def test_double_claim_material_raises_integrity_error(self):
         EstimateLineItemSource.objects.create(
             estimate_line_item=self.line_item,
-            source_type=EstimateLineItemSource.SOURCE_FEE,
-            source_pk=self.fee.pk,
+            source_type=EstimateLineItemSource.SOURCE_MATERIAL,
+            source_pk=self.material.pk,
         )
         other_li = EstimateLineItem.objects.create(
             estimate=self.estimate, qty=Decimal('1'), units='each',
@@ -133,13 +120,13 @@ class EstimateLineItemSourceAtomTest(TestCase):
             with transaction.atomic():
                 EstimateLineItemSource.objects.create(
                     estimate_line_item=other_li,
-                    source_type=EstimateLineItemSource.SOURCE_FEE,
-                    source_pk=self.fee.pk,
+                    source_type=EstimateLineItemSource.SOURCE_MATERIAL,
+                    source_pk=self.material.pk,
                 )
 
 
-class InvoiceLineItemSourceFeeTest(TestCase):
-    """InvoiceLineItemSource resolves Fee atoms."""
+class InvoiceLineItemSourceMaterialTest(TestCase):
+    """InvoiceLineItemSource resolves Material atoms."""
 
     def setUp(self):
         Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
@@ -155,33 +142,33 @@ class InvoiceLineItemSourceFeeTest(TestCase):
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001',
         )
-        self.fee = Fee.objects.create(
-            job=self.job, description='Rush fee',
-            quantity=Decimal('1'), unit_rate=Decimal('200'),
+        self.material = Material.objects.create(
+            job=self.job, description='Steel bar',
+            quantity=Decimal('1'), sell_price=Decimal('200'),
             accounting_category=self.cat,
         )
         self.invoice = Invoice.objects.create(job=self.job)
         self.line_item = InvoiceLineItem.objects.create(
             invoice=self.invoice,
-            description='Rush',
+            description='Steel',
             qty=Decimal('1'),
             price=Decimal('200'),
             accounting_category=self.cat,
         )
 
-    def test_resolve_returns_fee(self):
+    def test_resolve_returns_material(self):
         src = InvoiceLineItemSource.objects.create(
             invoice_line_item=self.line_item,
-            source_type=InvoiceLineItemSource.SOURCE_FEE,
-            source_pk=self.fee.pk,
+            source_type=InvoiceLineItemSource.SOURCE_MATERIAL,
+            source_pk=self.material.pk,
         )
-        self.assertEqual(src.resolve(), self.fee)
+        self.assertEqual(src.resolve(), self.material)
 
-    def test_double_claim_fee_raises_integrity_error(self):
+    def test_double_claim_material_raises_integrity_error(self):
         InvoiceLineItemSource.objects.create(
             invoice_line_item=self.line_item,
-            source_type=InvoiceLineItemSource.SOURCE_FEE,
-            source_pk=self.fee.pk,
+            source_type=InvoiceLineItemSource.SOURCE_MATERIAL,
+            source_pk=self.material.pk,
         )
         other_li = InvoiceLineItem.objects.create(
             invoice=self.invoice,
@@ -194,6 +181,6 @@ class InvoiceLineItemSourceFeeTest(TestCase):
             with transaction.atomic():
                 InvoiceLineItemSource.objects.create(
                     invoice_line_item=other_li,
-                    source_type=InvoiceLineItemSource.SOURCE_FEE,
-                    source_pk=self.fee.pk,
+                    source_type=InvoiceLineItemSource.SOURCE_MATERIAL,
+                    source_pk=self.material.pk,
                 )

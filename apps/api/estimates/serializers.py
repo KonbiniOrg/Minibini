@@ -62,10 +62,6 @@ def derive_estimate_backing(line):
       'from_catalog' means "this line is a catalog descriptor" for the
       line's whole life, not "not yet crystallized". This is intentional,
       not a staleness bug.
-    - A legacy hand line crystallized into a fee source (pre-Fee-removal
-      data) falls through the task-detection loop to 'planned_materials'.
-      That is a known mislabel, confined to accepted (read-only) estimates,
-      where the draft-only wizard chip surface never renders it anyway.
     """
     if line.adjustment_service_id is not None:
         return 'adjustment'
@@ -101,8 +97,8 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
     rate = serializers.SerializerMethodField()
 
     def _resolve_or_none(self, obj):
-        # A dangling row (atom deleted out from under the claim — pre-purge
-        # data, or a race) must render as null, never 500 the list endpoint.
+        # A dangling row (atom deleted out from under the claim — a race)
+        # must render as null, never 500 the list endpoint.
         from django.core.exceptions import ObjectDoesNotExist
         try:
             return obj.resolve()
@@ -116,7 +112,7 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return instance.name
-        return instance.description  # Material / legacy Fee
+        return instance.description  # Material
 
     def get_computed_amount(self, obj):
         instance = self._resolve_or_none(obj)
@@ -134,11 +130,9 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
     # re-summed into the line's own total — that stays
     # `computed_amount`/`backing_total`).
     #
-    # The non-Task fallthroughs are written for Material but may also receive
-    # a LEGACY resolved Fee (pre-Fee-removal source rows survive until Task
-    # 6's purge). Fee shares description/quantity/compute_amount/units with
-    # Material; the attribute it lacks (sell_price) is read defensively —
-    # null over 500, same philosophy as `_resolve_or_none` for dangling rows.
+    # The non-Task fallthroughs are written for Material; attributes are
+    # read defensively (getattr → null over 500), same philosophy as
+    # `_resolve_or_none` for dangling rows.
     def get_qty(self, obj):
         instance = self._resolve_or_none(obj)
         if instance is None:
@@ -146,7 +140,7 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return str(instance.est_qty if instance.est_qty is not None else Decimal('0'))
-        return str(instance.quantity)  # Material / legacy Fee
+        return str(instance.quantity)  # Material
 
     def get_units(self, obj):
         instance = self._resolve_or_none(obj)
@@ -155,7 +149,7 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return instance.unit_label or 'none'
-        # Material's units field; a legacy Fee's `units` property is 'none'.
+        # Material's units field, read defensively.
         return getattr(instance, 'units', None) or 'none'
 
     def get_rate(self, obj):
@@ -165,7 +159,7 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return str(instance.effective_rate())
-        # Material's sell_price; a legacy Fee has none → null, not a 500.
+        # Material's sell_price, read defensively → null, not a 500.
         sell_price = getattr(instance, 'sell_price', None)
         return None if sell_price is None else str(sell_price)
 

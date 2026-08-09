@@ -705,46 +705,6 @@ class RateScheme(models.Model):
         return self.name
 
 
-class Fee(models.Model):
-    """A fixed charge owned by the Job — the crystallized form of an accepted
-    hand-line. Frozen quantity × unit_rate; no actual lifecycle. Optionally
-    points at the Task that is the work behind it."""
-    fee_id = models.AutoField(primary_key=True)
-    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='fees')
-    task = models.OneToOneField('jobs.Task', on_delete=models.SET_NULL,
-                                null=True, blank=True, related_name='fee')
-    description = models.CharField(max_length=255, blank=True, default='')
-    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
-    unit_rate = models.DecimalField(max_digits=10, decimal_places=2)
-    accounting_category = models.ForeignKey('core.AccountingCategory', on_delete=models.PROTECT)
-    sort_order = models.PositiveIntegerField(default=0)
-
-    class Meta:
-        db_table = 'fees'
-
-    def compute_amount(self, active_modifiers=None):
-        return (self.quantity * self.unit_rate).quantize(Decimal('0.01'))
-
-    def delete(self, *args, **kwargs):
-        # No estimate/CO source row may outlive its atom.
-        from apps.estimates.claims import purge_source_rows_for_atom
-        pk = self.pk
-        result = super().delete(*args, **kwargs)
-        purge_source_rows_for_atom('fee', pk)
-        return result
-
-    @property
-    def effective_accounting_category(self):
-        return self.accounting_category
-
-    @property
-    def units(self):
-        return 'none'
-
-    def __str__(self):
-        return f'Fee {self.pk}: {self.description} ({self.quantity}×{self.unit_rate})'
-
-
 class BlepChangeRequest(TimeChangeRequest):
     request_id = models.AutoField(primary_key=True)
     blep = models.ForeignKey('jobs.Blep', on_delete=models.PROTECT,

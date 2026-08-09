@@ -57209,500 +57209,6 @@
   }
 },
 {
-  "model": "jobs.fee",
-  "pk": 1,
-  "fields": {
-    "job": 1,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 2
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 2,
-  "fields": {
-    "job": 2,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 3,
-  "fields": {
-    "job": 4,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 4,
-  "fields": {
-    "job": 6,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 5,
-  "fields": {
-    "job": 7,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 6,
-  "fields": {
-    "job": 9,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 7,
-  "fields": {
-    "job": 10,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 8,
-  "fields": {
-    "job": 10,
-    "task": null,
-    "description": "Heat bend parts",
-    "quantity": "200.00",
-    "unit_rate": "8.00",
-    "accounting_category": 1,
-    "sort_order": 3
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 9,
-  "fields": {
-    "job": 11,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 10,
-  "fields": {
-    "job": 11,
-    "task": null,
-    "description": "Delivery by truck/cargo van to San Francisco",
-    "quantity": "1.00",
-    "unit_rate": "150.00",
-    "accounting_category": 1,
-    "sort_order": 3
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 11,
-  "fields": {
-    "job": 15,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 12,
-  "fields": {
-    "job": 16,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 13,
-  "fields": {
-    "job": 16,
-    "task": null,
-    "description": "Charge to meet minimum order of $300",
-    "quantity": "1.00",
-    "unit_rate": "115.00",
-    "accounting_category": 1,
-    "sort_order": 3
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 14,
-  "fields": {
-    "job": 24,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 15,
-  "fields": {
-    "job": 35,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 16,
-  "fields": {
-    "job": 35,
-    "task": null,
-    "description": "Charge to meet minimum order of $300",
-    "quantity": "1.00",
-    "unit_rate": "150.00",
-    "accounting_category": 1,
-    "sort_order": 3
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 17,
-  "fields": {
-    "job": 35,
-    "task": null,
-    "description": "'--== RUSH FEE ==--",
-    "quantity": "0.25",
-    "unit_rate": "300.00",
-    "accounting_category": 1,
-    "sort_order": 4
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 18,
-  "fields": {
-    "job": 42,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 19,
-  "fields": {
-    "job": 42,
-    "task": null,
-    "description": "Palletize and delivery",
-    "quantity": "1.00",
-    "unit_rate": "350.00",
-    "accounting_category": 1,
-    "sort_order": 3
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 20,
-  "fields": {
-    "job": 44,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 21,
-  "fields": {
-    "job": 45,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 22,
-  "fields": {
-    "job": 48,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 23,
-  "fields": {
-    "job": 56,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 24,
-  "fields": {
-    "job": 58,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 2
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 25,
-  "fields": {
-    "job": 64,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 26,
-  "fields": {
-    "job": 70,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 27,
-  "fields": {
-    "job": 71,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 28,
-  "fields": {
-    "job": 73,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 29,
-  "fields": {
-    "job": 75,
-    "task": null,
-    "description": "Glue, paint, wire, acrylic, etc",
-    "quantity": "1.00",
-    "unit_rate": "200.00",
-    "accounting_category": 1,
-    "sort_order": 6
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 30,
-  "fields": {
-    "job": 83,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 31,
-  "fields": {
-    "job": 84,
-    "task": null,
-    "description": "Setup, editing, and coding",
-    "quantity": "1.00",
-    "unit_rate": "110.00",
-    "accounting_category": 1,
-    "sort_order": 1
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 32,
-  "fields": {
-    "job": 87,
-    "task": null,
-    "description": "Prepare two-lam stock for cutting M58 roofs:\n* cut black lam and mirror lam to approximate size using 1/8\" bit (dimensions are very tight)\n* cut 5x10 single-sided layup in half\n* Apply black and mirror laminates to blank side of each cut half, butt joinin",
-    "quantity": "1.00",
-    "unit_rate": "600.00",
-    "accounting_category": 1,
-    "sort_order": 24
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 33,
-  "fields": {
-    "job": 87,
-    "task": null,
-    "description": "Prepare stock for M67 floors: apply marmoleum to part of 1 side of 5x10 stock and black laminate to the other",
-    "quantity": "2.00",
-    "unit_rate": "200.00",
-    "accounting_category": 1,
-    "sort_order": 25
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 34,
-  "fields": {
-    "job": 87,
-    "task": null,
-    "description": "Prepare stock for M58 floors: apply marmoleum to one side of 5x10 stock and black laminate to the other",
-    "quantity": "1.00",
-    "unit_rate": "200.00",
-    "accounting_category": 1,
-    "sort_order": 26
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 35,
-  "fields": {
-    "job": 92,
-    "task": null,
-    "description": "Apply epoxy to engraved redwood bench:\n* inspect surface for obvious cracks and gaps; tape and fill\n* seal coat on all sides to seal lettering and find small bubble holes\n* patch and fill remaining gaps (knots and cracks)\n* seal and scrape letters; fill w",
-    "quantity": "5.00",
-    "unit_rate": "2250.00",
-    "accounting_category": 1,
-    "sort_order": 57
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 36,
-  "fields": {
-    "job": 100,
-    "task": null,
-    "description": "Glue up MDF to similar proportions and cut a test of the full piece (material included)",
-    "quantity": "1.00",
-    "unit_rate": "5000.00",
-    "accounting_category": 1,
-    "sort_order": 30
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 37,
-  "fields": {
-    "job": 19,
-    "task": null,
-    "description": "Cut parts from 1/4\" Baltic Birch Plywood",
-    "quantity": "8.00",
-    "unit_rate": "30.00",
-    "accounting_category": 1,
-    "sort_order": 2
-  }
-},
-{
-  "model": "jobs.fee",
-  "pk": 38,
-  "fields": {
-    "job": 19,
-    "task": null,
-    "description": "Cut parts from 1/8\" Acrylic",
-    "quantity": "16.00",
-    "unit_rate": "150.00",
-    "accounting_category": 1,
-    "sort_order": 3
-  }
-},
-{
   "model": "estimates.estimate",
   "pk": 1,
   "fields": {
@@ -70540,78 +70046,6 @@
 },
 {
   "model": "estimates.estimatelineitemsource",
-  "pk": 1,
-  "fields": {
-    "estimate_line_item": 538,
-    "source_type": "fee",
-    "source_pk": 1
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 2,
-  "fields": {
-    "estimate_line_item": 535,
-    "source_type": "fee",
-    "source_pk": 2
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 3,
-  "fields": {
-    "estimate_line_item": 539,
-    "source_type": "fee",
-    "source_pk": 3
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 4,
-  "fields": {
-    "estimate_line_item": 524,
-    "source_type": "fee",
-    "source_pk": 4
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 5,
-  "fields": {
-    "estimate_line_item": 528,
-    "source_type": "fee",
-    "source_pk": 5
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 6,
-  "fields": {
-    "estimate_line_item": 525,
-    "source_type": "fee",
-    "source_pk": 6
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 7,
-  "fields": {
-    "estimate_line_item": 520,
-    "source_type": "fee",
-    "source_pk": 7
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 8,
-  "fields": {
-    "estimate_line_item": 522,
-    "source_type": "fee",
-    "source_pk": 8
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
   "pk": 9,
   "fields": {
     "estimate_line_item": 523,
@@ -70621,56 +70055,11 @@
 },
 {
   "model": "estimates.estimatelineitemsource",
-  "pk": 10,
-  "fields": {
-    "estimate_line_item": 517,
-    "source_type": "fee",
-    "source_pk": 9
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 11,
-  "fields": {
-    "estimate_line_item": 519,
-    "source_type": "fee",
-    "source_pk": 10
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
   "pk": 12,
   "fields": {
     "estimate_line_item": 516,
     "source_type": "material",
     "source_pk": 2
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 13,
-  "fields": {
-    "estimate_line_item": 501,
-    "source_type": "fee",
-    "source_pk": 11
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 14,
-  "fields": {
-    "estimate_line_item": 496,
-    "source_type": "fee",
-    "source_pk": 12
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 15,
-  "fields": {
-    "estimate_line_item": 498,
-    "source_type": "fee",
-    "source_pk": 13
   }
 },
 {
@@ -70743,15 +70132,6 @@
     "estimate_line_item": 474,
     "source_type": "material",
     "source_pk": 10
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 24,
-  "fields": {
-    "estimate_line_item": 470,
-    "source_type": "fee",
-    "source_pk": 14
   }
 },
 {
@@ -70842,33 +70222,6 @@
     "estimate_line_item": 383,
     "source_type": "material",
     "source_pk": 20
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 35,
-  "fields": {
-    "estimate_line_item": 356,
-    "source_type": "fee",
-    "source_pk": 15
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 36,
-  "fields": {
-    "estimate_line_item": 358,
-    "source_type": "fee",
-    "source_pk": 16
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 37,
-  "fields": {
-    "estimate_line_item": 359,
-    "source_type": "fee",
-    "source_pk": 17
   }
 },
 {
@@ -70981,47 +70334,11 @@
 },
 {
   "model": "estimates.estimatelineitemsource",
-  "pk": 50,
-  "fields": {
-    "estimate_line_item": 334,
-    "source_type": "fee",
-    "source_pk": 18
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 51,
-  "fields": {
-    "estimate_line_item": 336,
-    "source_type": "fee",
-    "source_pk": 19
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 52,
-  "fields": {
-    "estimate_line_item": 325,
-    "source_type": "fee",
-    "source_pk": 20
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
   "pk": 53,
   "fields": {
     "estimate_line_item": 327,
     "source_type": "material",
     "source_pk": 33
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 54,
-  "fields": {
-    "estimate_line_item": 322,
-    "source_type": "fee",
-    "source_pk": 21
   }
 },
 {
@@ -71076,15 +70393,6 @@
     "estimate_line_item": 321,
     "source_type": "material",
     "source_pk": 39
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 61,
-  "fields": {
-    "estimate_line_item": 284,
-    "source_type": "fee",
-    "source_pk": 22
   }
 },
 {
@@ -71179,29 +70487,11 @@
 },
 {
   "model": "estimates.estimatelineitemsource",
-  "pk": 72,
-  "fields": {
-    "estimate_line_item": 243,
-    "source_type": "fee",
-    "source_pk": 23
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
   "pk": 73,
   "fields": {
     "estimate_line_item": 245,
     "source_type": "material",
     "source_pk": 50
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 74,
-  "fields": {
-    "estimate_line_item": 222,
-    "source_type": "fee",
-    "source_pk": 24
   }
 },
 {
@@ -71229,15 +70519,6 @@
     "estimate_line_item": 218,
     "source_type": "material",
     "source_pk": 53
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 78,
-  "fields": {
-    "estimate_line_item": 203,
-    "source_type": "fee",
-    "source_pk": 25
   }
 },
 {
@@ -71305,15 +70586,6 @@
 },
 {
   "model": "estimates.estimatelineitemsource",
-  "pk": 86,
-  "fields": {
-    "estimate_line_item": 156,
-    "source_type": "fee",
-    "source_pk": 26
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
   "pk": 87,
   "fields": {
     "estimate_line_item": 157,
@@ -71328,15 +70600,6 @@
     "estimate_line_item": 159,
     "source_type": "material",
     "source_pk": 62
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 89,
-  "fields": {
-    "estimate_line_item": 152,
-    "source_type": "fee",
-    "source_pk": 27
   }
 },
 {
@@ -71359,15 +70622,6 @@
 },
 {
   "model": "estimates.estimatelineitemsource",
-  "pk": 92,
-  "fields": {
-    "estimate_line_item": 144,
-    "source_type": "fee",
-    "source_pk": 28
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
   "pk": 93,
   "fields": {
     "estimate_line_item": 146,
@@ -71382,15 +70636,6 @@
     "estimate_line_item": 147,
     "source_type": "material",
     "source_pk": 66
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 95,
-  "fields": {
-    "estimate_line_item": 140,
-    "source_type": "fee",
-    "source_pk": 29
   }
 },
 {
@@ -71458,29 +70703,11 @@
 },
 {
   "model": "estimates.estimatelineitemsource",
-  "pk": 103,
-  "fields": {
-    "estimate_line_item": 97,
-    "source_type": "fee",
-    "source_pk": 30
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
   "pk": 104,
   "fields": {
     "estimate_line_item": 99,
     "source_type": "material",
     "source_pk": 74
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 105,
-  "fields": {
-    "estimate_line_item": 94,
-    "source_type": "fee",
-    "source_pk": 31
   }
 },
 {
@@ -71544,33 +70771,6 @@
     "estimate_line_item": 75,
     "source_type": "material",
     "source_pk": 81
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 113,
-  "fields": {
-    "estimate_line_item": 59,
-    "source_type": "fee",
-    "source_pk": 32
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 114,
-  "fields": {
-    "estimate_line_item": 65,
-    "source_type": "fee",
-    "source_pk": 33
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 115,
-  "fields": {
-    "estimate_line_item": 66,
-    "source_type": "fee",
-    "source_pk": 34
   }
 },
 {
@@ -71710,15 +70910,6 @@
 },
 {
   "model": "estimates.estimatelineitemsource",
-  "pk": 131,
-  "fields": {
-    "estimate_line_item": 25,
-    "source_type": "fee",
-    "source_pk": 35
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
   "pk": 132,
   "fields": {
     "estimate_line_item": 24,
@@ -71751,15 +70942,6 @@
     "estimate_line_item": 33,
     "source_type": "material",
     "source_pk": 100
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 136,
-  "fields": {
-    "estimate_line_item": 3,
-    "source_type": "fee",
-    "source_pk": 36
   }
 },
 {
@@ -76422,24 +75604,6 @@
     "estimate_line_item": 2,
     "source_type": "task",
     "source_pk": 519
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 655,
-  "fields": {
-    "estimate_line_item": 488,
-    "source_type": "fee",
-    "source_pk": 37
-  }
-},
-{
-  "model": "estimates.estimatelineitemsource",
-  "pk": 656,
-  "fields": {
-    "estimate_line_item": 489,
-    "source_type": "fee",
-    "source_pk": 38
   }
 },
 {

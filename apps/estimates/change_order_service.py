@@ -89,10 +89,8 @@ class ChangeOrderService:
 
     @staticmethod
     def struck_atom_keys(job):
-        """Keys ('task'|'material'|'fee', pk) of atoms an ACCEPTED change
-        order's remove/replace struck from the agreement ('fee' keys can only
-        come from historical source rows — nothing creates Fees anymore).
-        Derived, never
+        """Keys ('task'|'material', pk) of atoms an ACCEPTED change
+        order's remove/replace struck from the agreement. Derived, never
         stored — the chain crystallization walked persists: accepted CO line
         → target estimate line → its EstimateLineItemSource claim rows →
         atom. An atom in this set that is still live in the pool is exactly

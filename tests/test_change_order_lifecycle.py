@@ -175,11 +175,10 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         self.assertGreater(history_after, history_before)
 
     def test_accept_leaves_bare_add_line_document_only(self):
-        """A bare add line stays a document-only line at acceptance: no Fee,
-        no Task, no Material, no source row."""
+        """A bare add line stays a document-only line at acceptance: no
+        Task, no Material, no source row."""
         from apps.estimates.change_order_service import ChangeOrderService
         from apps.estimates.models import ChangeOrderLineItemSource
-        from apps.jobs.models import Fee
         task_count_before = Task.objects.count()
         mat_count_before = Material.objects.count()
 
@@ -188,7 +187,6 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         ChangeOrderService.mark_open(co.pk)
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
 
-        self.assertFalse(Fee.objects.filter(job=self.job).exists())
         self.assertFalse(
             ChangeOrderLineItemSource.objects.filter(
                 change_order_line_item=li).exists())

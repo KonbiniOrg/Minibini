@@ -132,14 +132,6 @@ class ItemRefResolutionTests(TestCase):
         line = self._line(adjustment_service=self.scheme)
         self.assertIsNone(QBOInvoiceSyncService._catalog_entity_for_line(line))
 
-    def test_fee_source_has_no_entity(self):
-        line = self._line()
-        InvoiceLineItemSource.objects.create(
-            invoice_line_item=line,
-            source_type=InvoiceLineItemSource.SOURCE_FEE, source_pk=999,
-        )
-        self.assertIsNone(QBOInvoiceSyncService._catalog_entity_for_line(line))
-
     def test_sourceless_hand_line_has_no_entity(self):
         line = self._line()
         self.assertIsNone(QBOInvoiceSyncService._catalog_entity_for_line(line))

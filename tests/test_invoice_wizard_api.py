@@ -150,15 +150,9 @@ class SourcePoolEndpointTest(TestCase):
         self.assertEqual(atom['id'], self.task.pk)
         self.assertEqual(atom['state'], 'available')
 
-    def test_no_fees_group_even_when_job_has_fees(self):
-        """The Fees pseudo-group is retired (fee removal Task 4): even a job
-        that still carries Fee rows must not produce a 'Fees' group."""
-        from apps.jobs.models import Fee
-        Fee.objects.create(
-            job=self.job, description='Delivery charge',
-            quantity=Decimal('1'), unit_rate=Decimal('50.00'),
-            accounting_category=self.category,
-        )
+    def test_no_fees_group_in_pool(self):
+        """The Fees pseudo-group is retired (fee removal Task 4): the pool
+        never produces a 'Fees' group."""
         response = self.client.get(f'/api/invoices/{self.invoice.pk}/source-pool/')
         self.assertEqual(response.status_code, 200)
         names = [g['name'] for g in response.json()['tasks']]
@@ -254,15 +248,9 @@ class LineItemsFromAtomsEndpointTest(TestCase):
     def test_fee_atom_type_returns_400(self):
         """'fee' is no longer an atom type (fee removal Task 4): posting a
         fee ref must 400 like any unknown type — never 500."""
-        from apps.jobs.models import Fee
-        fee = Fee.objects.create(
-            job=self.job, description='Setup fee',
-            quantity=Decimal('1'), unit_rate=Decimal('150.00'),
-            accounting_category=self.category,
-        )
         response = self.client.post(
             f'/api/invoices/{self.invoice.pk}/line-items-from-atoms/',
-            {'atoms': [{'type': 'fee', 'id': fee.pk}]},
+            {'atoms': [{'type': 'fee', 'id': 12345}]},
             format='json',
         )
         self.assertEqual(response.status_code, 400)
@@ -366,15 +354,9 @@ class AddAtomsEndpointTest(TestCase):
 
     def test_fee_atom_type_returns_400(self):
         """add-atoms rejects 'fee' refs with 400 (fee removal Task 4)."""
-        from apps.jobs.models import Fee
-        fee = Fee.objects.create(
-            job=self.job, description='Setup fee',
-            quantity=Decimal('1'), unit_rate=Decimal('150.00'),
-            accounting_category=self.category,
-        )
         response = self.client.post(
             f'/api/invoices/{self.invoice.pk}/line-items/{self.line_item.pk}/add-atoms/',
-            {'atoms': [{'type': 'fee', 'id': fee.pk}]},
+            {'atoms': [{'type': 'fee', 'id': 12345}]},
             format='json',
         )
         self.assertEqual(response.status_code, 400)

@@ -571,7 +571,7 @@ class EstimateLineItem(BaseLineItem):
         help_text=(
             'Marks a bare (no inventory_item, non-adjustment) freeform line as a '
             'material: at acceptance it crystallizes into a provisional Material '
-            '(sell price only, no lot) instead of a Fee.'
+            '(sell price only, no lot); non-material bare lines stay document-only.'
         ),
     )
     service_item = models.ForeignKey(
@@ -596,18 +596,16 @@ class EstimateLineItem(BaseLineItem):
 
 
 class EstimateLineItemSource(models.Model):
-    """Polymorphic join between an EstimateLineItem and its source atom (Task, Material, or Fee).
+    """Polymorphic join between an EstimateLineItem and its source atom (Task or Material).
 
     The unique_together on (source_type, source_pk) enforces whole-atom claim at the
     database level: an atom can be referenced by at most one estimate line item.
     """
     SOURCE_TASK = 'task'
     SOURCE_MATERIAL = 'material'
-    SOURCE_FEE = 'fee'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_TASK, 'Task'),
         (SOURCE_MATERIAL, 'Material'),
-        (SOURCE_FEE, 'Fee'),
     ]
 
     source_id = models.AutoField(primary_key=True)
@@ -631,9 +629,6 @@ class EstimateLineItemSource(models.Model):
         if self.source_type == self.SOURCE_MATERIAL:
             from apps.inventory.models import Material
             return Material.objects.get(pk=self.source_pk)
-        if self.source_type == self.SOURCE_FEE:
-            from apps.jobs.models import Fee
-            return Fee.objects.get(pk=self.source_pk)
         raise ValueError(f'Unknown source_type: {self.source_type}')
 
     def __str__(self):
@@ -671,8 +666,8 @@ class ChangeOrderLineItem(BaseLineItem):
         help_text=(
             'Marks a bare (no inventory_item) freeform line as a material: at '
             'CO acceptance it crystallizes into a provisional Material '
-            '(sell price only, no lot) instead of a Fee. Mirrors '
-            'EstimateLineItem.is_material.'
+            '(sell price only, no lot); non-material bare lines stay '
+            'document-only. Mirrors EstimateLineItem.is_material.'
         ),
     )
     service_item = models.ForeignKey(
@@ -722,20 +717,17 @@ class ChangeOrderLineItemSource(models.Model):
     """Polymorphic join between a ChangeOrderLineItem and the atom it crystallized.
 
     The CO analog of EstimateLineItemSource: created at CO acceptance for each
-    add/replace line, pointing at the Task/Material/Fee the line produced. It is
-    both the provenance record (compose_agreement traces crystallized CO fees so
-    the invoice claims them once) and the idempotency marker (a line with a
+    add/replace line, pointing at the Task/Material the line produced. It is
+    both the provenance record and the idempotency marker (a line with a
     source row is already crystallized and is skipped on re-run). The
     unique_together on (source_type, source_pk) enforces whole-atom claim at the
     database level within the CO lens.
     """
     SOURCE_TASK = 'task'
     SOURCE_MATERIAL = 'material'
-    SOURCE_FEE = 'fee'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_TASK, 'Task'),
         (SOURCE_MATERIAL, 'Material'),
-        (SOURCE_FEE, 'Fee'),
     ]
 
     source_id = models.AutoField(primary_key=True)
@@ -759,9 +751,6 @@ class ChangeOrderLineItemSource(models.Model):
         if self.source_type == self.SOURCE_MATERIAL:
             from apps.inventory.models import Material
             return Material.objects.get(pk=self.source_pk)
-        if self.source_type == self.SOURCE_FEE:
-            from apps.jobs.models import Fee
-            return Fee.objects.get(pk=self.source_pk)
         raise ValueError(f'Unknown source_type: {self.source_type}')
 
     def __str__(self):

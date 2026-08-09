@@ -15,7 +15,7 @@ from apps.estimates.models import (
     Estimate, EstimateLineItem, EstimateLineItemSource,
 )
 from apps.estimates.services import EstimateService
-from apps.jobs.models import Fee, Job, RateScheme, Task
+from apps.jobs.models import Job, RateScheme, Task
 
 
 class HandLineACValidationSetup(TestCase):
@@ -183,16 +183,14 @@ class AcceptancePlainLineACTest(HandLineACValidationSetup):
         self.estimate.refresh_from_db()
 
     def test_accept_with_null_ac_plain_line_does_not_raise(self):
-        """on_accept() skips plain lines entirely — even null-AC ones — since
-        nothing is crystallized from them (the old guard existed only because
-        Fee.accounting_category was NOT NULL)."""
+        """on_accept() skips plain lines entirely — even null-AC ones —
+        since nothing is crystallized from them."""
         result = EstimateAcceptanceService.on_accept(self.estimate)
         self.assertNotIn('fees_created', result)
-        self.assertFalse(Fee.objects.filter(job=self.job).exists())
         self.assertFalse(self.bad_hand_line.sources.exists())
 
     def test_accept_with_ac_plain_line_creates_nothing(self):
-        """Plain lines with an AC also crystallize nothing — no Fee, no source row."""
+        """Plain lines with an AC also crystallize nothing — no atom, no source row."""
         EstimateLineItem.objects.filter(pk=self.bad_hand_line.pk).update(
             accounting_category=self.cat,
         )
@@ -201,6 +199,5 @@ class AcceptancePlainLineACTest(HandLineACValidationSetup):
         result = EstimateAcceptanceService.on_accept(self.estimate)
         self.assertEqual(result['tasks_created'], 0)
         self.assertEqual(result['materials_created'], 0)
-        self.assertFalse(Fee.objects.filter(job=self.job).exists())
         self.assertFalse(self.hand_line.sources.exists())
         self.assertFalse(self.bad_hand_line.sources.exists())

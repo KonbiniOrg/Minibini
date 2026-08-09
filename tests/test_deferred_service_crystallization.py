@@ -219,7 +219,7 @@ class OnAcceptCrystallizesServiceTest(DeferredServiceBase):
     # status; it is driven by signals in production but callable directly in tests.
 
     def test_service_line_becomes_a_task_and_source_links(self):
-        from apps.jobs.models import Task, Fee
+        from apps.jobs.models import Task
         line = EstimateService.add_line_item_from_service(
             self.estimate.pk, self.service_item.pk, Decimal('2'),
         )
@@ -235,8 +235,6 @@ class OnAcceptCrystallizesServiceTest(DeferredServiceBase):
         self.assertEqual(task.source_scheme_id, self.scheme.pk)
         self.assertEqual(task.est_qty, Decimal('2'))
         self.assertEqual(result['tasks_created'], 1)
-        # It did NOT become a Fee.
-        self.assertFalse(Fee.objects.filter(job=self.job).exists())
         # Source-linked to the Task.
         src = EstimateLineItemSource.objects.get(estimate_line_item=line)
         self.assertEqual(src.source_type, EstimateLineItemSource.SOURCE_TASK)

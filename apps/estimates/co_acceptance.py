@@ -18,8 +18,7 @@ Mirrors EstimateAcceptanceService.on_accept (apps/estimates/acceptance.py):
   Material (earmark backed out, quantity moved to released_qty, claims kept as
   job history). Consumed / invoiced / PO-linked / terminal atoms are
   deliberately left alone — physical or billed reality is not unwound by a
-  document; the human reconciles those. Historical fee-sourced targets
-  (legacy SOURCE_FEE rows) are likewise left untouched.
+  document; the human reconciles those.
 - **replace** — crystallize the replacement first (so a cancel never leaves the
   job transiently task-less and auto-advances it), then retire the old atom.
   A bare replace line mirrors the old atom's type: a Task target yields a new
@@ -85,8 +84,7 @@ class ChangeOrderAcceptanceService:
                               or li.is_material)
             # The mirror only exists to type a BARE replace — a CO line with
             # its own descriptor crystallizes per that descriptor, so the
-            # target's mirror is never resolved for it (a legacy fee-sourced
-            # target would make _mirror_of raise). Document-only target
+            # target's mirror is never resolved for it. Document-only target
             # (adjustment line / already-retired atom) and no descriptor:
             # the delta stays document-only.
             mirror = (None if has_descriptor
@@ -150,8 +148,8 @@ class ChangeOrderAcceptanceService:
         """Snapshot of the primary current atom, used to type a bare replace.
 
         Explicit dispatch: task and material are the only mirrorable atom
-        kinds. Anything else (a future source type, or the retired 'fee')
-        raises rather than silently mistyping the replacement.
+        kinds. Anything else (a future source type) raises rather than
+        silently mistyping the replacement.
         """
         if not atoms:
             return None
@@ -316,5 +314,5 @@ class ChangeOrderAcceptanceService:
             counts['materials_removed'] += 1
             return
 
-        # Any other source_type (a legacy 'fee' row) falls through: nothing
+        # Any other source_type (a future atom kind) falls through: nothing
         # to retire — the document delta stays document-level.

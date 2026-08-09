@@ -115,12 +115,9 @@ class BaseWizardService:
         task, qty * rate == amount exactly (compute_amount is qty *
         effective_rate).
 
-        The non-task branch is written for Material but may also receive a
-        LEGACY resolved Fee via the source serializers (pre-Fee-removal
-        source rows survive until Task 6's purge; fees never appear in the
-        source pools themselves). A Fee lacks sell_price, so rate is read
-        defensively and comes back None — callers rendering a doc surface
-        must show null rather than 500."""
+        The non-task branch is written for Material; sell_price is read
+        defensively — callers rendering a doc surface must show null
+        rather than 500."""
         amount = cls._atom_computed_amount(atom_instance)
         units = cls._atom_units(atom_instance)
         if isinstance(atom_instance, cls._task_model()):

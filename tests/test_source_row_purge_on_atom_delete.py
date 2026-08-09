@@ -6,11 +6,11 @@ MaterialService.restock deleted the Material row — and the accepted estimate's
 EstimateLineItemSource kept pointing at the deleted pk, crashing
 EstimateLineItemSourceSerializer.get_description (unguarded resolve()).
 
-The invariant lives on the atom itself: Material.delete() / Fee.delete() /
-Task.delete() purge EstimateLineItemSource and ChangeOrderLineItemSource rows
-referencing the atom, so every deletion path (restock-to-zero, sever, fee
-delete, task delete, CO retirement) is covered. The serializer additionally
-tolerates a pre-existing dangling row (renders null) instead of 500ing.
+The invariant lives on the atom itself: Material.delete() / Task.delete()
+purge EstimateLineItemSource and ChangeOrderLineItemSource rows referencing
+the atom, so every deletion path (restock-to-zero, sever, task delete, CO
+retirement) is covered. The serializer additionally tolerates a pre-existing
+dangling row (renders null) instead of 500ing.
 """
 from decimal import Decimal
 
@@ -24,7 +24,7 @@ from apps.estimates.models import (
 )
 from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import MaterialService
-from apps.jobs.models import Fee, Job, RateScheme, Task
+from apps.jobs.models import Job, RateScheme, Task
 
 
 class AtomDeletePurgeBase(TestCase):
@@ -121,43 +121,6 @@ class MaterialDeletePurgesSourceRowsTest(AtomDeletePurgeBase):
             EstimateLineItemSource.objects.filter(pk=other_row.pk).exists())
 
 
-class FeeDeletePurgesSourceRowsTest(AtomDeletePurgeBase):
-
-    def test_delete_purges_estimate_source_row(self):
-        fee = Fee.objects.create(
-            job=self.job, description='fee', quantity=Decimal('1'),
-            unit_rate=Decimal('25.00'), accounting_category=self.cat,
-        )
-        self._claim(EstimateLineItemSource.SOURCE_FEE, fee.pk)
-        fee.delete()
-        self.assertFalse(self.line.sources.exists())
-
-    def test_delete_purges_invoice_source_row(self):
-        # Fee.delete() (model-level; the write API and FeeService are gone,
-        # Task 5) must purge the invoice lens too — same invariant, third
-        # table. This coverage dies with the model in Task 6.
-        from apps.invoicing.models import (
-            Invoice, InvoiceLineItem, InvoiceLineItemSource,
-        )
-        fee = Fee.objects.create(
-            job=self.job, description='fee', quantity=Decimal('1'),
-            unit_rate=Decimal('25.00'), accounting_category=self.cat,
-        )
-        invoice = Invoice.objects.create(
-            job=self.job, invoice_number='INV-2026-0001')
-        inv_li = InvoiceLineItem.objects.create(
-            invoice=invoice, description='fee', qty=Decimal('1'),
-            price=Decimal('25.00'), accounting_category=self.cat,
-        )
-        InvoiceLineItemSource.objects.create(
-            invoice_line_item=inv_li,
-            source_type=InvoiceLineItemSource.SOURCE_FEE,
-            source_pk=fee.pk,
-        )
-        fee.delete()
-        self.assertFalse(inv_li.sources.exists())
-
-
 class TaskDeletePurgesSourceRowsTest(AtomDeletePurgeBase):
 
     def test_delete_purges_estimate_source_row(self):
@@ -215,88 +178,3 @@ class DanglingSourceRowSerializationTest(AtomDeletePurgeBase):
         data = InvoiceLineItemSourceSerializer(dangling).data
         self.assertIsNone(data['description'])
         self.assertIsNone(data['computed_amount'])
-
-
-class LegacyFeeSourceRowSerializationTest(AtomDeletePurgeBase):
-    """LEGACY fee source rows that still resolve (dev DBs carry these until
-    Task 6's purge migration) must render with null money fields the
-    serializers can no longer compute — never 500. Fee removal Task 5 deleted
-    the serializers' Fee arms; these pins die with the model in Task 6."""
-
-    def test_serializer_tolerates_resolvable_legacy_fee_row(self):
-        """A LEGACY fee source row that still resolves (dev DBs carry these
-        until Task 6's purge migration) must render with null rate — the
-        serializer has no Fee arms anymore and must not 500 (AttributeError
-        on sell_price). Same null-over-500 philosophy as dangling rows."""
-        from apps.api.estimates.serializers import EstimateLineItemSourceSerializer
-        fee = Fee.objects.create(
-            job=self.job, description='legacy fee', quantity=Decimal('1'),
-            unit_rate=Decimal('25.00'), accounting_category=self.cat,
-        )
-        row = self._claim(EstimateLineItemSource.SOURCE_FEE, fee.pk)
-        data = EstimateLineItemSourceSerializer(row).data
-        self.assertEqual(data['description'], 'legacy fee')
-        self.assertEqual(data['computed_amount'], '25.00')
-        self.assertEqual(data['qty'], '1.00')
-        self.assertEqual(data['units'], 'none')
-        self.assertIsNone(data['rate'])
-
-    def test_estimate_detail_returns_200_with_legacy_fee_row(self):
-        from rest_framework.test import APIClient
-        from apps.core.models import User
-        fee = Fee.objects.create(
-            job=self.job, description='legacy fee', quantity=Decimal('1'),
-            unit_rate=Decimal('25.00'), accounting_category=self.cat,
-        )
-        self._claim(EstimateLineItemSource.SOURCE_FEE, fee.pk)
-        client = APIClient()
-        client.force_authenticate(
-            user=User.objects.create_user(username='feeviewer', password='x'))
-        resp = client.get(f'/api/estimates/{self.estimate.pk}/')
-        self.assertEqual(resp.status_code, 200)
-        resp_list = client.get(f'/api/estimates/?job={self.job.pk}')
-        self.assertEqual(resp_list.status_code, 200)
-
-    def _legacy_fee_invoice_row(self):
-        """Seed an invoice line claiming a still-resolvable legacy Fee."""
-        from apps.invoicing.models import (
-            Invoice, InvoiceLineItem, InvoiceLineItemSource,
-        )
-        fee = Fee.objects.create(
-            job=self.job, description='legacy inv fee', quantity=Decimal('2'),
-            unit_rate=Decimal('30.00'), accounting_category=self.cat,
-        )
-        invoice = Invoice.objects.create(
-            job=self.job, invoice_number='INV-2026-0009')
-        inv_li = InvoiceLineItem.objects.create(
-            invoice=invoice, description='fee line', qty=Decimal('1'),
-            price=Decimal('60.00'), accounting_category=self.cat,
-        )
-        row = InvoiceLineItemSource.objects.create(
-            invoice_line_item=inv_li,
-            source_type=InvoiceLineItemSource.SOURCE_FEE,
-            source_pk=fee.pk,
-        )
-        return invoice, row
-
-    def test_invoice_source_serializer_tolerates_resolvable_legacy_fee_row(self):
-        """Invoice mirror of the estimate pin: _atom_detail must not
-        AttributeError on a legacy Fee's missing sell_price."""
-        from apps.api.invoicing.serializers import InvoiceLineItemSourceSerializer
-        invoice, row = self._legacy_fee_invoice_row()
-        data = InvoiceLineItemSourceSerializer(row).data
-        self.assertEqual(data['description'], '')
-        self.assertEqual(data['computed_amount'], '60.00')
-        self.assertEqual(data['qty'], '2.00')
-        self.assertEqual(data['units'], 'none')
-        self.assertIsNone(data['rate'])
-
-    def test_invoice_detail_returns_200_with_legacy_fee_row(self):
-        from rest_framework.test import APIClient
-        from apps.core.models import User
-        invoice, _ = self._legacy_fee_invoice_row()
-        client = APIClient()
-        client.force_authenticate(
-            user=User.objects.create_user(username='feeviewer2', password='x'))
-        resp = client.get(f'/api/invoices/{invoice.pk}/')
-        self.assertEqual(resp.status_code, 200)

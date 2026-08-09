@@ -6,7 +6,7 @@ from apps.core.models import AccountingCategory, AppState, Configuration
 from apps.estimates.acceptance import EstimateAcceptanceService
 from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource
 from apps.inventory.models import Material
-from apps.jobs.models import Fee, Job
+from apps.jobs.models import Job
 
 
 class AcceptanceProvisionalMaterialTest(TestCase):
@@ -60,9 +60,6 @@ class AcceptanceProvisionalMaterialTest(TestCase):
         self.assertEqual(mat.accounting_category, self.cat)
         self.assertEqual(result['materials_created'], 1)
 
-        # It did NOT become a Fee.
-        self.assertFalse(Fee.objects.filter(job=self.job, description='M77 ABS').exists())
-
         # Source-linked as a Material.
         src = EstimateLineItemSource.objects.get(estimate_line_item=line)
         self.assertEqual(src.source_type, EstimateLineItemSource.SOURCE_MATERIAL)
@@ -93,6 +90,5 @@ class AcceptanceProvisionalMaterialTest(TestCase):
 
         self.assertNotIn('fees_created', result)
         self.assertEqual(result['materials_created'], 0)
-        self.assertFalse(Fee.objects.filter(job=self.job, description='Rush handling').exists())
         self.assertFalse(Material.objects.filter(job=self.job, description='Rush handling').exists())
         self.assertFalse(line.sources.exists())
