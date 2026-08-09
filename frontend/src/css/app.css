@@ -460,11 +460,30 @@ dd {
 /* Rides the right end of the document title row (.toolbar is flex). */
 .doc-stat-chips { margin-left: auto; }
 .doc-newline .cta { color:#2e6e73; font-weight:600; }
-.doc-mode-bar button { padding:6px 12px; border:1px solid #ccc; background:#f5f5f5;
-  color:#333; border-radius:4px; cursor:pointer; font-size:14px; }
-.doc-mode-bar button:hover { background:#efefef; }
-.doc-mode-bar button[aria-pressed="true"] { background:#115e59; color:#fff;
-  border-color:#115e59; }
+/* "Views" band — same grey band as the doc subnav. The switchers are centred
+   text chips (no button chrome, saving the vertical space buttons cost); the
+   active one reads like the subnav's active document: darker text on a
+   lighter fill spanning the band height. The "Views" label pins left, out of
+   the centred group's flow, mirroring .doc-subnav-trailing on the right. */
+.doc-mode-bar {
+  position: relative;
+  display: flex; justify-content: center; align-items: stretch; gap: 14px;
+  background: #eef2f7; border-bottom: 1px solid #cbd5e1;
+  padding: 0 10px;
+}
+.doc-mode-bar-label {
+  position: absolute; left: 10px; top: 0; bottom: 0;
+  display: flex; align-items: center;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: #64748b;
+}
+.doc-mode-bar button {
+  display: inline-flex; align-items: center;
+  border: 0; border-radius: 0; background: none; cursor: pointer;
+  font-size: 13px; color: #475569; padding: 7px 8px;
+}
+.doc-mode-bar button:hover { color: #1f2937; background: none; }
+.doc-mode-bar button[aria-pressed="true"] { color: #0f172a; background: #f8fafc; }
 /* An uncovered-work row that isn't billable yet (e.g. its task isn't
  * complete). Dimmed rather than hidden — visible so the user knows it
  * exists, disabled so it can't be selected. */

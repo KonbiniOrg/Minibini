@@ -14,6 +14,13 @@ describe('DocModeBar', () => {
     expect(buttons[2].textContent.trim()).toBe('Reorder');
   });
 
+  it('labels the band "Views"', () => {
+    const { getByText } = render(DocModeBar, {
+      props: { mode: 'edit', onMode: () => {} },
+    });
+    expect(getByText('Views')).toBeInTheDocument();
+  });
+
   it('sets aria-pressed="true" on active button', () => {
     const { container } = render(DocModeBar, {
       props: { mode: 'customer', onMode: () => {} },

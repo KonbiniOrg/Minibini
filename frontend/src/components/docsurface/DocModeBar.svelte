@@ -7,7 +7,11 @@
   } = $props();
 </script>
 
+<!-- Chrome lives in app.css (.doc-mode-bar family) per the docsurface kit
+     convention. The switchers stay <button>s — a mode flip acts, it doesn't
+     navigate — but render as text chips in the labeled band. -->
 <div class="doc-mode-bar">
+  <span class="doc-mode-bar-label">Views</span>
   {#each modes as m}
     <button
       type="button"
@@ -18,10 +22,3 @@
     </button>
   {/each}
 </div>
-
-<style>
-  .doc-mode-bar {
-    display: flex;
-    gap: 8px;
-  }
-</style>
