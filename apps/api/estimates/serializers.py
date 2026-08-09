@@ -1,7 +1,53 @@
+from decimal import Decimal
 from rest_framework import serializers
 from apps.estimates.models import Estimate, EstimateLineItem
+from apps.estimates.services import EstimateWizardService
 from apps.core.units import UnitsField
 from apps.api.mixins import JobScopedCanManageMixin
+
+
+def derive_estimate_backing(line):
+    """Classify how an estimate line's price is currently backed. Same
+    "derive on every read, never store" style as InvoiceLineItemSerializer's
+    module-level `derive_backing` (Task 5), reusing the wizard's own
+    in-sync rule (`BaseWizardService._sum_sources`/`_is_in_sync`) — but the
+    estimate enum is domain-specific: no deposit/agreement concepts, and it
+    splits catalog vs hand-authored vs sourced lines instead.
+
+    1. `adjustment_service_id` set -> 'adjustment'.
+    2. `service_item_id` or `inventory_item_id` set -> 'from_catalog'. A
+       bare `is_material=True` line with no `inventory_item` does NOT
+       count — it stays 'hand' until crystallization narrows it further.
+    3. Has claimed source rows:
+       - not in sync with the source sum (price != round(sum/qty, 2)) ->
+         'edited', regardless of source kind.
+       - in sync, any task among the sources -> 'planned_work'.
+       - in sync, materials only -> 'planned_materials'.
+    4. Otherwise (no adjustment, no catalog ref, no sources) -> 'hand'.
+    """
+    if line.adjustment_service_id is not None:
+        return 'adjustment'
+
+    if line.service_item_id is not None or line.inventory_item_id is not None:
+        return 'from_catalog'
+
+    sources = list(line.sources.all())
+    if sources:
+        sum_value = EstimateWizardService._sum_sources(line)
+        if not EstimateWizardService._is_in_sync(line, sum_value):
+            return 'edited'
+        from django.core.exceptions import ObjectDoesNotExist
+        from apps.jobs.models import Task
+        for src in sources:
+            try:
+                instance = src.resolve()
+            except ObjectDoesNotExist:
+                continue
+            if isinstance(instance, Task):
+                return 'planned_work'
+        return 'planned_materials'
+
+    return 'hand'
 
 
 class EstimateLineItemSourceSerializer(serializers.Serializer):
@@ -48,6 +94,8 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
     sources = EstimateLineItemSourceSerializer(many=True, read_only=True)
     adjustment_service_detail = serializers.SerializerMethodField()
     service_item_detail = serializers.SerializerMethodField()
+    backing = serializers.SerializerMethodField()
+    backing_total = serializers.SerializerMethodField()
 
     class Meta:
         model = EstimateLineItem
@@ -57,9 +105,23 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'accounting_category',
             'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail', 'service_item_detail',
-            'sources',
+            'sources', 'backing', 'backing_total',
         ]
         read_only_fields = ['line_item_id']
+
+    def get_backing(self, obj):
+        return derive_estimate_backing(obj)
+
+    def get_backing_total(self, obj):
+        """Sum of source compute_estimate_amount()/compute_amount() — the
+        "work totals $X" reference figure; null when the line has no
+        sources at all (independent of `backing`: an out-of-sync 'edited'
+        sourced line still reports its total)."""
+        sources = list(obj.sources.all())
+        if not sources:
+            return None
+        total = EstimateWizardService._sum_sources(obj)
+        return str(total.quantize(Decimal('0.01')))
 
     def get_adjustment_service_detail(self, obj):
         if obj.adjustment_service_id is None:

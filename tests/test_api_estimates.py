@@ -1,3 +1,4 @@
+from decimal import Decimal
 from unittest.mock import patch, MagicMock
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
@@ -363,3 +364,201 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
             content_type='application/json',
         )
         self.assertEqual(r2.status_code, 404)
+
+
+class EstimateLineBackingAPITest(BaseTestCase):
+    """derive_estimate_backing / backing_total on
+    GET /api/estimates/{id}/line-items/ (EstimateLineItemSerializer)."""
+
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.contacts.models import Contact
+        from apps.jobs.models import RateScheme
+
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-EBACK', name='Labor-EstBacking', taxable=False,
+        )
+        self.contact = Contact.objects.create(
+            first_name='Est', last_name='Backing',
+            email='estbacking@test.com', mobile_number='555-0400',
+        )
+        self.job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_DRAFT,
+            job_number='JOB-EBACK-0001',
+        )
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-EBack', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-EBACK-1', version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+
+    def _row(self, line_item):
+        resp = self.client.get(f'/api/estimates/{self.estimate.pk}/line-items/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        data = resp.data
+        items = data.get('results', data) if isinstance(data, dict) else data
+        return next(r for r in items if r['line_item_id'] == line_item.pk)
+
+    def _task(self, name, est_qty):
+        from decimal import Decimal
+        from apps.jobs.models import Task
+        task = Task(job=self.job, name=name, est_qty=Decimal(est_qty))
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        return task
+
+    def _material(self, description, quantity, sell_price):
+        from decimal import Decimal
+        from apps.inventory.models import Material
+        return Material.objects.create(
+            job=self.job, description=description,
+            quantity=Decimal(quantity), sell_price=Decimal(sell_price),
+            accounting_category=self.cat,
+        )
+
+    def test_backing_planned_work_on_task_sourced_line(self):
+        """A wizard line composed from a single task, still in sync ->
+        'planned_work'; backing_total mirrors compute_estimate_amount."""
+        from apps.estimates.services import EstimateWizardService
+
+        task = self._task('Build-EBack', est_qty='2')
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'task', 'id': task.pk}])
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'planned_work')
+        self.assertEqual(Decimal(row['backing_total']), Decimal('200.00'))
+
+    def test_backing_planned_materials_on_materials_only_line(self):
+        """A wizard line composed only from materials -> 'planned_materials'."""
+        from apps.estimates.services import EstimateWizardService
+
+        m1 = self._material('Steel', '2', '5.00')
+        m2 = self._material('Bolts', '3', '1.00')
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate,
+            [{'type': 'material', 'id': m1.pk}, {'type': 'material', 'id': m2.pk}])
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'planned_materials')
+        self.assertEqual(Decimal(row['backing_total']), Decimal('13.00'))
+
+    def test_backing_planned_work_on_mixed_task_and_material_line(self):
+        """A wizard line with a task AND a material among its sources ->
+        'planned_work' (any task among sources wins over materials-only)."""
+        from apps.estimates.services import EstimateWizardService
+
+        task = self._task('Build-Mix', est_qty='1')
+        material = self._material('Mix-Steel', '2', '5.00')
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate,
+            [{'type': 'task', 'id': task.pk}, {'type': 'material', 'id': material.pk}])
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'planned_work')
+
+    def test_backing_edited_when_sourced_line_out_of_sync(self):
+        """A sourced line whose stored price no longer matches the source
+        sum -> 'edited', regardless of source kind (materials-only here)."""
+        from apps.estimates.services import EstimateWizardService
+
+        m1 = self._material('Edited-Steel', '2', '5.00')
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'material', 'id': m1.pk}])
+        li.price = Decimal('999.00')
+        li.save()
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'edited')
+
+    def test_backing_from_catalog_on_service_item_line(self):
+        """A line pointing at a ServiceItem (deferred service descriptor) ->
+        'from_catalog'."""
+        from apps.estimates.models import ServiceItem
+
+        si = ServiceItem.objects.create(
+            template_name='Catalog Service', rate_scheme=self.scheme,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, qty=Decimal('1'),
+            units='hour', description='Catalog service', price=Decimal('100.00'),
+            accounting_category=self.cat, service_item=si,
+        )
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'from_catalog')
+
+    def test_backing_from_catalog_on_inventory_item_line(self):
+        """A line pointing at a catalog InventoryItem -> 'from_catalog'."""
+        from apps.inventory.models import InventoryItem
+
+        item = InventoryItem.objects.create(
+            code='EBACK-ITEM', accounting_category=self.cat,
+            qty_on_hand=Decimal('10'),
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, qty=Decimal('1'),
+            units='each', description='Catalog item', price=Decimal('25.00'),
+            accounting_category=self.cat, inventory_item=item,
+        )
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'from_catalog')
+
+    def test_backing_hand_on_bare_material_line(self):
+        """A bare `is_material=True` line with no inventory_item is NOT
+        'from_catalog' — it stays 'hand' until crystallization narrows it
+        (spec clarification, task-6 brief)."""
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, qty=Decimal('1'),
+            units='each', description='Bare material', price=Decimal('12.00'),
+            accounting_category=self.cat, is_material=True,
+        )
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'hand')
+        self.assertIsNone(row['backing_total'])
+
+    def test_backing_adjustment_on_adjustment_line(self):
+        """An adjustment line (adjustment_service set) -> 'adjustment', even
+        though it carries no sources and no catalog reference."""
+        from apps.jobs.models import RateScheme
+
+        rush = RateScheme.objects.create(
+            name='Rush-EBack', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.cat,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, qty=Decimal('1'),
+            units='%', description='Rush', price=Decimal('10.00'),
+            accounting_category=self.cat, adjustment_service=rush,
+            adjustment_percent=Decimal('10.00'),
+        )
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'adjustment')
+        self.assertIsNone(row['backing_total'])
+
+    def test_backing_hand_and_null_total_on_plain_hand_line(self):
+        """A bare hand line — no sources, no catalog ref, not an adjustment
+        -> 'hand'; backing_total null."""
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, qty=Decimal('1'),
+            units='each', description='Misc', price=Decimal('20.00'),
+            accounting_category=self.cat,
+        )
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'hand')
+        self.assertIsNone(row['backing_total'])
