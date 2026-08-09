@@ -6,6 +6,11 @@ The customer-facing billing side of Minibini and the employee/company expense le
 
 - The `Invoice`, `InvoiceLineItem`, and `InvoiceLineItemSource` models.
 - The invoice wizard (re-aggregating the job's atoms — `Task`, `Material`, plus `Fee` and `Expense` claims — into invoice line items).
+- Agreement-line references, auto-seeding, and the derived `backing`
+  model (the invoice side of the three-mode surface built from the
+  shared `docsurface` kit — see `estimates-and-prices.md` §12 for the
+  estimate side and `architecture-and-conventions.md` §5.5b for the
+  kit's own conventions).
 - The Minibini-side shape of "send an invoice to QBO": which states transition, which surfaces show what.
 - The `Expense` and `Reimbursement` models, services, and viewsets.
 - Per-expense permission scoping in the API.
@@ -152,6 +157,20 @@ Deletion goes through `LineItemService.delete_line_item_with_renumber(line_item)
 - The serializer exposes a read-only `adjustment_service_detail` dict
   `{name, rate, algorithm}` for display when `adjustment_service` is set.
 
+**Agreement-line reference fields (2026-08, skeleton phase).**
+`agreement_estimate_line` (FK → `estimates.EstimateLineItem`,
+`on_delete=SET_NULL`, null/blank, `related_name='invoice_lines'`) and
+`agreement_co_line` (FK → `estimates.ChangeOrderLineItem`, same shape) —
+which `compose_agreement` line (§"Agreement-line references and
+seeding" below) this invoice line was seeded or restored from, or
+`None` on a hand line. `SET_NULL` (never `CASCADE`): an invoice line
+must survive its agreement line vanishing. The `agreement_line`
+property returns whichever of the two is set (or `None`) — the single
+read path every consumer (the serializer's `agreement_ref`, the
+backing derivation) uses instead of checking both fields itself.
+Migration: `apps/invoicing/migrations/0023_invoicelineitem_agreement_co_line_and_more.py`
+(two plain `AddField` operations, no data migration).
+
 ### InvoiceLineItemSource
 
 Polymorphic join between `InvoiceLineItem` and the job atom it represents (a `Task`, `Material`, `Fee`, or `Expense`) — or, for `source_type='deposit'`, another `InvoiceLineItem` (see Deposits below). "Polymorphic" only in the sense that the atom side may be one of several model types; this is not a Django generic relation.
@@ -261,15 +280,192 @@ The field is populated without N+1:
 `obj.resolve()` and delegates to `InvoiceWizardService._atom_description`.
 `get_computed_amount` calls `InvoiceWizardService._atom_computed_amount`.
 
-`WizardLineItemCard.svelte` renders these as a stacked `↳ description ✕` list
-below the line item's price row, with per-source remove buttons. This replaces
-the old "N atoms" count.
+`InvoiceEditView.svelte`'s `AtomChildRow` (`docsurface/`, shared with the
+estimate side — `estimates-and-prices.md` §12.1) renders these as
+indented rows nested directly beneath the line, with a per-source
+Remove button. The **estimate** side has a parallel implementation:
+`EstimateLineItemSerializer` includes `EstimateLineItemSourceSerializer`
+with the same `description` + `computed_amount` fields (resolved via
+`EstimateWizardService._atom_description` / `_atom_computed_amount`),
+nested the same way.
 
-The **estimate** side has a parallel implementation: `EstimateLineItemSerializer`
-includes `EstimateLineItemSourceSerializer` with the same `description` +
-`computed_amount` fields (resolved via `EstimateWizardService._atom_description`
-/ `_atom_computed_amount`), shown in the same stacked layout on
-`WizardLineItemCard` for estimate line items.
+---
+
+## Agreement-line references and seeding
+
+**Design authority:** `docs/plans/2026-08-06-better-fees.md` §7.1/§7.2
+(rationale) and §9 + the wireframe artifact it links (the settled
+surface). Shipped 2026-08, "skeleton phase" — the invoice's job changed
+from "compose lines from a pool of atoms" to "start from the agreement,
+then reconcile against actuals."
+
+### The invariant
+
+An agreement line (an `EstimateLineItem` or `ChangeOrderLineItem` line
+surfaced by `compose_agreement`) is referenced by **at most one live
+(non-cancelled) invoice**, enforced under a row lock
+(`InvoiceService._assert_agreement_line_unclaimed`, `select_for_update`
+on the agreement line's own pk) inside both `seed_from_agreement` and
+`restore_agreement_line`. A violation raises `ValidationError('This
+agreement line is already on invoice INV-….')`
+(`display_number` in the message, not the raw pk). `LIVE_INVOICE_STATUSES`
+(module-level in `apps/invoicing/services.py`) is every `Invoice` status
+except `cancelled` — deliberately broader than `claims.py`'s
+`DEAD_INVOICE_STATUSES` (which also treats `superseded` as dead): the
+agreement-line invariant was scoped to "not cancelled" specifically.
+`apps/core/management/commands/validate_data.py`'s
+`check_agreement_line_invoice_exclusivity` re-checks this at rest — see
+`data-constraints.md` §1.16.
+
+Removing a line from a draft (`InvoiceService.remove_line`, below) or
+cancelling its invoice (`InvoiceService.cancel`) releases the reference
+— the two ref FKs (`agreement_estimate_line`/`agreement_co_line`) are
+set back to `None` on the surviving/remaining line, so the agreement
+line becomes eligible again. `cancel` NULLs both fields by iterating and
+calling `.save()` per line (never `QuerySet.update()` — the project's
+usual rule), in addition to `Invoice.save()`'s existing claim release
+via `claims.release_invoice_claims`.
+
+### `remaining_agreement_lines(job)`
+
+Returns the `compose_agreement(job)['lines']` minus any line already
+referenced by a **live** invoice on the job — including the caller's
+own draft, if it already carries that reference. This is deliberate: a
+line already on a live invoice never reappears as "remaining", even
+when that invoice is the one asking, which is exactly what stops the
+restore picker from re-offering a line the current draft already
+carries, and what stops `seed_from_agreement` from double-seeding a
+partially-seeded draft.
+
+### `seed_from_agreement(invoice) -> int`
+
+Called automatically the first time a **new** draft invoice is created
+on a job with an agreement (see "Auto-seed on creation" below) — its
+only caller today is `InvoiceWizardService.open_for_job`; there is no
+UI button that calls it a second way (the older "Apply everything" /
+"Copy from estimate" buttons call different, unrelated methods — see
+"Auto-seed on creation" below). Inside one `transaction.atomic()`:
+
+1. Walks `remaining_agreement_lines(invoice.job)` in order.
+2. Re-checks the invariant per line (`_assert_agreement_line_unclaimed`,
+   `exclude_invoice=invoice`).
+3. Builds the `InvoiceLineItem` straight from the agreement dict
+   (description/qty/units/price; AC from the source line's AC;
+   adjustment lines copy `adjustment_service`/`adjustment_percent` +
+   target categories) and saves it with a **plain `.save()`**, not
+   `LineItemService.save_line_item` — that helper would recompute
+   adjustment prices immediately, before the batch's own sibling lines
+   and target-category M2M exist yet. A single
+   `InvoiceService._recompute_adjustments(invoice)` pass runs once
+   after the whole batch instead.
+4. **Claim mirroring** (`_mirror_agreement_claims`): for an
+   estimate/CO-origin line, pulls the accepted line's own
+   `EstimateLineItemSource`/`ChangeOrderLineItemSource` rows and, for
+   each, tries `InvoiceWizardService._assert_atom_billable` — a `Task`
+   must be `complete` **or** `cancelled` (terminal, not complete, is the
+   billability line — a cancelled task's recorded actuals are still
+   work done), a `Material` must be `consumed`, a deposit line must
+   belong to a `paid` invoice; Fee and Expense atoms have no gate and
+   always pass. An atom that fails the gate is simply **skipped** (not
+   fatal) — "referenced but unclaimed", claimable later once ready; the
+   uncovered-work pool still shows it. Returns the number of lines
+   created.
+
+A backed agreement line therefore arrives **already on `actuals`**
+(§"Backing model" below) whenever its work is ready — case 1 of the
+design doc's acceptance criteria ("the estimate went to plan") is
+genuinely boring: read and send. A plain agreement line arrives with no
+claims — reconciling it is the invoicer pulling the relevant atoms *in*,
+same "Add selected here" gesture as any uncovered-work row.
+
+### `restore_agreement_line(invoice, *, estimate_line_id=None, co_line_id=None)`
+
+Re-adds exactly one previously-removed (or never-seeded) agreement line
+to a draft — exactly one of the two kwargs is required
+(`ValidationError` otherwise). Looks the line up in
+`compose_agreement(invoice.job)['lines']` (`ValidationError('Agreement
+line not found.')` if absent), re-checks the invariant, and builds/
+mirrors the line the same way `seed_from_agreement` does for one line.
+This is the **"add from agreement"** picker's backing call — it lists
+exactly the remaining lines not already on the draft (see the
+struck-row UI below).
+
+### `remove_line(invoice, line_item)`
+
+The single removal path for a seeded/restored/hand line — routes
+through `LineItemService.delete_line_item_with_renumber` (dropping the
+agreement ref FKs and cascading the line's `InvoiceLineItemSource` rows
+along with the row itself), so an agreement line removed this way
+becomes "remaining" again. **Every DELETE on an invoice line item goes
+through this** — `InvoiceService.delete_line_item` (the `LineItemMixin`
+generic entrypoint, `DELETE /api/invoices/{id}/line-items/{lid}/`)
+delegates to `remove_line` rather than calling `LineItemService`
+directly, so a removal from the API, the wizard, or any future caller
+releases the reference and mirrored claims identically.
+
+### Auto-seed on creation; `seed: false` opt-out
+
+`InvoiceWizardService.open_for_job(job, seed=True)`: when it actually
+**creates** a new draft (not when it returns an existing one — a
+get-or-create hit is never re-seeded), it calls
+`InvoiceService.seed_from_agreement(invoice)` unless `seed=False`. There
+is deliberately **no "start from agreement" button** — every invoice on
+a job with an agreement starts from it automatically (provisional, per
+RM 2026-08-06 — "not sure about this but I want to try it and see";
+revisit after real use). An estimate-less job (or one with a fully-
+consumed agreement) simply seeds empty, same as before.
+
+`POST /api/invoices/` (`InvoiceViewSet.perform_create`) reads `seed`
+straight off `request.data` (default `True`, not routed through the
+serializer) and passes it to `open_for_job`. The **only** opt-out caller
+is `DepositInvoiceModal.svelte`, which sends `{job, seed: false}` on its
+first of two create calls — a deposit invoice wants an empty,
+deposit-only draft, not one pre-populated with agreement lines it isn't
+billing yet.
+
+**Not the same mechanism as the older "Apply everything" / "Copy from
+estimate" buttons.** `InvoiceEditView` still shows both (only while
+`canEdit && lineItems.length === 0` — now a rare state, reachable mainly
+via a `seed: false` deposit draft before its own line is added, or an
+estimate-less/agreement-less job), but neither calls
+`seed_from_agreement`: **"Apply everything"** (`POST .../apply-everything/`)
+calls the pre-existing `InvoiceWizardService.seed_all_atoms` — one line
+per available job **atom**, unrelated to the agreement — and **"Copy
+from estimate"** (`POST .../copy-from-estimate/`) calls the pre-existing
+`InvoiceService.copy_from_estimate` (below), which copies
+`compose_agreement` values onto plain lines **without** writing
+`agreement_estimate_line`/`agreement_co_line` refs or mirroring claims —
+those lines get no `agreement_ref`, no est-vs-actual reference, no
+Restore, and read `backing: null` until something claims them by hand.
+Both buttons predate this phase and were **not** changed by it; they
+remain because their zero-lines precondition still occasionally holds.
+
+### Endpoints
+
+| Verb + path | Behavior |
+|---|---|
+| `GET /api/invoices/{id}/remaining-agreement-lines/` | Returns `{lines: [...]}` — the picker's feed; each `compose_agreement` line dict with Decimals stringified. Permission: `CanManageFinancials`. |
+| `POST /api/invoices/{id}/restore-line/` | Body: `{estimate_line_id}` or `{co_line_id}` (exactly one). 201 with the serialized new `InvoiceLineItem`. Permission: `CanManageFinancials`. |
+
+### Frontend: restore / "Remove from invoice" struck rows
+
+`InvoiceEditView.svelte` keeps its own **client-side, session-local**
+list of removed agreement-backed lines (`removedRefs`, a `$state`
+array) — not a server list. `handleRemoveItem` calls `DELETE
+.../line-items/{id}/` (single-phase, no confirm — the word "delete"
+never appears; the button reads **"Remove from invoice"**); if the
+removed line carried an `agreement_ref`, its `{kind, line_id,
+description, qty_display, price, amount}` is pushed onto `removedRefs`
+and rendered as a struck `tr.doc-offdoc` row (amounts parenthesized in
+spirit, description/qty/price/amount still legible, dashed-hatched
+background) with a **Restore** button. Restore POSTs `/restore-line/`
+with `{estimate_line_id}` or `{co_line_id}` per the entry's `kind`, then
+drops it from `removedRefs`. A hand line (no `agreement_ref`) simply
+vanishes on Remove — the server-side delete already released whatever
+it needed to release; there's nothing to restore. Either way the line
+reseeds on the **next** invoice's `seed_from_agreement` regardless of
+whether it was ever restored on this one — removal always frees the
+agreement line for `remaining_agreement_lines`.
 
 ---
 
@@ -287,9 +483,9 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 
 | Method | Responsibility |
 |---|---|
-| `open_for_job(job)` | Returns the job's draft `Invoice`. Creates one if none exists. Raises `ValidationError` if the job's status is not in `BILLABLE_JOB_STATUSES = {APPROVED, IN_PROGRESS, WORK_COMPLETE, COMPLETED, CANCELLED}`. `CANCELLED` is included so a job stopped early ("stop and bill") can still be invoiced for work done. |
+| `open_for_job(job, seed=True)` | Returns the job's draft `Invoice`. Creates one if none exists — a newly-**created** draft auto-seeds from the agreement (`InvoiceService.seed_from_agreement`) unless `seed=False`; an **existing** draft is returned as-is and never re-seeded. Raises `ValidationError` if the job's status is not in `BILLABLE_JOB_STATUSES = {APPROVED, IN_PROGRESS, WORK_COMPLETE, COMPLETED, CANCELLED}`. `CANCELLED` is included so a job stopped early ("stop and bill") can still be invoiced for work done. See "Agreement-line references and seeding" above. |
 | `send_all_atoms(invoice)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines — unlike `seed_all_atoms` (the fresh-document "Apply everything"), which requires an empty invoice. `POST /api/invoices/{id}/send-all-atoms/` → `{'created': N}`; the wizard's "Send all to Invoice" button. |
-| `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — ALL of the job's tasks (cancelled included since 2026-07-12, plan C3), plus a synthetic "Materials (no task)" group for task-less materials with `quantity > 0`. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), state (`available` / `claimed_by_current` / `claimed_by_other`), and (for claimed atoms) the claiming line item or invoice. **Terminal — not complete — is the task billability line**: `complete` and `cancelled` tasks are billable (the same doctrine that keeps cancelled *jobs* in `BILLABLE_JOB_STATUSES`); anything else is `not_billable` (`task_incomplete`). A cancelled task's atom carries `task_cancelled: true`, which `WizardAtomRow` renders as an amber "cancelled — work done" badge so the biller makes a conscious choice; a cancelled task with zero actuals is simply a $0 row. Task and material atoms also carry `struck_from_agreement: true` (2026-07-20) when an ACCEPTED change order's remove/replace targeted their claiming estimate line but crystallization left them live — derived per pool build via `ChangeOrderService.struck_atom_keys(job)` (nothing stored), rendered as an amber "struck from agreement" badge; suppressed on cancelled tasks (one prompt suffices). See estimates-and-prices §14.11 for the decision record. The *estimate* pool is the opposite — cancelled tasks are excluded there (estimates project planned work). Atom keys are normalized to match the estimate wizard so the frontend `WizardAtomRow` component is shared. |
+| `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — ALL of the job's tasks (cancelled included since 2026-07-12, plan C3), plus a synthetic "Materials (no task)" group for task-less materials with `quantity > 0`. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), state (`available` / `claimed_by_current` / `claimed_by_other`), and (for claimed atoms) the claiming line item or invoice. **Terminal — not complete — is the task billability line**: `complete` and `cancelled` tasks are billable (the same doctrine that keeps cancelled *jobs* in `BILLABLE_JOB_STATUSES`); anything else is `not_billable` (`task_incomplete`). A cancelled task's atom carries `task_cancelled: true`; `InvoiceEditView`'s `UncoveredWorkSection` renders it as an amber "cancelled — work done" chip so the biller makes a conscious choice (§"Uncovered-work section chips" below); a cancelled task with zero actuals is simply a $0 row. Task and material atoms also carry `struck_from_agreement: true` (2026-07-20) when an ACCEPTED change order's remove/replace targeted their claiming estimate line but crystallization left them live — derived per pool build via `ChangeOrderService.struck_atom_keys(job)` (nothing stored), rendered as an amber "struck from agreement" chip; suppressed on cancelled tasks (one prompt suffices). See estimates-and-prices §14.11 for the decision record. The *estimate* pool is the opposite — cancelled tasks are excluded there (estimates project planned work). Atom keys are normalized to match the estimate wizard so the same pool shape feeds both surfaces. |
 | `add_atoms_to_new_line_item(invoice, atoms)` | Creates a new `InvoiceLineItem` plus N `InvoiceLineItemSource` rows in one transaction. Defaults table below. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows. Recomputes per the in-sync rule. |
 | `remove_atoms_from_line_item(line_item, source_ids)` | Removes the matching source rows. Recomputes per the in-sync rule. Returns `{'line_item_deleted': bool}`. If the removal empties the source list, the line item is hard-deleted (via `LineItemService.delete_line_item_with_renumber`) regardless of override state. |
@@ -301,6 +497,17 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 `InvoiceService.copy_from_estimate(invoice)` (`POST /api/invoices/{id}/copy-from-estimate/`) seeds a fresh draft invoice from the job's **accepted-estimate agreement** (`compose_agreement(invoice.job)`) — one `InvoiceLineItem` per agreement line (description, qty, price, units, accounting_category; adjustment lines also carry `adjustment_service` + target categories). Preconditions (else `ValidationError`): the invoice is `draft`, has no existing line items, and is the only non-cancelled invoice for the job (i.e. it's the first invoice).
 
 **Fee-claim-on-copy.** A hand-line on the accepted estimate was crystallized into a `Fee` on the job at acceptance time (see `estimates-and-prices.md` §9). When `compose_agreement` surfaces such a line it carries the `source_fee_id`; `copy_from_estimate` then writes an `InvoiceLineItemSource` (`source_type='fee'`, `source_pk=fee.pk`) for that line. This claims the Fee so the wizard source pool marks it billed and the whole-atom unique constraint blocks double-billing it through the atom-pull path.
+
+**Predates, and is distinct from, `seed_from_agreement` (2026-08).**
+This method does **not** write `agreement_estimate_line`/
+`agreement_co_line` refs (except the Fee-claim case above) — its output
+lines carry no `agreement_ref`, get no est-vs-actual reference, support
+no Restore, and read `backing: null`/`edited` rather than
+`estimate`/`actuals`. It survives today only as the "Copy from
+estimate" button's backing call for the now-rare case of a draft with
+zero lines under auto-seeding — see "Agreement-line references and
+seeding" above for the mechanism that actually seeds new invoices by
+default.
 
 ### Defaults when bundling N atoms into a new line item
 
@@ -356,38 +563,44 @@ updates the URL to `/:docId` in place — no remount, no job refetch. The
 old `#/invoices/:id` route still works: `InvoiceDetailPage.svelte` is
 now a small redirect shim into the job-scoped URL.
 
-The atom-pull "wizard" is no longer a separate route — it's
-**reconcile mode**, a `mode` (`'lines'` | `'reconcile'`) that
-`InvoicePanel` toggles in place at the same URL, rendering
-`ReconcileMode.svelte` (`frontend/src/components/wizards/`) in place of
-the line-items view. `ReconcileMode` is shared with the estimate side
-(parameterized per `docType`); for invoices its config sets
-`hasManualLine: true` and `hasAgreementAdjustments: true` (the invoice
-side adds a manual-line button and the agreement-adjustments panel that
-the estimate side doesn't need). Two panes, unchanged in behavior from
-the former `InvoiceWizardPage`:
+**Retired 2026-08 (skeleton + three-mode surface).** The old two-mode
+(`'lines'`/`'reconcile'`) panel and the two-column `ReconcileMode.svelte`
+atom-pull wizard it rendered in place are **gone**, along with
+`WizardSourcePool.svelte`, `WizardLineItemCard.svelte`, and
+`WizardActions.svelte`. In their place: `InvoicePanel` renders a
+`DocModeBar` (three buttons, **Edit** / **Customer** / **Reorder**,
+`aria-pressed` on the active one) that flips its `mode` in place at the
+same URL — never a navigation, never a remount. **Edit** mode renders
+`InvoiceEditView.svelte` (`frontend/src/components/invoices/`) — one
+merged surface combining what used to be the separate lines view and
+reconcile mode: the line-items table (each row's atom claims and
+backing nested inline) plus an uncovered-work pool below it. **Customer**
+and **Reorder** modes render the shared `docsurface/DocCustomerView.svelte`
+/ `DocReorderView.svelte` — the collapsed, read-only document (Customer)
+or the same rows plus an arrows column (Reorder). All three modes, and
+the equivalent estimate-side surface, are built from one shared
+`docsurface` component kit — see `estimates-and-prices.md` §12 for the
+estimate side (which documents the kit's shared vocabulary in full) and
+`architecture-and-conventions.md` §5.5b for the kit's cross-cutting
+conventions.
 
-- Left: `frontend/src/components/invoices/WizardSourcePool.svelte` — invoice-specific source pool (renders the `Task → atoms` tree, with the synthetic "Materials (no task)" group). The estimate side has its own source-pool component because the atom shape and grouping differ.
-- Right: `frontend/src/components/wizards/WizardLineItemCard.svelte` — shared with the estimate side. One card per line item, in-sync/override price display, atom remove buttons.
-
-Footer actions use `frontend/src/components/wizards/WizardActions.svelte`
-— also shared; **Done** flips the panel back to `'lines'` mode in
-place rather than navigating.
-
-The old route `#/invoices/:id/wizard` is now a redirect shim
-(`InvoiceWizardRedirect.svelte`) that remembers `'reconcile'` mode for
-that invoice (`rememberMode`, `stores/jobWorkspace.js`) before bouncing
-to the job-scoped URL, so old wizard bookmarks land back in reconcile
-mode. Restoring a remembered `'reconcile'` mode is **validated against
-the invoice's live status** — reconcile is only offered on a `draft`
-invoice, so one sent/paid since the mode was last remembered falls back
-to `'lines'`.
+The old route `#/invoices/:id/wizard` is still a redirect shim
+(`InvoiceWizardRedirect.svelte`), but it now remembers **`'edit'`** mode
+for that invoice (`rememberMode`, `stores/jobWorkspace.js`) before
+bouncing to the job-scoped URL — old wizard bookmarks land on the merged
+Edit view. **Mode persistence and normalization** work exactly as on
+the estimate side (`estimates-and-prices.md` §12 intro): the store keeps
+whatever was written, unmigrated; the read site (`InvoicePanel`) folds a
+remembered `'lines'`/`'reconcile'` to `'edit'`, and falls a remembered
+`'reorder'` back to `'edit'` if the invoice is no longer editable
+(`canEditLineItems = can_manage_financials && status === 'draft'`).
 
 `InvoicePanel` (formerly `InvoiceDetailPage.svelte`'s inline logic) is
 the standard detail view of an invoice. It shares the same **JobHeader**
-band (via `JobShell`) as reconcile mode — same page, same shell. On
+band (via `JobShell`) as every mode — same page, same shell. On
 `draft` invoices, users with `can_manage_financials` can add, edit,
-delete, and reorder line items.
+delete, and reorder line items (Edit mode for add/edit/delete, Reorder
+mode for reordering).
 
 **Adding a line item** (2026-07-25 — adopted the estimate flow) opens
 `PriceListPicker.svelte` (shared with the estimate/CO add-line paths),
@@ -416,13 +629,163 @@ invoicing (no job side effects, no actuals tracking); it is distinct
 from the atom-pull wizard, which always bills a real Task/Material/Fee/
 Expense/deposit atom.
 
-A **"Show Billables"** button is shown on the panel only to users with `can_manage_financials`, only when the invoice is in `draft` status, and only when the job has at least one task or material (`hasBillables`) — it flips the panel into reconcile mode rather than navigating. If the invoice is not draft, the user lacks the permission, or the job has no billable sources, the button is absent.
+**"Show Billables" is retired** — there is no separate button to reach the
+job's uncovered work anymore; `InvoiceEditView`'s `UncoveredWorkSection`
+(§"Backing model" below) is always part of Edit mode, visible to any
+`canEdit` user on a `draft` invoice regardless of whether the job has
+billable atoms (an empty pool renders `emptyText`, never a hidden
+section).
 
 On `open` or `partly-paid` invoices a disabled **"Revise (coming soon)"** placeholder button appears in the toolbar — invoice revision is not yet implemented.
 
 ### Discard
 
 `DELETE /api/invoices/{id}/` calls `InvoiceService.discard_draft`, which validates draft status and hard-deletes. The viewset returns 200 with `{'message': 'Invoice discarded'}` per the project's all-DELETE-returns-JSON convention. There is no two-phase confirmation on this endpoint (the wizard owns the confirmation in the UI; cascade impact is implicit — all claimed atoms become free).
+
+---
+
+## Backing model
+
+**Design authority:** `docs/plans/2026-08-06-better-fees.md` §7.3
+("actuals by default") and §9.2 (the chip vocabulary). Every invoice
+line carries a **backing** — what its amount currently stands on —
+rendered as the "Backing" column's `BackingChip`. Both fields below are
+`SerializerMethodField`s on `InvoiceLineItemSerializer`
+(`apps/api/invoicing/serializers.py`) — **never stored**, recomputed on
+every read from the line's own state.
+
+### `agreement_ref`
+
+`null`, or `{kind: 'estimate'|'change_order', line_id, est_qty,
+est_price, est_amount}` sourced from the referenced agreement line's own
+stored qty/price (`_agreement_ref_payload`) — never from the invoice
+line's current values, so it stays a stable comparison point as the
+invoice line is edited. All four numeric values are **stringified
+explicitly** (not left to DRF's default JSON encoding of a bare
+`Decimal`, which falls back to `float()`): an un-stringified payload
+would silently ship floats, breaking the frontend's string-equality
+"synced" check and 400ing a PATCH that sends one straight back as
+qty/price (`DecimalValidator` rejects most floats' imprecise binary
+expansion).
+
+### `backing`
+
+One of `'deposit'` / `'deposit_credit'` / `'actuals'` / `'estimate'` /
+`'edited'` / `null`, via the module-level `derive_backing(line)`
+function (written duck-typed — the CO surface will reuse it for
+`ChangeOrderLineItem` too). In order:
+
+1. `is_deposit_line` → `'deposit'`; `is_deposit_deduction` →
+   `'deposit_credit'` (see "Deposits" below).
+2. Has claimed source rows **and** is in sync with them (the existing
+   wizard rule — `price == round(sum(sources) / qty, 2)`) →
+   `'actuals'`.
+3. Has an `agreement_ref` **and** qty/price still equal the ref's stored
+   qty/price → `'estimate'`.
+4. Has an `agreement_ref` or sources, but matched neither rule above
+   (hand-edited since seeding, or a claimed-but-out-of-sync line) →
+   `'edited'`.
+5. Otherwise (a plain hand line) → `null`.
+
+A seeded backed line therefore arrives already on `'actuals'` whenever
+its work is ready (§"Agreement-line references and seeding" above) —
+the boring case is read-and-send. `actuals_total` is a third field: the
+sum of `compute_amount()` over the line's claimed work atoms, `null`
+when there are none — independent of `backing` itself, so an
+out-of-sync `'edited'` claimed line still reports its actuals total as
+the est-vs-actual reference figure. (A `SOURCE_DEPOSIT` claim resolves
+to another `InvoiceLineItem`, not a work atom with `compute_amount()`,
+so it's skipped in the sum, same as a dangling/unresolvable source.)
+
+The list/retrieve queryset prefetches `sources` and
+`select_related('agreement_estimate_line', 'agreement_co_line',
+'accounting_category')` to keep all three fields N+1-free.
+
+### Chip labels (`docsurface/BackingChip.svelte`)
+
+`estimate` → "estimate", `actuals` → "actuals" (or **"actuals =
+estimate ✓"**, class `synced`, when `syncedWithEstimate` — the invoice
+side's own check: `backing === 'actuals' && actuals_total ===
+agreement_ref.est_amount`), `edited` → "edited", `deposit` → "deposit",
+`deposit_credit` → "deposit credit". (The estimate-only enum values —
+`planned_work`/`planned_materials`/`from_catalog`/`hand`/`adjustment` —
+live in `estimates-and-prices.md` §12.2.) `null` renders nothing.
+
+### Est-reference caption and backing controls (`InvoiceEditView`)
+
+Under the Backing chip, a line with an `agreement_ref` shows a small
+**est-reference caption**: `"est was {fmtMoney(est_amount)}"`, followed
+by `" · {sign}{fmtMoney(delta)}"` when `delta = current − est_amount`
+is nonzero (`current` = `actuals_total` if claimed, else the line's own
+current amount) — e.g. `"est was $500.00 · +$25.00"`. The `· +$Δ` clause
+is suppressed entirely at `delta === 0` (`fmtMoney(0)` renders `'-'`,
+the shared "no amount" sentinel — showing the clause there would print
+the nonsense `"· +-"`).
+
+Two backing controls render conditionally in the Actions cell (while
+`canEdit`), alongside the always-present **Edit…**:
+
+| Control | Renders when | Does |
+|---|---|---|
+| **Use estimate** | `agreement_ref != null && backing !== 'estimate'` | `PATCH .../line-items/{id}/` `{qty: agreement_ref.est_qty, price: agreement_ref.est_price}` — resets the line to the agreement's own stored values |
+| **Use actuals** | `(backing === 'estimate' \|\| backing === 'edited') && actuals_total != null` | `PATCH .../line-items/{id}/` `{price: round(actuals_total / qty, 2)}` — re-derives the per-unit price from claimed actuals |
+
+Both are ordinary field PATCHes — no dedicated endpoint — so "Edit…"
+(the full field-edit modal, `LineItemModal`) always remains available
+as the general escape hatch; editing price by hand there is what drives
+a line to `'edited'` (rule 4 above) when it doesn't happen to land back
+on the estimate's exact values.
+
+**Attachment recalculates immediately** (design doc §7.3 — reversing an
+earlier "attachment never moves money" position): claiming or releasing
+an atom (`add-atoms`/`remove-atoms`, or an atom from the uncovered-work
+pool) re-derives an in-sync line's price on the spot via the existing
+wizard in-sync rule, so the invoice total visibly moves the moment work
+attaches — attachment IS a billing decision, reversible by detaching or
+by **Use estimate**.
+
+### Uncovered-work section chips
+
+`InvoiceEditView`'s `UncoveredWorkSection` (title "Uncovered work") is
+fed from `GET .../source-pool/`, flattened and filtered to atoms not
+already claimed by this invoice (`claimed_by_current` rows are the
+`AtomChildRow` nests above, not pool rows) and excluding the "Deposit
+credits" group (its own section — below). Each row's optional `chip`
+prop (`UncoveredWorkSection`/`AtomChildRow`'s generic `{label, cls}`
+shape, kit Task 9) surfaces provenance the pool already computes
+server-side — `atomChip()` in `InvoiceEditView.svelte`, in precedence
+order:
+
+1. `state === 'claimed_by_other'` → **"invoiced — {invoice number}"**
+   (class `invoiced-elsewhere` — no dedicated `app.css` rule; falls back
+   to the base grey `.backing-chip` look). Wins over the other two even
+   when they'd also apply — a cancelled task already claimed on another
+   invoice is uninteresting to bill *here*.
+2. `task_cancelled` → **"cancelled — work done"** (reuses the `edited`
+   chip class/tan color) — the terminal-not-complete billability
+   doctrine (§"Atoms — same Job atoms as the estimate" above): a
+   cancelled task's recorded actuals are still real, billable work, but
+   the invoicer must consciously choose to bill it rather than have it
+   fold into an undifferentiated row.
+3. `struck_from_agreement` → **"struck from agreement"** (same `edited`
+   class) — an accepted CO removed/replaced the estimate line that used
+   to claim this atom, but crystallization left the atom itself live
+   (complete task, consumed material). Suppressed when the row is also
+   `task_cancelled` (one amber chip is a prompt, two is noise) — see
+   `estimates-and-prices.md` §14.11 for the decision record.
+4. No chip when none of the above apply — an unmarked row means nothing
+   special (positive-only marking, design doc §7.3): a hand-line
+   agreement legitimately covers work with no task-level claim.
+
+A `unselectableNote` (plain text, not a chip) additionally explains why
+a `claimed_by_other` or `not_billable` row's checkbox is disabled:
+`"Invoiced on {invoice number}"`, `"Task not complete yet"`, or
+`"Material not yet consumed"`.
+
+A "descoped by CO-N" chip variant is reserved for the future
+change-order plan (design doc §9.3) — `UncoveredWorkSection` already
+takes the generic `chip` prop for exactly this, so that phase slots in
+without a kit change.
 
 ---
 
@@ -590,14 +953,19 @@ state too).
 
 Clicking it opens `DepositInvoiceModal.svelte` — a single **Amount** field
 (client-validated `> 0` via a `FieldError` slot) plus Create/Cancel. On
-Create it does a two-step sequence, reusing existing contracts verbatim (no
-backend changes):
+Create it does a two-step sequence:
 
-1. `POST /api/invoices/` `{job}` — the exact call `InvoicePanel`'s Start
-   Invoice makes. `InvoiceWizardService.open_for_job` is idempotent: if the
-   job already has an open draft, it returns that draft instead of
-   erroring, so state 2's button is safe to offer — the deposit line lands
-   on the existing draft.
+1. `POST /api/invoices/` `{job, seed: false}` — the same call
+   `InvoicePanel`'s Start Invoice makes, **plus** the `seed: false` opt-out
+   (§"Agreement-line references and seeding" above — added 2026-08 when
+   invoice creation started auto-seeding by default). Without it, a fresh
+   deposit draft on a job with an agreement would arrive pre-populated
+   with agreement lines the invoicer isn't billing yet, defeating the
+   point of "Make this a deposit invoice." `InvoiceWizardService.open_for_job`
+   is idempotent: if the job already has an open draft, it returns that
+   draft instead of erroring (and never re-seeds it, seed flag or not),
+   so state 2's button is safe to offer — the deposit line lands on the
+   existing draft, seeded or not.
 2. `POST /api/invoices/{id}/line-items/` `{deposit: true, description:
    "Deposit on {job_number}", qty: '1', units: 'none', price: amount}` —
    the same deposit line-item contract described above.
@@ -682,6 +1050,38 @@ Material/Fee/Expense, so "Apply everything" / "Send all to Invoice" will
 include an outstanding deposit credit on the same job without special-
 casing it.
 
+### `DepositCreditsSection` — a dedicated one-click picker (2026-08)
+
+`InvoiceEditView.svelte` re-homes the credit-pull gesture as
+**`DepositCreditsSection`** — an inline section (not a separate
+component file; not part of the shared `docsurface` kit, since it's
+invoice-only) rendered while `canEdit` and only when the pool's
+"Deposit credits" group has at least one `available` atom. Each row
+shows the credit's description (+ an optional sub-info line), amount,
+and a single **"Apply to this invoice"** button (busy label "Applying…")
+— `POST .../line-items-from-atoms/` `{atoms: [{type: 'deposit', id}]}`,
+the same endpoint the generic uncovered-work "Add selected here" flow
+uses. Deliberately **not** the checkbox-then-merge object-first gesture
+the rest of Edit mode uses: pulling a credit is a distinct act (a
+deduction against money already collected, not a claim on job work), so
+it gets its own section and a direct one-click action instead.
+
+**Parked for RM (design call, not yet resolved as of this writing):**
+`InvoicePanel` **also** still renders its own pre-existing top-of-panel
+**"Unapplied deposit credit"** banner (§"Unapplied deposit credit"
+below) — a second, independently-derived "credit available" surface.
+The two currently coexist with different derivations (the banner is
+client-side math over the job-scoped `invoices` list,
+`lib/depositCredits.js`; `DepositCreditsSection` reads the server's
+`GET .../source-pool/` "Deposit credits" group) and different gestures
+(banner: `applyDepositCredit` in `InvoicePanel`; section: the same-named
+function local to `InvoiceEditView`, posting the identical payload
+through its own state/`onChanged` callback). A 2026-08 code review
+recommended keeping the banner and dropping the section (or the
+reverse); RM has not yet made the call. Do not "fix" this
+unilaterally — it's a design decision pending browser review, not a
+bug.
+
 ### Indicators (all derived, no stored state)
 
 - **Invoices list** (`InvoiceListPage.svelte`): a **DEPOSIT** doc-pill
@@ -707,6 +1107,10 @@ casing it.
   and unrelated to this derived signal.
 
 ### Unapplied deposit credit — draft-panel notice + send-time confirm (Task 22, frontend-only)
+
+**This is the "banner" side of the two-surface duplication parked for
+RM** — see "`DepositCreditsSection` — a dedicated one-click picker"
+above. Both exist in the shipped app today.
 
 The concept is called an **"unapplied deposit credit"** everywhere
 user-visible (never "unconsumed" — the wording is deliberate, matching the
@@ -735,23 +1139,28 @@ viewing a **draft** invoice, one row per unapplied credit renders above
 `JobDetail.svelte`'s `.change-request-banner`): `Unapplied deposit credit —
 $<amount> from <source invoice's display_number>` (amount = the credit
 line's `qty × price`, formatted `${n.toFixed(2)}` — this file's own money
-convention, e.g. `Amount Paid` above; no thousands separator, unlike the
-reconcile pool's `WizardAtomRow`, which uses `toLocaleString`). The notice
+convention, e.g. `Amount Paid` above; distinct from the shared `fmtMoney`
+helper (`lib/taskTotals.js`) the `docsurface` kit and `InvoiceEditView`
+use everywhere else, which renders `'-'` for a zero/falsy amount instead
+of `$0.00`). The notice
 text itself shows to any viewer of the draft; only the **Apply deposit
 credit** button is gated on `canEditLineItems` (same permission as any
 other line-item mutation). Apply posts
 `POST /api/invoices/{draftId}/line-items-from-atoms/` with `{atoms:
 [{type: 'deposit', id: <line_item_id>}]}` — the same atom-pull endpoint
-Reconcile's "Add Here" uses — then reloads the invoice and the job's
-`invoices` list; the deduction line appears and the notice row disappears
-because the credit is now applied. Errors route through `triageError` to
-the overlay (no form here), covering the 409 `atoms_already_claimed` case
-if the credit was claimed elsewhere in the interim; the invoices list is
-also refreshed on that error path so the notice reflects the new reality.
-`InvoicePanel.setMode('lines')` (the "Back to lines" transition) also
-refreshes `invoices`, not just the single invoice — Reconcile's own "Add
-Here" pull can claim/release a credit too, and that only shows up in the
-job-scoped list the notice is derived from.
+`InvoiceEditView`'s own `DepositCreditsSection`/uncovered-work "Add
+selected here" use — then reloads the invoice and the job's `invoices`
+list; the deduction line appears and the notice row disappears because
+the credit is now applied. Errors route through `triageError` to the
+overlay (no form here), covering the 409 `atoms_already_claimed` case if
+the credit was claimed elsewhere in the interim; the invoices list is
+also refreshed on that error path so the notice reflects the new
+reality. `InvoicePanel`'s `handleEditChanged` — the callback every Edit-mode
+gesture in `InvoiceEditView` fires — also refreshes `invoices`, not just
+the single invoice, since `InvoiceEditView`'s own atom-pull gestures
+(including its `DepositCreditsSection`) can claim/release a credit too,
+and that only shows up in the job-scoped list this banner's derivation
+reads.
 
 **Part 2 — send-time confirm** (`InvoiceSendPage.svelte`, not
 `InvoicePanel` — the actual `POST /api/invoices/{id}/send/` lives on this
@@ -1220,13 +1629,19 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 | Invoice detail (glue) | `frontend/src/routes/jobs/JobInvoicePage.svelte` (route `#/jobs/:jobId/invoice[/:docId]`) |
 | Invoice detail (panel) | `frontend/src/components/invoices/InvoicePanel.svelte` — hosted by `JobInvoicePage` inside `JobShell` |
 | Old detail route (shim) | `frontend/src/routes/invoices/InvoiceDetailPage.svelte` (route `#/invoices/:id`, redirects into the job-scoped URL) |
-| Reconcile mode (was "wizard") | `frontend/src/components/wizards/ReconcileMode.svelte` — a mode of `InvoicePanel`, not a route |
-| Old wizard route (shim) | `frontend/src/routes/invoices/InvoiceWizardRedirect.svelte` (route `#/invoices/:id/wizard`, remembers reconcile mode then redirects) |
-| Source pool | `frontend/src/components/invoices/WizardSourcePool.svelte` |
+| Mode bar (Edit/Customer/Reorder) | `frontend/src/components/docsurface/DocModeBar.svelte` — shared with the estimate side |
+| Edit mode | `frontend/src/components/invoices/InvoiceEditView.svelte` — a mode of `InvoicePanel`, not a route |
+| Customer / Reorder modes | `frontend/src/components/docsurface/DocCustomerView.svelte` / `DocReorderView.svelte` — shared with the estimate side |
+| `docsurface` kit (backing chips, atom rows, uncovered-work pool, placeholder row) | `frontend/src/components/docsurface/` — see `estimates-and-prices.md` §12, `architecture-and-conventions.md` §5.5b |
+| Old wizard route (shim) | `frontend/src/routes/invoices/InvoiceWizardRedirect.svelte` (route `#/invoices/:id/wizard`, remembers `'edit'` mode then redirects) |
+| Deposit-credits picker | `InvoiceEditView.svelte`'s inline `DepositCreditsSection` — invoice-only, not part of the shared kit |
 | Line item modal (shared with estimates) | `frontend/src/components/LineItemModal.svelte` |
-| Line item card (shared with estimates) | `frontend/src/components/wizards/WizardLineItemCard.svelte` |
-| Footer actions (shared with estimates) | `frontend/src/components/wizards/WizardActions.svelte` |
 | Send-to-QBO dialog | `frontend/src/components/invoices/SendToQBODialog.svelte` |
+
+**Retired 2026-08:** `frontend/src/components/wizards/ReconcileMode.svelte`,
+`WizardActions.svelte`, `WizardLineItemCard.svelte`, `WizardAtomRow.svelte`,
+and both `WizardSourcePool.svelte` files (estimate and invoice) — deleted,
+not renamed. See "Frontend" under "Invoice wizard" above.
 
 ### Invoice list page
 
@@ -1242,7 +1657,13 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 
 **Backend — `?summary=true` opt-in (dual contract).** The financials list page calls `GET /api/invoices/?summary=true`. Only in **summary mode** does `InvoiceViewSet` switch to the lightweight `InvoiceSummarySerializer`, apply the annotated totals, default the status filter to **open** (open + partly-paid), and apply the status presets / due-date range / `?business=` / `?contact=` / ordering. **Without** `summary=true`, the list endpoint keeps its original contract — the full `InvoiceSerializer` (with nested `line_items`) and **all** statuses (no default filter). This preserves the pre-existing consumer `GET /api/invoices/?job=<id>`, which the **job overview** page (`JobDetailPage` → `JobDetail.svelte` → `InvoicingBlock`) uses for its Invoicing block, reading each invoice's computed `total` field (above) rather than walking `line_items` itself. (Switching the bare list action to the summary serializer + default-open unconditionally was a regression that left the Job overview showing invoices with no line items and no totals.) List read permission stays `IsAuthenticated` in both modes — the Financials sidebar gate is a UI convention only.
 
-`ReconcileMode` tracks `selectedAtoms` with `$state`; "Add to line item" and "Create new line item" both POST and reload. 409 from the API surfaces as a `FormMessage` prompting the user to reload the reconcile view for a fresh source pool.
+`InvoiceEditView` tracks its ticked uncovered-work selection with local
+`$state`; "Add selected here" / "New line from selected" both POST and
+await the panel's silent refresh. A 409 (claim conflict) clears the
+selection, refreshes, and surfaces a specific "…refreshed" message via
+the global overlay (`handleMutationError`,
+`architecture-and-conventions.md` §5.5b's 409-refresh idiom) rather than
+a form message — there is no form on this surface anymore.
 
 ### Starting an invoice — Create/View model
 
@@ -1253,7 +1674,7 @@ on the job overview — the overview has no authoring affordances at all
 The Create/View model now lives entirely on the Invoices section
 (`InvoicePanel.svelte`, when the job has no invoices yet):
 
-- **"Start Invoice"** — shown when the job's status is billable (`approved`, `in_progress`, `work_complete`, `completed`, or `cancelled`) **and** no draft invoice exists. POSTs `{job}` to `/api/invoices/` (routed through `InvoiceWizardService.open_for_job`) and reloads the panel onto the new draft. Shown/allowed for users with `can_manage_jobs` **or** `can_manage_financials` (the `create` action of `InvoiceViewSet` is `(CanManageJobs | CanManageFinancials)`, matching the frontend gate and the wizard path; all other invoice write actions, including line-item editing, stay `can_manage_financials`-only). On a manageable but **not-yet-billable** job (draft/submitted) the button is hidden and the empty state explains: "Invoicing becomes available once the job is approved." (2026-07-19 — the button previously showed regardless of status, so its only outcome on a draft job was the service's refusal; the refusal message itself now names the real billable set in UI terms.)
+- **"Start Invoice"** — shown when the job's status is billable (`approved`, `in_progress`, `work_complete`, `completed`, or `cancelled`) **and** no draft invoice exists. POSTs `{job}` to `/api/invoices/` (routed through `InvoiceWizardService.open_for_job`) and reloads the panel onto the new draft — **auto-seeded from the job's agreement** (§"Agreement-line references and seeding" above) when one exists; an estimate-less job's draft simply arrives empty, same as before. Shown/allowed for users with `can_manage_jobs` **or** `can_manage_financials` (the `create` action of `InvoiceViewSet` is `(CanManageJobs | CanManageFinancials)`, matching the frontend gate; all other invoice write actions, including line-item editing, stay `can_manage_financials`-only). On a manageable but **not-yet-billable** job (draft/submitted) the button is hidden and the empty state explains: "Invoicing becomes available once the job is approved." (2026-07-19 — the button previously showed regardless of status, so its only outcome on a draft job was the service's refusal; the refusal message itself now names the real billable set in UI terms.)
 - **Viewing** — once an invoice exists, `InvoicePanel`'s own subnav
   (`DocSubnav.svelte`) lists every invoice for the job; picking one
   shows it in place (no separate "View" button — the Invoices section
@@ -1297,7 +1718,8 @@ The Job P&L view consumes invoices, expenses, and bleps to compute revenue and c
 
 - **Job P&L view** — consumes Invoices + Expenses + Bleps (plus, eventually, QBO-side vendor-bill actuals). Was Phase 5 of the QBO integration roadmap. Data is being captured today; the view is not built.
 - **`superseded` and `defaulted` statuses.** Both are defined in the status machine's choices but have no transition path that sets them. (Payment polling now drives `partly-paid` / `paid` — see "Payment polling" above — so those two are no longer dead.)
-- **One-click invoice generation.** Auto-create a draft invoice from all uninvoiced atoms when a Job hits `work_complete`, without going through the wizard. Will share the data model with the wizard. Out of scope per the 2026-04-09 design.
+- **One-click invoice generation.** Auto-create a draft invoice from all uninvoiced atoms when a Job hits `work_complete`, without going through the wizard. Will share the data model with the wizard. Out of scope per the 2026-04-09 design. (Distinct from the 2026-08 agreement auto-seeding above, which fires at invoice *creation* time, not on a job-status transition, and seeds from the agreement rather than sweeping all uninvoiced atoms.)
+- **Two deposit-credit surfaces, not yet unified.** `InvoicePanel`'s top-of-panel "Unapplied deposit credit" banner and `InvoiceEditView`'s `DepositCreditsSection` both offer the same credit pull today, independently derived. See "Deposits" → `DepositCreditsSection` above — parked for an explicit RM design call, not a bug to fix ad hoc.
 - **Invoice list customer filter — cross-contact rollup.** The `CustomerPicker` → `?business=` filter rolls up all of a business's contacts' invoices via an annotated queryset join; this may produce unexpected results for businesses where multiple contacts have separate billing relationships.
 - **Invoice revision** — the "Revise" button on `open`/`partly-paid` invoices is a disabled placeholder. The mechanism for creating a revised draft from a sent invoice (parallel to `EstimateService.revise_estimate`) is not yet implemented.
 - **Flat-rate task billing without bleps or materials.** Current workaround: model the charge as a Material row.

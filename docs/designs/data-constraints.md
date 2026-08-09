@@ -1273,6 +1273,28 @@ Enforced in `Invoice.clean()`.
   Must only be set when `adjustment_service` is set.
 - **line_number**: auto-generated sequentially per invoice if null
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work)
+- **agreement_estimate_line** (optional FK → estimates.EstimateLineItem,
+  `SET_NULL`) / **agreement_co_line** (optional FK →
+  estimates.ChangeOrderLineItem, `SET_NULL`) — added 2026-08 (skeleton
+  phase, migration `invoicing/0023`). Which `compose_agreement` line
+  this invoice line was seeded or restored from; `None`/`None` on a hand
+  line. `SET_NULL` (never `CASCADE`): the invoice line survives its
+  agreement line vanishing. The `agreement_line` property returns
+  whichever is set. **Invariant: at most one live (non-cancelled)
+  invoice may reference a given agreement line at a time** —
+  application-enforced under `select_for_update` on the agreement
+  line's own pk (`InvoiceService._assert_agreement_line_unclaimed`,
+  `apps/invoicing/services.py`) inside both `seed_from_agreement` and
+  `restore_agreement_line`, and re-checked at rest by
+  `validate_data.check_agreement_line_invoice_exclusivity` (aggregates
+  `InvoiceLineItem` rows — excluding `cancelled` invoices — grouped by
+  each ref FK, flags any group with `count > 1`, naming the invoices via
+  `display_number`). Removing the line from a draft
+  (`InvoiceService.remove_line`) or cancelling its invoice
+  (`InvoiceService.cancel`, which NULLs both fields by iterating +
+  `.save()` per line) releases the reference. See
+  `invoicing-and-expenses.md` §"Agreement-line references and seeding"
+  for the full seeding/restore/remove mechanics.
 
 #### InvoiceLineItemSource
 

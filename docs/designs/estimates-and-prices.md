@@ -918,6 +918,20 @@ The serializer exposes a read-only `adjustment_service_detail` dict
 is set. It also exposes `service_item` (writable FK PK, nullable) and a
 read-only `service_item_detail` dict `{template_id, name}` (or `null`).
 
+**`backing` / `backing_total` (2026-08, skeleton phase — never stored,
+derived on every read).** `EstimateLineItemSerializer` exposes read-only
+`backing` — one of `'adjustment'` / `'from_catalog'` / `'planned_work'` /
+`'planned_materials'` / `'edited'` / `'hand'`, via the module-level
+`derive_estimate_backing(line)` function
+(`apps/api/estimates/serializers.py`) — and `backing_total` (the summed
+source `compute_estimate_amount`/`compute_amount`, `null` when the line
+has no sources; the "work totals $X" reference figure, independent of
+`backing` itself). See §12.2 for the derivation order and the
+chip vocabulary; `derive_estimate_backing`'s own docstring is the
+authoritative source for the two post-acceptance quirks noted there.
+The list/retrieve queryset prefetches `sources` (and the atoms they
+resolve to) to keep this derivation N+1-free.
+
 Line item deletion goes through
 `LineItemService.delete_line_item_with_renumber` per the rule in
 CLAUDE.md.
@@ -1099,9 +1113,11 @@ yet ready:
 | `Expense` (material-less) | always (submitted is sufficient; no readiness gate) |
 
 Non-billable atoms appear in the pool with `state='not_billable'` and a
-`not_billable_reason` (`'task_incomplete'` or `'material_unconsumed'`). They
-are rendered greyed-out and non-selectable in `WizardSourcePool.svelte` so
-the invoicer can see what is pending without being able to add it yet.
+`not_billable_reason` (`'task_incomplete'` or `'material_unconsumed'`).
+`InvoiceEditView`'s `UncoveredWorkSection` (§12.1's invoice-side
+counterpart; see `invoicing-and-expenses.md`) renders them dimmed and
+non-selectable (`unselectableNote`) so the invoicer can see what is
+pending without being able to add it yet.
 
 `InvoiceWizardService._assert_atom_billable` is the service-side enforcement
 point: it re-checks readiness when atoms are actually submitted to the wizard
@@ -1177,22 +1193,30 @@ Permissions: read is `IsAuthenticated`; write actions require
 
 ### 8.4 Frontend components
 
+**Retired 2026-08 (skeleton + three-mode surface, Task 13 of the
+2026-08-08 plan):** `ReconcileMode.svelte`, `WizardActions.svelte`,
+`WizardLineItemCard.svelte`, `WizardAtomRow.svelte`, and both
+`WizardSourcePool.svelte` files (estimate and invoice) are **deleted**.
+The two-column "reconcile mode" presentation they built is gone; the
+service methods this section documents (§8.1–§8.3) are **unchanged** —
+only the surface that calls them moved. See §12 for what replaced it
+(`EstimateEditView.svelte` + the shared `docsurface` component kit) and
+`architecture-and-conventions.md` §5.5b for the kit's cross-cutting
+conventions.
+
 | Component | Path | Role |
 |---|---|---|
-| `ReconcileMode.svelte` | `frontend/src/components/wizards/` | Reconcile-mode view, rendered in place by `EstimatePanel`/`InvoicePanel` (§12; `jobs-and-tasks.md` §9.6) — not a route. Two-column layout (source pool left, line items right), parameterized per `docType` via a config block. Loads doc + line-items + source-pool on mount; re-fetches line items after every action and reconciles atom states locally |
-| `WizardSourcePool.svelte` | `frontend/src/components/estimates/` | Renders the flat atom list; binds `selectedAtoms` to `ReconcileMode`. Each atom is a `WizardAtomRow`. The invoice wizard has its own task-grouped `WizardSourcePool.svelte` that reuses the same row. |
-| `WizardAtomRow.svelte` | `frontend/src/components/wizards/` | One source-pool atom row, shared by both wizards: checkbox + `description — qty units × $rate = $total` + claim state |
-| `WizardLineItemCard.svelte` | `frontend/src/components/wizards/` | One line-item card with its source rows; surfaces "Add Here" and per-source remove |
-| `WizardActions.svelte` | `frontend/src/components/wizards/` | Bottom action bar (Discard draft, Done — flips the panel back to lines mode in place) |
-| `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines again via **Add Line Item** + per-line **Edit** (Phase 6's atoms-only projection was reversed). |
+| `EstimateEditView.svelte` | `frontend/src/components/estimates/` | The estimate's **Edit** mode — one merged surface: the line-items table (each row's atom claims nested via `AtomChildRow`) plus an `UncoveredWorkSection` pool below it. Presentation + gestures only; `EstimatePanel` owns data loading. See §12. |
+| `docsurface/*` kit | `frontend/src/components/docsurface/` | Seven shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `DocCustomerView`, `DocReorderView`) consumed by both the estimate and invoice edit surfaces (and the planned CO surface). Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched. |
+| `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines via **Add line** + per-line **Edit**. |
 
-The invoice-side wizard is structurally parallel — same source pool,
-add-atoms, remove-atoms, in-sync rule. Both wizards now read the **same**
-Job atoms (Tasks + Materials). Components are partially shared (e.g.
-`WizardLineItemCard`, `WizardActions`); the invoice WizardSourcePool is
-its own component (`frontend/src/components/invoices/WizardSourcePool.svelte`)
-because the invoice pool also surfaces billability gates (task complete /
-material consumed) and Expenses. Pointer: invoicing doc.
+The invoice side is structurally parallel — same source pool, add-atoms,
+remove-atoms, in-sync rule, and the same `docsurface` kit consumed by its
+own `InvoiceEditView.svelte`. Both surfaces now read the **same** Job
+atoms (Tasks + Materials) through the identical component family;
+invoice-only concerns (agreement `backing`, seeded lines, deposit
+credits) live in `InvoiceEditView` itself, not the shared kit. Pointer:
+invoicing doc.
 
 ---
 
@@ -1382,7 +1406,9 @@ a small redirect shim into the job-scoped URL (old bookmarks, emitted
 
 ### 11.1 Layout
 
-Top-down:
+Top-down (settled 2026-08-08 wireframe session; design authority
+`docs/plans/2026-08-06-better-fees.md` §9 and the wireframe artifact
+linked there):
 
 1. **JobHeader + JobNavRail + JobContextBand** — the job workspace
    shell (`JobShell`), shared by every job section page.
@@ -1395,20 +1421,18 @@ Top-down:
    extraction (see `jobs-and-tasks.md` §9.6).
 3. **Toolbar** — back link, page title (with `superseded` styling
    when applicable), status pill (interactive `<select>` for users
-   with `can_manage_jobs` when transitions are allowed), action
-   buttons, and a **Reconcile** / **Back to lines** toggle (§12).
+   with `can_manage_jobs` when transitions are allowed), and document
+   action buttons (Send/Resend/Revise/Create Change Order — §11.2).
+   There is no mode toggle here anymore — that moved to its own row
+   (item 5).
 4. **Field table** — estimate number, job link, version, status, dates.
-5. **Line Items area** — heading, then (when `canEdit` = `canManageJobs && isDraft`)
-   an actions row with a single **"Add line"** button, an **"Add Adjustment"**
-   button, and a **"Show Tasks & Materials"** button that flips the panel into
-   reconcile mode (§12) in place — no navigation. "Add line" opens
-   `PriceListPicker` (§6.4) — one entry point for service picks, inventory
-   picks, and freeform fee/material lines.
-6. **Line items table** (`LineItemTable.svelte`) — line items with per-line
-   **Edit** / **Delete** and reorder (move-up / move-down) when editable, plus an
-   "⚠ out of sync with atoms" marker on any line whose stored price no longer
-   matches its atoms' computed total. (Atom-backed lines are still pulled/edited
-   via reconcile mode; hand-lines are authored directly.)
+5. **`DocModeBar`** (`docsurface/DocModeBar.svelte`) — three buttons,
+   **Edit** / **Customer** / **Reorder**, `aria-pressed` on the active
+   one. Flips the panel's local `mode` in place at the same URL — never
+   a navigation, never a modal (§12).
+6. **Mode content** — `EstimateEditView` in Edit mode (line items +
+   uncovered-work pool, §12.1); `DocCustomerView`/`DocReorderView` in
+   Customer/Reorder mode (§12.3).
 
 ### 11.2 Action buttons
 
@@ -1416,34 +1440,41 @@ Top-down:
 |---|---|---|
 | `draft` | "Send Email" (navigation link) | navigates to `#/estimates/{id}/send` — the send-form page that calls `EstimateEmailService.send_estimate` on submit |
 | `open` | "Resend Email" (navigation link) | navigates to `#/estimates/{id}/send` |
-| `draft` | "Add line" | opens `PriceListPicker` → `EstimateAddLineForm` (§6.4) — unified entry for service, inventory, and freeform (fee or material) lines |
-| `draft` | "Add Adjustment" | opens `AdjustmentModal` (percentage `RateScheme`) |
-| `draft` | "Show Tasks & Materials" / "Reconcile" | flips `EstimatePanel`'s local `mode` to `'reconcile'` — same route, same panel, no navigation (pulls the job's atoms into atom-backed lines; §12) |
+| `open`, no CO yet, job on hold | "Create Change Order" | `POST /api/change-orders/` `{job}` → navigates to the new CO's page |
 | `open` | "Revise Estimate" | `POST /api/estimates/{id}/revise/` → opens new draft revision |
 | any | status `<select>` | `PATCH /api/estimates/{id}/` with `{status}` (when transitions are valid) |
 
-Editing rules: `canEdit = canManageJobs && status === 'draft'`.
+Editing rules: `canEdit = canManageJobs && status === 'draft'`. **Add
+line** and **Add Adjustment** are no longer toolbar buttons — they live
+inside `EstimateEditView` itself, above its line-items table (§12.1),
+since Edit mode is now the only place authoring happens.
 
 ### 11.3 Line item authoring — estimate vs invoice
 
-**Estimate.** The estimate detail page authors line items via the unified
-**"Add line"** button (§6.4, §11.2). A single `PriceListPicker` → `EstimateAddLineForm`
-flow replaces the former separate "Add Line Item" and "Add from Service" buttons.
-`AddServiceItemModal.svelte` has been deleted; the estimate detail no longer
-creates a Task immediately on service pick — the Task is deferred to acceptance.
-Per-line **Edit** / **Delete** and reorder remain; atom-backed lines still show an
-"⚠ out of sync with atoms" marker and are pulled/edited via the wizard.
-`POST /api/estimates/{id}/line-items/` (hand-lines) and
-`POST /api/estimates/{id}/line-items-from-service/` (service lines) are the two
-create endpoints; GET list, per-line `PATCH`/`DELETE`, reorder, and
-`POST .../adjustment-lines/` are unchanged.
+**Estimate.** `EstimateEditView` (Edit mode, §12.1) authors line items
+via the unified **"Add line"** button. A single `PriceListPicker` →
+`EstimateAddLineForm` flow covers service picks, inventory picks, and
+freeform (fee or material) lines — the estimate detail doesn't create a
+Task immediately on a service pick; the Task is deferred to acceptance.
+Per-line **Edit** / **Remove** remain (never "Delete" — §12.1); a line's
+current backing renders as a `BackingChip` with its atom claims nested
+underneath (`AtomChildRow`) rather than an "out of sync" marker — an
+`edited` chip (with a "work totals $X" caption) is what used to be the
+⚠ marker. `POST /api/estimates/{id}/line-items/` (hand-lines) and
+`POST /api/estimates/{id}/line-items-from-service/` (service lines) are
+the two create endpoints; GET list, per-line `PATCH`/`DELETE`, reorder
+(now driven from Reorder mode, §12.3), and `POST .../adjustment-lines/`
+are unchanged.
 
-**Invoice.** `LineItemModal.svelte` is still used by the **invoice** detail
-page for direct (no-atom) line authoring — a toggle between **manual entry**
-and **"From Price List"** (catalog mode: pick an `InventoryItem`; the server
-copies `description`, `units`, `selling_price`, `accounting_category`). Editing
-an existing line shows fields only. Bringing the invoice onto the same
-atoms-only projection is a deferred consolidation pass.
+**Invoice.** `LineItemModal.svelte` is still used by the **invoice**
+edit view for direct (no-atom) line authoring and for field-editing any
+line (`InvoiceEditView`, `invoicing-and-expenses.md`) — a toggle between
+**manual entry** and **"From Price List"** (catalog mode: pick an
+`InventoryItem`; the server copies `description`, `units`,
+`selling_price`, `accounting_category`) when adding, field-only when
+editing. The invoice surface additionally carries agreement-seeded lines
+and backing controls (**Use estimate** / **Use actuals**) the estimate
+side has no equivalent for — see `invoicing-and-expenses.md`.
 
 ### 11.4 Starting an estimate — Create/View model
 
@@ -1469,74 +1500,163 @@ The Create/View model now lives entirely on `EstimatePanel.svelte`
 
 ---
 
-## 12. UI: Estimate Wizard (reconcile mode)
+## 12. UI: The three-mode surface (Edit / Customer / Reorder)
 
-The "wizard" is no longer a separate route — it's **reconcile mode**,
-one of two view modes (`'lines'` | `'reconcile'`) that `EstimatePanel`
-(§11) toggles in place, both rendered at the same
-`#/jobs/:jobId/estimate/:docId` URL, same job load, no remount. In
-reconcile mode the panel renders the shared
-`ReconcileMode.svelte` (`frontend/src/components/wizards/`) —
-parameterized per `docType` (`'estimate'` | `'invoice'`; the invoice
-side is structurally identical, see `invoicing-and-expenses.md`) — in
-place of the line-items view. The former standalone
-`EstimateWizardPage.svelte` is gone; the old route
-`#/estimates/:id/wizard` is now a redirect shim
-(`EstimateWizardRedirect.svelte`) that remembers `'reconcile'` mode for
-that document (`rememberMode`, `stores/jobWorkspace.js`) and bounces to
-the job-scoped URL, so old bookmarks land back in reconcile mode.
+**Retired 2026-08 — the old two-mode ("lines"/"reconcile") panel and the
+two-column `ReconcileMode` wizard presentation are gone.** In their
+place: one merged editing surface (`EstimateEditView`) plus two
+read-only projections (`DocCustomerView`, `DocReorderView`), all three
+switched in place by `DocModeBar` (§11.1) at the same
+`#/jobs/:jobId/estimate/:docId` URL — never a navigation, never a
+remount, never a modal. This is the estimate side of a shared
+`docsurface` component kit also consumed by the invoice
+(`InvoiceEditView`, `invoicing-and-expenses.md`) and, per the design
+doc's sequencing, a future change-order surface. Design authority:
+`docs/plans/2026-08-06-better-fees.md` §9 (the settled surface) and the
+wireframe artifact it links — build-to-the-artifact was the standing
+instruction; this section records the shape as built.
+`architecture-and-conventions.md` §5.5b documents the kit's own
+cross-cutting conventions (the seven components, shared `app.css`
+classes, the flip-in-place pattern, the no-dead-buttons rule).
 
-**Mode persistence and validation.** Which mode a document was left in
-is remembered per document id (`stores/jobWorkspace.js`, keyed by
-`docId` — not by section, so leaving invoice #22 in reconcile can't
-leak into invoice #23). Restoring a remembered `'reconcile'` mode is
-**validated against the estimate's live status**: reconcile is only
-offered while the document is still an editable `draft`, so an estimate
-sent/accepted/superseded since the mode was last remembered falls back
-to `'lines'` instead of resurrecting an edit surface on a closed
-document.
+The former standalone `EstimateWizardPage.svelte` is gone; the old route
+`#/estimates/:id/wizard` is still a redirect shim
+(`EstimateWizardRedirect.svelte`), but it now remembers **`'edit'`**
+mode for that document (`rememberMode`, `stores/jobWorkspace.js`) before
+bouncing to the job-scoped URL — old wizard bookmarks land on the
+merged Edit view, not a resurrected reconcile pane.
 
-### 12.1 Flow
+**Mode persistence and normalization.** Which mode a document was left
+in is remembered per document id (`stores/jobWorkspace.js`, keyed by
+`est:{estimateId}` — not by section, so leaving invoice #22 in Reorder
+can't leak into invoice #23). The store itself keeps whatever was
+written, **unmigrated** — normalization happens at the read site
+(`EstimatePanel`, and identically in `InvoicePanel`): a remembered
+`'lines'` or `'reconcile'` (both pre-dating this surface) folds to
+`'edit'`; a remembered `'reorder'` additionally falls back to `'edit'`
+if the document is no longer editable (`canEdit` false — e.g. the
+estimate was sent/accepted since the mode was last remembered).
 
-Two columns, unchanged from the former wizard page's behavior:
+### 12.1 Edit mode — `EstimateEditView`
 
-- **Source pool** (left) — `WizardSourcePool` shows every Task and
-  Material on the **Job**. Each atom is clickable (checkbox-style) when
-  `available`; locked-out otherwise with a "claimed by …" indicator. The
-  component binds `selectedAtoms`.
-- **Line items** (right) — list of `WizardLineItemCard`s for the
-  current estimate, each with its source rows expanded. Each card
-  has an "Add Here" button (enabled when atoms are selected) that
-  appends the selected atoms via `add-atoms`. A trailing "New line
-  item" placeholder card has its own "Add Here" that calls
-  `line-items-from-atoms`. Estimates don't offer a manual-line button
-  here (`hasManualLine: false` in `ReconcileMode`'s per-doc-type
-  config) — hand lines are added from the lines view's "Add line".
+One `.data-table` of the estimate's line items, an uncovered-work pool
+below it. `EstimatePanel` owns data loading (estimate, source pool,
+categories) and passes it down; `EstimateEditView` is presentation +
+gestures only, calling back (`onChanged`) after every mutation so the
+panel can refresh both silently (`loadEstimate({silent: true})` — a
+non-silent refresh would blank the surface and lose in-flight state
+such as an open edit modal or the current pool selection; see
+`architecture-and-conventions.md` §5.5b for this idiom generalized).
 
-After every action, `ReconcileMode` re-fetches the estimate + line
-items, then **reconciles** atom states client-side from the new
-claims map without re-fetching the source pool. `claimed_by_other`
-atoms (snapshotted at mount) are left alone.
+- **Authoring buttons** above the table: **"Add line"** (opens
+  `PriceListPicker` → `EstimateAddLineForm`, §6.4/§11.3) and **"Add
+  Adjustment"** (opens `AdjustmentModal`).
+- **Table columns:** `#`, Description (+ a small provenance caption —
+  `+N% {scheme name}` for an adjustment line, `Catalog: {name}` for a
+  catalog-sourced line, and a **`needs category`** amber marker when
+  `accounting_category` is null on an editable line — the same send-gate
+  precondition the old ⚠ marker used to carry), Qty, Price, Amount,
+  **Backing** (a `BackingChip`, §9.2 vocabulary below), and — while
+  `canEdit` or a caller has wired `onMakeDeliverable` (currently no
+  caller does; see below) — Actions.
+- **Backing chip + reference.** Every line renders its derived
+  `backing` (`derive_estimate_backing`, §6.1); when `backing ===
+  'edited'` the chip is followed by a `work totals {backing_total}`
+  caption — the reference figure "today's ⚠ out-of-sync made a
+  first-class chip" per the design doc.
+- **Atom nest.** Each line's `sources` render as indented
+  `AtomChildRow`s directly beneath it — kind tag (task/material),
+  description, qty/rate/amount, and (while `canEdit`) a per-atom
+  **Remove** button that calls `remove-atoms`.
+- **Per-line actions (while `canEdit`):** **Edit** (opens
+  `LineItemModal` in field-edit mode — editing price flips `backing` to
+  `'edited'`), **Remove** (`DELETE .../line-items/{id}/`, single-phase —
+  the estimate has no two-phase confirm gate here since a removed line
+  is freely re-addable via the uncovered-work pool below), and — only
+  while the ticked-selection is non-empty — **"Add selected here"**
+  (`POST .../line-items/{id}/add-atoms/`). **The word "delete" does not
+  appear anywhere on this surface** — Remove releases the line's
+  backing work untouched, it does not destroy the atoms.
+- **"→ Deliverable" — ships dark.** The view accepts an
+  `onMakeDeliverable` prop and renders a per-line **"→ Deliverable"**
+  button only when a caller supplies it (the A3 no-dead-buttons rule,
+  `architecture-and-conventions.md` §5.5b); `EstimatePanel` does not
+  wire it yet, so the button is currently unrendered everywhere. It is
+  reserved for the §6 make-a-deliverable endpoint, a later phase.
+- **Uncovered-work pool** (`UncoveredWorkSection`, title "Uncovered
+  work") — fed from `GET .../source-pool/`, filtered to atoms this
+  estimate hasn't already claimed (`claimed_by_current` excluded — those
+  already show as `AtomChildRow`s above). A row is selectable when
+  `available`; a `claimed_by_other` row is dimmed with a "Claimed by
+  estimate …" note instead of a checkbox. `directLabel="Add as its own
+  line"` bills one atom directly (`onDirect` → `billDirect`, one POST to
+  `line-items-from-atoms`, then opens the new line's Edit modal).
+- **Object-first composition.** Ticking any pool row makes **every**
+  line's Actions cell offer "Add selected here" and reveals the table's
+  dashed footer placeholder, `NewLineFromSelectedRow` ("＋ New line from
+  selected", labeled with the next line number). Its **Create line**
+  button (`createLineFromSelected`) POSTs `line-items-from-atoms` with
+  the ticked atoms, then — after awaiting the panel's silent refresh so
+  the modal opens against the server's authoritative copy — opens
+  `LineItemModal` on the new line immediately, same as the single-atom
+  "Add as its own line" path.
+- **409 handling.** A claim conflict (another session claimed an atom
+  between pool load and POST) clears the selection, awaits a refresh,
+  and shows a specific "…refreshed" message via the global overlay
+  rather than the generic error text (`handleMutationError`,
+  `architecture-and-conventions.md` §5.5b's 409-refresh idiom).
 
-### 12.2 Bottom actions
+### 12.2 Backing chips (design doc §9.2 vocabulary)
 
-`WizardActions` provides:
+The estimate has no actuals yet, so its `backing` enum and chip labels
+(`docsurface/BackingChip.svelte`) are domain-specific — see §6.1 for the
+derivation, and `docs/plans/2026-08-06-better-fees.md` §9.2 for the full
+cross-document chip vocabulary (both estimate and invoice). On the
+estimate: `planned_work` → **"planned work"** (any task
+among the line's sources), `planned_materials` → **"planned materials"**
+(materials only), `from_catalog` → **"from catalog"** (a `service_item`
+or `inventory_item` ref — the two deferred-crystallization catalog
+kinds), `hand` → **"hand line"**, `edited` → **"edited"** (with the
+"work totals $X" reference caption), `adjustment` → **"adjustment"**.
+`derive_estimate_backing`'s docstring documents this as **draft-surface
+semantics**: the enum is designed for the estimate wizard's chip labels,
+not as a general-purpose lifecycle indicator — a catalog-sourced line
+keeps reading `from_catalog` for its whole life even after acceptance
+crystallizes it into a live Task/Material source on that same line (rule
+2 fires before rule 3, deliberately), and a hand line crystallized into
+a transitional Fee source falls through to `planned_materials` (a known,
+temporary mislabel confined to accepted, read-only estimates, where this
+draft-only chip surface never renders anyway).
 
-- **Discard draft** — `DELETE /api/estimates/{id}/?confirm=true` (sends
-  the confirm token to the discard-draft path on `EstimateService.discard_draft`).
-- **Done** — flips the panel back to `'lines'` mode at the same URL
-  (`onExit`, no navigation); flushed pending edits first
-  (`flushRegistry.flushAll()`).
+### 12.3 Customer and Reorder modes
 
-### 12.3 Reconcile-mode entry
+**Customer mode** renders `DocCustomerView` — the collapsed, read-only
+document exactly as it will read to the customer: `#`, description,
+qty, price, amount, and a grand-total footer row, for **every** line
+including adjustments, numbered by the document's own stored
+`line_number`. No backing column, no atom rows, no struck rows, no
+buttons of any kind — the settled rule is that a mode is never a modal
+and Customer mode carries zero interactive affordances.
+
+**Reorder mode** renders `DocReorderView` — **the identical rows as
+Customer mode plus a trailing arrows column** (↑/↓, boundary arrows
+disabled), so reordering never carries sub-line ambiguity. Clicking an
+arrow (`handleReorderDoc`) swaps the line's `line_number` with its
+neighbor in the full ordered id list and POSTs the existing
+`.../line-items/reorder/` endpoint with the full `item_ids` order, then
+reloads the estimate. Reorder is only offered in the mode bar
+(`modes`, §11.1) while `canEdit` is true; a document that stops being
+editable while remembered in `'reorder'` falls back to `'edit'` on next
+load (§12 intro).
+
+### 12.4 Entry
 
 The estimate is reached from the rail's Estimates link (§11): "Start
 Estimate" creates the draft estimate directly on the job
 (`POST /api/estimates/` with `{job}`), landing on
-`#/jobs/:jobId/estimate/:newId`. "Show Tasks & Materials" / "Reconcile"
-(on the estimate panel, §11.2) flips that same page into reconcile
-mode. There is no longer a worksheet page, a worksheet-side wizard
-entry, or a separate wizard route.
+`#/jobs/:jobId/estimate/:newId` in Edit mode (the panel's default). The
+mode bar (§11.1) is present unconditionally once the estimate is loaded
+— no separate reconcile entry point or worksheet page exists.
 
 ---
 
@@ -1773,6 +1893,18 @@ function that produces the agreement-of-record:
 
 where `origin` is `'estimate'` or `'change_order'`. Empty dict (lines
 `[]`, total `0`) when the Job has no accepted Estimate.
+
+**Line identity (2026-08, skeleton phase).** Every line dict also
+carries `estimate_line_id` and `co_line_id` (int or `None`) — exactly
+one is non-null per line: an estimate-origin line carries its
+`EstimateLineItem.pk` (and `co_line_id: None`); a CO-origin line (add or
+replace) carries its `ChangeOrderLineItem.pk` (and `estimate_line_id:
+None`) — a CO *replacement* line dict is CO-origin, since the CO's own
+line is the row of record once accepted. This identity is what
+`InvoiceService` (`invoicing-and-expenses.md` §"Agreement-line
+references and seeding") matches against to decide which agreement
+lines are "remaining" (not yet on a live invoice) and to enforce the
+one-live-invoice-per-agreement-line invariant.
 
 The composition rules:
 

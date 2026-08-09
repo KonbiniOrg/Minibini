@@ -758,10 +758,17 @@ the 2026-07-08 workspace-restructure design):
    candidate when the time comes: **estimate|invoice** (RM compares
    these daily today via two browser windows); also plausible:
    invoice|shipments, tasks|POs.
-3. **Reconciliation surface** — shell + one *composite* panel with an
-   internal two-column layout and owned cross-column state
-   (`ReconcileMode`). The wizard composed itself; it is never a pane in
-   a combo, and it needs full width.
+3. **Reconciliation surface** *(retired 2026-08)* — shell + one
+   *composite* panel with an internal two-column layout and owned
+   cross-column state (`ReconcileMode`). The wizard composed itself; it
+   was never a pane in a combo, and needed full width. Folded into the
+   **Section page** kind: the estimate/invoice edit surface is now one
+   ordinary panel (`EstimateEditView`/`InvoiceEditView`, single-column,
+   the docsurface kit's Edit mode — §5.5b) switched in place alongside
+   read-only Customer/Reorder projections by `DocModeBar`, not a
+   separate composite layout. Kept here as a record of a page-kind that
+   existed and was retired, in case a future surface reaches for the
+   same shape again.
 
 **Detailed pages** (the skip-list for generic sweeps — keep current as
 passes complete):
@@ -821,6 +828,103 @@ page-specific names or references:
   a block — a nested link or button makes the markup invalid and forces
   a stretched-link overlay instead (which also kills text selection in
   the card). Keep controls outside the family.
+
+### 5.5b The `docsurface` kit — shared document-editing surface (2026-08)
+
+`frontend/src/components/docsurface/` holds a seven-component kit
+shared by the estimate and invoice editing surfaces (a change-order
+surface is planned to reuse it too — see
+`docs/plans/2026-08-06-better-fees.md` §9.3). It replaced the old
+two-column `ReconcileMode` wizard presentation (§5.5a's job-page
+taxonomy, above) in the 2026-08-08 "skeleton phase": estimates and
+invoices both moved from a two-mode ("lines"/"reconcile") panel to a
+**three-mode** surface — **Edit / Customer / Reorder** — flipped in
+place at one URL. Design authority:
+`docs/plans/2026-08-06-better-fees.md` §9 and its wireframe artifact;
+build-to-the-artifact was the standing instruction for this work.
+Consumer detail: `estimates-and-prices.md` §12 (estimate), the invoice
+side in `invoicing-and-expenses.md` (Agreement-line references and
+seeding, Backing model).
+
+**The seven components:**
+
+| Component | Role |
+|---|---|
+| `DocModeBar.svelte` | The Edit/Customer/Reorder switcher — one `<button aria-pressed>` per mode; `{ mode, onMode, modes, labels }`. |
+| `BackingChip.svelte` | Renders a document line's derived `backing` enum as a labeled pill; `{ backing, syncedWithEstimate }`. Estimate and invoice ship different enum value sets through the same component. |
+| `AtomChildRow.svelte` | One indented `<tr class="doc-atom-row">` nested under a line for each of its claimed source atoms; `{ atom, colspanBefore, colspanAfter, onRemove, note }`. |
+| `UncoveredWorkSection.svelte` | The checkbox-selectable pool of not-yet-billed job atoms below the line-items table; `{ title, subtitle, rows, selected (bindable), directLabel, onDirect, emptyText }`. Each row optionally carries a `chip` (`{label, cls}`) for provenance markers (invoiced-elsewhere, cancelled, struck-from-agreement — invoice side; see `invoicing-and-expenses.md`). |
+| `NewLineFromSelectedRow.svelte` | The dashed placeholder `<tr class="doc-newline">` footer row offering "＋ New line from selected"; `{ visible, nextNumber, onCreate }`. |
+| `DocCustomerView.svelte` | The collapsed, read-only Customer-mode projection — `#`/description/qty/price/amount + a grand-total row, zero interactive elements; `{ title, lines, grandTotal }`. |
+| `DocReorderView.svelte` | Composes `DocCustomerView` with an added arrows column (`{ onReorder(lineId, 'up'|'down') }`) — **identical rows to Customer mode plus arrows**, so reordering never carries sub-line ambiguity. |
+
+Every prop is content/config — no component branches on `docType` or
+otherwise assumes "estimate" vs. "invoice." Surface-specific logic
+(agreement `backing` derivation, deposit credits, `→ Deliverable`) lives
+in the consuming view (`EstimateEditView.svelte`,
+`InvoiceEditView.svelte`), not the kit.
+
+**Shared `app.css` classes** (one block, added once — "Document-surface
+kit" comment header): `.backing-chip` (+ `.actuals`/`.planned`/
+`.catalog`/`.deposit`/`.synced`/`.edited` modifiers), `.doc-atom-row`,
+`.doc-offdoc` (a struck/removed row — hatched background, dashed
+border), `.doc-newline` (+ `.cta`), `.doc-mode-bar` (+ button chrome and
+the `[aria-pressed="true"]` active state), `.doc-unselectable-row` (a
+dimmed, non-selectable pool row), and `tr.grand` (the shared
+grand-total footer row `DocCustomerView`/`DocReorderView` render). Per
+§5.5a's rule of the road: these are promoted, shared classes — never
+copy one into a component's local `<style>` block.
+
+**The three-mode flip-in-place pattern.** `mode` is local `$state` on
+the hosting panel (`EstimatePanel`/`InvoicePanel`), persisted per
+document via `stores/jobWorkspace.js`'s `rememberMode`/`getJobWs`
+(keyed `est:{id}`/`inv:{id}`, not by section). The store itself never
+migrates old values — normalization happens at the read site: a
+remembered `'lines'`/`'reconcile'` (the pre-2026-08 panel/wizard values)
+folds to `'edit'`, and a remembered `'reorder'` additionally falls back
+to `'edit'` if the document is no longer editable. Switching modes is
+never a navigation, never a remount, and never a modal — modals are
+reserved for the per-line **Edit** form (§"Modals" in
+`frontend/README.md`).
+
+**The A3 no-dead-buttons rule.** A kit component renders an action only
+when its callback prop is actually supplied — never a disabled/greyed
+button standing in for "not wired yet." `AtomChildRow`'s Remove button
+and `UncoveredWorkSection`'s per-row direct-add button both follow this;
+so does `EstimateEditView`'s `onMakeDeliverable`-gated "→ Deliverable"
+action (dark today — no caller wires it yet, reserved for a later
+phase's make-a-deliverable endpoint). This is also why "Remove" (never
+"Delete" — the word does not appear on a document surface) always
+renders when editable rather than being conditionally hidden by state:
+an action's availability is a prop, not a runtime guess.
+
+**Object-first selection.** Checkboxes live on the uncovered-work pool
+rows, not on line items. While any row is ticked, every existing line
+gains an "Add selected here" action and the table's dashed
+`NewLineFromSelectedRow` footer appears; creating the line derives its
+starting values from the selection and opens its Edit modal
+immediately. An unticked row keeps its own direct "bill this alone"
+action instead.
+
+**Two idioms every kit consumer follows** (see `EstimateEditView.svelte`
+/ `InvoiceEditView.svelte` for the reference implementation; documented
+in `frontend/README.md` too):
+
+- **Silent refresh.** The hosting panel's loader takes a `{silent:
+  true}` option (`loadEstimate({silent: true})` /
+  `loadInvoice({silent: true})`) that updates the document's `$state`
+  without flipping the page's `docLoading` flag. A kit-consuming edit
+  view calls back (`onChanged`) after every gesture; a non-silent
+  refresh would swap the `{#if docLoading}` branch to a loading state,
+  unmounting the edit view and losing its local state (an open Edit
+  modal, the current pool selection) on every single mutation.
+- **409-refresh.** A claim conflict (another session claimed an atom
+  between the pool load and the POST) can't be resolved by blindly
+  retrying. `handleMutationError(e, fallback)` in both edit views
+  branches on `e.status === 409`: clear the local selection, `await`
+  the silent refresh, and show a specific "…refreshed" message via the
+  global overlay — never the generic error text — so the pool/lines the
+  user acts on next reflect reality.
 
 ### 5.6 Preserving line breaks in free-text fields
 

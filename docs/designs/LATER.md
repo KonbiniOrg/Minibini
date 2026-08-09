@@ -560,6 +560,16 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the spec's job is one it made, so full-suite ordering can't
   reach it.
 
+- **`contacts/import-skip-report.spec.js` is flaky (~50% locally).** — _added 2026-08-08_
+  A client render race in `ContactListPage`'s letter filter, unrelated to
+  QBO import itself and untouched by the skeleton-phase branch that
+  surfaced it (confirmed on the `feature/better-fees` full e2e suite,
+  Task 14). Reproduces both inside the full suite and standalone on a
+  fresh DB; not yet root-caused.
+  _Done when:_ the race is identified and fixed (or the spec is
+  rewritten to wait on the right condition instead of a fixed render
+  assumption), and the spec passes reliably solo and in the full suite.
+
 - **Convert the remaining local-state tab pages to per-tab routes.** — _added 2026-07-05 (RM, during the Catalog-area design)_
   The Catalog area set the pattern: real routes per tab (bookmarks, refresh, and
   back-button land on the right tab; the tab strip is `<a use:link>`). Settings

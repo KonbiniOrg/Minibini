@@ -147,6 +147,33 @@ The rule, which the whole codebase already followed implicitly:
 - If a loader genuinely must branch on reactive state, wrap the read in
   `untrack()` — and treat needing that as a design smell first.
 
+### Docsurface kit
+
+`src/components/docsurface/` holds a seven-component kit shared by the
+estimate and invoice editing surfaces (`EstimateEditView.svelte`,
+`InvoiceEditView.svelte`) — `DocModeBar`, `BackingChip`, `AtomChildRow`,
+`UncoveredWorkSection`, `NewLineFromSelectedRow`, `DocCustomerView`,
+`DocReorderView`. It replaced the old two-column `ReconcileMode` wizard
+presentation (2026-08, "skeleton phase"): a document now has **three
+modes** — Edit / Customer / Reorder — switched in place at one URL by
+`DocModeBar`, never a navigation or a modal. Full component-by-component
+reference, the shared `app.css` classes, the flip-in-place mode pattern,
+and the no-dead-buttons rule live in
+`docs/designs/architecture-and-conventions.md` §5.5b; this entry is
+just the two idioms every consumer of the kit follows:
+
+- **Silent refresh.** The hosting panel's loader accepts a `{silent:
+  true}` option that updates `$state` without flipping the page's
+  loading flag. An edit view calls back (`onChanged`) after every
+  gesture; a non-silent refresh would swap the loading branch in and
+  unmount the edit view mid-gesture, losing its local state (an open
+  modal, the current selection).
+- **409-refresh.** A claim conflict from the atom-pull endpoints can't
+  be resolved by retrying blind. `handleMutationError(e, fallback)`
+  branches on `e?.status === 409`: clear the local selection, `await`
+  a silent refresh, then show a specific "…refreshed" message via the
+  global overlay instead of the generic error text.
+
 ### Timestamps: day names expire after a week
 
 App-wide display convention (RM, 2026-07-06): a bare day name ("Sat
