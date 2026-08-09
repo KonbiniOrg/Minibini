@@ -1,0 +1,48 @@
+<script>
+  let { backing, syncedWithEstimate = false } = $props();
+
+  const labelMap = {
+    estimate: 'estimate',
+    actuals: 'actuals',
+    edited: 'edited',
+    deposit: 'deposit',
+    deposit_credit: 'deposit credit',
+    planned_work: 'planned work',
+    planned_materials: 'planned materials',
+    from_catalog: 'from catalog',
+    hand: 'hand line',
+    adjustment: 'adjustment',
+  };
+
+  const classMap = {
+    actuals: 'actuals',
+    planned_work: 'planned',
+    planned_materials: 'planned',
+    from_catalog: 'catalog',
+    deposit: 'deposit',
+    edited: 'edited',
+  };
+
+  let label = $derived.by(() => {
+    if (backing === null || backing === undefined) return null;
+    if (backing === 'actuals' && syncedWithEstimate) {
+      return 'actuals = estimate ✓';
+    }
+    return labelMap[backing] || backing;
+  });
+
+  let cssClass = $derived.by(() => {
+    if (backing === null || backing === undefined) return '';
+    let cls = '';
+    if (backing === 'actuals' && syncedWithEstimate) {
+      cls = 'synced';
+    } else {
+      cls = classMap[backing] || '';
+    }
+    return cls;
+  });
+</script>
+
+{#if label !== null}
+  <span class="backing-chip {cssClass}">{label}</span>
+{/if}

@@ -435,6 +435,24 @@ dd {
   cursor: pointer;
 }
 
+/* Document-surface kit (estimate / invoice / CO editing views, 2026-08) */
+.backing-chip { display:inline-block; font-size:11px; font-weight:600;
+  padding:1px 8px; border-radius:999px; white-space:nowrap;
+  background:#eceae5; color:#6b6e71; }
+.backing-chip.actuals, .backing-chip.planned, .backing-chip.catalog,
+.backing-chip.deposit { background:#e3eeee; color:#2e6e73; }
+.backing-chip.synced { background:#e4f0e6; color:#3e7c4f; }
+.backing-chip.edited { background:#f7ebdc; color:#a8651f; }
+.doc-atom-row td { font-size:12.5px; color:#6b6e71; padding:4px 10px;
+  background:#f7f7f5; border-bottom:1px dotted #e8e6e1; }
+.doc-atom-row td:first-child { padding-left: 34px; }
+.doc-offdoc td { color:#6b6e71; border-bottom:1px dashed #d8d6d0;
+  background:repeating-linear-gradient(-45deg, transparent 0 8px, #f0efec 8px 16px); }
+.doc-newline td { border-top:2px dashed #d8d6d0; border-bottom:2px dashed #d8d6d0; }
+.doc-newline .cta { color:#2e6e73; font-weight:600; }
+.doc-mode-bar button[aria-pressed="true"] { background:#115e59; color:#fff;
+  border-color:#115e59; }
+
 /* =========================== 3. PAGE KINDS — II. banner-page vocabulary == */
 /* Pages that render a full-bleed banner (JobHeader / CustomerHeader) with
  * .page-body beneath: the est/inv/PO/CO detail + wizard pages, job task
