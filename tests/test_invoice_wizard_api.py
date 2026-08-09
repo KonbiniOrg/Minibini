@@ -150,6 +150,20 @@ class SourcePoolEndpointTest(TestCase):
         self.assertEqual(atom['id'], self.task.pk)
         self.assertEqual(atom['state'], 'available')
 
+    def test_no_fees_group_even_when_job_has_fees(self):
+        """The Fees pseudo-group is retired (fee removal Task 4): even a job
+        that still carries Fee rows must not produce a 'Fees' group."""
+        from apps.jobs.models import Fee
+        Fee.objects.create(
+            job=self.job, description='Delivery charge',
+            quantity=Decimal('1'), unit_rate=Decimal('50.00'),
+            accounting_category=self.category,
+        )
+        response = self.client.get(f'/api/invoices/{self.invoice.pk}/source-pool/')
+        self.assertEqual(response.status_code, 200)
+        names = [g['name'] for g in response.json()['tasks']]
+        self.assertNotIn('Fees', names)
+
     def test_requires_authentication(self):
         self.client.logout()
         response = self.client.get(f'/api/invoices/{self.invoice.pk}/source-pool/')
@@ -237,6 +251,32 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.assertEqual(data['code'], 'atoms_already_claimed')
         self.assertIn({'type': 'task', 'id': self.task.pk}, data['atom_ids'])
 
+    def test_fee_atom_type_returns_400(self):
+        """'fee' is no longer an atom type (fee removal Task 4): posting a
+        fee ref must 400 like any unknown type — never 500."""
+        from apps.jobs.models import Fee
+        fee = Fee.objects.create(
+            job=self.job, description='Setup fee',
+            quantity=Decimal('1'), unit_rate=Decimal('150.00'),
+            accounting_category=self.category,
+        )
+        response = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items-from-atoms/',
+            {'atoms': [{'type': 'fee', 'id': fee.pk}]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_unknown_atom_type_returns_400(self):
+        """An unrecognized atom type is a ValidationError (400), not a
+        KeyError/ValueError (500)."""
+        response = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items-from-atoms/',
+            {'atoms': [{'type': 'bogus', 'id': 1}]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_returns_400_on_non_draft_invoice(self):
         # Need a line item to transition out of draft
         InvoiceLineItem.objects.create(
@@ -323,6 +363,21 @@ class AddAtomsEndpointTest(TestCase):
         # Adding task2 makes {task, task2} a uniform same-scheme bundle, so the
         # line item is re-summarized: qty = 3h, price = scheme rate $25.00.
         self.assertEqual(data['price'], '25.00')
+
+    def test_fee_atom_type_returns_400(self):
+        """add-atoms rejects 'fee' refs with 400 (fee removal Task 4)."""
+        from apps.jobs.models import Fee
+        fee = Fee.objects.create(
+            job=self.job, description='Setup fee',
+            quantity=Decimal('1'), unit_rate=Decimal('150.00'),
+            accounting_category=self.category,
+        )
+        response = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items/{self.line_item.pk}/add-atoms/',
+            {'atoms': [{'type': 'fee', 'id': fee.pk}]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_returns_409_on_claim_conflict(self):
         # Claim task2 on a different line item first

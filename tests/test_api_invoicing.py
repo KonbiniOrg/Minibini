@@ -1107,11 +1107,10 @@ class InvoiceLineBackingAPITest(BaseTestCase):
         qty/units/rate — not the '-' a missing field renders as — sourced
         the same way the source pool itself computes them
         (InvoiceWizardService._atom_detail): task actual-qty ×
-        effective_rate, material quantity × units × sell_price, fee
-        quantity × unit_rate. A deposit-credit claim is not a real work
-        atom (get_actuals_total already skips it) so it reports null
-        rather than a fabricated qty/rate."""
-        from apps.jobs.models import Fee
+        effective_rate, material quantity × units × sell_price. A
+        deposit-credit claim is not a real work atom (get_actuals_total
+        already skips it) so it reports null rather than a fabricated
+        qty/rate."""
         from apps.inventory.models import Material, InventoryItem
         from apps.invoicing.models import InvoiceLineItemSource
         from apps.invoicing.services import InvoiceWizardService
@@ -1139,11 +1138,6 @@ class InvoiceLineBackingAPITest(BaseTestCase):
         material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
         material.save(update_fields=['consumption_state'])
 
-        fee = Fee.objects.create(
-            job=self.job, description='Rush-Src', quantity=Decimal('2'),
-            unit_rate=Decimal('15.00'), accounting_category=self.cat,
-        )
-
         dep_invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_PAID)
         dep_line = InvoiceLineItem.objects.create(
             invoice=dep_invoice, line_number=1, description='Deposit-Src',
@@ -1156,8 +1150,6 @@ class InvoiceLineBackingAPITest(BaseTestCase):
             invoice, [{'type': 'task', 'id': task.pk}])
         material_li = InvoiceWizardService.add_atoms_to_new_line_item(
             invoice, [{'type': 'material', 'id': material.pk}])
-        fee_li = InvoiceWizardService.add_atoms_to_new_line_item(
-            invoice, [{'type': 'fee', 'id': fee.pk}])
         deposit_li = InvoiceWizardService.add_atoms_to_new_line_item(
             invoice, [{'type': 'deposit', 'id': dep_line.pk}])
 
@@ -1173,11 +1165,6 @@ class InvoiceLineBackingAPITest(BaseTestCase):
         self.assertEqual(Decimal(material_src['qty']), Decimal('3.00'))
         self.assertEqual(material_src['units'], 'sheet')
         self.assertEqual(Decimal(material_src['rate']), Decimal('12.50'))
-
-        fee_row = self._row(invoice, fee_li)
-        fee_src = fee_row['sources'][0]
-        self.assertEqual(Decimal(fee_src['qty']), Decimal('2'))
-        self.assertEqual(Decimal(fee_src['rate']), Decimal('15.00'))
 
         deposit_row = self._row(invoice, deposit_li)
         deposit_src = deposit_row['sources'][0]
