@@ -8,6 +8,19 @@ from apps.core.services import NotFoundError
 from apps.core.wizard import BaseWizardService
 
 
+# Every invoice status except cancelled — "live" for the one-live-invoice-
+# per-agreement-line invariant (remaining_agreement_lines / seed_from_agreement
+# / restore_agreement_line). Deliberately broader than DEAD_INVOICE_STATUSES
+# (apps/invoicing/claims.py, which also treats `superseded` as dead for atom
+# claims) — a superseded invoice has no writer yet, and the agreement-line
+# invariant was scoped to "not cancelled" specifically (better-fees skeleton
+# phase, Task 3).
+LIVE_INVOICE_STATUSES = [
+    status for status, _label in Invoice.INVOICE_STATUS_CHOICES
+    if status != Invoice.STATUS_CANCELLED
+]
+
+
 class InvoiceService:
     """Service for invoice operations."""
 
@@ -191,6 +204,21 @@ class InvoiceService:
         # cancelled is one of DEAD_INVOICE_STATUSES (apps/invoicing/claims.py).
         invoice.status = Invoice.STATUS_CANCELLED
         invoice.save()
+
+        # A cancelled invoice's lines must stop counting as "on this
+        # invoice" for the agreement-reference invariant — NULL both ref
+        # FKs so remaining_agreement_lines / restore_agreement_line's
+        # re-check see the agreement line as free again. (LIVE_INVOICE_STATUSES
+        # already excludes cancelled invoices by status, but a stray direct
+        # FK lookup elsewhere should not need to know that.) Iterate + save
+        # per instance (not QuerySet.update()) per house rule — Model.save()
+        # runs full_clean() but has no other side effects for this field pair.
+        for li in invoice.invoicelineitem_set.all():
+            if li.agreement_estimate_line_id or li.agreement_co_line_id:
+                li.agreement_estimate_line = None
+                li.agreement_co_line = None
+                li.save()
+
         return invoice
 
     @staticmethod
@@ -335,6 +363,231 @@ class InvoiceService:
             LineItemService.save_line_item(line)
             line.refresh_from_db()
             return line
+
+    # ── agreement seeding / remaining / restore / remove ────────────────
+
+    @staticmethod
+    def remaining_agreement_lines(job, exclude_invoice=None):
+        """compose_agreement(job)'s lines minus those already referenced by
+        a live (non-cancelled) invoice's line item.
+
+        `exclude_invoice` lets a draft's own restore picker exclude its own
+        already-seeded refs from the "already claimed elsewhere" check —
+        i.e. a line the draft itself already carries should not appear as
+        both "on this invoice" and "remaining".
+        """
+        from apps.estimates.agreement import compose_agreement
+
+        lines = compose_agreement(job)['lines']
+
+        refs = InvoiceLineItem.objects.filter(
+            invoice__job=job, invoice__status__in=LIVE_INVOICE_STATUSES,
+        )
+        if exclude_invoice is not None:
+            refs = refs.exclude(invoice=exclude_invoice)
+
+        claimed_estimate_ids = set(
+            refs.filter(agreement_estimate_line_id__isnull=False)
+            .values_list('agreement_estimate_line_id', flat=True)
+        )
+        claimed_co_ids = set(
+            refs.filter(agreement_co_line_id__isnull=False)
+            .values_list('agreement_co_line_id', flat=True)
+        )
+
+        return [
+            line for line in lines
+            if line['estimate_line_id'] not in claimed_estimate_ids
+            and line['co_line_id'] not in claimed_co_ids
+        ]
+
+    @staticmethod
+    def _assert_agreement_line_unclaimed(line, exclude_invoice):
+        """Re-check under select_for_update (on the agreement line's own
+        pk) that no live invoice already references this agreement line —
+        closes the race between reading remaining_agreement_lines and
+        writing the new reference. Raises ValidationError naming the
+        invoice that already holds it."""
+        from apps.estimates.models import EstimateLineItem, ChangeOrderLineItem
+
+        if line['estimate_line_id'] is not None:
+            EstimateLineItem.objects.select_for_update().get(
+                pk=line['estimate_line_id'])
+            ref_filter = {'agreement_estimate_line_id': line['estimate_line_id']}
+        else:
+            ChangeOrderLineItem.objects.select_for_update().get(
+                pk=line['co_line_id'])
+            ref_filter = {'agreement_co_line_id': line['co_line_id']}
+
+        qs = InvoiceLineItem.objects.filter(
+            invoice__status__in=LIVE_INVOICE_STATUSES, **ref_filter,
+        ).select_related('invoice')
+        if exclude_invoice is not None:
+            qs = qs.exclude(invoice=exclude_invoice)
+        existing = qs.first()
+        if existing is not None:
+            raise ValidationError(
+                f'This agreement line is already on invoice '
+                f'{existing.invoice.display_number}.'
+            )
+
+    @staticmethod
+    def _mirror_agreement_claims(li, line):
+        """Copy the accepted agreement line's source rows (task/material/fee
+        claims) onto the new invoice line — skipping atoms that fail the
+        billability gate (task not complete, material not consumed). An
+        unbillable atom is simply not claimed yet; the source pool still
+        offers it. Fee atoms have no completion gate and always pass."""
+        from apps.estimates.models import (
+            EstimateLineItemSource, ChangeOrderLineItemSource,
+        )
+        from apps.invoicing.models import InvoiceLineItemSource
+
+        if line['estimate_line_id'] is not None:
+            sources = EstimateLineItemSource.objects.filter(
+                estimate_line_item_id=line['estimate_line_id'])
+        elif line['co_line_id'] is not None:
+            sources = ChangeOrderLineItemSource.objects.filter(
+                change_order_line_item_id=line['co_line_id'])
+        else:
+            return
+
+        for src in sources:
+            instance = src.resolve()
+            try:
+                InvoiceWizardService._assert_atom_billable(instance)
+            except ValidationError:
+                continue
+            InvoiceLineItemSource.objects.create(
+                invoice_line_item=li,
+                source_type=src.source_type,
+                source_pk=src.source_pk,
+            )
+
+    @staticmethod
+    def _build_agreement_line_item(invoice, line, line_number):
+        """Construct (unsaved) an InvoiceLineItem from one compose_agreement
+        line dict — shared by seed_from_agreement and restore_agreement_line."""
+        li = InvoiceLineItem(
+            invoice=invoice,
+            line_number=line_number,
+            description=line['description'],
+            qty=line['qty'],
+            price=line['price'],
+            units=line['units'],
+            accounting_category_id=line.get('accounting_category_id'),
+            agreement_estimate_line_id=line['estimate_line_id'],
+            agreement_co_line_id=line['co_line_id'],
+        )
+        if line.get('is_adjustment') and line.get('adjustment_service_id'):
+            li.adjustment_service_id = line['adjustment_service_id']
+            li.adjustment_percent = line.get('percent')
+        return li
+
+    @staticmethod
+    def seed_from_agreement(invoice):
+        """Create one InvoiceLineItem per *remaining* agreement line (see
+        remaining_agreement_lines) on a draft invoice.
+
+        Values (description/qty/units/price/accounting category) come
+        straight from the compose_agreement dict. An estimate-origin or
+        CO-origin line's billable source atoms are mirrored onto the new
+        line (InvoiceLineItemSource) so the wizard pool shows them claimed.
+
+        Returns the number of lines created.
+        """
+        from django.db import transaction
+        from django.db.models import Max
+        from apps.core.services import LineItemService
+
+        InvoiceService._validate_draft(invoice)
+
+        with transaction.atomic():
+            lines = InvoiceService.remaining_agreement_lines(
+                invoice.job, exclude_invoice=invoice)
+
+            max_ln = (InvoiceLineItem.objects.filter(invoice=invoice)
+                      .aggregate(Max('line_number'))['line_number__max'] or 0)
+
+            created = 0
+            for line in lines:
+                InvoiceService._assert_agreement_line_unclaimed(
+                    line, exclude_invoice=invoice)
+
+                max_ln += 1
+                li = InvoiceService._build_agreement_line_item(
+                    invoice, line, max_ln)
+                LineItemService.save_line_item(li)
+
+                if line.get('is_adjustment') and line.get('target_category_ids'):
+                    li.adjustment_target_categories.set(line['target_category_ids'])
+
+                InvoiceService._mirror_agreement_claims(li, line)
+
+                created += 1
+
+        return created
+
+    @staticmethod
+    def restore_agreement_line(invoice, *, estimate_line_id=None, co_line_id=None):
+        """Re-add a single agreement line (previously removed from this
+        draft, or never seeded) as a new line on `invoice`, mirroring claims
+        the same way seed_from_agreement does.
+
+        Exactly one of estimate_line_id / co_line_id must be given.
+        """
+        from django.db import transaction
+        from django.db.models import Max
+        from apps.core.services import LineItemService
+        from apps.estimates.agreement import compose_agreement
+
+        if bool(estimate_line_id) == bool(co_line_id):
+            raise ValidationError(
+                'Exactly one of estimate_line_id or co_line_id is required.')
+
+        InvoiceService._validate_draft(invoice)
+
+        with transaction.atomic():
+            line = next(
+                (l for l in compose_agreement(invoice.job)['lines']
+                 if l['estimate_line_id'] == estimate_line_id
+                 and l['co_line_id'] == co_line_id),
+                None,
+            )
+            if line is None:
+                raise ValidationError('Agreement line not found.')
+
+            InvoiceService._assert_agreement_line_unclaimed(
+                line, exclude_invoice=invoice)
+
+            max_ln = (InvoiceLineItem.objects.filter(invoice=invoice)
+                      .aggregate(Max('line_number'))['line_number__max'] or 0)
+            li = InvoiceService._build_agreement_line_item(
+                invoice, line, max_ln + 1)
+            LineItemService.save_line_item(li)
+
+            if line.get('is_adjustment') and line.get('target_category_ids'):
+                li.adjustment_target_categories.set(line['target_category_ids'])
+
+            InvoiceService._mirror_agreement_claims(li, line)
+
+        return li
+
+    @staticmethod
+    def remove_line(invoice, line_item):
+        """Remove one seeded/restored line from a draft invoice.
+
+        Routes through LineItemService.delete_line_item_with_renumber, which
+        deletes the row (dropping its agreement_estimate_line/agreement_co_line
+        reference along with it) and cascades its InvoiceLineItemSource rows
+        (claims) — the agreement line becomes "remaining" again.
+        """
+        InvoiceService._validate_draft(invoice)
+        if line_item.invoice_id != invoice.pk:
+            raise ValidationError('Line item does not belong to this invoice.')
+
+        from apps.core.services import LineItemService
+        return LineItemService.delete_line_item_with_renumber(line_item)
 
 
 class InvoiceEmailService:
