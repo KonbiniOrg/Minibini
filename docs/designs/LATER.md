@@ -577,6 +577,17 @@ Cross-cutting UI/API conventions and shared components.
   isolation and passed earlier full runs). Both pre-date and are
   untouched by the `feature/better-fees` skeleton phase; evidence in that
   phase's task reports. Same treatment as the contacts flake above.
+  _2026-08-09 (fee-removal Task 10):_ the cascade timing flake reproduced
+  once more in a full run. Separately, the file's OTHER §6 test
+  ("Completion settle-up") fails deterministically when the spec runs
+  SOLO on a fresh DB: its seed-hunt picks the PT-MIS216 job whose task
+  carries an out-of-stock material, so the (correct, pre-existing)
+  completion stock-gate blocks it — order-dependent candidate selection,
+  same family as the deposit-creation entry, not timing. Not caused by
+  the fee strip (the stripped seed differs from the old one only in
+  `jobs.fee` + fee source rows — verified row-for-row). Fix shape: the
+  hunt should also require the candidate task's materials to be
+  completable (in stock or absent), or build its own job.
   _Done when:_ each spec waits on its real condition and passes reliably
   solo and in the full suite.
 
