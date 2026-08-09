@@ -37,8 +37,9 @@ def _add_co_line(co):
         qty=1,
         price=Decimal('250'),
         line_number=1,
-        # A bare add line needs an AC to pass the send guard (it crystallizes
-        # into a Fee at acceptance). 901 = 'SVC' in unit_test_data.json.
+        # A bare add line needs an AC to pass the send guard (the category
+        # rides the line onto the agreement and its invoice copy).
+        # 901 = 'SVC' in unit_test_data.json.
         accounting_category_id=901,
     )
 
@@ -173,21 +174,24 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         history_after = JobHistory.objects.filter(object_type='changeorder').count()
         self.assertGreater(history_after, history_before)
 
-    def test_accept_crystallizes_added_line_into_fee(self):
-        """A bare add line becomes a Fee atom on the job at acceptance (it used
-        to stay document-only); no Task or Material is minted for it."""
+    def test_accept_leaves_bare_add_line_document_only(self):
+        """A bare add line stays a document-only line at acceptance: no Fee,
+        no Task, no Material, no source row."""
         from apps.estimates.change_order_service import ChangeOrderService
+        from apps.estimates.models import ChangeOrderLineItemSource
         from apps.jobs.models import Fee
         task_count_before = Task.objects.count()
         mat_count_before = Material.objects.count()
 
         co = ChangeOrderService.create(job_id=self.job.pk)
-        _add_co_line(co)
+        li = _add_co_line(co)
         ChangeOrderService.mark_open(co.pk)
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
 
-        fee = Fee.objects.get(job=self.job, description='Extra scope')
-        self.assertEqual(fee.unit_rate, Decimal('250'))
+        self.assertFalse(Fee.objects.filter(job=self.job).exists())
+        self.assertFalse(
+            ChangeOrderLineItemSource.objects.filter(
+                change_order_line_item=li).exists())
         self.assertEqual(Task.objects.count(), task_count_before)
         self.assertEqual(Material.objects.count(), mat_count_before)
 

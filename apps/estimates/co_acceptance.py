@@ -7,40 +7,39 @@ held, so crystallization runs against the released job.
 
 Mirrors EstimateAcceptanceService.on_accept (apps/estimates/acceptance.py):
 
-- **add** — crystallize a new atom via the same four-way discriminator
-  (service_item → Task, inventory_item → Material, is_material bare →
-  established Material at a reverse-markup placeholder cost, else → Fee) and
-  link it back to the CO line with a ChangeOrderLineItemSource row.
+- **add** — crystallize a new atom via the same discriminator (service_item →
+  Task, inventory_item → Material, is_material bare → established Material at
+  a reverse-markup placeholder cost, else → skip: a plain line stays
+  document-only, no atom, no source row) and, when an atom is created, link
+  it back to the CO line with a ChangeOrderLineItemSource row.
 - **remove** — resolve the target estimate line to its *current* atom (through
   the accepted-CO replace chain) and retire it: cancel a Task (bleps preserved
   — cancelled-task time stays on record), **release** a pending un-invoiced
   Material (earmark backed out, quantity moved to released_qty, claims kept as
-  job history), delete an un-invoiced Fee. Consumed / invoiced / PO-linked /
-  terminal atoms are deliberately left alone — physical or billed reality is
-  not unwound by a document; the human reconciles those.
+  job history). Consumed / invoiced / PO-linked / terminal atoms are
+  deliberately left alone — physical or billed reality is not unwound by a
+  document; the human reconciles those. Historical fee-sourced targets
+  (legacy SOURCE_FEE rows) are likewise left untouched.
 - **replace** — crystallize the replacement first (so a cancel never leaves the
   job transiently task-less and auto-advances it), then retire the old atom.
   A bare replace line mirrors the old atom's type: a Task target yields a new
   Task on the same rate scheme/modifiers at the CO line's qty; a Material
-  target a new Material on the same inventory item; a Fee target a new Fee.
-  A CO line carrying its own descriptor (service/inventory/is_material)
-  crystallizes per that descriptor instead. A document-only target (adjustment
-  line, or an atom already retired) stays document-only.
+  target a new Material on the same inventory item. A CO line carrying its
+  own descriptor (service/inventory/is_material) crystallizes per that
+  descriptor instead. A document-only target (adjustment line, a plain line,
+  or an atom already retired) stays document-only.
 
 Adds are processed before replaces, and replaces before removes, so a CO that
 swaps out the job's only task never transiently empties the live work set.
 After the walk the job's inventoried materials are (re-)earmarked, exactly as
 estimate acceptance does. Billing stays with compose_agreement — the
-crystallized atoms are the *work* mirror, traced via the source rows so the
-invoice claims each crystallized Fee exactly once (see compose_agreement's
-source_fee_id).
+crystallized atoms are the *work* mirror, traced via the source rows.
 
 Idempotency: each crystallized add/replace line gets a source row and is
 skipped on re-run; retirement re-checks atom state before acting.
 """
 from decimal import Decimal
 
-from django.core.exceptions import ValidationError
 from django.db import transaction
 
 
@@ -51,8 +50,8 @@ class ChangeOrderAcceptanceService:
     def on_accept(co):
         """Apply the accepted CO's line deltas to its Job's atoms.
 
-        Returns {'tasks_created', 'materials_created', 'fees_created',
-                 'tasks_cancelled', 'materials_removed', 'fees_removed'}.
+        Returns {'tasks_created', 'materials_created',
+                 'tasks_cancelled', 'materials_removed'}.
         """
         from apps.inventory.services import InventoryService
         from apps.jobs.models import Job
@@ -62,8 +61,8 @@ class ChangeOrderAcceptanceService:
         job = Job.objects.get(pk=co.job_id)
 
         counts = {
-            'tasks_created': 0, 'materials_created': 0, 'fees_created': 0,
-            'tasks_cancelled': 0, 'materials_removed': 0, 'fees_removed': 0,
+            'tasks_created': 0, 'materials_created': 0,
+            'tasks_cancelled': 0, 'materials_removed': 0,
         }
 
         from apps.estimates.models import ChangeOrderLineItem
@@ -143,7 +142,12 @@ class ChangeOrderAcceptanceService:
 
     @staticmethod
     def _mirror_of(atoms):
-        """Snapshot of the primary current atom, used to type a bare replace."""
+        """Snapshot of the primary current atom, used to type a bare replace.
+
+        Explicit dispatch: task and material are the only mirrorable atom
+        kinds. Anything else (a future source type, or the retired 'fee')
+        raises rather than silently mistyping the replacement.
+        """
         if not atoms:
             return None
         source_type, atom = atoms[0]
@@ -162,11 +166,7 @@ class ChangeOrderAcceptanceService:
                 'accounting_category': atom.accounting_category,
                 'units': atom.units,
             }
-        return {
-            'type': 'fee',
-            'description': atom.description,
-            'accounting_category': atom.accounting_category,
-        }
+        raise ValueError(f'unknown source_type {source_type!r}')
 
     # ------------------------------------------------------------------
     # Crystallization (adds and replacements)
@@ -177,12 +177,14 @@ class ChangeOrderAcceptanceService:
         """Create the atom a CO add/replace line describes and source-link it.
 
         Same discriminator order as estimate acceptance (service_item →
-        inventory_item → is_material → Fee); a bare replace line falls through
-        to mirroring the retired atom's type instead.
+        inventory_item → is_material → skip); a bare replace line falls
+        through to mirroring the retired atom's type instead. A plain line
+        (no descriptor, no mirror) crystallizes nothing — it stays a
+        document-only line.
         """
         from apps.estimates.models import ChangeOrderLineItemSource
         from apps.inventory.services import MaterialService
-        from apps.jobs.models import Fee, Task
+        from apps.jobs.models import Task
 
         qty = li.qty or Decimal('1')
 
@@ -260,27 +262,9 @@ class ChangeOrderAcceptanceService:
             counts['materials_created'] += 1
             return
 
-        # Fee (default). AC comes from the line, falling back to the retired
-        # fee's category on a bare replace. Same defensive guard as estimate
-        # acceptance: Fee.accounting_category is NOT NULL.
-        accounting_category = li.accounting_category or (
-            mirror.get('accounting_category') if mirror else None)
-        if accounting_category is None:
-            raise ValidationError(
-                f'Change order line "{li.description or "(no description)"}" '
-                f'has no accounting category. All added line items must have '
-                f'an accounting category before the change order can be accepted.'
-            )
-        fee = Fee.objects.create(
-            job=job,
-            description=li.description or '',
-            quantity=qty,
-            unit_rate=li.price or Decimal('0'),
-            accounting_category=accounting_category,
-            sort_order=li.line_number or 0,
-        )
-        ChangeOrderAcceptanceService._link(li, ChangeOrderLineItemSource.SOURCE_FEE, fee.pk)
-        counts['fees_created'] += 1
+        # Plain line (no service_item, no inventory_item, not marked
+        # material, no mirror): stays a document-only line. No atom, no
+        # source row.
 
     @staticmethod
     def _link(li, source_type, source_pk):
@@ -327,9 +311,5 @@ class ChangeOrderAcceptanceService:
             counts['materials_removed'] += 1
             return
 
-        if source_type == 'fee':
-            if InvoiceClaimService.is_invoiced(
-                    InvoiceLineItemSource.SOURCE_FEE, atom.pk):
-                return
-            atom.delete()  # Fee.delete() purges its source rows
-            counts['fees_removed'] += 1
+        # Any other source_type (a legacy 'fee' row) falls through: nothing
+        # to retire — the document delta stays document-level.

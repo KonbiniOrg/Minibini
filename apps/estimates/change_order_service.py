@@ -90,7 +90,9 @@ class ChangeOrderService:
     @staticmethod
     def struck_atom_keys(job):
         """Keys ('task'|'material'|'fee', pk) of atoms an ACCEPTED change
-        order's remove/replace struck from the agreement. Derived, never
+        order's remove/replace struck from the agreement ('fee' keys can only
+        come from historical source rows — nothing creates Fees anymore).
+        Derived, never
         stored — the chain crystallization walked persists: accepted CO line
         → target estimate line → its EstimateLineItemSource claim rows →
         atom. An atom in this set that is still live in the pool is exactly
@@ -118,10 +120,11 @@ class ChangeOrderService:
 
     @staticmethod
     def assert_all_bare_add_lines_have_ac(co):
-        """A bare add line (no service/inventory descriptor) crystallizes into
-        a Fee or a provisional Material at acceptance, and both need an
-        accounting category — catch it at send so acceptance, after the
-        customer has said yes, can never fail on it. The CO parallel of
+        """A bare add line (no service/inventory descriptor) needs an
+        accounting category to travel on documents — the category rides the
+        line onto the agreement and its invoice copy, so a category-less line
+        would surface as an unclassifiable charge downstream. Catch it at
+        send, before the customer has said yes. The CO parallel of
         EstimateService.assert_all_hand_lines_have_ac; shared by
         ChangeOrder.clean()'s draft-exit guard (the invariant home) and
         ChangeOrderEmailService._validate_send (the pre-email copy, so the
@@ -218,8 +221,9 @@ class ChangeOrderService:
 
         - Accepted: clear the job's hold (status preserved); write system
           HistoryEntry; crystallize the CO's deltas onto the Job's atoms
-          (add → new Task/Material/Fee; remove/replace → retire the target's
-          atom, with the replacement crystallized from the CO line).
+          (typed add → new Task/Material, plain add stays document-only;
+          remove/replace → retire the target's atom, with the replacement
+          crystallized from the CO line).
         - Rejected / Expired: snapshot the proposal (Trigger 2); leave the
           job held.
         """

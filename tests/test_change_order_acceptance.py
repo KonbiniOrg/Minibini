@@ -1,16 +1,19 @@
 """ChangeOrderAcceptanceService — CO acceptance crystallizes deltas onto Job atoms.
 
-Mirrors EstimateAcceptanceService.on_accept (tests/test_acceptance_fees.py):
-- add    → crystallize a new atom via the same four-way discriminator
-           (service_item → Task, inventory_item → Material, is_material bare →
-           established Material with reverse-markup cost, else → Fee),
-           source-linked to the CO line.
+Mirrors EstimateAcceptanceService.on_accept (tests/test_acceptance_plain_lines.py):
+- add    → crystallize a new atom via the same discriminator (service_item →
+           Task, inventory_item → Material, is_material bare → established
+           Material with reverse-markup cost, else → skip: a plain line stays
+           document-only, no atom, no source row), source-linked to the CO
+           line when an atom is created.
 - remove → retire the target line's current atom: cancel a Task (bleps
-           preserved), delete a pending un-invoiced Material (earmark released),
-           delete an un-invoiced Fee. Consumed / invoiced / terminal atoms are
-           left alone; document-only targets (adjustments) are a no-op.
+           preserved), release a pending un-invoiced Material (earmark backed
+           out). Consumed / invoiced / terminal atoms and historical
+           fee-sourced targets are left alone; document-only targets
+           (adjustments, plain lines) are a no-op.
 - replace → crystallize the replacement first (a bare CO line mirrors the old
-           atom's type), then retire the old atom.
+           atom's type), then retire the old atom. A plain (document-only)
+           target stays document-only.
 Then earmark the job's inventoried materials, exactly like estimate acceptance.
 """
 from datetime import timedelta
@@ -127,6 +130,9 @@ class ChangeOrderAcceptanceBase(TestCase):
         return line, material
 
     def _fee_backed_line(self, line_number=1):
+        # Historical data: pre-narrowing acceptances crystallized plain
+        # hand-lines into Fees with a SOURCE_FEE row. Nothing creates these
+        # anymore; they exist only as seeded legacy rows.
         fee = Fee.objects.create(
             job=self.job, description='Rush handling', quantity=Decimal('1'),
             unit_rate=Decimal('75.00'), accounting_category=self.cat,
@@ -215,7 +221,10 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_MATERIAL)
         self.assertEqual(src.source_pk, mat.pk)
 
-    def test_bare_add_line_crystallizes_fee(self):
+    def test_bare_add_line_stays_document_only(self):
+        # A plain add line (no service_item, no inventory_item, not
+        # is_material) crystallizes NOTHING: no Fee, no source row — it stays
+        # a document-only line.
         co = self._make_co()
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
@@ -224,13 +233,19 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         )
         self._accept(co)
 
-        fee = Fee.objects.get(job=self.job, description='Extra scope')
-        self.assertEqual(fee.quantity, Decimal('3'))
-        self.assertEqual(fee.unit_rate, Decimal('25.00'))
-        self.assertEqual(fee.accounting_category, self.cat)
-        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
-        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_FEE)
-        self.assertEqual(src.source_pk, fee.pk)
+        self.assertEqual(Fee.objects.filter(job=self.job).count(), 0)
+        self.assertFalse(
+            ChangeOrderLineItemSource.objects.filter(
+                change_order_line_item=li).exists())
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
+        self.assertEqual(Material.objects.filter(job=self.job).count(), 0)
+        # The line itself is untouched — still present on the document.
+        li.refresh_from_db()
+        self.assertEqual(li.description, 'Extra scope')
+        self.assertEqual(li.qty, Decimal('3'))
+        self.assertEqual(li.price, Decimal('25.00'))
+        co.refresh_from_db()
+        self.assertEqual(co.status, ChangeOrder.STATUS_ACCEPTED)
 
     def test_bare_add_line_without_ac_blocks_send(self):
         co = self._make_co()
@@ -245,17 +260,14 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
     def test_on_accept_is_idempotent(self):
         from apps.estimates.co_acceptance import ChangeOrderAcceptanceService
         co = self._make_co()
-        ChangeOrderService.add_line_item(
-            co.pk, action=ChangeOrderLineItem.ACTION_ADD,
-            description='Extra scope', qty=Decimal('1'), price=Decimal('10.00'),
-            accounting_category=self.cat.pk,
-        )
+        ChangeOrderService.add_line_item_from_service(
+            co.pk, self.service_item.pk, Decimal('4'))
         self._accept(co)
         # Re-running acceptance must not duplicate atoms: crystallized lines
         # already carry a source row and are skipped.
         ChangeOrderAcceptanceService.on_accept(co)
         self.assertEqual(
-            Fee.objects.filter(job=self.job, description='Extra scope').count(), 1)
+            Task.objects.filter(job=self.job, name='CNC cutting').count(), 1)
 
 
 class CORemoveCrystallizationTests(ChangeOrderAcceptanceBase):
@@ -323,37 +335,19 @@ class CORemoveCrystallizationTests(ChangeOrderAcceptanceBase):
         self.assertEqual(
             material.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
 
-    def test_remove_fee_line_deletes_fee(self):
+    def test_remove_fee_backed_line_is_left_alone(self):
+        # Retirement no longer has a fee arm: a remove targeting a historical
+        # fee-sourced estimate line is a document-level no-op — the legacy Fee
+        # and its source row survive untouched.
         line, fee = self._fee_backed_line()
-        co = self._make_co()
-        self._remove_line(co, line)
-        self._accept(co)
-
-        self.assertFalse(Fee.objects.filter(pk=fee.pk).exists())
-        self.assertFalse(line.sources.exists())
-
-    def test_remove_invoiced_fee_is_left_alone(self):
-        from apps.invoicing.models import (
-            Invoice, InvoiceLineItem, InvoiceLineItemSource,
-        )
-        line, fee = self._fee_backed_line()
-        invoice = Invoice.objects.create(
-            job=self.job, invoice_number='INV-2026-0001')
-        inv_li = InvoiceLineItem.objects.create(
-            invoice=invoice, description='Rush handling',
-            qty=Decimal('1'), price=Decimal('75.00'),
-            accounting_category=self.cat,
-        )
-        InvoiceLineItemSource.objects.create(
-            invoice_line_item=inv_li,
-            source_type=InvoiceLineItemSource.SOURCE_FEE,
-            source_pk=fee.pk,
-        )
         co = self._make_co()
         self._remove_line(co, line)
         self._accept(co)
 
         self.assertTrue(Fee.objects.filter(pk=fee.pk).exists())
+        self.assertTrue(line.sources.exists())
+        co.refresh_from_db()
+        self.assertEqual(co.status, ChangeOrder.STATUS_ACCEPTED)
 
     def test_remove_adjustment_line_is_document_only(self):
         adj_scheme = RateScheme.objects.create(
@@ -468,23 +462,43 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         self.assertEqual(new_mat.cost_source, Material.COST_SOURCE_ESTIMATED)
         self.assertEqual(new_mat.sell_price, Decimal('120.00'))
 
-    def test_replace_fee_line_recreates_fee(self):
-        line, old_fee = self._fee_backed_line()
+    def test_replace_plain_line_stays_document_only(self):
+        # A plain estimate line (no source rows — post-narrowing acceptance
+        # left it document-only) replaced by a bare CO line: the delta stays
+        # document-level. No atom is created, no source row is written.
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1,
+            description='Rush handling', qty=Decimal('1'), price=Decimal('75.00'),
+            accounting_category=self.cat,
+        )
         co = self._make_co()
         li = self._replace_line(
             co, line, description='Rush handling (expanded)', qty=Decimal('2'),
-            price=Decimal('90.00'),
+            price=Decimal('90.00'), accounting_category=self.cat.pk,
         )
         self._accept(co)
 
-        self.assertFalse(Fee.objects.filter(pk=old_fee.pk).exists())
-        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
-        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_FEE)
-        new_fee = Fee.objects.get(pk=src.source_pk)
-        self.assertEqual(new_fee.quantity, Decimal('2'))
-        self.assertEqual(new_fee.unit_rate, Decimal('90.00'))
-        # AC inherited from the old fee (the bare CO line supplied none).
-        self.assertEqual(new_fee.accounting_category, self.cat)
+        self.assertEqual(Fee.objects.filter(job=self.job).count(), 0)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
+        self.assertEqual(Material.objects.filter(job=self.job).count(), 0)
+        self.assertFalse(
+            ChangeOrderLineItemSource.objects.filter(
+                change_order_line_item=li).exists())
+        co.refresh_from_db()
+        self.assertEqual(co.status, ChangeOrder.STATUS_ACCEPTED)
+
+    def test_mirror_of_unknown_source_type_raises(self):
+        # The mirror dispatch is explicit: task and material only. Any other
+        # source_type (a future atom kind, or the retired 'fee') must raise,
+        # never silently mistype the replacement.
+        from apps.estimates.co_acceptance import ChangeOrderAcceptanceService
+        fee = Fee.objects.create(
+            job=self.job, description='Legacy fee', quantity=Decimal('1'),
+            unit_rate=Decimal('10.00'), accounting_category=self.cat,
+        )
+        with self.assertRaises(ValueError) as ctx:
+            ChangeOrderAcceptanceService._mirror_of([('fee', fee)])
+        self.assertIn('fee', str(ctx.exception))
 
     def test_second_co_replace_resolves_through_first_replacement(self):
         line, original_task = self._task_backed_line(est_qty=Decimal('10'))
@@ -592,30 +606,32 @@ class COAuthoringParityTests(ChangeOrderAcceptanceBase):
 
 
 class COAgreementBillingTests(ChangeOrderAcceptanceBase):
-    """No double-billing: the agreement traces crystallized CO fees so the
-    invoice claims them (parity with estimate hand-line source_fee_id)."""
+    """The agreement still carries CO document lines (no fee behind them
+    anymore), and the historical SOURCE_FEE claim mapping keeps resolving for
+    legacy data until its own removal task."""
 
-    def test_compose_agreement_emits_source_fee_id_for_co_add(self):
+    def test_compose_agreement_includes_co_add_line_without_fee(self):
+        # A plain CO add line rides the agreement as a document line; with no
+        # crystallized Fee behind it, source_fee_id is None.
         from apps.estimates.agreement import compose_agreement
         co = self._make_co()
-        li = ChangeOrderService.add_line_item(
+        ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra scope', qty=Decimal('1'), price=Decimal('10.00'),
             accounting_category=self.cat.pk,
         )
         self._accept(co)
 
-        fee = ChangeOrderLineItemSource.objects.get(
-            change_order_line_item=li).source_pk
         agreement = compose_agreement(self.job)
         co_lines = [l for l in agreement['lines'] if l['origin'] == 'change_order']
         self.assertEqual(len(co_lines), 1)
-        self.assertEqual(co_lines[0]['source_fee_id'], fee)
+        self.assertIsNone(co_lines[0]['source_fee_id'])
 
-    def test_copy_from_estimate_claims_crystallized_co_fee(self):
+    def test_copy_from_estimate_claims_legacy_co_fee(self):
         from apps.invoicing.models import Invoice, InvoiceLineItemSource
         from apps.invoicing.services import InvoiceService
-        # An estimate hand-line fee plus a CO-added fee: both must be claimed.
+        # Legacy data: an estimate hand-line fee plus a CO-added fee, both
+        # seeded directly (acceptance no longer creates them). copy claims both.
         line, est_fee = self._fee_backed_line()
         co = self._make_co()
         li = ChangeOrderService.add_line_item(
@@ -624,8 +640,17 @@ class COAgreementBillingTests(ChangeOrderAcceptanceBase):
             accounting_category=self.cat.pk,
         )
         self._accept(co)
-        co_fee_pk = ChangeOrderLineItemSource.objects.get(
-            change_order_line_item=li).source_pk
+        # Seed the crystallized Fee and its source row directly, mirroring
+        # what a pre-narrowing acceptance would have written.
+        co_fee = Fee.objects.create(
+            job=self.job, description='Extra scope', quantity=Decimal('1'),
+            unit_rate=Decimal('10.00'), accounting_category=self.cat,
+        )
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=li,
+            source_type=ChangeOrderLineItemSource.SOURCE_FEE,
+            source_pk=co_fee.pk,
+        )
 
         invoice = Invoice.objects.create(
             job=self.job, invoice_number='INV-2026-0001')
@@ -638,4 +663,4 @@ class COAgreementBillingTests(ChangeOrderAcceptanceBase):
             ).values_list('source_pk', flat=True)
         )
         self.assertIn(est_fee.pk, claimed)
-        self.assertIn(co_fee_pk, claimed)
+        self.assertIn(co_fee.pk, claimed)
