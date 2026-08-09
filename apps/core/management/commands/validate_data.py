@@ -875,57 +875,51 @@ class Command(BaseCommand):
         """Each estimate line and change-order line may be referenced by at
         most one live invoice. A live invoice is every status except cancelled.
         Uses DB-side aggregation to identify violations, then fetches details only
-        for violating IDs."""
+        for violating IDs.
+
+        Two distinct violation shapes are possible and get distinct
+        messages: the agreement line is held by more than one DISTINCT live
+        invoice (the invariant this check exists for), or it has more than
+        one live InvoiceLineItem row all pointing at the same single
+        invoice (duplicate references — also invalid, but not "more than
+        one invoice" and would otherwise be misreported as such since a
+        raw row-count doesn't distinguish the two)."""
         from apps.invoicing.models import InvoiceLineItem
 
-        # Check estimate lines: aggregate at DB level
-        # Find agreement_estimate_line_ids that are referenced by more than one live invoice
-        estimate_line_violations = InvoiceLineItem.objects.exclude(
+        self._check_agreement_line_field_exclusivity(
+            InvoiceLineItem, 'agreement_estimate_line_id', 'EstimateLineItem')
+        self._check_agreement_line_field_exclusivity(
+            InvoiceLineItem, 'agreement_co_line_id', 'ChangeOrderLineItem')
+
+    def _check_agreement_line_field_exclusivity(self, InvoiceLineItem, field, label):
+        # Aggregate at DB level: both a raw row count (n) and a distinct-
+        # invoice count (n_invoices) — two dup rows on ONE invoice must not
+        # be reported as "more than one live invoice".
+        violations = InvoiceLineItem.objects.exclude(
             invoice__status=Invoice.STATUS_CANCELLED
         ).exclude(
-            agreement_estimate_line__isnull=True
-        ).values('agreement_estimate_line_id').annotate(
-            n=Count('pk')
+            **{f'{field}__isnull': True}
+        ).values(field).annotate(
+            n=Count('pk'), n_invoices=Count('invoice', distinct=True),
         ).filter(n__gt=1)
 
-        # Fetch violating ILIs for display
-        if estimate_line_violations:
-            violating_estimate_line_ids = [v['agreement_estimate_line_id']
-                                           for v in estimate_line_violations]
-            for line_id in violating_estimate_line_ids:
-                ilis = InvoiceLineItem.objects.exclude(
-                    invoice__status=Invoice.STATUS_CANCELLED
-                ).filter(
-                    agreement_estimate_line_id=line_id
-                ).select_related('invoice')
+        for v in violations:
+            line_id = v[field]
+            ilis = InvoiceLineItem.objects.exclude(
+                invoice__status=Invoice.STATUS_CANCELLED
+            ).filter(
+                **{field: line_id}
+            ).select_related('invoice')
 
-                display_numbers = sorted(set(ili.invoice.display_number for ili in ilis))
+            display_numbers = sorted(set(ili.invoice.display_number for ili in ilis))
+            if v['n_invoices'] > 1:
                 self.errors.append(
-                    f'EstimateLineItem {line_id}: referenced by more than one live invoice: '
+                    f'{label} {line_id}: referenced by more than one live invoice: '
                     f'{", ".join(display_numbers)}'
                 )
-
-        # Check change-order lines: aggregate at DB level
-        co_line_violations = InvoiceLineItem.objects.exclude(
-            invoice__status=Invoice.STATUS_CANCELLED
-        ).exclude(
-            agreement_co_line__isnull=True
-        ).values('agreement_co_line_id').annotate(
-            n=Count('pk')
-        ).filter(n__gt=1)
-
-        # Fetch violating ILIs for display
-        if co_line_violations:
-            violating_co_line_ids = [v['agreement_co_line_id'] for v in co_line_violations]
-            for line_id in violating_co_line_ids:
-                ilis = InvoiceLineItem.objects.exclude(
-                    invoice__status=Invoice.STATUS_CANCELLED
-                ).filter(
-                    agreement_co_line_id=line_id
-                ).select_related('invoice')
-
-                display_numbers = sorted(set(ili.invoice.display_number for ili in ilis))
+            else:
                 self.errors.append(
-                    f'ChangeOrderLineItem {line_id}: referenced by more than one live invoice: '
-                    f'{", ".join(display_numbers)}'
+                    f'{label} {line_id}: referenced by {v["n"]} line items on '
+                    f'the same live invoice {display_numbers[0]} (duplicate '
+                    f'references).'
                 )

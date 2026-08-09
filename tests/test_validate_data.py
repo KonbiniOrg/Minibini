@@ -788,3 +788,19 @@ class ValidateDataAgreementLineInvoicesTest(TestCase):
 
         output = self._run()
         self.assertNotIn('referenced by more than one live invoice', output)
+
+    def test_two_dup_refs_on_one_invoice_flagged_as_duplicate_not_multi_invoice(self):
+        """Two InvoiceLineItem rows on the SAME live invoice both referencing
+        the same agreement line is also invalid (duplicate references), but
+        must not be reported with the "more than one live invoice" message
+        — there's only one invoice involved, so a DISTINCT invoice count
+        (not a raw row count) must drive which message fires."""
+        inv1 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-008')
+        InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+        InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+
+        output = self._run()
+        self.assertIn('[ERROR]', output)
+        self.assertNotIn('referenced by more than one live invoice', output)
+        self.assertIn('duplicate references', output)
+        self.assertIn('INV-AGRLNE-008', output)
