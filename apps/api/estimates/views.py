@@ -103,7 +103,8 @@ class EstimateViewSet(
     # Line-item GET (list) + POST (create) are provided by LineItemMixin.line_items;
     # 'line_items' stays in get_permissions' mixed_actions so GET is IsAuthenticated
     # and POST requires CanManageJobOrPM. Direct line authoring is supported again
-    # (hand-lines crystallize into Fees at acceptance); atom-backed lines still come
+    # (typed hand-lines crystallize into Tasks/Materials at acceptance; plain
+    # hand-lines stay document-only); atom-backed lines still come
     # via line-items-from-atoms / add-atoms.
 
     @action(detail=True, methods=['post'], url_path='revise')

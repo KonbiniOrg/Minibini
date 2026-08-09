@@ -111,10 +111,11 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
 
 @receiver(estimate_accepted)
 def trigger_acceptance_crystallization(sender, estimate, **kwargs):
-    """When an Estimate is accepted, crystallize its hand-lines into Fees on the
-    Job and earmark the job. In the job-owns-atoms model, work already lives on
-    the Job, so there is nothing to carry over from a worksheet — only hand-lines
-    (line items with no source atom, and not adjustments) become Fees.
+    """When an Estimate is accepted, crystallize its typed hand-lines into atoms
+    on the Job (service_item → Task, inventory_item / is_material → Material)
+    and earmark the job. In the job-owns-atoms model, work already lives on the
+    Job, so there is nothing to carry over from a worksheet. Plain hand-lines
+    (no atom type) stay document-only and crystallize nothing.
     """
     from apps.estimates.acceptance import EstimateAcceptanceService
     EstimateAcceptanceService.on_accept(estimate)

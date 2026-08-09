@@ -13,7 +13,7 @@ class AcceptanceProvisionalMaterialTest(TestCase):
     """A bare line marked is_material=True crystallizes into an ESTABLISHED
     Material: a QOH-0 lot minted at a reverse-markup provisional cost, with the
     accepted sell price locked and cost_source='estimated'. An unmarked bare
-    line still becomes a Fee (unchanged)."""
+    line is a plain line and crystallizes nothing."""
 
     def setUp(self):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
@@ -83,15 +83,16 @@ class AcceptanceProvisionalMaterialTest(TestCase):
         self.assertEqual(mat.sell_price, Decimal('0.00'))
         self.assertEqual(mat.cost_source, Material.COST_SOURCE_ESTIMATED)
 
-    def test_unmarked_bare_line_still_becomes_a_fee(self):
-        self._add_line(
+    def test_unmarked_bare_line_crystallizes_nothing(self):
+        line = self._add_line(
             line_number=1, description='Rush handling', qty=Decimal('3'),
             price=Decimal('25.00'), is_material=False,
         )
 
         result = EstimateAcceptanceService.on_accept(self.estimate)
 
-        self.assertEqual(result['fees_created'], 1)
+        self.assertNotIn('fees_created', result)
         self.assertEqual(result['materials_created'], 0)
-        self.assertTrue(Fee.objects.filter(job=self.job, description='Rush handling').exists())
+        self.assertFalse(Fee.objects.filter(job=self.job, description='Rush handling').exists())
         self.assertFalse(Material.objects.filter(job=self.job, description='Rush handling').exists())
+        self.assertFalse(line.sources.exists())

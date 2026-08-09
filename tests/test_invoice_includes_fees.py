@@ -16,7 +16,6 @@ from django.utils import timezone
 
 from apps.core.models import AccountingCategory, AppState, Configuration, User
 from apps.contacts.models import Contact
-from apps.estimates.acceptance import EstimateAcceptanceService
 from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource
 from apps.inventory.models import InventoryItem, Material
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
@@ -222,8 +221,13 @@ class FeeClaimGuardTest(TestCase):
 # ---------------------------------------------------------------------------
 
 class CopyFromEstimateClaimsFeeTest(TestCase):
-    """copy_from_estimate creates an InvoiceLineItemSource for any crystallized Fee
-    so the Fee cannot be double-billed via the wizard after a copy."""
+    """copy_from_estimate creates an InvoiceLineItemSource for any fee-sourced
+    estimate line so the Fee cannot be double-billed via the wizard after a copy.
+
+    Estimate acceptance no longer crystallizes plain hand-lines into Fees, so
+    the Fee and its EstimateLineItemSource are seeded directly here (mirroring
+    historical / CO-acceptance-created data, which still produces SOURCE_FEE rows).
+    """
 
     def setUp(self):
         self.contact, self.cat = _make_common(tag='CFEF')
@@ -243,12 +247,18 @@ class CopyFromEstimateClaimsFeeTest(TestCase):
             qty=Decimal('2'), price=Decimal('75.00'),
             units='ea', accounting_category=self.cat,
         )
-        # No EstimateLineItemSource → this is a pure hand-line.
-
-        # Crystallize: on_accept creates the Fee AND (after Task 3.3 implementation)
-        # an EstimateLineItemSource linking the estimate line to the Fee.
-        EstimateAcceptanceService.on_accept(self.estimate)
-        self.fee = Fee.objects.get(job=self.job, description='Custom fabrication fee')
+        # Seed the crystallized Fee and its source row directly (acceptance no
+        # longer creates them from plain lines).
+        self.fee = Fee.objects.create(
+            job=self.job, description='Custom fabrication fee',
+            quantity=Decimal('2'), unit_rate=Decimal('75.00'),
+            accounting_category=self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=self.hand_line,
+            source_type=EstimateLineItemSource.SOURCE_FEE,
+            source_pk=self.fee.pk,
+        )
 
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
@@ -257,18 +267,6 @@ class CopyFromEstimateClaimsFeeTest(TestCase):
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         fee_group = next(g for g in pool['tasks'] if g['name'] == 'Fees')
         self.assertEqual(fee_group['atoms'][0]['state'], 'available')
-
-    def test_on_accept_creates_estimate_line_item_source_for_fee(self):
-        """Acceptance links the hand-line to its crystallized Fee via
-        EstimateLineItemSource(source_type='fee'), enabling copy_from_estimate
-        to trace the mapping."""
-        self.assertTrue(
-            EstimateLineItemSource.objects.filter(
-                estimate_line_item=self.hand_line,
-                source_type=EstimateLineItemSource.SOURCE_FEE,
-                source_pk=self.fee.pk,
-            ).exists()
-        )
 
     def test_copy_creates_invoice_line_for_hand_line(self):
         """copy_from_estimate creates an InvoiceLineItem for the hand-line."""
