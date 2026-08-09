@@ -8,7 +8,6 @@
   import TaskTree from '../TaskTree.svelte';
   import WorkItemForm from '../WorkItemForm.svelte';
   import MaterialModal from '../MaterialModal.svelte';
-  import FeeModal from '../FeeModal.svelte';
   import ExpenseModal from '../expenses/ExpenseModal.svelte';
   import AssignModal from '../AssignModal.svelte';
   import PriceListPicker from '../PriceListPicker.svelte';
@@ -40,10 +39,6 @@
   let materialModalTaskId = $state(null);
   let materialModalJobId = $state(null);
 
-  let feeModalOpen = $state(false);
-  let feeModalMode = $state('create');
-  let feeModalFee = $state(null);
-
   let selectedTaskId = $state(null);
 
   let assignModalOpen = $state(false);
@@ -56,7 +51,6 @@
   let taskPresetName = $state('');
   let materialPresetPli = $state(null);
   let materialPresetDescription = $state('');
-  let feePresetDescription = $state('');
   let defaultMaterialCategoryId = $state(null);
 
   // Status action state
@@ -220,12 +214,9 @@
       materialPresetPli = null;
       materialPresetDescription = choice.typed;
       materialModalOpen = true;
-    } else {
-      feeModalFee = null;
-      feeModalMode = 'create';
-      feePresetDescription = choice.typed;
-      feeModalOpen = true;
     }
+    // No other choice shape can arrive from the task-surface picker
+    // (Task / Material only) — an unexpected one deliberately does nothing.
   }
 
   // Task modal handlers
@@ -296,19 +287,6 @@
     materialModalMaterial = null;
     materialModalTaskId = null;
     materialModalJobId = null;
-    reload();
-  }
-
-  // Fee modal handlers
-  function openEditFee(fee) {
-    feeModalFee = fee;
-    feeModalMode = 'edit';
-    feeModalOpen = true;
-  }
-
-  function handleFeeSaved() {
-    feeModalOpen = false;
-    feeModalFee = null;
     reload();
   }
 
@@ -395,12 +373,8 @@
     onMoveMaterial={handleMoveMaterial}
     expenses={jobExpenses}
     onEditExpense={openEditExpense}
-    fees={job.fees || []}
-    onEditFee={openEditFee}
     bind:selectedTaskId
   />
-
-  <!-- Fees now render inside the TaskTree table (above), included in the grand total. -->
 
   <!-- Modals -->
   <WorkItemForm
@@ -432,17 +406,6 @@
     {defaultMaterialCategoryId}
     onSaved={handleMaterialSaved}
     onClose={() => { materialModalOpen = false; }}
-  />
-
-  <FeeModal
-    open={feeModalOpen}
-    mode={feeModalMode}
-    fee={feeModalFee}
-    jobId={job.job_id}
-    {categories}
-    presetDescription={feePresetDescription}
-    onSaved={handleFeeSaved}
-    onClose={() => { feeModalOpen = false; }}
   />
 
   <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} taskSurface={true} />

@@ -57,7 +57,3 @@ export function materialTotal(mat) {
   const price = Number(mat.sell_price) || 0;
   return qty * price;
 }
-
-export function feeTotal(fee) {
-  return (Number(fee.quantity) || 0) * (Number(fee.unit_rate) || 0);
-}

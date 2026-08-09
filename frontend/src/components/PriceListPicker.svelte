@@ -8,12 +8,12 @@
   import { api } from '../lib/api.js';
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
 
-  // taskSurface: the task-list footer offers three explicit atom buttons
-  // (Task / Material / Fee). Default (estimate) footer is the material checkbox
+  // taskSurface: the task-list footer offers two explicit atom buttons
+  // (Task / Material). Default (estimate) footer is the material checkbox
   // + "Add Line" (there, tasks come only from a ServiceItem pick).
   let { open = false, onChoose = null, onclose = null, taskSurface = false } = $props();
   let pickerQuery = $state('');
-  let isMaterial = $state(false); // freeform: unchecked → Fee, checked → Material
+  let isMaterial = $state(false); // estimate freeform: checked → Material, unchecked → plain hand line
 
   // Start fresh on every open: a cancelled add (or any other close) must not
   // leave stale typing or a stale material toggle behind when reopened.
@@ -46,15 +46,13 @@
     else onChoose?.({ type: 'inventory', inventoryItem: r.item });
   }
   function emitFreeform() {
-    // Estimate footer: the "is material?" checkbox decides material vs fee.
+    // Estimate footer: the "is material?" checkbox decides material vs
+    // plain hand line — is_material still drives crystallization there.
     onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial });
   }
   // Task-list footer: explicit per-atom emits.
   function emitFreeformMaterial() {
     onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial: true });
-  }
-  function emitFreeformFee() {
-    onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial: false });
   }
   function emitFreeformTask() {
     // A manual/freeform Task — rate scheme picked in the follow-up WorkItemForm.
@@ -91,7 +89,6 @@
     {#if taskSurface}
       <button type="button" onclick={emitFreeformTask}>Add Task</button>
       <button type="button" onclick={emitFreeformMaterial}>Add Material</button>
-      <button type="button" onclick={emitFreeformFee}>Add Fee</button>
     {:else}
       <label><input type="checkbox" bind:checked={isMaterial}> Is this a material?</label>
       <button type="button" onclick={emitFreeform}>Add Line</button>

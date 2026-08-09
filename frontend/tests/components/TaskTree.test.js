@@ -22,21 +22,20 @@ describe('TaskTree', () => {
     expect(getByText('$65.00')).toBeInTheDocument();
   });
 
-  it('includes fees as rows in the same table and in the grand total', async () => {
+  it('renders no Fees group and ignores a stale fees prop in the grand total', () => {
+    // Fees are gone (better-fees, 2026-08): a caller still passing a legacy
+    // `fees` array must get no Fees section and a tasks+materials-only total.
     const t = task({}); // task total 2*25 = $50.00
-    const onEditFee = vi.fn();
-    // fee 4 * 12.50 = $50.00 → grand total 50 + 50 = $100.00
     const fee = { fee_id: 3, description: 'Setup fee', quantity: '4', unit_rate: '12.50' };
-    const { getByText, container } = render(TaskTree, {
-      props: { tasks: [t], fees: [fee], canManage: true, onEditFee },
+    const { queryByText, container } = render(TaskTree, {
+      props: { tasks: [t], fees: [fee], canManage: true },
     });
-    expect(getByText('Setup fee')).toBeInTheDocument();          // fee row present in the same table
-    const feeRow = container.querySelector('.fee-row');
-    expect(feeRow).not.toBeNull();                               // distinguishable styling
-    expect(getByText('$100.00')).toBeInTheDocument();            // fee is in the grand total
-    // the fee's own edit affordance calls back with the fee
-    await fireEvent.click(feeRow.querySelector('button'));
-    expect(onEditFee).toHaveBeenCalledWith(expect.objectContaining({ fee_id: 3 }));
+    expect(queryByText('Fees')).toBeNull();
+    expect(queryByText('Setup fee')).toBeNull();
+    expect(container.querySelector('.fee-row')).toBeNull();
+    // tasks + materials only — the fee's $50.00 is NOT added ($100.00 nowhere)
+    expect(container.querySelector('.grand-total-row').textContent).toContain('$50.00');
+    expect(queryByText('$100.00')).toBeNull();
   });
 
   it('shows material units inline beside the qty (the Units column is gone)', () => {

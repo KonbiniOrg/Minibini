@@ -2,7 +2,7 @@
   import { link } from 'svelte-spa-router';
   import TaskRow from './tasks/TaskRow.svelte';
   import MaterialRow from './materials/MaterialRow.svelte';
-  import { fmtMoney as fmt, taskTotal, materialTotal, feeTotal }
+  import { fmtMoney as fmt, taskTotal, materialTotal }
     from '../lib/taskTotals.js';
 
   let {
@@ -38,8 +38,6 @@
     onAttachExpense = null,
     expenses = [],
     onEditExpense = () => {},
-    fees = [],
-    onEditFee = () => {},
     selectedTaskId = $bindable(null),
   } = $props();
 
@@ -76,9 +74,6 @@
     }
     for (const m of (jobMaterials || [])) {
       total += materialTotal(m);
-    }
-    for (const f of (fees || [])) {
-      total += feeTotal(f);
     }
     return total;
   });
@@ -186,28 +181,6 @@
         {@render expenseRow(exp, false)}
       {/each}
     {/if}
-
-    {#if fees && fees.length}
-      <tr class="job-materials-header">
-        <td colspan={colCount}><strong>Fees</strong></td>
-      </tr>
-      {#each fees as fee (fee.fee_id)}
-        <tr class="fee-row">
-          {#if !readonly && !jobLocked}<td class="move-cell"></td>{/if}
-          <td class="indent"><span class="fee-marker">$</span> {fee.description || '(fee)'}</td>
-          {#if showAssignee}<td></td>{/if}
-          <td></td>
-          {#if showStatus}<td>{#if fee.invoice}{@render invoicedLink(fee.invoice)}{/if}</td>{/if}
-          <td class="text-right">{fee.quantity ?? '-'}</td>
-          <td class="text-right">-</td>
-          <td class="text-right">{fmt(fee.unit_rate)}</td>
-          <td class="text-right">{fmt(feeTotal(fee))}</td>
-          {#if !readonly}
-            <td class="actions-cell row-actions">{#if !jobLocked}<button type="button" onclick={() => onEditFee(fee)}>edit</button>{/if}</td>
-          {/if}
-        </tr>
-      {/each}
-    {/if}
   </tbody>
   <tfoot>
     <tr class="grand-total-row">
@@ -228,14 +201,11 @@
   .indent-2 { padding-left: 48px; }
   /* Headerless radio column — just wide enough for the radio button. */
   .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
-  /* Fees are billable but not a task/material — tint them so they read distinctly. */
-  .fee-row { background: #f3e8ff; }
-  .fee-marker { color: #9333ea; font-weight: bold; margin-right: 4px; }
   /* .badge-invoiced comes from app.css. */
 
   /* Task and material rows style themselves in the shared TaskRow /
      MaterialRow fragments; the rules here cover only the rows TaskTree
-     still renders itself (fees, expenses, section headers, footer). */
+     still renders itself (expenses, section headers, footer). */
   .expense-row { background: #f0fdf4; }
   .expense-marker { color: #166534; font-weight: 600; margin-right: 4px; }
   .grand-total-row { background: #ecfdf5; border-top: 2px solid #99f6e4; }

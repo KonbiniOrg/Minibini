@@ -17,7 +17,6 @@ const ATOM_KIND_TAGS = {
   task: 'task',
   material: 'mat',
   expense: 'exp',
-  fee: 'fee',
   deposit: 'dep',
 };
 

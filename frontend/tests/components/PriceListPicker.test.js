@@ -69,14 +69,6 @@ describe('PriceListPicker (onChoose emitter)', () => {
     });
   });
 
-  it('freeform commit defaults to a fee (isMaterial false)', async () => {
-    const props = baseProps();
-    const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
-    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Rush charge' } });
-    await fireEvent.click(await findByRole('button', { name: /add line/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Rush charge', isMaterial: false });
-  });
-
   it('freeform commit with the material checkbox set emits isMaterial true', async () => {
     const props = baseProps();
     const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
@@ -104,18 +96,17 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(queryByRole('button', { name: /add task/i })).toBeNull();
   });
 
-  it('task surface offers explicit Task/Material/Fee buttons (no checkbox/Add Line)', async () => {
+  it('task surface offers exactly Task/Material buttons (no Fee, no checkbox/Add Line)', async () => {
     const props = { ...baseProps(), taskSurface: true };
     const { getByPlaceholderText, getByRole, queryByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Custom milling' } });
     expect(queryByRole('button', { name: /add line/i })).toBeNull();
     expect(queryByRole('checkbox')).toBeNull();
+    expect(queryByRole('button', { name: /add fee/i })).toBeNull();
     await fireEvent.click(getByRole('button', { name: /add task/i }));
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform-task', typed: 'Custom milling' });
     await fireEvent.click(getByRole('button', { name: /add material/i }));
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Custom milling', isMaterial: true });
-    await fireEvent.click(getByRole('button', { name: /add fee/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Custom milling', isMaterial: false });
   });
 
   it('shows the material checkbox and Add Line button constantly, from the start', async () => {

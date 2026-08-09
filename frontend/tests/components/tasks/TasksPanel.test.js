@@ -14,11 +14,6 @@ import { user } from '@/stores/auth.js';
 import { overlayMessage, clearMessage } from '@/stores/messages.js';
 import TasksPanel from '@/components/tasks/TasksPanel.svelte';
 
-const CATEGORIES = [
-  { id: 1, code: 'RUSH', name: 'Rush Charges' },
-  { id: 2, code: 'MISC', name: 'Miscellaneous' },
-];
-
 // The job carries can_manage = "atom-holder OR this job's PM". The panel
 // toolbar gates "Mark Work Complete" on job.can_manage alone (not the global
 // atom), while "Add Work" is open to any authenticated user on an unlocked job.
@@ -27,7 +22,7 @@ const CATEGORIES = [
 function makeJob(overrides = {}) {
   return {
     job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress',
-    contact: null, materials: [], tasks: [], fees: [],
+    contact: null, materials: [], tasks: [],
     ...overrides,
   };
 }
@@ -80,7 +75,7 @@ describe('TasksPanel per-job can_manage', () => {
   });
 });
 
-describe('TasksPanel — Add Work picker → FeeModal path', () => {
+describe('TasksPanel — Add Work picker', () => {
   it('shows the Add Work toolbar button', async () => {
     mockApi();
     const { findByRole } = render(TasksPanel, { props: { job: makeJob({ can_manage: false }) } });
@@ -143,47 +138,18 @@ describe('TasksPanel — Add Work picker → FeeModal path', () => {
       expect(getAllByDisplayValue('Laser Etch').length).toBeGreaterThanOrEqual(2));
   });
 
-  it('freeform fee path through picker opens FeeModal', async () => {
+  it('the picker offers no fee path from the task surface', async () => {
+    // Fees are gone (better-fees, 2026-08): after typing, the footer offers
+    // exactly Add Task / Add Material — no Add Fee, and no modal path to one.
     mockApi();
-    const { findByRole, getByRole, getByPlaceholderText } = render(TasksPanel, { props: { job: makeJob({ can_manage: false }) } });
+    const { findByRole, getByRole, getByPlaceholderText, queryByRole } = render(TasksPanel, { props: { job: makeJob({ can_manage: false }) } });
     await findByRole('button', { name: /add work/i });
     await fireEvent.click(getByRole('button', { name: /add work/i }));
     await waitFor(() => getByRole('dialog'));
     await fireEvent.input(getByPlaceholderText(/search services or materials/i), { target: { value: 'Rush' } });
-    // task-list footer offers an explicit "Add Fee" button
-    const freeformBtn = await findByRole('button', { name: /add fee/i });
-    await fireEvent.click(freeformBtn);
-    // FeeModal opens (picker closes, FeeModal renders h3 "Add Fee")
-    await waitFor(() => expect(getByRole('heading', { name: /add fee/i })).toBeInTheDocument());
-  });
-
-  it('FeeModal seeded from picker receives the job id (posts to correct endpoint)', async () => {
-    api.post.mockResolvedValue({});
-    mockApi();
-    const { findByRole, getByRole, getByLabelText, getByPlaceholderText } = render(TasksPanel, { props: { job: makeJob({ can_manage: false }) } });
-    await findByRole('button', { name: /add work/i });
-    await fireEvent.click(getByRole('button', { name: /add work/i }));
-    await waitFor(() => getByRole('dialog'));
-    await fireEvent.input(getByPlaceholderText(/search services or materials/i), { target: { value: 'Rush' } });
-    await fireEvent.click(await findByRole('button', { name: /add fee/i }));
-    await waitFor(() => getByRole('heading', { name: /add fee/i }));
-    await fireEvent.click(getByRole('button', { name: 'Save' }));
-    expect(api.post).toHaveBeenCalledWith('/api/jobs/3/fees/', expect.any(Object));
-  });
-
-  it('FeeModal receives non-empty categories when categories are loaded', async () => {
-    mockApi(CATEGORIES);
-    const { findByRole, getByRole, getByLabelText, getByPlaceholderText } = render(TasksPanel, { props: { job: makeJob({ can_manage: false }) } });
-    await findByRole('button', { name: /add work/i });
-    await fireEvent.click(getByRole('button', { name: /add work/i }));
-    await waitFor(() => getByRole('dialog'));
-    await fireEvent.input(getByPlaceholderText(/search services or materials/i), { target: { value: 'Rush' } });
-    await fireEvent.click(await findByRole('button', { name: /add fee/i }));
-    await waitFor(() => getByRole('heading', { name: /add fee/i }));
-    const select = getByLabelText(/Accounting Category/i);
-    // Two real options plus "-- None --" placeholder
-    expect(select.options.length).toBe(3);
-    expect(select.options[1].text).toContain('RUSH');
+    await findByRole('button', { name: /add task/i });
+    expect(getByRole('button', { name: /add material/i })).toBeInTheDocument();
+    expect(queryByRole('button', { name: /add fee/i })).toBeNull();
   });
 });
 
@@ -285,31 +251,9 @@ describe('TasksPanel — material fulfillment actions', () => {
   });
 });
 
-describe('TasksPanel — fees display', () => {
-  it('lists a job fee by description', async () => {
-    mockApi();
-    const { findByText } = render(TasksPanel, {
-      props: {
-        job: makeJob({
-          can_manage: false,
-          fees: [{ fee_id: 10, description: 'Setup Charge', quantity: '2', unit_rate: '50', sort_order: 1 }],
-        }),
-      },
-    });
-    expect(await findByText('Setup Charge')).toBeInTheDocument();
-  });
-
-  it('does not render the fees section when there are no fees', async () => {
-    mockApi();
-    const { findByRole, queryByText } = render(TasksPanel, { props: { job: makeJob({ can_manage: false, fees: [] }) } });
-    await findByRole('button', { name: /add work/i });
-    expect(queryByText('Fees')).toBeNull();
-  });
-});
-
 describe('TasksPanel — job-change coupling', () => {
   // Old JobTaskListPage's `reload()` was `loadJob()`: every mutation refetched
-  // the job (and, with it, its nested tasks/materials/fees) from the server.
+  // the job (and, with it, its nested tasks/materials) from the server.
   // The panel no longer owns the job fetch, so that same "mutate → refresh
   // job-derived state" coupling must now run through `onJobChange` — proving
   // the parent's job refetch is still what's triggered on a job-level action.

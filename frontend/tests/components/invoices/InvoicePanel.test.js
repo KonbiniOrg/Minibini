@@ -19,7 +19,7 @@ import InvoicePanel from '@/components/invoices/InvoicePanel.svelte';
 
 const JOB = {
   job_id: 9, job_number: 'JOB-9', name: 'Job', contact: null, can_manage: true,
-  tasks: [], materials: [], fees: [],
+  tasks: [], materials: [],
 };
 const ADJ_SERVICE = { rate_scheme_id: 2, name: 'Late Fee', algorithm: 'percentage', rate: '5.00' };
 
