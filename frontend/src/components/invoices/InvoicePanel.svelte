@@ -233,7 +233,7 @@
 
   function fmtDate(iso) {
     if (!iso) return '';
-    return new Date(iso).toLocaleString();
+    return new Date(iso).toLocaleDateString();
   }
 
   // Invoice subnav: this job's invoices, oldest first.
@@ -375,44 +375,44 @@
         Revise (coming soon)
       </button>
     {/if}
-  </div>
-
-  <!-- Compact stat chips (RM 2026-08-09): number/status live in the header;
-       dates + payment facts remain. QBO id rides as a hover title rather than
-       burning a chip on a raw id. -->
-  <div class="stat-chips doc-stat-chips">
-    <div class="stat-chip">
-      <div class="stat-chip-header">Created</div>
-      <div class="stat-chip-body">{fmtDate(invoice.created_date)}</div>
-    </div>
-    <div class="stat-chip">
-      <div class="stat-chip-header">Sent</div>
-      <div class="stat-chip-body"><span class:muted={!invoice.sent_date}>{invoice.sent_date ? fmtDate(invoice.sent_date) : 'not sent'}</span></div>
-    </div>
-    {#if invoice.due_date}
+    <!-- Compact date chips (RM 2026-08-09): number/status live in the header;
+         dates + payment facts ride the right end of the title row. QBO id is
+         a hover title rather than burning a chip on a raw id. closed_date is
+         only ever stamped on the paid transition, so it reads "Paid". -->
+    <div class="stat-chips doc-stat-chips">
       <div class="stat-chip">
-        <div class="stat-chip-header">Due</div>
-        <div class="stat-chip-body">{fmtDate(invoice.due_date)}{#if invoice.is_late} <span class="late-flag">(late)</span>{/if}</div>
+        <div class="stat-chip-header">Created</div>
+        <div class="stat-chip-body">{fmtDate(invoice.created_date)}</div>
       </div>
-    {/if}
-    {#if invoice.closed_date}
       <div class="stat-chip">
-        <div class="stat-chip-header">Closed</div>
-        <div class="stat-chip-body">{fmtDate(invoice.closed_date)}</div>
+        <div class="stat-chip-header">Sent</div>
+        <div class="stat-chip-body"><span class:muted={!invoice.sent_date}>{invoice.sent_date ? fmtDate(invoice.sent_date) : 'not sent'}</span></div>
       </div>
-    {/if}
-    {#if invoice.qbo_id}
-      <div class="stat-chip" title={`QBO ID ${invoice.qbo_id}`}>
-        <div class="stat-chip-header">QBO</div>
-        <div class="stat-chip-body">{invoice.qbo_payment_status || 'Pending'}</div>
-      </div>
-      {#if invoice.qbo_amount_paid}
-        <div class="stat-chip money" title={`QBO ID ${invoice.qbo_id}`}>
-          <div class="stat-chip-header">Paid</div>
-          <div class="stat-chip-body">${Number(invoice.qbo_amount_paid).toFixed(2)}</div>
+      {#if invoice.due_date}
+        <div class="stat-chip">
+          <div class="stat-chip-header">Due</div>
+          <div class="stat-chip-body">{fmtDate(invoice.due_date)}{#if invoice.is_late} <span class="late-flag">(late)</span>{/if}</div>
         </div>
       {/if}
-    {/if}
+      {#if invoice.closed_date}
+        <div class="stat-chip">
+          <div class="stat-chip-header">Paid</div>
+          <div class="stat-chip-body">{fmtDate(invoice.closed_date)}</div>
+        </div>
+      {/if}
+      {#if invoice.qbo_id}
+        <div class="stat-chip" title={`QBO ID ${invoice.qbo_id}`}>
+          <div class="stat-chip-header">QBO</div>
+          <div class="stat-chip-body">{invoice.qbo_payment_status || 'Pending'}</div>
+        </div>
+        {#if invoice.qbo_amount_paid}
+          <div class="stat-chip money" title={`QBO ID ${invoice.qbo_id}`}>
+            <div class="stat-chip-header">Amount paid</div>
+            <div class="stat-chip-body">${Number(invoice.qbo_amount_paid).toFixed(2)}</div>
+          </div>
+        {/if}
+      {/if}
+    </div>
   </div>
 
   {#if invoice.status === 'draft' && unappliedCredits.length > 0}

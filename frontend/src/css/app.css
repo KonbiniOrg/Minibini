@@ -457,7 +457,8 @@ dd {
 .doc-edit-table tbody tr:nth-child(even) { background: transparent; }
 /* Doc-header stat strip (estimate/invoice panels) — same chip family as the
    task page, just spaced under the toolbar. */
-.doc-stat-chips { margin: 8px 0 14px; }
+/* Rides the right end of the document title row (.toolbar is flex). */
+.doc-stat-chips { margin-left: auto; }
 .doc-newline .cta { color:#2e6e73; font-weight:600; }
 .doc-mode-bar button { padding:6px 12px; border:1px solid #ccc; background:#f5f5f5;
   color:#333; border-radius:4px; cursor:pointer; font-size:14px; }

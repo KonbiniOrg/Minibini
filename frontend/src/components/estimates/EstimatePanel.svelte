@@ -247,7 +247,7 @@
   function fmtDate(iso) {
     if (!iso) return '';
     const d = new Date(iso);
-    return d.toLocaleString();
+    return d.toLocaleDateString();
   }
 
   // Reorder mode: swap the doc-shaped line's line_item_id with its up/down
@@ -352,32 +352,32 @@
         {creatingChangeOrder ? 'Creating…' : 'Create Change Order'}
       </button>
     {/if}
-  </div>
-
-  <!-- Compact stat chips (RM 2026-08-09): number/job/status live in the
-       header and surrounding context; the parent-revision link is covered by
-       the DocSubnav version pills. Only the dates remain. -->
-  <div class="stat-chips doc-stat-chips" class:superseded={isSuperseded}>
-    <div class="stat-chip">
-      <div class="stat-chip-header">Created</div>
-      <div class="stat-chip-body">{fmtDate(estimate.created_date)}</div>
-    </div>
-    <div class="stat-chip">
-      <div class="stat-chip-header">Sent</div>
-      <div class="stat-chip-body"><span class:muted={!estimate.sent_date}>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'not sent'}</span></div>
-    </div>
-    {#if estimate.expiration_date}
+    <!-- Compact date chips (RM 2026-08-09): number/job/status live in the
+         header and surrounding context; the parent-revision link is covered
+         by the DocSubnav version pills. Dates only, right end of the title
+         row. -->
+    <div class="stat-chips doc-stat-chips" class:superseded={isSuperseded}>
       <div class="stat-chip">
-        <div class="stat-chip-header">Expires</div>
-        <div class="stat-chip-body">{fmtDate(estimate.expiration_date)}</div>
+        <div class="stat-chip-header">Created</div>
+        <div class="stat-chip-body">{fmtDate(estimate.created_date)}</div>
       </div>
-    {/if}
-    {#if estimate.closed_date}
       <div class="stat-chip">
-        <div class="stat-chip-header">Closed</div>
-        <div class="stat-chip-body">{fmtDate(estimate.closed_date)}</div>
+        <div class="stat-chip-header">Sent</div>
+        <div class="stat-chip-body"><span class:muted={!estimate.sent_date}>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'not sent'}</span></div>
       </div>
-    {/if}
+      {#if estimate.expiration_date}
+        <div class="stat-chip">
+          <div class="stat-chip-header">Expires</div>
+          <div class="stat-chip-body">{fmtDate(estimate.expiration_date)}</div>
+        </div>
+      {/if}
+      {#if estimate.closed_date}
+        <div class="stat-chip">
+          <div class="stat-chip-header">Closed</div>
+          <div class="stat-chip-body">{fmtDate(estimate.closed_date)}</div>
+        </div>
+      {/if}
+    </div>
   </div>
 
   {#if isSuperseded}
