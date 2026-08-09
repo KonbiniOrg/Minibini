@@ -995,12 +995,12 @@ def build_estimates(c):
                     'units':             units,
                     'description':       description,
                     'price':             f'{price:.2f}',
-                    # Every line needs an AC: source-backed lines (task/material/
-                    # fee) carry it on their atom, but bare discount/credit
-                    # ('lineitem') and deliverable lines never get a source, so
-                    # emit a classification-matched default here (matches the AC
-                    # the eventual atom would carry) — current code forbids a
-                    # null-AC line item.
+                    # Every line needs an AC: source-backed lines (task/
+                    # material) carry it on their atom, but plain fixed-charge
+                    # lines, bare discount/credit ('lineitem'), and deliverable
+                    # lines never get a source, so emit a classification-
+                    # matched default here (matches the AC the eventual atom
+                    # would carry) — current code forbids a null-AC line item.
                     'accounting_category': (
                         c.ac_mat_pk if classification == 'material'
                         else c.ac_svc_pk
@@ -1062,7 +1062,7 @@ def _match_seed_scheme(c, algorithm, rate):
     otherwise (or when no seed scheme of that algorithm exists) the default Shop
     labor scheme stands in. active_modifiers is always an empty list.
 
-    Fixed charges no longer reach this function — they become jobs.Fee atoms
+    Fixed charges never reach this function — they stay plain document lines
     (see _line_billing); only 'elapsed_time' / 'entered_qty' lines are matched.
     """
     candidates = [
@@ -1085,18 +1085,20 @@ def _line_billing(c, li):
     """Decide how a task-classified estimate line should bill.
 
     Returns one of:
-      ('fee', None, None)              — a fixed charge → emit a jobs.Fee atom
+      ('plain', None, None)            — a fixed charge → the line stays a
+                                         plain document line (no atom, no
+                                         source row — better-fees spec §4)
       ('task', scheme_pk, modifiers)   — work → emit a Task with this RateScheme
 
     Keyword rule first (a 'cut'/'laser'/'cad' line is always work); otherwise the
-    inferred billing shape decides. A line with no time/quantity signal is a fee.
+    inferred billing shape decides. A line with no time/quantity signal is plain.
     """
     keyword_name = P.checklist_scheme_name(li['description'])
     if keyword_name != _CHECKLIST_DEFAULT_SCHEME:
         return 'task', _scheme_pk(c, keyword_name), []
     algorithm = P.infer_algorithm(li['item_type'], li['units'])
-    if algorithm == 'fee':
-        return 'fee', None, None
+    if algorithm == 'plain':
+        return 'plain', None, None
     scheme_pk, modifiers = _match_seed_scheme(c, algorithm, li['price'])
     return 'task', scheme_pk, modifiers
 
@@ -1239,50 +1241,21 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
     return sort_order
 
 
-def _emit_fee(c, base_ref, job_pk, li, sort_order, task_pk=None):
-    """Emit a jobs.fee atom for a fixed-charge estimate line, plus the
-    EstimateLineItemSource claiming it (source_type='fee'). Returns the fee pk.
-
-    quantity comes from the line qty (>0) or defaults to 1; unit_rate is the
-    line price; the fee carries the services AccountingCategory.
-
-    A non-positive price emits nothing (returns None): validate_data requires
-    Fee.unit_rate > 0, and a $0 fixed charge carries no billing information —
-    the estimate line itself is kept, just unclaimed.
-    """
-    if not li['price'] or li['price'] <= 0:
-        print(f"  fee skipped (non-positive price {li['price']}): "
-              f"{(li['description'] or '')[:60]!r}")
-        return None
-    qty = li['qty'] if (li['qty'] and li['qty'] > 0) else Decimal('1')
-    fee_pk = c.next_pk('jobs.fee')
-    c.add_fixture('jobs.fee', fee_pk, {
-        'job':                 job_pk,
-        'task':                task_pk,
-        'description':         (li['description'] or '')[:255],
-        'quantity':            f'{qty:.2f}',
-        'unit_rate':           f"{li['price']:.2f}",
-        'accounting_category': c.ac_svc_pk,
-        'sort_order':          sort_order,
-    })
-    _emit_estimate_line_item_source(c, li['line_item_pk'], 'fee', fee_pk)
-    return fee_pk
-
-
 def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
-    """Emit jobs.task / jobs.fee fixtures from estimate line items.
+    """Emit jobs.task fixtures from estimate line items.
 
     Used for the no-checklist fallback (task-classified lines) and for
-    material-keyword lines reclassified as labour. A line that bills as a fixed
-    charge becomes a jobs.Fee (claimed via an EstimateLineItemSource); every
-    other line becomes a Task. Returns the final per-job sort_order.
+    material-keyword lines reclassified as labour. A line that bills as a
+    fixed charge stays a plain document line — no atom, no source row
+    (better-fees spec §4; the line item itself, price included, was already
+    emitted by build_estimates); every other line becomes a Task. Returns the
+    final per-job sort_order.
     """
     sort_order = start_sort
     for li in task_lines:
         sort_order += 1
         kind, scheme_pk, active_modifiers = _line_billing(c, li)
-        if kind == 'fee':
-            _emit_fee(c, base_ref, job_pk, li, sort_order)
+        if kind == 'plain':
             continue
         name = (li['description'] or 'Task')[:255] or 'Task'
         task_pk = c.next_pk('jobs.task')
@@ -1366,8 +1339,8 @@ def assign_est_quantities(c):
     - entered_qty: a piece count tied to the worker time (longer task → more
       pieces, 2–6 pieces/hour), unless a source line already set one.
 
-    Fixed charges are now jobs.Fee atoms (not Tasks), so no flat-fee case
-    remains here.
+    Fixed charges stay plain document lines (never Tasks), so no flat-fee
+    case exists here.
     """
     for f in c.fixture_data:
         if f['model'] != 'jobs.task':
@@ -1386,7 +1359,7 @@ def assign_est_quantities(c):
 def _emit_estimate_line_item_source(c, li_pk, source_type, source_pk):
     """Emit an estimates.estimatelineitemsource row claiming a job atom.
 
-    source_type is one of 'task' / 'material' / 'fee'. Each atom can be claimed
+    source_type is one of 'task' / 'material'. Each atom can be claimed
     by at most one line item (model enforces unique_together on
     (source_type, source_pk)); the converter never double-claims an atom.
     """
@@ -1443,18 +1416,17 @@ def _build_deliverables(c, job_pk, deliverable_lines):
 
 
 def derive_atoms(c):
-    """Derive Task, Material, Fee, and Deliverable fixtures for each job.
+    """Derive Task, Material, and Deliverable fixtures for each job.
 
     Atoms now live directly on the Job for **every** status (draft included) —
     there is no plan layer. Per job:
 
     - **Tasks** come from the Kanban card's Checklist when it has any items
       (each line -> a Task; indented lines -> subtasks; [X] -> complete);
-      otherwise task-classified estimate line items become Tasks (or Fees, see
-      below). Checklist tasks keep their subtask hierarchy and [X]/[ ] status.
-    - **Fees**: a task-classified estimate line that bills as a fixed charge
-      (no time/quantity signal) becomes a jobs.Fee instead of a Task, claimed by
-      its source line via an EstimateLineItemSource (source_type='fee').
+      otherwise task-classified estimate line items become Tasks — except a
+      line that bills as a fixed charge (no time/quantity signal), which stays
+      a plain document line: no atom, no source row (better-fees spec §4).
+      Checklist tasks keep their subtask hierarchy and [X]/[ ] status.
     - **Materials** come from material-classified lines split by
       _material_line_kind: raw stock -> Material, labour/prep -> Task, finished
       goods -> Deliverable. Each line becomes exactly one of those.
@@ -1489,7 +1461,7 @@ def derive_atoms(c):
 
         checklist_items = P.parse_checklist(card.get('Checklist'))
 
-        # --- 1. Tasks/Fees: checklist (or fallback line items), plus labour.
+        # --- 1. Tasks: checklist (or fallback line items), plus labour. ----
         if checklist_items:
             sort_order = _build_checklist_tasks(
                 c, base_ref, job_pk, checklist_items)
@@ -1548,9 +1520,9 @@ def derive_atoms(c):
                 'po_line_item':        None,
             })
             # The Material IS this line's crystallized atom — record the
-            # claim exactly as _emit_fee does for fee lines. Without it,
-            # accepting a still-open estimate in-app re-crystallizes the
-            # bare line as a Fee, duplicating the material.
+            # claim. Without it the line looks unsourced, and accepting a
+            # still-open estimate in-app re-crystallizes it as a duplicate
+            # atom.
             _emit_estimate_line_item_source(
                 c, li['line_item_pk'], 'material', mat_pk)
 
@@ -1741,10 +1713,10 @@ def build_synthetic_estimate_sources(c):
     unique_together); extra Tasks group onto lines, surplus/adjustment lines
     stay sourceless.
 
-    Fee atoms are already claimed by their own source lines in derive_atoms
-    (source_type='fee'); this pass only places Tasks, and it skips Tasks already
-    claimed and estimate lines that already carry a source (so a line that owns
-    a Fee isn't double-sourced with a Task).
+    Material atoms are already claimed by their own source lines in
+    derive_atoms (source_type='material'); this pass only places Tasks, and it
+    skips Tasks already claimed and estimate lines that already carry a source
+    (so a line that owns a Material isn't double-sourced with a Task).
     """
     claimed_tasks = {
         f['fields']['source_pk']
@@ -1771,7 +1743,7 @@ def build_synthetic_estimate_sources(c):
         if f['model'] != 'estimates.estimatelineitem':
             continue
         if f['pk'] in sourced_lines:
-            continue  # already owns an atom (e.g. a Fee) — don't double-source
+            continue  # already owns an atom (e.g. a Material) — don't double-source
         job_pk = est_to_job.get(f['fields']['estimate'])
         if job_pk is not None:
             lines_by_job.setdefault(job_pk, []).append(f)
@@ -1789,18 +1761,18 @@ def build_synthetic_estimate_sources(c):
 
 def build_invoice_line_item_sources(c):
     """Emit invoicing.invoicelineitemsource rows linking InvoiceLineItems to
-    Tasks / Fees / Materials on the Job.
+    Tasks / Materials on the Job.
 
     Schema permits freeform invoice lines (no source); the wiring is purely
-    cosmetic — it makes Tasks/Fees/Materials show as 'billed' on a paid Job in
+    cosmetic — it makes Tasks/Materials show as 'billed' on a paid Job in
     the UI instead of orphaned. Heuristic, deterministic claim:
 
       - For each Invoice on each Job (invoice pk asc → invoice line_number asc)
       - Classify the line via P.classify_line_item.
       - If classification is 'task': claim the next unclaimed Task on the Job;
-        fall through to Fees, then Materials, if exhausted.
+        fall through to Materials if exhausted.
       - If classification is 'material': claim the next unclaimed Material;
-        fall through to Tasks, then Fees, if exhausted.
+        fall through to Tasks if exhausted.
       - 'lineitem' / 'skip' classifications never claim (discounts / comments
         are inherently freeform).
       - Leftover lines stay freeform.
@@ -1836,14 +1808,8 @@ def build_invoice_line_item_sources(c):
         if (f['model'] == 'inventory.material'
                 and f['fields'].get('consumption_state') == 'consumed'):
             materials_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
-    fees_by_job = {}
-    for f in c.fixture_data:
-        if f['model'] == 'jobs.fee':
-            fees_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
-
     claimed_tasks = set()
     claimed_materials = set()
-    claimed_fees = set()
 
     def _claim(pool, claimed):
         for pk in pool:
@@ -1856,7 +1822,6 @@ def build_invoice_line_item_sources(c):
     for job_pk in sorted(invoices_by_job):
         task_pool = sorted(tasks_by_job.get(job_pk, []))
         material_pool = sorted(materials_by_job.get(job_pk, []))
-        fee_pool = sorted(fees_by_job.get(job_pk, []))
         invs = sorted(invoices_by_job[job_pk], key=lambda f: f['pk'])
         for inv in invs:
             # Draft invoices are seeded empty in the app (the user picks
@@ -1874,9 +1839,6 @@ def build_invoice_line_item_sources(c):
                     src_pk = _claim(task_pool, claimed_tasks)
                     src_type = 'task'
                     if src_pk is None:
-                        src_pk = _claim(fee_pool, claimed_fees)
-                        src_type = 'fee'
-                    if src_pk is None:
                         src_pk = _claim(material_pool, claimed_materials)
                         src_type = 'material'
                 elif kind == 'material':
@@ -1885,9 +1847,6 @@ def build_invoice_line_item_sources(c):
                     if src_pk is None:
                         src_pk = _claim(task_pool, claimed_tasks)
                         src_type = 'task'
-                    if src_pk is None:
-                        src_pk = _claim(fee_pool, claimed_fees)
-                        src_type = 'fee'
                 else:
                     src_pk = None
                 if src_pk is None:

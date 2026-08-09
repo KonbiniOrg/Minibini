@@ -516,6 +516,58 @@ class AtomDerivationTest(unittest.TestCase):
                 self.assertNotEqual(rate_str, '0.00',
                                     f"task {t['pk']} points to a flat_fee scheme with zero rate")
 
+    def test_fixed_charge_lines_stay_plain_no_atom_no_source(self):
+        # better-fees spec §4 (Fee model deleted): a task-classified line with
+        # no time/quantity signal is 'plain' — the estimate line item keeps its
+        # price, but NO atom and NO source row crystallize from it. The
+        # jobs.Fee model string must not appear in output at all, and no
+        # source row may carry source_type='fee'.
+        build.derive_atoms(self.c)
+        self.assertEqual(
+            [f for f in self.c.fixture_data if f['model'] == 'jobs.fee'], [])
+        self.assertEqual(
+            [s for s in self._models('estimates.estimatelineitemsource')
+             if s['fields']['source_type'] == 'fee'], [])
+        # Find the plain-classified task lines on each job's latest estimate
+        # (the lines _build_line_item_tasks saw) and pin: line emitted with
+        # its price, unclaimed by any source, and no Task made from it.
+        line_by_pk = {f['pk']: f
+                      for f in self._models('estimates.estimatelineitem')}
+        sourced = {s['fields']['estimate_line_item']
+                   for s in self._models('estimates.estimatelineitemsource')}
+        tasks_by_job = {}
+        for t in self._models('jobs.task'):
+            tasks_by_job.setdefault(
+                t['fields']['job'], set()).add(t['fields']['name'])
+        plain_lines = []  # (li, job_pk, fallback_path_ran)
+        for base_ref, job_info in self.c.jobs.items():
+            est_list = self.c.estimates.get(base_ref, [])
+            if not est_list:
+                continue
+            latest = max(est_list, key=lambda e: e['version'])
+            has_checklist = bool(
+                P.parse_checklist(job_info['card'].get('Checklist')))
+            for li in self.c.line_items.get(latest['est_pk'], []):
+                if li['classification'] != 'task':
+                    continue
+                kind, _, _ = build._line_billing(self.c, li)
+                if kind == 'plain':
+                    plain_lines.append(
+                        (li, job_info['job_pk'], not has_checklist))
+        self.assertGreater(len(plain_lines), 0,
+                           'dataset slice has no plain fixed-charge lines')
+        for li, job_pk, fallback_ran in plain_lines:
+            fixture = line_by_pk[li['line_item_pk']]
+            self.assertEqual(fixture['fields']['price'], f"{li['price']:.2f}",
+                             'plain line must keep its price')
+            self.assertNotIn(li['line_item_pk'], sourced,
+                             'plain line must not be claimed by any atom')
+            if fallback_ran:
+                name = (li['description'] or 'Task')[:255] or 'Task'
+                self.assertNotIn(
+                    name, tasks_by_job.get(job_pk, set()),
+                    'plain line must not crystallize into a Task')
+
     def test_assign_worker_times_random_per_task_in_range(self):
         # Every task/plantask gets an invented per-task estimate in [0.5, 4.0]h
         # (2 sig figs); cut/ass card columns are no longer consumed.
@@ -563,9 +615,9 @@ class AtomDerivationTest(unittest.TestCase):
     def test_every_derived_material_is_claimed_by_its_source_line(self):
         # A Material derived from a material-classified estimate line is that
         # line's crystallized atom — the converter must record the claim
-        # (EstimateLineItemSource, source_type='material'), exactly as it does
-        # for fees. Without it, accepting a still-open estimate in-app
-        # re-crystallizes the line as a bare Fee → duplicate atoms (job 08008).
+        # (EstimateLineItemSource, source_type='material'). Without it the
+        # line looks unsourced, and accepting a still-open estimate in-app
+        # re-crystallizes it → duplicate atoms (job 08008).
         build.derive_atoms(self.c)
         materials = self._models('inventory.material')
         self.assertGreater(len(materials), 0)
@@ -1387,7 +1439,8 @@ class ConvertEndToEndTest(unittest.TestCase):
         c = NealsDataConverter(XLSX, CSV, output_path=path, limit=40)
         c.convert()
         with open(path) as f:
-            data = json.load(f)
+            raw = f.read()
+        data = json.loads(raw)
         self.assertIsInstance(data, list)
         self.assertGreater(len(data), 0)
         models = {row['model'] for row in data}
@@ -1397,6 +1450,11 @@ class ConvertEndToEndTest(unittest.TestCase):
         self.assertIn('jobs.blep', models)
         self.assertIn('core.shift', models)
         self.assertNotIn('jobs.workorder', models)
+        # Fee model deleted (better-fees spec §4): the literal model string
+        # and the fee source_type must never appear anywhere in output —
+        # loaddata would crash on jobs.fee rows.
+        self.assertNotIn('"jobs.fee"', raw)
+        self.assertNotIn('"source_type": "fee"', raw)
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
@@ -1848,9 +1906,9 @@ class EstQuantityHeuristicTest(unittest.TestCase):
     """assign_est_quantities fills est_qty on real Tasks by scheme algorithm."""
 
     # scheme pk -> algorithm, for _add_task's qty_source. 'flat_fee' isn't a
-    # real Task.qty_source choice (fixed charges are jobs.Fee atoms now, not
-    # Tasks) — kept as a value assign_est_quantities' branches don't match,
-    # to exercise the "leaves est_qty untouched" fallthrough.
+    # real Task.qty_source choice (fixed charges stay plain document lines,
+    # never Tasks) — kept as a value assign_est_quantities' branches don't
+    # match, to exercise the "leaves est_qty untouched" fallthrough.
     _SCHEME_ALGO = {1: 'elapsed_time', 2: 'entered_qty', 3: 'flat_fee'}
 
     def _converter(self):
@@ -1884,9 +1942,9 @@ class EstQuantityHeuristicTest(unittest.TestCase):
         self.assertEqual(self._qty(c, 10), '1.00')
 
     def test_non_work_algorithm_leaves_est_qty_untouched(self):
-        # Fixed charges are now jobs.Fee atoms (no est_qty), not Tasks, so
-        # assign_est_quantities only fills elapsed_time / entered_qty Tasks and
-        # leaves any other scheme's est_qty exactly as the source set it.
+        # Fixed charges stay plain document lines (no est_qty), never Tasks,
+        # so assign_est_quantities only fills elapsed_time / entered_qty Tasks
+        # and leaves any other scheme's est_qty exactly as the source set it.
         c = self._converter()
         self._add_task(c, 10, 3, est_qty=None)
         self._add_task(c, 11, 3, est_qty='3.00')

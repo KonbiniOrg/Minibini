@@ -293,9 +293,10 @@ def infer_algorithm(item_type, units):
     """Billing shape for a Task-classified line item.
 
     Returns a RateScheme.algorithm ('elapsed_time' / 'entered_qty') for lines
-    that bill as work, or the 'fee' sentinel for a fixed charge — a line with
-    no time/quantity signal. A 'fee' line becomes a jobs.Fee atom (not a
-    Task + RateScheme); the caller routes on this value.
+    that bill as work, or the 'plain' sentinel for a fixed charge — a line
+    with no time/quantity signal. A plain line stays a document line: nothing
+    crystallizes from it (better-fees spec §4); the caller routes on this
+    value.
     """
     it = (item_type or '').strip().lower()
     u = (units or '').strip().lower()
@@ -303,7 +304,7 @@ def infer_algorithm(item_type, units):
         return 'elapsed_time'
     if u in COUNT_UNITS:
         return 'entered_qty'
-    return 'fee'
+    return 'plain'
 
 
 # --- Synthetic-value helpers (worker times, actuals, blep lengths) -----------
