@@ -1,25 +1,27 @@
-"""Tests for Task 3.3 of the job-owns-atoms refactor.
+"""Tests: the invoice wizard's Fee-atom seeding and claim guard.
 
 Verifies:
 1. seed_all_atoms creates one line per Fee (in addition to Tasks and Materials).
 2. The claim guard (InvoiceLineItemSource unique_together) blocks double-billing
    a Fee on a second invoice.
-3. copy_from_estimate maps an accepted-estimate hand-line to its crystallized
-   Fee so the Fee is claimed and cannot be double-billed via the wizard.
+
+(The former Goal 3 — copy_from_estimate claiming a hand-line's crystallized
+Fee via the agreement's source_fee_id channel — was removed with that channel;
+copy_from_estimate no longer creates fee claims. See
+tests/test_invoice_copy_from_estimate.py and
+tests/test_change_order_acceptance.py COAgreementBillingTests.)
 """
 
 from decimal import Decimal
 
-from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
 from apps.core.models import AccountingCategory, AppState, Configuration, User
 from apps.contacts.models import Contact
-from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource
 from apps.inventory.models import InventoryItem, Material
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
-from apps.invoicing.services import InvoiceService, InvoiceWizardService, ClaimConflict
+from apps.invoicing.services import InvoiceWizardService, ClaimConflict
 from apps.jobs.models import Blep, Fee, Job, RateScheme, Task
 
 
@@ -215,114 +217,3 @@ class FeeClaimGuardTest(TestCase):
         fee_group = next(g for g in pool['tasks'] if g['name'] == 'Fees')
         self.assertEqual(fee_group['atoms'][0]['state'], 'available')
 
-
-# ---------------------------------------------------------------------------
-# Goal 3: copy_from_estimate claims the crystallized Fee
-# ---------------------------------------------------------------------------
-
-class CopyFromEstimateClaimsFeeTest(TestCase):
-    """copy_from_estimate creates an InvoiceLineItemSource for any fee-sourced
-    estimate line so the Fee cannot be double-billed via the wizard after a copy.
-
-    Estimate acceptance no longer crystallizes plain hand-lines into Fees, so
-    the Fee and its EstimateLineItemSource are seeded directly here (mirroring
-    historical / CO-acceptance-created data, which still produces SOURCE_FEE rows).
-    """
-
-    def setUp(self):
-        self.contact, self.cat = _make_common(tag='CFEF')
-
-        self.job = Job.objects.create(
-            contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-CFEF-01',
-        )
-
-        # An accepted estimate with one hand-line (no atom source, not an adjustment).
-        self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-CFEF-01', version=1,
-            status=Estimate.STATUS_ACCEPTED,
-        )
-        self.hand_line = EstimateLineItem.objects.create(
-            estimate=self.estimate, line_number=1,
-            description='Custom fabrication fee',
-            qty=Decimal('2'), price=Decimal('75.00'),
-            units='ea', accounting_category=self.cat,
-        )
-        # Seed the crystallized Fee and its source row directly (acceptance no
-        # longer creates them from plain lines).
-        self.fee = Fee.objects.create(
-            job=self.job, description='Custom fabrication fee',
-            quantity=Decimal('2'), unit_rate=Decimal('75.00'),
-            accounting_category=self.cat,
-        )
-        EstimateLineItemSource.objects.create(
-            estimate_line_item=self.hand_line,
-            source_type=EstimateLineItemSource.SOURCE_FEE,
-            source_pk=self.fee.pk,
-        )
-
-        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
-
-    def test_fee_is_available_before_copy(self):
-        """Baseline: before copy_from_estimate, the Fee is available in the wizard pool."""
-        pool = InvoiceWizardService.get_source_pool(self.invoice)
-        fee_group = next(g for g in pool['tasks'] if g['name'] == 'Fees')
-        self.assertEqual(fee_group['atoms'][0]['state'], 'available')
-
-    def test_copy_creates_invoice_line_for_hand_line(self):
-        """copy_from_estimate creates an InvoiceLineItem for the hand-line."""
-        created = InvoiceService.copy_from_estimate(self.invoice)
-        self.assertEqual(created, 1)  # one line (hand-line only, no adjustment)
-        lines = list(InvoiceLineItem.objects.filter(invoice=self.invoice))
-        self.assertEqual(len(lines), 1)
-        self.assertEqual(lines[0].description, 'Custom fabrication fee')
-
-    def test_copy_creates_invoice_line_item_source_for_fee(self):
-        """copy_from_estimate creates an InvoiceLineItemSource(type='fee') so
-        the Fee is claimed and cannot be double-billed via the wizard."""
-        InvoiceService.copy_from_estimate(self.invoice)
-        self.assertTrue(
-            InvoiceLineItemSource.objects.filter(
-                source_type=InvoiceLineItemSource.SOURCE_FEE,
-                source_pk=self.fee.pk,
-            ).exists()
-        )
-
-    def test_fee_shows_as_claimed_by_current_after_copy(self):
-        """After copy_from_estimate, the Fee is marked 'claimed_by_current' in
-        the wizard pool — the wizard cannot offer it again on the same invoice."""
-        InvoiceService.copy_from_estimate(self.invoice)
-        pool = InvoiceWizardService.get_source_pool(self.invoice)
-        fee_group = next(g for g in pool['tasks'] if g['name'] == 'Fees')
-        atom = fee_group['atoms'][0]
-        self.assertEqual(atom['state'], 'claimed_by_current')
-
-    def test_fee_is_not_double_billed_via_wizard_after_copy(self):
-        """After copy_from_estimate, adding the Fee atom via the wizard raises
-        ClaimConflict — double-billing is blocked at the DB level."""
-        InvoiceService.copy_from_estimate(self.invoice)
-        atoms = [{'type': 'fee', 'id': self.fee.pk}]
-        with self.assertRaises(ClaimConflict):
-            InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
-
-    def test_adjustment_line_is_not_a_fee_and_has_no_source(self):
-        """Adjustment lines in the estimate never become Fees and copy_from_estimate
-        must not try to create a fee source for them."""
-        # Add an adjustment line to the estimate.
-        rush_svc = RateScheme.objects.create(
-            name='Rush-CFEF', algorithm=RateScheme.PERCENTAGE,
-            rate=Decimal('10.00'), unit_label='%',
-            accounting_category=self.cat,
-        )
-        EstimateLineItem.objects.create(
-            estimate=self.estimate, line_number=2,
-            description='Rush 10%', qty=Decimal('1'), price=Decimal('15.00'),
-            units='%', adjustment_service=rush_svc,
-            adjustment_percent=rush_svc.rate,
-        )
-        InvoiceService.copy_from_estimate(self.invoice)
-        # Only 1 InvoiceLineItemSource of type 'fee' should exist
-        fee_sources = InvoiceLineItemSource.objects.filter(
-            source_type=InvoiceLineItemSource.SOURCE_FEE,
-        )
-        self.assertEqual(fee_sources.count(), 1)
-        self.assertEqual(fee_sources.first().source_pk, self.fee.pk)

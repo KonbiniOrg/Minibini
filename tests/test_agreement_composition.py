@@ -245,6 +245,22 @@ class ComposeAgreementWithCOTests(FixtureTestCase):
             self.assertIsNotNone(l['co_line_id'])
             self.assertIsNone(l['estimate_line_id'])
 
+    def test_lines_carry_no_source_fee_id_key(self):
+        """The source_fee_id agreement channel is gone: no line dict carries
+        the key, whatever the line's origin (estimate, CO replace, CO add)."""
+        from apps.estimates.agreement import compose_agreement
+        co = _make_accepted_co(self.job, self.est)
+        _make_co_line(co, 1, ChangeOrderLineItem.ACTION_REPLACE,
+                      description='Widget C v2', qty='3', price='40.00',
+                      target=self.li3)
+        _make_co_line(co, 2, ChangeOrderLineItem.ACTION_ADD,
+                      description='New Service', qty='1', price='200.00')
+
+        lines = compose_agreement(self.job)['lines']
+        self.assertEqual(len(lines), 4)
+        for line in lines:
+            self.assertNotIn('source_fee_id', line)
+
     def test_non_accepted_co_is_ignored(self):
         """Draft, open, rejected COs must not affect the composition."""
         from apps.estimates.agreement import compose_agreement

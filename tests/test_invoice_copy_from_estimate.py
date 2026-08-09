@@ -137,6 +137,49 @@ class InvoiceCopyFromEstimateServiceTest(TestCase):
         self.assertEqual(len(adj_lines), 1)
         self.assertIn(adj_lines[0]['adjustment_service_id'], existing_svc_ids)
 
+    def test_copy_creates_no_source_rows_for_plain_lines(self):
+        """A plain hand line copies as a bare invoice line — no
+        InvoiceLineItemSource row of any kind is created."""
+        from apps.invoicing.models import InvoiceLineItemSource
+        InvoiceService.copy_from_estimate(self.invoice)
+        self.assertFalse(
+            InvoiceLineItemSource.objects.filter(
+                invoice_line_item__invoice=self.invoice,
+            ).exists()
+        )
+
+    def test_copy_ignores_legacy_fee_source_row(self):
+        """A legacy SOURCE_FEE row on an estimate hand-line no longer
+        transits into an invoice fee claim — the source_fee_id channel is
+        gone. The document line still copies; the Fee is simply not
+        claimed."""
+        from apps.estimates.models import EstimateLineItemSource
+        from apps.invoicing.models import InvoiceLineItemSource
+        from apps.jobs.models import Fee
+
+        hand_line = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=3, qty=Decimal('1'),
+            units='ea', description='Rush handling', price=Decimal('75.00'),
+            accounting_category=self.cat,
+        )
+        fee = Fee.objects.create(
+            job=self.job, description='Rush handling', quantity=Decimal('1'),
+            unit_rate=Decimal('75.00'), accounting_category=self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=hand_line,
+            source_type=EstimateLineItemSource.SOURCE_FEE,
+            source_pk=fee.pk,
+        )
+
+        created = InvoiceService.copy_from_estimate(self.invoice)
+        self.assertEqual(created, 3)
+        self.assertFalse(
+            InvoiceLineItemSource.objects.filter(
+                source_type=InvoiceLineItemSource.SOURCE_FEE,
+            ).exists()
+        )
+
     def test_400_when_invoice_already_has_lines(self):
         """copy_from_estimate raises ValidationError when invoice already has lines."""
         InvoiceLineItem.objects.create(

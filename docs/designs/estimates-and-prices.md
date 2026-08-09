@@ -1925,16 +1925,11 @@ The composition rules:
 `amount = qty * price` on each line, matching `BaseLineItem.total_amount`.
 The grand total is the sum of all surviving line amounts.
 
-Every line also carries `source_fee_id` — the pk of the Fee the line
-crystallized into, when it did: for estimate-origin lines that's the
-hand-line fee provenance (`EstimateLineItemSource`, §9.1), and for
-CO-origin add/replace lines the `ChangeOrderLineItemSource` fee row
-written at CO acceptance (§14.11). Both are bulk-prefetched.
-`InvoiceService.copy_from_estimate` claims each `source_fee_id` with an
-`InvoiceLineItemSource` so the wizard pool marks the Fee as billed and
-double-billing is impossible — the agreement stays the **billing**
-source of truth; the crystallized atoms are the *work* mirror, and the
-source rows are what keep the two views counting each Fee once.
+Line dicts carry **no** `source_fee_id` key (the fee-provenance channel
+was removed 2026-08, fee-removal Task 3 — `copy_from_estimate` no longer
+creates fee claims from agreement lines; legacy `SOURCE_FEE` rows on
+estimate/CO lines are simply ignored by the composition). Line identity
+is `estimate_line_id` / `co_line_id` only.
 
 This function is the single source of truth for what the customer owes.
 The Invoice wizard reads it; PDF rendering of the agreement reads it;
@@ -2221,8 +2216,9 @@ are skipped on re-run; retirement re-checks atom state (a cancelled
 task, a deleted material) before acting.
 
 **Billing stays with the agreement.** Crystallization never creates
-billing lines; §14.6's `source_fee_id` plumbing is what keeps the
-document and atom views counting each crystallized Fee once. Bleps on a
+billing lines. (The former `source_fee_id` plumbing in §14.6 — the
+channel that fed crystallized Fees into `copy_from_estimate` claims —
+was removed 2026-08, fee-removal Task 3.) Bleps on a
 task cancelled by a remove/replace stay on record under the cancelled
 task (the invoice wizard's complete-task gate applies as usual — the
 cancelled work's time is reconciled by the human at invoicing).

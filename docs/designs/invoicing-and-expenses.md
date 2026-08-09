@@ -515,11 +515,15 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 
 `InvoiceService.copy_from_estimate(invoice)` (`POST /api/invoices/{id}/copy-from-estimate/`) seeds a fresh draft invoice from the job's **accepted-estimate agreement** (`compose_agreement(invoice.job)`) — one `InvoiceLineItem` per agreement line (description, qty, price, units, accounting_category; adjustment lines also carry `adjustment_service` + target categories). Preconditions (else `ValidationError`): the invoice is `draft`, has no existing line items, and is the only non-cancelled invoice for the job (i.e. it's the first invoice).
 
-**Fee-claim-on-copy.** A hand-line on the accepted estimate was crystallized into a `Fee` on the job at acceptance time (see `estimates-and-prices.md` §9). When `compose_agreement` surfaces such a line it carries the `source_fee_id`; `copy_from_estimate` then writes an `InvoiceLineItemSource` (`source_type='fee'`, `source_pk=fee.pk`) for that line. This claims the Fee so the wizard source pool marks it billed and the whole-atom unique constraint blocks double-billing it through the atom-pull path.
+**No fee-claim-on-copy (removed 2026-08, fee-removal Task 3).** The
+`source_fee_id` agreement channel is gone: `compose_agreement` line dicts no
+longer carry the key, and `copy_from_estimate` writes **no**
+`InvoiceLineItemSource` rows of any kind — a legacy `SOURCE_FEE` row on an
+estimate/CO line no longer transits into an invoice fee claim on copy.
 
 **Predates, and is distinct from, `seed_from_agreement` (2026-08).**
 This method does **not** write `agreement_estimate_line`/
-`agreement_co_line` refs (except the Fee-claim case above) — its output
+`agreement_co_line` refs — its output
 lines carry no `agreement_ref`, get no est-vs-actual reference, support
 no Restore, and read `backing: null`/`edited` rather than
 `estimate`/`actuals`. It survives today only as the "Copy from

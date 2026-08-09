@@ -632,12 +632,12 @@ class COAuthoringParityTests(ChangeOrderAcceptanceBase):
 
 class COAgreementBillingTests(ChangeOrderAcceptanceBase):
     """The agreement still carries CO document lines (no fee behind them
-    anymore), and the historical SOURCE_FEE claim mapping keeps resolving for
-    legacy data until its own removal task."""
+    anymore). The source_fee_id agreement channel is gone: line dicts carry
+    no such key, and copy_from_estimate no longer claims legacy Fees."""
 
     def test_compose_agreement_includes_co_add_line_without_fee(self):
-        # A plain CO add line rides the agreement as a document line; with no
-        # crystallized Fee behind it, source_fee_id is None.
+        # A plain CO add line rides the agreement as a document line; the
+        # line dict no longer carries a source_fee_id key at all.
         from apps.estimates.agreement import compose_agreement
         co = self._make_co()
         ChangeOrderService.add_line_item(
@@ -650,13 +650,17 @@ class COAgreementBillingTests(ChangeOrderAcceptanceBase):
         agreement = compose_agreement(self.job)
         co_lines = [l for l in agreement['lines'] if l['origin'] == 'change_order']
         self.assertEqual(len(co_lines), 1)
-        self.assertIsNone(co_lines[0]['source_fee_id'])
+        self.assertNotIn('source_fee_id', co_lines[0])
 
-    def test_copy_from_estimate_claims_legacy_co_fee(self):
-        from apps.invoicing.models import Invoice, InvoiceLineItemSource
+    def test_copy_from_estimate_ignores_legacy_fee_sources(self):
+        from apps.invoicing.models import (
+            Invoice, InvoiceLineItem, InvoiceLineItemSource,
+        )
         from apps.invoicing.services import InvoiceService
         # Legacy data: an estimate hand-line fee plus a CO-added fee, both
-        # seeded directly (acceptance no longer creates them). copy claims both.
+        # seeded directly (acceptance no longer creates them). The
+        # source_fee_id channel is gone: copy creates the document lines
+        # but claims neither Fee.
         line, est_fee = self._fee_backed_line()
         co = self._make_co()
         li = ChangeOrderService.add_line_item(
@@ -681,11 +685,13 @@ class COAgreementBillingTests(ChangeOrderAcceptanceBase):
             job=self.job, invoice_number='INV-2026-0001')
         InvoiceService.copy_from_estimate(invoice)
 
-        claimed = set(
+        # Both document lines copied…
+        self.assertEqual(
+            InvoiceLineItem.objects.filter(invoice=invoice).count(), 2)
+        # …but no fee claim was created for either legacy Fee.
+        self.assertFalse(
             InvoiceLineItemSource.objects.filter(
                 invoice_line_item__invoice=invoice,
                 source_type=InvoiceLineItemSource.SOURCE_FEE,
-            ).values_list('source_pk', flat=True)
+            ).exists()
         )
-        self.assertIn(est_fee.pk, claimed)
-        self.assertIn(co_fee.pk, claimed)
