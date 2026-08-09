@@ -229,17 +229,15 @@ class InvoiceService:
 
     @staticmethod
     def delete_line_item(line_item_id):
-        """Delete an invoice line item and renumber — validates draft status."""
-        from apps.core.services import LineItemService
+        """Delete an invoice line item — the generic LineItemMixin's DELETE
+        entrypoint. Routes through remove_line (not a direct
+        LineItemService call) so an agreement-backed line's reference and
+        mirrored claims release the same way a wizard-driven removal does."""
         try:
             line_item = InvoiceLineItem.objects.get(pk=line_item_id)
         except InvoiceLineItem.DoesNotExist:
             raise NotFoundError(f'InvoiceLineItem {line_item_id} not found')
-        if line_item.invoice.status != Invoice.STATUS_DRAFT:
-            raise ValidationError(
-                'Cannot modify line items on a non-draft invoice.'
-            )
-        return LineItemService.delete_line_item_with_renumber(line_item)
+        return InvoiceService.remove_line(line_item.invoice, line_item)
 
     @staticmethod
     def copy_from_estimate(invoice):
@@ -858,10 +856,15 @@ class InvoiceWizardService(BaseWizardService):
     }
 
     @staticmethod
-    def open_for_job(job):
+    def open_for_job(job, seed=True):
         """Return the job's draft Invoice, creating one if none exists.
 
         Raises ValidationError if the job is in a status that doesn't allow invoicing.
+
+        A newly created draft auto-seeds from the job's agreement
+        (InvoiceService.seed_from_agreement) unless seed=False — the
+        deposit-invoice path opts out since it wants an empty, deposit-only
+        draft. An existing draft is returned as-is and never re-seeded.
         """
         if job.status not in InvoiceWizardService.BILLABLE_JOB_STATUSES:
             raise ValidationError(
@@ -876,7 +879,10 @@ class InvoiceWizardService(BaseWizardService):
         if existing:
             return existing
 
-        return Invoice.objects.create(job=job, status=Invoice.STATUS_DRAFT)
+        invoice = Invoice.objects.create(job=job, status=Invoice.STATUS_DRAFT)
+        if seed:
+            InvoiceService.seed_from_agreement(invoice)
+        return invoice
 
     @staticmethod
     def get_source_pool(invoice):

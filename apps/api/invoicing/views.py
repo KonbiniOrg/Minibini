@@ -157,7 +157,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
 
     def perform_create(self, serializer):
         job = serializer.validated_data.get('job')
-        serializer.instance = InvoiceWizardService.open_for_job(job)
+        seed = self.request.data.get('seed', True)
+        serializer.instance = InvoiceWizardService.open_for_job(job, seed=seed)
 
     def destroy(self, request, *args, **kwargs):
         invoice = self.get_object()
@@ -353,6 +354,28 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         ]
         return Response({'adjustments': out})
 
+    @action(detail=True, methods=['get'], url_path='remaining-agreement-lines')
+    def remaining_agreement_lines(self, request, pk=None):
+        """List agreement lines not yet on any live invoice for this job —
+        feeds the restore picker."""
+        invoice = self.get_object()
+        lines = InvoiceService.remaining_agreement_lines(invoice.job)
+        return Response({'lines': [_serialize_agreement_line(l) for l in lines]})
+
+    @action(detail=True, methods=['post'], url_path='restore-line')
+    def restore_line(self, request, pk=None):
+        """Re-add a single agreement line to this draft. Body:
+        {estimate_line_id} or {co_line_id} (exactly one). Returns 201 with
+        the serialized new line item."""
+        invoice = self.get_object()
+        line = InvoiceService.restore_agreement_line(
+            invoice,
+            estimate_line_id=request.data.get('estimate_line_id'),
+            co_line_id=request.data.get('co_line_id'),
+        )
+        serializer = InvoiceLineItemSerializer(line)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['get'], url_path='send-defaults')
     def send_defaults(self, request, pk=None):
         """Pre-populated values for the Send Email page."""
@@ -406,6 +429,16 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             'invoice_status': invoice.status,
             'qbo_id': invoice.qbo_id,
         })
+
+
+def _serialize_agreement_line(line):
+    """Convert Decimal values in a compose_agreement line dict to strings
+    for JSON — used by the remaining-agreement-lines restore-picker feed."""
+    from decimal import Decimal
+    return {
+        k: (str(v) if isinstance(v, Decimal) else v)
+        for k, v in line.items()
+    }
 
 
 def _serialize_pool(pool):

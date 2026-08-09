@@ -730,3 +730,125 @@ class InvoiceAdjustmentAPITest(BaseTestCase):
         self.assertEqual(resp.status_code, 200)
         adj = resp.data['adjustments'][0]
         self.assertTrue(adj['already_added'])
+
+
+# ---------------------------------------------------------------------------
+# Task 4 (better-fees skeleton phase): auto-seed on creation, seed:false
+# opt-out, remaining-agreement-lines + restore-line endpoints.
+# ---------------------------------------------------------------------------
+
+class InvoiceAutoSeedAPITest(BaseTestCase):
+    """POST /api/invoices/ auto-seeds a new draft from the job's agreement
+    unless seed:false; GET .../remaining-agreement-lines/ and
+    POST .../restore-line/ round-trip a removed line back onto the draft."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+
+        from apps.contacts.models import Contact
+        from apps.core.models import AccountingCategory
+        from apps.estimates.models import Estimate, EstimateLineItem
+
+        contact = Contact.objects.create(
+            first_name='Seed', last_name='API',
+            email='seed-api@test.com', mobile_number='555-0200',
+        )
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-SEEDAPI', name='Labor-SeedAPI', taxable=False,
+        )
+
+        self.job = Job.objects.create(
+            contact=contact, status=Job.STATUS_APPROVED,
+            job_number='JOB-SEEDAPI-0001',
+        )
+        est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-SEEDAPI-1', version=1,
+            status=Estimate.STATUS_ACCEPTED,
+        )
+        for n, desc in enumerate(['Labor', 'Materials', 'Delivery'], start=1):
+            EstimateLineItem.objects.create(
+                estimate=est, line_number=n, qty=Decimal('1'),
+                units='ea', description=desc, price=Decimal('100.00'),
+                accounting_category=self.cat,
+            )
+
+        # A job with no accepted estimate at all — compose_agreement returns
+        # no lines, so seeding it produces an empty draft either way.
+        self.bare_job = Job.objects.create(
+            contact=contact, status=Job.STATUS_APPROVED,
+            job_number='JOB-SEEDAPI-0002',
+        )
+
+    def _seeded_via_api(self):
+        resp = self.client.post(
+            '/api/invoices/', {'job': self.job.pk}, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        return Invoice.objects.get(pk=resp.data['invoice_id'])
+
+    def test_create_invoice_auto_seeds_from_agreement(self):
+        resp = self.client.post(
+            '/api/invoices/', {'job': self.job.pk}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        inv = Invoice.objects.get(pk=resp.data['invoice_id'])
+        self.assertEqual(inv.invoicelineitem_set.count(), 3)
+
+    def test_create_with_seed_false_stays_empty(self):
+        resp = self.client.post(
+            '/api/invoices/', {'job': self.job.pk, 'seed': False},
+            format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        inv = Invoice.objects.get(pk=resp.data['invoice_id'])
+        self.assertEqual(inv.invoicelineitem_set.count(), 0)
+
+    def test_estimate_less_job_seeds_empty(self):
+        resp = self.client.post(
+            '/api/invoices/', {'job': self.bare_job.pk}, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        inv = Invoice.objects.get(pk=resp.data['invoice_id'])
+        self.assertEqual(inv.invoicelineitem_set.count(), 0)
+
+    def test_remaining_agreement_lines_endpoint(self):
+        inv = self._seeded_via_api()
+        li = inv.invoicelineitem_set.first()
+        self.client.delete(
+            f'/api/invoices/{inv.pk}/line-items/{li.pk}/?confirm=true')
+        resp = self.client.get(
+            f'/api/invoices/{inv.pk}/remaining-agreement-lines/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        remaining_ids = [
+            l['estimate_line_id'] for l in resp.data['lines']]
+        self.assertEqual(remaining_ids, [li.agreement_estimate_line_id])
+
+    def test_restore_line_endpoint(self):
+        inv = self._seeded_via_api()
+        li = inv.invoicelineitem_set.first()
+        self.client.delete(
+            f'/api/invoices/{inv.pk}/line-items/{li.pk}/?confirm=true')
+        self.assertEqual(inv.invoicelineitem_set.count(), 2)
+        resp = self.client.post(
+            f'/api/invoices/{inv.pk}/restore-line/',
+            {'estimate_line_id': li.agreement_estimate_line_id},
+            format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(inv.invoicelineitem_set.count(), 3)
+
+    def test_delete_line_item_releases_agreement_reference(self):
+        """The generic line-item DELETE path (LineItemMixin) must route
+        through InvoiceService.remove_line so the removed line's agreement
+        reference reappears as remaining — not just disappear from the
+        draft while still being claimed."""
+        inv = self._seeded_via_api()
+        li = inv.invoicelineitem_set.first()
+        estimate_line_id = li.agreement_estimate_line_id
+        resp = self.client.delete(
+            f'/api/invoices/{inv.pk}/line-items/{li.pk}/?confirm=true')
+        self.assertEqual(resp.status_code, 200)
+        from apps.invoicing.services import InvoiceService
+        remaining_ids = [
+            l['estimate_line_id']
+            for l in InvoiceService.remaining_agreement_lines(self.job)
+        ]
+        self.assertIn(estimate_line_id, remaining_ids)

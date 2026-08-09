@@ -3,8 +3,11 @@
   // picker's "Add Deposit" entry). Two-step create, reusing the exact
   // backend contract the rest of the deposit feature already uses (no
   // backend changes):
-  //   1. POST /api/invoices/ {job} — same call InvoicePanel's Start Invoice
-  //      makes. InvoiceWizardService.open_for_job is idempotent: if the job
+  //   1. POST /api/invoices/ {job, seed: false} — same call InvoicePanel's
+  //      Start Invoice makes, except seed: false: a fresh draft otherwise
+  //      auto-seeds from the job's agreement (better-fees skeleton phase),
+  //      but this modal wants an empty, deposit-only draft.
+  //      InvoiceWizardService.open_for_job is idempotent: if the job
   //      already has an open draft, it returns that draft instead of erroring
   //      (see docs/designs/invoicing-and-expenses.md), so this button is safe
   //      to offer even when a draft already exists.
@@ -48,7 +51,7 @@
     busy = true;
     let invoiceId;
     try {
-      const inv = await api.post('/api/invoices/', { job: job.job_id });
+      const inv = await api.post('/api/invoices/', { job: job.job_id, seed: false });
       invoiceId = inv.invoice_id;
     } catch (e) {
       busy = false;

@@ -39,7 +39,7 @@ describe('DepositInvoiceModal', () => {
     await fireEvent.click(getByRole('button', { name: /create/i }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(42));
-    expect(api.post).toHaveBeenNthCalledWith(1, '/api/invoices/', { job: 9 });
+    expect(api.post).toHaveBeenNthCalledWith(1, '/api/invoices/', { job: 9, seed: false });
     expect(api.post).toHaveBeenNthCalledWith(2, '/api/invoices/42/line-items/', {
       deposit: true, description: 'Deposit on JOB-9', qty: '1', units: 'none', price: '2500',
     });
