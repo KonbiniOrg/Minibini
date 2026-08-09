@@ -33,6 +33,8 @@ class InvoiceSeedingTestCase(TestCase):
 
         self.cat = AccountingCategory.objects.create(
             code='LAB-SEED', name='Labor-Seed', taxable=False)
+        self.cat2 = AccountingCategory.objects.create(
+            code='MISC-SEED', name='Misc-Seed', taxable=False)
         contact = Contact.objects.create(
             first_name='Seed', last_name='Test', email='seed@test.com',
             mobile_number='555-0100',
@@ -85,14 +87,21 @@ class InvoiceSeedingTestCase(TestCase):
             source_pk=self.material.pk,
         )
 
-        # -- hand_line: bare, no sources
+        # -- hand_line: bare, no sources. A DIFFERENT accounting category
+        # (cat2) from backed_line's (cat) so the adjustment's target-category
+        # subset actually excludes something — the fixture would not catch
+        # an untargeted-vs-targeted computation bug if every sibling shared
+        # one category.
         self.hand_line = EstimateLineItem.objects.create(
             estimate=self.est, line_number=2, qty=Decimal('1'),
             units='ea', description='Misc hand line', price=Decimal('25.00'),
-            accounting_category=self.cat,
+            accounting_category=self.cat2,
         )
 
-        # -- adj_line: percentage adjustment
+        # -- adj_line: percentage adjustment, targeted at ONLY backed_line's
+        # category (cat) — hand_line's 25.00 (cat2) must NOT count toward
+        # the computed amount. Targeted: 200.00 (backed_line) * 10% = 20.00.
+        # Untargeted (the bug): (200.00 + 25.00) * 10% = 22.50.
         self.rush_svc = RateScheme.objects.create(
             name='Rush-Seed', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
@@ -100,10 +109,11 @@ class InvoiceSeedingTestCase(TestCase):
         )
         self.adj_line = EstimateLineItem.objects.create(
             estimate=self.est, line_number=3, qty=Decimal('1'),
-            units='%', description='Rush 10%', price=Decimal('12.50'),
+            units='%', description='Rush 10%', price=Decimal('20.00'),
             adjustment_service=self.rush_svc,
             adjustment_percent=self.rush_svc.rate,
         )
+        self.adj_line.adjustment_target_categories.set([self.cat])
 
     def _seeded(self):
         inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
@@ -145,6 +155,26 @@ class InvoiceSeedingTestCase(TestCase):
         li = inv.invoicelineitem_set.get(agreement_estimate_line=self.adj_line)
         self.assertEqual(li.adjustment_percent, self.adj_line.adjustment_percent)
 
+    def test_seeded_adjustment_amount_uses_targeted_subtotal_only(self):
+        # adj_line is line 3 (last) — the ordering bug this guards against
+        # (M2M set after LineItemService.save_line_item's premature
+        # recompute) only shows up when the adjustment line is the last one
+        # processed, which is the normal compose_agreement ordering.
+        inv = self._seeded()
+        li = inv.invoicelineitem_set.get(agreement_estimate_line=self.adj_line)
+        self.assertEqual(li.price, Decimal('20.00'))
+
+    def test_restored_adjustment_amount_uses_targeted_subtotal_only(self):
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceService.restore_agreement_line(
+            inv, estimate_line_id=self.backed_line.pk)
+        InvoiceService.restore_agreement_line(
+            inv, estimate_line_id=self.hand_line.pk)
+        InvoiceService.restore_agreement_line(
+            inv, estimate_line_id=self.adj_line.pk)
+        li = inv.invoicelineitem_set.get(agreement_estimate_line=self.adj_line)
+        self.assertEqual(li.price, Decimal('20.00'))
+
     # ── remove_line ──────────────────────────────────────────────────────
 
     def test_remove_line_releases_reference_and_claims(self):
@@ -175,3 +205,14 @@ class InvoiceSeedingTestCase(TestCase):
         InvoiceService.cancel(inv1.pk)
         self.assertEqual(
             len(InvoiceService.remaining_agreement_lines(self.job)), 3)
+
+    # ── remaining_agreement_lines ────────────────────────────────────────
+
+    def test_remaining_excludes_lines_already_held_by_a_live_invoice(self):
+        # A line already on a live invoice — including the invoice that
+        # holds it — must not reappear as "remaining". (Regression guard:
+        # remaining_agreement_lines used to accept an exclude_invoice kwarg
+        # that made the excluded invoice's OWN held lines reappear, the
+        # opposite of what a restore picker or seed_from_agreement needs.)
+        self._seeded()  # a single draft now holds all three agreement lines
+        self.assertEqual(InvoiceService.remaining_agreement_lines(self.job), [])

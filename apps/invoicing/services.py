@@ -367,14 +367,16 @@ class InvoiceService:
     # ── agreement seeding / remaining / restore / remove ────────────────
 
     @staticmethod
-    def remaining_agreement_lines(job, exclude_invoice=None):
+    def remaining_agreement_lines(job):
         """compose_agreement(job)'s lines minus those already referenced by
-        a live (non-cancelled) invoice's line item.
+        a live (non-cancelled) invoice's line item — for ANY live invoice on
+        the job, including one currently being seeded or edited.
 
-        `exclude_invoice` lets a draft's own restore picker exclude its own
-        already-seeded refs from the "already claimed elsewhere" check —
-        i.e. a line the draft itself already carries should not appear as
-        both "on this invoice" and "remaining".
+        A line already on a live invoice never reappears as remaining, even
+        when that invoice is the caller's own draft: that is exactly what
+        stops the restore picker from re-offering a line the draft already
+        carries, and what stops seed_from_agreement from double-seeding a
+        line onto a partially-seeded draft.
         """
         from apps.estimates.agreement import compose_agreement
 
@@ -383,8 +385,6 @@ class InvoiceService:
         refs = InvoiceLineItem.objects.filter(
             invoice__job=job, invoice__status__in=LIVE_INVOICE_STATUSES,
         )
-        if exclude_invoice is not None:
-            refs = refs.exclude(invoice=exclude_invoice)
 
         claimed_estimate_ids = set(
             refs.filter(agreement_estimate_line_id__isnull=False)
@@ -498,13 +498,12 @@ class InvoiceService:
         """
         from django.db import transaction
         from django.db.models import Max
-        from apps.core.services import LineItemService
+        from apps.core.adjustments import recompute_adjustments
 
         InvoiceService._validate_draft(invoice)
 
         with transaction.atomic():
-            lines = InvoiceService.remaining_agreement_lines(
-                invoice.job, exclude_invoice=invoice)
+            lines = InvoiceService.remaining_agreement_lines(invoice.job)
 
             max_ln = (InvoiceLineItem.objects.filter(invoice=invoice)
                       .aggregate(Max('line_number'))['line_number__max'] or 0)
@@ -517,7 +516,13 @@ class InvoiceService:
                 max_ln += 1
                 li = InvoiceService._build_agreement_line_item(
                     invoice, line, max_ln)
-                LineItemService.save_line_item(li)
+                # Plain save (not LineItemService.save_line_item): that
+                # helper recomputes adjustment prices immediately, which
+                # would fire before this line's own target-category M2M is
+                # set (needs a pk first) and before later sibling lines in
+                # this same loop exist. Defer to one recompute pass after
+                # every line + M2M in the batch is settled, below.
+                li.save()
 
                 if line.get('is_adjustment') and line.get('target_category_ids'):
                     li.adjustment_target_categories.set(line['target_category_ids'])
@@ -525,6 +530,10 @@ class InvoiceService:
                 InvoiceService._mirror_agreement_claims(li, line)
 
                 created += 1
+
+            if created:
+                recompute_adjustments(
+                    InvoiceLineItem.objects.filter(invoice=invoice))
 
         return created
 
@@ -538,7 +547,7 @@ class InvoiceService:
         """
         from django.db import transaction
         from django.db.models import Max
-        from apps.core.services import LineItemService
+        from apps.core.adjustments import recompute_adjustments
         from apps.estimates.agreement import compose_agreement
 
         if bool(estimate_line_id) == bool(co_line_id):
@@ -564,12 +573,20 @@ class InvoiceService:
                       .aggregate(Max('line_number'))['line_number__max'] or 0)
             li = InvoiceService._build_agreement_line_item(
                 invoice, line, max_ln + 1)
-            LineItemService.save_line_item(li)
+            # Plain save, then set the M2M, then one explicit recompute over
+            # every line on the invoice — see the matching comment in
+            # seed_from_agreement. Using LineItemService.save_line_item here
+            # would recompute this adjustment line's own price before its
+            # target-category M2M exists, always landing on the untargeted
+            # (all-siblings) amount.
+            li.save()
 
             if line.get('is_adjustment') and line.get('target_category_ids'):
                 li.adjustment_target_categories.set(line['target_category_ids'])
 
             InvoiceService._mirror_agreement_claims(li, line)
+
+            recompute_adjustments(InvoiceLineItem.objects.filter(invoice=invoice))
 
         return li
 
