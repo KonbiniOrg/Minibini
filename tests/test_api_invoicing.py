@@ -930,10 +930,51 @@ class InvoiceLineBackingAPITest(BaseTestCase):
         self.assertIsNotNone(row['agreement_ref'])
         self.assertEqual(row['agreement_ref']['kind'], 'estimate')
         self.assertEqual(row['agreement_ref']['line_id'], self.est_line.pk)
-        self.assertEqual(Decimal(row['agreement_ref']['est_qty']), Decimal('2.00'))
-        self.assertEqual(Decimal(row['agreement_ref']['est_price']), Decimal('50.00'))
-        self.assertEqual(Decimal(row['agreement_ref']['est_amount']), Decimal('100.00'))
+        # Pin the JSON TYPE, not just the numeric value: a bare Decimal
+        # embedded in a SerializerMethodField dict bypasses DecimalField's
+        # to-string coercion and DRF's raw JSONEncoder floats it instead
+        # (see _agreement_ref_payload's docstring) — `Decimal(x) ==
+        # Decimal('2.00')` would pass identically whether `x` is the
+        # string '2.00' or the float 2.0, so it can't catch that
+        # regression. Assert the wire value IS the string.
+        self.assertEqual(row['agreement_ref']['est_qty'], '2.00')
+        self.assertEqual(row['agreement_ref']['est_price'], '50.00')
+        self.assertEqual(row['agreement_ref']['est_amount'], '100.00')
+        self.assertIsInstance(row['agreement_ref']['est_qty'], str)
+        self.assertIsInstance(row['agreement_ref']['est_price'], str)
+        self.assertIsInstance(row['agreement_ref']['est_amount'], str)
         self.assertIsNone(row['actuals_total'])
+
+    def test_use_estimate_patch_accepts_the_agreement_ref_values_verbatim(self):
+        """Regression guard for the float-PATCH bug: PATCHing a line's
+        qty/price back to agreement_ref's own est_qty/est_price (exactly
+        what the frontend's "Use estimate" control sends) must succeed —
+        it would 400 with a DecimalValidator error if agreement_ref ever
+        regressed to shipping floats for a price needing more precision
+        than float's binary expansion round-trips cleanly."""
+        from apps.invoicing.services import InvoiceService
+
+        # A price that a float round-trip reliably mangles beyond 2 places
+        # (0.1 has no exact binary representation) — a stronger canary
+        # than the round '50.00' used elsewhere in this test class.
+        self.est_line.price = Decimal('33.10')
+        self.est_line.save()
+
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceService.seed_from_agreement(invoice)
+        li = invoice.invoicelineitem_set.get()
+
+        row = self._row(invoice, li)
+        ref = row['agreement_ref']
+
+        resp = self.client.patch(
+            f'/api/invoices/{invoice.pk}/line-items/{li.pk}/',
+            {'qty': ref['est_qty'], 'price': ref['est_price']},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+        li.refresh_from_db()
+        self.assertEqual(li.price, Decimal('33.10'))
 
     def test_backing_actuals_on_in_sync_claimed_line(self):
         """A plain (non-agreement) wizard line whose price is still in sync
@@ -1059,3 +1100,91 @@ class InvoiceLineBackingAPITest(BaseTestCase):
 
         plain_row = self._row(invoice, plain_li)
         self.assertIsNone(plain_row['actuals_total'])
+
+    def test_source_qty_units_rate_mirror_the_pool_per_atom_type(self):
+        """The nested `sources[]` breakdown on a line (what the SPA's
+        AtomChildRow renders under a seeded/claimed line) must carry real
+        qty/units/rate — not the '-' a missing field renders as — sourced
+        the same way the source pool itself computes them
+        (InvoiceWizardService._atom_detail): task actual-qty ×
+        effective_rate, material quantity × units × sell_price, fee
+        quantity × unit_rate. A deposit-credit claim is not a real work
+        atom (get_actuals_total already skips it) so it reports null
+        rather than a fabricated qty/rate."""
+        from apps.jobs.models import Fee
+        from apps.inventory.models import Material, InventoryItem
+        from apps.invoicing.models import InvoiceLineItemSource
+        from apps.invoicing.services import InvoiceWizardService
+
+        scheme = RateScheme.objects.create(
+            name='Hourly-Src', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('40.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        task = self._completed_task('Task-Src', scheme, hours=1.5)
+
+        # _atom_units reads a material's units off its catalog link (a
+        # bare Material.units field isn't consulted — pre-existing
+        # behavior, not something this test changes), so link an
+        # InventoryItem to get a real (non-'none') units value here.
+        pli = InventoryItem.objects.create(
+            code='SRC-PLY', description='Plywood', units='sheet',
+            selling_price=Decimal('12.50'), accounting_category=self.cat,
+        )
+        material = Material.objects.create(
+            job=self.job, description='Ply-Src', quantity=Decimal('3.00'),
+            sell_price=Decimal('12.50'), inventory_item=pli,
+            accounting_category=self.cat,
+        )
+        material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        material.save(update_fields=['consumption_state'])
+
+        fee = Fee.objects.create(
+            job=self.job, description='Rush-Src', quantity=Decimal('2'),
+            unit_rate=Decimal('15.00'), accounting_category=self.cat,
+        )
+
+        dep_invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_PAID)
+        dep_line = InvoiceLineItem.objects.create(
+            invoice=dep_invoice, line_number=1, description='Deposit-Src',
+            qty=Decimal('1'), price=Decimal('500.00'),
+            accounting_category=self.dep_cat,
+        )
+
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        task_li = InvoiceWizardService.add_atoms_to_new_line_item(
+            invoice, [{'type': 'task', 'id': task.pk}])
+        material_li = InvoiceWizardService.add_atoms_to_new_line_item(
+            invoice, [{'type': 'material', 'id': material.pk}])
+        fee_li = InvoiceWizardService.add_atoms_to_new_line_item(
+            invoice, [{'type': 'fee', 'id': fee.pk}])
+        deposit_li = InvoiceWizardService.add_atoms_to_new_line_item(
+            invoice, [{'type': 'deposit', 'id': dep_line.pk}])
+
+        task_row = self._row(invoice, task_li)
+        self.assertEqual(len(task_row['sources']), 1)
+        task_src = task_row['sources'][0]
+        self.assertEqual(Decimal(task_src['qty']), task.get_actual_qty())
+        self.assertEqual(task_src['units'], task.unit_label or 'none')
+        self.assertEqual(Decimal(task_src['rate']), task.effective_rate())
+
+        material_row = self._row(invoice, material_li)
+        material_src = material_row['sources'][0]
+        self.assertEqual(Decimal(material_src['qty']), Decimal('3.00'))
+        self.assertEqual(material_src['units'], 'sheet')
+        self.assertEqual(Decimal(material_src['rate']), Decimal('12.50'))
+
+        fee_row = self._row(invoice, fee_li)
+        fee_src = fee_row['sources'][0]
+        self.assertEqual(Decimal(fee_src['qty']), Decimal('2'))
+        self.assertEqual(Decimal(fee_src['rate']), Decimal('15.00'))
+
+        deposit_row = self._row(invoice, deposit_li)
+        deposit_src = deposit_row['sources'][0]
+        self.assertIsNone(deposit_src['qty'])
+        self.assertIsNone(deposit_src['units'])
+        self.assertIsNone(deposit_src['rate'])
+        # The deposit source's description/amount are unaffected — only
+        # the fabricated-qty/rate fields are suppressed.
+        self.assertIsNotNone(deposit_src['description'])
+        self.assertIsNotNone(deposit_src['computed_amount'])

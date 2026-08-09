@@ -4,6 +4,7 @@
   // display row; `onRemove` (when wired) lets an editable context pull the
   // atom back out of the line it's attached to.
   import { fmtMoney } from '@/lib/taskTotals.js';
+  import { atomKindTag } from '@/lib/format.js';
 
   // colspanAfter: additive empty cells rendered AFTER the qty/rate/amount
   // content and BEFORE the onRemove cell — lets a caller with more trailing
@@ -17,7 +18,7 @@
     <td></td>
   {/each}
   <td>
-    <small>[{atom.kind === 'task' ? 'task' : 'mat'}]</small>
+    <small>[{atomKindTag(atom.kind)}]</small>
     {atom.description}
     {#if note}<small> &mdash; {note}</small>{/if}
   </td>

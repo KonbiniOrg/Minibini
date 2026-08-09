@@ -22,7 +22,19 @@ UNPAID_STATUSES = {
 def _agreement_ref_payload(line):
     """The `agreement_ref` field: null, or {kind, line_id, est_qty,
     est_price, est_amount} sourced from the referenced agreement line's own
-    stored qty/price — never from the invoice line's current values."""
+    stored qty/price — never from the invoice line's current values.
+
+    Values are stringified explicitly: this dict is returned from a plain
+    SerializerMethodField, not routed through a DecimalField, so DRF's
+    JSONEncoder never gets a chance to apply its normal (settings-driven)
+    decimal-to-string coercion — its raw fallback for a bare Decimal is
+    always `float(obj)` (see rest_framework.utils.encoders.JSONEncoder).
+    An un-stringified payload silently ships floats: string/string
+    equality checks (e.g. the frontend's actuals==estimate "synced" chip)
+    never match, and PATCHing a float back as qty/price 400s against the
+    model field's DecimalValidator for the ~96% of prices that need more
+    than float's imprecise binary expansion. Same reasoning as
+    `_serialize_agreement_line` in apps/api/invoicing/views.py."""
     ref = getattr(line, 'agreement_estimate_line', None)
     kind = 'estimate'
     if ref is None:
@@ -33,9 +45,9 @@ def _agreement_ref_payload(line):
     return {
         'kind': kind,
         'line_id': ref.pk,
-        'est_qty': ref.qty,
-        'est_price': ref.price,
-        'est_amount': (ref.qty * ref.price).quantize(Decimal('0.01')),
+        'est_qty': str(ref.qty),
+        'est_price': str(ref.price),
+        'est_amount': str((ref.qty * ref.price).quantize(Decimal('0.01'))),
     }
 
 
@@ -84,6 +96,9 @@ class InvoiceLineItemSourceSerializer(serializers.Serializer):
     source_pk = serializers.IntegerField(read_only=True)
     description = serializers.SerializerMethodField()
     computed_amount = serializers.SerializerMethodField()
+    qty = serializers.SerializerMethodField()
+    units = serializers.SerializerMethodField()
+    rate = serializers.SerializerMethodField()
 
     def _resolve_or_none(self, obj):
         # A dangling row (atom deleted out from under the claim — pre-purge
@@ -107,6 +122,34 @@ class InvoiceLineItemSourceSerializer(serializers.Serializer):
         if instance is None:
             return None
         return str(InvoiceWizardService._atom_computed_amount(instance))
+
+    def _atom_detail_or_none(self, obj):
+        """The {qty, rate, units, amount} breakdown for the nested atom row
+        — the same helper the source pool itself uses
+        (InvoiceWizardService._atom_detail: real task actual-qty ×
+        effective_rate, material quantity × sell_price, fee quantity ×
+        unit_rate). None for a dangling source AND for a deposit-credit
+        claim — that resolves to another InvoiceLineItem, not a real work
+        atom (get_actuals_total skips it the same way), so a fabricated
+        qty/rate would be misleading rather than informative."""
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.invoicing.services import InvoiceWizardService
+        instance = self._resolve_or_none(obj)
+        if instance is None or isinstance(instance, InvoiceLineItem):
+            return None
+        return InvoiceWizardService._atom_detail(instance)
+
+    def get_qty(self, obj):
+        detail = self._atom_detail_or_none(obj)
+        return str(detail['qty']) if detail else None
+
+    def get_units(self, obj):
+        detail = self._atom_detail_or_none(obj)
+        return detail['units'] if detail else None
+
+    def get_rate(self, obj):
+        detail = self._atom_detail_or_none(obj)
+        return str(detail['rate']) if detail else None
 
 
 class InvoiceLineItemSerializer(serializers.ModelSerializer):

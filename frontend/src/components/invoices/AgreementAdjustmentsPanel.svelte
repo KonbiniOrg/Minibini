@@ -1,8 +1,16 @@
 <script>
-  import { onMount } from 'svelte';
   import { api } from '../../lib/api.js';
 
-  let { invoiceId, onLineItemAdded = () => {} } = $props();
+  // `refreshKey`: an optional caller-supplied value (e.g. a join of the
+  // parent's current line_item_ids) that this panel re-loads on whenever
+  // it changes — not just on mount. Under the silent-refresh no-remount
+  // idiom (InvoicePanel.loadInvoice({silent:true}) never tears this
+  // component down), an onMount-only load would go stale the moment an
+  // adjustment line is removed elsewhere: `already_added` would keep
+  // reporting the removed adjustment as added, hiding its own Add button
+  // forever. Reacting to `invoiceId` too covers a caller that swaps
+  // documents without unmounting.
+  let { invoiceId, refreshKey = null, onLineItemAdded = () => {} } = $props();
 
   let adjustments = $state([]);
   let loaded = $state(false);
@@ -29,7 +37,11 @@
     onLineItemAdded();
   }
 
-  onMount(load);
+  $effect(() => {
+    void invoiceId;
+    void refreshKey;
+    load();
+  });
 </script>
 
 {#if loaded && adjustments.length > 0}

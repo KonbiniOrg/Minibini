@@ -101,6 +101,16 @@ describe('InvoiceEditView', () => {
     expect(queryByText('Use actuals')).toBeNull();
   });
 
+  it('suppresses the "· +$Δ" clause entirely when the delta is exactly zero (never shows "· +-")', async () => {
+    // Untouched seeded line: current amount (qty*price) equals est_amount
+    // exactly, so delta is 0 — fmtMoney(0) is '-', and showing the clause
+    // unconditionally would render the nonsense "est was $50.00 · +-".
+    const { findByText, queryByText } = render(InvoiceEditView, { props: baseProps() });
+    const ref = await findByText(/est was \$50\.00/);
+    expect(ref.textContent).toBe('est was $50.00');
+    expect(queryByText(/·/)).toBeNull();
+  });
+
   it('shows the actuals chip and the est-reference once claimed work is attached', async () => {
     const line = seededLine({
       backing: 'actuals', actuals_total: '55.00',
@@ -313,6 +323,34 @@ describe('InvoiceEditView', () => {
     const row = container.querySelector('tr.doc-unselectable-row');
     expect(row).not.toBeNull();
     expect(row.querySelector('input[type="checkbox"]')).toBeDisabled();
+  });
+
+  it('carries a "cancelled — work done" chip for a cancelled task, still selectable so the biller consciously chooses', async () => {
+    const cancelledTask = {
+      ...AVAILABLE_ATOM, id: 61, description: 'Frame it up', task_cancelled: true,
+    };
+    const { findByText } = render(InvoiceEditView, {
+      props: baseProps({
+        sourcePool: poolWith([{ task_id: 1, name: 'Task', has_billable_atoms: true, atoms: [cancelledTask] }]),
+      }),
+    });
+    await findByText('Frame it up');
+    expect(await findByText(/cancelled — work done/i)).toBeInTheDocument();
+  });
+
+  it('the INVOICED-elsewhere chip wins over the cancelled-task chip when both apply', async () => {
+    const both = {
+      ...AVAILABLE_ATOM, id: 62, description: 'Trim it out', state: 'claimed_by_other',
+      claiming_invoice_id: 9, claiming_invoice_number: 'INV-9', task_cancelled: true,
+    };
+    const { findByText, queryByText } = render(InvoiceEditView, {
+      props: baseProps({
+        sourcePool: poolWith([{ task_id: 1, name: 'Task', has_billable_atoms: true, atoms: [both] }]),
+      }),
+    });
+    await findByText('Trim it out');
+    expect(await findByText(/invoiced — INV-9/i)).toBeInTheDocument();
+    expect(queryByText(/cancelled — work done/i)).toBeNull();
   });
 
   it('Deposit credits section applies a credit via line-items-from-atoms', async () => {

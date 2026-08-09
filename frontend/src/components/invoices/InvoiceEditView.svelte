@@ -168,15 +168,23 @@
 
   // "est was $X · +$Δ" — Δ compares the estimate's stored amount against
   // what the line is actually backed by right now: actuals (when claimed
-  // work exists) else the line's own current amount.
+  // work exists) else the line's own current amount. The "· +$Δ" clause
+  // is suppressed entirely when Δ is exactly zero: fmtMoney(0) renders as
+  // '-' (its "no amount" sentinel, used everywhere else in this app), so
+  // showing the clause at Δ=0 would render the nonsense "· +-" instead of
+  // just quietly having nothing to report.
   function estReferenceText(li) {
     const ref = li.agreement_ref;
     if (!ref) return '';
     const estAmount = Number(ref.est_amount);
     const current = li.actuals_total != null ? Number(li.actuals_total) : lineAmount(li);
     const delta = current - estAmount;
-    const sign = delta >= 0 ? '+' : '';
-    return `est was ${fmtMoney(estAmount)} · ${sign}${fmtMoney(delta)}`;
+    let text = `est was ${fmtMoney(estAmount)}`;
+    if (delta !== 0) {
+      const sign = delta > 0 ? '+' : '';
+      text += ` · ${sign}${fmtMoney(delta)}`;
+    }
+    return text;
   }
 
   // ── Uncovered work pool → selection → add-atoms / line-items-from-atoms ──
@@ -209,6 +217,24 @@
     return undefined;
   }
 
+  // INVOICED-elsewhere wins when both apply (a cancelled task claimed by
+  // another invoice is uninteresting to bill here at all) — otherwise a
+  // cancelled task still carries its own prompt: the work is real and
+  // billable, but the biller must consciously choose to bill it rather
+  // than have it disappear into an undifferentiated row (same doctrine
+  // as the source pool's own `struck_from_agreement` badge). The
+  // "descoped by CO-N" chip (Task 9's `chip` prop) arrives with the CO
+  // plan and slots in here the same way, unused for now.
+  function atomChip(atom) {
+    if (atom.state === 'claimed_by_other') {
+      return { label: `invoiced — ${atom.claiming_invoice_number || ''}`.trim(), cls: 'invoiced-elsewhere' };
+    }
+    if (atom.task_cancelled) {
+      return { label: 'cancelled — work done', cls: 'edited' };
+    }
+    return undefined;
+  }
+
   let uncoveredRows = $derived(
     (sourcePool?.tasks || [])
       .filter((t) => t.name !== 'Deposit credits')
@@ -223,9 +249,7 @@
         amount: a.amount,
         selectable: a.state === 'available',
         unselectableNote: unselectableNote(a),
-        chip: a.state === 'claimed_by_other'
-          ? { label: `invoiced — ${a.claiming_invoice_number || ''}`.trim(), cls: 'invoiced-elsewhere' }
-          : undefined,
+        chip: atomChip(a),
       }))
   );
 
@@ -504,7 +528,11 @@
     </section>
   {/if}
 
-  <AgreementAdjustmentsPanel invoiceId={invoice.invoice_id} onLineItemAdded={onChanged} />
+  <AgreementAdjustmentsPanel
+    invoiceId={invoice.invoice_id}
+    refreshKey={lineItems.map((li) => li.line_item_id).join(',')}
+    onLineItemAdded={onChanged}
+  />
 {/if}
 
 <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />

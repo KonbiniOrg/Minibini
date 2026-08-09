@@ -6,6 +6,7 @@
   // action. Rows the caller marks unselectable (e.g. task not yet
   // complete) render dimmed and can't be checked off.
   import { fmtMoney } from '@/lib/taskTotals.js';
+  import { atomKindTag } from '@/lib/format.js';
 
   let {
     title,
@@ -60,7 +61,7 @@
               />
             </td>
             <td>
-              <small>[{row.kind === 'task' ? 'task' : 'mat'}]</small>
+              <small>[{atomKindTag(row.kind)}]</small>
               {row.description}
               {#if row.chip}<span class="backing-chip {row.chip.cls}">{row.chip.label}</span>{/if}
               {#if unselectable && row.unselectableNote}

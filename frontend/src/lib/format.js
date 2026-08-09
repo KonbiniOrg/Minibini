@@ -8,6 +8,23 @@ export function formatQtyUnits(quantity, units) {
   return `${quantity} ${units}`;
 }
 
+// Short bracketed tag ("[task]", "[mat]", ...) for an atom's `kind`/`type` —
+// shared by the docsurface kit's AtomChildRow (nested atom rows under a
+// backing line) and UncoveredWorkSection (the pick-list rows) so the two
+// never drift. Additive: unknown kinds fall back to 'mat', same as the
+// pre-existing binary task/mat mapping.
+const ATOM_KIND_TAGS = {
+  task: 'task',
+  material: 'mat',
+  expense: 'exp',
+  fee: 'fee',
+  deposit: 'dep',
+};
+
+export function atomKindTag(kind) {
+  return ATOM_KIND_TAGS[kind] || 'mat';
+}
+
 // Parse user duration input to an ISO 8601 duration string ("PT1H30M").
 // Accepts "HH:MM" (e.g. "1:30") or decimal hours (e.g. "1.5").
 // Returns null for empty input, false for unparseable input.
