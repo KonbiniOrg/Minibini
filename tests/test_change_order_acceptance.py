@@ -18,6 +18,7 @@ Then earmark the job's inventoried materials, exactly like estimate acceptance.
 """
 from datetime import timedelta
 from decimal import Decimal
+from unittest import skip
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -452,6 +453,12 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         co.refresh_from_db()
         self.assertEqual(co.status, ChangeOrder.STATUS_ACCEPTED)
 
+    @skip(
+        'rewritten in Task 3 — replace is commercial-only now (CO '
+        'amend-in-place Task 1 clean() rule forbids is_material/'
+        'service_item/inventory_item on a replace line); typed-descriptor '
+        'replace crystallization is replaced by remove+add in Task 3'
+    )
     def test_typed_replace_crystallizes_per_descriptor_not_mirror(self):
         # A TYPED replace (own descriptor: is_material here) targeting a
         # task-backed estimate line must never resolve the target's mirror —

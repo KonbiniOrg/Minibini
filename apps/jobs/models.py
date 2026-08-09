@@ -375,6 +375,15 @@ class Task(TaskBase):
         ),
     )
     # est_qty inherited from TaskBase (nullable on Task).
+    descoped_by = models.ForeignKey(
+        'estimates.ChangeOrder', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='+',
+        help_text=(
+            "Accepted change order whose remove struck the agreement line "
+            "this atom backed. Stamped at CO acceptance; drives the billing "
+            "pool's 'descoped' badge."
+        ),
+    )
 
     class Meta:
         db_table = 'tasks'

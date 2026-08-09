@@ -677,6 +677,27 @@ class ChangeOrderLineItem(BaseLineItem):
         related_name='+',
         help_text='Deferred service descriptor: crystallizes to a Task at CO acceptance.',
     )
+    # adjustment_service/adjustment_percent/adjustment_target_categories:
+    # mirror EstimateLineItem's adjustment triple exactly (task-owned-money
+    # Phase 1, Task 5 shape). Valid ONLY on a replace line whose target is
+    # itself an adjustment line — replace is commercial-only, and an
+    # adjustment's rate/target-categories are its entire commercial content.
+    adjustment_service = models.ForeignKey(
+        'jobs.RateScheme', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='+',
+        help_text='Set when this line is a percentage adjustment (rush/discount).',
+    )
+    adjustment_percent = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True,
+        help_text=(
+            "Snapshot of adjustment_service's rate at creation time. "
+            "compute_adjustment_amount reads this field, never the live scheme."
+        ),
+    )
+    adjustment_target_categories = models.ManyToManyField(
+        'core.AccountingCategory', blank=True, related_name='+',
+        help_text='Categories the adjustment applies to; empty = all non-adjustment lines.',
+    )
 
     class Meta:
         db_table = 'co_li'
@@ -707,6 +728,35 @@ class ChangeOrderLineItem(BaseLineItem):
             if self.service_item_id is not None or self.is_material:
                 raise ValidationError(
                     'action="remove" cannot carry a service item or material marker.'
+                )
+        if self.action == self.ACTION_REPLACE:
+            # replace amends the commercial line only (amend-in-place):
+            # changing the WORK behind an agreement line goes through
+            # remove + add, never a descriptor riding a replace.
+            if (
+                self.service_item_id is not None
+                or self.inventory_item_id is not None
+                or self.is_material
+            ):
+                raise ValidationError(
+                    'action="replace" amends the commercial line only — it '
+                    'cannot carry a service item, inventory item, or material '
+                    'marker. Use remove + add to change the work.'
+                )
+        has_adjustment_fields = (
+            self.adjustment_service_id is not None
+            or self.adjustment_percent is not None
+        )
+        if has_adjustment_fields:
+            target_is_adjustment = (
+                self.action == self.ACTION_REPLACE
+                and self.target_line_item_id
+                and self.target_line_item.adjustment_service_id is not None
+            )
+            if not target_is_adjustment:
+                raise ValidationError(
+                    'adjustment_service/adjustment_percent are only valid on '
+                    'a replace line whose target is itself an adjustment line.'
                 )
 
     def __str__(self):
