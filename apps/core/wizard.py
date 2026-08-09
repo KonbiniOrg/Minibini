@@ -113,7 +113,14 @@ class BaseWizardService:
         """The qty / rate / units / amount breakdown for an atom — the
         `qty units × rate = amount` line shown in the source pool. For a
         task, qty * rate == amount exactly (compute_amount is qty *
-        effective_rate)."""
+        effective_rate).
+
+        The non-task branch is written for Material but may also receive a
+        LEGACY resolved Fee via the source serializers (pre-Fee-removal
+        source rows survive until Task 6's purge; fees never appear in the
+        source pools themselves). A Fee lacks sell_price, so rate is read
+        defensively and comes back None — callers rendering a doc surface
+        must show null rather than 500."""
         amount = cls._atom_computed_amount(atom_instance)
         units = cls._atom_units(atom_instance)
         if isinstance(atom_instance, cls._task_model()):
@@ -121,7 +128,8 @@ class BaseWizardService:
             rate = atom_instance.effective_rate()  # already quantized to cents
         else:
             qty = atom_instance.quantity
-            rate = atom_instance.sell_price.quantize(Decimal('0.01'))
+            sell_price = getattr(atom_instance, 'sell_price', None)
+            rate = None if sell_price is None else sell_price.quantize(Decimal('0.01'))
         return {'qty': qty, 'rate': rate, 'units': units, 'amount': amount}
 
     # ── line-item sync helpers ─────────────────────────────────────────

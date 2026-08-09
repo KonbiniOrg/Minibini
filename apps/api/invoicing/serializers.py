@@ -173,8 +173,13 @@ class InvoiceLineItemSourceSerializer(serializers.Serializer):
         return detail['units'] if detail else None
 
     def get_rate(self, obj):
+        # detail['rate'] is None for a LEGACY resolved fee source (no
+        # sell_price — see BaseWizardService._atom_detail): render null,
+        # never the string 'None'.
         detail = self._atom_detail_or_none(obj)
-        return str(detail['rate']) if detail else None
+        if detail is None or detail['rate'] is None:
+            return None
+        return str(detail['rate'])
 
 
 class InvoiceLineItemSerializer(serializers.ModelSerializer):

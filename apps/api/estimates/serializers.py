@@ -116,7 +116,7 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return instance.name
-        return instance.description  # Material
+        return instance.description  # Material / legacy Fee
 
     def get_computed_amount(self, obj):
         instance = self._resolve_or_none(obj)
@@ -133,6 +133,12 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
     # resolved instance, and feed a doc-surface's nested atom-row (never
     # re-summed into the line's own total — that stays
     # `computed_amount`/`backing_total`).
+    #
+    # The non-Task fallthroughs are written for Material but may also receive
+    # a LEGACY resolved Fee (pre-Fee-removal source rows survive until Task
+    # 6's purge). Fee shares description/quantity/compute_amount/units with
+    # Material; the attribute it lacks (sell_price) is read defensively —
+    # null over 500, same philosophy as `_resolve_or_none` for dangling rows.
     def get_qty(self, obj):
         instance = self._resolve_or_none(obj)
         if instance is None:
@@ -140,7 +146,7 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return str(instance.est_qty if instance.est_qty is not None else Decimal('0'))
-        return str(instance.quantity)  # Material
+        return str(instance.quantity)  # Material / legacy Fee
 
     def get_units(self, obj):
         instance = self._resolve_or_none(obj)
@@ -149,7 +155,8 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return instance.unit_label or 'none'
-        return instance.units or 'none'  # Material
+        # Material's units field; a legacy Fee's `units` property is 'none'.
+        return getattr(instance, 'units', None) or 'none'
 
     def get_rate(self, obj):
         instance = self._resolve_or_none(obj)
@@ -158,7 +165,9 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return str(instance.effective_rate())
-        return str(instance.sell_price)  # Material
+        # Material's sell_price; a legacy Fee has none → null, not a 500.
+        sell_price = getattr(instance, 'sell_price', None)
+        return None if sell_price is None else str(sell_price)
 
 
 class EstimateLineItemSerializer(serializers.ModelSerializer):
