@@ -93,7 +93,8 @@
         });
       } else {
         const isMaterialLine = showMaterialMarker && isMaterial;
-        // Accounting category is required for fees; materials default server-side.
+        // Accounting category is required on plain (non-material) hand lines —
+        // the document/invoice transit needs it; materials default server-side.
         if (!accountingCategory && !isMaterialLine) {
           fieldErrs = { accounting_category: ['Accounting Category is required.'] };
           busy = false;

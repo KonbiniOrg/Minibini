@@ -33,7 +33,7 @@ describe('COAddLineForm', () => {
       { action: 'add', inventory_item: 22, qty: '10' });
   });
 
-  it('freeform fee posts a manual add payload; description prefilled from typed', async () => {
+  it('freeform plain line posts a manual add payload; description prefilled from typed', async () => {
     const choice = { type: 'freeform', typed: 'Rush charge', isMaterial: false };
     const { getByLabelText, getByRole } = render(COAddLineForm, {
       props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
@@ -77,7 +77,7 @@ describe('COAddLineForm', () => {
       expect.objectContaining({ action: 'add', is_material: true }));
   });
 
-  it('freeform fee blocks save with no accounting category (send-guard rule)', async () => {
+  it('freeform plain line blocks save with no accounting category (send-guard rule)', async () => {
     const choice = { type: 'freeform', typed: 'x', isMaterial: false };
     const { getByLabelText, getByRole, findByText } = render(COAddLineForm, {
       props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },

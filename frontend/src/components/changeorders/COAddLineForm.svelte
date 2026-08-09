@@ -60,7 +60,8 @@
     } else if (choice.type === 'inventory') {
       payload = { action: 'add', inventory_item: choice.inventoryItem.inventory_item_id, qty };
     } else {
-      // Fees require an AC; materials default it server-side.
+      // Plain (non-material) hand lines require an AC before send — the document
+      // transit needs it; materials default it server-side.
       if (!accountingCategory && !choice.isMaterial) { error = 'Accounting Category is required.'; return; }
       payload = {
         action: 'add',

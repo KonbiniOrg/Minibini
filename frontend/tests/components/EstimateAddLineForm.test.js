@@ -33,7 +33,7 @@ describe('EstimateAddLineForm', () => {
       { inventory_item: 22, qty: '10' });
   });
 
-  it('freeform fee posts manual payload with is_material false; description prefilled from typed', async () => {
+  it('freeform plain line posts manual payload with is_material false; description prefilled from typed', async () => {
     const choice = { type: 'freeform', typed: 'Rush charge', isMaterial: false };
     const { getByLabelText, getByRole } = render(EstimateAddLineForm, {
       props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
@@ -94,7 +94,7 @@ describe('EstimateAddLineForm', () => {
     expect(getByText('ea')).toBeInTheDocument();
   });
 
-  it('freeform fee blocks save with no accounting category (hand-line rule)', async () => {
+  it('freeform plain line blocks save with no accounting category (hand-line rule)', async () => {
     const choice = { type: 'freeform', typed: 'x', isMaterial: false };
     const { getByLabelText, getByRole, findByText } = render(EstimateAddLineForm, {
       props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },

@@ -564,7 +564,7 @@
   {#if !isDepositInvoice}
     <UncoveredWorkSection
       title="Uncovered work"
-      subtitle="Tasks, materials, expenses, and fees from this job not yet on this invoice."
+      subtitle="Tasks, materials, and expenses from this job not yet on this invoice."
       rows={uncoveredRows}
       bind:selected
       directLabel="Bill as its own line"

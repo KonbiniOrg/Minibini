@@ -51,7 +51,7 @@ describe('LineItemModal — is-material marker', () => {
     expect(payload.is_material).toBe(true);
   });
 
-  it('a fee (unchecked) still blocks save with no accounting category', async () => {
+  it('a plain line (unchecked) still blocks save with no accounting category', async () => {
     const { getByLabelText, getByText, queryByText } = render(LineItemModal, {
       props: {
         open: true, mode: 'create', apiBase: '/api/estimates/1',

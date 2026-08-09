@@ -43,8 +43,9 @@
 
   // Whether description/qty/units/price fields are needed (not for plain 'remove')
   let needsLineFields = $derived(action !== 'remove');
-  // A bare add line crystallizes into a Fee at acceptance, so it needs an AC
-  // before send; replace lines inherit from the atom they replace.
+  // A bare (non-material) add line stays a plain document line — no atom is
+  // created — but it still needs an AC before send; replace lines inherit from
+  // the atom they replace.
   let needsAccountingCategory = $derived(action === 'add');
 
   $effect(() => {
@@ -90,8 +91,8 @@
       payload.price = price || '0';
     }
     if (needsAccountingCategory) {
-      // Bare add lines need an AC to send (they crystallize into Fees);
-      // material lines get the config default server-side.
+      // Bare (non-material) add lines need an AC to send — the document/invoice
+      // transit needs it; material lines get the config default server-side.
       if (!accountingCategory && !item?.is_material) {
         fieldErrs = { accounting_category: ['Accounting Category is required.'] };
         busy = false;
