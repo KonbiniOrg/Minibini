@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
 vi.mock('@/lib/api.js', () => ({
@@ -72,6 +72,8 @@ function mockApi(invoice, { invoices = null, categories = [] } = {}) {
     }
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: categories });
     if (url.includes('rate-schemes')) return Promise.resolve({ results: [ADJ_SERVICE] });
+    if (url.includes('source-pool')) return Promise.resolve({ tasks: [] });
+    if (url.includes('agreement-adjustments')) return Promise.resolve({ adjustments: [] });
     return Promise.resolve({});
   });
 }
@@ -545,43 +547,6 @@ describe('InvoicePanel send gate', () => {
   });
 });
 
-// ─── hasBillables / Show Billables link ──────────────────────────────────────
-
-describe('InvoicePanel Show Billables link', () => {
-  it('shows "Show Billables" when job has fees (but no tasks or materials)', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    mockApi(makeInvoice({ status: 'draft' }));
-    const job = { ...JOB, tasks: [], materials: [], fees: [{ id: 1, description: 'Setup Fee' }] };
-    const { findByText } = render(InvoicePanel, { props: { job, invoiceId: 5 } });
-    expect(await findByText('Show Billables')).toBeInTheDocument();
-  });
-
-  it('shows "Show Billables" when job has tasks', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    mockApi(makeInvoice({ status: 'draft' }));
-    const job = { ...JOB, tasks: [{ id: 1, name: 'Cut' }], materials: [], fees: [] };
-    const { findByText } = render(InvoicePanel, { props: { job, invoiceId: 5 } });
-    expect(await findByText('Show Billables')).toBeInTheDocument();
-  });
-
-  it('shows "Show Billables" when job has materials', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    mockApi(makeInvoice({ status: 'draft' }));
-    const job = { ...JOB, tasks: [], materials: [{ id: 2, description: 'Steel' }], fees: [] };
-    const { findByText } = render(InvoicePanel, { props: { job, invoiceId: 5 } });
-    expect(await findByText('Show Billables')).toBeInTheDocument();
-  });
-
-  it('does NOT show "Show Billables" when job has no tasks, materials, or fees', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    mockApi(makeInvoice({ status: 'draft' }));
-    const job = { ...JOB, tasks: [], materials: [], fees: [] };
-    const { findByText, queryByText } = render(InvoicePanel, { props: { job, invoiceId: 5 } });
-    await findByText('Line Items');
-    expect(queryByText('Show Billables')).not.toBeInTheDocument();
-  });
-});
-
 // ─── Adjustment affordances ──────────────────────────────────────────────────
 
 describe('InvoicePanel adjustment affordances', () => {
@@ -631,90 +596,135 @@ describe('InvoicePanel adjustment affordances', () => {
   });
 });
 
-// ─── Line-item actions ────────────────────────────────────────────────────────
+// ─── Mode bar ─────────────────────────────────────────────────────────────────
 
-describe('InvoicePanel reconcile mode', () => {
+describe('InvoicePanel mode bar', () => {
   beforeEach(() => { localStorage.clear(); });
 
-  function mockReconcile(invoice) {
-    api.get.mockReset();
-    api.get.mockImplementation((url) => {
-      if (url === `/api/invoices/${invoice.invoice_id}/`) return Promise.resolve({ ...invoice });
-      if (url === `/api/invoices/${invoice.invoice_id}/line-items/`) return Promise.resolve([]);
-      if (url === `/api/invoices/${invoice.invoice_id}/source-pool/`) return Promise.resolve({ tasks: [] });
-      if (url === `/api/invoices/${invoice.invoice_id}/agreement-adjustments/`) return Promise.resolve({ adjustments: [] });
-      if (url.startsWith('/api/invoices/?job=')) return Promise.resolve({ results: [invoice] });
-      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
-      return Promise.resolve({});
-    });
-  }
+  const LINE = {
+    line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
+    price: '5', accounting_category: null, sources: [], backing: null,
+  };
 
-  it('flips to reconcile mode and persists the choice per docId', async () => {
+  it('offers Edit / Customer / Reorder — no wizard-era wording', async () => {
     user.set({ permissions: ['can_manage_financials'] });
-    mockReconcile(makeInvoice({ invoice_id: 5, status: 'draft' }));
-    const { findByRole, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
-    expect(await findByText('Send all to Invoice')).toBeInTheDocument();
-    expect(getJobWs(9).modes['inv:5']).toBe('reconcile');
-    expect(await findByRole('button', { name: 'Back to lines' })).toBeInTheDocument();
-  });
-
-  it('restores reconcile mode on mount for a draft doc when remembered', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    rememberMode(9, 'inv:5', 'reconcile');
-    mockReconcile(makeInvoice({ invoice_id: 5, status: 'draft' }));
+    mockApi(makeInvoice({ invoice_id: 5, status: 'draft', line_items: [LINE] }));
     const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    expect(await findByText('Send all to Invoice')).toBeInTheDocument();
+    await findByText('Line Items');
+    expect(await findByText('Edit')).toBeInTheDocument();
+    expect(await findByText('Customer')).toBeInTheDocument();
+    expect(await findByText('Reorder')).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Show Billables|Reconcile|Send all to Invoice/);
   });
 
-  it('restores lines (not reconcile) for a SENT doc even when reconcile was remembered', async () => {
+  it('does not offer Reorder when the invoice is not editable (sent)', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    mockApi(makeInvoice({ invoice_id: 5, status: 'open', line_items: [LINE] }));
+    const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Invoice: INV-5');
+    expect(await findByText('Customer')).toBeInTheDocument();
+    expect(queryByText('Reorder')).toBeNull();
+  });
+
+  it('switches between Edit / Customer / Reorder views in place and persists the choice per docId', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    mockApi(makeInvoice({ invoice_id: 5, status: 'draft', line_items: [LINE], total: '10.00' }));
+    const { container, findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Cut');
+
+    const modeBar = () => container.querySelector('.doc-mode-bar');
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Customer' }));
+    expect(await findByText('Invoice INV-5')).toBeInTheDocument();
+    expect(queryByText('Add Line Item')).toBeNull();
+    expect(getJobWs(9).modes['inv:5']).toBe('customer');
+
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Reorder' }));
+    expect(container.querySelectorAll('.doc-reorder-arrows').length).toBeGreaterThan(0);
+    expect(getJobWs(9).modes['inv:5']).toBe('reorder');
+
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Edit' }));
+    expect(await findByText('Add Line Item')).toBeInTheDocument();
+    expect(getJobWs(9).modes['inv:5']).toBe('edit');
+  });
+
+  it('normalizes a remembered "reconcile" (old wizard toggle) to Edit mode', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     rememberMode(9, 'inv:5', 'reconcile');
-    mockReconcile(makeInvoice({ invoice_id: 5, status: 'open' }));
-    const { findByText, queryByText, queryByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    await findByText('Line Items');
-    expect(queryByText('Send all to Invoice')).toBeNull();
-    expect(queryByRole('button', { name: 'Reconcile' })).toBeNull();
-    expect(queryByRole('button', { name: 'Back to lines' })).toBeNull();
+    mockApi(makeInvoice({ invoice_id: 5, status: 'draft', line_items: [LINE] }));
+    const { container, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Add Line Item');
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('reloads the invoice when flipping back to lines', async () => {
+  it('normalizes a remembered "lines" (old two-mode panel) to Edit mode', async () => {
     user.set({ permissions: ['can_manage_financials'] });
-    mockReconcile(makeInvoice({ invoice_id: 5, status: 'draft' }));
-    const { findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
-    await findByRole('button', { name: 'Back to lines' });
-    const before = api.get.mock.calls.filter(([u]) => u === '/api/invoices/5/').length;
-    await fireEvent.click(await findByRole('button', { name: 'Back to lines' }));
-    expect(api.get.mock.calls.filter(([u]) => u === '/api/invoices/5/').length).toBeGreaterThan(before);
-    expect(getJobWs(9).modes['inv:5']).toBe('lines');
+    rememberMode(9, 'inv:5', 'lines');
+    mockApi(makeInvoice({ invoice_id: 5, status: 'draft', line_items: [LINE] }));
+    const { container, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Add Line Item');
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('does NOT restore from an ESTIMATE with the same numeric id (namespaced keys)', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    rememberMode(9, 'est:5', 'reorder');
+    mockApi(makeInvoice({ invoice_id: 5, status: 'draft', line_items: [LINE] }));
+    const { container, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Add Line Item');
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('falls back to Edit when "reorder" was remembered but the invoice is no longer editable', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    rememberMode(9, 'inv:5', 'reorder');
+    mockApi(makeInvoice({ invoice_id: 5, status: 'open', line_items: [LINE] }));
+    const { container, findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Cut');
+    expect(queryByText('Add Line Item')).toBeNull(); // not editable, but still Edit mode
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).queryByRole('button', { name: 'Reorder' })).toBeNull();
   });
 });
 
 describe('InvoicePanel line-item actions', () => {
-  it('Delete on a line calls the line-item delete endpoint', async () => {
+  it('"Remove from invoice" on a line calls the line-item delete endpoint', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     mockApi(makeInvoice({ status: 'draft', line_items: [
       { line_item_id: 42, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
-        price: '5', accounting_category: null, sources: [] },
+        price: '5', accounting_category: null, sources: [], backing: null },
     ] }));
-    api.delete.mockResolvedValue({ message: 'deleted' });
+    api.delete.mockResolvedValue({ message: 'Line item deleted.' });
     const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    const deleteBtn = await findByText('Delete');
-    await fireEvent.click(deleteBtn);
+    const removeBtn = await findByText('Remove from invoice');
+    await fireEvent.click(removeBtn);
     expect(api.delete).toHaveBeenCalledWith('/api/invoices/5/line-items/42/');
   });
 
-  it('hides Edit/Delete when canEditLineItems is false (not draft)', async () => {
+  it('hides Edit…/Remove when canEditLineItems is false (not draft)', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     mockApi(makeInvoice({ status: 'open', line_items: [
       { line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
-        price: '5', accounting_category: null, sources: [] },
+        price: '5', accounting_category: null, sources: [], backing: null },
     ] }));
     const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Cut');
-    expect(queryByText('Edit')).toBeNull();
-    expect(queryByText('Delete')).toBeNull();
+    expect(queryByText('Edit…')).toBeNull();
+    expect(queryByText('Remove from invoice')).toBeNull();
+  });
+
+  it('never renders the word "delete" anywhere in the edit view', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    mockApi(makeInvoice({ status: 'draft', line_items: [
+      { line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
+        price: '5', accounting_category: null, sources: [], backing: null },
+    ] }));
+    const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Cut');
+    expect(queryByText(/delete/i)).toBeNull();
   });
 });
 

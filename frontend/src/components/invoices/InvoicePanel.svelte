@@ -2,16 +2,15 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
   import { canManageFinancials } from '../../stores/permissions.js';
-  import { triageError } from '../../lib/errorTriage.js';
   import { unappliedDepositCredits } from '../../lib/depositCredits.js';
-  import LineItemTable from '../LineItemTable.svelte';
-  import LineItemModal from '../LineItemModal.svelte';
-  import AdjustmentModal from '../AdjustmentModal.svelte';
-  import PriceListPicker from '../PriceListPicker.svelte';
-  import InvoiceAddLineForm from './InvoiceAddLineForm.svelte';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { formatQtyUnits } from '../../lib/format.js';
   import DepositInvoiceModal from './DepositInvoiceModal.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
-  import ReconcileMode from '../wizards/ReconcileMode.svelte';
+  import DocModeBar from '../docsurface/DocModeBar.svelte';
+  import DocCustomerView from '../docsurface/DocCustomerView.svelte';
+  import DocReorderView from '../docsurface/DocReorderView.svelte';
+  import InvoiceEditView from './InvoiceEditView.svelte';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
 
   let { job, invoiceId, onJobChange = () => {} } = $props();
@@ -20,43 +19,34 @@
   let invoices = $state([]); // this job's invoices (raw /api/invoices/?job= results)
   let listLoaded = $state(false);
   let categories = $state([]);
+  let sourcePool = $state(null);
   let docLoading = $state(true);
   let error = $state('');
-  let success = $state(null);
 
   let canEditLineItems = $derived($canManageFinancials && invoice?.status === 'draft');
-  // "Show Billables" when the job has anything billable to pull from — tasks,
-  // materials, OR fees. (JobSerializer exposes all three.) The pool may still be
-  // empty of logged actuals — that's fine, we still offer the wizard view.
-  let hasBillables = $derived(
-    (job?.tasks?.length ?? 0) > 0 ||
-    (job?.materials?.length ?? 0) > 0 ||
-    (job?.fees?.length ?? 0) > 0
-  );
   // Revise placeholder: visible on sent invoices, not yet functional.
   let canSeeRevise = $derived(
     $canManageFinancials && (invoice?.status === 'open' || invoice?.status === 'partly-paid')
   );
 
-  let modalOpen = $state(false);
-  let modalMode = $state('edit');
-  let modalItem = $state(null);
-  let adjustmentModalOpen = $state(false);
-  let pickerOpen = $state(false);
-  let addChoice = $state(null);
   let depositModalOpen = $state(false);
 
-  // Reconcile (wizard) is a mode of this panel, not a separate route. Initial
-  // mode comes from the per-doc workspace memory, but is validated against the
-  // live doc: reconcile is only restorable while the invoice is still an
-  // editable draft (someone may have sent it since the mode was remembered).
-  let mode = $state('lines');
+  // The mode bar is a surface of this panel, not a separate route. Initial
+  // mode comes from the per-doc workspace memory; legacy remembered values
+  // ('lines' from the old two-mode panel, 'reconcile' from the old wizard
+  // toggle) normalize to 'edit' here at the read site — the store itself
+  // keeps whatever was written, unmigrated. Reorder is only restorable while
+  // the invoice is still an editable draft (someone may have sent it since
+  // the mode was remembered).
+  let mode = $state('edit');
   let modeInitializedFor = $state(null);
+  let modes = $derived(canEditLineItems ? ['edit', 'customer', 'reorder'] : ['edit', 'customer']);
   $effect(() => {
     if (invoice && String(invoice.invoice_id) === String(invoiceId)
         && modeInitializedFor !== String(invoiceId)) {
-      const remembered = getJobWs(job?.job_id).modes[`inv:${invoiceId}`] ?? 'lines';
-      mode = (remembered === 'reconcile' && canEditLineItems) ? 'reconcile' : 'lines';
+      const remembered = getJobWs(job?.job_id).modes[`inv:${invoiceId}`] ?? 'edit';
+      const normalized = (remembered === 'lines' || remembered === 'reconcile') ? 'edit' : remembered;
+      mode = (normalized === 'reorder' && !canEditLineItems) ? 'edit' : normalized;
       modeInitializedFor = String(invoiceId);
     }
   });
@@ -64,16 +54,6 @@
   function setMode(next) {
     mode = next;
     rememberMode(job?.job_id, `inv:${invoiceId}`, next);
-    // Returning to lines must show fresh data — reconcile mode may have
-    // mutated the invoice's line items. It can also claim/release a deposit
-    // credit (an "Add Here" pull creates the deduction line's source row),
-    // which changes the job-scoped `invoices` list the unapplied-deposit-
-    // credit notice is derived from — refresh that too, not just the single
-    // invoice.
-    if (next === 'lines') {
-      loadInvoice();
-      loadInvoices();
-    }
   }
 
   let lineItems = $derived(
@@ -84,35 +64,34 @@
     lineItems.every(li => li.accounting_category != null)
   );
 
-  async function applyEverything() {
+  // Doc-shaped rows for the read-only Customer/Reorder kit views — ALL lines
+  // including adjustments, numbered as stored.
+  let docLines = $derived(
+    lineItems.map((li) => ({
+      line_id: li.line_item_id,
+      line_number: li.line_number,
+      description: li.description,
+      qty_display: formatQtyUnits(li.qty, li.units),
+      price: li.price,
+      amount: Number(li.qty || 0) * Number(li.price || 0),
+    }))
+  );
+
+  async function handleReorderDoc(lineId, direction) {
+    const ids = lineItems.map((li) => li.line_item_id);
+    const idx = ids.indexOf(lineId);
+    if (idx === -1) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= ids.length) return;
+    [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
     try {
-      await api.post(`/api/invoices/${invoice.invoice_id}/apply-everything/`, {});
+      await api.post(`/api/invoices/${invoice.invoice_id}/line-items/reorder/`, {
+        item_ids: ids,
+      });
       await loadInvoice();
     } catch (e) {
-      // api.js surfaces error overlay automatically; nothing to do here
+      showError(errorMessage(e, 'Could not reorder line items.'));
     }
-  }
-
-  async function copyFromEstimate() {
-    try {
-      await api.post(`/api/invoices/${invoice.invoice_id}/copy-from-estimate/`, {});
-      await loadInvoice();
-    } catch (e) {
-      // api.js surfaces error overlay automatically; nothing to do here
-    }
-  }
-
-  function openAddItem() { pickerOpen = true; }
-  function openEditItem(li) { modalItem = li; modalMode = 'edit'; modalOpen = true; }
-  function handleSaved() { modalOpen = false; modalItem = null; loadInvoice(); }
-
-  function handleChoose(choice) {
-    pickerOpen = false;
-    addChoice = choice;
-  }
-  function handleLineAdded() {
-    addChoice = null;
-    loadInvoice();
   }
 
   // Gates the deposit modal's enabled state: only offer it once an active
@@ -158,49 +137,52 @@
     return Number(li.qty) * Number(li.price);
   }
 
-  async function handleDeleteItem(li) {
-    // No confirm: draft-only line edit, re-addable by hand.
-    try {
-      await api.delete(`/api/invoices/${invoice.invoice_id}/line-items/${li.line_item_id}/`);
-      await loadInvoice();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not delete line item.'));
+  // `silent`: post-gesture refreshes from InvoiceEditView (add-atoms,
+  // create-a-line, remove, adjustments...) must NOT flip docLoading — that
+  // would swap the `{#if docLoading}` branch to "Loading…", destroying and
+  // remounting InvoiceEditView on every single gesture and losing its local
+  // state (the just-opened edit modal, the in-progress atom selection, the
+  // struck removed-line rows). A silent failure doesn't blank the surface
+  // either — it reports through the global overlay and leaves the
+  // last-good doc on screen, same as any other form-less background
+  // refresh (see EstimatePanel.loadEstimate).
+  async function loadInvoice({ silent = false } = {}) {
+    if (!silent) {
+      docLoading = true;
+      error = '';
     }
-  }
-
-  async function handleReorder(itemIds) {
-    try {
-      await api.post(`/api/invoices/${invoice.invoice_id}/line-items/reorder/`, { item_ids: itemIds });
-      await loadInvoice();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not reorder line items.'));
-    }
-  }
-
-  function moveUp(index) {
-    if (index === 0) return;
-    const ids = lineItems.map(li => li.line_item_id);
-    [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
-    handleReorder(ids);
-  }
-
-  function moveDown(index) {
-    if (index >= lineItems.length - 1) return;
-    const ids = lineItems.map(li => li.line_item_id);
-    [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
-    handleReorder(ids);
-  }
-
-  async function loadInvoice() {
-    docLoading = true;
-    error = '';
     try {
       invoice = await api.get(`/api/invoices/${invoiceId}/`);
     } catch (e) {
-      error = e.message || 'Could not load invoice.';
+      if (silent) {
+        showError(errorMessage(e, 'Could not refresh the invoice.'));
+      } else {
+        error = e.message || 'Could not load invoice.';
+      }
     } finally {
-      docLoading = false;
+      if (!silent) docLoading = false;
     }
+  }
+
+  async function loadSourcePool() {
+    try {
+      sourcePool = await api.get(`/api/invoices/${invoiceId}/source-pool/`);
+    } catch (_) {
+      sourcePool = { tasks: [] };
+    }
+  }
+
+  // InvoiceEditView is presentation + gestures only — every mutation it
+  // makes (add/remove atoms, add/edit/remove a line, adjustments, backing
+  // controls, deposit credits) calls back here so the doc and the
+  // uncovered-work pool stay in sync. Silent: see loadInvoice's comment
+  // above — InvoiceEditView awaits this to look up the fresh copy of a
+  // just-created line, so it must resolve without ever tearing the view
+  // down mid-gesture. Also refreshes the job-scoped `invoices` list — a
+  // deposit-credit pull or line removal changes what the unapplied-credit
+  // notice above should show.
+  async function handleEditChanged() {
+    await Promise.all([loadInvoice({ silent: true }), loadSourcePool(), loadInvoices()]);
   }
 
   // Value-keyed: the glue (JobInvoicePage) assigns a new `job` object on
@@ -234,6 +216,7 @@
   $effect(() => {
     if (invoiceId) {
       loadInvoice();
+      loadSourcePool();
     }
   });
 
@@ -392,18 +375,7 @@
         Revise (coming soon)
       </button>
     {/if}
-    {#if canEditLineItems}
-      {#if mode === 'reconcile'}
-        <button type="button" onclick={() => setMode('lines')}>Back to lines</button>
-      {:else}
-        <button type="button" onclick={() => setMode('reconcile')}>Reconcile</button>
-      {/if}
-    {/if}
   </div>
-
-  {#if success}
-    <p class="success-msg">{success}</p>
-  {/if}
 
   <table class="data-table">
     <tbody>
@@ -424,14 +396,6 @@
     </tbody>
   </table>
 
-  {#if mode === 'reconcile'}
-    <ReconcileMode
-      docType="invoice"
-      docId={invoice.invoice_id}
-      onChanged={loadInvoice}
-      onExit={() => setMode('lines')}
-    />
-  {:else}
   {#if invoice.status === 'draft' && unappliedCredits.length > 0}
     <div class="deposit-credit-notice">
       {#each unappliedCredits as credit (credit.lineItem.line_item_id)}
@@ -447,75 +411,31 @@
       {/each}
     </div>
   {/if}
-  <h3>Line Items</h3>
-  {#if canEditLineItems}
-    {#if lineItems.length === 0}
-      <p class="seed-buttons">
-        <button type="button" onclick={applyEverything}>Apply everything</button>
-        <button
-          type="button"
-          onclick={copyFromEstimate}
-          disabled={invoice.job_has_other_invoices}
-          title={invoice.job_has_other_invoices ? 'Not available once another invoice exists for this job' : undefined}
-        >Copy from estimate</button>
-      </p>
-    {/if}
-    <p>
-      <button type="button" onclick={openAddItem}>Add Line Item</button>
-      <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
-      {#if hasBillables}
-        <button type="button" onclick={() => setMode('reconcile')}>Show Billables</button>
-      {/if}
-    </p>
-  {/if}
 
-  {#snippet actionsSnippet(li, i)}
-    <button type="button" onclick={() => openEditItem(li)}>Edit</button>
-    <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
-    <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
-    <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
-  {/snippet}
+  <DocModeBar {mode} onMode={setMode} {modes} />
 
-  <LineItemTable
-    {lineItems}
-    {categories}
-    showSource={true}
-    canEdit={canEditLineItems}
-    actions={canEditLineItems ? actionsSnippet : null}
-  />
-
-  <PriceListPicker
-    open={pickerOpen}
-    onChoose={handleChoose}
-    onclose={() => { pickerOpen = false; }}
-  />
-
-  <InvoiceAddLineForm
-    open={addChoice != null}
-    choice={addChoice}
-    invoiceId={invoice.invoice_id}
-    {categories}
-    onSaved={handleLineAdded}
-    onClose={() => { addChoice = null; }}
-  />
-
-  <LineItemModal
-    open={modalOpen}
-    mode={modalMode}
-    apiBase={`/api/invoices/${invoice.invoice_id}`}
-    item={modalItem}
-    {categories}
-    onSaved={handleSaved}
-    onClose={() => { modalOpen = false; }}
-  />
-
-  <AdjustmentModal
-    open={adjustmentModalOpen}
-    apiBase={`/api/invoices/${invoice.invoice_id}`}
-    {categories}
-    onSaved={() => { adjustmentModalOpen = false; loadInvoice(); }}
-    onClose={() => { adjustmentModalOpen = false; }}
-  />
+  {#if mode === 'edit'}
+    <InvoiceEditView
+      {invoice}
+      canEdit={canEditLineItems}
+      onChanged={handleEditChanged}
+      {sourcePool}
+      {lineItems}
+      {categories}
+    />
+  {:else if mode === 'customer'}
+    <DocCustomerView
+      title={`Invoice ${invoice.display_number}`}
+      lines={docLines}
+      grandTotal={Number(invoice.total)}
+    />
+  {:else if mode === 'reorder'}
+    <DocReorderView
+      title={`Invoice ${invoice.display_number}`}
+      lines={docLines}
+      grandTotal={Number(invoice.total)}
+      onReorder={handleReorderDoc}
+    />
   {/if}
   </div>
   {/if}
@@ -571,9 +491,6 @@
   /* Status pill styling and colors come from the global .status-badge /
      .status-{status} classes (app.css). */
   .late-flag { color: #b91c1c; font-weight: 600; }
-  /* Content aligns to the .page-body gutter (like EstimatePanel and the
-     toolbar) — no extra horizontal inset. */
-  .success-msg { padding: 8px 0; color: #166534; }
   .send-blocked { opacity: 0.5; cursor: not-allowed; }
   .send-blocked-note { font-size: 12px; color: #6b7280; }
   /* Unapplied deposit credit notice — same boxed-banner vocabulary as
