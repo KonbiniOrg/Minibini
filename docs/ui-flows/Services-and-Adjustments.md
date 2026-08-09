@@ -35,13 +35,13 @@ algorithm, **`percentage`**, is a *document adjustment*: its `rate` is a percent
 invoice as its own line whose amount = `percent × (sum of the other lines it targets)`,
 scoped by accounting category. The amount **recalculates while the document is a draft
 and freezes when the document is sent/finalized**. Agreement adjustments surface in the
-invoice wizard so they can't be missed when billing. See
+draft invoice's Agreement Adjustments panel so they can't be missed when billing. See
 `docs/designs/estimates-and-prices.md` §2-§3 (preset semantics + stamping) and §10.3
 (adjustment-percent snapshots).
 
 > **Scope — what to test now vs. what's coming (Phase 8 deferred).** Today,
 > adjustments are **document-scoped**: you add one per **draft estimate** and again per
-> **draft invoice** (the **Add Adjustment** button, §3/§7), and the invoice wizard's
+> **draft invoice** (the **Add Adjustment** button, §3/§7), and the draft invoice's
 > **Agreement Adjustments** panel (§8) pulls the accepted estimate's adjustments onto an
 > invoice. **That is the current, shippable behavior this doc covers — test it as
 > written.** **Phase 8 ("job-scoped, auto-applied adjustments") is deferred and NOT
@@ -63,7 +63,7 @@ invoice wizard so they can't be missed when billing. See
   (scoped to that job). Can add adjustments on that job's **draft estimates**; can write
   a task's money fields (rate/unit/category/modifiers) at create and edit time (§2).
 - **Financials** — holds `can_manage_financials`. Can add adjustments on
-  **draft invoices** and use the invoice wizard's Agreement Adjustments panel; shares
+  **draft invoices** and use the draft invoice's Agreement Adjustments panel; shares
   the same task money-field write access as Jobs/PM.
 - **Config** — holds `can_manage_config`. Creates/edits/retires/reactivates **Rate
   Schemes** (and Service Items) in Settings → Catalog. *(Creating a Service Item is
@@ -102,8 +102,8 @@ Without these, whole branches below are silent no-ops:
   **Show Tasks & Materials** wizard — see `Add-Line-and-Work-Authoring.md`; the
   old worksheet/"Plan" layer was removed in the job-owns-atoms refactor.)*
 - [ ] **An accepted Estimate that carries a percentage adjustment**, plus a
-  **draft Invoice** on the same Job — required for the agreement-surfacing /
-  wizard panel (§8).
+  **draft Invoice** on the same Job — required for the agreement-surfacing
+  Agreement Adjustments panel (§8).
 - [ ] **Four users** — worker, a `can_manage_jobs` user (and/or a Job whose PM is
   a non-atom user), a `can_manage_financials` user, and a `can_manage_config`
   user.
@@ -267,26 +267,33 @@ Adjustment** shows only when `can_manage_financials` **and** the invoice is
   Adjustment on an **invoice** (that's financials); a `can_manage_financials`
   user does.
 
-## 8. Invoice wizard — Agreement Adjustments panel
+## 8. Agreement Adjustments panel (invoice Edit mode)
 
-Entry: from invoice detail, **Show Billables** → invoice wizard
-(`#/invoices/{id}/wizard`). This surfaces adjustments from the **agreement of
-record** (the accepted estimate + accepted change orders) so they aren't missed —
-and it works **whether or not the invoice was built from the estimate**.
+Entry: any **draft** invoice's **Edit** mode (`InvoiceEditView.svelte`) —
+the **Agreement Adjustments** panel renders at the bottom of the surface,
+below the uncovered-work section, whenever the panel has something to
+show. There is no separate wizard route to open first: the old **"Show
+Billables" → invoice wizard** entry path is retired (the wizard merged
+into this one edit surface — see `Invoice-Seeding-and-Send.md`). The
+panel surfaces adjustments from the **agreement of record** (the
+accepted estimate + accepted change orders) so they aren't missed — and
+it works **whether or not the invoice was built from the estimate**.
 
 > *This whole panel is the current document-scoped carry-over mechanism and is
 > slated to be **replaced** by Phase 8's job-scoped auto-apply (deferred). Test it as
 > written for now.*
 
 - [ ] **Panel lists agreement adjustments.** With an accepted estimate that
-  carried a rush adjustment, the wizard shows an **"Agreement Adjustments"** panel
-  listing that rush (description + percent) with an **Add** button.
+  carried a rush adjustment, opening the invoice's Edit mode shows an
+  **"Agreement Adjustments"** panel listing that rush (description + percent)
+  with an **Add** button.
 - [ ] **Add drops it onto the invoice.** Click **Add** → an adjustment line is
   created on the invoice (recomputed against the **invoice's own** lines, which
   may differ from the estimate's), and the panel entry flips to **Added**
   (disabled).
-- [ ] **Already-on-invoice shows Added.** Re-opening the wizard, an adjustment the
-  invoice already has shows **Added** (disabled), not **Add**.
+- [ ] **Already-on-invoice shows Added.** Reloading (or re-navigating back to)
+  the invoice, an adjustment it already has shows **Added** (disabled), not
+  **Add**.
 - [ ] **Not in the atom pool.** The agreement adjustment appears **only** in the
   Agreement Adjustments panel — **not** mixed into the billable-atoms source pool
   (it isn't work/goods done).
@@ -327,7 +334,7 @@ and it works **whether or not the invoice was built from the estimate**.
 | Adjustment scope | whole-order (empty target) · single category · multi-category · no stacking |
 | Sign | positive (rush) · negative (discount) |
 | Lifecycle | add (draft) · auto-recompute on every mutation (draft) · freeze on send/finalize · revision preserves |
-| Surface | estimate detail/Client View · invoice detail · invoice wizard Agreement panel (path-independent) · NOT atom pool |
+| Surface | estimate detail/Client View · invoice detail · invoice Edit-mode Agreement Adjustments panel (path-independent) · NOT atom pool |
 | Persona | worker (stamp-only, no money writes) · jobs/PM (estimate + task money) · financials (invoice + task money) · config (Rate Schemes manager) |
 | Guards | non-draft hides adjustment controls · percentage rejected on task (`ValueError`/400) + picker filter (fixed in `WorkItemForm`, still gapped in `ServiceItemManager`) · negative-rate non-percentage rejected |
 | Display | badge shows percent + rate scheme + categories (no `NaN%`/`undefined`) · adjustment row distinct · sorted last |
