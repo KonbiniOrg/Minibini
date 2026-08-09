@@ -15,13 +15,13 @@ beforeEach(() => {
 });
 
 describe('InvoiceWizardRedirect shim', () => {
-  it('fetches the invoice, remembers reconcile mode, then replaces the hash with the job-scoped URL', async () => {
+  it('fetches the invoice, remembers edit mode, then replaces the hash with the job-scoped URL', async () => {
     api.get.mockResolvedValue({ invoice_id: 1, job: 9 });
 
     render(InvoiceWizardRedirect, { props: { params: { id: '1' } } });
 
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/api/invoices/1/'));
-    await waitFor(() => expect(rememberMode).toHaveBeenCalledWith(9, 'inv:1', 'reconcile'));
+    await waitFor(() => expect(rememberMode).toHaveBeenCalledWith(9, 'inv:1', 'edit'));
     await waitFor(() => expect(window.location.hash).toBe('#/jobs/9/invoice/1'));
   });
 

@@ -324,10 +324,8 @@
     }
   }
 
-  // ── Deposit credits — re-homed from the retiring wizard's generic pool
-  // rendering (WizardSourcePool mixed every pool group, including "Deposit
-  // credits", into one undifferentiated checklist). Pulling a credit is a
-  // distinct gesture from billing an atom (it creates a deduction line
+  // ── Deposit credits — dedicated to one-click deduction. Pulling a credit is
+  // a distinct gesture from billing an atom (it creates a deduction line
   // against money already collected, not a claim on job work) so it gets
   // its own section and a direct one-click action rather than the
   // select-then-merge flow above. ──────────────────────────────────────────
