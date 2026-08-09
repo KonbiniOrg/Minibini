@@ -363,20 +363,16 @@
       </div>
       <div class="stat-chip">
         <div class="stat-chip-header">Sent</div>
-        <div class="stat-chip-body"><span class:muted={!estimate.sent_date}>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'not sent'}</span></div>
+        <div class="stat-chip-body"><span class:muted={!estimate.sent_date}>{estimate.sent_date ? fmtDate(estimate.sent_date) : '-'}</span></div>
       </div>
-      {#if estimate.expiration_date}
-        <div class="stat-chip">
-          <div class="stat-chip-header">Expires</div>
-          <div class="stat-chip-body">{fmtDate(estimate.expiration_date)}</div>
-        </div>
-      {/if}
-      {#if estimate.closed_date}
-        <div class="stat-chip">
-          <div class="stat-chip-header">Closed</div>
-          <div class="stat-chip-body">{fmtDate(estimate.closed_date)}</div>
-        </div>
-      {/if}
+      <div class="stat-chip">
+        <div class="stat-chip-header">Expires</div>
+        <div class="stat-chip-body"><span class:muted={!estimate.expiration_date}>{estimate.expiration_date ? fmtDate(estimate.expiration_date) : '-'}</span></div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Closed</div>
+        <div class="stat-chip-body"><span class:muted={!estimate.closed_date}>{estimate.closed_date ? fmtDate(estimate.closed_date) : '-'}</span></div>
+      </div>
     </div>
   </div>
 

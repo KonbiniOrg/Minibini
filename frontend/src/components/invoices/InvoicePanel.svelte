@@ -386,32 +386,30 @@
       </div>
       <div class="stat-chip">
         <div class="stat-chip-header">Sent</div>
-        <div class="stat-chip-body"><span class:muted={!invoice.sent_date}>{invoice.sent_date ? fmtDate(invoice.sent_date) : 'not sent'}</span></div>
+        <div class="stat-chip-body"><span class:muted={!invoice.sent_date}>{invoice.sent_date ? fmtDate(invoice.sent_date) : '-'}</span></div>
       </div>
-      {#if invoice.due_date}
-        <div class="stat-chip">
-          <div class="stat-chip-header">Due</div>
-          <div class="stat-chip-body">{fmtDate(invoice.due_date)}{#if invoice.is_late} <span class="late-flag">(late)</span>{/if}</div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Due</div>
+        <div class="stat-chip-body">
+          {#if invoice.due_date}{fmtDate(invoice.due_date)}{#if invoice.is_late} <span class="late-flag">(late)</span>{/if}{:else}<span class="muted">-</span>{/if}
         </div>
-      {/if}
-      {#if invoice.closed_date}
-        <div class="stat-chip">
-          <div class="stat-chip-header">Paid</div>
-          <div class="stat-chip-body">{fmtDate(invoice.closed_date)}</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Paid</div>
+        <div class="stat-chip-body"><span class:muted={!invoice.closed_date}>{invoice.closed_date ? fmtDate(invoice.closed_date) : '-'}</span></div>
+      </div>
+      <div class="stat-chip" title={invoice.qbo_id ? `QBO ID ${invoice.qbo_id}` : undefined}>
+        <div class="stat-chip-header">QBO</div>
+        <div class="stat-chip-body">
+          {#if invoice.qbo_id}{invoice.qbo_payment_status || 'Pending'}{:else}<span class="muted">-</span>{/if}
         </div>
-      {/if}
-      {#if invoice.qbo_id}
-        <div class="stat-chip" title={`QBO ID ${invoice.qbo_id}`}>
-          <div class="stat-chip-header">QBO</div>
-          <div class="stat-chip-body">{invoice.qbo_payment_status || 'Pending'}</div>
+      </div>
+      <div class="stat-chip money" title={invoice.qbo_id ? `QBO ID ${invoice.qbo_id}` : undefined}>
+        <div class="stat-chip-header">Amount paid</div>
+        <div class="stat-chip-body">
+          {#if invoice.qbo_amount_paid}${Number(invoice.qbo_amount_paid).toFixed(2)}{:else}<span class="muted">-</span>{/if}
         </div>
-        {#if invoice.qbo_amount_paid}
-          <div class="stat-chip money" title={`QBO ID ${invoice.qbo_id}`}>
-            <div class="stat-chip-header">Amount paid</div>
-            <div class="stat-chip-body">${Number(invoice.qbo_amount_paid).toFixed(2)}</div>
-          </div>
-        {/if}
-      {/if}
+      </div>
     </div>
   </div>
 
