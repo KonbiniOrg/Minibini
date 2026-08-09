@@ -570,6 +570,12 @@ Phased, each phase leaving main green:
    invoice lines' stored values); unclaimed job fees are surfaced to RM
    for manual disposition before the migration (expected count: small).
    `validate_data` sweep updated in the same phase.
+   *(LANDED 2026-08-09: acceptance/CO discriminator narrowed to
+   service_item → Task, inventory_item → Material, is_material →
+   Material, else → nothing; `Fee` model deleted (migrations
+   `estimates/0045`, `invoicing/0024`, `jobs/0062`); plain hand-lines
+   never crystallize and stay document lines, transiting to invoices via
+   agreement-line references instead of a Fee atom.)*
 6. **Phase 3 + Phase 5 adoption** (re-implement or cherry-pick per §2).
 7. **Docs pass**: estimates-and-prices, jobs-and-tasks,
    invoicing-and-expenses, data-constraints, schedule.

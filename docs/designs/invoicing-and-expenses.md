@@ -5,7 +5,7 @@ The customer-facing billing side of Minibini and the employee/company expense le
 ## What this doc owns
 
 - The `Invoice`, `InvoiceLineItem`, and `InvoiceLineItemSource` models.
-- The invoice wizard (re-aggregating the job's atoms — `Task`, `Material`, plus `Fee` and `Expense` claims — into invoice line items).
+- The invoice wizard (re-aggregating the job's atoms — `Task`, `Material`, plus `Expense` claims — into invoice line items).
 - Agreement-line references, auto-seeding, and the derived `backing`
   model (the invoice side of the three-mode surface built from the
   shared `docsurface` kit — see `estimates-and-prices.md` §12 for the
@@ -173,29 +173,28 @@ Migration: `apps/invoicing/migrations/0023_invoicelineitem_agreement_co_line_and
 
 ### InvoiceLineItemSource
 
-Polymorphic join between `InvoiceLineItem` and the job atom it represents (a `Task`, `Material`, `Fee`, or `Expense`) — or, for `source_type='deposit'`, another `InvoiceLineItem` (see Deposits below). "Polymorphic" only in the sense that the atom side may be one of several model types; this is not a Django generic relation.
+Polymorphic join between `InvoiceLineItem` and the job atom it represents (a `Task`, `Material`, or `Expense`) — or, for `source_type='deposit'`, another `InvoiceLineItem` (see Deposits below). "Polymorphic" only in the sense that the atom side may be one of several model types; this is not a Django generic relation.
 
 | Field | Type | Notes |
 |---|---|---|
 | `source_id` | AutoField PK | |
 | `invoice_line_item` | FK InvoiceLineItem (CASCADE) | `related_name='sources'`. |
-| `source_type` | CharField(20), choices `'task'` / `'material'` / `'fee'` / `'expense'` / `'deposit'` | `SOURCE_TASK`, `SOURCE_MATERIAL`, `SOURCE_FEE`, `SOURCE_EXPENSE`, `SOURCE_DEPOSIT`. |
-| `source_pk` | PositiveIntegerField | The `Task.pk` / `Material.pk` / `Fee.pk` / `Expense.pk` — or, for `'deposit'`, the **deposit `InvoiceLineItem.pk`** being claimed (`resolve()` looks it up on `InvoiceLineItem` itself rather than a Job-atom model). |
+| `source_type` | CharField(20), choices `'task'` / `'material'` / `'expense'` / `'deposit'` | `SOURCE_TASK`, `SOURCE_MATERIAL`, `SOURCE_EXPENSE`, `SOURCE_DEPOSIT`. |
+| `source_pk` | PositiveIntegerField | The `Task.pk` / `Material.pk` / `Expense.pk` — or, for `'deposit'`, the **deposit `InvoiceLineItem.pk`** being claimed (`resolve()` looks it up on `InvoiceLineItem` itself rather than a Job-atom model). |
 
 `db_table = 'invoice_line_item_sources'`.
-`unique_together = [('source_type', 'source_pk')]` — DB-level enforcement of whole-atom claim. An atom cannot appear in two `InvoiceLineItemSource` rows. For `'deposit'` rows this is what makes the credit **unsplittable**: a paid deposit line can be claimed by at most one deduction, ever (see Deposits below) — the same mechanism that blocks double-billing a Task/Material/Fee/Expense, applied to a deposit line instead of a Job atom.
+`unique_together = [('source_type', 'source_pk')]` — DB-level enforcement of whole-atom claim. An atom cannot appear in two `InvoiceLineItemSource` rows. For `'deposit'` rows this is what makes the credit **unsplittable**: a paid deposit line can be claimed by at most one deduction, ever (see Deposits below) — the same mechanism that blocks double-billing a Task/Material/Expense, applied to a deposit line instead of a Job atom.
 
-`InvoiceLineItemSource.resolve()` returns the concrete `Task` / `Material` / `Fee` / `Expense` instance.
+`InvoiceLineItemSource.resolve()` returns the concrete `Task` / `Material` / `Expense` instance.
 
 ### Atoms — same Job atoms as the estimate
 
-Both the estimate and the invoice are **lenses** over the **same Job atoms** (see `estimates-and-prices.md` §7) — `Task`, `Material`, `Fee` — plus, invoice-only, material-less `Expense`s.
+Both the estimate and the invoice are **lenses** over the **same Job atoms** (see `estimates-and-prices.md` §7) — `Task`, `Material` — plus, invoice-only, material-less `Expense`s. (The `Fee` atom was retired with the `Fee` model, 2026-08 — a plain hand-line no longer crystallizes into a job atom on accept; it transits to an invoice via agreement-line references instead — see "No fee-claim-on-copy" and "Agreement-line references and seeding" below.)
 
 | Atom | Invoice billable amount | Billable when |
 |---|---|---|
 | `Task` | `task.compute_amount()` — actuals (bleps / `actual_qty`) via the `RateScheme` | `status == complete` |
 | `Material` | `quantity × sell_price` | `consumption_state == consumed` |
-| `Fee` | `quantity × unit_rate` | always |
 | `Expense` (material-less) | the expense amount | always (submitted) |
 
 See `InvoiceWizardService._atom_computed_amount`. The estimate side projects `est_qty` (`Task.compute_estimate_amount`) instead — the lens difference.
@@ -210,7 +209,7 @@ When the wizard hits a race, `InvoiceWizardService` catches `IntegrityError` and
 
 - Deleting an `InvoiceLineItem` deletes its `InvoiceLineItemSource` rows (CASCADE).
 - Deleting an `Invoice` cascades to its line items, then to their sources. All claimed atoms become available again.
-- Deleting a `Task` / `Material` / `Fee` / `Expense` does not affect `InvoiceLineItemSource` rows directly (no FK; the join uses `source_type`+`source_pk`). A claimed atom that gets deleted leaves a dangling source whose `resolve()` raises `DoesNotExist`. Atom deletion is gated upstream — Tasks with bleps don't get hard-deleted in normal flows.
+- Deleting a `Task` / `Material` / `Expense` does not affect `InvoiceLineItemSource` rows directly (no FK; the join uses `source_type`+`source_pk`). A claimed atom that gets deleted leaves a dangling source whose `resolve()` raises `DoesNotExist`. Atom deletion is gated upstream — Tasks with bleps don't get hard-deleted in normal flows.
 
 ### Per-atom `invoice` field (API) and "Invoiced" indicator (UI)
 
@@ -365,7 +364,7 @@ UI button that calls it a second way (the older "Apply everything" /
    must be `complete` **or** `cancelled` (terminal, not complete, is the
    billability line — a cancelled task's recorded actuals are still
    work done), a `Material` must be `consumed`, a deposit line must
-   belong to a `paid` invoice; Fee and Expense atoms have no gate and
+   belong to a `paid` invoice; Expense atoms have no gate and
    always pass. An atom that fails the gate is simply **skipped** (not
    fatal) — "referenced but unclaimed", claimable later once ready; the
    uncovered-work pool still shows it.
@@ -504,7 +503,7 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 |---|---|
 | `open_for_job(job, seed=True)` | Returns the job's draft `Invoice`. Creates one if none exists — a newly-**created** draft auto-seeds from the agreement (`InvoiceService.seed_from_agreement`) unless `seed=False`; an **existing** draft is returned as-is and never re-seeded. Raises `ValidationError` if the job's status is not in `BILLABLE_JOB_STATUSES = {APPROVED, IN_PROGRESS, WORK_COMPLETE, COMPLETED, CANCELLED}`. `CANCELLED` is included so a job stopped early ("stop and bill") can still be invoiced for work done. See "Agreement-line references and seeding" above. |
 | `send_all_atoms(invoice)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines — unlike `seed_all_atoms` (the fresh-document "Apply everything"), which requires an empty invoice. `POST /api/invoices/{id}/send-all-atoms/` → `{'created': N}`; the wizard's "Send all to Invoice" button. |
-| `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — ALL of the job's tasks (cancelled included since 2026-07-12, plan C3), plus a synthetic "Materials (no task)" group for task-less materials with `quantity > 0`. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), state (`available` / `claimed_by_current` / `claimed_by_other`), and (for claimed atoms) the claiming line item or invoice. **Terminal — not complete — is the task billability line**: `complete` and `cancelled` tasks are billable (the same doctrine that keeps cancelled *jobs* in `BILLABLE_JOB_STATUSES`); anything else is `not_billable` (`task_incomplete`). A cancelled task's atom carries `task_cancelled: true`; `InvoiceEditView`'s `UncoveredWorkSection` renders it as an amber "cancelled — work done" chip so the biller makes a conscious choice (§"Uncovered-work section chips" below); a cancelled task with zero actuals is simply a $0 row. Task and material atoms also carry `struck_from_agreement: true` (2026-07-20) when an ACCEPTED change order's remove/replace targeted their claiming estimate line but crystallization left them live — derived per pool build via `ChangeOrderService.struck_atom_keys(job)` (nothing stored), rendered as an amber "struck from agreement" chip; suppressed on cancelled tasks (one prompt suffices). See estimates-and-prices §14.11 for the decision record. The *estimate* pool is the opposite — cancelled tasks are excluded there (estimates project planned work). Atom keys are normalized to match the estimate wizard so the same pool shape feeds both surfaces. |
+| `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — a group per real Task on the job (cancelled included since 2026-07-12, plan C3), plus three synthetic groups appended in order: "Materials (no task)" for task-less materials with `quantity > 0`, "Expenses" for material-less, non-rejected `Expense`s on the job, and — only when at least one qualifying line exists (see "Deposits" → "The credit atom" below) — "Deposit credits" for unclaimed deposit lines on `paid` invoices of this job. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), state (`available` / `claimed_by_current` / `claimed_by_other`), and (for claimed atoms) the claiming line item or invoice. **Terminal — not complete — is the task billability line**: `complete` and `cancelled` tasks are billable (the same doctrine that keeps cancelled *jobs* in `BILLABLE_JOB_STATUSES`); anything else is `not_billable` (`task_incomplete`). A cancelled task's atom carries `task_cancelled: true`; `InvoiceEditView`'s `UncoveredWorkSection` renders it as an amber "cancelled — work done" chip so the biller makes a conscious choice (§"Uncovered-work section chips" below); a cancelled task with zero actuals is simply a $0 row. Task and material atoms also carry `struck_from_agreement: true` (2026-07-20) when an ACCEPTED change order's remove/replace targeted their claiming estimate line but crystallization left them live — derived per pool build via `ChangeOrderService.struck_atom_keys(job)` (nothing stored), rendered as an amber "struck from agreement" chip; suppressed on cancelled tasks (one prompt suffices). See estimates-and-prices §14.11 for the decision record. The *estimate* pool is the opposite — cancelled tasks are excluded there (estimates project planned work). Atom keys are normalized to match the estimate wizard so the same pool shape feeds both surfaces. |
 | `add_atoms_to_new_line_item(invoice, atoms)` | Creates a new `InvoiceLineItem` plus N `InvoiceLineItemSource` rows in one transaction. Defaults table below. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows. Recomputes per the in-sync rule. |
 | `remove_atoms_from_line_item(line_item, source_ids)` | Removes the matching source rows. Recomputes per the in-sync rule. Returns `{'line_item_deleted': bool}`. If the removal empties the source list, the line item is hard-deleted (via `LineItemService.delete_line_item_with_renumber`) regardless of override state. |
@@ -649,7 +648,7 @@ the *default*-modifier rate, not a live-editable modifier set), and
 `Task` is created and no `InvoiceLineItemSource` row is written. This is
 a pure billing line for work done outside the app that still needs
 invoicing (no job side effects, no actuals tracking); it is distinct
-from the atom-pull wizard, which always bills a real Task/Material/Fee/
+from the atom-pull wizard, which always bills a real Task/Material/
 Expense/deposit atom.
 
 **"Show Billables" is retired** — there is no separate button to reach the
@@ -917,7 +916,7 @@ each paid deposit line is its own credit atom.
 - **Targeted freeze once referenced:** `ConfigurationService.FROZEN_WHEN_REFERENCED
   = ('taxable', 'is_deposit')`. Once `AccountingCategory.is_referenced()`
   is `True` (any line item, expense, inventory item, material, rate
-  scheme, fee, **or `adjustment_target_categories` M2M** points at it —
+  scheme, **or `adjustment_target_categories` M2M** points at it —
   the M2M coverage was a 2026-07-25 fix; a category referenced *only* as
   an adjustment target used to report `is_referenced() == False`),
   `ConfigurationService.update_accounting_category` refuses to change
@@ -1077,7 +1076,7 @@ deposit-specific rules enforced by `InvoiceWizardService._assert_deposit_atom_ru
   source_pk=<deposit line pk>)` — the whole-atom unique constraint on
   `(source_type, source_pk)` is what makes the claim unsplittable; a
   second pull attempt on the same deposit line raises `ClaimConflict` →
-  409 `atoms_already_claimed`, exactly like a Task/Material/Fee/Expense
+  409 `atoms_already_claimed`, exactly like a Task/Material/Expense
   double-claim.
 
 Deleting the deduction line (`delete_line_item_with_renumber`, as
@@ -1090,7 +1089,7 @@ atom — it covers no work — only ever as a credit.
 
 **seed-all-atoms / send-all-atoms deliberately pull deposit credits too**
 — they're ordinary available atoms in the pool, same as any Task/
-Material/Fee/Expense, so "Apply everything" / "Send all to Invoice" will
+Material/Expense, so "Apply everything" / "Send all to Invoice" will
 include an outstanding deposit credit on the same job without special-
 casing it.
 

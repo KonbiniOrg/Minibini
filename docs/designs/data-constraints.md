@@ -351,7 +351,7 @@ Standalone. No FK dependencies.
     `ValidationError({'is_deposit': [...]})` otherwise.
   - **Frozen once referenced**: `ConfigurationService.FROZEN_WHEN_REFERENCED
     = ('taxable', 'is_deposit')`. Once `is_referenced()` is `True` (any
-    line item, expense, inventory item, material, rate scheme, or fee
+    line item, expense, inventory item, material, or rate scheme
     points at the category — including via the hidden
     `adjustment_target_categories` M2M on `EstimateLineItem`/
     `InvoiceLineItem`, covered by a 2026-07-25 fix), changing either
@@ -466,8 +466,9 @@ algorithm/modifier semantics and the stamping/retirement mechanics.
 
 - **name**: required, unique, max 100 chars.
 - **algorithm**: one of `elapsed_time`, `entered_qty`, `percentage`
-  (the former `flat_fee` algorithm was **removed** — fixed charges are the
-  `Fee` atom, §1.8a).
+  (the former `flat_fee` algorithm was **removed**; there is no fixed-charge
+  algorithm or atom — a plain hand-line stays a document-only line, see the
+  "Fee retired" note after §1.8).
 - **rate**: decimal(10,2). Semantics depend on `algorithm`:
   - `elapsed_time` / `entered_qty`: per-unit price; **must be ≥ 0**
     (`RateScheme.clean()` raises `ValidationError` for negative values
@@ -640,42 +641,28 @@ guard on `in_progress → work_complete`.
 
 ---
 
-### 1.8a Fee
+### 1.8a ~~Fee~~ (removed)
 
-Depends on: Job, AccountingCategory, (optionally) Task.
-(`db_table = 'fees'`, FK field `job` `related_name='fees'`, API
-`POST /api/jobs/{id}/fees/`.)
-
-A **fixed charge** owned by the Job — `quantity × unit_rate`. The
-crystallized form of an accepted estimate hand-line, and the replacement
-for the removed `flat_fee` RateScheme algorithm. No lifecycle, no actuals;
-always billable.
-
-- **job** (required FK → Job, CASCADE)
-- **task** (optional OneToOne → Task, SET_NULL): the work behind the charge
-- **description**: CharField(255), blank default `''`
-- **quantity**: decimal(10,2), default `1.00`
-- **unit_rate**: decimal(10,2) — **required**
-- **accounting_category** (required FK → AccountingCategory, PROTECT) —
-  **NOT NULL**; a missing value surfaces as a `ValidationError` (→ 400) via
-  `full_clean`, never a 500
-- **sort_order**: PositiveInteger, default 0
-
-`compute_amount() = (quantity × unit_rate).quantize('0.01')`. Writes go
-through `FeeService.create_on_job` / `update` / `delete` (on-hold guarded).
-
-- **Deletion (Rule 1)**: `FeeService.delete` refuses while the fee is claimed
-  by any estimate/CO line or on a live invoice — removing an agreed charge is
-  a change order, not a delete. Unreferenced fees (setup scratch, mistakes)
-  delete freely.
+> **Fee retired 2026-08-09** — the `jobs.Fee` model, its field table, and the
+> `fee` source_type value were deleted (migrations `estimates/0045`,
+> `invoicing/0024`, `jobs/0062`). Plain hand-lines no longer crystallize into
+> a money-only atom; they stay document lines. There is no fixed-charge atom
+> and no `flat_fee` RateScheme algorithm (removed earlier, §1.7) — a bare
+> hand-line (`EstimateLineItem`/`ChangeOrderLineItem` with no `service_item`,
+> no `inventory_item`, `is_material=False`) crystallizes NOTHING at
+> acceptance; it stays a document-only line and later transits to invoices
+> via **agreement-line references**
+> (`InvoiceLineItem.agreement_estimate_line`/`agreement_co_line`, §1.16),
+> not via an atom + claim. See the acceptance discriminator in §1.13/§1.13a
+> and §2.3.
 
 ---
 
 ### 1.9 ~~EstWorksheet~~ (removed)
 
 > **Removed** with the planning layer. There is no worksheet model. Work
-> atoms (`Task`, `Material`, `Fee`) live directly on the `Job`; the estimate
-> is a lens that projects them.
+> atoms (`Task`, `Material`) live directly on the `Job`; the estimate is a
+> lens that projects them.
 
 ---
 
@@ -986,10 +973,10 @@ Enforced in `Estimate.clean()`.
 
 #### EstimateLineItemSource
 
-Polymorphic row joining a line item to a Job atom (Task, Material, or Fee).
+Polymorphic row joining a line item to a Job atom (Task or Material).
 
 - **estimate_line_item** (required FK → EstimateLineItem, CASCADE)
-- **source_type**: `task`, `material`, or `fee`
+- **source_type**: `task` or `material`
 - **source_pk**: integer pointing at the atom
 - `unique_together = [('source_type', 'source_pk')]` — an atom can be
   referenced by at most one estimate line item at a time. On revision,
@@ -1006,8 +993,6 @@ Polymorphic row joining a line item to a Job atom (Task, Material, or Fee).
 - The atom's `job` must match the line item's estimate's `job`
   (validator-enforced — `validate_data.check_estimate_source_job_consistency`;
   the invoice side has the parallel `check_invoice_source_job_consistency`).
-  Fee atoms are validated by `validate_data.check_fees` (unit_rate > 0,
-  accounting_category present, quantity ≥ 0, `task.job == fee.job`).
 
 See `docs/designs/estimates-and-prices.md`.
 
@@ -1046,10 +1031,10 @@ Valid transitions (`ChangeOrder.VALID_TRANSITIONS`):
 - **One live CO per job**: at most one ChangeOrder per Job in `draft` or `open`.
 - **Create requires the hold flag**: `ChangeOrderService.create` raises `ValidationError` unless `job.on_hold` is set and the job has an `accepted` Estimate.
 - **Line item requirement**: cannot transition out of `draft` without at least one ChangeOrderLineItem. Enforced in `ChangeOrder.clean()`.
-- **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`) lacks an `accounting_category` — it crystallizes into a Fee / provisional Material at acceptance and the category must be pinned before the customer can accept. Enforced in `ChangeOrder.clean()`.
+- **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`) lacks an `accounting_category` — the category rides the line onto the agreement and its invoice copy, so a category-less bare line would surface as an unclassifiable charge downstream; it must be pinned before the customer can accept. Enforced in `ChangeOrder.clean()` (`ChangeOrderService.assert_all_bare_add_lines_have_ac`).
 - **Release guard**: a held Job cannot be released (`JobService.release_job`) or cancelled while any of its COs is `draft` or `open`.
 - **Acceptance clears the hold**: on transition to `accepted`, the handler drops the job's `on_hold` flag — the job resumes its true underlying status directly (held from `in_progress` goes straight back to `in_progress`).
-- **Acceptance crystallizes atoms**: on transition to `accepted`, `ChangeOrderAcceptanceService.on_accept` applies the line deltas to the Job's atoms (add → Task/Material/Fee; remove/replace → retire the target's current atom) in the same transaction, after the hold is cleared (atom writes are blocked while held). See `estimates-and-prices.md` §14.11.
+- **Acceptance crystallizes atoms**: on transition to `accepted`, `ChangeOrderAcceptanceService.on_accept` applies the line deltas to the Job's atoms (add → Task/Material, per the same discriminator as estimate acceptance, §1.13/§2.3; remove/replace → retire the target's current atom) in the same transaction, after the hold is cleared (atom writes are blocked while held). See `estimates-and-prices.md` §14.11.
 
 #### ChangeOrderLineItem
 
@@ -1060,7 +1045,7 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - **target_line_item** (optional FK → EstimateLineItem, PROTECT): required for `remove` / `replace`; must be null for `add` (enforced by `clean()`)
 - **inventory_item** (optional FK → InventoryItem, SET_NULL)
 - **service_item** (optional FK → ServiceItem, PROTECT): deferred service descriptor; crystallizes to a Task at CO acceptance (mirrors `EstimateLineItem.service_item`)
-- **is_material** (bool, default False): marks a bare line as crystallizing into an established Material (reverse-markup placeholder cost) instead of a Fee (mirrors `EstimateLineItem.is_material`); authoring rejects it alongside an `inventory_item`/`service_item` and applies the `default_material_accounting_category` config default
+- **is_material** (bool, default False): marks a bare line as crystallizing into an established Material (reverse-markup placeholder cost) rather than staying a document-only line (mirrors `EstimateLineItem.is_material`); authoring rejects it alongside an `inventory_item`/`service_item` and applies the `default_material_accounting_category` config default
 - `clean()` also rejects `service_item` / `is_material` on `remove` lines (display-only; never crystallize)
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
 
@@ -1069,7 +1054,7 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 `db_table = 'co_li_sources'`. The CO analog of EstimateLineItemSource (§ estimates doc §6.2/§14.4): polymorphic join from a ChangeOrderLineItem to the atom it crystallized at acceptance.
 
 - **change_order_line_item** (required FK → ChangeOrderLineItem, CASCADE, `related_name='sources'`)
-- **source_type**: `task` | `material` | `fee`; **source_pk**: positive int
+- **source_type**: `task` | `material`; **source_pk**: positive int
 - `unique_together (source_type, source_pk)` — an atom is claimed by at most one CO line
 - Rows exist only for add/replace lines of accepted COs; purged when the referenced atom is deleted by a later CO's remove/replace.
 - **A dead CO releases its claims** (2026-07-28): entering `rejected` or
@@ -1200,7 +1185,7 @@ Either a description or a `inventory_item` must be present.
 - Consume / Restock flip earmarks back via `_mutate_earmark(..., -qty)`.
 - Job entering `work_complete` releases all remaining earmarks for the Job.
 - **Deletion purges document claims**: `Material.delete()` (like
-  `Fee.delete()` and `Task.delete()`) calls `purge_source_rows_for_atom`
+  `Task.delete()`) calls `purge_source_rows_for_atom`
   (`apps/estimates/claims.py`) — no `EstimateLineItemSource` /
   `ChangeOrderLineItemSource` / `InvoiceLineItemSource` row may outlive its
   atom, on any deletion path (restock-to-zero, PO sever, CO retirement, …).
@@ -1299,12 +1284,12 @@ Enforced in `Invoice.clean()`.
 #### InvoiceLineItemSource
 
 Polymorphic row joining an `InvoiceLineItem` to its source atom (a Job
-`Task`, `Material`, or `Fee`, or a material-less `Expense`) — or, for
+`Task` or `Material`, or a material-less `Expense`) — or, for
 `source_type='deposit'`, to another `InvoiceLineItem` (the deposit line
 being deducted; see `invoicing-and-expenses.md` §Deposits).
 
 - **invoice_line_item** (required FK → InvoiceLineItem, CASCADE)
-- **source_type**: `task`, `material`, `fee`, `expense`, or `deposit`;
+- **source_type**: `material`, `task`, `expense`, or `deposit`;
   **source_pk**: integer — for `deposit`, the claimed deposit
   `InvoiceLineItem`'s pk rather than a Job-atom pk.
 - `unique_together = [('source_type', 'source_pk')]` — global. An atom can
@@ -1792,26 +1777,39 @@ Implemented in `Estimate._maybe_update_job_status()` which fires
 
 ---
 
-### 2.3 Estimate accepted → hand-lines crystallized into Fees
+### 2.3 Estimate accepted → hand-lines crystallized into atoms
 
 **Trigger:** Estimate status changes to `accepted`; the `estimate_accepted`
 signal calls `EstimateAcceptanceService.on_accept(estimate)`.
 
 **Effects** (the work already lives on the Job — Tasks/Materials were
-created directly — so nothing is "carried over"):
-- For each `EstimateLineItem` with **no source row** (a hand-line) that is
-  not a percentage adjustment → create a `Fee` on the Job (`description`,
-  `quantity = qty or 1`, `unit_rate = price or 0`, `accounting_category`,
-  `sort_order = line_number`) and record an `EstimateLineItemSource`
-  (`source_type='fee'`) back to it.
-- Atom-backed lines (Task/Material sources) are skipped.
+created directly — so nothing is "carried over"): for each
+`EstimateLineItem` with **no source row** (a hand-line) that is not a
+percentage adjustment, apply the discriminator, in order:
+- `service_item` set → generate a **Task** and record an
+  `EstimateLineItemSource` (`source_type='task'`) back to it.
+- `inventory_item` set (added "From Inventory") → create a catalog
+  **Material** atom and record an `EstimateLineItemSource`
+  (`source_type='material'`) back to it.
+- `is_material=True` (no `inventory_item`) → create an **established**
+  Material atom at a reverse-markup placeholder cost
+  (`MaterialService.establish_reverse_markup`) and record the same kind of
+  source row.
+- Otherwise (a plain hand-line — no `service_item`, no `inventory_item`,
+  `is_material=False`) → crystallizes **nothing**: no atom, no source row.
+  It stays a document-only line, later transiting to invoices via
+  **agreement-line references** (`InvoiceLineItem.agreement_estimate_line`,
+  §1.16), not via an atom + claim.
+- Atom-backed lines (lines that already carry an `EstimateLineItemSource`)
+  are skipped.
 - `InventoryService.create_earmarks_for_job(job)` earmarks the job's
   inventoried materials.
 
-**Data constraint:** Every hand-authored line on an `accepted` Estimate
-should have a corresponding `Fee` on its Job, claimed by a `fee` source
-row. Because the crystallized line becomes source-backed, re-firing the
-signal does not duplicate Fees.
+**Data constraint:** Every hand-authored line on an `accepted` Estimate that
+carries a `service_item`, `inventory_item`, or `is_material=True` should have
+a corresponding Task/Material on its Job, claimed by a `task`/`material`
+source row; a plain hand-line should have neither. Because a crystallized
+line becomes source-backed, re-firing the signal does not duplicate atoms.
 
 See `docs/designs/estimates-and-prices.md` §9 and
 `apps/estimates/acceptance.py`.

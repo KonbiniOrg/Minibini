@@ -121,7 +121,7 @@ Minibini/
 | App | Models | Authoritative doc |
 |---|---|---|
 | `apps.core` | User, Configuration, AccountingCategory, BaseLineItem (abstract), AbstractWorkContainer (abstract), HistoryEntry, EmailRecord, TempEmail | architecture, users-and-permissions, data-constraints |
-| `apps.jobs` | Job, Task, Blep, RateScheme, Fee | jobs-and-tasks (Job/Task/Blep) + estimates-and-prices (RateScheme) |
+| `apps.jobs` | Job, Task, Blep, RateScheme | jobs-and-tasks (Job/Task/Blep) + estimates-and-prices (RateScheme) |
 | `apps.estimates` | Estimate, ChangeOrder, EstimateLineItem, EstimateLineItemSource, WorkTemplate, ServiceItem, TemplateTaskAssociation | estimates-and-prices + jobs-and-tasks (templates) |
 | `apps.contacts` | Contact, Business, PaymentTerms, Tag | contacts-and-businesses + data-constraints §1.5, §1.4 |
 | `apps.inventory` | InventoryItem (was PriceListItem; `is_catalog` flag), Material, Earmark, TemplateMaterialAssociation | materials-inventory-and-purchasing |

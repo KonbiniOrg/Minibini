@@ -131,8 +131,10 @@ effects. Two different conventions coexist:
   handled inside `apps/jobs/services.py`.
 - `apps/estimates/signals.py` — two receivers
   (`estimate_status_changed_for_job`, `estimate_accepted`) that mutate jobs
-  (and, on accept, crystallize hand-lines into Fees) when an estimate
-  status changes. The job-status receiver routes its changes through
+  (and, on accept, crystallize typed hand-lines into atoms — `service_item`
+  → `Task`, `inventory_item` / `is_material` → `Material`; a plain hand-line
+  with neither stays document-only and crystallizes nothing) when an
+  estimate status changes. The job-status receiver routes its changes through
   `JobService.update_job` rather than mutating the Job directly. (The former
   `estimate_status_changed_for_worksheet` receiver was removed with the
   planning layer.)
@@ -185,7 +187,7 @@ apps/api/
 The `WorkOrder` model has been removed; Tasks live directly on `Job`. The
 planning layer (`EstWorksheet` / `PlanTask` / the `worksheets/` and
 `plan_tasks/` API apps) has also been removed — the Job owns its work atoms
-(`Task` / `Material` / `Fee`) directly. See
+(`Task` / `Material`) directly. See
 `docs/designs/jobs-and-tasks.md` for the job-owns-atoms shape.
 
 **Shared change-request viewset.** `apps/api/shifts/views.py` defines a
@@ -301,7 +303,7 @@ All in `apps/api/mixins.py`.
 |---|---|---|
 | `StatusTransitionMixin` | Every document viewset | Auto-registers `@action` POST endpoints from a `status_actions` dict, with optional `requires_reason` validation and HistoryEntry attachment. |
 | `LineItemMixin` | EstimateViewSet, InvoiceViewSet, PurchaseOrderViewSet | Adds `line-items/`, `line-items/{id}/`, `line-items/reorder/` actions; delegates all writes to `line_item_service_class`. Its own `try`/`except` blocks catch only `NotFoundError` → 404; a service `ValidationError` is **not** caught here (2026-07-25 fix — it used to be re-rendered as `{'detail': str(e)}`, which stringified dict-keyed field errors into garbled text) and instead propagates to the central handler (§3.9), which renders both the plain-sentence and field-keyed shapes correctly. |
-| `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. (The Job's `materials/` and `fees/` actions live on `JobViewSet` directly.) |
+| `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. (The Job's `materials/` action lives on `JobViewSet` directly. There is no `fees/` action — the `Fee` model was deleted; a plain hand-line no longer crystallizes into a job atom on estimate/CO acceptance, see §2.3 above.) |
 | `JSONDestroyMixin` | JobViewSet, InventoryItemViewSet, WorkTemplateViewSet, ServiceItemViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
 | `ConfirmDeleteMixin` | ContactViewSet, BusinessViewSet, ReimbursementViewSet | Two-phase delete; first DELETE returns `{'confirm_required': True, 'impact': {…}}`, DELETE with `?confirm=true` runs the delete. Subclasses implement `get_deletion_impact(obj)` and `perform_confirmed_destroy(obj)`. |
 | `JobScopedPermissionMixin` | JobViewSet, EstimateViewSet, ChangeOrderViewSet, DeliverableViewSet, TaskViewSet | Resolves a viewset's target Job for `CanManageJobOrPM` via `get_object_job(obj)` / `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'estimate.job'`), `job_create_field` (create-body key naming the parent Job), and `job_url_kwarg` (job-nested URL kwarg). |

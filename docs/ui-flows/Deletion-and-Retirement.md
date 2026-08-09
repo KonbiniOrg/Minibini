@@ -17,36 +17,45 @@ order", "deactivate it instead", "remove the line first").
 ## Personas
 
 - **Worker** — no atoms; can add/edit/delete tasks and own time.
-- **Jobs / PM** — `can_manage_jobs` or the job's PM; fees, jobs, estimates.
+- **Jobs / PM** — `can_manage_jobs` or the job's PM; jobs, estimates.
 - **Time** — `can_manage_time`; anyone's bleps.
 - **Financials** — `can_manage_financials`; expenses, inventory.
 
 ## Prerequisites (test-data setup)
 
-- [ ] A job with an **accepted estimate** (atom-backed task/material/fee lines)
-  and a second job still in **draft** with a draft estimate.
-- [ ] A **first invoice** seeded via *Copy from estimate* on the accepted job
-  (claims the fee) and a task pulled onto an invoice via the wizard.
+- [ ] A job with an **accepted estimate** (atom-backed task/material lines,
+  plus a plain hand-line) and a second job still in **draft** with a draft
+  estimate.
+- [ ] A **first invoice** seeded via *Copy from estimate* on the accepted job,
+  plus a task pulled onto the invoice via the wizard.
 - [ ] Some **blepped time** on one task.
-- [ ] A **setup fee** added by hand on the job page that no estimate has
-  claimed.
 - [ ] Users per persona above.
 
 ---
 
-## 1. Fees
+## 1. Fees (retired 2026-08-09)
 
-Entry: job task list (`#/jobs/{id}/tasklist`), Fees rows.
+The `jobs.Fee` model was deleted (`docs/plans/2026-08-06-better-fees.md`);
+there is no longer a Fee entity to delete or retire, so this section's old
+"Fees rows on the job task list" case no longer exists — the task list has
+no Fees rows at all. A former "fee" is now just a **plain hand-line** on an
+estimate/CO/invoice: no service item, no inventory item. It never becomes a
+job atom, so there's nothing atom-level to guard here:
 
-- [ ] **Unclaimed fee deletes freely.** Delete the hand-added setup fee → gone,
-  no prompt beyond the normal action.
-- [ ] **Guard — estimate-claimed fee refuses.** Delete a fee that backs an
-  estimate line (even a *draft* estimate's) → 400: "backs an estimate or
-  change-order line… remove the line (draft) or issue a change order."
-- [ ] **Draft escape works.** On the *draft* estimate, delete the claiming line
-  item first → the same fee now deletes.
-- [ ] **Guard — invoiced fee refuses.** A fee on a live invoice → 400 "remove it
-  from the invoice first."
+- Deleting a plain hand-line while its document is **draft** is the ordinary
+  line-item delete flow (`Add-Line-and-Work-Authoring.md` §2/§6,
+  `Change-Orders.md` §3) — no atom-claim guard applies, because a plain line
+  never crystallizes into anything for another document to claim.
+- Once the estimate is sent/accepted, its lines are read-only; dropping a
+  hand-line from the agreement goes through a change-order **remove** delta
+  instead (`Change-Orders.md` §3/§6), which simply removes the line — there's
+  no job-side atom to retire.
+- On a draft invoice, a seeded agreement hand-line deletes freely via the
+  invoice's normal **delete-to-defer** (it just reappears on the next
+  invoice's seeding — `Invoice-Seeding-and-Send.md`); a live invoice already
+  holding an agreement line is a fact tracked on the invoice side (an
+  agreement line resolves to at most one live invoice reference at a time —
+  `Invoice-Seeding-and-Send.md`), not a delete-time guard on the estimate/CO.
 
 ## 2. Tasks
 
@@ -129,7 +138,7 @@ Entry: job list / job page delete.
 
 | Dimension | Cases |
 |---|---|
-| Fee | unclaimed deletes · draft-claim refused until line removed · invoiced refused |
+| Hand-line (formerly Fee) | draft-document delete is ordinary (no atom-claim guard, retired 2026-08-09) · accepted-document removal is a CO remove delta · draft-invoice delete-to-defer |
 | Task | unclaimed deletes · blep guard · sent-claim refused · draft-claim allowed · invoiced refused · cancel always offered |
 | Blep | own-window delete · manager delete · invoiced-task frozen for all actors · estimate claim doesn't freeze |
 | Material | unclaimed full restock deletes · claimed full restock releases (row stays, qty 0, no actions, earmark gone, claim resolves) · partial stays live · loose release keeps claimed history · sever releases claimed · duplicate skips released |

@@ -17,22 +17,27 @@
 
 **Purpose:** From-the-user's-perspective walkthrough of getting work and lines
 onto a job: the unified service/inventory/freeform picker, the
-material-vs-fee marker, deferred crystallization at acceptance, and the wizard
-that groups atoms into customer-facing lines.
+material-vs-plain marker on freeform lines, deferred crystallization at
+acceptance, and the wizard that groups atoms into customer-facing lines.
 
 **Vocabulary (current):**
-- **Atom** = a `Task`, `Material`, or `Fee` owned by the **Job** — the live work
+- **Atom** = a `Task` or `Material` owned by the **Job** — the live work
   set. Documents (estimate, invoice) are *lenses*: their lines may link to atoms.
 - **Service Item** = the saved-work catalog entry (name + Rate Scheme).
   **Inventory Item** = catalog goods. **Rate Scheme** = the priced thing a
   task bills against.
-- **Hand-line** = an estimate line with no atom behind it *yet* — it
-  **crystallizes** into an atom when the estimate (or a change order) is
-  accepted.
+- **Hand-line** = an estimate/CO line typed freeform rather than picked from
+  the Service Item / Inventory Item catalog. Checking **"Is this a
+  material?"** at authoring splits it in two: a **material hand-line**
+  still **crystallizes** into a Material at acceptance, same as a catalog
+  pick; a **plain hand-line** (material unchecked — no service item, no
+  inventory item, formerly "a fee") crystallizes into **nothing** — it stays
+  a document-only line forever and transits to invoices via the agreement
+  (§4, `Invoice-Seeding-and-Send.md`).
 
 ## Personas
 
-- **Worker** — no atoms needed: may add tasks/materials/fees on the job task
+- **Worker** — no atoms needed: may add tasks/materials on the job task
   list (`Add Work`), and track time.
 - **Jobs / PM** — `can_manage_jobs` or the job's `project_manager` (scoped):
   estimate authoring, sending, wizard.
@@ -44,7 +49,7 @@ that groups atoms into customer-facing lines.
 - [ ] At least one **Service Item** (with Rate Scheme) and one **catalog
   Inventory Item** so the picker returns both kinds.
 - [ ] The `default_material_accounting_category` setting for the freeform
-  material fork; at least one other AccountingCategory for fee lines.
+  material fork; at least one other AccountingCategory for plain hand-lines.
 - [ ] A jobs/PM user and a plain worker.
 
 ---
@@ -80,15 +85,20 @@ Entry: `#/estimates/{id}`, draft estimate → **Add line**.
 - [ ] **Freeform + material checked → material line.** The typed search text
   pre-fills the description; Accounting Category pre-fills from the material
   default (overridable).
-- [ ] **Freeform + material unchecked → fee line.** Same form; **AC is
+- [ ] **Freeform + material unchecked → plain hand-line.** Same form; **AC is
   required** — saving without one shows "Accounting Category is required."
+  A plain hand-line stays a document line and never crystallizes into a
+  Task or Material of its own.
 - [ ] **Lines are editable/reorderable/deletable while draft** (per-line Edit,
   arrows, delete with renumbering); all of it disappears once sent.
 
 ## 3. Job task list — "Add Work" (atoms, immediate)
 
 Entry: `#/jobs/{id}/tasklist` → **Add Work**. Same picker, task-surface footer:
-three explicit buttons — **Add Task**, **Add Material**, **Add Fee**.
+two explicit buttons — **Add Task**, **Add Material**. (There is no third
+"Add Fee" button — a pure charge with no work or material behind it is not a
+job atom at all; it's authored as a plain hand-line on a document instead,
+see §2/§4 and `Invoice-Seeding-and-Send.md`.)
 
 - [ ] **Service pick → Task now.** `WorkItemForm` opens pre-filled from the
   Service Item; saving creates a real Task on the job immediately.
@@ -97,7 +107,6 @@ three explicit buttons — **Add Task**, **Add Material**, **Add Fee**.
 - [ ] **Inventory pick / Add Material → Material now** (`MaterialModal`,
   pre-seeded from the item or freeform); on a committed job it earmarks
   immediately.
-- [ ] **Add Fee → Fee now** (`FeeModal`: description, qty, unit rate, AC).
 - [ ] **Any authenticated user** can do all of §3 — worker self-service is
   deliberate.
 - [ ] **Live search across windows (2026-07-19).** The picker searches the
@@ -114,16 +123,18 @@ three explicit buttons — **Add Task**, **Add Material**, **Add Fee**.
   manager can edit the task's own rate afterward without disturbing the
   Scheme provenance chip. E2E: `e2e/specs/add-line-and-work-authoring/stamped-task-money.spec.js`.
 
-## 4. Acceptance — hand-lines crystallize
+## 4. Acceptance — deferred lines crystallize (or don't)
 
 Accepting the estimate (customer portal or shop-side) turns document lines into
-job atoms:
+job atoms, except plain hand-lines, which stay document-only:
 
 - [ ] **Service line → Task** (named after the Service Item, description from
   the line, qty as the estimate).
 - [ ] **Inventory line → Material** + earmark.
 - [ ] **Bare material line → provisional Material** (no inventory link).
-- [ ] **Bare fee line → Fee** at qty × price.
+- [ ] **Plain hand-line crystallizes into nothing.** No Task, no Material —
+  it stays a document line and later transits to the invoice via the
+  agreement (see `Invoice-Seeding-and-Send.md`).
 - [ ] **Atom-backed lines (wizard-built) don't duplicate** — their atoms already
   exist.
 - [ ] **Adjustment lines stay document-only.**
@@ -152,9 +163,9 @@ Entry: estimate detail → **Show Tasks & Materials** (`#/estimates/{id}/wizard`
 - [ ] **Estimate authoring is jobs/PM + draft-only.** Sent estimates are
   read-only; a worker sees no Add line.
 - [ ] **Task-list authoring is open** to any authenticated user, but respects
-  the job state: on-hold jobs refuse task/material/fee mutations.
-- [ ] **Fee hand-lines require an AC** at authoring and again at send.
-- [ ] **Deleting authored things follows the deletion doctrine** — a fee/task
+  the job state: on-hold jobs refuse task/material mutations.
+- [ ] **Plain hand-lines require an AC** at authoring and again at send.
+- [ ] **Deleting authored things follows the deletion doctrine** — a task
   claimed by a sent document refuses with "cancel / change order" messaging;
   see `Deletion-and-Retirement.md`.
 
@@ -165,9 +176,9 @@ Entry: estimate detail → **Show Tasks & Materials** (`#/estimates/{id}/wizard`
 | Dimension | Cases |
 |---|---|
 | Start | Start Estimate (direct, no worksheet) · gating (persona/status/live estimate) · past-quoting hint (approved estimate-less) |
-| Picker | dual-source search · no initial list · labeled rows · typed-text carry-over · estimate footer (material checkbox) vs task-surface footer (Task/Material/Fee buttons) · live cross-window search (full-item pick) |
-| Estimate lines (deferred) | service (no Task yet) · inventory · freeform material (AC default) · freeform fee (AC required) · edit/reorder/delete draft-only |
-| Task-list atoms (immediate) | service → Task · manual task (scheme pick) · material (catalog/freeform, earmark) · fee · open to all users |
-| Crystallization | service → Task · inventory → Material+earmark · bare material → provisional Material · bare fee → Fee · atom-backed skip · adjustments document-only · AC send guard |
+| Picker | dual-source search · no initial list · labeled rows · typed-text carry-over · estimate footer (material checkbox) vs task-surface footer (Task/Material buttons) · live cross-window search (full-item pick) |
+| Estimate lines (deferred) | service (no Task yet) · inventory · freeform material (AC default) · plain hand-line (AC required) · edit/reorder/delete draft-only |
+| Task-list atoms (immediate) | service → Task · manual task (scheme pick) · material (catalog/freeform, earmark) · open to all users |
+| Crystallization | service → Task · inventory → Material+earmark · bare material → provisional Material · plain hand-line → nothing · atom-backed skip · adjustments document-only · AC send guard |
 | Wizard | job-atom pool + claim states · released materials absent · grouping/summarize · in-sync vs overridden · last-atom removal |
 | Guards | draft-only authoring · on-hold freeze · deletion-doctrine cross-ref |

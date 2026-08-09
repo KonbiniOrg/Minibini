@@ -9,15 +9,17 @@ were retired to QBO 2026-07-23 — see §13.
 > **Job-owns-atoms model.** A `Material` is created **directly on the
 > Job** (via the Work surface or a job-attributed PO line); the former
 > worksheet-side `PlanMaterial` and worksheet→job carry-over are
-> **removed**. `Material` is a billable **atom** (alongside `Task` and
-> `Fee`) that the estimate and invoice lenses claim.
+> **removed**. `Material` is a billable **atom** (alongside `Task`) that
+> the estimate and invoice lenses claim. (The `Fee` atom was removed
+> 2026-08 — a fixed charge is now a plain hand line on the estimate/
+> invoice document, not a job atom.)
 
 Sibling docs:
 
 - `docs/designs/architecture-and-conventions.md` — service-layer pattern,
   `LineItemMixin`, `LineItemService.delete_line_item_with_renumber`,
   delete-confirm pattern.
-- `docs/designs/jobs-and-tasks.md` — `Job`, `Task`, `Fee`,
+- `docs/designs/jobs-and-tasks.md` — `Job`, `Task`,
   `WorkTemplate`, populate-from-template path, the Work surface.
 - `docs/designs/estimates-and-prices.md` — `RateScheme`, billable atoms
   (Materials are atoms), AccountingCategory pass-through.

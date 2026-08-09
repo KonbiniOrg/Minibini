@@ -310,7 +310,7 @@ On any exception, `QBOSyncLog` records `status='failed'` with the error message,
 
 Each pushed line's `ItemRef` resolves in order:
 
-1. **The line's catalog entity's mirrored QBO Item** — `_catalog_entity_for_line` finds the single `InventoryItem` or `ServiceItem` the line sells: the line's direct `inventory_item` FK, else its source atoms (all task sources sharing one `Task.service_item`, or all material sources sharing one `Material.inventory_item`). Adjustment lines, expense/fee sources, provisional materials, mixed bundles, and hand lines have no catalog identity → fall through.
+1. **The line's catalog entity's mirrored QBO Item** — `_catalog_entity_for_line` finds the single `InventoryItem` or `ServiceItem` the line sells: the line's direct `inventory_item` FK, else its source atoms (all task sources sharing one `Task.service_item`, or all material sources sharing one `Material.inventory_item`). Adjustment lines, expense sources, provisional materials, mixed bundles, and hand lines have no catalog identity → fall through.
 2. **The category's generic fallback Item** — `AccountingCategory.qbo_item_id` (the pre-existing per-category mapping, now demoted to fallback).
 3. **No ItemRef** — QBO applies its default item.
 

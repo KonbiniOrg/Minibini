@@ -18,7 +18,8 @@ current as the pricing UI evolves.
 
 **Model (task-owned-money Phase 1, 2026-08).** A **Rate Scheme** (`RateScheme`) is a
 **freely editable preset** — a named, priced service the shop performs. There is no
-`flat_fee` algorithm (fixed one-off charges are the `Fee` atom, not a Rate Scheme) and no
+`flat_fee` algorithm (a fixed one-off charge is a plain hand-line on a document, not a
+Rate Scheme — see `Add-Line-and-Work-Authoring.md`) and no
 supersession: a Rate Scheme's fields can be edited directly at any time, referenced or
 not. When a worker or manager creates a Task from a preset, the task **stamps a
 permanent copy** of the preset's `rate`/`unit`/`category`/checked modifiers onto itself
@@ -90,7 +91,8 @@ Without these, whole branches below are silent no-ops:
 - [ ] **A Rate Scheme of each task algorithm** — one `elapsed_time` (e.g. "CNC
   Router", rate 85/hour) and one `entered_qty` (e.g. "Tap a hole", rate 5/unit).
   Needed for the stamping checks (§1, §2). (No `flat_fee` algorithm exists —
-  fixed one-off charges are the `Fee` atom, out of this doc's scope.)
+  fixed one-off charges are a plain hand-line on a document, out of this
+  doc's scope.)
 - [ ] **A `percentage` "Rush" Rate Scheme** (rate **15**) and a **`percentage`
   "Discount" Rate Scheme** (rate **-10**). Without these, no adjustment can be added.
 - [ ] **At least two AccountingCategories** (e.g. **Labor** and **Materials**) so
@@ -126,7 +128,8 @@ section (`RateSchemeManager`, heading **"Rate Schemes"**).
 - [ ] **Only three algorithms.** The **Algorithm** dropdown offers **"Based on time
   worked"** (`elapsed_time`), **"Worker enters quantity"** (`entered_qty`), and
   **"Percentage of other lines"** (`percentage`) — no "Fixed charge"/flat-fee option
-  (removed; fixed one-off charges are the `Fee` atom, out of this doc's scope).
+  (removed; fixed one-off charges are a plain hand-line on a document, out of
+  this doc's scope).
 - [ ] **Percentage type.** Choose algorithm **"Percentage of other lines"** → the
   form shows a **"Rate (%)"** field, **no modifier menu**, and **no unit/quantity
   fields**; the AccountingCategory selector stays. Save a "Rush" at **15**.

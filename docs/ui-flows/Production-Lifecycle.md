@@ -196,7 +196,7 @@ list.
 - [ ] **Hold** (Jobs manager, job page): requires a reason; **rejected
   while any timeslip on the job is open** (find the worker; stop first).
 - [ ] While held: **no new timeslips** ("the job is on hold"); task /
-  material / fee mutation affordances are **hidden** (task-tree edit/
+  material mutation affordances are **hidden** (task-tree edit/
   cancel/add, Add Work, the work-complete button, task-detail action
   band); status changes are blocked **except cancellation**.
 - [ ] **Procurement reality stays:** Order, Attach expense, Mark

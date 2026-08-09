@@ -4,7 +4,8 @@
 estimate with a change order: pausing the job, authoring the CO's diff
 (deliverables + line items, including the unified add-line picker), sending it,
 and — new in the 2026-07-03 batch — what **acceptance crystallizes onto the
-job's work** (tasks/materials/fees created, cancelled, and released). Reference:
+job's work** (tasks/materials created, cancelled, and released — plain
+hand-lines crystallize into nothing; see §6). Reference:
 `docs/designs/estimates-and-prices.md` §14 (esp. §14.11).
 
 ## Personas
@@ -19,9 +20,9 @@ job's work** (tasks/materials/fees created, cancelled, and released). Reference:
 
 - [ ] **A job with an accepted estimate** whose lines are atom-backed: at least
   one **service/task line** (a Task exists on the job), one **catalog material
-  line** (a Material with an earmark), and one **hand-line** (crystallized into
-  a Fee at estimate acceptance). Include an **adjustment line** (e.g. 10% rush)
-  to test the document-only case.
+  line** (a Material with an earmark), and one **plain hand-line** (stays a
+  document line — no atom behind it — at estimate acceptance). Include an
+  **adjustment line** (e.g. 10% rush) to test the document-only case.
 - [ ] Some **blepped time** on one of the tasks (start/stop work) — needed to
   observe bleps surviving a CO remove.
 - [ ] **A Service Item** and a **catalog Inventory Item** for the add-line picker.
@@ -106,9 +107,9 @@ Entry: **+ New line** on a draft CO.
 - [ ] **Freeform, material checked → material line.** Description/qty/units/
   price + Accounting Category (pre-filled from the configured material default,
   overridable).
-- [ ] **Freeform, material unchecked → fee line.** Same form; **Accounting
-  Category is required** — saving without one shows "Accounting Category is
-  required."
+- [ ] **Freeform, material unchecked → plain hand-line.** Same form;
+  **Accounting Category is required** — saving without one shows "Accounting
+  Category is required."
 - [ ] **Edit modal carries AC.** Editing an added line (or switching the
   Change modal to *add*) shows an Accounting Category select; replace/remove
   lines don't (they inherit from the atom they replace).
@@ -143,7 +144,8 @@ Entry: open CO → **Record Accepted** (or the customer's portal Accept).
   (check Inventory: earmarked rises).
 - [ ] **Added freeform material line → provisional Material** (no inventory
   link).
-- [ ] **Added freeform fee line → Fee** on the job at the line's qty × price.
+- [ ] **Added plain hand-line crystallizes nothing.** No Task, no Material —
+  it stays a document-only line on the CO/agreement.
 - [ ] **Removed task line → Task cancelled, bleps preserved.** The target
   line's Task flips to `cancelled`; its recorded time is still on the task
   detail page. A task already **complete** is left alone.
@@ -151,7 +153,8 @@ Entry: open CO → **Record Accepted** (or the customer's portal Accept).
   the job greyed out with quantity 0 (its planned quantity moved to the released
   record); its earmark is gone from Inventory. A **consumed** material is left
   alone.
-- [ ] **Removed hand-line → Fee gone** from the job (no longer billable).
+- [ ] **Removed plain hand-line → line gone** from the agreement (it never had
+  a job atom to retire).
 - [ ] **Replaced task line → old Task cancelled + new Task** at the CO line's
   qty/description on the same rate scheme (same assignee).
 - [ ] **Removed adjustment line → document-only.** The agreement drops it;
@@ -162,8 +165,8 @@ Entry: open CO → **Record Accepted** (or the customer's portal Accept).
   (`Invoice-Seeding-and-Send.md` §4).
 - [ ] **Agreement view** (`Job → agreement` / invoice **Copy from estimate**)
   reflects the composed result: struck lines gone, replacements in place, added
-  lines appended — and a later first-invoice copy bills each crystallized fee
-  exactly once.
+  lines appended — and each agreement line (atom-backed or a plain hand-line)
+  bills exactly once, via its agreement-line reference on the invoice.
 
 ## 7. Reject / revise
 
@@ -195,9 +198,9 @@ Entry: open CO → **Record Accepted** (or the customer's portal Accept).
 | Entry | pause (hold reason required) · open-blep block · Create Change Order gating (on_hold + accepted estimate + no COs yet; hidden and API-refused un-held) · exit guard |
 | Deliverables diff | change (amber + struck) · remove (+Undo) · add · shipped frozen |
 | Line diff | unchanged (Change/Delete) · changed (Edit/Undo) · added (Edit/Delete) · footer totals |
-| Add-line source | service (deferred, no Task yet) · inventory · freeform material (AC default) · freeform fee (AC required) |
+| Add-line source | service (deferred, no Task yet) · inventory · freeform material (AC default) · plain hand-line (AC required) |
 | Send | send page + PDF + portal link · resend · AC send guard (pre-email) · empty-CO guard (deliverables-only IS sendable) |
-| Acceptance crystallization | add → Task / Material+earmark / provisional Material / Fee · remove → task cancelled (bleps kept) / material released (qty 0, earmark gone) / fee gone · complete task + consumed material left alone · replace → cancel + new mirrored task · adjustment document-only |
-| After accept | job approved · estimate "amended" · agreement composed · first-invoice copy bills fees once · struck-atom badge in the wizard pool |
+| Acceptance crystallization | add → Task / Material+earmark / provisional Material / plain hand-line crystallizes nothing · remove → task cancelled (bleps kept) / material released (qty 0, earmark gone) / plain hand-line just drops · complete task + consumed material left alone · replace → cancel + new mirrored task · adjustment document-only |
+| After accept | job approved · estimate "amended" · agreement composed · each agreement line (atom or plain hand-line) bills exactly once via its reference · struck-atom badge in the wizard pool |
 | Reject/revise | rejected stays on hold · seed-new copies deltas · discard draft · portal request-changes supersedes |
 | Personas | worker read-only · jobs full · PM scoped |
