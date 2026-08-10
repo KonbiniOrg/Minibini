@@ -1030,3 +1030,21 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ either an app-wide `select` rule lands in `app.css`
   (matching the input look, checked across the major pages), or the
   team decides native chrome is acceptable and this entry is closed.
+
+
+- **Hand-line material-ness should derive from the accounting category —
+  drop the Material checkbox.** — _added 2026-08-09 (RM)_
+  When adding a freeform hand line, choosing the Materials accounting
+  category should itself mark the line as a material (`is_material`);
+  a separate "Material" checkbox is then probably unnecessary. Today the
+  checkbox drives it and the AC merely defaults
+  (`_apply_material_ac_default` fills the configured
+  `default_material_accounting_category` when the box is checked) —
+  RM's point is the causality should run the other way. Touches the
+  estimate/invoice/CO add-line forms, `is_material` handling in
+  `EstimateService`/`ChangeOrderService`, and the crystallization
+  discriminator's `is_material` arm (a bare material line becomes a
+  Material at acceptance).
+  _Done when:_ selecting the Materials AC on a freeform hand line yields
+  material behavior with no separate checkbox (or the team decides the
+  checkbox stays and this entry is closed).
