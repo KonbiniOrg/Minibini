@@ -8,7 +8,7 @@ from apps.api.estimates.serializers import (
 )
 from apps.api.mixins import JobScopedCanManageMixin
 from apps.core.units import UnitsField
-from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
+from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, EstimateLineItem
 from apps.estimates.services import EstimateWizardService
 
 
@@ -64,6 +64,15 @@ def _resolve_rows(rows):
     return resolved
 
 
+def _sum_amounts(resolved):
+    """Sum EstimateWizardService._atom_computed_amount over already-resolved
+    atom instances (Task/Material), quantized to cents."""
+    return sum(
+        (EstimateWizardService._atom_computed_amount(i) for i in resolved),
+        Decimal('0.00'),
+    )
+
+
 def _backing_total(line):
     """Sum of a line's own resolvable source amounts, or None when it has
     none. Generalizes EstimateLineItemSerializer.get_backing_total to any
@@ -71,11 +80,7 @@ def _backing_total(line):
     resolved = _resolve_sources(line)
     if not resolved:
         return None
-    total = sum(
-        (EstimateWizardService._atom_computed_amount(i) for i in resolved),
-        Decimal('0.00'),
-    )
-    return str(total.quantize(Decimal('0.01')))
+    return str(_sum_amounts(resolved).quantize(Decimal('0.01')))
 
 
 def _sources_for_replace(co_line):
@@ -92,41 +97,46 @@ def _sources_for_replace(co_line):
     return list(target.sources.all())
 
 
-def derive_co_line_backing(co_line):
+def derive_co_line_backing(co_line, resolved_sources=None):
     """Backing classification for a replace CO line: same enum as
-    derive_estimate_backing, but summed off the TARGET's resolvable sources
-    against the CO line's own qty/price (in-sync -> planned_work /
-    planned_materials; out-of-sync -> 'edited'). A replace line can never
-    carry a catalog descriptor (model-enforced), so the classification
-    reduces to adjustment / sourced / hand."""
+    derive_estimate_backing, but summed off the resolvable sources backing
+    the target — the line's OWN sources when the CO is already accepted
+    (claims moved off the target at acceptance) else the TARGET's sources
+    (draft/open CO, not yet moved) — see `_sources_for_replace` — against
+    the CO line's own qty/price (in-sync -> planned_work / planned_materials;
+    out-of-sync -> 'edited'). A replace line can never carry a catalog
+    descriptor (model-enforced), so the classification reduces to
+    adjustment / sourced / hand.
+
+    `resolved_sources`: optional pre-resolved atom list (from
+    `_resolve_rows(_sources_for_replace(co_line))`) — pass this when the
+    caller already resolved sources for the same co_line (e.g. per-row
+    endpoint serialization, which also needs them for backing_total/sources)
+    to avoid a duplicate query round-trip. Computed fresh when omitted."""
     if co_line.adjustment_service_id is not None:
         return 'adjustment'
 
-    resolved = _resolve_rows(_sources_for_replace(co_line))
-    if resolved:
-        sum_value = sum(
-            (EstimateWizardService._atom_computed_amount(i) for i in resolved),
-            Decimal('0.00'),
-        )
+    if resolved_sources is None:
+        resolved_sources = _resolve_rows(_sources_for_replace(co_line))
+
+    if resolved_sources:
+        sum_value = _sum_amounts(resolved_sources)
         if not EstimateWizardService._is_in_sync(co_line, sum_value):
             return 'edited'
         from apps.jobs.models import Task
-        if any(isinstance(i, Task) for i in resolved):
+        if any(isinstance(i, Task) for i in resolved_sources):
             return 'planned_work'
         return 'planned_materials'
 
     return 'hand'
 
 
-def _replace_backing_total(co_line):
-    resolved = _resolve_rows(_sources_for_replace(co_line))
-    if not resolved:
+def _replace_backing_total(resolved_sources):
+    """backing_total for a replace row from an already-resolved source list
+    (see derive_co_line_backing's resolved_sources param) — never re-queries."""
+    if not resolved_sources:
         return None
-    total = sum(
-        (EstimateWizardService._atom_computed_amount(i) for i in resolved),
-        Decimal('0.00'),
-    )
-    return str(total.quantize(Decimal('0.01')))
+    return str(_sum_amounts(resolved_sources).quantize(Decimal('0.01')))
 
 
 def _serialize_sources(rows, *, inherited_from_line=None):
@@ -149,7 +159,10 @@ def _serialize_line_dict(d):
     return out
 
 
-def _serialize_amended_row(row):
+def _serialize_amended_row(row, co_lines_by_id, estimate_lines_by_id):
+    """`co_lines_by_id`/`estimate_lines_by_id`: pk -> instance maps, batch-
+    fetched once by `serialize_amended_agreement` for every row (never a
+    per-row `.get()` — see that function)."""
     kind = row['kind']
 
     if kind == 'agreement':
@@ -164,8 +177,7 @@ def _serialize_amended_row(row):
             ),
         }
         if line['estimate_line_id'] is not None:
-            from apps.estimates.models import EstimateLineItem
-            eli = EstimateLineItem.objects.get(pk=line['estimate_line_id'])
+            eli = estimate_lines_by_id[line['estimate_line_id']]
             out['backing'] = derive_estimate_backing(eli)
             out['backing_total'] = _backing_total(eli)
         else:
@@ -183,24 +195,30 @@ def _serialize_amended_row(row):
         }
 
     if kind == 'replaced':
-        co_line = ChangeOrderLineItem.objects.get(pk=row['co_line_id'])
+        co_line = co_lines_by_id[row['co_line_id']]
         target = co_line.target_line_item
+        # Resolve sources ONCE per row and thread the same list into backing,
+        # backing_total, and the sources block — _sources_for_replace does its
+        # own query (own-sources-first, else target's), so calling it more
+        # than once per row would triple the round trips.
+        raw_sources = _sources_for_replace(co_line)
+        resolved_sources = _resolve_rows(raw_sources)
         return {
             'kind': 'replaced',
             'line': _serialize_line_dict(row['line']),
             'original': _serialize_line_dict(row['original']),
             'co_line_id': row['co_line_id'],
             'co_index': row['co_index'],
-            'backing': derive_co_line_backing(co_line),
-            'backing_total': _replace_backing_total(co_line),
+            'backing': derive_co_line_backing(co_line, resolved_sources),
+            'backing_total': _replace_backing_total(resolved_sources),
             'sources': _serialize_sources(
-                _sources_for_replace(co_line),
+                raw_sources,
                 inherited_from_line=(target.line_number if target else None),
             ),
         }
 
     if kind == 'added':
-        co_line = ChangeOrderLineItem.objects.get(pk=row['co_line_id'])
+        co_line = co_lines_by_id[row['co_line_id']]
         return {
             'kind': 'added',
             'line': _serialize_line_dict(row['line']),
@@ -216,9 +234,32 @@ def _serialize_amended_row(row):
 
 def serialize_amended_agreement(result):
     """JSON-safe payload for GET .../amended-agreement/ from
-    compose_amended_agreement(co)'s result dict."""
+    compose_amended_agreement(co)'s result dict.
+
+    Batch-fetches every ChangeOrderLineItem/EstimateLineItem the rows
+    reference (`in_bulk`, one query each) instead of a `.get()` per row."""
+    rows = result['rows']
+
+    co_line_ids = [
+        r['co_line_id'] for r in rows if r['kind'] in ('replaced', 'added')
+    ]
+    estimate_line_ids = [
+        r['line']['estimate_line_id'] for r in rows
+        if r['kind'] == 'agreement' and r['line']['estimate_line_id'] is not None
+    ]
+
+    co_lines_by_id = (
+        ChangeOrderLineItem.objects
+        .select_related('target_line_item')
+        .in_bulk(co_line_ids)
+    )
+    estimate_lines_by_id = EstimateLineItem.objects.in_bulk(estimate_line_ids)
+
     return {
-        'rows': [_serialize_amended_row(r) for r in result['rows']],
+        'rows': [
+            _serialize_amended_row(r, co_lines_by_id, estimate_lines_by_id)
+            for r in rows
+        ],
         'original_total': str(result['original_total'].quantize(Decimal('0.01'))),
         'co_delta': str(result['co_delta'].quantize(Decimal('0.01'))),
         'revised_total': str(result['revised_total'].quantize(Decimal('0.01'))),
