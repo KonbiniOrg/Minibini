@@ -1,7 +1,11 @@
 // docs/ui-flows/Change-Orders.md §1 (enter the CO room — Create Change Order
 // gating) and §2 (the CO page as a job-workspace panel: JobShell chrome,
-// full-code subnav, diff grids, inline deliverable add). Post-extraction
-// regression coverage for the 2026-07-19 JobShell-panel move.
+// full-code subnav, deliverables diff, inline deliverable add). Post-
+// extraction regression coverage for the 2026-07-19 JobShell-panel move,
+// rewritten 2026-08-09 for the amend-in-place line-items surface
+// (COEditView replaced the old flat diff table — see amend-in-place.spec.js
+// for that surface's own coverage; this file stays focused on room entry +
+// page chrome).
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { findJobWithEstimate, loadBackdrop } from '../../fixtures/lookups.js';
@@ -25,10 +29,13 @@ async function jobDetail(jobId) {
 }
 
 test('§1 Enter the CO room — Create Change Order gating', async ({ page }) => {
+  // noChangeOrders: this test IS the "create the first CO" flow, so a job
+  // that already carries one (e.g. left behind by another spec earlier in
+  // this same run) is not a valid candidate.
   const hit = await findJobWithEstimate(jobs, {
-    jobStatus: 'in_progress', estimateStatus: 'accepted', used,
+    jobStatus: 'in_progress', estimateStatus: 'accepted', used, noChangeOrders: true,
   });
-  test.skip(!hit, 'seed gap: no in_progress job with an accepted estimate');
+  test.skip(!hit, 'seed gap: no in_progress job with an accepted estimate and no change order yet');
   const { job, estimate } = hit;
 
   await test.step('Un-held job: Create Change Order is hidden (and the API refuses)', async () => {
@@ -70,9 +77,9 @@ test('§2 The CO page — JobShell chrome, full-code subnav, diff grids, inline 
   // Own job + CO via API: this test is about the CO *page*, not the entry
   // flow (§1 above owns that), so setup goes through fixtures/api.js.
   const hit = await findJobWithEstimate(jobs, {
-    jobStatus: 'in_progress', estimateStatus: 'accepted', used,
+    jobStatus: 'in_progress', estimateStatus: 'accepted', used, noChangeOrders: true,
   });
-  test.skip(!hit, 'seed gap: no second in_progress job with an accepted estimate');
+  test.skip(!hit, 'seed gap: no second in_progress job with an accepted estimate and no change order yet');
   const { job, estimate } = hit;
   const api = await apiAs(personas.finjobs);
   await api.post(`/api/jobs/${job.job_id}/hold/`, { reason: 'e2e: CO panel smoke' });
@@ -100,10 +107,11 @@ test('§2 The CO page — JobShell chrome, full-code subnav, diff grids, inline 
     })).toBeVisible();
   });
 
-  await test.step('Both diff grids render', async () => {
+  await test.step('Both surfaces render: the deliverables diff and the amended-agreement line-items table', async () => {
     await expect(page.getByRole('heading', { name: 'Deliverables' })).toBeVisible();
+    await expect(page.locator('table.diff-table')).toHaveCount(1);
     await expect(page.getByRole('heading', { name: 'Line items' })).toBeVisible();
-    await expect(page.locator('table.diff-table')).toHaveCount(2);
+    await expect(page.locator('table.co-edit-table')).toHaveCount(1);
   });
 
   await test.step('+ New deliverable → fill → Add lands a green added row', async () => {

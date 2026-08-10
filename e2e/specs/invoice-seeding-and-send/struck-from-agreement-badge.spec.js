@@ -4,6 +4,12 @@
 // itself stayed live (complete task, consumed material), is badged in the
 // invoice's uncovered-work pool so the biller chooses consciously. Untouched
 // atoms carry no badge.
+//
+// UPDATED 2026-08-09 (CO amend-in-place plan, Task 10): the badge's label
+// changed from the generic "struck from agreement" to "descoped by CO-N"
+// (frontend/src/components/invoices/InvoiceEditView.svelte atomChip, off
+// the pool atom's descoped_by_co_number) — same struck_from_agreement gate,
+// more specific text.
 // (The cancelled-task suppression — "cancelled — work done" wins over the
 // struck badge — is a one-flag render rule covered by the unit tests:
 // frontend/tests/components/wizards/WizardAtomRow.test.js and
@@ -103,7 +109,10 @@ test('§4 "Struck from agreement" badge in Show Billables', async ({ page }) => 
     await expect(page.getByRole('heading', { name: 'Uncovered work' })).toBeVisible();
     const strikeRow = page.locator('.uncovered-work-section tr').filter({ hasText: strike.task.name });
     await expect(strikeRow).toBeVisible();
-    await expect(strikeRow.getByText('struck from agreement')).toBeVisible();
+    // "CO-1" derives from the CO number's trailing "-CO<n>" suffix
+    // (lib/agreementReference.js coShortLabel) — same regex the frontend uses.
+    const shortLabel = `CO-${/-CO(\d+)$/.exec(co.change_order_number)[1]}`;
+    await expect(strikeRow.getByText(`descoped by ${shortLabel}`)).toBeVisible();
   });
 
   await test.step('The untouched line seeded straight onto the invoice carries no badge', async () => {
@@ -117,6 +126,6 @@ test('§4 "Struck from agreement" badge in Show Billables', async ({ page }) => 
       .toHaveCount(0);
     const controlRows = page.locator('table.line-items-table tr').filter({ hasText: control.task.name });
     await expect(controlRows.first()).toBeVisible();
-    await expect(controlRows.getByText('struck from agreement')).toHaveCount(0);
+    await expect(controlRows.getByText(/descoped by/)).toHaveCount(0);
   });
 });

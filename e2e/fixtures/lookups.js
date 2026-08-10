@@ -62,9 +62,17 @@ export function findStartableTask(jobs, {
 // (async — the backdrop list can't answer this: has_estimates is detail-only
 // and estimate statuses live on /api/estimates/). Candidates are tried
 // poorest-first (fewest pending tasks) so shape-rich jobs stay available for
-// specs that need multi-task setups. Returns { job, estimate } or null.
+// specs that need multi-task setups. `noChangeOrders` (for callers that mean
+// "this job's FIRST change order" — e.g. the Create Change Order entry gate,
+// which is only offered while the estimate has no change orders at all)
+// skips any candidate that already carries one: a job created earlier in
+// the SAME run by another spec (e.g. change-orders/amend-in-place.spec.js,
+// which drives a CO through to accepted) is real backdrop by the time this
+// runs and would otherwise get matched — its low pending-task count after
+// acceptance's crystallization can even sort it first. Returns
+// { job, estimate } or null.
 export async function findJobWithEstimate(jobs, {
-  jobStatus, estimateStatus, used = new Set(),
+  jobStatus, estimateStatus, used = new Set(), noChangeOrders = false,
 } = {}) {
   const api = await apiAs(personas.finjobs);
   try {
@@ -76,6 +84,11 @@ export async function findJobWithEstimate(jobs, {
       const list = resp?.results || resp || [];
       const estimate = list.find((e) => e.status === estimateStatus);
       if (estimate) {
+        if (noChangeOrders) {
+          const cosResp = await api.get(`/api/change-orders/?job=${job.job_id}`);
+          const cos = cosResp?.results || cosResp || [];
+          if (cos.length > 0) continue;
+        }
         used.add(job.job_id);
         return { job, estimate };
       }
