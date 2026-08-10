@@ -12,7 +12,9 @@ from apps.core.services import NotFoundError
 from apps.estimates.change_order_service import ChangeOrderService
 from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
 
-from .serializers import ChangeOrderLineItemSerializer, ChangeOrderSerializer
+from .serializers import (
+    ChangeOrderLineItemSerializer, ChangeOrderSerializer, serialize_amended_agreement,
+)
 
 
 class ChangeOrderViewSet(
@@ -40,7 +42,7 @@ class ChangeOrderViewSet(
     }
 
     def get_permissions(self):
-        read_actions = ('list', 'retrieve', 'deliverables_baseline')
+        read_actions = ('list', 'retrieve', 'deliverables_baseline', 'amended_agreement')
         if self.action in read_actions:
             return [IsAuthenticated()]
         if self.action == 'line_items' and self.request.method == 'GET':
@@ -206,3 +208,22 @@ class ChangeOrderViewSet(
 
         serializer = DeliverableSnapshotSerializer(snapshots, many=True)
         return Response({'baseline': serializer.data})
+
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path='amended-agreement',
+        url_name='amended-agreement',
+        permission_classes=[IsAuthenticated],
+    )
+    def amended_agreement(self, request, pk=None):
+        """Server-composed "amended agreement": the baseline (estimate +
+        accepted COs preceding this one) with this CO's own add/remove/
+        replace lines applied — the CO edit view's one-table composition,
+        computed server-side so the view, footer totals, and future seeding
+        can never disagree (apps.estimates.agreement.compose_amended_agreement).
+        """
+        from apps.estimates.agreement import compose_amended_agreement
+        co = self.get_object()
+        result = compose_amended_agreement(co)
+        return Response(serialize_amended_agreement(result))

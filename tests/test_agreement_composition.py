@@ -361,3 +361,73 @@ class ComposeAgreementMultipleCOTests(FixtureTestCase):
         descriptions = [l['description'] for l in result['lines']]
         self.assertNotIn('Widget B', descriptions)
         self.assertEqual(len(result['lines']), 2)
+
+
+class ComposeAgreementAdjustmentReplaceTests(FixtureTestCase):
+    """An accepted replace-of-adjustment CO line must emit its own
+    is_adjustment/percent/target_category_ids triple — _line_dict_from_co_item
+    reads the CO line's own fields rather than hardcoding falsey."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import RateScheme
+
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        self.est = _make_accepted_estimate(self.job, number='EST-AGR-ADJ')
+        self.labor = AccountingCategory.objects.create(
+            code='LAB-AGR-ADJ', name='Labor-AGR-ADJ', taxable=False)
+        self.base = _make_est_line(self.est, 1, 'Base work', '1', '100.00')
+        self.scheme = RateScheme.objects.create(
+            name='Rush-AGR-ADJ', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.labor,
+        )
+        self.adj_line = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=2, description='Rush 10%',
+            qty=Decimal('1'), price=Decimal('10.00'),
+            adjustment_service=self.scheme, adjustment_percent=Decimal('10.00'),
+        )
+        self.adj_line.adjustment_target_categories.set([self.labor.pk])
+
+    def test_replace_of_adjustment_emits_own_triple(self):
+        from apps.estimates.agreement import compose_agreement
+        from apps.jobs.models import RateScheme
+
+        co = _make_accepted_co(self.job, self.est)
+        replace_scheme = RateScheme.objects.create(
+            name='Rush-AGR-ADJ-16', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('16.00'), unit_label='%',
+            accounting_category=self.labor,
+        )
+        co_line = ChangeOrderLineItem.objects.create(
+            change_order=co, line_number=1,
+            action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=self.adj_line,
+            description='Rush 16%', qty=Decimal('1'), price=Decimal('16.00'),
+            adjustment_service=replace_scheme, adjustment_percent=Decimal('16.00'),
+        )
+        co_line.adjustment_target_categories.set([self.labor.pk])
+
+        result = compose_agreement(self.job)
+        replaced = next(l for l in result['lines'] if l['description'] == 'Rush 16%')
+        self.assertTrue(replaced['is_adjustment'])
+        self.assertEqual(replaced['adjustment_service_id'], replace_scheme.pk)
+        self.assertEqual(replaced['percent'], Decimal('16.00'))
+        self.assertEqual(replaced['target_category_ids'], [self.labor.pk])
+
+    def test_add_line_is_not_an_adjustment(self):
+        """A plain add line still reads is_adjustment=False (no descriptor set)."""
+        from apps.estimates.agreement import compose_agreement
+
+        co = _make_accepted_co(self.job, self.est)
+        _make_co_line(co, 1, ChangeOrderLineItem.ACTION_ADD,
+                      description='New Service', qty='1', price='200.00')
+
+        result = compose_agreement(self.job)
+        added = next(l for l in result['lines'] if l['description'] == 'New Service')
+        self.assertFalse(added['is_adjustment'])
+        self.assertIsNone(added['adjustment_service_id'])
+        self.assertIsNone(added['percent'])
+        self.assertEqual(added['target_category_ids'], [])
