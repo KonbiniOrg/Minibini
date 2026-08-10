@@ -308,17 +308,52 @@ class ChangeOrderService:
         DeliverableService.snapshot_document(change_order=co)
         co.status = ChangeOrder.STATUS_SUPERSEDED
         co.save()  # sets closed_date
-        # 3. Seed a fresh draft CO carrying the same deltas for the shop.
-        return ChangeOrderService.seed_new(co.pk)
+        # 3. Seed a fresh draft CO carrying the same deltas for the shop,
+        #    moving the superseded CO's authored/inherited claims onto their
+        #    corresponding copies — otherwise those atoms strand on the now-
+        #    dead superseded CO forever (SUPERSEDED deliberately isn't in
+        #    DEAD_DOCUMENT_STATUSES, so no release fires for it).
+        return ChangeOrderService.seed_new(co.pk, move_claims=True)
 
     @staticmethod
     @transaction.atomic
-    def seed_new(pk):
+    def seed_new(pk, move_claims=False):
         """Create a new draft CO by copying all line items from an existing (terminal) CO.
 
         The source CO retains its status. The new CO gets parent=source.
-        Line items are copied directly (no renumbering).
+        Line items are copied directly (no renumbering); each copy carries
+        its adjustment triple (adjustment_service / adjustment_percent /
+        adjustment_target_categories) when the source line has one, so a
+        seeded copy of an adjustment-replace line stays a real adjustment
+        amendment instead of silently reverting to a plain replace. Prices
+        are recomputed once, after every line is copied
+        (recompute_adjustment_replaces), against the *new* CO's own amended
+        basis.
+
+        A copy of a legacy ACTION_REPLACE line still carrying a
+        crystallization descriptor (service_item / inventory_item /
+        is_material — predates the clean() rule forbidding them on replace
+        lines) is normalized to a bare replace: the descriptor is stripped
+        (description/qty/units/price/accounting_category are kept) so every
+        copy this method makes passes full_clean().
+
+        ``move_claims``: when True, each source line's
+        ChangeOrderLineItemSource rows move onto its corresponding copy
+        (delete-then-create — same pattern as
+        ChangeOrderAcceptanceService._move_claims_to, required because the
+        source model's uniqueness is on (source_type, source_pk), so the old
+        row must go before the new one can be created). Only
+        ``request_changes`` (supersede-then-reseed) passes True. A
+        standalone call on a terminal CO — the "seed a new draft from this
+        one" API action — must NOT move claims: a rejected/expired CO
+        already released its claims (DEAD_DOCUMENT_STATUSES), and an
+        ACCEPTED CO's claims are the agreement record (compose_agreement
+        reads them; ChangeOrderAcceptanceService._current_atoms walks them)
+        and must stay exactly where they are — its copies correctly arrive
+        claimless.
         """
+        from apps.estimates.models import ChangeOrderLineItemSource
+
         try:
             src = ChangeOrder.objects.get(pk=pk)
         except ChangeOrder.DoesNotExist:
@@ -331,7 +366,8 @@ class ChangeOrderService:
         )
 
         for li in ChangeOrderLineItem.objects.filter(change_order=src):
-            ChangeOrderLineItem.objects.create(
+            is_replace = li.action == ChangeOrderLineItem.ACTION_REPLACE
+            new_li = ChangeOrderLineItem(
                 change_order=new_co,
                 action=li.action,
                 target_line_item=li.target_line_item,
@@ -340,12 +376,34 @@ class ChangeOrderService:
                 units=li.units,
                 price=li.price,
                 line_number=li.line_number,
-                inventory_item=li.inventory_item,
-                service_item=li.service_item,
-                is_material=li.is_material,
+                # Legacy normalization: a replace line never carries a
+                # crystallization descriptor going forward (clean() forbids
+                # it) — strip these on copy instead of propagating a
+                # pre-rule violation into the new draft.
+                inventory_item=None if is_replace else li.inventory_item,
+                service_item=None if is_replace else li.service_item,
+                is_material=False if is_replace else li.is_material,
                 accounting_category=li.accounting_category,
+                adjustment_service=li.adjustment_service,
+                adjustment_percent=li.adjustment_percent,
             )
+            new_li.full_clean()
+            new_li.save()
+            if li.adjustment_service_id is not None:
+                # M2M needs a saved row — set after save().
+                new_li.adjustment_target_categories.set(
+                    li.adjustment_target_categories.all())
 
+            if move_claims:
+                for row in list(li.sources.all()):
+                    source_type, source_pk = row.source_type, row.source_pk
+                    row.delete()  # delete before create: unique on (source_type, source_pk)
+                    ChangeOrderLineItemSource.objects.create(
+                        change_order_line_item=new_li,
+                        source_type=source_type, source_pk=source_pk,
+                    )
+
+        ChangeOrderService.recompute_adjustment_replaces(new_co)
         return new_co
 
     @staticmethod

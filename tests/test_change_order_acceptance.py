@@ -6,11 +6,12 @@ Mirrors EstimateAcceptanceService.on_accept (tests/test_acceptance_plain_lines.p
            Material with reverse-markup cost, else → skip: a plain line stays
            document-only, no atom, no source row), source-linked to the CO
            line when an atom is created.
-- remove → retire the target line's current atom: cancel a Task (bleps
-           preserved), release a pending un-invoiced Material (earmark backed
-           out). Consumed / invoiced / terminal atoms and historical
-           fee-sourced targets are left alone; document-only targets
-           (adjustments, plain lines) are a no-op.
+- remove → stamp `descoped_by = co` on the target's current atom(s), then
+           retire: cancel a Task (bleps preserved), release a pending
+           un-invoiced Material (earmark backed out). Consumed / invoiced /
+           terminal atoms are still stamped but otherwise left alone (the
+           stamp is descope provenance, not a retirement outcome);
+           document-only targets (adjustments, plain lines) are a no-op.
 - replace → backing inheritance: the target's current claim rows move onto
            the replacement CO line. Nothing is crystallized, nothing is
            retired — the underlying Task/Material is untouched (same pk,

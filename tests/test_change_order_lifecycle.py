@@ -3,13 +3,18 @@ Tests for ChangeOrderService lifecycle: create, update_status (accept/reject),
 seed_new, discard_draft, and related side effects.
 """
 from decimal import Decimal
-from apps.core.models import JobHistory
+from apps.core.models import AccountingCategory, JobHistory
 from django.core.exceptions import ValidationError
 from tests.base import FixtureTestCase
-from apps.estimates.models import Estimate, EstimateLineItem, ChangeOrder, ChangeOrderLineItem
+from apps.estimates.change_order_service import ChangeOrderService
+from apps.estimates.models import (
+    Estimate, EstimateLineItem, ChangeOrder, ChangeOrderLineItem,
+    ChangeOrderLineItemSource,
+)
+from apps.estimates.services import ChangeOrderWizardService
 from apps.deliverables.models import Deliverable, DeliverableSnapshot
-from apps.jobs.models import Job, Task
-from apps.inventory.models import Material
+from apps.jobs.models import Job, RateScheme, Task
+from apps.inventory.models import InventoryItem, Material
 
 
 def _advance_job_to_on_hold(job):
@@ -275,6 +280,188 @@ class ChangeOrderServiceSeedNewTests(FixtureTestCase):
         new_count = ChangeOrderLineItem.objects.filter(change_order=co_new).count()
         self.assertEqual(src_count, 2)
         self.assertEqual(new_count, 2)
+
+    def test_seed_new_from_rejected_co_with_authored_claim_arrives_claimless(self):
+        """Rejection already released the source line's authored claim
+        (DEAD_DOCUMENT_STATUSES), so the seeded copy — default
+        move_claims=False — must not carry any source rows either."""
+        from apps.estimates.change_order_service import ChangeOrderService
+        cat = AccountingCategory.objects.create(
+            code='LAB-COSREJ', name='Labor-COSREJ', taxable=False)
+        scheme = RateScheme.objects.create(
+            name='Hourly-COSREJ', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50'), unit_label='hour', accounting_category=cat,
+        )
+        task = Task(job=self.job, name='Extra', est_qty=Decimal('1'))
+        task.stamp_from_scheme(scheme)
+        task.save()
+
+        co_src = ChangeOrderService.create(job_id=self.job.pk)
+        ChangeOrderWizardService.add_atoms_to_new_line_item(
+            co_src, [{'type': 'task', 'id': task.pk}])
+        ChangeOrderService.mark_open(co_src.pk)
+        ChangeOrderService.update_status(co_src.pk, ChangeOrder.STATUS_REJECTED)
+
+        self.assertEqual(
+            ChangeOrderLineItemSource.objects.filter(source_pk=task.pk).count(), 0,
+            'Rejection should already have released the claim.',
+        )
+
+        co_new = ChangeOrderService.seed_new(co_src.pk)
+        new_li = ChangeOrderLineItem.objects.get(change_order=co_new)
+        self.assertEqual(new_li.sources.count(), 0)
+
+
+class ChangeOrderServiceSeedNewAdjustmentTests(FixtureTestCase):
+    """seed_new preserves the adjustment triple on a copied REPLACE line, so
+    the copy stays a real adjustment amendment (Task 6 shape) instead of
+    silently reverting to a plain replace."""
+
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        self.labor = AccountingCategory.objects.create(
+            code='LAB-SEEDADJ', name='Labor-SeedAdj', taxable=False)
+        self.materials = AccountingCategory.objects.create(
+            code='MAT-SEEDADJ', name='Materials-SeedAdj', taxable=False)
+        self.est = _make_accepted_estimate(self.job, number='EST-SEEDADJ-1')
+        self.li_labor = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, description='Labor',
+            qty=Decimal('1'), price=Decimal('100.00'), accounting_category=self.labor,
+        )
+        self.li_materials = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=2, description='Materials',
+            qty=Decimal('1'), price=Decimal('40.00'), accounting_category=self.materials,
+        )
+        self.scheme = RateScheme.objects.create(
+            name='Rush-SeedAdj', algorithm=RateScheme.PERCENTAGE, rate=Decimal('10.00'),
+            unit_label='%', accounting_category=self.labor,
+        )
+        self.adj = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=3, description='Rush 10%',
+            qty=Decimal('1'), price=Decimal('14.00'), units='pct',
+            accounting_category=self.labor,
+            adjustment_service=self.scheme, adjustment_percent=Decimal('10.00'),
+        )
+        _advance_job_to_on_hold(self.job)
+
+    def test_seed_new_preserves_adjustment_triple_and_recomputes_price(self):
+        co_src = ChangeOrderService.create(job_id=self.job.pk)
+        replace_li = ChangeOrderService.add_line_item(
+            co_src.pk, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=self.adj.pk, adjustment_percent='5.00',
+        )
+        self.assertEqual(replace_li.price, Decimal('7.00'))  # 5% of 140
+        ChangeOrderService.mark_open(co_src.pk)
+        ChangeOrderService.update_status(co_src.pk, ChangeOrder.STATUS_REJECTED)
+
+        co_new = ChangeOrderService.seed_new(co_src.pk)
+        new_li = ChangeOrderLineItem.objects.get(
+            change_order=co_new, action=ChangeOrderLineItem.ACTION_REPLACE)
+
+        self.assertEqual(new_li.adjustment_service_id, self.scheme.pk)
+        self.assertEqual(new_li.adjustment_percent, Decimal('5.00'))
+        self.assertEqual(
+            {c.pk for c in new_li.adjustment_target_categories.all()},
+            {c.pk for c in self.adj.adjustment_target_categories.all()},
+        )
+        # Recomputed against the new CO's own amended basis — same 140 total
+        # (no accepted COs exist yet), so still 5% = 7.00.
+        self.assertEqual(new_li.price, Decimal('7.00'))
+
+
+class ChangeOrderServiceSeedNewFromAcceptedTests(FixtureTestCase):
+    """Standalone seed_new (move_claims=False, the default) on an ACCEPTED
+    CO must leave that CO's claims exactly where they are — they're the
+    agreement record — and the seeded copy must arrive claimless."""
+
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        self.est = _make_accepted_estimate(self.job, number='EST-COS-ACC-1')
+        self.d_a = Deliverable.objects.create(
+            job=self.job, description='Part', qty_ordered=Decimal('1'), units='ea', sort_order=10,
+        )
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-COSACC', name='Labor-COSACC', taxable=False)
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-COSACC', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.task = Task(job=self.job, name='Extra cut', est_qty=Decimal('1'))
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
+        _advance_job_to_on_hold(self.job)
+
+    def test_standalone_seed_new_from_accepted_co_leaves_claims_in_place(self):
+        co = ChangeOrderService.create(job_id=self.job.pk)
+        li = ChangeOrderWizardService.add_atoms_to_new_line_item(
+            co, [{'type': 'task', 'id': self.task.pk}])
+        ChangeOrderService.mark_open(co.pk)
+        ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
+
+        co_new = ChangeOrderService.seed_new(co.pk)
+
+        li.refresh_from_db()
+        self.assertEqual(li.sources.count(), 1)
+        self.assertEqual(li.sources.first().source_pk, self.task.pk)
+
+        new_li = ChangeOrderLineItem.objects.get(change_order=co_new)
+        self.assertEqual(new_li.sources.count(), 0)
+
+
+class SeedNewNormalizesLegacyReplaceDescriptorTests(FixtureTestCase):
+    """A legacy ACTION_REPLACE line carrying a crystallization descriptor
+    (created before ChangeOrderLineItem.clean() forbade it — e.g. via a
+    direct .objects.create() bypassing full_clean) must not propagate the
+    violation into a seeded copy: seed_new strips the descriptor so the
+    copy is a valid bare replace."""
+
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        self.est = _make_accepted_estimate(self.job, number='EST-LEGACY-1')
+        self.d_a = Deliverable.objects.create(
+            job=self.job, description='Part', qty_ordered=Decimal('1'), units='ea', sort_order=10,
+        )
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-LEGACY', name='Labor-Legacy', taxable=False)
+        self.target = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, description='Old work',
+            qty=Decimal('1'), price=Decimal('100.00'), accounting_category=self.cat,
+        )
+        _advance_job_to_on_hold(self.job)
+
+    def test_legacy_replace_descriptor_copy_is_normalized(self):
+        co_src = ChangeOrderService.create(job_id=self.job.pk)
+        pli = InventoryItem.objects.create(
+            code='PLY-LEGACY', accounting_category=self.cat,
+            qty_on_hand=Decimal('10'), purchase_price=Decimal('5'),
+            selling_price=Decimal('12.00'), units='ea',
+        )
+        # Legacy row: predates the clean() rule forbidding a descriptor on a
+        # replace line. BaseLineItem.save() always full_cleans, so simulate
+        # the pre-rule persisted row with bulk_create (skips save()/clean()
+        # entirely) rather than the normal ORM write path.
+        ChangeOrderLineItem.objects.bulk_create([ChangeOrderLineItem(
+            change_order=co_src, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=self.target, description='New work',
+            qty=Decimal('1'), price=Decimal('120.00'), line_number=1,
+            accounting_category=self.cat, inventory_item=pli,
+        )])
+        ChangeOrderService.mark_open(co_src.pk)
+        ChangeOrderService.update_status(co_src.pk, ChangeOrder.STATUS_REJECTED)
+
+        co_new = ChangeOrderService.seed_new(co_src.pk)
+        new_li = ChangeOrderLineItem.objects.get(change_order=co_new)
+
+        self.assertIsNone(new_li.inventory_item_id)
+        self.assertIsNone(new_li.service_item_id)
+        self.assertFalse(new_li.is_material)
+        new_li.full_clean()  # must not raise
 
 
 class ChangeOrderServiceDiscardDraftTests(FixtureTestCase):

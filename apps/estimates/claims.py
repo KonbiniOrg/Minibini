@@ -119,7 +119,12 @@ class EstimateClaimService:
 #                         walks them (through the replace chain) to resolve
 #                         a remove/replace target's current atom.
 #   superseded          — already holds none: EstimateService.revise_estimate
-#                         re-points the rows onto the new revision.
+#                         re-points the rows onto the new revision, and
+#                         ChangeOrderService.request_changes does the CO-side
+#                         equivalent (seed_new's move_claims=True moves each
+#                         superseded line's source rows onto its copy in the
+#                         freshly-seeded draft before the CO transitions to
+#                         superseded).
 #
 # Called from Estimate.save() / ChangeOrder.save() rather than a service, so
 # every writer is covered — the portal decline endpoints, the expiry sweep,

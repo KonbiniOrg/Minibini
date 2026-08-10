@@ -238,6 +238,48 @@ The CO surface and its estimate-parallel code.
   spanning both source models) closes the race, or the risk is judged not
   worth one.
 
+- **`_assert_target_not_billed` isn't chain-aware.** — _added 2026-08-09 (CO
+  amend-in-place final review)_ `ChangeOrderService._assert_target_not_billed`
+  (the remove/replace guard) only checks `InvoiceLineItem.agreement_estimate_line`
+  — so a target line that a *prior accepted CO* already replaced (whose
+  invoice reference lives on `agreement_co_line`, not `agreement_estimate_line`)
+  isn't caught, and a second CO could remove/replace an already-billed line
+  out from under the invoice. `apps/estimates/agreement.py`'s `_billed_on`
+  (the CO edit page's display helper, feeding `compose_amended_agreement`)
+  already checks both branches correctly — only the write-side guard is
+  behind. Only reachable once a multi-CO chain exists, so single-CO testing
+  never exercises it.
+  _Done when:_ `_assert_target_not_billed` walks the same
+  estimate-line-or-prior-replace-CO-line chain `_billed_on` does.
+
+- **No guard against two lines in one CO targeting the same estimate
+  line.** — _added 2026-08-09 (CO amend-in-place final review)_ Nothing
+  stops `add_line_item`/`update_line_item` from creating two remove/replace
+  lines on the same draft CO with the same `target_line_item` — a raw-API-only
+  gap (the wizard/UI never offers it). `ChangeOrderAcceptanceService.on_accept`
+  applies both against the target's current atom(s) without checking for the
+  collision, which is undefined behavior rather than a clean rejection. Related:
+  `target_line_item` is also never validated to belong to `co.estimate` — see
+  the existing "`ChangeOrderLineItem.clean()` doesn't validate the target
+  belongs to the CO's estimate" entry above, still open; a one-line ownership
+  check for that entry and the duplicate-target check here are natural
+  companions to add in the same pass.
+  _Done when:_ `ChangeOrderLineItem.clean()` (or the service) rejects a
+  second draft-CO line targeting an estimate line already targeted by
+  another remove/replace line on the same CO, with a test.
+
+- **Per-row `_billed_on` query in `compose_amended_agreement` is an
+  N+1.** — _added 2026-08-09 (CO amend-in-place final review)_ The
+  `'agreement'`-row loop in `compose_amended_agreement` (`apps/estimates/agreement.py`)
+  calls `_billed_on(line)` once per surviving baseline row, each a fresh
+  `InvoiceLineItem` query — roughly one query per agreement line on the CO
+  edit page. Fine at today's line counts; candidate for a single
+  prefetch/batched lookup (keyed by estimate-line-id/co-line-id) if a job's
+  agreement grows large enough to notice.
+  _Done when:_ `compose_amended_agreement` resolves `billed_on` for every row
+  in O(1) queries instead of one per row (or the cost is judged not worth
+  batching at current scale).
+
 
 ## Invoicing, expenses & payments
 
