@@ -159,12 +159,15 @@ def compose_agreement(job):
     return {'lines': lines, 'grand_total': grand_total}
 
 
-def _adjustment_expected_amount(adj_line, amended_lines):
+def adjustment_expected_amount(adj_line, amended_lines):
     """The amended-basis adjustment amount: percent/100 × Σ surviving amended
     non-adjustment line amounts, filtered by the target-category set (empty
     set = all). Mirrors apps.core.adjustments.compute_adjustment_amount but
     operates on the composed line-dict shape (post CO-application) rather
-    than live model instances/siblings."""
+    than live model instances/siblings. Public: also the basis for
+    ChangeOrderService.recompute_adjustment_replaces (Task 6) — the single
+    place this math lives so the "amended agreement" hint and the CO line's
+    stored price can never disagree."""
     percent = adj_line['percent'] or Decimal('0')
     target_ids = set(adj_line['target_category_ids'])
     total = Decimal('0.00')
@@ -307,7 +310,7 @@ def compose_amended_agreement(co):
         line = row['line']
         row['billed_on'] = _billed_on(line)
         if line['is_adjustment']:
-            expected = _adjustment_expected_amount(line, amended_lines)
+            expected = adjustment_expected_amount(line, amended_lines)
             stored = line['amount'].quantize(Decimal('0.01'))
             row['adjustment_expected_amount'] = None if expected == stored else expected
         else:

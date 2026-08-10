@@ -11,6 +11,8 @@ Rules:
 - Rejecting/expiring a CO snapshots the proposal and leaves the job held.
 """
 
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from apps.core.history import record_history
 from django.db import transaction
@@ -395,6 +397,100 @@ class ChangeOrderService:
             )})
 
     @staticmethod
+    def _apply_adjustment_replace_shape(li):
+        """Enforce the adjustment-replace shape on a REPLACE line whose
+        target is itself an adjustment (estimate) line — amend-in-place of a
+        percentage adjustment (e.g. lowering a 10% rush fee to 5%).
+
+        Copies `adjustment_service` and `adjustment_target_categories` from
+        the target, pins `qty=1`, `units=target.units`,
+        `accounting_category=target.accounting_category`, defaults
+        `description` to the target's when blank, and defaults
+        `adjustment_percent` to the target's when not yet set — a
+        percent-less replace is a description-only edit (Task 6 brief).
+
+        Idempotent (safe to call on every add/update), so it applies the
+        same invariant whether this is the line's creation or a later edit.
+        A no-op for any line that isn't a replace-of-adjustment.
+
+        `price` is deliberately left untouched — recompute_adjustment_replaces
+        (called at the end of every mutating service method) computes it
+        against the amended agreement basis, the single place that math
+        lives.
+
+        Returns the target's `adjustment_target_categories` queryset to
+        `.set()` on `li` once `li` has a pk (M2M needs a saved row), or None
+        if this isn't an adjustment-replace line.
+        """
+        if li.action != ChangeOrderLineItem.ACTION_REPLACE or not li.target_line_item_id:
+            return None
+        target = li.target_line_item
+        if target.adjustment_service_id is None:
+            return None
+
+        li.adjustment_service_id = target.adjustment_service_id
+        if li.adjustment_percent is None:
+            li.adjustment_percent = target.adjustment_percent
+        li.qty = Decimal('1')
+        li.units = target.units
+        li.accounting_category_id = target.accounting_category_id
+        if not li.description:
+            li.description = target.description
+        return target.adjustment_target_categories.all()
+
+    @staticmethod
+    def recompute_adjustment_replaces(co):
+        """Recompute price for every CO line that amends an adjustment line
+        in place (adjustment_service_id set), against the AMENDED agreement
+        basis — compose_amended_agreement(co)'s surviving non-adjustment
+        rows (target-category set; empty = all), quantized to cents.
+
+        Reuses apps.estimates.agreement.adjustment_expected_amount — the
+        same math compose_amended_agreement uses for its own
+        "stale adjustment" hint — so the two can never disagree. No
+        recursion: adjustments never stack, and the composed row for each
+        adjustment-replace line itself carries is_adjustment=True, so it's
+        automatically excluded from every basis (including its own).
+
+        Saves only when the computed price actually changes. Call at the
+        end of add_line_item, update_line_item, delete_line_item, and
+        reorder_line_items (reorder for completeness/cheapness — a pure
+        reorder never changes any amount, but it's a one-line safety net),
+        all in the same transaction as the triggering mutation — and by
+        Task 7's atom mutations.
+        """
+        from apps.estimates.agreement import (
+            adjustment_expected_amount, compose_amended_agreement,
+        )
+
+        adjustment_lines = list(
+            ChangeOrderLineItem.objects.filter(
+                change_order=co,
+                action=ChangeOrderLineItem.ACTION_REPLACE,
+                adjustment_service__isnull=False,
+            )
+        )
+        if not adjustment_lines:
+            return
+
+        composed = compose_amended_agreement(co)
+        amended_lines = [row['line'] for row in composed['rows'] if row['kind'] != 'removed']
+        by_co_line_id = {
+            line['co_line_id']: line for line in amended_lines
+            if line['co_line_id'] is not None
+        }
+
+        for li in adjustment_lines:
+            line_dict = by_co_line_id.get(li.pk)
+            if line_dict is None:
+                continue  # target already gone upstream — nothing to price against
+            new_price = adjustment_expected_amount(line_dict, amended_lines)
+            if li.price != new_price:
+                li.price = new_price
+                li.save()
+
+    @staticmethod
+    @transaction.atomic
     def add_line_item(co_pk, **kwargs):
         """Add a manual line item to a draft change order."""
         try:
@@ -410,12 +506,20 @@ class ChangeOrderService:
         # Material lines (is_material=True) get their AC from config if not
         # supplied — same default the estimate side applies at authoring.
         EstimateService._apply_material_ac_default(li)
+        target_categories = ChangeOrderService._apply_adjustment_replace_shape(li)
         ChangeOrderService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
         if (li.action in (ChangeOrderLineItem.ACTION_REMOVE, ChangeOrderLineItem.ACTION_REPLACE)
                 and li.target_line_item_id):
             ChangeOrderService._assert_target_not_billed(li.target_line_item)
         li.save()
+        if target_categories is not None:
+            li.adjustment_target_categories.set(target_categories)
+        ChangeOrderService.recompute_adjustment_replaces(co)
+        # recompute_adjustment_replaces saves through a freshly-queried
+        # instance, not this one — refresh so a caller (e.g. the API
+        # response) sees the amended-basis price, not the pre-recompute one.
+        li.refresh_from_db()
         return li
 
     @staticmethod
@@ -493,6 +597,7 @@ class ChangeOrderService:
         return li
 
     @staticmethod
+    @transaction.atomic
     def update_line_item(line_item_id, **kwargs):
         """Update a change order line item — validates draft status."""
         try:
@@ -507,15 +612,23 @@ class ChangeOrderService:
         for field, value in kwargs.items():
             setattr(li, field, value)
         EstimateService._apply_material_ac_default(li)
+        target_categories = ChangeOrderService._apply_adjustment_replace_shape(li)
         ChangeOrderService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
         if (li.action in (ChangeOrderLineItem.ACTION_REMOVE, ChangeOrderLineItem.ACTION_REPLACE)
                 and li.target_line_item_id):
             ChangeOrderService._assert_target_not_billed(li.target_line_item)
         li.save()
+        if target_categories is not None:
+            li.adjustment_target_categories.set(target_categories)
+        ChangeOrderService.recompute_adjustment_replaces(li.change_order)
+        # See add_line_item's comment: refresh so the caller sees the
+        # amended-basis price, not the pre-recompute one.
+        li.refresh_from_db()
         return li
 
     @staticmethod
+    @transaction.atomic
     def reorder_line_items(co_pk, item_ids):
         """Reorder change order line items by position list — validates draft status."""
         try:
@@ -530,8 +643,10 @@ class ChangeOrderService:
                 ChangeOrderLineItem.objects.filter(
                     pk=item_id, change_order=co,
                 ).update(line_number=position)
+        ChangeOrderService.recompute_adjustment_replaces(co)
 
     @staticmethod
+    @transaction.atomic
     def delete_line_item(line_item_id):
         """Delete a change order line item and renumber — validates draft status."""
         from apps.core.services import LineItemService
@@ -541,4 +656,7 @@ class ChangeOrderService:
             raise NotFoundError(f'ChangeOrderLineItem {line_item_id} not found')
         if li.change_order.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Cannot modify line items on a non-draft change order.')
-        return LineItemService.delete_line_item_with_renumber(li)
+        co = li.change_order
+        result = LineItemService.delete_line_item_with_renumber(li)
+        ChangeOrderService.recompute_adjustment_replaces(co)
+        return result
