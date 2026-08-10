@@ -290,12 +290,16 @@ class LineItemMixin:
         # derive_backing / agreement_ref (invoice lines; the CO surface's
         # equivalent fields reuse the same names) read the agreement
         # reference and accounting_category per row — avoid the N+1.
-        related_field_names = (
-            'agreement_estimate_line', 'agreement_co_line',
-            'accounting_category',
-        )
+        # agreement_co_line's own `change_order` is followed one hop
+        # further for the ref payload's co_number (_agreement_ref_payload).
+        related_field_paths = {
+            'agreement_estimate_line': 'agreement_estimate_line',
+            'agreement_co_line': 'agreement_co_line__change_order',
+            'accounting_category': 'accounting_category',
+        }
         select_related_fields = [
-            f for f in related_field_names if f in field_names
+            path for name, path in related_field_paths.items()
+            if name in field_names
         ]
         if select_related_fields:
             qs = qs.select_related(*select_related_fields)

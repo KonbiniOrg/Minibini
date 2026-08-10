@@ -91,12 +91,14 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             qs = qs.filter(job_id=job)
 
         if not (self.action == 'list' and self._summary_mode()):
-            # Detail/list (non-summary) path: prefetch line items' sources and
-            # accounting_category so InvoiceSerializer.get_is_deposit (and the
-            # per-line is_deposit) don't N+1 across invoicelineitem_set.
+            # Detail/list (non-summary) path: prefetch line items' sources,
+            # accounting_category, and a CO ref's own change_order so
+            # InvoiceSerializer.get_is_deposit / the per-line agreement_ref's
+            # co_number don't N+1 across invoicelineitem_set.
             return qs.prefetch_related(
                 'invoicelineitem_set__sources',
                 'invoicelineitem_set__accounting_category',
+                'invoicelineitem_set__agreement_co_line__change_order',
             )
 
         # Summary (financials A/R) mode only: select_related to avoid N+1 from

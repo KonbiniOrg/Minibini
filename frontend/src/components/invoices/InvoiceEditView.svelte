@@ -10,6 +10,7 @@
   import { showError } from '../../stores/messages.js';
   import { formatQtyUnits } from '../../lib/format.js';
   import { fmtMoney } from '../../lib/taskTotals.js';
+  import { coShortLabel, estReferenceText } from '../../lib/agreementReference.js';
   import AdjustmentModal from '../AdjustmentModal.svelte';
   import LineItemModal from '../LineItemModal.svelte';
   import PriceListPicker from '../PriceListPicker.svelte';
@@ -223,27 +224,6 @@
     }
   }
 
-  // "est was $X · +$Δ" — Δ compares the estimate's stored amount against
-  // what the line is actually backed by right now: actuals (when claimed
-  // work exists) else the line's own current amount. The "· +$Δ" clause
-  // is suppressed entirely when Δ is exactly zero: fmtMoney(0) renders as
-  // '-' (its "no amount" sentinel, used everywhere else in this app), so
-  // showing the clause at Δ=0 would render the nonsense "· +-" instead of
-  // just quietly having nothing to report.
-  function estReferenceText(li) {
-    const ref = li.agreement_ref;
-    if (!ref) return '';
-    const estAmount = Number(ref.est_amount);
-    const current = li.actuals_total != null ? Number(li.actuals_total) : lineAmount(li);
-    const delta = current - estAmount;
-    let text = `est was ${fmtMoney(estAmount)}`;
-    if (delta !== 0) {
-      const sign = delta > 0 ? '+' : '';
-      text += ` · ${sign}${fmtMoney(delta)}`;
-    }
-    return text;
-  }
-
   // ── Uncovered work pool → selection → add-atoms / line-items-from-atoms ──
   // The invoice pool is nested (tasks[].atoms[]), unlike the estimate's flat
   // pool — flatten it here, excluding the atoms already claimed by THIS
@@ -280,8 +260,11 @@
   // billable, but the biller must consciously choose to bill it rather
   // than have it disappear into an undifferentiated row (same doctrine
   // as the source pool's own `struck_from_agreement` badge). The
-  // "descoped by CO-N" chip (Task 9's `chip` prop) arrives with the CO
-  // plan and slots in here the same way, unused for now.
+  // "descoped by CO-N" chip reads `descoped_by_co_number` (the CO whose
+  // remove line struck this atom off the accepted agreement — Task 3);
+  // `struck_from_agreement` is the server-computed display gate, already
+  // suppressed on a cancelled task (one amber badge is a prompt, two is
+  // noise) — this branch never re-derives that suppression client-side.
   function atomChip(atom) {
     if (atom.state === 'claimed_by_other') {
       return { label: `invoiced — ${atom.claiming_invoice_number || ''}`.trim(), cls: 'invoiced-elsewhere' };
@@ -290,7 +273,7 @@
       return { label: 'cancelled — work done', cls: 'edited' };
     }
     if (atom.struck_from_agreement) {
-      return { label: 'struck from agreement', cls: 'edited' };
+      return { label: `descoped by ${coShortLabel(atom.descoped_by_co_number)}`, cls: 'edited' };
     }
     return undefined;
   }

@@ -111,6 +111,18 @@ describe('InvoiceEditView', () => {
     expect(queryByText(/·/)).toBeNull();
   });
 
+  it('reads "CO-1 line 2" for a CO-origin seeded line, not "est was $X"', async () => {
+    const line = seededLine({
+      agreement_ref: agreementRef({
+        kind: 'change_order', co_number: 'EST-2026-0004-CO1', co_line_number: 2,
+      }),
+    });
+    const { findByText, queryByText } = render(InvoiceEditView, { props: baseProps({ lineItems: [line] }) });
+    await findByText('Cut parts');
+    expect(await findByText('CO-1 line 2')).toBeInTheDocument();
+    expect(queryByText(/est was/)).toBeNull();
+  });
+
   it('shows the actuals chip and the est-reference once claimed work is attached', async () => {
     const line = seededLine({
       backing: 'actuals', actuals_total: '55.00',
@@ -336,6 +348,20 @@ describe('InvoiceEditView', () => {
     });
     await findByText('Frame it up');
     expect(await findByText(/cancelled — work done/i)).toBeInTheDocument();
+  });
+
+  it('carries a "descoped by CO-1" chip for an atom struck by an accepted CO', async () => {
+    const descoped = {
+      ...AVAILABLE_ATOM, id: 63, description: 'Rout edges',
+      struck_from_agreement: true, descoped_by_co_number: 'EST-2026-0004-CO1',
+    };
+    const { findByText } = render(InvoiceEditView, {
+      props: baseProps({
+        sourcePool: poolWith([{ task_id: 1, name: 'Task', has_billable_atoms: true, atoms: [descoped] }]),
+      }),
+    });
+    await findByText('Rout edges');
+    expect(await findByText(/descoped by CO-1/i)).toBeInTheDocument();
   });
 
   it('the INVOICED-elsewhere chip wins over the cancelled-task chip when both apply', async () => {

@@ -42,13 +42,22 @@ def _agreement_ref_payload(line):
         kind = 'change_order'
     if ref is None:
         return None
-    return {
+    payload = {
         'kind': kind,
         'line_id': ref.pk,
         'est_qty': str(ref.qty),
         'est_price': str(ref.price),
         'est_amount': str((ref.qty * ref.price).quantize(Decimal('0.01'))),
     }
+    if kind == 'change_order':
+        # CO-line provenance for the "CO-N line M" reference text (spec
+        # §9.3) — null/absent for an estimate-origin ref. `ref.change_order`
+        # must already be select_related where lines are serialized in
+        # bulk (see InvoiceViewSet.get_queryset and LineItemMixin's
+        # _get_line_items_qs) or this N+1's across the whole invoice.
+        payload['co_number'] = ref.change_order.change_order_number
+        payload['co_line_number'] = ref.line_number
+    return payload
 
 
 def _resolve_sources(line):

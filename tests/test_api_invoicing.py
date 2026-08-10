@@ -944,6 +944,45 @@ class InvoiceLineBackingAPITest(BaseTestCase):
         self.assertIsInstance(row['agreement_ref']['est_price'], str)
         self.assertIsInstance(row['agreement_ref']['est_amount'], str)
         self.assertIsNone(row['actuals_total'])
+        # Estimate-origin refs carry no CO provenance.
+        self.assertIsNone(row['agreement_ref'].get('co_number'))
+        self.assertIsNone(row['agreement_ref'].get('co_line_number'))
+
+    def test_agreement_ref_carries_co_provenance_for_co_origin_line(self):
+        """A CO-origin seeded line (agreement_co_line set) reports
+        co_number/co_line_number off the referenced CO line — the pair the
+        frontend renders as "CO-1 line 2" provenance (spec §9.3). The CO/CO
+        line are built directly here (not in setUp) so this fixture never
+        touches the other tests in this class, several of which drive
+        InvoiceService.seed_from_agreement off self.estimate — an
+        ACCEPTED CO with an add line under that same estimate would change
+        what gets seeded for them too."""
+        from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
+
+        co = ChangeOrder.objects.create(
+            job=self.job, estimate=self.estimate,
+            change_order_number='EST-BACK-1-CO1',
+            status=ChangeOrder.STATUS_ACCEPTED,
+        )
+        co_line = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            line_number=2, qty=Decimal('3'), units='hour',
+            description='CO labor', price=Decimal('40.00'),
+            accounting_category=self.cat,
+        )
+        invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceLineItem.objects.create(
+            invoice=invoice, line_number=1,
+            agreement_co_line=co_line,
+            qty=co_line.qty, units=co_line.units,
+            description=co_line.description, price=co_line.price,
+            accounting_category=self.cat,
+        )
+
+        row = self._row(invoice, li)
+        self.assertEqual(row['agreement_ref']['kind'], 'change_order')
+        self.assertEqual(row['agreement_ref']['co_number'], 'EST-BACK-1-CO1')
+        self.assertEqual(row['agreement_ref']['co_line_number'], 2)
 
     def test_use_estimate_patch_accepts_the_agreement_ref_values_verbatim(self):
         """Regression guard for the float-PATCH bug: PATCHing a line's
