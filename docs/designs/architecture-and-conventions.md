@@ -834,8 +834,8 @@ page-specific names or references:
 ### 5.5b The `docsurface` kit — shared document-editing surface (2026-08)
 
 `frontend/src/components/docsurface/` holds a seven-component kit
-shared by the estimate and invoice editing surfaces (a change-order
-surface is planned to reuse it too — see
+shared by the estimate, invoice, **and change-order** editing surfaces
+(the CO panel grew the same mode bar 2026-08-09 — see
 `docs/plans/2026-08-06-better-fees.md` §9.3). It replaced the old
 two-column `ReconcileMode` wizard presentation (§5.5a's job-page
 taxonomy, above) in the 2026-08-08 "skeleton phase": estimates and
@@ -844,9 +844,11 @@ invoices both moved from a two-mode ("lines"/"reconcile") panel to a
 place at one URL. Design authority:
 `docs/plans/2026-08-06-better-fees.md` §9 and its wireframe artifact;
 build-to-the-artifact was the standing instruction for this work.
-Consumer detail: `estimates-and-prices.md` §12 (estimate), the invoice
-side in `invoicing-and-expenses.md` (Agreement-line references and
-seeding, Backing model).
+Consumer detail: `estimates-and-prices.md` §12 (estimate) and §14.9a
+(change order — its Customer mode uses `COCustomerView`, a
+delta-document sibling to `DocCustomerView` rather than a direct
+consumer of it), the invoice side in `invoicing-and-expenses.md`
+(Agreement-line references and seeding, Backing model).
 
 **The seven components:**
 
@@ -878,9 +880,10 @@ grand-total footer row `DocCustomerView`/`DocReorderView` render). Per
 copy one into a component's local `<style>` block.
 
 **The three-mode flip-in-place pattern.** `mode` is local `$state` on
-the hosting panel (`EstimatePanel`/`InvoicePanel`), persisted per
-document via `stores/jobWorkspace.js`'s `rememberMode`/`getJobWs`
-(keyed `est:{id}`/`inv:{id}`, not by section). The store itself never
+the hosting panel (`EstimatePanel`/`InvoicePanel`/`ChangeOrderPanel`),
+persisted per document via `stores/jobWorkspace.js`'s
+`rememberMode`/`getJobWs` (keyed `est:{id}`/`inv:{id}`/`co:{id}`, not by
+section). The store itself never
 migrates old values — normalization happens at the read site: a
 remembered `'lines'`/`'reconcile'` (the pre-2026-08 panel/wizard values)
 folds to `'edit'`, and a remembered `'reorder'` additionally falls back

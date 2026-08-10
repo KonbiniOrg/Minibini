@@ -1206,7 +1206,7 @@ conventions.
 | Component | Path | Role |
 |---|---|---|
 | `EstimateEditView.svelte` | `frontend/src/components/estimates/` | The estimate's **Edit** mode — one merged surface: the line-items table (each row's atom claims nested via `AtomChildRow`) plus an `UncoveredWorkSection` pool below it. Presentation + gestures only; `EstimatePanel` owns data loading. See §12. |
-| `docsurface/*` kit | `frontend/src/components/docsurface/` | Seven shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `DocCustomerView`, `DocReorderView`) consumed by both the estimate and invoice edit surfaces (and the planned CO surface). Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched. |
+| `docsurface/*` kit | `frontend/src/components/docsurface/` | Seven shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `DocCustomerView`, `DocReorderView`) consumed by the estimate, invoice, **and CO** (§14.9a) edit surfaces. Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched. |
 | `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines via **Add line** + per-line **Edit**. |
 
 The invoice side is structurally parallel — same source pool, add-atoms,
@@ -1516,8 +1516,8 @@ switched in place by `DocModeBar` (§11.1) at the same
 `#/jobs/:jobId/estimate/:docId` URL — never a navigation, never a
 remount, never a modal. This is the estimate side of a shared
 `docsurface` component kit also consumed by the invoice
-(`InvoiceEditView`, `invoicing-and-expenses.md`) and, per the design
-doc's sequencing, a future change-order surface. Design authority:
+(`InvoiceEditView`, `invoicing-and-expenses.md`) and the change order
+(`ChangeOrderPanel`, §14.9a). Design authority:
 `docs/plans/2026-08-06-better-fees.md` §9 (the settled surface) and the
 wireframe artifact it links — build-to-the-artifact was the standing
 instruction; this section records the shape as built.
@@ -2139,6 +2139,64 @@ The draft toolbar's **Send to customer** link routes to
 re-emails), alongside the shop's internal **Record Accepted / Record
 Rejected** buttons for decisions relayed out-of-band. This mirrors the
 estimate detail page's Send / Resend Email affordance.
+
+### 14.9a The CO's own three-mode surface (Edit / Customer / Reorder)
+
+**Added 2026-08-09**, on top of the amend-in-place `COEditView` (§14.9):
+`ChangeOrderPanel` grows the same `DocModeBar` (§11.1/§12) — **Edit** /
+**Customer** / **Reorder**, `aria-pressed` on the active one, flipped in
+place at the same `#/jobs/:jobId/change-order/:coId` URL. `canEdit =
+canManageJobs && isDraft` (the same gate `COEditView` and
+`CODeliverablesSection` already used); `modes` is `['edit', 'customer',
+'reorder']` while `canEdit`, else `['edit', 'customer']`. Mode memory is
+namespaced `co:{coId}` (`stores/jobWorkspace.js`, key-generic — no store
+change needed); a remembered `'reorder'` falls back to `'edit'` when the
+CO is no longer editable, identical to the estimate/invoice normalization
+rule (§12 intro).
+
+**Deliverables in Edit mode only.** `CODeliverablesSection` — the grid +
+inline drafting forms — renders only when `mode === 'edit'`; Customer and
+Reorder are read-only document projections and never show it.
+
+**Date chips.** The toolbar carries the same `.stat-chips doc-stat-chips`
+strip as the estimate/invoice panels — Created / Sent / Expires / Closed,
+`fmtDate(co.{created,sent,expiration,closed}_date)`, muted `-` when a date
+is null — always rendered once the CO is loaded.
+
+**Customer mode — `COCustomerView.svelte`** (`components/changeorders/`,
+new). Deliberately **not** `DocCustomerView` reused as-is: a CO's
+customer-facing document is a *change* — only the lines this CO touches —
+not the whole agreement, so it needs a delta-amount column and two
+footer totals DocCustomerView's single-line-one-amount props don't
+express. It's a sibling that rhymes with DocCustomerView's visual grammar
+(same `.doc-customer-view` / `.data-table` / `tr.grand` classes from
+`app.css`) rather than a wrapper. Built from the `GET
+.../amended-agreement/` `rows` (§14.6, §14.8) — `agreement` (untouched
+baseline) rows are dropped entirely — reduced to one row per changed
+line:
+
+- `replaced` → the revised description/qty/price, Amount column = `line.amount − original.amount` (signed).
+- `removed` → the original description/qty/price, Amount column = `−original.amount`.
+- `added` → the line's own description/qty/price/amount (no original to net against).
+
+Footer: **Change total** (`amended.co_delta`, signed) and **Revised
+agreement total** (`amended.revised_total`). Title: `Change Order
+{change_order_number}`.
+
+**Reorder mode** renders `DocReorderView` (unmodified) over the CO's
+**own** `added`/`replaced` rows only — pulled from the same
+`amended-agreement` payload, sorted by `co_index`, each labeled `CO
+{co_index} — {description}` in the Description cell (so a reordered add
+or replace line is never mistaken for an untouched baseline line). The
+`removed` rows have no `co_index` and aren't offered as reorderable rows
+at all — but the reorder endpoint (`POST .../line-items/reorder/`)
+renumbers **every** `item_id` it's given from 1 and silently no-ops any
+`ChangeOrderLineItem` left out of the list, so a payload built only from
+the visible add+replace ids would leave the CO's remove lines with stale,
+colliding `line_number`s. `handleReorderDoc` therefore appends the CO's
+own `action='remove'` line ids (read from `co.line_items`, sorted by
+their current `line_number`) to the end of every reorder POST, unseen but
+present.
 
 ### 14.10 Customer portal
 

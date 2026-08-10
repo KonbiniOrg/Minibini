@@ -12,9 +12,14 @@
   import { showError } from '../../stores/messages.js';
   import CODeliverablesSection from './CODeliverablesSection.svelte';
   import COEditView from './COEditView.svelte';
+  import COCustomerView from './COCustomerView.svelte';
+  import DocModeBar from '../docsurface/DocModeBar.svelte';
+  import DocReorderView from '../docsurface/DocReorderView.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import { buildEstimateDocItems, changeOrderDisplayStatus } from '../../lib/estimateDocs.js';
   import { buildDeliverableRows } from '../../lib/changeOrderDiff.js';
+  import { formatQtyUnits } from '../../lib/format.js';
+  import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
 
   let {
     job,
@@ -47,8 +52,86 @@
   let isDraft = $derived(co?.status === 'draft');
   let isOpen = $derived(co?.status === 'open');
   let isTerminal = $derived(['accepted', 'rejected'].includes(co?.status));
+  let canEdit = $derived(canManageJobs && isDraft);
 
   let delivMergedRows = $derived(buildDeliverableRows(liveDeliverables, delivBaseline));
+
+  // The mode bar is a surface of this panel, not a separate route — same
+  // shape as EstimatePanel's mode wiring. Reorder is only restorable while
+  // the CO is still an editable draft (someone may have sent it since the
+  // mode was remembered).
+  let mode = $state('edit');
+  let modeInitializedFor = $state(null);
+  let modes = $derived(canEdit ? ['edit', 'customer', 'reorder'] : ['edit', 'customer']);
+  $effect(() => {
+    if (co && String(co.change_order_id) === String(coId)
+        && modeInitializedFor !== String(coId)) {
+      const remembered = getJobWs(job?.job_id).modes[`co:${coId}`] ?? 'edit';
+      mode = (remembered === 'reorder' && !canEdit) ? 'edit' : remembered;
+      modeInitializedFor = String(coId);
+    }
+  });
+
+  function setMode(next) {
+    mode = next;
+    rememberMode(job?.job_id, `co:${coId}`, next);
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleDateString();
+  }
+
+  // Reorder mode operates over the CO's OWN add+replace rows only (labeled
+  // "CO {co_index} — {description}"), taken from the amended-agreement
+  // payload so the display order/label match the edit view exactly.
+  let reorderLines = $derived(
+    (amended?.rows || [])
+      .filter((r) => r.kind === 'added' || r.kind === 'replaced')
+      .slice()
+      .sort((a, b) => (a.co_index ?? 0) - (b.co_index ?? 0))
+      .map((r) => ({
+        line_id: r.co_line_id,
+        line_number: r.co_index,
+        description: `CO ${r.co_index} — ${r.line.description || 'No description'}`,
+        qty_display: formatQtyUnits(r.line.qty, r.line.units),
+        price: r.line.price,
+        amount: Number(r.line.amount || 0),
+      }))
+  );
+  let reorderGrandTotal = $derived(
+    reorderLines.reduce((sum, l) => sum + Number(l.amount || 0), 0)
+  );
+
+  // The CO's own remove-line ids, in their existing line_number order — the
+  // reorder endpoint renumbers every listed line from 1, so these must ride
+  // along at the end of every reorder POST or they'd collide with the
+  // renumbered add/replace lines.
+  let removeLineIds = $derived(
+    (co?.line_items || [])
+      .filter((li) => li.action === 'remove')
+      .slice()
+      .sort((a, b) => (a.line_number ?? 0) - (b.line_number ?? 0))
+      .map((li) => li.line_item_id)
+  );
+
+  async function handleReorderDoc(lineId, direction) {
+    const ids = reorderLines.map((l) => l.line_id);
+    const idx = ids.indexOf(lineId);
+    if (idx === -1) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= ids.length) return;
+    [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+    try {
+      await api.post(`/api/change-orders/${co.change_order_id}/line-items/reorder/`, {
+        item_ids: [...ids, ...removeLineIds],
+      });
+      await loadCO();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not reorder line items.'));
+    }
+  }
 
   // `silent`: post-gesture refreshes from COEditView (add-atoms, create-a-line,
   // remove, replace, adjustments...) must NOT flip `loading` — that would
@@ -271,24 +354,64 @@
         </button>
       {/if}
     {/if}
+    <!-- Compact date chips (mirrors EstimatePanel): number/job/status live in
+         the header and surrounding context; the parent-revision link is
+         covered by the DocSubnav version pills. Dates only, right end of the
+         title row. -->
+    <div class="stat-chips doc-stat-chips">
+      <div class="stat-chip">
+        <div class="stat-chip-header">Created</div>
+        <div class="stat-chip-body">{fmtDate(co.created_date)}</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Sent</div>
+        <div class="stat-chip-body"><span class:muted={!co.sent_date}>{co.sent_date ? fmtDate(co.sent_date) : '-'}</span></div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Expires</div>
+        <div class="stat-chip-body"><span class:muted={!co.expiration_date}>{co.expiration_date ? fmtDate(co.expiration_date) : '-'}</span></div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Closed</div>
+        <div class="stat-chip-body"><span class:muted={!co.closed_date}>{co.closed_date ? fmtDate(co.closed_date) : '-'}</span></div>
+      </div>
+    </div>
   </div>
 
-  <CODeliverablesSection
-    jobId={co.job}
-    rows={delivMergedRows}
-    canEdit={canManageJobs && isDraft}
-    onReload={loadCO}
-  />
+  <DocModeBar {mode} onMode={setMode} {modes} />
 
-  <COEditView
-    {co}
-    canEdit={canManageJobs && isDraft}
-    onChanged={handleEditChanged}
-    {amended}
-    {sourcePool}
-    {categories}
-    {defaultMaterialCategoryId}
-  />
+  {#if mode === 'edit'}
+    <CODeliverablesSection
+      jobId={co.job}
+      rows={delivMergedRows}
+      canEdit={canEdit}
+      onReload={loadCO}
+    />
+
+    <COEditView
+      {co}
+      {canEdit}
+      onChanged={handleEditChanged}
+      {amended}
+      {sourcePool}
+      {categories}
+      {defaultMaterialCategoryId}
+    />
+  {:else if mode === 'customer'}
+    <COCustomerView
+      title={`Change Order ${co.change_order_number || `CO #${co.change_order_id}`}`}
+      rows={amended?.rows || []}
+      coDelta={amended?.co_delta}
+      revisedTotal={amended?.revised_total}
+    />
+  {:else if mode === 'reorder'}
+    <DocReorderView
+      title={`Change Order ${co.change_order_number || `CO #${co.change_order_id}`}`}
+      lines={reorderLines}
+      grandTotal={reorderGrandTotal}
+      onReorder={handleReorderDoc}
+    />
+  {/if}
   </div>
 {/if}
 
