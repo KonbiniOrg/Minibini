@@ -150,10 +150,15 @@ The rule, which the whole codebase already followed implicitly:
 ### Docsurface kit
 
 `src/components/docsurface/` holds a seven-component kit shared by the
-estimate and invoice editing surfaces (`EstimateEditView.svelte`,
-`InvoiceEditView.svelte`) — `DocModeBar`, `BackingChip`, `AtomChildRow`,
+estimate, invoice, and change-order editing surfaces
+(`EstimateEditView.svelte`, `InvoiceEditView.svelte`,
+`COEditView.svelte`) — `DocModeBar`, `BackingChip`, `AtomChildRow`,
 `UncoveredWorkSection`, `NewLineFromSelectedRow`, `DocCustomerView`,
-`DocReorderView`. It replaced the old two-column `ReconcileMode` wizard
+`DocReorderView`. `COEditView` (2026-08-09) reuses `BackingChip` /
+`AtomChildRow` / `UncoveredWorkSection` / `NewLineFromSelectedRow` over
+the server-composed amended agreement rather than a document's own line
+items — it doesn't yet have `DocModeBar`'s Edit/Customer/Reorder modes
+(a single edit view for now). It replaced the old two-column `ReconcileMode` wizard
 presentation (2026-08, "skeleton phase"): a document now has **three
 modes** — Edit / Customer / Reorder — switched in place at one URL by
 `DocModeBar`, never a navigation or a modal. Full component-by-component

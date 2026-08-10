@@ -1602,14 +1602,17 @@ it doesn't — every version is directly viewable at its own URL.
 **Change orders joined the panel pattern 2026-07-19**: the old 1100-line
 `ChangeOrderDetailPage.svelte` route was extracted into
 `ChangeOrderPanel.svelte` hosted by `routes/jobs/JobChangeOrderPage.svelte`
-(thin glue: job load + `JobShell`), with the two diff grids as components
-(`CODeliverablesSection.svelte` — owns the inline drafting forms;
-`COLineItemsSection.svelte` — a dumb renderer, actions as callbacks) over
-pure unit-tested derivations in `lib/changeOrderDiff.js`
-(`buildMergedRows` / `lineDiffTotals` / `buildDeliverableRows` — the
-backend's `compose_change_order_diff` mirrors `buildMergedRows`; keep in
-lockstep). The retired `/change-orders/:id` URL still redirects via
-`ChangeOrderRedirect.svelte`.
+(thin glue: job load + `JobShell`), with the deliverables grid as its own
+component (`CODeliverablesSection.svelte` — owns the inline drafting
+forms, over `lib/changeOrderDiff.js`'s unit-tested `buildDeliverableRows`).
+The line-item surface moved off a client-derived diff to the
+server-composed amended agreement 2026-08-09 (CO amend-in-place):
+`COEditView.svelte` renders `GET .../amended-agreement/`
+(`compose_amended_agreement`, `estimates-and-prices.md` §14.6, §14.9)
+directly instead of re-deriving a diff from the CO's line items — the
+old `COLineItemsSection.svelte` and the diff builders it read
+(`buildMergedRows` / `lineDiffTotals`) were retired. The retired
+`/change-orders/:id` URL still redirects via `ChangeOrderRedirect.svelte`.
 
 **Per-job persisted position** (`stores/jobWorkspace.js`) is what the
 "last-remembered document" / "restore where I left off" behavior above

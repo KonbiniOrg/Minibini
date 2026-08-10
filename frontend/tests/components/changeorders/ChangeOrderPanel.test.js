@@ -73,7 +73,7 @@ describe('ChangeOrderPanel per-object can_manage gating', () => {
       props: { job: JOB, coId: '3' },
     });
 
-    expect(await findByText('+ New line')).toBeInTheDocument();
+    expect(await findByText('Add line')).toBeInTheDocument();
     expect(await findByText('+ New deliverable')).toBeInTheDocument();
   });
 
@@ -87,13 +87,13 @@ describe('ChangeOrderPanel per-object can_manage gating', () => {
 
     // page renders (Line items heading) once load completes
     await findByText('Line items');
-    expect(queryByText('+ New line')).not.toBeInTheDocument();
+    expect(queryByText('Add line')).not.toBeInTheDocument();
     expect(queryByText('+ New deliverable')).not.toBeInTheDocument();
   });
 });
 
 describe('ChangeOrderPanel add-line flow', () => {
-  it('"+ New line" opens the unified picker (service/inventory/freeform), not the CO modal', async () => {
+  it('"Add line" opens the unified picker (service/inventory/freeform), not a legacy action-select modal', async () => {
     user.set({ permissions: [] });
     mockApi(makeCO({ can_manage: true, status: 'draft' }));
 
@@ -101,11 +101,14 @@ describe('ChangeOrderPanel add-line flow', () => {
       props: { job: JOB, coId: '3' },
     });
 
-    await fireEvent.click(await findByText('+ New line'));
+    await fireEvent.click(await findByText('Add line'));
     // The PriceListPicker's freeform footer is visible…
     expect(await findByText('Is this a material?')).toBeInTheDocument();
-    // …and the legacy action-select modal did not open.
+    // …and no gesture-modal opened underneath it — old action-select modal
+    // is gone, and the new one never shows action/target selects either way.
     expect(queryByText('Add Change Order Line')).not.toBeInTheDocument();
+    expect(queryByText('Edit Line')).not.toBeInTheDocument();
+    expect(queryByText('Replace Line')).not.toBeInTheDocument();
   });
 });
 

@@ -1949,6 +1949,25 @@ The Invoice wizard reads it; PDF rendering of the agreement reads it;
 the Estimate-detail page surfaces the composed view alongside the
 underlying Estimate.
 
+**`compose_amended_agreement(co)`** (same module, CO amend-in-place
+2026-08-09) is the sibling composer that answers "what will the
+agreement read if `co` is accepted" — the baseline (the estimate plus
+whichever accepted COs precede `co` in acceptance order) with `co`'s
+own draft add/remove/replace lines applied on top. It shares `_fold`
+(the add/remove/replace walk) with `compose_agreement` so the two can
+never diverge. Returns `{'rows', 'original_total', 'co_delta',
+'revised_total'}`; each row is kind-tagged —
+`agreement` (untouched baseline line; carries `billed_on` and, for a
+stale adjustment line, `adjustment_expected_amount`), `replaced` (the
+CO's replacement line dict + the struck `original`), `removed` (struck
+`original` only), `added` (the CO's new line dict) — with `replaced`/
+`added` rows numbered `co_index` (1… in line_number order). This is the
+engine behind `COEditView` (§14.9) and its `GET .../amended-agreement/`
+endpoint (§14.8); `apps/api/change_orders/serializers.py`'s
+`serialize_amended_agreement` adds the per-row display extras (backing
+classification, resolvable `sources`, JSON stringification) the same
+way `EstimateLineItemSerializer` does for the estimate side.
+
 ### 14.7 Auto-expiry — `mark_change_orders_expired`
 
 `mark_change_orders_expired`
@@ -1994,6 +2013,19 @@ are resolved).
   of deliverables-at-CO-creation used to render the CO-edit view's
   baseline (see `jobs-and-tasks.md` §12 for snapshot
   mechanics)
+- `GET /api/change-orders/{id}/amended-agreement/` — the
+  `compose_amended_agreement(co)` result (§14.6), serialized —
+  `COEditView`'s (§14.9) one-table data source
+- `GET /api/change-orders/{id}/source-pool/` — the CO wizard's source
+  pool (`ChangeOrderWizardService.get_source_pool`), same atom shape as
+  the estimate's `source-pool` (§8), with claims unioned across both
+  the estimate and CO lenses (uncovered-work rows in `COEditView`)
+- `POST /api/change-orders/{id}/line-items-from-atoms/` — create a new
+  `add` line from a set of atoms (mirrors §8's estimate action)
+- `POST /api/change-orders/{id}/line-items/{lid}/add-atoms/` /
+  `POST /api/change-orders/{id}/line-items/{lid}/remove-atoms/` —
+  append/detach atoms on an existing CO line (409 `atoms_already_claimed`
+  on a claim conflict, same contract as the estimate side)
 - `GET /api/change-orders/{id}/send-defaults/` — pre-populated
   send-to-customer form fields (to / subject / body with the portal
   link; `attachments_preview` lists the auto-attached CO PDF)
@@ -2012,24 +2044,72 @@ is authoritative.
 `ChangeOrderPanel.svelte` (`components/changeorders/`, hosted at
 `#/jobs/:jobId/change-order/:coId` by `routes/jobs/JobChangeOrderPage.svelte`
 inside `JobShell` — extracted 2026-07-19 from the old
-`ChangeOrderDetailPage` route) is the CO edit view. It renders a merged
-baseline-vs-proposal diff using the CO's line items and the
-`deliverables-baseline` endpoint: `lib/changeOrderDiff.js` derives the
-rows (unit-tested), `CODeliverablesSection.svelte` owns the deliverables
-grid + inline drafting forms, and `COLineItemsSection.svelte` renders the
-line diff with actions as callbacks to the panel.
-**"+ New line"** opens the unified `PriceListPicker` (§6.4) — the same
+`ChangeOrderDetailPage` route) is the CO edit view. It owns CO-scoped
+loading (the CO, its `amended-agreement`, its `source-pool`, sibling
+COs for display-status relabelling, and the deliverables live/baseline
+pair) plus the toolbar and status actions; `CODeliverablesSection.svelte`
+owns the deliverables grid + inline drafting forms
+(`lib/changeOrderDiff.js`'s `buildDeliverableRows`, unit-tested), and
+`COEditView.svelte` owns the line-item surface.
+
+**`COEditView.svelte`** (CO amend-in-place, 2026-08-09 — replaced the
+old flat `COLineItemsSection` line-diff table) renders **one**
+`.data-table doc-edit-table` of the CO's `amended-agreement` (§14.6,
+§14.8): "the agreement as it will read if this CO is accepted", with
+gesture buttons rather than a diff. It follows the same structural
+contract as `EstimateEditView`/`InvoiceEditView` (§12, the `docsurface`
+kit) — presentation + gestures only, the panel owns loading and a
+silent (`{silent:true}`) refresh after every mutation so an
+in-progress edit modal or atom selection survives the round trip.
+Row kinds, per `compose_amended_agreement`'s row `kind`:
+
+- `agreement` — an untouched baseline line: `BackingChip` + **Remove
+  via CO** / **Replace…** (POST a `remove`/`replace` CO line targeting
+  it). Both buttons disable with `title="Billed on {billed_on}"` (and a
+  caption) once a live invoice references the line; a stale adjustment
+  line shows a muted "recomputes to {amount} if replaced" caption.
+  Replace on an adjustment line (`line.is_adjustment`) opens the
+  modal's `adjustment` variant instead of `replace-prefill`.
+- `replaced` — CO-tinted (`.co-authored`), tagged `CO {co_index}`, the
+  replacement line above its struck `original` (excluded from totals)
+  and the inherited-preview `AtomChildRow`s (each labelled "inherited
+  from line {n}" — the claims that backed the original line, per
+  `derive_co_line_backing`); actions **Edit** / **Undo** (DELETE the CO
+  line, reverting to the `agreement` row).
+- `removed` — the struck original alone; action **Undo**.
+- `added` — CO-tinted, tagged `CO {co_index}`, its own `AtomChildRow`s
+  (detachable via `remove-atoms`) and `BackingChip`; actions **Edit** /
+  **Remove**, plus **Add selected here** while the uncovered-work
+  selection is non-empty (`add-atoms`).
+
+The table foot is `NewLineFromSelectedRow` (`line-items-from-atoms`,
+then opens the Edit modal on the fresh line) and the
+original/this-CO/revised totals from the payload. Below the table:
+**"Add line"** opens the unified `PriceListPicker` (§6.4) — the same
 service / inventory / freeform (+ is-material checkbox) entry point as
 the estimate detail page — followed by `COAddLineForm.svelte`
-(`components/changeorders/`), which posts a service pick to
+(`components/changeorders/`, unchanged), which posts a service pick to
 `line-items-from-service/`, an inventory pick to `line-items/` (the
-from-pli path), and a freeform line manually with AC + `is_material`.
-`COLineItemModal.svelte` remains the editor for existing lines and the
-Change/replace flow; on `add`-action lines it carries an Accounting
-Category select (required for bare plain lines, config-defaulted for
-material lines — the send guard's authoring face). The Estimate detail
-page shows accepted COs as pills/badges in the deliverables and
-line-items sections.
+from-pli path), and a freeform line manually with AC + `is_material`;
+then `UncoveredWorkSection` (title "Uncovered work") over the CO's
+`source-pool`.
+
+**`COLineItemModal.svelte`** was reworked the same day from a single
+action/target-select form into a gesture-driven modal with **no**
+action or target selects — the calling gesture presets everything via
+props, and create-vs-PATCH is derived from whether `lineItemId` (a
+PATCH target) is set. Three variants: `edit-fields`
+(description/qty/units/price; an Accounting Category select only when
+editing an `add` line — replace lines inherit AC from their target),
+`replace-prefill` (same fields, prefilled from the `agreement` line
+being replaced; POSTs `{action:'replace', target_line_item, …}`), and
+`adjustment` (description + percent only — the server recomputes
+`price` against the amended-agreement basis,
+`ChangeOrderService.recompute_adjustment_replaces` — the modal shows
+that computed amount as a readback with an explicit **Done** button
+before closing, never auto-closing on save). The Estimate detail page
+shows accepted COs as pills/badges in the deliverables and line-items
+sections.
 
 **The "amended" status label.** An accepted estimate that an accepted
 change order amends keeps its stored `status = accepted` — it is still
