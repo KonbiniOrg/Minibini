@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -11,6 +13,7 @@ from apps.api.permissions import CanManageJobOrPM
 from apps.core.services import NotFoundError
 from apps.estimates.change_order_service import ChangeOrderService
 from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
+from apps.estimates.services import ChangeOrderClaimConflict, ChangeOrderWizardService
 
 from .serializers import (
     ChangeOrderLineItemSerializer, ChangeOrderSerializer, serialize_amended_agreement,
@@ -42,7 +45,10 @@ class ChangeOrderViewSet(
     }
 
     def get_permissions(self):
-        read_actions = ('list', 'retrieve', 'deliverables_baseline', 'amended_agreement')
+        read_actions = (
+            'list', 'retrieve', 'deliverables_baseline', 'amended_agreement',
+            'source_pool',
+        )
         if self.action in read_actions:
             return [IsAuthenticated()]
         if self.action == 'line_items' and self.request.method == 'GET':
@@ -122,6 +128,86 @@ class ChangeOrderViewSet(
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
         serializer = ChangeOrderLineItemSerializer(line_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'], url_path='source-pool')
+    def source_pool(self, request, pk=None):
+        """Return the CO wizard's source pool, drawn from the job's
+        Tasks/Materials — same shape as the estimate wizard's, with claims
+        unioned across both the estimate and CO lenses (Task 7)."""
+        co = self.get_object()
+        pool = ChangeOrderWizardService.get_source_pool(co)
+        return Response(_serialize_pool(pool))
+
+    @action(detail=True, methods=['post'], url_path='line-items-from-atoms')
+    def line_items_from_atoms(self, request, pk=None):
+        """Create a new action='add' CO line item from a list of atoms."""
+        co = self.get_object()
+        atoms = request.data.get('atoms', [])
+        try:
+            line_item = ChangeOrderWizardService.add_atoms_to_new_line_item(co, atoms)
+        except ChangeOrderClaimConflict as e:
+            return Response(
+                {'detail': 'Some of these atoms are already claimed by another '
+                           'estimate or change order.',
+                 'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
+                status=status.HTTP_409_CONFLICT,
+            )
+        ChangeOrderService.recompute_adjustment_replaces(co)
+        serializer = ChangeOrderLineItemSerializer(line_item)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True, methods=['post'],
+        url_path=r'line-items/(?P<line_item_pk>[^/.]+)/add-atoms',
+    )
+    def add_atoms(self, request, pk=None, line_item_pk=None):
+        """Append atoms to an existing add line item."""
+        co = self.get_object()
+        try:
+            line_item = ChangeOrderLineItem.objects.get(pk=line_item_pk, change_order=co)
+        except ChangeOrderLineItem.DoesNotExist:
+            return Response({'detail': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        atoms = request.data.get('atoms', [])
+        try:
+            ChangeOrderWizardService.add_atoms_to_line_item(line_item, atoms)
+        except ChangeOrderClaimConflict as e:
+            return Response(
+                {'detail': 'Some of these atoms are already claimed by another '
+                           'estimate or change order.',
+                 'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
+                status=status.HTTP_409_CONFLICT,
+            )
+        ChangeOrderService.recompute_adjustment_replaces(co)
+
+        line_item.refresh_from_db()
+        serializer = ChangeOrderLineItemSerializer(line_item)
+        return Response(serializer.data)
+
+    @action(
+        detail=True, methods=['post'],
+        url_path=r'line-items/(?P<line_item_pk>[^/.]+)/remove-atoms',
+    )
+    def remove_atoms(self, request, pk=None, line_item_pk=None):
+        """Remove atoms from an existing line item."""
+        co = self.get_object()
+        try:
+            line_item = ChangeOrderLineItem.objects.get(pk=line_item_pk, change_order=co)
+        except ChangeOrderLineItem.DoesNotExist:
+            return Response({'detail': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        source_ids = request.data.get('source_ids', [])
+        result = ChangeOrderWizardService.remove_atoms_from_line_item(line_item, source_ids)
+        ChangeOrderService.recompute_adjustment_replaces(co)
+
+        if result['line_item_deleted']:
+            return Response({'line_item_deleted': True, 'line_item': None})
+
+        line_item.refresh_from_db()
+        return Response({
+            'line_item_deleted': False,
+            'line_item': ChangeOrderLineItemSerializer(line_item).data,
+        })
 
     @action(detail=True, methods=['post'], url_path='seed-new', url_name='seed-new')
     def seed_new(self, request, pk=None):
@@ -227,3 +313,19 @@ class ChangeOrderViewSet(
         co = self.get_object()
         result = compose_amended_agreement(co)
         return Response(serialize_amended_agreement(result))
+
+
+def _serialize_pool(pool):
+    """Convert Decimals in the pool to strings for JSON serialization.
+    Mirrors apps.api.estimates.views._serialize_pool."""
+    def _s(value):
+        if isinstance(value, Decimal):
+            return str(value)
+        return value
+
+    return {
+        'atoms': [
+            {k: _s(v) for k, v in atom.items()}
+            for atom in pool['atoms']
+        ],
+    }

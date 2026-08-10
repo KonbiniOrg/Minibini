@@ -99,7 +99,16 @@ class ChangeOrderService:
         EstimateService.assert_all_hand_lines_have_ac; shared by
         ChangeOrder.clean()'s draft-exit guard (the invariant home) and
         ChangeOrderEmailService._validate_send (the pre-email copy, so the
-        refusal lands before the customer is mailed a dead draft link)."""
+        refusal lands before the customer is mailed a dead draft link).
+
+        `sources__isnull=True` exempts an authored-claimed add line (Task
+        7): a line the wizard built from job atoms already carries an
+        accounting category from the atom when the atoms share one, but
+        even when it doesn't (mixed-category multi-atom bundle), it isn't a
+        bare hand line — it has real backing, unlike a plain typed-in line
+        with no descriptor and no category. Mirrors
+        EstimateService.assert_all_hand_lines_have_ac, which exempts sourced
+        lines the same way."""
         from apps.estimates.models import ChangeOrderLineItem
         missing = [
             li.description or f'line {li.line_number}'
@@ -109,6 +118,7 @@ class ChangeOrderService:
                 service_item__isnull=True,
                 inventory_item__isnull=True,
                 accounting_category__isnull=True,
+                sources__isnull=True,
             )
         ]
         if missing:

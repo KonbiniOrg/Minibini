@@ -1090,7 +1090,7 @@ class EstimateWizardService(BaseWizardService):
              'category_id': N or None, 'units': str}
         ]}
         """
-        from apps.estimates.models import EstimateLineItemSource
+        from apps.estimates.models import ChangeOrderLineItemSource, EstimateLineItemSource
         from apps.jobs.models import Task
         from apps.inventory.models import Material
 
@@ -1116,6 +1116,8 @@ class EstimateWizardService(BaseWizardService):
                     'claiming_line_number': li.line_number,
                     'claiming_estimate_id': None,
                     'claiming_estimate_number': None,
+                    'claiming_change_order_id': None,
+                    'claiming_change_order_number': None,
                 }
             else:
                 claims[key] = {
@@ -1124,7 +1126,34 @@ class EstimateWizardService(BaseWizardService):
                     'claiming_line_number': None,
                     'claiming_estimate_id': est.pk,
                     'claiming_estimate_number': est.estimate_number,
+                    'claiming_change_order_id': None,
+                    'claiming_change_order_number': None,
                 }
+
+        # Cross-lens (Task 7): any atom claimed by one of the job's CO lines
+        # is off limits to a *different* estimate too — a CO add line is a
+        # promise in progress, same as another estimate's line. Never
+        # downgrades an atom already claimed_by_current on THIS estimate
+        # (that combination shouldn't occur, but current always wins).
+        co_sources = (
+            ChangeOrderLineItemSource.objects
+            .filter(change_order_line_item__change_order__job=job)
+            .select_related('change_order_line_item', 'change_order_line_item__change_order')
+        )
+        for src in co_sources:
+            key = (src.source_type, src.source_pk)
+            if claims.get(key, {}).get('state') == 'claimed_by_current':
+                continue
+            co = src.change_order_line_item.change_order
+            claims[key] = {
+                'state': 'claimed_by_other',
+                'claiming_line_item_id': None,
+                'claiming_line_number': None,
+                'claiming_estimate_id': None,
+                'claiming_estimate_number': None,
+                'claiming_change_order_id': co.pk,
+                'claiming_change_order_number': co.change_order_number,
+            }
 
         default_state = {
             'state': 'available',
@@ -1132,6 +1161,8 @@ class EstimateWizardService(BaseWizardService):
             'claiming_line_number': None,
             'claiming_estimate_id': None,
             'claiming_estimate_number': None,
+            'claiming_change_order_id': None,
+            'claiming_change_order_number': None,
         }
 
         atoms = []
@@ -1241,3 +1272,196 @@ class EstimateWizardService(BaseWizardService):
     @classmethod
     def _task_actual_qty(cls, task):
         return task.est_qty
+
+
+class ChangeOrderClaimConflict(Exception):
+    """Raised when the CO wizard tries to claim an atom already claimed
+    elsewhere (the ChangeOrderLineItemSource-model IntegrityError case — see
+    EstimateClaimConflict; the pool's cross-lens check in get_source_pool is
+    the read-side counterpart that keeps the UI from offering the atom in
+    the first place)."""
+
+    def __init__(self, atom_ids):
+        self.atom_ids = atom_ids
+        super().__init__(f'Atoms already claimed: {atom_ids}')
+
+
+class ChangeOrderWizardService(EstimateWizardService):
+    """Orchestration layer for the CO wizard's authoring claims — add-atoms /
+    remove-atoms / line-items-from-atoms on a draft ChangeOrder.
+
+    Subclasses EstimateWizardService (not BaseWizardService directly) so the
+    CO's pool and billing amounts share estimate semantics: a CO composes
+    *future* agreement exactly like an estimate does (est_qty billing via
+    the inherited _atom_computed_amount override, cancelled tasks and
+    released materials excluded from the pool, _task_qty_and_price /
+    _task_actual_qty unchanged). Only the claim lens and the line-item shape
+    (action='add') differ from the estimate wizard.
+    """
+
+    container_attr = 'change_order'
+    source_fk = 'change_order_line_item'
+    claim_conflict_exc = ChangeOrderClaimConflict
+
+    # ── BaseWizardService hooks ────────────────────────────────────────
+    @classmethod
+    def _line_item_model(cls):
+        from apps.estimates.models import ChangeOrderLineItem
+        return ChangeOrderLineItem
+
+    @classmethod
+    def _source_model(cls):
+        from apps.estimates.models import ChangeOrderLineItemSource
+        return ChangeOrderLineItemSource
+
+    @classmethod
+    def _validate_draft(cls, container):
+        if container.status != ChangeOrder.STATUS_DRAFT:
+            raise ValidationError(
+                f'Cannot modify line items on change order in status "{container.status}".'
+            )
+
+    @classmethod
+    def _extra_line_kwargs(cls):
+        from apps.estimates.models import ChangeOrderLineItem
+        return {'action': ChangeOrderLineItem.ACTION_ADD}
+
+    # ── overrides ───────────────────────────────────────────────────────
+    @classmethod
+    def add_atoms_to_line_item(cls, line_item, atoms):
+        """Atoms attach to CO add lines only — a replace line inherits its
+        backing (the target's current claim rows) at acceptance
+        (ChangeOrderAcceptanceService._move_claims_to), it never accepts
+        authored atoms of its own."""
+        from apps.estimates.models import ChangeOrderLineItem
+        if line_item.action != ChangeOrderLineItem.ACTION_ADD:
+            raise ValidationError(
+                'Atoms attach to CO add lines only — a replacement inherits '
+                'its backing at acceptance.'
+            )
+        return super().add_atoms_to_line_item(line_item, atoms)
+
+    @classmethod
+    def get_source_pool(cls, co):
+        """Same atom walk as the estimate pool (cancelled tasks / released
+        materials excluded — a CO shares the estimate's future-agreement
+        semantics), but the claim lookup unions BOTH lenses:
+
+        - the job's EstimateLineItemSource rows — always someone else's (a
+          CO never itself holds one): claimed_by_other, "Claimed by
+          estimate EST-N". Covered work (already agreed, including on the
+          very estimate this CO amends) is not CO-addable.
+        - the job's ChangeOrderLineItemSource rows — claimed_by_current when
+          the claiming line is on THIS co, else claimed_by_other, "Claimed
+          by change order <number>".
+        """
+        from apps.estimates.models import ChangeOrderLineItemSource, EstimateLineItemSource
+        from apps.jobs.models import Task
+        from apps.inventory.models import Material
+
+        job = co.job
+        current_co_pk = co.pk
+        claims = {}
+
+        est_sources = (
+            EstimateLineItemSource.objects
+            .filter(estimate_line_item__estimate__job=job)
+            .select_related('estimate_line_item', 'estimate_line_item__estimate')
+        )
+        for src in est_sources:
+            est = src.estimate_line_item.estimate
+            key = (src.source_type, src.source_pk)
+            claims[key] = {
+                'state': 'claimed_by_other',
+                'claiming_line_item_id': None,
+                'claiming_line_number': None,
+                'claiming_estimate_id': est.pk,
+                'claiming_estimate_number': est.estimate_number,
+                'claiming_change_order_id': None,
+                'claiming_change_order_number': None,
+            }
+
+        co_sources = (
+            ChangeOrderLineItemSource.objects
+            .filter(change_order_line_item__change_order__job=job)
+            .select_related('change_order_line_item', 'change_order_line_item__change_order')
+        )
+        for src in co_sources:
+            li = src.change_order_line_item
+            other_co = li.change_order
+            key = (src.source_type, src.source_pk)
+            if other_co.pk == current_co_pk:
+                claims[key] = {
+                    'state': 'claimed_by_current',
+                    'claiming_line_item_id': li.pk,
+                    'claiming_line_number': li.line_number,
+                    'claiming_estimate_id': None,
+                    'claiming_estimate_number': None,
+                    'claiming_change_order_id': None,
+                    'claiming_change_order_number': None,
+                }
+            else:
+                claims[key] = {
+                    'state': 'claimed_by_other',
+                    'claiming_line_item_id': None,
+                    'claiming_line_number': None,
+                    'claiming_estimate_id': None,
+                    'claiming_estimate_number': None,
+                    'claiming_change_order_id': other_co.pk,
+                    'claiming_change_order_number': other_co.change_order_number,
+                }
+
+        default_state = {
+            'state': 'available',
+            'claiming_line_item_id': None,
+            'claiming_line_number': None,
+            'claiming_estimate_id': None,
+            'claiming_estimate_number': None,
+            'claiming_change_order_id': None,
+            'claiming_change_order_number': None,
+        }
+
+        atoms = []
+
+        for task in Task.objects.filter(job=job).exclude(
+            status=Task.STATUS_CANCELLED,
+        ).select_related(
+            'accounting_category',
+        ):
+            key = (EstimateLineItemSource.SOURCE_TASK, task.pk)
+            state_info = claims.get(key, default_state)
+            eff_cat = task.effective_accounting_category
+            detail = cls._atom_detail(task)
+            atoms.append({
+                'type': 'task',
+                'id': task.pk,
+                'description': task.name,
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'amount': detail['amount'],
+                'units': detail['units'],
+                'category_id': eff_cat.pk if eff_cat else None,
+                **state_info,
+            })
+
+        for mat in Material.objects.filter(job=job).exclude(
+            consumption_state=Material.CONSUMPTION_STATE_RELEASED,
+        ).select_related(
+            'accounting_category', 'inventory_item',
+        ):
+            key = (EstimateLineItemSource.SOURCE_MATERIAL, mat.pk)
+            state_info = claims.get(key, default_state)
+            detail = cls._atom_detail(mat)
+            atoms.append({
+                'type': 'material',
+                'id': mat.pk,
+                'description': mat.description,
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'amount': detail['amount'],
+                'units': detail['units'],
+                'category_id': mat.accounting_category_id,
+                **state_info,
+            })
+
+        return {'atoms': atoms}

@@ -97,6 +97,64 @@ class GetSourcePoolTest(TestCase):
         self.assertEqual(states[('task', self.pt.pk)], 'claimed_by_current')
         self.assertEqual(states[('material', self.pm.pk)], 'available')
 
+    def test_co_claimed_atom_shows_as_claimed_by_other(self):
+        """Symmetric cross-lens fix (Task 7): an atom claimed by a job's
+        ChangeOrderLineItemSource row is off-limits to a *different*
+        estimate too — a CO add line is a promise in progress, same as
+        another estimate's line."""
+        from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, ChangeOrderLineItemSource
+        co_estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-CO-BASE', status=Estimate.STATUS_ACCEPTED,
+        )
+        co = ChangeOrder.objects.create(job=self.job, estimate=co_estimate)
+        co_li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='CO line', qty=Decimal('1'), price=Decimal('10.00'),
+            accounting_category=self.cat,
+        )
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=co_li,
+            source_type=ChangeOrderLineItemSource.SOURCE_MATERIAL,
+            source_pk=self.pm.pk,
+        )
+        pool = EstimateWizardService.get_source_pool(self.estimate)
+        entry = next(a for a in pool['atoms'] if a['type'] == 'material' and a['id'] == self.pm.pk)
+        self.assertEqual(entry['state'], 'claimed_by_other')
+        self.assertEqual(entry['claiming_change_order_number'], co.change_order_number)
+        self.assertIsNone(entry['claiming_estimate_number'])
+
+    def test_current_estimate_claim_wins_over_a_co_claim_on_the_same_atom(self):
+        """Defense-in-depth: if the estimate's own line already claims an
+        atom, a (should-be-impossible) CO-lens row on the same atom must not
+        downgrade it from claimed_by_current."""
+        from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, ChangeOrderLineItemSource
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, qty=Decimal('1'), units='each',
+            price=Decimal('200'), description='', accounting_category=self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=self.pt.pk,
+        )
+        co_estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-CO-BASE-2', status=Estimate.STATUS_ACCEPTED,
+        )
+        co = ChangeOrder.objects.create(job=self.job, estimate=co_estimate)
+        co_li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='CO line', qty=Decimal('1'), price=Decimal('10.00'),
+            accounting_category=self.cat,
+        )
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=co_li,
+            source_type=ChangeOrderLineItemSource.SOURCE_TASK,
+            source_pk=self.pt.pk,
+        )
+        pool = EstimateWizardService.get_source_pool(self.estimate)
+        entry = next(a for a in pool['atoms'] if a['type'] == 'task' and a['id'] == self.pt.pk)
+        self.assertEqual(entry['state'], 'claimed_by_current')
+
     def test_source_pool_includes_tasks_without_explicit_charge_creation(self):
         """Bug regression: Tasks should appear in the source pool even when
         no separate PlanCharge POST has fired — the billing fields are on the

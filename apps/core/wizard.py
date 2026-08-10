@@ -77,6 +77,14 @@ class BaseWizardService:
         """Override to reject atoms that aren't in a billable lifecycle state."""
         return None
 
+    @classmethod
+    def _extra_line_kwargs(cls):
+        """Extra kwargs to splat into the new line item's constructor,
+        beyond the shared description/qty/units/price/accounting_category —
+        e.g. the CO wizard's action='add' (a line minted from atoms is
+        always an add). Defaults to none for the estimate/invoice paths."""
+        return {}
+
     # ── shared atom helpers ────────────────────────────────────────────
     @classmethod
     def _atom_computed_amount(cls, atom_instance):
@@ -271,6 +279,7 @@ class BaseWizardService:
                     units=units,
                     price=price,
                     accounting_category=category,
+                    **cls._extra_line_kwargs(),
                 )
                 LineItemService.save_line_item(line_item)
                 for instance in instances:
