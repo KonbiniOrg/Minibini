@@ -63,6 +63,10 @@
   let mode = $state('edit');
   let modeInitializedFor = $state(null);
   let modes = $derived(canEdit ? ['edit', 'customer', 'reorder'] : ['edit', 'customer']);
+  // Read-only documents relabel the mode: same surface, but it's now the
+  // shop-facing Detail view, not an editor (RM 2026-08-09).
+  let modeLabels = $derived(
+    { edit: canEdit ? 'Edit' : 'Detail', customer: 'Customer', reorder: 'Reorder' });
   $effect(() => {
     if (co && String(co.change_order_id) === String(coId)
         && modeInitializedFor !== String(coId)) {
@@ -378,7 +382,7 @@
     </div>
   </div>
 
-  <DocModeBar {mode} onMode={setMode} {modes} />
+  <DocModeBar {mode} onMode={setMode} {modes} labels={modeLabels} />
 
   {#if mode === 'edit'}
     <CODeliverablesSection

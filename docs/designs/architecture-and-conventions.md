@@ -841,7 +841,10 @@ two-column `ReconcileMode` wizard presentation (§5.5a's job-page
 taxonomy, above) in the 2026-08-08 "skeleton phase": estimates and
 invoices both moved from a two-mode ("lines"/"reconcile") panel to a
 **three-mode** surface — **Edit / Customer / Reorder** — flipped in
-place at one URL. Design authority:
+place at one URL. Once a document leaves draft (or the viewer lacks
+manage rights) the surface is read-only: Reorder drops out and the
+Edit mode relabels to **Detail** (same component, `canEdit=false`;
+RM 2026-08-09) — the bar reads Detail / Customer. Design authority:
 `docs/plans/2026-08-06-better-fees.md` §9 and its wireframe artifact;
 build-to-the-artifact was the standing instruction for this work.
 Consumer detail: `estimates-and-prices.md` §12 (estimate) and §14.9a

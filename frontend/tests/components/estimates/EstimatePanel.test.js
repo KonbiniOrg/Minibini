@@ -305,7 +305,7 @@ describe('EstimatePanel mode bar labels', () => {
     expect(queryByText('Worksheet')).toBeNull();
   });
 
-  it('does not offer Reorder when the estimate is not editable (sent)', async () => {
+  it('relabels Edit to Detail and drops Reorder when the estimate is not editable (sent)', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'open' }));
 
@@ -314,7 +314,9 @@ describe('EstimatePanel mode bar labels', () => {
     });
 
     await findByText('Line Items');
+    expect(await findByText('Detail')).toBeInTheDocument();
     expect(await findByText('Customer')).toBeInTheDocument();
+    expect(queryByText('Edit')).toBeNull();
     expect(queryByText('Reorder')).toBeNull();
   });
 });
@@ -452,15 +454,15 @@ describe('EstimatePanel mode bar', () => {
     expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('falls back to Edit when "reorder" was remembered but the estimate is no longer editable', async () => {
+  it('falls back to Detail when "reorder" was remembered but the estimate is no longer editable', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     rememberMode(9, 'est:7', 'reorder');
     mockApi(makeEstimate({ estimate_id: 7, can_manage: true, status: 'open', line_items: [LINE] }));
     const { container, findByText, queryByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     await findByText('Cut');
-    expect(queryByText('Add line')).toBeNull(); // not editable, but still Edit mode
+    expect(queryByText('Add line')).toBeNull(); // not editable — the mode shows as Detail
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).getByRole('button', { name: 'Detail' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(modeBar).queryByRole('button', { name: 'Reorder' })).toBeNull();
   });
 });

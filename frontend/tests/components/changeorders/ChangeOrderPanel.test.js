@@ -269,7 +269,7 @@ describe('ChangeOrderPanel mode bar', () => {
     expect(getJobWs(9).modes['co:3']).toBe('edit');
   });
 
-  it('offers only Edit / Customer when the CO is not manageable', async () => {
+  it('offers only Detail / Customer when the CO is not manageable', async () => {
     user.set({ permissions: [] });
     const co = makeCO({ can_manage: false, status: 'draft' });
     mockApiFull(co, EMPTY_AMENDED);
@@ -278,12 +278,13 @@ describe('ChangeOrderPanel mode bar', () => {
     await findByText('Line items');
 
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(within(modeBar).getByRole('button', { name: 'Detail' })).toBeInTheDocument();
     expect(within(modeBar).getByRole('button', { name: 'Customer' })).toBeInTheDocument();
+    expect(within(modeBar).queryByRole('button', { name: 'Edit' })).toBeNull();
     expect(within(modeBar).queryByRole('button', { name: 'Reorder' })).toBeNull();
   });
 
-  it('offers only Edit / Customer once the CO is no longer a draft', async () => {
+  it('offers only Detail / Customer once the CO is no longer a draft', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     const co = makeCO({ can_manage: true, status: 'open' });
     mockApiFull(co, EMPTY_AMENDED);
@@ -292,10 +293,12 @@ describe('ChangeOrderPanel mode bar', () => {
     await findByText('Line items');
 
     const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Detail' })).toBeInTheDocument();
+    expect(within(modeBar).queryByRole('button', { name: 'Edit' })).toBeNull();
     expect(within(modeBar).queryByRole('button', { name: 'Reorder' })).toBeNull();
   });
 
-  it('falls back to Edit when "reorder" was remembered but the CO is no longer editable', async () => {
+  it('falls back to Detail when "reorder" was remembered but the CO is no longer editable', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     rememberMode(9, 'co:3', 'reorder');
     const co = makeCO({ can_manage: true, status: 'open' });
@@ -304,7 +307,7 @@ describe('ChangeOrderPanel mode bar', () => {
     const { container, findByText } = render(ChangeOrderPanel, { props: { job: JOB, coId: '3' } });
     await findByText('Line items');
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).getByRole('button', { name: 'Detail' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('restores a remembered "customer" mode on mount', async () => {

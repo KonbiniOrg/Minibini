@@ -652,12 +652,14 @@ describe('InvoicePanel mode bar', () => {
     expect(document.body.textContent).not.toMatch(/Show Billables|Reconcile|Send all to Invoice/);
   });
 
-  it('does not offer Reorder when the invoice is not editable (sent)', async () => {
+  it('relabels Edit to Detail and drops Reorder when the invoice is not editable (sent)', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     mockApi(makeInvoice({ invoice_id: 5, status: 'open', line_items: [LINE] }));
     const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Invoice: INV-5');
+    expect(await findByText('Detail')).toBeInTheDocument();
     expect(await findByText('Customer')).toBeInTheDocument();
+    expect(queryByText('Edit')).toBeNull();
     expect(queryByText('Reorder')).toBeNull();
   });
 
@@ -712,15 +714,15 @@ describe('InvoicePanel mode bar', () => {
     expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('falls back to Edit when "reorder" was remembered but the invoice is no longer editable', async () => {
+  it('falls back to Detail when "reorder" was remembered but the invoice is no longer editable', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     rememberMode(9, 'inv:5', 'reorder');
     mockApi(makeInvoice({ invoice_id: 5, status: 'open', line_items: [LINE] }));
     const { container, findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Cut');
-    expect(queryByText('Add Line Item')).toBeNull(); // not editable, but still Edit mode
+    expect(queryByText('Add Line Item')).toBeNull(); // not editable — the mode shows as Detail
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).getByRole('button', { name: 'Detail' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(modeBar).queryByRole('button', { name: 'Reorder' })).toBeNull();
   });
 });
