@@ -157,8 +157,12 @@ estimate, invoice, and change-order editing surfaces
 `DocReorderView`. `COEditView` (2026-08-09) reuses `BackingChip` /
 `AtomChildRow` / `UncoveredWorkSection` / `NewLineFromSelectedRow` over
 the server-composed amended agreement rather than a document's own line
-items — it doesn't yet have `DocModeBar`'s Edit/Customer/Reorder modes
-(a single edit view for now). It replaced the old two-column `ReconcileMode` wizard
+items — it is itself the Edit-mode content only; `ChangeOrderPanel`
+wraps it in the same `DocModeBar` (Edit/Customer/Reorder, added
+2026-08-09) the estimate/invoice panels use, with `COCustomerView` (a
+sibling of `DocCustomerView`, not a reuse — a CO's customer-facing
+document is a delta, not the whole agreement) and `DocReorderView`
+(reused as-is) filling Customer/Reorder. It replaced the old two-column `ReconcileMode` wizard
 presentation (2026-08, "skeleton phase"): a document now has **three
 modes** — Edit / Customer / Reorder — switched in place at one URL by
 `DocModeBar`, never a navigation or a modal. Full component-by-component

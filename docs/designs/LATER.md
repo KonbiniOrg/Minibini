@@ -117,13 +117,22 @@ Status coupling, transitions, and what a job may do at each stage.
 
 The CO surface and its estimate-parallel code.
 
-- **Converter fabricates estimate claims → false "struck from agreement" badges.** — _added 2026-07-20_
+- **Converter fabricates estimate claims → false "descoped by CO-N" badges.** — _added 2026-07-20, mechanism updated 2026-08-09_
   Root-caused on dev job 61: `build_synthetic_estimate_sources`
   (`nealsdata/converter/build.py` ~L1715) round-robins EVERY unclaimed task
   across a job's estimate lines so converted jobs project atoms in the Client
-  View — fabricating many-to-one `EstimateLineItemSource` rows. The struck-badge
-  derivation (`ChangeOrderService.struck_atom_keys`) read those rows faithfully
-  and badged tasks the removed line never really sold. The badge logic is
+  View — fabricating many-to-one `EstimateLineItemSource` rows. At the time
+  this was found, the struck-badge was a *derived* query
+  (`ChangeOrderService.struck_atom_keys`, since deleted); CO amend-in-place
+  (2026-08-09) replaced it with a stamp written once at CO acceptance
+  (`ChangeOrderAcceptanceService`'s REMOVE loop sets `Task`/
+  `Material.descoped_by`, read by the invoice pool as
+  `descoped_by_co_number` for the "descoped by CO-N" chip — see
+  `estimates-and-prices.md` §14.11) — but the underlying bug is identical:
+  acceptance still resolves the remove/replace target's *current* atom
+  through the same `EstimateLineItemSource`/`ChangeOrderLineItemSource`
+  chain the converter corrupts, so a fabricated multi-task claim still
+  stamps (or fails to stamp) the wrong task. The badge logic is
   correct; fix the converter (claim at most one plausible task per line, or drop
   the pass and accept sourceless converted lines). MUST run
   `tests.test_neals_builders`; `nealsmall.json` is RM-managed — never regenerate.
@@ -132,14 +141,16 @@ The CO surface and its estimate-parallel code.
   _Done when:_ the converter emits no fabricated multi-task claims, builders
   suite green, and job 61's synthetic rows are repaired.
 
-- **`ChangeOrderLineItem.clean()` doesn't validate the target belongs to the CO's estimate.** — _added 2026-07-20_
+- **`ChangeOrderLineItem.clean()` doesn't validate the target belongs to the CO's estimate.** — _added 2026-07-20, corrected 2026-08-09_
   Found while clearing suspects on the badge investigation: nothing enforces
   `target_line_item.estimate_id == change_order.estimate_id`, so a CO line
   could target another estimate's line. Latent (no observed corruption); add
-  the validation. Also record as intended: REPLACE targets stay in the
-  struck-atom set (the old atom WAS struck; the successor is the new agreement).
-  _Done when:_ the clean() check exists with a test, and the replace semantics
-  note lives in estimates-and-prices §14.11.
+  the validation. (Superseded intent, 2026-08-09: this note originally said
+  "REPLACE targets stay in the struck-atom set" — CO amend-in-place settled
+  the opposite: a REPLACE **moves** the target's claim onto the CO line and
+  never stamps `descoped_by` at all; only a REMOVE target gets stamped. See
+  `estimates-and-prices.md` §14.11.)
+  _Done when:_ the clean() check exists with a test.
 
 - **Expose *estimate* claims somewhere after acceptance.** — _added 2026-07-20 (RM)_
   `EstimateLineItemSource` (what the agreement SOLD per line) is invisible in
@@ -179,13 +190,53 @@ The CO surface and its estimate-parallel code.
   Deliberately still duplicated: `estimate_pdf.html` vs `change_order_pdf.html`
   (shared CSS + header-info block) — PDF templates are self-contained by
   convention (no extends/include, per CLAUDE.md), so the Python-side helper is
-  the consolidation; touch the two templates in tandem. (A diff-logic note:
-  `compose_change_order_diff` is also a Python re-implementation of the
-  frontend merged-rows logic, which now lives in
-  `frontend/src/lib/changeOrderDiff.js`; keep them in lockstep until/unless
-  the shop view reads the server composer too.)
+  the consolidation; touch the two templates in tandem. (A diff-logic note,
+  updated 2026-08-09: the frontend merged-rows logic
+  [`buildMergedRows`/`lineDiffTotals` in `frontend/src/lib/changeOrderDiff.js`]
+  this used to be kept in lockstep with was **retired** when `COEditView`
+  moved the shop edit page onto the server-composed
+  `compose_amended_agreement` — see the unify item below; `changeOrderDiff.js`
+  now only holds `buildDeliverableRows`.)
   _Remaining done when:_ either the PDF-template convention changes (allowing a
   shared header include) or the template pair drifts enough to force a rethink.
+
+- **Unify `compose_change_order_diff` / the CO PDF / the customer portal onto
+  `compose_amended_agreement`.** — _added 2026-08-09 (CO amend-in-place Task
+  7/12)_ The shop edit page (`COEditView`) now reads the server-composed
+  `compose_amended_agreement(co)` (§14.6), but `compose_change_order_diff`
+  (`apps/estimates/agreement.py`) — the function backing the CO PDF
+  (`generate_change_order_pdf`) and the customer portal
+  (`build_change_order_payload`) — is a separate, older composer that still
+  baselines off the flat accepted estimate (`co.estimate`) rather than
+  `compose_amended_agreement`'s baseline-through-prior-accepted-COs walk.
+  Single-CO is the validated path for both composers today (see "Validate the
+  multi-change-order display" above); with ≥2 accepted COs the diff/PDF/portal
+  baseline can understate the true current agreement even though
+  crystallization itself resolves the replace chain correctly (§14.11). Fold
+  the PDF and portal onto `compose_amended_agreement`'s rows (or a shared
+  baseline helper) so all three CO-facing surfaces — shop edit, PDF, portal —
+  read one composer and can't drift.
+  _Done when:_ `compose_change_order_diff` is retired or reimplemented on top
+  of `compose_amended_agreement`, and the PDF/portal render correctly for a
+  ≥2-accepted-CO chain.
+
+- **No DB-level guard against a cross-lens claim race.** — _added 2026-08-09
+  (CO amend-in-place Task 7, reviewer-accepted scope)_ The estimate wizard's
+  pool correctly *displays* a CO-claimed atom as `claimed_by_other` and vice
+  versa (`EstimateWizardService`/`ChangeOrderWizardService.get_source_pool`
+  union both claim lenses), but the two claim tables
+  (`EstimateLineItemSource`, `ChangeOrderLineItemSource`) each enforce
+  whole-atom uniqueness only within themselves — there is no DB constraint
+  spanning both. A determined or racing pair of requests (one hitting the
+  estimate wizard, one the CO wizard, near-simultaneously) could still create
+  an estimate claim and a CO claim on the same atom; only the pool-level
+  display stops the ordinary UI from offering it. Accepted as scope for the
+  amend-in-place phase (no observed occurrence; the estimate is normally
+  terminal — `accepted`/superseded — by the time a CO exists, which narrows
+  the window in practice).
+  _Done when:_ a cross-table DB constraint (or an application-level lock
+  spanning both source models) closes the race, or the risk is judged not
+  worth one.
 
 
 ## Invoicing, expenses & payments

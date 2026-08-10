@@ -503,7 +503,7 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 |---|---|
 | `open_for_job(job, seed=True)` | Returns the job's draft `Invoice`. Creates one if none exists — a newly-**created** draft auto-seeds from the agreement (`InvoiceService.seed_from_agreement`) unless `seed=False`; an **existing** draft is returned as-is and never re-seeded. Raises `ValidationError` if the job's status is not in `BILLABLE_JOB_STATUSES = {APPROVED, IN_PROGRESS, WORK_COMPLETE, COMPLETED, CANCELLED}`. `CANCELLED` is included so a job stopped early ("stop and bill") can still be invoiced for work done. See "Agreement-line references and seeding" above. |
 | `send_all_atoms(invoice)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines — unlike `seed_all_atoms` (the fresh-document "Apply everything"), which requires an empty invoice. `POST /api/invoices/{id}/send-all-atoms/` → `{'created': N}`; the wizard's "Send all to Invoice" button. |
-| `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — a group per real Task on the job (cancelled included since 2026-07-12, plan C3), plus three synthetic groups appended in order: "Materials (no task)" for task-less materials with `quantity > 0`, "Expenses" for material-less, non-rejected `Expense`s on the job, and — only when at least one qualifying line exists (see "Deposits" → "The credit atom" below) — "Deposit credits" for unclaimed deposit lines on `paid` invoices of this job. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), state (`available` / `claimed_by_current` / `claimed_by_other`), and (for claimed atoms) the claiming line item or invoice. **Terminal — not complete — is the task billability line**: `complete` and `cancelled` tasks are billable (the same doctrine that keeps cancelled *jobs* in `BILLABLE_JOB_STATUSES`); anything else is `not_billable` (`task_incomplete`). A cancelled task's atom carries `task_cancelled: true`; `InvoiceEditView`'s `UncoveredWorkSection` renders it as an amber "cancelled — work done" chip so the biller makes a conscious choice (§"Uncovered-work section chips" below); a cancelled task with zero actuals is simply a $0 row. Task and material atoms also carry `struck_from_agreement: true` (2026-07-20) when an ACCEPTED change order's remove/replace targeted their claiming estimate line but crystallization left them live — derived per pool build via `ChangeOrderService.struck_atom_keys(job)` (nothing stored), rendered as an amber "struck from agreement" chip; suppressed on cancelled tasks (one prompt suffices). See estimates-and-prices §14.11 for the decision record. The *estimate* pool is the opposite — cancelled tasks are excluded there (estimates project planned work). Atom keys are normalized to match the estimate wizard so the same pool shape feeds both surfaces. |
+| `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — a group per real Task on the job (cancelled included since 2026-07-12, plan C3), plus three synthetic groups appended in order: "Materials (no task)" for task-less materials with `quantity > 0`, "Expenses" for material-less, non-rejected `Expense`s on the job, and — only when at least one qualifying line exists (see "Deposits" → "The credit atom" below) — "Deposit credits" for unclaimed deposit lines on `paid` invoices of this job. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), state (`available` / `claimed_by_current` / `claimed_by_other`), and (for claimed atoms) the claiming line item or invoice. **Terminal — not complete — is the task billability line**: `complete` and `cancelled` tasks are billable (the same doctrine that keeps cancelled *jobs* in `BILLABLE_JOB_STATUSES`); anything else is `not_billable` (`task_incomplete`). A cancelled task's atom carries `task_cancelled: true`; `InvoiceEditView`'s `UncoveredWorkSection` renders it as an amber "cancelled — work done" chip so the biller makes a conscious choice (§"Uncovered-work section chips" below); a cancelled task with zero actuals is simply a $0 row. Task and material atoms also carry `struck_from_agreement` (`task.descoped_by_id is not None`, `and task.status != CANCELLED` for tasks; no suppression clause for materials) and `descoped_by_co_number` (`atom.descoped_by.change_order_number`, else `None`) — both read straight off the **stored** `descoped_by` stamp (§ "Uncovered-work section chips" below; rewritten 2026-08-09, CO amend-in-place — previously `struck_from_agreement` was derived per pool build via the now-deleted `ChangeOrderService.struck_atom_keys(job)`), rendered as an amber "descoped by {coShortLabel}" chip; suppressed on cancelled tasks (one prompt suffices). `.select_related('descoped_by')` on the per-job Task/Material querysets keeps this N+1-free. See estimates-and-prices §14.11 for the acceptance-time mechanics. The *estimate* pool is the opposite — cancelled tasks are excluded there (estimates project planned work). Atom keys are normalized to match the estimate wizard so the same pool shape feeds both surfaces. |
 | `add_atoms_to_new_line_item(invoice, atoms)` | Creates a new `InvoiceLineItem` plus N `InvoiceLineItemSource` rows in one transaction. Defaults table below. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows. Recomputes per the in-sync rule. |
 | `remove_atoms_from_line_item(line_item, source_ids)` | Removes the matching source rows. Recomputes per the in-sync rule. Returns `{'line_item_deleted': bool}`. If the removal empties the source list, the line item is hard-deleted (via `LineItemService.delete_line_item_with_renumber`) regardless of override state. |
@@ -690,6 +690,21 @@ would silently ship floats, breaking the frontend's string-equality
 qty/price (`DecimalValidator` rejects most floats' imprecise binary
 expansion).
 
+**CO-line provenance (2026-08-09).** When `kind == 'change_order'`,
+`_agreement_ref_payload` additionally sets `co_number`
+(`ref.change_order.change_order_number`) and `co_line_number`
+(`ref.line_number`) — omitted for an estimate-origin ref. Kept N+1-free
+by the existing `agreement_co_line` select_related/prefetch on
+`LineItemMixin._get_line_items_qs` and `InvoiceViewSet.get_queryset`
+extending one hop further to `change_order`. On the frontend,
+`frontend/src/lib/agreementReference.js` exposes `coShortLabel(number)`
+(derives `"CO-1"` from the trailing `-CO<n>` suffix, null-safe) and
+`estReferenceText(li)` — for a CO-origin ref this reads as pure
+provenance, `"{coShortLabel} line {co_line_number}"` (spec §9.3
+"CO-N line M"), with **no** "est was $X" value-drift clause (that
+clause is estimate-origin-only, unchanged — see the est-reference
+caption below).
+
 ### `backing`
 
 One of `'deposit'` / `'deposit_credit'` / `'actuals'` / `'estimate'` /
@@ -736,13 +751,24 @@ live in `estimates-and-prices.md` §12.2.) `null` renders nothing.
 ### Est-reference caption and backing controls (`InvoiceEditView`)
 
 Under the Backing chip, a line with an `agreement_ref` shows a small
-**est-reference caption**: `"est was {fmtMoney(est_amount)}"`, followed
-by `" · {sign}{fmtMoney(delta)}"` when `delta = current − est_amount`
-is nonzero (`current` = `actuals_total` if claimed, else the line's own
-current amount) — e.g. `"est was $500.00 · +$25.00"`. The `· +$Δ` clause
-is suppressed entirely at `delta === 0` (`fmtMoney(0)` renders `'-'`,
-the shared "no amount" sentinel — showing the clause there would print
-the nonsense `"· +-"`).
+reference caption, via `estReferenceText(li)`
+(`frontend/src/lib/agreementReference.js`) — the text differs by the
+ref's origin:
+
+- **Estimate-origin**: `"est was {fmtMoney(est_amount)}"`, followed by
+  `" · {sign}{fmtMoney(delta)}"` when `delta = current − est_amount` is
+  nonzero (`current` = `actuals_total` if claimed, else the line's own
+  current amount) — e.g. `"est was $500.00 · +$25.00"`. The `· +$Δ`
+  clause is suppressed entirely at `delta === 0` (`fmtMoney(0)` renders
+  `'-'`, the shared "no amount" sentinel — showing the clause there
+  would print the nonsense `"· +-"`).
+- **CO-origin (2026-08-09)**: pure provenance, no value comparison —
+  `"{coShortLabel(co_number)} line {co_line_number}"` (e.g. `"CO-1 line
+  3"`) — which document and line this invoice line was seeded/restored
+  from. A CO-origin line's whole point is that it's freshly amended, so
+  "what it used to say" isn't the interesting fact; see "Agreement-line
+  references and seeding" above and `estimates-and-prices.md` §14.6's
+  `estimate_line_id`/`co_line_id` line-identity note.
 
 Two backing controls render conditionally in the Actions cell (while
 `canEdit`), alongside the always-present **Edit…**:
@@ -789,12 +815,23 @@ order:
    cancelled task's recorded actuals are still real, billable work, but
    the invoicer must consciously choose to bill it rather than have it
    fold into an undifferentiated row.
-3. `struck_from_agreement` → **"struck from agreement"** (same `edited`
-   class) — an accepted CO removed/replaced the estimate line that used
-   to claim this atom, but crystallization left the atom itself live
-   (complete task, consumed material). Suppressed when the row is also
-   `task_cancelled` (one amber chip is a prompt, two is noise) — see
-   `estimates-and-prices.md` §14.11 for the decision record.
+3. `struck_from_agreement` → **"descoped by {coShortLabel}"** (same
+   `edited` class; `coShortLabel`, `frontend/src/lib/agreementReference.js`,
+   derives `"CO-1"` from the trailing `-CO<n>` suffix of a
+   `change_order_number`) — an accepted CO's `remove` line targeted the
+   estimate line that used to claim this atom, but the atom
+   itself was left alone (complete task, consumed material — see
+   `estimates-and-prices.md` §14.11's REMOVE step). Server-side the flag
+   is `task.descoped_by_id is not None` / always-true-when-set on a
+   Material (no suppression clause there); `descoped_by_co_number`
+   (`task.descoped_by.change_order_number` /
+   `mat.descoped_by.change_order_number`) is what feeds the chip's label
+   — both stamped **once, at CO acceptance**
+   (`ChangeOrderAcceptanceService`'s REMOVE loop), never derived at read
+   time. A **replace** target is never stamped — replace moves the claim
+   onto the CO line instead of descoping the atom, so a replaced task/
+   material never carries this chip. Suppressed on a task that's also
+   `task_cancelled` (one amber chip is a prompt, two is noise).
 4. No chip when none of the above apply — an unmarked row means nothing
    special (positive-only marking, design doc §7.3): a hand-line
    agreement legitimately covers work with no task-level claim.
@@ -803,11 +840,6 @@ A `unselectableNote` (plain text, not a chip) additionally explains why
 a `claimed_by_other` or `not_billable` row's checkbox is disabled:
 `"Invoiced on {invoice number}"`, `"Task not complete yet"`, or
 `"Material not yet consumed"`.
-
-A "descoped by CO-N" chip variant is reserved for the future
-change-order plan (design doc §9.3) — `UncoveredWorkSection` already
-takes the generic `chip` prop for exactly this, so that phase slots in
-without a kit change.
 
 ---
 

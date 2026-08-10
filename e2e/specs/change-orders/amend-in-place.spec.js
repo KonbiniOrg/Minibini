@@ -74,7 +74,7 @@ async function buildJob(api, { stamp, taskNames, extraTaskNames = [] }) {
   return { job, estimate, tasks, lines };
 }
 
-test('Amend-in-place gestures: remove/undo, replace with inherited atoms, add from the pool, billed-on gating, customer + reorder modes', async ({ page }) => {
+test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, add from the pool, billed-on gating, customer + reorder modes', async ({ page }) => {
   const stamp = `e2e-amend-${Date.now().toString(36)}`;
   const api = await apiAs(personas.finjobs);
 
@@ -258,7 +258,7 @@ test('Amend-in-place gestures: remove/undo, replace with inherited atoms, add fr
   await api.dispose();
 });
 
-test('Accepting a CO crystallizes the amendment: job un-holds, estimate reads "amended", billing shows the descope + CO provenance', async ({ page }) => {
+test('§6 Accepting a CO crystallizes the amendment: job un-holds, estimate reads "amended", billing shows the descope + CO provenance', async ({ page }) => {
   const stamp = `e2e-accept-${Date.now().toString(36)}`;
   const api = await apiAs(personas.finjobs);
 

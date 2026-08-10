@@ -579,6 +579,27 @@ Phased, each phase leaving main green:
 6. **Phase 3 + Phase 5 adoption** (re-implement or cherry-pick per §2).
 7. **Docs pass**: estimates-and-prices, jobs-and-tasks,
    invoicing-and-expenses, data-constraints, schedule.
+8. **CO amend-in-place** (own 12-task plan,
+   `docs/plans/2026-08-09-co-amend-in-place-plan.md`): the CO surface
+   rebuilt from a client-derived flat diff onto the server-composed
+   amended agreement.
+   *(LANDED 2026-08-09: replace-is-commercial CO lines (no descriptor,
+   only a replace-of-adjustment may carry the adjustment triple);
+   acceptance rewritten — adds crystallize (skipped when authored
+   claims already exist), replaces move the target's claim onto the CO
+   line instead of crystallizing/retiring, removes stamp
+   `Task`/`Material.descoped_by` before retiring; a live-invoice guard
+   blocks remove/replace on an agreement line already billed;
+   `compose_amended_agreement` + `GET .../amended-agreement/` drive one
+   `COEditView` table (row kinds agreement/replaced/removed/added) in
+   place of the old diff; `ChangeOrderWizardService` + source-pool/
+   add-atoms/remove-atoms/line-items-from-atoms endpoints let a CO
+   claim job atoms directly, cross-lens with the estimate pool; the CO
+   panel grew the same Edit/Customer/Reorder `DocModeBar` as the
+   estimate/invoice surfaces; the invoice side shows a "descoped by
+   CO-N" chip and "CO-N line M" provenance. Full backend 4560 tests OK
+   (skipped=1), Vitest ~205 files / 1478 tests, e2e
+   `change-orders/amend-in-place.spec.js` green.)*
 
 Each phase: TDD, targeted backend modules + Vitest per task, full suite at
 final verification, e2e for user-reachable flows in the same phase.

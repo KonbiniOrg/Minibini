@@ -231,6 +231,7 @@ Concrete job-side material that participates in QOH/earmark flows.
 | `released_qty` | `Decimal(10,2)` default 0 | Quantity restocked/released back out of the plan (was `restocked_qty`, renamed 2026-07-03). Invariant: `quantity + released_qty` = originally planned — the expense-void reversal relies on it |
 | `po_line_item` | FK SET_NULL `related_name='+'` | Optional PO line attribution |
 | `cost_source` | `CharField(20)` choices, **null**able | Provenance enum — see below. `NULL` = provisional (no lot yet); non-null = established. `is_customer_supplied` is `cost_source == 'customer_supplied'` |
+| `descoped_by` | FK → `estimates.ChangeOrder` (`SET_NULL`, `related_name='+'`), nullable, added 2026-08-09 (CO amend-in-place) | Stamped by `ChangeOrderAcceptanceService`'s REMOVE loop when an accepted CO's `remove`/`replace` line targets the estimate line that used to claim this material — set **before** `_retire` runs, so a consumed/invoiced/PO-linked material left alone by `_retire` still gets stamped. **Never** set on a REPLACE target — replace moves the claim onto the CO line instead (`estimates-and-prices.md` §14.11), leaving `descoped_by = None`. Provenance only, read by the invoice wizard pool (`descoped_by_co_number`) for the "descoped by CO-N" chip. Backfilled by `apps/estimates/migrations/0047_backfill_descoped_by.py`. |
 
 #### Provisional vs established (the core state)
 

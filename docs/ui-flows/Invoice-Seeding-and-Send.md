@@ -181,10 +181,13 @@ Entry: any draft invoice, Edit mode — **always visible**, no toggle.
 - [ ] **"cancelled — work done" chip.** A cancelled task with recorded
   actuals is still billable — it shows this chip rather than
   disappearing, so billing it is a conscious choice.
-- [ ] **"struck from agreement" chip.** A task/material whose claiming
-  estimate line an accepted change order removed/replaced — while the
-  atom itself stayed live — shows this chip. Suppressed on a cancelled
-  task (cancelled wins; one amber chip is enough).
+- [ ] **"descoped by CO-N" chip** (2026-08-09, was "struck from
+  agreement"). A task/material an accepted change order **removed**
+  (not replaced — a replace moves the claim onto the CO's line instead
+  of descoping the atom, so a replaced atom never shows this chip) —
+  while the atom itself stayed live — shows this chip, `CO-N` naming the
+  change order that descoped it. Suppressed on a cancelled task
+  (cancelled wins; one amber chip is enough).
 - [ ] **Deposit credits are separate.** Available deposit credits render
   in their own section (§"Deposits") with a one-click "Apply to this
   invoice" — not part of the checkbox pool.

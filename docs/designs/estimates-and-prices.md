@@ -829,9 +829,14 @@ price is frozen automatically.
 `is_adjustment` (bool), `adjustment_service_id`, `percent` (the line's own
 `adjustment_percent` snapshot — never the live `adjustment_service.rate`,
 which is provenance only — or `None` for non-adjustment lines), and
-`target_category_ids` for
-estimate-origin lines. CO-origin lines always have falsey adjustment fields
-(adjustments are estimate-only).
+`target_category_ids`. Estimate-origin lines read these off the
+`EstimateLineItem` itself. **CO-origin lines can carry the same triple too
+(2026-08-09, CO amend-in-place)** — but only a `replace` line targeting an
+*already-adjustment* estimate line is allowed to
+(`ChangeOrderLineItem.clean()`, §14.4); a plain `add`/`remove`/other
+`replace` line always reads falsey. `_line_dict_from_co_item` emits the same
+shape `_line_dict_from_estimate_item` does either way, so a downstream
+reader never has to branch on origin to find the adjustment fields.
 
 ### 5.4 Document numbering
 
@@ -1390,8 +1395,12 @@ value) at line-creation time. `compute_adjustment_amount` (§2.2) reads
 already-created line's charge. `adjustment_service` itself is kept as
 **provenance/identity only** — it's still what *selects* a line as an
 adjustment (`adjustment_service_id is not None`), but the dollar amount
-never reads its live `rate`. `ChangeOrderLineItem` has no adjustment
-fields at all — CO deltas don't carry percentage-adjustment lines.
+never reads its live `rate`. `ChangeOrderLineItem` gained the identical
+three fields 2026-08-09 (CO amend-in-place) — but they're legal only on
+a `replace` line targeting an already-adjustment estimate line
+(`ChangeOrderLineItem.clean()`, §14.4); the value is still recomputed
+off the amended-agreement basis, not a live scheme read — see §14.4/§14.9
+("adjustment-replace amendment") for the CO-side recompute mechanics.
 
 ---
 
@@ -1788,23 +1797,136 @@ terminal.
 | `inventory_item` | Optional catalog pointer, parallel to `EstimateLineItem` provenance. At acceptance the line crystallizes into a `Material` on this item. |
 | `service_item` | Nullable FK → `ServiceItem` (PROTECT). Deferred service descriptor, identical to `EstimateLineItem.service_item` (§6.1): the line snapshots the service's price at authoring and crystallizes to a `Task` at CO acceptance. |
 | `is_material` | Marks a bare (no descriptor) line as a material: crystallizes into an **established Material** (reverse-markup placeholder cost, `cost_source='estimated'`) instead of staying a plain, uncrystallized document line, same as `EstimateLineItem.is_material`. Authoring applies the `default_material_accounting_category` config default and rejects the marker on lines that already carry an `inventory_item`/`service_item`. |
+| `adjustment_service` | Nullable FK → `RateScheme` (PROTECT), added 2026-08-09. Mirrors `EstimateLineItem.adjustment_service` field-for-field — provenance/identity only, never read for the dollar amount. |
+| `adjustment_percent` | Nullable Decimal(6,2), added 2026-08-09. Snapshot of `adjustment_service.rate` at line-creation/recompute time — the price of record, mirroring `EstimateLineItem.adjustment_percent`. |
+| `adjustment_target_categories` | M2M → `AccountingCategory`, blank, added 2026-08-09. Mirrors `EstimateLineItem.adjustment_target_categories`. |
 
-`clean()` also rejects `service_item` / `is_material` on a `remove` line
-(its own fields are display-only; it never crystallizes anything).
+**Replace is commercial-only (2026-08-09).** `clean()` rejects
+`service_item` / `inventory_item` / `is_material` on an `action='replace'`
+line — a replace can only override description/qty/price/units/AC in
+place; a typed crystallization change (e.g. "this used to be a plain line,
+now it should mint a Task") goes through a **remove + add** pair instead,
+never a typed replace. `clean()` also rejects `service_item` / `is_material`
+on a `remove` line (its own fields are display-only; it never crystallizes
+anything).
+
+**The adjustment triple is valid only on a replace-of-adjustment
+(2026-08-09).** `adjustment_service`/`adjustment_percent` (either non-null)
+are legal exclusively when `action == 'replace'` **and**
+`target_line_item.adjustment_service_id` is already set — i.e. the CO is
+amending an existing percentage-adjustment estimate line's percent/target
+categories, never creating a new adjustment or touching a non-adjustment
+line. See "Adjustment-replace amendment" below (§14.4c) for the recompute
+mechanics this unlocks.
 
 The `action` field is the heart of CO semantics:
 
 - **`add`** — a brand-new line. The line's qty/price/description live
   on the CO row; there's no `target_line_item`. Composed at the **end**
   of the agreement (after all estimate lines), in line-number order
-  within the CO.
+  within the CO. May also carry claimed atoms authored directly through
+  the CO wizard (§14.4b) — a claimed `add` line crystallizes nothing new
+  at acceptance (§14.11).
 - **`remove`** — strikes the `target_line_item` from the agreement.
   The CO row's own qty/price/description are display-only (what the
   customer agreed to remove). The line vanishes from the composed
   output.
 - **`replace`** — overrides the `target_line_item`'s qty / price /
   description with the CO row's values, in place. The original line
-  number is preserved in the composed output.
+  number is preserved in the composed output. Commercial-only per above
+  — replacing never changes *what kind of thing* backs the line, only
+  its description/qty/price (or, for an adjustment replace, its percent
+  and target categories).
+
+### 14.4a Live-invoice guard on remove/replace targets
+
+`ChangeOrderService._assert_target_not_billed(target_line_item)`
+(2026-08-09) blocks saving a `remove`/`replace` CO line whose
+`target_line_item` is referenced by a **live** (non-cancelled) invoice —
+`ValidationError`. Wired into both `add_line_item` and `update_line_item`,
+after `full_clean()`, whenever `li.action in (ACTION_REMOVE, ACTION_REPLACE)`
+and `li.target_line_item_id` is set. `update_line_item` re-evaluates this
+against the line's **current** target on every call (not only when
+`target_line_item` is in the update payload), so it also catches a line
+whose target becomes billed *after* the CO line was created, not only an
+explicit retarget. "Live" here is every `Invoice` status except
+`cancelled` (`LIVE_INVOICE_STATUSES`, `apps/invoicing/services.py`) —
+deliberately broader than `claims.py`'s `DEAD_INVOICE_STATUSES` (which
+also treats `superseded` as dead for atom claims; that's a different
+invariant). The frontend surfaces this as both **Remove via CO** and
+**Replace…** disabling with a `title="Billed on {billed_on}"` tooltip and
+caption once `compose_amended_agreement`'s row carries a `billed_on`
+value (§14.6, §14.9).
+
+### 14.4b Authoring claims — `ChangeOrderWizardService`
+
+A **draft** CO's own `add` lines can claim job atoms directly, the same
+gesture as the estimate wizard (§8), rather than only being crystallized
+implicitly at acceptance. `ChangeOrderWizardService`
+(`apps/estimates/services.py`) subclasses `EstimateWizardService` so a
+CO's pool/claim semantics inherit the estimate wizard's rules (est_qty
+billing, cancelled tasks and released materials excluded) — it overrides
+`add_atoms_to_line_item` to refuse a non-`add` CO line (a `remove`/
+`replace` line has nothing to claim onto) and `get_source_pool(co)` to
+union **both** claim lenses: an atom already claimed by an estimate line
+shows `claimed_by_other` (`claiming_estimate_number`); one claimed by
+*another* CO's add line also shows `claimed_by_other`
+(`claiming_change_order_number`) — the estimate wizard's own pool got the
+symmetric fix so an estimate never offers an atom a CO has already
+claimed either. There is **no DB-level constraint spanning the two claim
+tables** (`EstimateLineItemSource` vs `ChangeOrderLineItemSource`) — the
+pool-level display is the only defense against a same-atom cross-lens
+race; see `LATER.md`. A CO `add` line that already carries claimed atoms
+is exempt from the bare-add-line AC send guard (§14.4 above —
+`assert_all_bare_add_lines_have_ac` filters `sources__isnull=True`),
+since a claimed atom already carries its own AC.
+
+Endpoints (§14.8): `GET .../source-pool/`, `POST .../line-items-from-atoms/`,
+`POST .../line-items/{lid}/add-atoms/`, `POST .../line-items/{lid}/remove-atoms/`
+— identical body/response shape to the estimate wizard's equivalents, 409
+`atoms_already_claimed` on a claim conflict. Each mutating action also
+re-runs `ChangeOrderService.recompute_adjustment_replaces(co)` (§14.4c,
+"Adjustment-replace amendment") so claiming/releasing an atom on a line an
+adjustment-replace targets recomputes that percentage immediately.
+
+### 14.4c Adjustment-replace amendment
+
+An adjustment-replace CO line (§14.4's adjustment triple) doesn't take a
+user-entered `price` — the server computes it from the **amended-agreement
+basis** (the agreement as it will read once this CO is accepted, same basis
+`compose_amended_agreement` composes), via
+`ChangeOrderService.recompute_adjustment_replaces(co)` reusing
+`agreement.adjustment_expected_amount` (promoted from a private helper to a
+public one so the two call sites — the "stale adjustment" hint on an
+untouched `agreement` row, and the actual replace-line price — can never
+disagree). The adjustment-replace row correctly excludes **itself** (and
+every other adjustment row) from its own basis via the same
+`is_adjustment`/identity skip `compute_adjustment_amount`/
+`adjustment_expected_amount` already apply.
+
+**Recomputed on every CO mutator** that could move the basis: `add_line_item`,
+`update_line_item`, `delete_line_item`, `reorder_line_items`, `add_line_item_from_pli`,
+`add_line_item_from_service`, and the three wizard atom-mutation endpoints
+(§14.4b) — each wrapped in `@transaction.atomic` so the recompute commits
+with the triggering mutation. `COLineItemModal`'s `adjustment` variant
+(description + percent only, §14.9) POSTs/PATCHes `adjustment_percent`; the
+server computes `price` and the modal shows the computed amount as a
+readback with an explicit **Done** button (never auto-closing — saves stay
+explicit).
+
+**Retargeting away from an adjustment clears the triple.** If a CO line's
+`target_line_item` changes (or is reassigned) to a line that isn't itself an
+adjustment line, but the CO line still carries a stale
+`adjustment_service_id`/`adjustment_percent`, both are cleared (and the M2M
+target-category set is emptied) rather than left to fail `clean()`'s
+adjustment-triple rule — idempotent in both directions (into and out of
+adjustment-replace shape).
+
+**Acceptance crystallizes nothing** for an adjustment-replace line — the
+target has no `EstimateLineItemSource` rows to move (§14.11's REPLACE step
+is a no-op when there's nothing to move), so accepting one only updates the
+composed agreement's percent/price; no Task/Material is ever created or
+retired by an adjustment change.
 
 The estimate's line items are never mutated. The agreement is always
 the composition (Estimate + accepted COs); the underlying
@@ -1843,12 +1965,18 @@ no line items was refused outright.
 **`ChangeOrderLineItemSource`** (`db_table = 'co_li_sources'`) is the CO
 analog of `EstimateLineItemSource` (§6.2): a polymorphic join
 (`source_type ∈ {task, material}` + `source_pk`, unique together)
-from a CO line to the atom it **crystallized** at acceptance. It is the
-provenance record and the idempotency marker (a line with a source row
-is already crystallized). `resolve()` returns the concrete atom. Unlike
-the estimate table, rows exist only for add/replace lines of
-**accepted** COs — authoring never creates one. (Billing no longer
-traces through this table at all — see §14.6's note on the retired
+from a CO line to the atom that backs it. `resolve()` returns the concrete
+atom. A row on an `add` line means that atom either was **crystallized**
+by acceptance (§14.11) or was **claimed directly** by an authoring user
+through the CO wizard before acceptance (§14.4b — since 2026-08-09,
+authoring *can* create rows, unlike the pre-amend-in-place doc's "authoring
+never creates one"); a row on a `replace` line was **moved** onto it at
+acceptance from whatever the target line held (§14.11's REPLACE step —
+never newly crystallized). `remove` lines never carry rows (display-only,
+nothing to claim). A row's presence on an `add`/`replace` line is what
+makes acceptance idempotent — a line that already has sources is skipped
+(add) or left alone (replace, already-moved). (Billing no longer traces
+through this table at all — see §14.6's note on the retired
 `source_fee_id` channel; the invoice side now claims agreement value via
 `agreement_estimate_line`/`agreement_co_line` references instead,
 invoicing doc.)
@@ -2288,96 +2416,142 @@ Lines are processed **adds → replaces → removes** (each group in
 transiently empties the live work set and trips the auto-advance to
 `work_complete`.
 
-- **add** — crystallize via the same four-way discriminator as estimate
-  acceptance (§9.1): `service_item` → Task
+**Rewritten 2026-08-09 (CO amend-in-place, Task 3).** REPLACE no longer
+crystallizes a new atom and retires the old one — it **moves the existing
+claim** onto the CO line, so the same physical Task/Material stays live and
+un-touched under new document terms. Only REMOVE retires an atom, and it now
+stamps `descoped_by` before doing so, replacing the old derived
+`struck_atom_keys` badge lookup with a stored field. ADD gained a skip: a
+line already claimed through the CO wizard (§14.4b) has nothing left to
+crystallize.
+
+- **add** — **skipped entirely if the line already has
+  `ChangeOrderLineItemSource` rows** (an atom claimed directly through the
+  CO wizard, §14.4b — there's nothing to crystallize, the claim already
+  exists). Otherwise crystallizes via the same four-way discriminator as
+  estimate acceptance (§9.1): `service_item` → Task
   (`generate_task(allow_inactive_scheme=True)`; name from the
   ServiceItem, description from the line), `inventory_item` → Material
   (line price = sell price), `is_material` bare → established Material
   via `MaterialService.establish_reverse_markup` (parity with §9.1 —
-  cost backed out of the locked sell, `cost_source='estimated'`; a bare
-  replace whose mirrored atom was provisional is likewise established),
-  else → nothing — a **plain** add line crystallizes no atom and gets no
+  cost backed out of the locked sell, `cost_source='estimated'`), else →
+  nothing — a **plain** add line crystallizes no atom and gets no
   `ChangeOrderLineItemSource` row; it stays a document-only delta,
   exactly like a plain estimate hand-line (§9.1). Descriptor-bearing
   branches write a `ChangeOrderLineItemSource` row.
-- **remove** — resolve the target estimate line to its **current** atom
-  and retire it:
+- **replace** — **moves the target's claim onto the CO line; never
+  crystallizes, never retires.** `_move_claims_to(li)`
+  (`ChangeOrderAcceptanceService`, `apps/estimates/co_acceptance.py`)
+  resolves the target's **current** claim rows (through the multi-CO
+  chain, below) and, for each, **deletes the old row then creates the
+  identical row on the CO line** — delete-before-create, inside the same
+  `on_accept` transaction, because in a chained-replace scenario the
+  moved row can itself be a `ChangeOrderLineItemSource` (a prior accepted
+  replace's row), and the table's `(source_type, source_pk)` unique
+  constraint would collide if the new row were created before the old one
+  is gone. A no-op when the CO line already has sources (idempotent
+  re-run) or the target has none (a plain line, or an adjustment line —
+  document-only, stays document-only). The physical atom's pk, status,
+  and cancellation state are **completely untouched** — a replace is a
+  document reassignment of an existing claim, not a swap of the
+  underlying work. (A replace line can also carry the adjustment triple
+  instead of a descriptor — §14.4c covers that path, which crystallizes
+  nothing regardless.)
+- **remove** — resolve the target estimate line to its **current** atom(s)
+  (through the multi-CO chain, below) and, for each, **stamp
+  `Task`/`Material.descoped_by = co` and save it, before attempting
+  retirement** — so a task/material `_retire` leaves alone still records
+  that it was descoped:
   - *Task*: `TaskLifecycleService.cancel_task` — **bleps are
-    preserved**; already complete/cancelled tasks are left alone.
+    preserved**; already complete/cancelled tasks are stamped but
+    otherwise left alone.
   - *Material*: **released** (`MaterialService.release` — earmark backed
     out, quantity moved to `released_qty`, state → `released`, claims
     kept as job history), but **only if** pending, not expense-bound,
     not PO-linked, and not on a live invoice — physical or billed
-    reality is never unwound by a document; those are left for the
-    human to reconcile.
+    reality is never unwound by a document; those are stamped but left
+    for the human to reconcile.
   - A document-only target (adjustment line, a plain line that never
-    crystallized, or an atom already retired) is a no-op — the delta
-    stays document-only, matching `compose_agreement`.
+    crystallized, or an atom already retired) is a no-op — nothing to
+    stamp, the delta stays document-only, matching `compose_agreement`.
+  - **A REPLACE target is never stamped** — replace moves the claim
+    instead of descoping the atom (above), so a replaced task/material's
+    `descoped_by` stays `None` even though the estimate line it used to
+    sit on is gone from the agreement.
 
-  **Surfacing the skips (decided 2026-07-20):** the skip itself stays
-  silent at acceptance, but the invoice wizard pool badges every
-  struck-but-still-live atom **"struck from agreement"** (amber, like
-  the cancelled-task badge; suppressed when the task is also cancelled)
-  so the biller decides consciously at the money moment. The set is
-  derived, never stored — `ChangeOrderService.struck_atom_keys(job)`
-  walks the persisted chain (accepted CO remove/replace line → target
-  estimate line → claim rows → atom); "still live in the pool" is the
-  whole skip test, so the skip-reason logic is not replicated.
+  **Surfacing the skips (decided 2026-07-20, mechanism rewritten
+  2026-08-09):** the skip itself stays silent at acceptance, but the
+  invoice wizard pool badges every stamped-but-still-live atom
+  **"descoped by {CO-N}"** (amber, like the cancelled-task badge;
+  suppressed when the task is also cancelled) so the biller decides
+  consciously at the money moment. The badge now reads the **stored**
+  `descoped_by` field directly (`struck_from_agreement:
+  task.descoped_by_id is not None`, `descoped_by_co_number:
+  task.descoped_by.change_order_number`) — the old derived
+  `ChangeOrderService.struck_atom_keys(job)` walk (accepted CO
+  remove/replace line → target estimate line → claim rows → atom,
+  re-executed on every pool build) is **deleted**; the stamp written once
+  at acceptance is now the single source of truth, and a data migration
+  (`apps/estimates/migrations/0047_backfill_descoped_by.py`) backfilled it
+  for every pre-2026-08-09 accepted CO. See `invoicing-and-expenses.md`
+  ("Uncovered-work section chips") for the chip's full read side.
   **Considered and declined for now:** keeping the job held after CO
   acceptance (making release-hold the worker's reconciliation act,
   parallel to release-to-floor) plus a SCOPE reconciliation banner. RM
   2026-07-20: don't change a working system — acceptance keeps
   auto-clearing the hold, no second hold layer, no job-status changes.
-  Revisit if the badge alone proves insufficient in practice; the
-  banner would reuse `struck_atom_keys` (built shared-ready). Note the
+  Revisit if the badge alone proves insufficient in practice. Note the
   inherent limit either way: work added outside the estimate has no
   claim chain, so no mechanism can identify it — that reconciliation is
   always the human's.
   When an atom is hard-deleted, source rows pointing at it are purged so
   no lens dangles; release never purges.
-- **replace** — crystallize the replacement **first**, then retire the
-  old atom (as above). A CO line carrying its own descriptor
-  (service/inventory/is_material) crystallizes per that descriptor; a
-  **bare** replace line mirrors the retired atom's type (Task or
-  Material — the only two mirrorable atom kinds; `_mirror_of` raises if
-  it's ever handed anything else) — a Task target yields a new pending
-  Task with the same name / rate scheme / modifiers / sort order /
-  assignee (`TaskBase.copy_fields`) at the CO line's qty and
-  description; a Material target a new Material on the same inventory
-  item (AC/units inherited when the line omits them). A bare replace
-  whose target never crystallized (a plain line) has no atom to mirror,
-  so it stays document-only, same as a bare add with no descriptor.
+
+**Live-invoice guard runs before any of this.** A `remove`/`replace` CO
+line can't even be *saved* against a target already referenced by a live
+invoice — §14.4a's `_assert_target_not_billed` guard fires at
+`add_line_item`/`update_line_item` time, not at acceptance, so by the time
+`on_accept` runs, every remove/replace target is guaranteed unbilled.
 
 **Current-atom resolution (multi-CO chain).** The target of a
 remove/replace is always an `EstimateLineItem`, but after an earlier
-accepted CO replaced that line, the live atom is the *earlier CO line's*
-crystallized atom, not the estimate's. Resolution therefore picks the
-sources of the latest accepted-CO replace line targeting the same
-estimate line (acceptance order: `closed_date`, then id), falling back
-to the estimate line's own sources. This is how consecutive COs against
-one line chain correctly. (The `compose_change_order_diff` display
-baseline still has the documented single-CO limitation — see LATER.md;
-crystallization does not share it.)
+accepted CO replaced that line, the live claim now sits on the *earlier
+CO line* (moved there by that CO's own `_move_claims_to`), not the
+estimate's. Resolution therefore picks the sources of the latest
+accepted-CO replace line targeting the same estimate line (acceptance
+order: `closed_date`, then id), falling back to the estimate line's own
+sources. This is how consecutive COs against one line chain correctly —
+a third CO removing a line two prior COs replaced descopes the atom the
+second replace moved the claim onto, not the estimate's original atom.
+(The `compose_change_order_diff` display baseline still has the
+documented single-CO limitation — see `LATER.md`'s "unify onto
+`compose_amended_agreement`" item; crystallization/claim-move does not
+share it.)
 
 After the walk, `InventoryService.create_earmarks_for_job(job)` re-runs
 the absolute earmark sweep — same as estimate acceptance — so
 crystallized and retired materials net out to correct reservations.
 
-**Idempotency** mirrors §9.2: crystallized lines carry a source row and
-are skipped on re-run; retirement re-checks atom state (a cancelled
-task, a deleted material) before acting.
+**Idempotency** mirrors §9.2: an add line with sources (crystallized or
+authored-claimed) is skipped; a replace line with sources is skipped (the
+move already happened); retirement re-checks atom state (a cancelled
+task, a deleted material) before acting, and the `descoped_by` stamp is a
+plain field write, safe to re-apply.
 
 **Billing stays with the agreement.** Crystallization never creates
 billing lines. (The former `source_fee_id` plumbing in §14.6 — the
 channel that fed crystallized Fees into `copy_from_estimate` claims —
 was removed 2026-08, fee-removal Task 3.) Bleps on a
-task cancelled by a remove/replace stay on record under the cancelled
+task cancelled by a remove stay on record under the cancelled
 task (the invoice wizard's complete-task gate applies as usual — the
 cancelled work's time is reconciled by the human at invoicing).
 
 Returns `{'tasks_created', 'materials_created',
-'tasks_cancelled', 'materials_removed'}`. Tests:
-`tests/test_change_order_acceptance.py`.
+'tasks_cancelled', 'materials_removed'}` — a replace's claim-move
+contributes to none of these counters (nothing was created, cancelled, or
+removed). Tests: `tests/test_change_order_acceptance.py`,
+`tests/test_co_struck_badge.py`, `tests/test_co_live_invoice_guard.py`,
+`tests/test_co_authoring_claims.py`, `tests/test_co_adjustment_amendment.py`.
 
 ---
 

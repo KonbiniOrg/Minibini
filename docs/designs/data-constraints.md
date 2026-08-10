@@ -786,6 +786,16 @@ Valid transitions:
   non-NULL value, since the CASCADE makes stale pointers dangerous)
 - **sort_order**: auto-assigned per Job on save
 - **name** / **description**: text
+- **descoped_by** (optional FK → `estimates.ChangeOrder`, `SET_NULL`,
+  `related_name='+'`, added 2026-08-09): stamped by
+  `ChangeOrderAcceptanceService`'s REMOVE loop when an accepted CO's
+  `remove`/`replace` line targets the estimate line that used to claim
+  this task, set **before** `_retire` runs so it lands even on a
+  complete/cancelled task `_retire` leaves alone. Never set on a REPLACE
+  target — replace moves the claim onto the CO line instead, see
+  `estimates-and-prices.md` §14.11. Provenance only; the invoice pool
+  reads it (`descoped_by_co_number`) for the "descoped by CO-N" chip.
+  Backfilled by `apps/estimates/migrations/0047_backfill_descoped_by.py`.
 
 #### Implied state from other models
 
@@ -987,7 +997,8 @@ Polymorphic row joining a line item to a Job atom (Task or Material).
   `claims.release_estimate_claims`). Both are *terminal*, so without this
   the atoms were locked out of every future estimate on a still-live job.
   `accepted` deliberately keeps its rows — they ARE the agreement record
-  (`compose_agreement`, `ChangeOrderService.struck_atom_keys` read them);
+  (`compose_agreement`, and `ChangeOrderAcceptanceService`'s remove/replace
+  resolution, read them);
   `superseded` already holds none. The line items stay either way, so a
   rejected estimate remains a readable snapshot of what was offered.
 - The atom's `job` must match the line item's estimate's `job`
@@ -1034,7 +1045,41 @@ Valid transitions (`ChangeOrder.VALID_TRANSITIONS`):
 - **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`) lacks an `accounting_category` — the category rides the line onto the agreement and its invoice copy, so a category-less bare line would surface as an unclassifiable charge downstream; it must be pinned before the customer can accept. Enforced in `ChangeOrder.clean()` (`ChangeOrderService.assert_all_bare_add_lines_have_ac`).
 - **Release guard**: a held Job cannot be released (`JobService.release_job`) or cancelled while any of its COs is `draft` or `open`.
 - **Acceptance clears the hold**: on transition to `accepted`, the handler drops the job's `on_hold` flag — the job resumes its true underlying status directly (held from `in_progress` goes straight back to `in_progress`).
-- **Acceptance crystallizes atoms**: on transition to `accepted`, `ChangeOrderAcceptanceService.on_accept` applies the line deltas to the Job's atoms (add → Task/Material, per the same discriminator as estimate acceptance, §1.13/§2.3; remove/replace → retire the target's current atom) in the same transaction, after the hold is cleared (atom writes are blocked while held). See `estimates-and-prices.md` §14.11.
+- **Acceptance crystallizes/moves/retires atoms** (rewritten 2026-08-09, CO
+  amend-in-place): on transition to `accepted`, `ChangeOrderAcceptanceService.on_accept`
+  walks the CO's lines **adds → replaces → removes** (each group in
+  `line_number` order), in the same transaction, after the hold is cleared
+  (atom writes are blocked while held):
+  - **add**: crystallizes via the same four-way discriminator as estimate
+    acceptance (§1.13/§2.3) — `service_item` → Task, `inventory_item` →
+    Material, bare `is_material` → established Material, else → nothing —
+    **skipped if the line already carries `ChangeOrderLineItemSource` rows**
+    (an authored claim made through the CO's own atom-pull wizard, §"CO
+    authoring claims" below; a line that already claims an atom has nothing
+    left to crystallize).
+  - **replace**: **moves** the target `EstimateLineItem`'s (or, in a
+    multi-CO chain, the prior replace's) claim rows onto the CO line —
+    delete-then-create inside the same transaction, never crystallizes a
+    new atom and never retires the old one. A no-op if the CO line already
+    has sources (idempotent re-run) or the target never had any (a plain
+    line — the delta stays document-only).
+  - **remove**: resolves the target's *current* atom (through the accepted-
+    replace chain, same resolution `replace` above uses) and stamps
+    `Task`/`Material.descoped_by = co` on it **before** attempting
+    retirement — so a task/material `_retire` leaves alone (already
+    complete/cancelled, consumed, PO-linked, or invoiced — physical/billed
+    reality is never unwound by a document) still records the descope. A
+    Task target is cancelled (bleps preserved) if not already terminal; a
+    Material target is released (`MaterialService.release`) only if
+    pending, not expense-bound, not PO-linked, and not on a live invoice.
+  See `estimates-and-prices.md` §14.11.
+- **Live-invoice guard on remove/replace targets** (`ChangeOrderService._assert_target_not_billed`,
+  added 2026-08-09): `add_line_item` / `update_line_item` refuse to save a
+  `remove`/`replace` CO line whose `target_line_item` is referenced by a
+  **live** (non-cancelled) invoice — `ValidationError`, re-checked on every
+  save (not just when `target_line_item` changes), so a line already saved
+  against a target that becomes billed afterward is caught on its next edit
+  too.
 
 #### ChangeOrderLineItem
 
@@ -1046,21 +1091,73 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - **inventory_item** (optional FK → InventoryItem, SET_NULL)
 - **service_item** (optional FK → ServiceItem, PROTECT): deferred service descriptor; crystallizes to a Task at CO acceptance (mirrors `EstimateLineItem.service_item`)
 - **is_material** (bool, default False): marks a bare line as crystallizing into an established Material (reverse-markup placeholder cost) rather than staying a document-only line (mirrors `EstimateLineItem.is_material`); authoring rejects it alongside an `inventory_item`/`service_item` and applies the `default_material_accounting_category` config default
+- **adjustment_service** (optional FK → RateScheme, PROTECT, added 2026-08-09):
+  mirrors `EstimateLineItem.adjustment_service` field-for-field (same
+  `on_delete`). Provenance/identity only.
+- **adjustment_percent** (optional Decimal(6,2), added 2026-08-09): snapshot
+  of `adjustment_service.rate` at line-creation/recompute time — the price
+  of record, mirroring `EstimateLineItem.adjustment_percent`.
+- **adjustment_target_categories** (M2M → AccountingCategory, blank, added
+  2026-08-09): mirrors `EstimateLineItem.adjustment_target_categories`.
+- `clean()` (2026-08-09, CO amend-in-place Task 1) — two new rules:
+  1. **Replace is commercial-only**: `action='replace'` may not carry
+     `service_item`, `inventory_item`, or `is_material` — a replace can only
+     override description/qty/price/units/AC in place; any typed
+     crystallization goes through a separate remove+add instead.
+  2. **Adjustment triple valid only on replace-of-adjustment**: a non-null
+     `adjustment_service`/`adjustment_percent` is only legal when
+     `action == 'replace'` **and** `target_line_item.adjustment_service_id`
+     is set (i.e. the CO is amending an existing percentage-adjustment
+     line) — raises otherwise. `ChangeOrderService`'s
+     `recompute_adjustment_replaces` clears a stale triple automatically
+     when a line is retargeted away from an adjustment target.
 - `clean()` also rejects `service_item` / `is_material` on `remove` lines (display-only; never crystallize)
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
 
 #### ChangeOrderLineItemSource
 
-`db_table = 'co_li_sources'`. The CO analog of EstimateLineItemSource (§ estimates doc §6.2/§14.4): polymorphic join from a ChangeOrderLineItem to the atom it crystallized at acceptance.
+`db_table = 'co_li_sources'`. The CO analog of EstimateLineItemSource (§ estimates doc §6.2/§14.4): polymorphic join from a ChangeOrderLineItem to the atom that backs it.
 
 - **change_order_line_item** (required FK → ChangeOrderLineItem, CASCADE, `related_name='sources'`)
 - **source_type**: `task` | `material`; **source_pk**: positive int
 - `unique_together (source_type, source_pk)` — an atom is claimed by at most one CO line
-- Rows exist only for add/replace lines of accepted COs; purged when the referenced atom is deleted by a later CO's remove/replace.
+- Rows exist only for accepted COs' `add`/`replace` lines, **plus** any CO
+  line an authoring user directly claimed atoms onto through the CO wizard
+  before acceptance (§"CO authoring claims" below) — never for `remove`
+  lines (display-only, nothing to claim). An `add` line's rows are written
+  at crystallization (or earlier, if authored) or as the destination of an
+  atom-pull claim; a `replace` line's rows are **moved** onto it (not newly
+  created) at acceptance from whatever the target line held. Purged when
+  the referenced atom is hard-deleted by a later CO's remove/replace.
 - **A dead CO releases its claims** (2026-07-28): entering `rejected` or
   `expired` deletes the CO's source rows (`ChangeOrder.save()` →
   `claims.release_change_order_claims`) — the same rule and rationale as the
   estimate lens above.
+- **CO authoring claims** (2026-08-09, CO amend-in-place Task 7):
+  `ChangeOrderWizardService` (`apps/estimates/services.py`, subclasses
+  `EstimateWizardService`) lets a **draft** CO's own `add` lines claim job
+  atoms directly — `POST .../source-pool/`, `line-items-from-atoms/`,
+  `line-items/{lid}/add-atoms/`, `line-items/{lid}/remove-atoms/` — the same
+  shape as the estimate wizard. `add_atoms_to_line_item` refuses a
+  non-`add` CO line. The pool is **cross-lens**: an atom already claimed by
+  an estimate line, or by another CO's add line, shows `claimed_by_other`;
+  see the cross-lens-race note in `LATER.md` (no DB-level guard spans both
+  claim tables, pool-display-only defense). A CO `add` line with sources is
+  **exempt** from the bare-add-line AC send guard (above —
+  `assert_all_bare_add_lines_have_ac` filters `sources__isnull=True`) since
+  an authored-claimed atom already carries its own AC.
+
+**Migrations (CO amend-in-place, 2026-08-09):**
+`apps/estimates/migrations/0046_changeorderlineitem_adjustment_percent_and_more.py`
+(schema — the three adjustment fields), `apps/jobs/migrations/0063_task_descoped_by.py`
+and `apps/inventory/migrations/0035_material_descoped_by.py` (schema — the
+`descoped_by` FKs, both depending on `estimates.0046`), and
+`apps/estimates/migrations/0047_backfill_descoped_by.py` (data migration —
+walks every historical ACCEPTED `ChangeOrder` ordered `closed_date`,
+`change_order_id` ascending and stamps `descoped_by` on each `remove`/
+`replace` line's target's then-current claimed atom; a later-accepted CO's
+stamp wins when two both target the same line; no-ops on a dangling/already-
+retired atom; reverse is a no-op).
 
 See `docs/designs/estimates-and-prices.md`.
 
@@ -1177,6 +1274,16 @@ Either a description or a `inventory_item` must be present.
   `inventory_item` or any non-zero `unit_cost`/`sell_price`; `update_fields`
   rejects any pricing edit (including sell) on a customer-supplied material. It
   is never ordered or expense-attached; arrival is via **Mark received**.
+- **descoped_by** (optional FK → `estimates.ChangeOrder`, `SET_NULL`,
+  `related_name='+'`, added 2026-08-09): stamped by
+  `ChangeOrderAcceptanceService`'s REMOVE loop when an accepted CO's
+  `remove`/`replace` line targets the estimate line that used to claim
+  this material, set **before** `_retire` runs so it lands even on a
+  consumed/invoiced/PO-linked material `_retire` leaves alone. Never set
+  on a REPLACE target — replace moves the claim onto the CO line instead,
+  see `estimates-and-prices.md` §14.11. Provenance only; the invoice pool
+  reads it (`descoped_by_co_number`) for the "descoped by CO-N" chip.
+  Backfilled by `apps/estimates/migrations/0047_backfill_descoped_by.py`.
 
 #### Implied state from other models
 
