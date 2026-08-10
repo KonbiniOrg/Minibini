@@ -30,7 +30,7 @@ export default defineConfig({
     {
       command: 'npx vite',
       cwd: '../frontend',
-      env: { VITE_PORT: '9100', VITE_API_TARGET: 'http://localhost:8100' },
+      env: { VITE_PORT: '9100', VITE_API_TARGET: 'http://127.0.0.1:8100' },
       url: 'http://localhost:9100',
       reuseExistingServer: false,
     },

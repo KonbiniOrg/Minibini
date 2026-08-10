@@ -27,7 +27,10 @@ export default defineConfig({
     port: Number(process.env.VITE_PORT || 9000),
     allowedHosts: ['moose', 'moose.local', 'minibini.me'],
     proxy: {
-      '/api': process.env.VITE_API_TARGET || 'http://localhost:8000',
+      // 127.0.0.1, not localhost: Node 17+ resolves localhost dual-stack and
+      // its happy-eyeballs race intermittently aborts proxy connects with a
+      // fast AggregateError ETIMEDOUT against a healthy IPv4-only runserver.
+      '/api': process.env.VITE_API_TARGET || 'http://127.0.0.1:8000',
     },
   },
 });
