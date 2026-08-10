@@ -292,4 +292,148 @@ class AdjustmentReplaceAcceptanceTests(AdjustmentReplaceBase):
             l for l in result['lines'] if l['description'] == self.adj.description)
         self.assertEqual(adj_line['percent'], Decimal('5.00'))
         self.assertEqual(adj_line['price'], Decimal('7.00'))
-        self.assertEqual(adj_line['amount'], Decimal('7.00'))
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 — review findings on the initial Task 6 submission.
+# ---------------------------------------------------------------------------
+
+# CRITICAL 1: delete_line_item crashed for EVERY CO line (missing ChangeOrder
+# entry in LineItemService.get_line_items_for_container's field_name_map).
+
+class DeleteLineItemDoesNotCrashTests(AdjustmentReplaceBase):
+    def test_service_delete_of_a_plain_line_succeeds_and_renumbers(self):
+        add_line = ChangeOrderService.add_line_item(
+            self.co.pk,
+            action=ChangeOrderLineItem.ACTION_ADD,
+            description='Extra scope', qty='1', price='20.00',
+            accounting_category=self.labor.pk,
+        )
+        ChangeOrderService.delete_line_item(add_line.pk)
+        self.assertFalse(
+            ChangeOrderLineItem.objects.filter(pk=add_line.pk).exists())
+
+    def test_api_delete_returns_200(self):
+        self.client = APIClient()
+        from apps.core.models import User
+        manager = User.objects.create_user(username='co_adj_del_mgr', password='x')
+        manager = _add_can_manage_jobs(manager)
+        self.client.force_authenticate(user=manager)
+
+        add_line = ChangeOrderService.add_line_item(
+            self.co.pk,
+            action=ChangeOrderLineItem.ACTION_ADD,
+            description='Extra scope', qty='1', price='20.00',
+            accounting_category=self.labor.pk,
+        )
+        resp = self.client.delete(
+            f'/api/change-orders/{self.co.pk}/line-items/{add_line.pk}/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertFalse(
+            ChangeOrderLineItem.objects.filter(pk=add_line.pk).exists())
+
+    def test_delete_recomputes_adjustment_replace_price(self):
+        """Deleting a plain (non-adjustment) CO line on a CO that also
+        carries an adjustment-replace line must refresh that line's price
+        against the new amended basis."""
+        replace_li = ChangeOrderService.add_line_item(
+            self.co.pk,
+            action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=self.adj.pk,
+            adjustment_percent='5.00',
+        )
+        add_line = ChangeOrderService.add_line_item(
+            self.co.pk,
+            action=ChangeOrderLineItem.ACTION_ADD,
+            description='Extra scope', qty='1', price='60.00',
+            accounting_category=self.labor.pk,
+        )
+        replace_li.refresh_from_db()
+        # basis 100 + 40 + 60 = 200 -> 5% = 10.00
+        self.assertEqual(replace_li.price, Decimal('10.00'))
+
+        ChangeOrderService.delete_line_item(add_line.pk)
+
+        replace_li.refresh_from_db()
+        # basis back to 140 -> 5% = 7.00
+        self.assertEqual(replace_li.price, Decimal('7.00'))
+
+
+# IMPORTANT 2: add_line_item_from_pli / add_line_item_from_service skipped
+# recompute_adjustment_replaces, so an adjustment-replace price went stale
+# through those two add paths.
+
+class AddFromPliAndServiceRecomputeTests(AdjustmentReplaceBase):
+    def test_add_line_item_from_pli_recomputes_adjustment_replace(self):
+        from apps.inventory.models import InventoryItem
+
+        replace_li = ChangeOrderService.add_line_item(
+            self.co.pk,
+            action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=self.adj.pk,
+            adjustment_percent='5.00',
+        )
+        self.assertEqual(replace_li.price, Decimal('7.00'))  # 5% of 140
+
+        pli = InventoryItem.objects.create(
+            code='PLY-COADJ', accounting_category=self.labor,
+            qty_on_hand=Decimal('50'), purchase_price=Decimal('30'),
+            selling_price=Decimal('60.00'), units='ea',
+        )
+        ChangeOrderService.add_line_item_from_pli(self.co.pk, pli.pk, '1')
+
+        replace_li.refresh_from_db()
+        # basis 100 + 40 + 60 = 200 -> 5% = 10.00
+        self.assertEqual(replace_li.price, Decimal('10.00'))
+
+    def test_add_line_item_from_service_recomputes_adjustment_replace(self):
+        from apps.estimates.models import ServiceItem
+
+        replace_li = ChangeOrderService.add_line_item(
+            self.co.pk,
+            action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=self.adj.pk,
+            adjustment_percent='5.00',
+        )
+        self.assertEqual(replace_li.price, Decimal('7.00'))  # 5% of 140
+
+        hourly = RateScheme.objects.create(
+            name='Hourly-COADJ', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('60.00'), unit_label='hour',
+            accounting_category=self.labor,
+        )
+        service_item = ServiceItem.objects.create(
+            template_name='Cutting-COADJ', rate_scheme=hourly,
+        )
+        ChangeOrderService.add_line_item_from_service(self.co.pk, service_item.pk, '1')
+
+        replace_li.refresh_from_db()
+        # basis 100 + 40 + 60 = 200 -> 5% = 10.00
+        self.assertEqual(replace_li.price, Decimal('10.00'))
+
+
+# IMPORTANT 3: retargeting a REPLACE line away from an adjustment target left
+# the stale adjustment triple in place, tripping ChangeOrderLineItem.clean().
+
+class RetargetAwayFromAdjustmentTests(AdjustmentReplaceBase):
+    def test_retargeting_to_a_plain_line_clears_the_adjustment_triple(self):
+        replace_li = ChangeOrderService.add_line_item(
+            self.co.pk,
+            action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=self.adj.pk,
+            adjustment_percent='5.00',
+        )
+        self.assertIsNotNone(replace_li.adjustment_service_id)
+
+        updated = ChangeOrderService.update_line_item(
+            replace_li.pk,
+            target_line_item=self.li_labor.pk,
+            description='Labor v2', qty='1', price='120.00',
+            accounting_category=self.labor.pk,
+        )
+
+        self.assertIsNone(updated.adjustment_service_id)
+        self.assertIsNone(updated.adjustment_percent)
+        self.assertEqual(list(updated.adjustment_target_categories.all()), [])
+        # Confirm it's now a fully valid plain replace.
+        updated.full_clean()

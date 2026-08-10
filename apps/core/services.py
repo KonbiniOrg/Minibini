@@ -1089,6 +1089,7 @@ class LineItemService:
             'Estimate': 'estimate',
             'Invoice': 'invoice',
             'PurchaseOrder': 'purchase_order',
+            'ChangeOrder': 'change_order',
         }
 
         parent_field_name = field_name_map.get(container_type)

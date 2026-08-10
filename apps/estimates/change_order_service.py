@@ -410,8 +410,15 @@ class ChangeOrderService:
         percent-less replace is a description-only edit (Task 6 brief).
 
         Idempotent (safe to call on every add/update), so it applies the
-        same invariant whether this is the line's creation or a later edit.
-        A no-op for any line that isn't a replace-of-adjustment.
+        same invariant whether this is the line's creation or a later edit
+        — including a *retarget*: if a previously-adjustment replace line
+        is repointed at a plain (non-adjustment) target, the stale
+        adjustment triple (adjustment_service/adjustment_percent/target
+        categories) is cleared so the line becomes a valid plain replace
+        instead of tripping ChangeOrderLineItem.clean()'s adjustment-fields
+        guard. A true no-op for any line that isn't and never was a
+        replace-of-adjustment (plain add/remove/replace lines never carry
+        adjustment fields, so there's nothing to clear).
 
         `price` is deliberately left untouched — recompute_adjustment_replaces
         (called at the end of every mutating service method) computes it
@@ -419,14 +426,23 @@ class ChangeOrderService:
         lives.
 
         Returns the target's `adjustment_target_categories` queryset to
-        `.set()` on `li` once `li` has a pk (M2M needs a saved row), or None
-        if this isn't an adjustment-replace line.
+        `.set()` on `li` once `li` has a pk (M2M needs a saved row); `[]` to
+        clear a stale M2M on a retarget-away; or None if there's no M2M
+        change to make.
         """
         if li.action != ChangeOrderLineItem.ACTION_REPLACE or not li.target_line_item_id:
             return None
         target = li.target_line_item
+
         if target.adjustment_service_id is None:
-            return None
+            had_adjustment_fields = (
+                li.adjustment_service_id is not None or li.adjustment_percent is not None
+            )
+            if not had_adjustment_fields:
+                return None
+            li.adjustment_service_id = None
+            li.adjustment_percent = None
+            return []
 
         li.adjustment_service_id = target.adjustment_service_id
         if li.adjustment_percent is None:
@@ -458,6 +474,12 @@ class ChangeOrderService:
         reorder never changes any amount, but it's a one-line safety net),
         all in the same transaction as the triggering mutation — and by
         Task 7's atom mutations.
+
+        Returns the set of ChangeOrderLineItem pks whose price was actually
+        changed (and saved) — callers holding an in-memory instance of one
+        of those lines (e.g. add_line_item/update_line_item's own `li`) use
+        it to decide whether a `refresh_from_db()` is needed, rather than
+        paying that round-trip unconditionally on every mutation.
         """
         from apps.estimates.agreement import (
             adjustment_expected_amount, compose_amended_agreement,
@@ -471,7 +493,7 @@ class ChangeOrderService:
             )
         )
         if not adjustment_lines:
-            return
+            return set()
 
         composed = compose_amended_agreement(co)
         amended_lines = [row['line'] for row in composed['rows'] if row['kind'] != 'removed']
@@ -480,6 +502,7 @@ class ChangeOrderService:
             if line['co_line_id'] is not None
         }
 
+        changed = set()
         for li in adjustment_lines:
             line_dict = by_co_line_id.get(li.pk)
             if line_dict is None:
@@ -488,6 +511,8 @@ class ChangeOrderService:
             if li.price != new_price:
                 li.price = new_price
                 li.save()
+                changed.add(li.pk)
+        return changed
 
     @staticmethod
     @transaction.atomic
@@ -515,14 +540,18 @@ class ChangeOrderService:
         li.save()
         if target_categories is not None:
             li.adjustment_target_categories.set(target_categories)
-        ChangeOrderService.recompute_adjustment_replaces(co)
-        # recompute_adjustment_replaces saves through a freshly-queried
-        # instance, not this one — refresh so a caller (e.g. the API
-        # response) sees the amended-basis price, not the pre-recompute one.
-        li.refresh_from_db()
+        changed = ChangeOrderService.recompute_adjustment_replaces(co)
+        if li.pk in changed:
+            # recompute_adjustment_replaces saves through a freshly-queried
+            # instance, not this one — refresh so a caller (e.g. the API
+            # response) sees the amended-basis price, not the pre-recompute
+            # one. Guarded so a CO with no adjustment-replace lines (the
+            # common case) never pays this extra round-trip.
+            li.refresh_from_db()
         return li
 
     @staticmethod
+    @transaction.atomic
     def add_line_item_from_pli(co_pk, pli_pk, qty):
         """Add a line item from a InventoryItem to a draft change order."""
         from apps.inventory.models import InventoryItem
@@ -547,6 +576,7 @@ class ChangeOrderService:
             price=pli.selling_price,
             accounting_category=pli.accounting_category,
         )
+        ChangeOrderService.recompute_adjustment_replaces(co)
         return li
 
     @staticmethod
@@ -560,6 +590,7 @@ class ChangeOrderService:
         return co
 
     @staticmethod
+    @transaction.atomic
     def add_line_item_from_service(co_pk, service_item_pk, qty):
         """Add a deferred service line to a draft change order.
 
@@ -594,6 +625,7 @@ class ChangeOrderService:
         )
         li.full_clean()
         li.save()
+        ChangeOrderService.recompute_adjustment_replaces(co)
         return li
 
     @staticmethod
@@ -621,10 +653,11 @@ class ChangeOrderService:
         li.save()
         if target_categories is not None:
             li.adjustment_target_categories.set(target_categories)
-        ChangeOrderService.recompute_adjustment_replaces(li.change_order)
-        # See add_line_item's comment: refresh so the caller sees the
-        # amended-basis price, not the pre-recompute one.
-        li.refresh_from_db()
+        changed = ChangeOrderService.recompute_adjustment_replaces(li.change_order)
+        if li.pk in changed:
+            # See add_line_item's comment: refresh so the caller sees the
+            # amended-basis price, not the pre-recompute one.
+            li.refresh_from_db()
         return li
 
     @staticmethod
