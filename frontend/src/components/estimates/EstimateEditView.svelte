@@ -95,6 +95,18 @@
     });
   }
 
+  // A claimed_by_other atom is claimed on one of two lenses (Task 7): a CO
+  // add line (claiming_change_order_number set) or another estimate
+  // (claiming_estimate_number set) — never both. CO wins the branch since
+  // it's the more specific claim; falls back to the estimate note.
+  function unselectableNote(atom) {
+    if (atom.state !== 'claimed_by_other') return undefined;
+    if (atom.claiming_change_order_number) {
+      return `Claimed by change order ${atom.claiming_change_order_number}`;
+    }
+    return `Claimed by estimate ${atom.claiming_estimate_number || ''}`.trim();
+  }
+
   let uncoveredRows = $derived(
     (sourcePool?.atoms || [])
       .filter((a) => a.state !== 'claimed_by_current')
@@ -106,9 +118,7 @@
         rate: a.rate,
         amount: a.amount,
         selectable: a.state === 'available',
-        unselectableNote: a.state === 'claimed_by_other'
-          ? `Claimed by estimate ${a.claiming_estimate_number || ''}`.trim()
-          : undefined,
+        unselectableNote: unselectableNote(a),
       }))
   );
 

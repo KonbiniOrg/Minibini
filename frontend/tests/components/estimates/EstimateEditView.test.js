@@ -132,6 +132,43 @@ describe('EstimateEditView', () => {
     expect(container.textContent).toContain('New line from selected');
   });
 
+  it('shows "Claimed by estimate EST-N" for an atom claimed_by_other on another estimate', async () => {
+    const claimedByEstimate = {
+      ...AVAILABLE_ATOM, id: 42, description: 'Weld joints', state: 'claimed_by_other',
+      claiming_estimate_id: 8, claiming_estimate_number: 'EST-8',
+      claiming_change_order_id: null, claiming_change_order_number: null,
+    };
+    const { findByText, container } = render(EstimateEditView, {
+      props: baseProps({ sourcePool: poolWith([claimedByEstimate]) }),
+    });
+    await findByText('Weld joints');
+    expect(await findByText(/Claimed by estimate EST-8/)).toBeInTheDocument();
+    const row = container.querySelector('tr.doc-unselectable-row');
+    expect(row).not.toBeNull();
+    expect(row.querySelector('input[type="checkbox"]')).toBeDisabled();
+  });
+
+  it('shows "Claimed by change order CO-N" (not "Claimed by estimate") for an atom claimed by a CO add line', async () => {
+    // Task 7 cross-lens fix: a CO-claimed atom comes back claimed_by_other
+    // with claiming_estimate_number null and claiming_change_order_number
+    // set — the note must branch on that, not fall into the old
+    // "Claimed by estimate " (empty number) text.
+    const claimedByCO = {
+      ...AVAILABLE_ATOM, id: 43, description: 'Trim it out', state: 'claimed_by_other',
+      claiming_estimate_id: null, claiming_estimate_number: null,
+      claiming_change_order_id: 5, claiming_change_order_number: 'EST-1-CO2',
+    };
+    const { findByText, queryByText, container } = render(EstimateEditView, {
+      props: baseProps({ sourcePool: poolWith([claimedByCO]) }),
+    });
+    await findByText('Trim it out');
+    expect(await findByText(/Claimed by change order EST-1-CO2/)).toBeInTheDocument();
+    expect(queryByText(/Claimed by estimate\s*$/)).not.toBeInTheDocument();
+    const row = container.querySelector('tr.doc-unselectable-row');
+    expect(row).not.toBeNull();
+    expect(row.querySelector('input[type="checkbox"]')).toBeDisabled();
+  });
+
   it('clicking a line\'s "Add selected here" POSTs add-atoms with the ticked ids', async () => {
     api.post.mockResolvedValue({});
     const { findByText, findAllByText, container } = render(EstimateEditView, {
