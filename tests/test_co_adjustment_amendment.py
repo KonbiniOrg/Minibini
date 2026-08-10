@@ -292,6 +292,7 @@ class AdjustmentReplaceAcceptanceTests(AdjustmentReplaceBase):
             l for l in result['lines'] if l['description'] == self.adj.description)
         self.assertEqual(adj_line['percent'], Decimal('5.00'))
         self.assertEqual(adj_line['price'], Decimal('7.00'))
+        self.assertEqual(adj_line['amount'], Decimal('7.00'))
 
 
 # ---------------------------------------------------------------------------
