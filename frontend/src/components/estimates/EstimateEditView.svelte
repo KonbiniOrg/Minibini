@@ -18,6 +18,7 @@
   import AtomChildRow from '../docsurface/AtomChildRow.svelte';
   import UncoveredWorkSection from '../docsurface/UncoveredWorkSection.svelte';
   import NewLineFromSelectedRow from '../docsurface/NewLineFromSelectedRow.svelte';
+  import QtyUnits from '../docsurface/QtyUnits.svelte';
 
   // Atom rows carry # (colspanBefore=1) + description/qty/rate/amount (4) +
   // this many blank cells before the onRemove cell — one for the Backing
@@ -257,7 +258,7 @@
           {/if}
           {#if provenanceText(li)}<br><small>{provenanceText(li)}</small>{/if}
         </td>
-        <td class="text-right">{formatQtyUnits(li.qty, li.units)}</td>
+        <td class="text-right"><QtyUnits qty={li.qty} units={li.units} /></td>
         <td class="text-right">{fmtMoney(li.price)}</td>
         <td class="text-right">{fmtMoney(lineAmount(li))}</td>
         <td>

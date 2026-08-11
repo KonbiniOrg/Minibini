@@ -4,9 +4,9 @@ import DocCustomerView from '@/components/docsurface/DocCustomerView.svelte';
 import DocReorderView from '@/components/docsurface/DocReorderView.svelte';
 
 const lines = [
-  { line_id: 1, line_number: 1, description: 'Sanding', qty_display: '2 hr', price: 25, amount: 50 },
-  { line_id: 2, line_number: 2, description: 'Acrylic sheet', qty_display: '3 ea', price: 10, amount: 30 },
-  { line_id: 3, line_number: 3, description: 'Finishing', qty_display: '1 hr', price: 40, amount: 40 },
+  { line_id: 1, line_number: 1, description: 'Sanding', qty: '2', units: 'hr', price: 25, amount: 50 },
+  { line_id: 2, line_number: 2, description: 'Acrylic sheet', qty: '3', units: 'ea', price: 10, amount: 30 },
+  { line_id: 3, line_number: 3, description: 'Finishing', qty: '1', units: 'hr', price: 40, amount: 40 },
 ];
 
 describe('DocCustomerView', () => {
@@ -16,7 +16,11 @@ describe('DocCustomerView', () => {
     });
     getByText('Estimate #123');
     getByText('Sanding');
-    getByText('2 hr');
+    // Qty stacks its units beneath it (QtyUnits) — assert within the row.
+    const sandingRow = [...container.querySelectorAll('tbody tr')]
+      .find((tr) => tr.textContent.includes('Sanding'));
+    expect(sandingRow.textContent).toContain('2');
+    expect(sandingRow.querySelector('.qty-units-under').textContent).toBe('hr');
     getByText('$25.00');
     getByText('$50.00');
     getByText('Acrylic sheet');

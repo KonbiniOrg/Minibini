@@ -833,7 +833,7 @@ page-specific names or references:
 
 ### 5.5b The `docsurface` kit — shared document-editing surface (2026-08)
 
-`frontend/src/components/docsurface/` holds a seven-component kit
+`frontend/src/components/docsurface/` holds an eight-component kit
 shared by the estimate, invoice, **and change-order** editing surfaces
 (the CO panel grew the same mode bar 2026-08-09 — see
 `docs/plans/2026-08-06-better-fees.md` §9.3). It replaced the old
@@ -853,7 +853,7 @@ delta-document sibling to `DocCustomerView` rather than a direct
 consumer of it), the invoice side in `invoicing-and-expenses.md`
 (Agreement-line references and seeding, Backing model).
 
-**The seven components:**
+**The eight components:**
 
 | Component | Role |
 |---|---|
@@ -862,7 +862,8 @@ consumer of it), the invoice side in `invoicing-and-expenses.md`
 | `AtomChildRow.svelte` | One indented `<tr class="doc-atom-row">` nested under a line for each of its claimed source atoms; `{ atom, colspanBefore, colspanAfter, onRemove, note }`. |
 | `UncoveredWorkSection.svelte` | The checkbox-selectable pool of not-yet-billed job atoms below the line-items table; `{ title, subtitle, rows, selected (bindable), directLabel, onDirect, emptyText }`. Each row optionally carries a `chip` (`{label, cls}`) for provenance markers (invoiced-elsewhere, cancelled, struck-from-agreement — invoice side; see `invoicing-and-expenses.md`). |
 | `NewLineFromSelectedRow.svelte` | The dashed placeholder `<tr class="doc-newline">` footer row offering "＋ New line from selected"; `{ visible, nextNumber, onCreate }`. |
-| `DocCustomerView.svelte` | The collapsed, read-only Customer-mode projection — `#`/description/qty/price/amount + a grand-total row, zero interactive elements; `{ title, lines, grandTotal }`. |
+| `QtyUnits.svelte` | Qty-cell content for document line items: the quantity with its units stacked beneath in muted small text (RM 2026-08-11); units `'none'`/empty omitted, missing qty renders `-`. Used by every doc line table (edit + customer, all three doc types) — `lib/format.js formatQtyUnits` remains the inline single-string variant for the atom child/pool rows. |
+| `DocCustomerView.svelte` | The collapsed, read-only Customer-mode projection — `#`/description/qty/price/amount + a grand-total row, zero interactive elements; `{ title, lines, grandTotal }` (lines carry `qty`/`units`, rendered via `QtyUnits`). |
 | `DocReorderView.svelte` | Composes `DocCustomerView` with an added arrows column (`{ onReorder(lineId, 'up'|'down') }`) — **identical rows to Customer mode plus arrows**, so reordering never carries sub-line ambiguity. |
 
 Every prop is content/config — no component branches on `docType` or

@@ -18,6 +18,7 @@
   import AtomChildRow from '../docsurface/AtomChildRow.svelte';
   import UncoveredWorkSection from '../docsurface/UncoveredWorkSection.svelte';
   import NewLineFromSelectedRow from '../docsurface/NewLineFromSelectedRow.svelte';
+  import QtyUnits from '../docsurface/QtyUnits.svelte';
 
   // Atom rows carry description/qty/price/amount (4, no leading # column in
   // this table — amended-agreement rows carry no stable line_number) + this
@@ -326,7 +327,7 @@
           <td class="preserve-breaks">
             <LinkifiedText text={row.line.description || 'No description'} />
           </td>
-          <td class="text-right">{formatQtyUnits(row.line.qty, row.line.units)}</td>
+          <td class="text-right"><QtyUnits qty={row.line.qty} units={row.line.units} /></td>
           <td class="text-right">{fmtMoney(row.line.price)}</td>
           <td class="text-right">{fmtMoney(row.line.amount)}</td>
           <td>
@@ -363,7 +364,7 @@
       {:else if row.kind === 'removed'}
         <tr class="co-struck-original">
           <td class="preserve-breaks struck">{row.original.description}</td>
-          <td class="text-right struck">{formatQtyUnits(row.original.qty, row.original.units)}</td>
+          <td class="text-right struck"><QtyUnits qty={row.original.qty} units={row.original.units} /></td>
           <td class="text-right struck">{fmtMoney(row.original.price)}</td>
           <td class="text-right struck">({fmtMoney(row.original.amount)})</td>
           <td></td>
@@ -377,7 +378,7 @@
             <span class="co-badge">CO {row.co_index}</span>
             <span class="co-desc"><LinkifiedText text={row.line.description || 'No description'} /></span>
           </td>
-          <td class="text-right">{formatQtyUnits(row.line.qty, row.line.units)}</td>
+          <td class="text-right"><QtyUnits qty={row.line.qty} units={row.line.units} /></td>
           <td class="text-right">{fmtMoney(row.line.price)}</td>
           <td class="text-right">{fmtMoney(row.line.amount)}</td>
           <td>
@@ -395,7 +396,7 @@
         </tr>
         <tr class="co-struck-original">
           <td class="preserve-breaks struck">{row.original.description}</td>
-          <td class="text-right struck">{formatQtyUnits(row.original.qty, row.original.units)}</td>
+          <td class="text-right struck"><QtyUnits qty={row.original.qty} units={row.original.units} /></td>
           <td class="text-right struck">{fmtMoney(row.original.price)}</td>
           <td class="text-right struck">({fmtMoney(row.original.amount)})</td>
           <td></td>
@@ -417,7 +418,7 @@
             <span class="co-badge">CO {row.co_index}</span>
             <span class="co-desc"><LinkifiedText text={row.line.description || 'No description'} /></span>
           </td>
-          <td class="text-right">{formatQtyUnits(row.line.qty, row.line.units)}</td>
+          <td class="text-right"><QtyUnits qty={row.line.qty} units={row.line.units} /></td>
           <td class="text-right">{fmtMoney(row.line.price)}</td>
           <td class="text-right">{fmtMoney(row.line.amount)}</td>
           <td>

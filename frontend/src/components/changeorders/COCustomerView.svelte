@@ -9,7 +9,7 @@
   // grammar) rather than a wrapper: its one-line-one-amount props don't fit
   // struck originals and three footer totals.
   import { fmtMoney } from '@/lib/taskTotals.js';
-  import { formatQtyUnits } from '../../lib/format.js';
+  import QtyUnits from '../docsurface/QtyUnits.svelte';
 
   // `deliverables`: compose_deliverable_diff rows (GET .../deliverables-diff/)
   // — {kind, description, qty, units}, kinds unchanged / changed /
@@ -62,7 +62,7 @@
         {#each deliverables as d, i (i)}
           <tr class={`row-${d.kind}`}>
             <td>{#if d.kind === 'added'}<span class="tag-add">+</span>{/if}{d.description}</td>
-            <td class="text-right">{formatQtyUnits(d.qty, d.units)}</td>
+            <td class="text-right"><QtyUnits qty={d.qty} units={d.units} /></td>
           </tr>
         {/each}
       </tbody>
@@ -82,7 +82,7 @@
       {#each displayRows as row (row.key)}
         <tr class={row.cls}>
           <td>{#if row.added}<span class="tag-add">+</span>{/if}{row.line.description}</td>
-          <td class="text-right">{formatQtyUnits(row.line.qty, row.line.units)}</td>
+          <td class="text-right"><QtyUnits qty={row.line.qty} units={row.line.units} /></td>
           <td class="text-right">{fmtMoney(row.line.price)}</td>
           <td class="text-right">{fmtMoney(row.line.amount)}</td>
         </tr>

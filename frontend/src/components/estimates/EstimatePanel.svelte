@@ -4,7 +4,6 @@
   import { showError } from '../../stores/messages.js';
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import { buildEstimateDocItems } from '../../lib/estimateDocs.js';
-  import { formatQtyUnits } from '../../lib/format.js';
   import DocModeBar from '../docsurface/DocModeBar.svelte';
   import DocCustomerView from '../docsurface/DocCustomerView.svelte';
   import DocReorderView from '../docsurface/DocReorderView.svelte';
@@ -106,7 +105,8 @@
       line_id: li.line_item_id,
       line_number: li.line_number,
       description: li.description,
-      qty_display: formatQtyUnits(li.qty, li.units),
+      qty: li.qty,
+      units: li.units,
       price: li.price,
       amount: Number(li.qty || 0) * Number(li.price || 0),
     }))

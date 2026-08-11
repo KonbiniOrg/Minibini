@@ -7,6 +7,7 @@
   // (DocReorderView) tack on one trailing column without duplicating this
   // row markup — the DRY seam for kit C.
   import { fmtMoney } from '@/lib/taskTotals.js';
+  import QtyUnits from './QtyUnits.svelte';
 
   let { title, lines = [], grandTotal, extraHeader = null, extraCell = null } = $props();
 </script>
@@ -29,7 +30,7 @@
         <tr>
           <td>{line.line_number}</td>
           <td>{line.description}</td>
-          <td class="text-right">{line.qty_display}</td>
+          <td class="text-right"><QtyUnits qty={line.qty} units={line.units} /></td>
           <td class="text-right">{fmtMoney(line.price)}</td>
           <td class="text-right">{fmtMoney(line.amount)}</td>
           {#if extraCell}{@render extraCell(line, i)}{/if}

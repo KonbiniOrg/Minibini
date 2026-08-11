@@ -22,6 +22,7 @@
   import AtomChildRow from '../docsurface/AtomChildRow.svelte';
   import UncoveredWorkSection from '../docsurface/UncoveredWorkSection.svelte';
   import NewLineFromSelectedRow from '../docsurface/NewLineFromSelectedRow.svelte';
+  import QtyUnits from '../docsurface/QtyUnits.svelte';
 
   // Atom rows carry # (colspanBefore=1) + description/qty/rate/amount (4) +
   // this many blank cells before the onRemove cell — one for the Backing
@@ -158,7 +159,8 @@
           kind: li.agreement_ref.kind,
           line_id: li.agreement_ref.line_id,
           description: li.description,
-          qty_display: formatQtyUnits(li.qty, li.units),
+          qty: li.qty,
+          units: li.units,
           price: li.price,
           amount: lineAmount(li),
         }];
@@ -488,7 +490,7 @@
           {/if}
           {#if provenanceText(li)}<br><small>{provenanceText(li)}</small>{/if}
         </td>
-        <td class="text-right">{formatQtyUnits(li.qty, li.units)}</td>
+        <td class="text-right"><QtyUnits qty={li.qty} units={li.units} /></td>
         <td class="text-right">{fmtMoney(li.price)}</td>
         <td class="text-right">{fmtMoney(lineAmount(li))}</td>
         <td>
@@ -539,7 +541,7 @@
         <tr class="doc-offdoc">
           <td></td>
           <td class="preserve-breaks">{entry.description}</td>
-          <td class="text-right">{entry.qty_display}</td>
+          <td class="text-right"><QtyUnits qty={entry.qty} units={entry.units} /></td>
           <td class="text-right">{fmtMoney(entry.price)}</td>
           <td class="text-right">{fmtMoney(entry.amount)}</td>
           <td></td>
@@ -629,7 +631,7 @@
       {#each remainingLines as line (agreementLineKey(line))}
         <tr>
           <td>{line.description}</td>
-          <td class="text-right">{formatQtyUnits(line.qty, line.units)}</td>
+          <td class="text-right"><QtyUnits qty={line.qty} units={line.units} /></td>
           <td class="text-right">{fmtMoney(line.price)}</td>
           <td class="text-right">{fmtMoney(Number(line.qty) * Number(line.price))}</td>
           <td>

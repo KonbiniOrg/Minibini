@@ -1211,7 +1211,7 @@ conventions.
 | Component | Path | Role |
 |---|---|---|
 | `EstimateEditView.svelte` | `frontend/src/components/estimates/` | The estimate's **Edit** mode — one merged surface: the line-items table (each row's atom claims nested via `AtomChildRow`) plus an `UncoveredWorkSection` pool below it. Presentation + gestures only; `EstimatePanel` owns data loading. See §12. |
-| `docsurface/*` kit | `frontend/src/components/docsurface/` | Seven shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `DocCustomerView`, `DocReorderView`) consumed by the estimate, invoice, **and CO** (§14.9a) edit surfaces. Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched. |
+| `docsurface/*` kit | `frontend/src/components/docsurface/` | Eight shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `QtyUnits`, `DocCustomerView`, `DocReorderView`) consumed by the estimate, invoice, **and CO** (§14.9a) edit surfaces. Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched. `QtyUnits` (2026-08-11) stacks a line's units beneath its qty in every doc line table (units `'none'` omitted). |
 | `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines via **Add line** + per-line **Edit**. |
 
 The invoice side is structurally parallel — same source pool, add-atoms,

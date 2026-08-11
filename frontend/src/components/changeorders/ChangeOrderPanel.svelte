@@ -18,7 +18,6 @@
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import { buildEstimateDocItems, changeOrderDisplayStatus } from '../../lib/estimateDocs.js';
   import { buildDeliverableRows } from '../../lib/changeOrderDiff.js';
-  import { formatQtyUnits } from '../../lib/format.js';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
 
   let {
@@ -100,7 +99,8 @@
         line_id: r.co_line_id,
         line_number: r.co_index,
         description: `CO ${r.co_index} — ${r.line.description || 'No description'}`,
-        qty_display: formatQtyUnits(r.line.qty, r.line.units),
+        qty: r.line.qty,
+        units: r.line.units,
         price: r.line.price,
         amount: Number(r.line.amount || 0),
       }))

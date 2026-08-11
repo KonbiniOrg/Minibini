@@ -677,6 +677,20 @@ Cross-cutting UI/API conventions and shared components.
   rewritten to wait on the right condition instead of a fixed render
   assumption), and the spec passes reliably solo and in the full suite.
 
+- **Batch-order flake: `invoice-seeding-and-send/struck-from-agreement-badge.spec.js` §4.** — _added 2026-08-11_
+  Fails reliably when the change-orders + invoice-skeleton +
+  invoice-seeding-and-send + deposits folders run as one batch (the
+  untouched control task unexpectedly appears in the invoice's
+  Uncovered-work pool), passes solo. Bisected via stash: reproduces on a
+  clean committed tree, so it pre-dates the 2026-08-11 QtyUnits work.
+  Same order-dependent-seed-hunt family as the entries below —
+  `findStruckShape` picks a seed job that a parallel worker's spec has
+  meanwhile claimed atoms on, so auto-seed can't claim the control line
+  and it lands in the pool.
+  _Done when:_ the shape-hunt builds its own job via the API (like
+  `change-orders/amend-in-place.spec.js` does) instead of hunting the
+  shared seed, and the batch passes.
+
 - **Two more intermittently-flaky e2e specs, catalogued 2026-08-08 (skeleton-phase final verification).**
   `production-lifecycle/completion.spec.js` §6 (a timing flake around the
   work-complete cascade) and `deposits/deposit-creation.spec.js` (a
