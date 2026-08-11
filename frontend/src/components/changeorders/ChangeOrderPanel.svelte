@@ -40,6 +40,7 @@
   // Deliverables diff state
   let liveDeliverables = $state([]);
   let delivBaseline = $state([]);
+  let deliverablesDiff = $state([]); // server-composed kind rows (Customer mode)
 
   let actionBusy = $state(false);
 
@@ -160,17 +161,21 @@
         } catch (_) {
           siblingCOs = [];
         }
-        // Load live deliverables + baseline snapshot
+        // Load live deliverables + baseline snapshot + server-composed diff
+        // (the diff drives Customer mode; same rows as the portal/PDF).
         try {
-          const [liveDel, baselineResp] = await Promise.all([
+          const [liveDel, baselineResp, diffResp] = await Promise.all([
             api.get(`/api/jobs/${co.job}/deliverables/`),
             api.get(`/api/change-orders/${coId}/deliverables-baseline/`),
+            api.get(`/api/change-orders/${coId}/deliverables-diff/`),
           ]);
           liveDeliverables = liveDel || [];
           delivBaseline = baselineResp?.baseline || [];
+          deliverablesDiff = diffResp?.rows || [];
         } catch (_) {
           liveDeliverables = [];
           delivBaseline = [];
+          deliverablesDiff = [];
         }
         // Amended agreement + source pool — COEditView's own data.
         try {
@@ -405,6 +410,7 @@
     <COCustomerView
       title={`Change Order ${co.change_order_number || `CO #${co.change_order_id}`}`}
       rows={amended?.rows || []}
+      deliverables={deliverablesDiff}
       originalTotal={amended?.original_total}
       coDelta={amended?.co_delta}
       revisedTotal={amended?.revised_total}

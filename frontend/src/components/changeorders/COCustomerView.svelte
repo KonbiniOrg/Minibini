@@ -11,7 +11,11 @@
   import { fmtMoney } from '@/lib/taskTotals.js';
   import { formatQtyUnits } from '../../lib/format.js';
 
-  let { title, rows = [], originalTotal = 0, coDelta = 0, revisedTotal = 0 } = $props();
+  // `deliverables`: compose_deliverable_diff rows (GET .../deliverables-diff/)
+  // — {kind, description, qty, units}, kinds unchanged / changed /
+  // changed-orig / removed / added, same grammar as the portal's "What
+  // you'll receive" table.
+  let { title, rows = [], deliverables = [], originalTotal = 0, coDelta = 0, revisedTotal = 0 } = $props();
 
   function fmtSigned(n) {
     const v = Number(n ?? 0);
@@ -44,6 +48,27 @@
 
 <section class="doc-customer-view co-customer-view">
   <h3>{title}</h3>
+
+  {#if deliverables.length}
+    <h4>What you'll receive</h4>
+    <table class="data-table co-customer-deliverables">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th class="text-right">Qty</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each deliverables as d, i (i)}
+          <tr class={`row-${d.kind}`}>
+            <td>{#if d.kind === 'added'}<span class="tag-add">+</span>{/if}{d.description}</td>
+            <td class="text-right">{formatQtyUnits(d.qty, d.units)}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {/if}
+
   <table class="data-table">
     <thead>
       <tr>

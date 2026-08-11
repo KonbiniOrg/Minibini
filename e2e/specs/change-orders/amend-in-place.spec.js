@@ -243,6 +243,14 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
     // (RM 2026-08-11).
     await expect(view.locator('tbody tr.row-unchanged').filter({ hasText: lines.Billed.description })).toBeVisible();
 
+    // Deliverables render above the lines, portal-style ("What you'll
+    // receive"); the seed deliverable predates the CO's baseline snapshot,
+    // so it diffs unchanged.
+    await expect(view.getByRole('heading', { name: "What you'll receive" })).toBeVisible();
+    await expect(
+      view.locator('.co-customer-deliverables tr.row-unchanged').filter({ hasText: `${stamp} deliverable` })
+    ).toBeVisible();
+
     const after = await amended();
     await expect(view).toContainText('Previous total');
     await expect(view).toContainText(fmtTotal(after.original_total));

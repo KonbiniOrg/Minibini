@@ -2157,6 +2157,10 @@ are resolved).
   of deliverables-at-CO-creation used to render the CO-edit view's
   baseline (see `jobs-and-tasks.md` §12 for snapshot
   mechanics)
+- `GET /api/change-orders/{id}/deliverables-diff/` — `{'rows': [...]}`
+  from `ChangeOrderService.compose_deliverable_diff(co)` — the same
+  baseline-vs-live kind rows the portal payload and CO PDF render;
+  drives the Customer mode's "What you'll receive" table (§14.9a)
 - `GET /api/change-orders/{id}/amended-agreement/` — the
   `compose_amended_agreement(co)` result (§14.6), serialized —
   `COEditView`'s (§14.9) one-table data source
@@ -2340,6 +2344,14 @@ Footer: **Previous total** (`amended.original_total`), **New total**
 (`amended.revised_total`, bold), **Change** (`amended.co_delta`, signed
 `+`/`-`) — the portal's three totals. Title: `Change Order
 {change_order_number}`.
+
+Above the lines, a **"What you'll receive"** deliverables table (added
+2026-08-11) — the same `compose_deliverable_diff` kind rows the portal
+renders, served by `GET .../deliverables-diff/` (§14.8) and passed down
+by `ChangeOrderPanel` as the `deliverables` prop: unchanged plain,
+changed above its struck original, removed struck, added tinted with a
+`+` tag; Item + merged Qty columns; the section is omitted when the
+diff is empty.
 
 **Reorder mode** renders `DocReorderView` (unmodified) over the CO's
 **own** `added`/`replaced` rows only — pulled from the same

@@ -450,6 +450,55 @@ class AgreementAPITest(FixtureTestCase):
 
 
 # ---------------------------------------------------------------------------
+# deliverables-diff action
+# ---------------------------------------------------------------------------
+
+class DeliverablesDiffAPITest(FixtureTestCase):
+    """GET /api/change-orders/{id}/deliverables-diff/
+
+    Serves ChangeOrderService.compose_deliverable_diff(co) — the same
+    baseline-vs-live rows the customer portal and CO PDF render — so the
+    shop's Customer mode mirrors them exactly (RM 2026-08-11)."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        from apps.core.models import User
+        self.user = User.objects.create_user(username='co_ddiff', password='x')
+        self.manager = User.objects.create_user(username='co_ddiff_mgr', password='x')
+        self.manager = _add_can_manage_jobs(self.manager)
+
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        self.est = _make_accepted_estimate(self.job, number='EST-DD-1')
+        self.d1 = _make_deliverable(self.job, description='Widget A', sort_order=10)
+
+        _advance_job_to_on_hold(self.job)
+        self.client.force_authenticate(user=self.manager)
+        resp = self.client.post('/api/change-orders/', {'job': self.job.pk}, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.co_id = resp.data['change_order_id']
+
+    def test_diff_marks_baseline_rows_unchanged_and_new_rows_added(self):
+        # A deliverable added AFTER the CO snapshotted its baseline diffs as
+        # 'added'; the snapshotted one is 'unchanged'.
+        _make_deliverable(self.job, description='Widget New', sort_order=20)
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.get(f'/api/change-orders/{self.co_id}/deliverables-diff/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        rows = resp.data['rows']
+        by_desc = {r['description']: r for r in rows}
+        self.assertEqual(by_desc['Widget A']['kind'], 'unchanged')
+        self.assertEqual(by_desc['Widget New']['kind'], 'added')
+        self.assertIsInstance(by_desc['Widget A']['qty'], str)
+
+    def test_diff_requires_auth(self):
+        self.client.force_authenticate(user=None)
+        resp = self.client.get(f'/api/change-orders/{self.co_id}/deliverables-diff/')
+        self.assertIn(resp.status_code, [401, 403])
+
+
+# ---------------------------------------------------------------------------
 # deliverables-baseline action
 # ---------------------------------------------------------------------------
 

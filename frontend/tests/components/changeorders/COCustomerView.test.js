@@ -23,11 +23,22 @@ const ROWS = [
   },
 ];
 
+// The deliverable diff (compose_deliverable_diff rows via
+// GET .../deliverables-diff/): same kind grammar as the portal.
+const DELIVERABLES = [
+  { kind: 'unchanged', description: 'Widget kept', qty: '1.00', units: 'ea' },
+  { kind: 'changed', description: 'Widget grown', qty: '3.00', units: 'ea' },
+  { kind: 'changed-orig', description: 'Widget grown', qty: '2.00', units: 'ea' },
+  { kind: 'removed', description: 'Widget dropped', qty: '1.00', units: 'ea' },
+  { kind: 'added', description: 'Widget new', qty: '5.00', units: 'ea' },
+];
+
 // originalTotal = 10 + 100 + 30 = 140; revisedTotal = 10 + 120 + 75 = 205.
 function props(overrides = {}) {
   return {
     title: 'Change Order CO-3',
     rows: ROWS,
+    deliverables: DELIVERABLES,
     originalTotal: '140.00',
     coDelta: '65.00',
     revisedTotal: '205.00',
@@ -102,5 +113,27 @@ describe('COCustomerView', () => {
       props: props({ rows: [], originalTotal: '100.00', coDelta: '-42.50', revisedTotal: '57.50' }),
     });
     expect(getByText('-$42.50')).toBeInTheDocument();
+  });
+
+  it('renders the deliverables diff under "What you\'ll receive" with portal kind styling', () => {
+    const { getByText, container } = render(COCustomerView, { props: props() });
+    expect(getByText("What you'll receive")).toBeInTheDocument();
+
+    const delivRows = [...container.querySelectorAll('.co-customer-deliverables tbody tr')];
+    const rowFor = (text, cls) =>
+      delivRows.find((tr) => tr.textContent.includes(text) && tr.classList.contains(cls));
+    expect(rowFor('Widget kept', 'row-unchanged')).toBeTruthy();
+    expect(rowFor('Widget grown', 'row-changed')).toBeTruthy();
+    expect(rowFor('Widget grown', 'row-changed-orig')).toBeTruthy();
+    expect(rowFor('Widget dropped', 'row-removed')).toBeTruthy();
+    const added = rowFor('Widget new', 'row-added');
+    expect(added).toBeTruthy();
+    expect(added.querySelector('.tag-add')).toBeTruthy();
+    expect(added.textContent).toContain('5.00 ea');
+  });
+
+  it('omits the deliverables section entirely when the diff is empty', () => {
+    const { queryByText } = render(COCustomerView, { props: props({ deliverables: [] }) });
+    expect(queryByText("What you'll receive")).toBeNull();
   });
 });

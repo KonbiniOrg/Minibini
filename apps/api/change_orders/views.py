@@ -46,8 +46,8 @@ class ChangeOrderViewSet(
 
     def get_permissions(self):
         read_actions = (
-            'list', 'retrieve', 'deliverables_baseline', 'amended_agreement',
-            'source_pool',
+            'list', 'retrieve', 'deliverables_baseline', 'deliverables_diff',
+            'amended_agreement', 'source_pool',
         )
         if self.action in read_actions:
             return [IsAuthenticated()]
@@ -262,6 +262,21 @@ class ChangeOrderViewSet(
             'email_record_id': record.email_record_id,
             'change_order_status': co.status,
         })
+
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path='deliverables-diff',
+        url_name='deliverables-diff',
+        permission_classes=[IsAuthenticated],
+    )
+    def deliverables_diff(self, request, pk=None):
+        """Baseline-vs-live deliverable diff
+        (`ChangeOrderService.compose_deliverable_diff`) — the same rows the
+        customer portal payload and the CO PDF render, so the shop Customer
+        mode (COCustomerView) mirrors them exactly."""
+        co = self.get_object()
+        return Response({'rows': ChangeOrderService.compose_deliverable_diff(co)})
 
     @action(
         detail=True,
