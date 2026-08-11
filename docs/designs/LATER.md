@@ -1048,3 +1048,20 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ selecting the Materials AC on a freeform hand line yields
   material behavior with no separate checkbox (or the team decides the
   checkbox stays and this entry is closed).
+
+
+- **Job overview Scope card links to the amended estimate instead of the
+  latest agreement doc.** — _added 2026-08-10 (RM)_
+  On a job with an ACCEPTED change order (no live CO), the Scope block's
+  frozen state links to the estimate
+  (`scopeFrozen` in `frontend/src/lib/jobOverview.js` — `href:
+  estimateHref(jobId, current)`) even though the accepted CO tab is now
+  the record of the current agreement (better-fees §11 #6: post-
+  acceptance the CO tab is the record; the estimate stays as-was with
+  the "amended" badge). It should link to the latest agreement document
+  — the most recently accepted CO when one exists, else the estimate.
+  Note the live-CO path already gets this right (`scopeActiveChangeOrder`
+  gives the warm CO the link); only the frozen/settled state lags.
+  _Done when:_ a job whose estimate is amended by an accepted CO has its
+  Scope card link land on the latest accepted CO's page (jobOverview
+  unit tests updated), falling back to the estimate when no CO exists.
