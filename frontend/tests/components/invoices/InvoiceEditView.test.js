@@ -537,3 +537,27 @@ describe('InvoiceEditView', () => {
     });
   });
 });
+
+describe('InvoiceEditView estimate total in the Total row (RM 2026-08-10)', () => {
+  it('sums est_amount over referenced lines into the Backing cell of the Total row', async () => {
+    const lines = [
+      seededLine(),                                              // est_amount 50.00
+      seededLine({
+        line_item_id: 7, line_number: 2, description: 'Weld frame',
+        backing: 'edited',
+        agreement_ref: agreementRef({ line_id: 31, est_qty: '1', est_price: '75.50', est_amount: '75.50' }),
+      }),
+      handLine({ line_item_id: 8, line_number: 3 }),             // no ref — excluded
+    ];
+    const { findByText } = render(InvoiceEditView, { props: baseProps({ lineItems: lines }) });
+    expect(await findByText('estimate $125.50')).toBeInTheDocument();
+  });
+
+  it('shows nothing when no line carries an agreement reference', async () => {
+    const { findByText, queryByText } = render(InvoiceEditView, {
+      props: baseProps({ lineItems: [handLine()] }),
+    });
+    await findByText('Hand entry');
+    expect(queryByText(/^estimate \$/)).toBeNull();
+  });
+});

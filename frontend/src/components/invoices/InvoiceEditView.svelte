@@ -410,6 +410,17 @@
 
   let total = $derived(lineItems.reduce((sum, li) => sum + lineAmount(li), 0));
 
+  // "The estimate said $X for the work billed here" — Σ est_amount over
+  // on-doc lines seeded from the agreement (estimate/actuals/edited backing
+  // all keep their ref; hand and deposit lines have none). Rendered small in
+  // the Total row's Backing cell so it sits under the chips, beside the
+  // invoice's actual total. Null (cell stays empty) when no line has a ref.
+  let estimateTotal = $derived.by(() => {
+    const referenced = lineItems.filter((li) => li.agreement_ref != null);
+    if (referenced.length === 0) return null;
+    return referenced.reduce((sum, li) => sum + Number(li.agreement_ref.est_amount || 0), 0);
+  });
+
   // Next number offered by "New line from selected" — the highest existing
   // line_number + 1, not the array length (lines can carry gaps in theory,
   // and this is only ever a hint text, never sent to the server).
@@ -538,7 +549,11 @@
     <tr class="grand">
       <td colspan="4"><strong>Total</strong></td>
       <td class="text-right"><strong>{fmtMoney(total)}</strong></td>
-      <td colspan={canEdit ? 2 : 1}></td>
+      <td colspan={canEdit ? 2 : 1}>
+        {#if estimateTotal != null}
+          <small>estimate {fmtMoney(estimateTotal)}</small>
+        {/if}
+      </td>
     </tr>
   </tfoot>
 </table>
