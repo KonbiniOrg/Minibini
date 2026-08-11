@@ -514,7 +514,10 @@
       {#each li.sources || [] as source (source.source_id)}
         <AtomChildRow
           atom={{
-            kind: source.source_type === 'task' ? 'task' : 'material',
+            // Pass the real source_type through — deposit/expense rows have
+            // their own tags in ATOM_KIND_TAGS; atomKindTag falls back to
+            // 'mat' for anything unknown, preserving the old binary behavior.
+            kind: source.source_type,
             description: source.description ?? '(removed)',
             qty_display: formatQtyUnits(source.qty, source.units),
             rate: source.rate,

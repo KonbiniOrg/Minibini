@@ -284,7 +284,7 @@
       {#each li.sources || [] as source (source.source_id)}
         <AtomChildRow
           atom={{
-            kind: source.source_type === 'task' ? 'task' : 'material',
+            kind: source.source_type,
             description: source.description ?? '(removed)',
             qty_display: formatQtyUnits(source.qty, source.units),
             rate: source.rate,

@@ -277,7 +277,7 @@
 
   function atomFromSource(source) {
     return {
-      kind: source.source_type === 'task' ? 'task' : 'material',
+      kind: source.source_type,
       description: source.description ?? '(removed)',
       qty_display: formatQtyUnits(source.qty, source.units),
       rate: source.rate,

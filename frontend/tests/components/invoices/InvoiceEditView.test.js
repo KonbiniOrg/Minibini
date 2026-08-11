@@ -561,3 +561,22 @@ describe('InvoiceEditView estimate total in the Total row (RM 2026-08-10)', () =
     expect(queryByText(/^estimate \$/)).toBeNull();
   });
 });
+
+describe('InvoiceEditView deposit-credit source tag (RM 2026-08-10)', () => {
+  it('tags a deposit source row [dep], not [mat]', async () => {
+    const line = handLine({
+      line_item_id: 9, description: 'Less deposit (INV-4)',
+      qty: '1', price: '-500.00', backing: 'deposit_credit',
+      sources: [{
+        source_id: 41, source_type: 'deposit', source_pk: 12,
+        description: 'Less deposit (INV-4)', qty: '1', units: 'none',
+        rate: '-500.00', computed_amount: '-500.00',
+      }],
+    });
+    const { findByText, queryByText } = render(InvoiceEditView, {
+      props: baseProps({ lineItems: [line] }),
+    });
+    expect(await findByText('[dep]')).toBeInTheDocument();
+    expect(queryByText('[mat]')).toBeNull();
+  });
+});
