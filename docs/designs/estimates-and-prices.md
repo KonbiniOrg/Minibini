@@ -1631,7 +1631,9 @@ estimate: `planned_work` → **"planned work"** (any task
 among the line's sources), `planned_materials` → **"planned materials"**
 (materials only), `from_catalog` → **"from catalog"** (a `service_item`
 or `inventory_item` ref — the two deferred-crystallization catalog
-kinds), `hand` → **"hand line"**, `edited` → **"edited"** (with the
+kinds), `hand` → **"none"** (the "hand line" term is internal-only —
+RM 2026-08-10; the chip answers "what backs this price?" and a typed-in
+line has no backing), `edited` → **"edited"** (with the
 "work totals $X" reference caption), `adjustment` → **"adjustment"**.
 `derive_estimate_backing`'s docstring documents this as **draft-surface
 semantics**: the enum is designed for the estimate wizard's chip labels,

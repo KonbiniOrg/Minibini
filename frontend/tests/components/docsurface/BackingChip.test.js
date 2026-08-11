@@ -82,11 +82,11 @@ describe('BackingChip', () => {
     getByText('from catalog');
   });
 
-  it('renders "hand line" for backing="hand"', () => {
+  it('renders "none" for backing="hand" — the internal term stays internal', () => {
     const { getByText } = render(BackingChip, {
       props: { backing: 'hand' },
     });
-    getByText('hand line');
+    getByText('none');
   });
 
   it('renders "adjustment" for backing="adjustment"', () => {

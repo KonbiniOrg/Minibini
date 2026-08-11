@@ -10,7 +10,10 @@
     planned_work: 'planned work',
     planned_materials: 'planned materials',
     from_catalog: 'from catalog',
-    hand: 'hand line',
+    // "none" not "hand line" — the internal term isn't meaningful to users
+    // (RM 2026-08-10): the chip answers "what backs this price?", and for a
+    // typed-in line the honest answer is nothing.
+    hand: 'none',
     adjustment: 'adjustment',
   };
 
