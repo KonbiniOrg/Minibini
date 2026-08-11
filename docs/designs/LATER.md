@@ -1065,3 +1065,18 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ a job whose estimate is amended by an accepted CO has its
   Scope card link land on the latest accepted CO's page (jobOverview
   unit tests updated), falling back to the estimate when no CO exists.
+
+
+- **PO line items should show the inventory item's code.** — _added
+  2026-08-10 (RM)_
+  A purchase-order line for a catalog item gives the vendor/shop no
+  `InventoryItem.code` (the unique catalog code, inventory/models.py).
+  Note the link is indirect: `PurchaseOrderLineItem` has no
+  `inventory_item` FK — the route is the line's `linked_material`
+  property (`Material.po_line_item` reverse) → `Material.inventory_item`
+  → `.code`, so freeform/non-catalog lines simply have none. Surfaces:
+  the PO page's line table and probably the PO PDF
+  (`templates/purchasing/purchase_order_pdf.html`) where a code column
+  is arguably most valuable (it's what the vendor keys on).
+  _Done when:_ catalog-backed PO lines display the code on the PO page
+  (and PDF if RM wants it there), blank for freeform lines.
