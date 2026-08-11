@@ -3,8 +3,9 @@ import { render } from '@testing-library/svelte';
 import COCustomerView from '@/components/changeorders/COCustomerView.svelte';
 
 // A representative amended-agreement `rows` slice: one untouched baseline
-// line (must be omitted — this is a delta document, not the whole
-// agreement), one replaced line, one removed line, one added line.
+// line (shown plain — the customer view displays the WHOLE amended
+// agreement, mirroring the portal), one replaced line over its struck
+// original, one removed (struck) line, one added line.
 const ROWS = [
   { kind: 'agreement', line: { description: 'Untouched', qty: '1', units: 'none', price: '10.00', amount: '10.00' } },
   {
@@ -22,60 +23,83 @@ const ROWS = [
   },
 ];
 
+// originalTotal = 10 + 100 + 30 = 140; revisedTotal = 10 + 120 + 75 = 205.
+function props(overrides = {}) {
+  return {
+    title: 'Change Order CO-3',
+    rows: ROWS,
+    originalTotal: '140.00',
+    coDelta: '65.00',
+    revisedTotal: '205.00',
+    ...overrides,
+  };
+}
+
 describe('COCustomerView', () => {
   it('renders the "Change Order {number}" title', () => {
     const { getByText } = render(COCustomerView, {
-      props: { title: 'Change Order CO-3', rows: [], coDelta: '0.00', revisedTotal: '0.00' },
+      props: props({ rows: [], originalTotal: '0.00', coDelta: '0.00', revisedTotal: '0.00' }),
     });
     expect(getByText('Change Order CO-3')).toBeInTheDocument();
   });
 
-  it('shows only the changed lines — an untouched "agreement" row is omitted', () => {
-    const { queryByText } = render(COCustomerView, {
-      props: { title: 'CO', rows: ROWS, coDelta: '65.00', revisedTotal: '295.00' },
-    });
-    expect(queryByText('Untouched')).toBeNull();
+  it('shows an untouched "agreement" row plain, at its full amount', () => {
+    const { getByText, container } = render(COCustomerView, { props: props() });
+    expect(getByText('Untouched')).toBeInTheDocument();
+    const row = [...container.querySelectorAll('tbody tr')]
+      .find((tr) => tr.textContent.includes('Untouched'));
+    expect(row.textContent).toContain('$10.00');
+    expect(row.classList.contains('row-unchanged')).toBe(true);
+    expect(row.classList.contains('row-changed')).toBe(false);
   });
 
-  it('shows a replaced line as the revised description with a new-minus-old delta amount', () => {
-    const { getByText, queryByText } = render(COCustomerView, {
-      props: { title: 'CO', rows: ROWS, coDelta: '65.00', revisedTotal: '295.00' },
-    });
+  it('shows a replaced line tinted above its struck original', () => {
+    const { getByText, container } = render(COCustomerView, { props: props() });
     expect(getByText('New price')).toBeInTheDocument();
-    expect(queryByText('Old price')).toBeNull();
-    // delta = 120.00 - 100.00 = 20.00
-    expect(getByText('$20.00')).toBeInTheDocument();
+    expect(getByText('$120.00')).toBeInTheDocument();
+    // The struck original is VISIBLE now (portal grammar), styled struck.
+    expect(getByText('Old price')).toBeInTheDocument();
+    const rows = [...container.querySelectorAll('tbody tr')];
+    const newRow = rows.find((tr) => tr.textContent.includes('New price'));
+    const origRow = rows.find((tr) => tr.textContent.includes('Old price'));
+    expect(newRow.classList.contains('row-changed')).toBe(true);
+    expect(origRow.classList.contains('row-changed-orig')).toBe(true);
+    // New row renders directly above the struck original.
+    expect(rows.indexOf(origRow)).toBe(rows.indexOf(newRow) + 1);
   });
 
-  it('shows a removed line as the original with its amount negated', () => {
-    const { getByText } = render(COCustomerView, {
-      props: { title: 'CO', rows: ROWS, coDelta: '65.00', revisedTotal: '295.00' },
-    });
+  it('shows a removed line struck, at its original amount', () => {
+    const { getByText, container } = render(COCustomerView, { props: props() });
     expect(getByText('Dropped line')).toBeInTheDocument();
-    expect(getByText('-$30.00')).toBeInTheDocument();
+    const row = [...container.querySelectorAll('tbody tr')]
+      .find((tr) => tr.textContent.includes('Dropped line'));
+    expect(row.textContent).toContain('$30.00');
+    expect(row.classList.contains('row-removed')).toBe(true);
   });
 
-  it('shows an added line at its own full amount', () => {
-    const { getByText } = render(COCustomerView, {
-      props: { title: 'CO', rows: ROWS, coDelta: '65.00', revisedTotal: '295.00' },
-    });
+  it('shows an added line tinted with a "+" tag at its own full amount', () => {
+    const { getByText, container } = render(COCustomerView, { props: props() });
     expect(getByText('New line')).toBeInTheDocument();
     expect(getByText('$75.00')).toBeInTheDocument();
+    const row = [...container.querySelectorAll('tbody tr')]
+      .find((tr) => tr.textContent.includes('New line'));
+    expect(row.classList.contains('row-added')).toBe(true);
+    expect(row.querySelector('.tag-add')).toBeTruthy();
   });
 
-  it('shows the "Change total" and "Revised agreement total" footer rows', () => {
-    const { getByText } = render(COCustomerView, {
-      props: { title: 'CO', rows: ROWS, coDelta: '65.00', revisedTotal: '295.00' },
-    });
-    expect(getByText('Change total')).toBeInTheDocument();
-    expect(getByText('$65.00')).toBeInTheDocument();
-    expect(getByText('Revised agreement total')).toBeInTheDocument();
-    expect(getByText('$295.00')).toBeInTheDocument();
+  it('shows the Previous total / New total / Change footer rows', () => {
+    const { getByText } = render(COCustomerView, { props: props() });
+    expect(getByText('Previous total')).toBeInTheDocument();
+    expect(getByText('$140.00')).toBeInTheDocument();
+    expect(getByText('New total')).toBeInTheDocument();
+    expect(getByText('$205.00')).toBeInTheDocument();
+    expect(getByText('Change')).toBeInTheDocument();
+    expect(getByText('+$65.00')).toBeInTheDocument();
   });
 
-  it('renders a negative change total with a leading minus sign', () => {
+  it('renders a negative change with a leading minus sign', () => {
     const { getByText } = render(COCustomerView, {
-      props: { title: 'CO', rows: [], coDelta: '-42.50', revisedTotal: '57.50' },
+      props: props({ rows: [], originalTotal: '100.00', coDelta: '-42.50', revisedTotal: '57.50' }),
     });
     expect(getByText('-$42.50')).toBeInTheDocument();
   });

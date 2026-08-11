@@ -1,57 +1,44 @@
 <script>
-  // Read-only "what the customer sees" view of a CHANGE (not the whole
-  // amended agreement): only the lines this change order touches, each
-  // reduced to a single delta-amount row — replaced lines show the revised
-  // description with (new − old), removed lines show the struck line's
-  // amount negated, added lines show their own amount. A sibling of
-  // DocCustomerView (same table/footer visual grammar — data-table, grand
-  // footer rows) rather than a wrapper: DocCustomerView's one-line-one-amount
-  // props don't fit a delta document with two footer totals.
+  // Read-only "what the customer sees" view of the WHOLE amended agreement
+  // (RM 2026-08-11 — previously a changed-lines-only delta list): every
+  // amended-agreement row renders, mirroring the customer portal's grammar
+  // (ChangeOrderPortal.svelte over compose_change_order_diff): untouched
+  // lines plain, a replacement tinted above its struck original, removed
+  // lines struck, adds tinted with a "+" tag, and a Previous / New / Change
+  // totals footer. A sibling of DocCustomerView (same table/footer visual
+  // grammar) rather than a wrapper: its one-line-one-amount props don't fit
+  // struck originals and three footer totals.
   import { fmtMoney } from '@/lib/taskTotals.js';
   import { formatQtyUnits } from '../../lib/format.js';
 
-  let { title, rows = [], coDelta = 0, revisedTotal = 0 } = $props();
+  let { title, rows = [], originalTotal = 0, coDelta = 0, revisedTotal = 0 } = $props();
 
   function fmtSigned(n) {
     const v = Number(n ?? 0);
-    const sign = v < 0 ? '-' : '';
-    return `${sign}$${Math.abs(v).toFixed(2)}`;
+    if (v === 0) return '$0.00';
+    return (v > 0 ? '+' : '-') + `$${Math.abs(v).toFixed(2)}`;
   }
 
-  // Reduce the amended-agreement rows to the changed-lines-only delta list.
-  // 'agreement' (untouched baseline) rows are dropped entirely — this is a
-  // change document, not the whole agreement.
-  let deltaRows = $derived(
-    rows
-      .filter((r) => r.kind !== 'agreement')
-      .map((r) => {
-        if (r.kind === 'removed') {
-          return {
-            key: `r-${r.co_line_id}`,
-            description: r.original.description,
-            qty_display: formatQtyUnits(r.original.qty, r.original.units),
-            price: r.original.price,
-            delta: -Number(r.original.amount || 0),
-          };
-        }
-        if (r.kind === 'replaced') {
-          return {
-            key: `p-${r.co_line_id}`,
-            description: r.line.description,
-            qty_display: formatQtyUnits(r.line.qty, r.line.units),
-            price: r.line.price,
-            delta: Number(r.line.amount || 0) - Number(r.original.amount || 0),
-          };
-        }
-        // 'added'
-        return {
-          key: `d-${r.co_line_id}`,
-          description: r.line.description,
-          qty_display: formatQtyUnits(r.line.qty, r.line.units),
-          price: r.line.price,
-          delta: Number(r.line.amount || 0),
-        };
-      })
+  // Flatten amended-agreement rows into display rows. `cls` mirrors the
+  // portal's row-<kind> classes so the two customer surfaces stay visually
+  // aligned.
+  let displayRows = $derived(
+    rows.flatMap((r) => {
+      if (r.kind === 'agreement') {
+        return [{ key: `a-${r.line.estimate_line_id ?? r.line.description}`, cls: 'row-unchanged', line: r.line }];
+      }
+      if (r.kind === 'removed') {
+        return [{ key: `r-${r.co_line_id}`, cls: 'row-removed', line: r.original }];
+      }
+      if (r.kind === 'replaced') {
+        return [
+          { key: `p-${r.co_line_id}`, cls: 'row-changed', line: r.line },
+          { key: `po-${r.co_line_id}`, cls: 'row-changed-orig', line: r.original },
+        ];
+      }
+      // 'added'
+      return [{ key: `d-${r.co_line_id}`, cls: 'row-added', added: true, line: r.line }];
+    })
   );
 </script>
 
@@ -67,24 +54,37 @@
       </tr>
     </thead>
     <tbody>
-      {#each deltaRows as row (row.key)}
-        <tr>
-          <td>{row.description}</td>
-          <td class="text-right">{row.qty_display}</td>
-          <td class="text-right">{fmtMoney(row.price)}</td>
-          <td class="text-right">{fmtSigned(row.delta)}</td>
+      {#each displayRows as row (row.key)}
+        <tr class={row.cls}>
+          <td>{#if row.added}<span class="tag-add">+</span>{/if}{row.line.description}</td>
+          <td class="text-right">{formatQtyUnits(row.line.qty, row.line.units)}</td>
+          <td class="text-right">{fmtMoney(row.line.price)}</td>
+          <td class="text-right">{fmtMoney(row.line.amount)}</td>
         </tr>
       {/each}
     </tbody>
     <tfoot>
       <tr class="grand">
-        <td colspan="3">Change total</td>
-        <td class="text-right">{fmtSigned(coDelta)}</td>
+        <td colspan="3">Previous total</td>
+        <td class="text-right">{fmtMoney(originalTotal)}</td>
       </tr>
       <tr class="grand">
-        <td colspan="3"><strong>Revised agreement total</strong></td>
+        <td colspan="3"><strong>New total</strong></td>
         <td class="text-right"><strong>{fmtMoney(revisedTotal)}</strong></td>
+      </tr>
+      <tr class="grand">
+        <td colspan="3">Change</td>
+        <td class="text-right">{fmtSigned(coDelta)}</td>
       </tr>
     </tfoot>
   </table>
 </section>
+
+<style>
+  /* Mirrors ChangeOrderPortal.svelte's row styling so shop Customer mode and
+     the portal read the same. */
+  tr.row-changed { background: #fff7ed; }
+  tr.row-added { background: #dcfce7; }
+  tr.row-removed td, tr.row-changed-orig td { color: #9ca3af; text-decoration: line-through; }
+  .tag-add { color: #166534; font-weight: 600; margin-right: 4px; }
+</style>

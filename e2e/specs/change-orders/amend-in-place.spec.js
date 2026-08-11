@@ -27,13 +27,7 @@ function fmtDelta(n) {
   return (v > 0 ? '+' : '-') + `$${Math.abs(v).toFixed(2)}`;
 }
 function fmtParen(n) { return `(${fmtTotal(n)})`; }
-// COCustomerView's own fmtSigned (frontend/src/components/changeorders/
-// COCustomerView.svelte) — minus-only, unlike COEditView's fmtDelta above
-// which also prefixes a '+' for positive deltas.
-function fmtSigned(n) {
-  const v = Number(n ?? 0);
-  return `${v < 0 ? '-' : ''}$${Math.abs(v).toFixed(2)}`;
-}
+// COCustomerView's Change row uses the same +/-/$0.00 shape as fmtDelta.
 
 // A job with an accepted estimate whose lines are one-atom-per-line (task
 // name === line description, so UI text and API rows can be cross-checked
@@ -233,22 +227,29 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
     await expect(row).toContainText(`billed on ${invoice.display_number}`);
   });
 
-  await test.step('Customer mode shows only the delta lines, with Change total / Revised agreement total', async () => {
+  await test.step('Customer mode shows the whole amended agreement (untouched lines included) with Previous / New / Change totals', async () => {
     await page.locator('.doc-mode-bar').getByRole('button', { name: 'Customer', exact: true }).click();
     const view = page.locator('.co-customer-view');
     await expect(view).toBeVisible();
 
-    await expect(view.locator('tbody tr').filter({ hasText: lines.Replace.description })).toBeVisible();
-    await expect(view.locator('tbody tr').filter({ hasText: tasks.Uncovered.name })).toBeVisible();
-    // Untouched agreement lines (the billed one) never appear — this is a
-    // change document, not the whole agreement.
-    await expect(view.locator('tbody tr').filter({ hasText: lines.Billed.description })).toHaveCount(0);
+    // Replaced line: tinted new row above its struck original (two rows,
+    // same description — the replace only changed the price).
+    await expect(view.locator('tbody tr.row-changed').filter({ hasText: lines.Replace.description })).toBeVisible();
+    await expect(view.locator('tbody tr.row-changed-orig').filter({ hasText: lines.Replace.description })).toBeVisible();
+    // Added line: tinted, "+"-tagged.
+    await expect(view.locator('tbody tr.row-added').filter({ hasText: tasks.Uncovered.name })).toBeVisible();
+    // Untouched agreement lines (the billed one) DO appear — the customer
+    // view shows the whole amended agreement, mirroring the portal
+    // (RM 2026-08-11).
+    await expect(view.locator('tbody tr.row-unchanged').filter({ hasText: lines.Billed.description })).toBeVisible();
 
     const after = await amended();
-    await expect(view).toContainText('Change total');
-    await expect(view).toContainText(fmtSigned(after.co_delta));
-    await expect(view).toContainText('Revised agreement total');
+    await expect(view).toContainText('Previous total');
+    await expect(view).toContainText(fmtTotal(after.original_total));
+    await expect(view).toContainText('New total');
     await expect(view).toContainText(fmtTotal(after.revised_total));
+    await expect(view).toContainText('Change');
+    await expect(view).toContainText(fmtDelta(after.co_delta));
   });
 
   await test.step('Reorder mode moves a CO line', async () => {

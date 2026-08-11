@@ -405,6 +405,7 @@
     <COCustomerView
       title={`Change Order ${co.change_order_number || `CO #${co.change_order_id}`}`}
       rows={amended?.rows || []}
+      originalTotal={amended?.original_total}
       coDelta={amended?.co_delta}
       revisedTotal={amended?.revised_total}
     />

@@ -2319,24 +2319,26 @@ strip as the estimate/invoice panels — Created / Sent / Expires / Closed,
 `fmtDate(co.{created,sent,expiration,closed}_date)`, muted `-` when a date
 is null — always rendered once the CO is loaded.
 
-**Customer mode — `COCustomerView.svelte`** (`components/changeorders/`,
-new). Deliberately **not** `DocCustomerView` reused as-is: a CO's
-customer-facing document is a *change* — only the lines this CO touches —
-not the whole agreement, so it needs a delta-amount column and two
-footer totals DocCustomerView's single-line-one-amount props don't
-express. It's a sibling that rhymes with DocCustomerView's visual grammar
-(same `.doc-customer-view` / `.data-table` / `tr.grand` classes from
-`app.css`) rather than a wrapper. Built from the `GET
-.../amended-agreement/` `rows` (§14.6, §14.8) — `agreement` (untouched
-baseline) rows are dropped entirely — reduced to one row per changed
-line:
+**Customer mode — `COCustomerView.svelte`** (`components/changeorders/`).
+**Reworked 2026-08-11 (RM):** shows the **whole amended agreement**, not a
+changed-lines-only delta list — mirroring the customer portal
+(`ChangeOrderPortal.svelte` over `compose_change_order_diff`, §14.10) so
+the shop preview and what the customer actually opens read the same. It
+remains a sibling of `DocCustomerView` (same `.doc-customer-view` /
+`.data-table` / `tr.grand` classes) rather than a wrapper — struck
+originals and three footer totals don't fit its one-line-one-amount
+props. Built from the `GET .../amended-agreement/` `rows` (§14.6, §14.8),
+every row renders with plain (unsigned) amounts, styled with the
+portal's `row-<kind>` classes:
 
-- `replaced` → the revised description/qty/price, Amount column = `line.amount − original.amount` (signed).
-- `removed` → the original description/qty/price, Amount column = `−original.amount`.
-- `added` → the line's own description/qty/price/amount (no original to net against).
+- `agreement` → plain row (`row-unchanged`).
+- `replaced` → the revised line tinted (`row-changed`) directly above its struck original (`row-changed-orig`).
+- `removed` → the original, struck (`row-removed`).
+- `added` → tinted (`row-added`) with a `+` tag, appended in row order.
 
-Footer: **Change total** (`amended.co_delta`, signed) and **Revised
-agreement total** (`amended.revised_total`). Title: `Change Order
+Footer: **Previous total** (`amended.original_total`), **New total**
+(`amended.revised_total`, bold), **Change** (`amended.co_delta`, signed
+`+`/`-`) — the portal's three totals. Title: `Change Order
 {change_order_number}`.
 
 **Reorder mode** renders `DocReorderView` (unmodified) over the CO's
