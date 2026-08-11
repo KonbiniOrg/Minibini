@@ -1365,12 +1365,29 @@ class ChangeOrderWizardService(EstimateWizardService):
         - the job's ChangeOrderLineItemSource rows — claimed_by_current when
           the claiming line is on THIS co, else claimed_by_other, "Claimed
           by change order <number>".
+
+        Exception (RM 2026-08-10): atoms currently backing a line THIS CO
+        removes return to the pool — descoping frees the work, and
+        re-adding it to this CO restates it under new terms (acceptance
+        skips retiring atoms the same CO re-claims on an add line). The
+        freed set suppresses agreement-lens claims (the estimate's own, or
+        an accepted CO's inherited claim on the removed target) but never a
+        draft/open CO's claim — that's still a live conflict.
         """
-        from apps.estimates.models import ChangeOrderLineItemSource, EstimateLineItemSource
+        from apps.estimates.co_acceptance import ChangeOrderAcceptanceService
+        from apps.estimates.models import (
+            ChangeOrderLineItem, ChangeOrderLineItemSource, EstimateLineItemSource)
 
         job = co.job
         current_co_pk = co.pk
         claims = {}
+
+        freed = set()
+        for remove_li in co.changeorderlineitem_set.filter(
+                action=ChangeOrderLineItem.ACTION_REMOVE):
+            for source_type, atom in ChangeOrderAcceptanceService._current_atoms(
+                    remove_li.target_line_item):
+                freed.add((source_type, atom.pk))
 
         est_sources = (
             EstimateLineItemSource.objects
@@ -1380,6 +1397,8 @@ class ChangeOrderWizardService(EstimateWizardService):
         for src in est_sources:
             est = src.estimate_line_item.estimate
             key = (src.source_type, src.source_pk)
+            if key in freed:
+                continue
             claims[key] = cls._claim_state(
                 'claimed_by_other',
                 claiming_estimate_id=est.pk, claiming_estimate_number=est.estimate_number,
@@ -1400,6 +1419,10 @@ class ChangeOrderWizardService(EstimateWizardService):
                     claiming_line_item_id=li.pk, claiming_line_number=li.line_number,
                 )
             else:
+                if key in freed and other_co.status == ChangeOrder.STATUS_ACCEPTED:
+                    # The accepted claim IS the agreement claim this CO's
+                    # remove supersedes (chain case) — freed, not a conflict.
+                    continue
                 claims[key] = cls._claim_state(
                     'claimed_by_other',
                     claiming_change_order_id=other_co.pk,

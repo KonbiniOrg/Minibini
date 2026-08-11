@@ -183,6 +183,12 @@
   let uncoveredRows = $derived(
     (sourcePool?.atoms || [])
       .filter((a) => a.state !== 'claimed_by_current')
+      // Atoms claimed by this CO's own agreement display nested under their
+      // agreement line above (RM 2026-08-10) — not as disabled pool noise.
+      // Claims by a different estimate or another CO stay visible: those are
+      // real conflicts the user can't see anywhere else on this page.
+      .filter((a) => !(a.state === 'claimed_by_other'
+                       && a.claiming_estimate_id === co.estimate))
       .map((a) => ({
         id: atomRowId(a),
         kind: a.type,
@@ -346,6 +352,14 @@
             </td>
           {/if}
         </tr>
+        {#each row.sources || [] as source (source.source_id)}
+          <AtomChildRow
+            atom={atomFromSource(source)}
+            colspanBefore={0}
+            colspanAfter={ATOM_ROW_COLSPAN_AFTER}
+            onRemove={null}
+          />
+        {/each}
       {:else if row.kind === 'removed'}
         <tr class="co-struck-original">
           <td class="preserve-breaks struck">{row.original.description}</td>

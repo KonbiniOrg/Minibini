@@ -380,3 +380,49 @@ class AmendedAgreementEndpointTests(FixtureTestCase):
         self.assertIn('original_total', resp.data)
         self.assertIn('co_delta', resp.data)
         self.assertIn('revised_total', resp.data)
+
+    def test_agreement_row_carries_the_lines_sources(self):
+        # RM 2026-08-10: atoms claimed by an agreement line display nested
+        # under that line on the CO edit surface (like estimate editing), so
+        # agreement rows serialize the estimate line's claim rows.
+        task2 = Task(job=self.job, name='Sanding', est_qty=Decimal('1'))
+        task2.stamp_from_scheme(self.scheme)
+        task2.save()
+        li2 = _make_est_line(self.est, 2, 'Sanding labor', '1', '100.00',
+                             accounting_category=self.cat)
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li2,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task2.pk,
+        )
+
+        resp = self.client.get(f'/api/change-orders/{self.co.pk}/amended-agreement/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        row = next(
+            r for r in resp.data['rows']
+            if r['kind'] == 'agreement'
+            and r['line']['description'] == 'Sanding labor'
+        )
+        sources = row['sources']
+        self.assertEqual(len(sources), 1)
+        self.assertEqual(sources[0]['description'], 'Sanding')
+
+    def test_removed_row_carries_no_sources(self):
+        # A removed line's atoms return to the Uncovered Work pool instead of
+        # displaying under the struck row.
+        task2 = Task(job=self.job, name='Sanding', est_qty=Decimal('1'))
+        task2.stamp_from_scheme(self.scheme)
+        task2.save()
+        li2 = _make_est_line(self.est, 2, 'Sanding labor', '1', '100.00',
+                             accounting_category=self.cat)
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li2,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task2.pk,
+        )
+        _make_co_line(self.co, 2, ChangeOrderLineItem.ACTION_REMOVE, target=li2)
+
+        resp = self.client.get(f'/api/change-orders/{self.co.pk}/amended-agreement/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        removed_row = next(r for r in resp.data['rows'] if r['kind'] == 'removed')
+        self.assertNotIn('sources', removed_row)

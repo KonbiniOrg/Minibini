@@ -1875,7 +1875,21 @@ shows `claimed_by_other` (`claiming_estimate_number`); one claimed by
 *another* CO's add line also shows `claimed_by_other`
 (`claiming_change_order_number`) — the estimate wizard's own pool got the
 symmetric fix so an estimate never offers an atom a CO has already
-claimed either. There is **no DB-level constraint spanning the two claim
+claimed either.
+
+**This CO's removes free their atoms** (RM 2026-08-10): an atom currently
+backing a line THIS CO removes (resolved chain-aware via
+`ChangeOrderAcceptanceService._current_atoms`) is suppressed from the
+claim lookup and returns to the pool as `available` — descoping frees the
+work, and re-adding it to the same CO restates it under new terms. The
+freed set suppresses agreement-lens claims (the estimate's own row, or an
+*accepted* CO's inherited claim on the removed target) but never a
+draft/open CO's claim, which is still a live conflict. The acceptance-side
+counterpart: `on_accept`'s remove loop skips any atom the same CO
+re-claimed on an add line — no `descoped_by` stamp, no retirement; the
+work carries forward under its new line (§14.11).
+
+There is **no DB-level constraint spanning the two claim
 tables** (`EstimateLineItemSource` vs `ChangeOrderLineItemSource`) — the
 pool-level display is the only defense against a same-atom cross-lens
 race; see `LATER.md`. A CO `add` line that already carries claimed atoms
@@ -2195,7 +2209,11 @@ Row kinds, per `compose_amended_agreement`'s row `kind`:
 
 - `agreement` — an untouched baseline line: `BackingChip` + **Remove
   via CO** / **Replace…** (POST a `remove`/`replace` CO line targeting
-  it). Both buttons disable with `title="Billed on {billed_on}"` (and a
+  it). The line's claimed atoms render nested beneath it as read-only
+  `AtomChildRow`s (RM 2026-08-10 — the serializer puts the estimate
+  line's own claim rows in the row's `sources`; no per-atom Remove:
+  covered work is changed via the line gestures, never atom-by-atom).
+  Both buttons disable with `title="Billed on {billed_on}"` (and a
   caption) once a live invoice references the line; a stale adjustment
   line shows a muted "recomputes to {amount} if replaced" caption.
   Replace on an adjustment line (`line.is_adjustment`) opens the
@@ -2206,7 +2224,9 @@ Row kinds, per `compose_amended_agreement`'s row `kind`:
   from line {n}" — the claims that backed the original line, per
   `derive_co_line_backing`); actions **Edit** / **Undo** (DELETE the CO
   line, reverting to the `agreement` row).
-- `removed` — the struck original alone; action **Undo**.
+- `removed` — the struck original alone (no nested atoms — its freed
+  claims reappear in the Uncovered-work pool, see below); action
+  **Undo**.
 - `added` — CO-tinted, tagged `CO {co_index}`, its own `AtomChildRow`s
   (detachable via `remove-atoms`) and `BackingChip`; actions **Edit** /
   **Remove**, plus **Add selected here** while the uncovered-work
@@ -2222,7 +2242,13 @@ the estimate detail page — followed by `COAddLineForm.svelte`
 `line-items-from-service/`, an inventory pick to `line-items/` (the
 from-pli path), and a freeform line manually with AC + `is_material`;
 then `UncoveredWorkSection` (title "Uncovered work") over the CO's
-`source-pool`.
+`source-pool`. The view filters out pool atoms whose `claimed_by_other`
+claim names this CO's own estimate (`claiming_estimate_id ===
+co.estimate`) — those display nested under their agreement line above,
+not as disabled pool noise (RM 2026-08-10). Atoms freed by this CO's
+own remove lines arrive from the server as `available` (§14.4b) and are
+selectable; claims by a *different* estimate or another CO stay visible
+as dimmed conflict rows.
 
 **`COLineItemModal.svelte`** was reworked the same day from a single
 action/target-select form into a gesture-driven modal with **no**
@@ -2480,6 +2506,12 @@ crystallize.
     instead of descoping the atom (above), so a replaced task/material's
     `descoped_by` stays `None` even though the estimate line it used to
     sit on is gone from the agreement.
+  - **An atom the same CO re-claimed on an add line is never stamped or
+    retired** (RM 2026-08-10) — the wizard pool frees a removed line's
+    atoms back into this CO's pool (§14.4b), so "remove line, re-add its
+    work under new terms" is a supported flow; the remove loop skips any
+    `(source_type, source_pk)` present on the CO's own add-line sources,
+    and the work carries forward untouched under its new line.
 
   **Surfacing the skips (decided 2026-07-20, mechanism rewritten
   2026-08-09):** the skip itself stays silent at acceptance, but the

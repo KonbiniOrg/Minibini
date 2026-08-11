@@ -11,6 +11,7 @@ import COEditView from '@/components/changeorders/COEditView.svelte';
 
 const CO = {
   change_order_id: 3,
+  estimate: 7,
   line_items: [
     { line_item_id: 11, action: 'remove', line_number: 1, target_line_item: 2 },
     {
@@ -296,6 +297,72 @@ describe('COEditView Replace… gestures', () => {
     await findByText('Widget A');
     expect(queryByRole('button', { name: 'Remove via CO' })).toBeNull();
     expect(queryByRole('button', { name: /Replace/ })).toBeNull();
+  });
+});
+
+describe('COEditView agreement-row nested atoms', () => {
+  it("renders an agreement row's claimed atoms as read-only child rows", async () => {
+    const row = agreementRow({
+      backing: 'planned_work',
+      backing_total: '200.00',
+      sources: [{
+        source_id: 71, source_type: 'task', source_pk: 21, description: 'Sanding',
+        qty: '2.00', units: 'hour', rate: '100.00', computed_amount: '200.00',
+      }],
+    });
+    const { findByText, container } = render(COEditView, {
+      props: baseProps({ amended: amendedPayload([row]) }),
+    });
+    await findByText('Widget A');
+
+    const childRow = [...container.querySelectorAll('tr.doc-atom-row')]
+      .find((tr) => tr.textContent.includes('Sanding'));
+    expect(childRow).toBeTruthy();
+    // Read-only: no per-atom Remove control — claims move via replace/remove
+    // gestures on the line, never atom-by-atom on the agreement.
+    expect(childRow.querySelector('button')).toBeNull();
+  });
+});
+
+describe('COEditView uncovered-work pool filtering', () => {
+  const POOL = {
+    atoms: [
+      {
+        type: 'task', id: 41, description: 'Sand edges', qty: '1', rate: '30.00',
+        amount: '30.00', units: 'hour', state: 'available',
+      },
+      {
+        // Claimed by THIS CO's own agreement — displays nested under its
+        // agreement line above, never as disabled pool noise.
+        type: 'task', id: 42, description: 'Covered agreement task', qty: '2',
+        rate: '100.00', amount: '200.00', units: 'hour', state: 'claimed_by_other',
+        claiming_estimate_id: 7, claiming_estimate_number: 'EST-0001',
+      },
+      {
+        // Claimed by a DIFFERENT estimate — still a real conflict, stays
+        // visible as a disabled row.
+        type: 'task', id: 43, description: 'Other estimate task', qty: '1',
+        rate: '50.00', amount: '50.00', units: 'hour', state: 'claimed_by_other',
+        claiming_estimate_id: 8, claiming_estimate_number: 'EST-0002',
+      },
+      {
+        type: 'task', id: 44, description: 'Other CO task', qty: '1',
+        rate: '40.00', amount: '40.00', units: 'hour', state: 'claimed_by_other',
+        claiming_change_order_id: 9, claiming_change_order_number: 'CO-9',
+      },
+    ],
+  };
+
+  it('hides atoms claimed by this CO\'s own agreement, keeps other claims as disabled rows', async () => {
+    const { findByText, queryByText } = render(COEditView, {
+      props: baseProps({ sourcePool: POOL }),
+    });
+    await findByText('Sand edges');
+    expect(queryByText('Covered agreement task')).toBeNull();
+    await findByText('Other estimate task');
+    await findByText(/Claimed by estimate EST-0002/);
+    await findByText('Other CO task');
+    await findByText(/Claimed by change order CO-9/);
   });
 });
 

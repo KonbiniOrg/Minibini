@@ -346,6 +346,59 @@ class CORemoveCrystallizationTests(ChangeOrderAcceptanceBase):
             material.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         self.assertEqual(material.descoped_by_id, co.pk)
 
+    def test_remove_then_readd_atom_on_same_co_is_not_retired(self):
+        # RM 2026-08-10: removing a line frees its atoms into the CO pool, so
+        # the same CO can re-claim one on an add line ("restate the work under
+        # new terms"). Acceptance must then carry the work forward — no
+        # cancel, no descope stamp — instead of retiring it out from under
+        # the add line it now backs.
+        line, task = self._task_backed_line()
+        co = self._make_co()
+        self._remove_line(co, line)
+        add_li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            line_number=2, description='Cutting, rescoped',
+            qty=Decimal('10'), price=Decimal('120.00'),
+            accounting_category=self.cat,
+        )
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=add_li,
+            source_type=ChangeOrderLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+        co = self._accept(co)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, Task.STATUS_PENDING)
+        self.assertIsNone(task.descoped_by_id)
+        # The authored claim survives untouched — nothing re-crystallized.
+        self.assertEqual(add_li.sources.get().resolve().pk, task.pk)
+
+    def test_remove_then_readd_material_on_same_co_is_not_released(self):
+        line, material = self._material_backed_line()
+        co = self._make_co()
+        self._remove_line(co, line)
+        add_li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            line_number=2, description='Plywood, rescoped',
+            qty=Decimal('7'), price=Decimal('110.00'),
+            accounting_category=self.mat_cat,
+        )
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=add_li,
+            source_type=ChangeOrderLineItemSource.SOURCE_MATERIAL,
+            source_pk=material.pk,
+        )
+        co = self._accept(co)
+
+        material.refresh_from_db()
+        self.assertEqual(
+            material.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        self.assertEqual(material.quantity, Decimal('7'))
+        self.assertIsNone(material.descoped_by_id)
+        self.assertTrue(
+            Earmark.objects.filter(job=self.job, inventory_item=self.pli).exists())
+
     def test_remove_adjustment_line_is_document_only(self):
         adj_scheme = RateScheme.objects.create(
             name='Rush 10%', algorithm=RateScheme.PERCENTAGE,

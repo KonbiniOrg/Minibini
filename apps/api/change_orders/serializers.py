@@ -180,11 +180,15 @@ def _serialize_amended_row(row, co_lines_by_id, estimate_lines_by_id):
             eli = estimate_lines_by_id[line['estimate_line_id']]
             out['backing'] = derive_estimate_backing(eli)
             out['backing_total'] = _backing_total(eli)
+            # The line's claimed atoms display nested under it on the CO edit
+            # surface (RM 2026-08-10), like estimate editing — read-only.
+            out['sources'] = _serialize_sources(list(eli.sources.all()))
         else:
             # CO-origin baseline line (an earlier accepted CO's add/replace) —
             # rare under single-CO; no estimate line to derive backing from.
             out['backing'] = None
             out['backing_total'] = None
+            out['sources'] = []
         return out
 
     if kind == 'removed':
@@ -253,7 +257,11 @@ def serialize_amended_agreement(result):
         .select_related('target_line_item')
         .in_bulk(co_line_ids)
     )
-    estimate_lines_by_id = EstimateLineItem.objects.in_bulk(estimate_line_ids)
+    estimate_lines_by_id = (
+        EstimateLineItem.objects
+        .prefetch_related('sources')
+        .in_bulk(estimate_line_ids)
+    )
 
     return {
         'rows': [

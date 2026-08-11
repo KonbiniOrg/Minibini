@@ -164,6 +164,49 @@ class ChangeOrderSourcePoolTest(COWizardServiceBase):
         self.assertEqual(entry['state'], 'claimed_by_current')
         self.assertEqual(entry['claiming_line_item_id'], li.pk)
 
+    def test_this_cos_removed_target_atoms_return_to_available(self):
+        # RM 2026-08-10: a line this CO removes frees its claimed atoms back
+        # into the pool — removing descopes the work, and re-adding it to the
+        # same CO restates it under new terms.
+        ChangeOrderService.add_line_item(
+            self.co.pk, action=ChangeOrderLineItem.ACTION_REMOVE,
+            target_line_item=self.claimed_line.pk,
+        )
+        pool = ChangeOrderWizardService.get_source_pool(self.co)
+        entry = next(
+            a for a in pool['atoms']
+            if a['type'] == 'task' and a['id'] == self.claimed_task.pk
+        )
+        self.assertEqual(entry['state'], 'available')
+
+    def test_another_cos_remove_does_not_free_the_atom_here(self):
+        other_co = ChangeOrder.objects.create(job=self.job, estimate=self.estimate)
+        ChangeOrderLineItem.objects.create(
+            change_order=other_co, action=ChangeOrderLineItem.ACTION_REMOVE,
+            target_line_item=self.claimed_line,
+        )
+        pool = ChangeOrderWizardService.get_source_pool(self.co)
+        entry = next(
+            a for a in pool['atoms']
+            if a['type'] == 'task' and a['id'] == self.claimed_task.pk
+        )
+        self.assertEqual(entry['state'], 'claimed_by_other')
+
+    def test_freed_atom_readded_to_this_co_shows_claimed_by_current(self):
+        ChangeOrderService.add_line_item(
+            self.co.pk, action=ChangeOrderLineItem.ACTION_REMOVE,
+            target_line_item=self.claimed_line.pk,
+        )
+        li = ChangeOrderWizardService.add_atoms_to_new_line_item(
+            self.co, [{'type': 'task', 'id': self.claimed_task.pk}])
+        pool = ChangeOrderWizardService.get_source_pool(self.co)
+        entry = next(
+            a for a in pool['atoms']
+            if a['type'] == 'task' and a['id'] == self.claimed_task.pk
+        )
+        self.assertEqual(entry['state'], 'claimed_by_current')
+        self.assertEqual(entry['claiming_line_item_id'], li.pk)
+
 
 # ---------------------------------------------------------------------------
 # (b) line-items-from-atoms

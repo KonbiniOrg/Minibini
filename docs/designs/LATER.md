@@ -161,21 +161,12 @@ The CO surface and its estimate-parallel code.
   `estimates-and-prices.md` §14.11.)
   _Done when:_ the clean() check exists with a test.
 
-- **CO "Uncovered work" pool is confusing — covered rows shown as disabled noise.** — _added 2026-08-10 (RM)_
-  On a draft CO, the atom pool lists every atom the agreement already covers
-  as a disabled row ("Claimed by estimate N") in a section titled *Uncovered
-  work* — a contradiction in terms, and on a CO the agreement's claims are
-  the *majority* of the pool. Design intent is sound (the pool serves only
-  ADD lines; covered work is changed via replace/remove on its agreement
-  line, and claims move at acceptance) but the presentation doesn't teach
-  that. Candidate adjustments: filter agreement-claimed rows out of the CO
-  pool entirely (keep other-CO claims, which are actionable warnings),
-  collapse them to a one-line "N items already covered" summary, or link the
-  blocked row to its agreement line's replace action. RM: "still a very
-  confusing UI and we'll need to adjust it."
-  _Done when:_ RM picks a direction and the CO pool reads honestly.
-
 - **Expose *estimate* claims somewhere after acceptance.** — _added 2026-07-20 (RM)_
+  _Partial 2026-08-10:_ the CO edit surface now nests each agreement
+  line's claimed atoms under it (read-only `AtomChildRow`s), so agreement
+  claims are inspectable whenever a draft CO is open. Other surfaces
+  (estimate panel post-acceptance, task detail, job overview) still don't
+  show them.
   `EstimateLineItemSource` (what the agreement SOLD per line) is invisible in
   the daily UI once the estimate is accepted and the estimate wizard is gone —
   which is why fabricated claims sat unnoticed until the struck badge read them.

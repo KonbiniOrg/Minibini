@@ -107,21 +107,36 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
   await page.goto(`/#/jobs/${job.job_id}/change-order/${co.change_order_id}`);
   const editTable = page.locator('table.co-edit-table');
   const plainRow = (desc) =>
-    editTable.locator('tbody > tr:not(.co-authored):not(.co-struck-original)').filter({ hasText: desc });
+    editTable.locator('tbody > tr:not(.co-authored):not(.co-struck-original):not(.doc-atom-row)').filter({ hasText: desc });
   const struckRow = (desc) => editTable.locator('tr.co-struck-original').filter({ hasText: desc });
   const authoredRow = (desc) => editTable.locator('tr.co-authored').filter({ hasText: desc });
 
-  await test.step('Remove via CO strikes the row in place (parenthesized amount, revised total drops); Undo restores it', async () => {
+  await test.step('Remove via CO strikes the row in place (parenthesized amount, revised total drops); the freed atom moves to the pool; Undo restores both', async () => {
     const before = await amended();
     const originalRow = agreementRowFor(before, lines.Remove.line_item_id);
+    const pool = page.locator('.uncovered-work-section');
+    const claimedChild = editTable.locator('tr.doc-atom-row').filter({ hasText: tasks.Remove.name });
 
+    // The agreement line's claimed task displays nested under it, and NOT in
+    // the pool (it's covered work, shown under the line that covers it).
     await expect(plainRow(lines.Remove.description)).toBeVisible();
+    await expect(claimedChild).toBeVisible();
+    await expect(pool.locator('tbody tr').filter({ hasText: tasks.Remove.name })).toHaveCount(0);
+
     await plainRow(lines.Remove.description).getByRole('button', { name: 'Remove via CO' }).click();
 
     const struck = struckRow(lines.Remove.description);
     await expect(struck).toBeVisible();
     await expect(struck).toContainText(fmtParen(originalRow.line.amount));
     await expect(struck.getByRole('button', { name: 'Undo' })).toBeVisible();
+
+    // Removing the line frees its claimed task back into the pool,
+    // selectable (re-adding it to this CO restates the work under new
+    // terms); the nested child row is gone with its line.
+    const freedRow = pool.locator('tbody tr').filter({ hasText: tasks.Remove.name });
+    await expect(freedRow).toBeVisible();
+    await expect(freedRow.locator('input[type="checkbox"]')).toBeEnabled();
+    await expect(claimedChild).toHaveCount(0);
 
     const afterRemove = await amended();
     expect(Number(afterRemove.revised_total)).toBeLessThan(Number(before.revised_total));
@@ -130,6 +145,9 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
     await struck.getByRole('button', { name: 'Undo' }).click();
     await expect(struckRow(lines.Remove.description)).toHaveCount(0);
     await expect(plainRow(lines.Remove.description)).toBeVisible();
+    // The claim is covered again: nested child back, pool row gone.
+    await expect(claimedChild).toBeVisible();
+    await expect(pool.locator('tbody tr').filter({ hasText: tasks.Remove.name })).toHaveCount(0);
 
     const afterUndo = await amended();
     expect(afterUndo.revised_total).toBe(before.revised_total);

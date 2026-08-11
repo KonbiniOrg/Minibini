@@ -20,6 +20,9 @@ The add path mirrors EstimateAcceptanceService.on_accept
   and save it, then retire: cancel a Task (bleps preserved — cancelled-task
   time stays on record), **release** a pending un-invoiced Material (earmark
   backed out, quantity moved to released_qty, claims kept as job history).
+  Exception: an atom the same CO re-claims on an add line (a removed line's
+  atom pulled back from the pool — the wizard frees this CO's removed
+  targets) is carried forward untouched — no stamp, no retirement.
   Consumed / invoiced / PO-linked / terminal atoms are deliberately left
   alone by retirement — physical or billed reality is not unwound by a
   document, the human reconciles those — but they are still stamped: the
@@ -93,8 +96,20 @@ class ChangeOrderAcceptanceService:
                 continue
             ChangeOrderAcceptanceService._move_claims_to(li)
 
+        # An atom this CO re-claimed on an add line (a removed line's atom
+        # pulled back from the pool — "restate the work under new terms") is
+        # carried forward, not descoped: no stamp, no retirement. Computed
+        # after the adds loop so it also covers freshly-crystallized claims
+        # (harmless — new atoms are never remove targets).
+        readded = {
+            (src.source_type, src.source_pk)
+            for add_li in adds for src in add_li.sources.all()
+        }
+
         for li in removes:
             for source_type, atom in ChangeOrderAcceptanceService._current_atoms(li.target_line_item):
+                if (source_type, atom.pk) in readded:
+                    continue
                 atom.descoped_by = co
                 atom.save()
                 ChangeOrderAcceptanceService._retire(job, source_type, atom, counts)
