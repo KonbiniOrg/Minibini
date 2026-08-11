@@ -801,6 +801,46 @@ class ReconcileTest(unittest.TestCase):
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
+class SyntheticEstimateSourcesTest(unittest.TestCase):
+    def setUp(self):
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=20)
+        self.c.loader.load()
+        self.c.csv_cards = self.c.csv_loader.load()
+        self.c.spine = self.c.select_spine()
+        build.build_seed(self.c)
+        build.build_contacts_and_businesses(self.c)
+        build.build_jobs(self.c)
+        build.build_estimates(self.c)
+        build.derive_atoms(self.c)
+        build.build_invoices(self.c)
+        reconcile.reconcile(self.c)
+        build.build_synthetic_estimate_sources(self.c)
+
+    def _models(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_no_source_claims_a_line_on_a_superseded_estimate(self):
+        # In-app invariant: revising an estimate MOVES every source row onto
+        # the revision's copied lines, so a superseded estimate keeps its line
+        # items as a frozen snapshot but holds zero claims. The synthetic pass
+        # must respect that — a claim stranded on an old revision surfaces in
+        # the estimate/CO wizard pools as a bogus "Claimed by estimate
+        # <superseded rev>" blocked row.
+        est_status = {f['pk']: f['fields']['status']
+                      for f in self._models('estimates.estimate')}
+        line_estimate = {f['pk']: f['fields']['estimate']
+                         for f in self._models('estimates.estimatelineitem')}
+        for s in self._models('estimates.estimatelineitemsource'):
+            est_pk = line_estimate[s['fields']['estimate_line_item']]
+            self.assertNotEqual(
+                est_status[est_pk], 'superseded',
+                f"source {s['pk']} claims {s['fields']['source_type']} "
+                f"{s['fields']['source_pk']} on a line of superseded "
+                f"estimate {est_pk}")
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
 class ShipmentBuilderTest(unittest.TestCase):
     def setUp(self):
         self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json',

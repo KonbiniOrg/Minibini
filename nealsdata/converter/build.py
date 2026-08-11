@@ -1717,6 +1717,12 @@ def build_synthetic_estimate_sources(c):
     derive_atoms (source_type='material'); this pass only places Tasks, and it
     skips Tasks already claimed and estimate lines that already carry a source
     (so a line that owns a Material isn't double-sourced with a Task).
+
+    Runs after reconcile (statuses are final): only lines on non-superseded
+    estimates are candidates. In-app, revising moves every source row onto
+    the revision, so a superseded estimate never holds claims — a claim
+    stranded on an old revision would block its atom in the estimate/CO
+    wizard pools as "Claimed by estimate <superseded rev>".
     """
     claimed_tasks = {
         f['fields']['source_pk']
@@ -1738,12 +1744,18 @@ def build_synthetic_estimate_sources(c):
         f['pk']: f['fields']['job']
         for f in c.fixture_data if f['model'] == 'estimates.estimate'
     }
+    est_status = {
+        f['pk']: f['fields']['status']
+        for f in c.fixture_data if f['model'] == 'estimates.estimate'
+    }
     lines_by_job = {}
     for f in c.fixture_data:
         if f['model'] != 'estimates.estimatelineitem':
             continue
         if f['pk'] in sourced_lines:
             continue  # already owns an atom (e.g. a Material) — don't double-source
+        if est_status.get(f['fields']['estimate']) == 'superseded':
+            continue  # claims live on the latest revision only (revise moves them)
         job_pk = est_to_job.get(f['fields']['estimate'])
         if job_pk is not None:
             lines_by_job.setdefault(job_pk, []).append(f)

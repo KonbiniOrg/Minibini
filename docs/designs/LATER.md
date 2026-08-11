@@ -138,6 +138,15 @@ The CO surface and its estimate-parallel code.
   `tests.test_neals_builders`; `nealsmall.json` is RM-managed — never regenerate.
   Separately, RM hand-repairs the existing dev rows (job 61: source_ids 327,
   331, 335, 339 at minimum — Claude drafts the SQL, RM runs it).
+  **Progress 2026-08-10:** a second corruption mode fixed — the pass also
+  scattered claims onto *superseded* revisions' lines (in-app, revise moves
+  every source row to the latest revision, so superseded estimates hold zero
+  claims; dev job 29 had 12 stranded claims surfacing as "Claimed by estimate
+  07998-1/-2/-3" blocks in the CO pool). `build_synthetic_estimate_sources`
+  now skips superseded estimates' lines, with an invariant test
+  (`SyntheticEstimateSourcesTest`); builders suite green (128). The
+  many-to-one fabrication on the *live* estimate remains — this entry stays
+  open for that. Loaded dev DBs keep stranded rows until RM reseeds/repairs.
   _Done when:_ the converter emits no fabricated multi-task claims, builders
   suite green, and job 61's synthetic rows are repaired.
 
@@ -151,6 +160,20 @@ The CO surface and its estimate-parallel code.
   never stamps `descoped_by` at all; only a REMOVE target gets stamped. See
   `estimates-and-prices.md` §14.11.)
   _Done when:_ the clean() check exists with a test.
+
+- **CO "Uncovered work" pool is confusing — covered rows shown as disabled noise.** — _added 2026-08-10 (RM)_
+  On a draft CO, the atom pool lists every atom the agreement already covers
+  as a disabled row ("Claimed by estimate N") in a section titled *Uncovered
+  work* — a contradiction in terms, and on a CO the agreement's claims are
+  the *majority* of the pool. Design intent is sound (the pool serves only
+  ADD lines; covered work is changed via replace/remove on its agreement
+  line, and claims move at acceptance) but the presentation doesn't teach
+  that. Candidate adjustments: filter agreement-claimed rows out of the CO
+  pool entirely (keep other-CO claims, which are actionable warnings),
+  collapse them to a one-line "N items already covered" summary, or link the
+  blocked row to its agreement line's replace action. RM: "still a very
+  confusing UI and we'll need to adjust it."
+  _Done when:_ RM picks a direction and the CO pool reads honestly.
 
 - **Expose *estimate* claims somewhere after acceptance.** — _added 2026-07-20 (RM)_
   `EstimateLineItemSource` (what the agreement SOLD per line) is invisible in
