@@ -106,6 +106,9 @@
 </section>
 
 <style>
+  /* Breathing room between the deliverables table and the line-items table. */
+  table.co-customer-deliverables { margin-bottom: 1.5em; }
+
   /* Mirrors ChangeOrderPortal.svelte's row styling so shop Customer mode and
      the portal read the same. */
   tr.row-changed { background: #fff7ed; }
