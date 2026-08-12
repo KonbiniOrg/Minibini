@@ -363,3 +363,89 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
             content_type='application/json',
         )
         self.assertEqual(r2.status_code, 404)
+
+
+class EstimateUnexpireAPITest(BaseTestCase):
+    """POST /api/estimates/{id}/unexpire/ — in-place reactivation, gated on
+    can_manage_jobs OR can_manage_financials (not the usual CanManageJobOrPM
+    per-job scope)."""
+
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+        from tests.base import grant_atoms
+        from apps.contacts.models import Contact
+        from apps.core.models import AccountingCategory
+        from apps.deliverables.models import Deliverable
+        from apps.estimates.services import EstimateService
+        from apps.jobs.services import JobService
+
+        self.client = APIClient()
+        self.contact = Contact.objects.create(
+            first_name='Ex', last_name='Piree', email='ex@piree.com',
+            mobile_number='555-0199',
+        )
+        cat = AccountingCategory.objects.first() or AccountingCategory.objects.create(
+            code='SVC', name='Services')
+        self.job = JobService.create_job(name='Lapsed Job', contact=self.contact)
+        Deliverable.objects.create(
+            job=self.job, description='One thing',
+            qty_ordered=Decimal('1'), units='each')
+        self.est = EstimateService.create_for_job(self.job.pk)
+        EstimateLineItem.objects.create(
+            estimate=self.est, description='Do the thing',
+            qty=Decimal('1'), units='each', price=Decimal('75.00'),
+            accounting_category=cat,
+        )
+        EstimateService.mark_open(self.est.pk)
+        self.est.refresh_from_db()
+        self.est.status = Estimate.STATUS_EXPIRED
+        self.est.save()
+
+        self.jobs_user = grant_atoms(
+            User.objects.create_user(username='unexp_jobs', password='x'),
+            'can_manage_jobs',
+        )
+        self.fin_user = grant_atoms(
+            User.objects.create_user(username='unexp_fin', password='x'),
+            'can_manage_financials',
+        )
+        self.plain_user = User.objects.create_user(username='unexp_plain', password='x')
+
+    def test_unexpire_with_can_manage_jobs_succeeds(self):
+        self.client.force_authenticate(user=self.jobs_user)
+        response = self.client.post(f'/api/estimates/{self.est.pk}/unexpire/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], Estimate.STATUS_OPEN)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
+
+    def test_unexpire_with_can_manage_financials_succeeds(self):
+        self.client.force_authenticate(user=self.fin_user)
+        response = self.client.post(f'/api/estimates/{self.est.pk}/unexpire/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], Estimate.STATUS_OPEN)
+
+    def test_unexpire_without_either_atom_is_forbidden(self):
+        self.client.force_authenticate(user=self.plain_user)
+        response = self.client.post(f'/api/estimates/{self.est.pk}/unexpire/')
+        self.assertEqual(response.status_code, 403)
+        self.est.refresh_from_db()
+        self.assertEqual(self.est.status, Estimate.STATUS_EXPIRED)
+
+    def test_unexpire_job_pm_without_atom_is_forbidden(self):
+        """Unlike every other estimate action, this is NOT PM-scoped — being
+        the job's own project_manager isn't enough without the atom."""
+        pm = User.objects.create_user(username='unexp_pm', password='x')
+        self.job.refresh_from_db()
+        self.job.project_manager = pm
+        self.job.save()
+        self.client.force_authenticate(user=pm)
+        response = self.client.post(f'/api/estimates/{self.est.pk}/unexpire/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_unexpire_non_expired_returns_400(self):
+        self.client.force_authenticate(user=self.jobs_user)
+        Estimate.objects.filter(pk=self.est.pk).update(status=Estimate.STATUS_OPEN)
+        response = self.client.post(f'/api/estimates/{self.est.pk}/unexpire/')
+        self.assertEqual(response.status_code, 400)

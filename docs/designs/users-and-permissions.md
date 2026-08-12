@@ -120,7 +120,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/contacts/` | `IsAuthenticated` | `can_manage_jobs` | atom-only — **not** PM-scoped |
 | `/api/businesses/` | `IsAuthenticated` | `can_manage_jobs` | atom-only — **not** PM-scoped |
 | `/api/payment-terms/` | `IsAuthenticated` | `can_manage_config` | Settings → Business manager (2026-07-23); two-phase confirm delete |
-| `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (incl. line items) | also `send-defaults` (GET, IsAuth), `send` (POST, can_manage_jobs) |
+| `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (incl. line items) | also `send-defaults` (GET, IsAuth), `send` (POST, can_manage_jobs); `unexpire` is the one exception — `can_manage_jobs` **OR** `can_manage_financials`, not PM-scoped, see below |
 | `/api/tasks/` (flat lifecycle) | `IsAuthenticated` | `IsAuthenticated` (incl. `cancel`, opened 2026-07-12) | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
 | `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 30h rolling rule + `can_manage_time` for editing others |
 | `/api/shifts/` | `IsAuthenticated` | `IsAuthenticated` for `PATCH` (service enforces 30h self-edit window) | `DELETE` requires `can_manage_time` (200 + JSON body); `?user=me\|<id>`, `?since=` |
@@ -160,6 +160,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 - **`POST /api/jobs/{id}/add-from-template/`** and **`POST /api/jobs/{id}/create_material/`** are `IsAuthenticated` only — workers can self-serve adding template-driven tasks and materials.
 - **`POST /api/jobs/{id}/duplicate/`** requires `can_manage_jobs` **OR** the job's PM (`CanManageJobOrPM`). Duplicates the Job into a new one; body `{contact_id, path}`, returns `{job_id}` at 201.
 - **`POST /api/jobs/{id}/start-invoice-wizard/`** accepts `can_manage_jobs` OR `can_manage_financials` — either side can spawn the draft so the other side can fill it.
+- **`POST /api/estimates/{id}/unexpire/`** accepts `can_manage_jobs` OR `can_manage_financials` — **not** `CanManageJobOrPM` (the job's own PM alone is not enough). Reactivates an `expired` estimate to `open` in place and walks the job `rejected → submitted`; see `estimates-and-prices.md` §5.2b.
 - **`POST /api/jobs/{id}/notes/`**, **`POST /api/contacts/{id}/notes/`**, **`POST /api/businesses/{id}/notes/`** are `IsAuthenticated` — anyone can add a note.
 - **`POST /api/shifts/clock-in/`**, **`POST /api/shifts/clock-out/`** are `IsAuthenticated` for self. Clocking another worker (via `?user=` / body `user`) requires `can_manage_time`; an unknown user id returns 404. Clock-out also closes the worker's open bleps.
 - **`GET /api/shifts/active/`** is `IsAuthenticated` — the caller's own open shift (or `null`).
