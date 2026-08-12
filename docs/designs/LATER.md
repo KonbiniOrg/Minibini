@@ -23,6 +23,22 @@ proper issue.
 
 Status coupling, transitions, and what a job may do at each stage.
 
+- **Sending an estimate with no deliverables should at least require a
+  confirm.** — _added 2026-08-11 (RM)_
+  RM: "if an estimate is to be sent and there are no deliverables
+  configured, at least make the user confirm this." Note the current
+  state before building: `EstimateService.mark_open` already HARD-blocks
+  a deliverable-less send (`'Cannot send estimate: job has no
+  deliverables.'`) — stricter than the ask. If RM has seen sends go out
+  without consciously configuring deliverables, the likely culprit is
+  converted dev jobs, whose seed carries a synthetic "Fake Deliverable"
+  row that satisfies the gate invisibly. Resolve the design first: (a)
+  keep the hard block but surface it better pre-send in the SPA, (b)
+  soften the block to an explicit confirm, or (c) both, plus treat
+  placeholder deliverables as "not configured".
+  _Done when:_ RM picks a direction and a deliverable-less (or
+  placeholder-only) send can't happen silently.
+
 - **Release-to-floor should require at least one Task — placement undecided.** — _added 2026-07-02_
   A job with no Tasks shouldn't be releasable to the floor (`approved → in_progress`).
   A first pass built this but it was **removed pending a design decision** — the code
