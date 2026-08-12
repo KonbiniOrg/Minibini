@@ -561,6 +561,15 @@ Billing mechanics and money-record lifecycle.
 
 ## Platform & conventions
 
+- **Settings category pickers truncate at 25 (StandardPagination default).** — _added 2026-08-12_
+  `DefaultMaterialCategorySetting`, `DefaultDepositCategorySetting`, and
+  `FallbackCategorySetting` all fetch `/api/accounting-categories/` without
+  `page_size`, taking `.results` — with >25 categories the picker silently
+  offers only the first page. Pre-existing pattern, flagged by the Phase 3
+  final review. Fix is a `?page_size=100` in the three components (or a
+  shared loader).
+  _Done when:_ the three settings pickers list every category.
+
 Cross-cutting UI/API conventions and shared components.
 
 - **`#/jobs` (JobListPage) has no nav link.** — _added 2026-07-31_

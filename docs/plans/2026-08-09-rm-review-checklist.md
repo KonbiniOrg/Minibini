@@ -1,5 +1,34 @@
 # RM browser-review checklist — feature/better-fees (delete when done)
 
+## Phase 3 — nullable task AC + fallback stamping (added 2026-08-12)
+
+No new migrations — no dev migrate step needed for this phase.
+
+- [ ] Settings → accounting tab: new "Fallback Accounting Category" block —
+      designate a category (create an "Uncategorized income" AC first if you
+      want a dedicated one; taxable recommended), Save. Deposit-flagged
+      categories are refused.
+- [ ] The designated fallback disappears from every authoring category
+      dropdown (line modals, add-line forms, task edit, material, expense,
+      PO line, adjustment targets) but still shows in Settings and still
+      renders as a name on any line carrying it.
+- [ ] Edit-task modal: Accounting Category now offers
+      "— none (categorize at invoicing) —"; clearing it works (money-writer
+      only); task detail shows a muted "uncategorized" chip.
+- [ ] An estimate line built from that uncategorized task keeps NO category
+      (estimates don't stamp) — accept the estimate, start the invoice: the
+      seeded line arrives stamped with the fallback and shows the amber
+      "uncategorized → {name} · taxable" chip. Fixing the line's AC via
+      Edit clears the chip.
+- [ ] A percentage adjustment on the agreement seeds through with its REAL
+      category (this was the final-review catch — seeded adjustments were
+      briefly stripped to null and blocked send).
+- [ ] Targeted adjustment + uncategorized lines on one invoice → amber
+      warning banner above the table.
+- [ ] Send an invoice with a fallback-stamped line: NOT blocked (it has a
+      real category). A hand line with no AC at all still blocks send, with
+      a message that now mentions the fallback setting.
+
 Covers everything landed since your last review (the deposit path sign-off):
 the Fee removal phase and the CO amend-in-place phase. Branch is at
 `0c3824a2`, all suites green (backend 4566, Vitest 1478, e2e 81+1 catalogued
