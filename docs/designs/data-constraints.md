@@ -189,6 +189,35 @@ with a hint in that case. The settings API (`PATCH /api/settings/`) rejects
 a value that isn't blank or an existing **active, deposit**
 `AccountingCategory` id. See `invoicing-and-expenses.md` §Deposits.
 
+Uncategorized fallback (Phase 3, 2026-08): `fallback_accounting_category`
+(unset) — string-encoded `AccountingCategory` PK stamped server-side onto an
+invoice line whose derived category is null (a null-AC `Task` atom, or a
+null-AC agreement hand line seeded/restored/copied) at the moment the
+invoice line is constructed (`InvoiceService.resolve_line_category`,
+`apps/invoicing/services.py`) — never onto the Task or the estimate/CO line
+itself, which keep null (see `estimates-and-prices.md` §10,
+`invoicing-and-expenses.md` §"Fallback accounting category stamping"). An
+adjustment (percentage) line is exempt — it has no AC concept of its own and
+is never stamped. Unset, or pointing at a category that's since gone
+inactive, makes the stamp attempt raise a field-keyed `ValidationError`
+naming the Configuration key. The settings API (`PATCH /api/settings/`)
+rejects a value that isn't blank or an existing **active, non-deposit**
+`AccountingCategory` id (the picker itself, unlike its siblings, lists
+**every** category — active or not, deposit or not — server-side validation
+is the sole gate). `GET /api/accounting-categories/` exposes a computed,
+per-row `is_fallback` boolean (`AccountingCategorySerializer`,
+`apps/api/templates_config/serializers.py`) marking exactly the designated
+row; every authoring `<select>` in the SPA filters it out of its option
+list client-side (`!c.is_fallback`) so a user can't hand-pick the fallback
+category directly, while every name-lookup/display path (row labels, line
+tables, the invoice adjustment-target checklist) keeps reading the
+unfiltered list so a line already carrying the fallback still renders its
+real name. The `exclude_fallback=true` query param on the same endpoint
+(server-side list filtering, from an earlier iteration of this mechanism)
+still works but has no SPA caller today — superseded by the `is_fallback`
+flag once display paths also needed to see the fallback-carrying rows. See
+`invoicing-and-expenses.md` §"Fallback accounting category stamping".
+
 ---
 
 ### 1.2 User

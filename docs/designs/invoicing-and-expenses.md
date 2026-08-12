@@ -171,6 +171,11 @@ backing derivation) uses instead of checking both fields itself.
 Migration: `apps/invoicing/migrations/0023_invoicelineitem_agreement_co_line_and_more.py`
 (two plain `AddField` operations, no data migration).
 
+**`used_fallback_ac`** (Phase 3, 2026-08) — read-only, serializer-computed
+(not a model field): `true` when the line's `accounting_category` is the
+configured `fallback_accounting_category`. See "Fallback accounting
+category stamping" below.
+
 ### InvoiceLineItemSource
 
 Polymorphic join between `InvoiceLineItem` and the job atom it represents (a `Task`, `Material`, or `Expense`) — or, for `source_type='deposit'`, another `InvoiceLineItem` (see Deposits below). "Polymorphic" only in the sense that the atom side may be one of several model types; this is not a Django generic relation.
@@ -349,7 +354,10 @@ UI button that calls it a second way (the older "Apply everything" /
 2. Re-checks the invariant per line (`_assert_agreement_line_unclaimed`,
    `exclude_invoice=invoice`).
 3. Builds the `InvoiceLineItem` straight from the agreement dict
-   (description/qty/units/price; AC from the source line's AC;
+   (description/qty/units/price; AC from the source line's AC, or the
+   configured fallback if the source line's AC is null — adjustment
+   lines are exempt and stay null; see "Fallback accounting category
+   stamping" below —
    adjustment lines copy `adjustment_service`/`adjustment_percent` +
    target categories) and saves it with a **plain `.save()`**, not
    `LineItemService.save_line_item` — that helper would recompute
@@ -535,17 +543,155 @@ default.
 
 | Case | Description | Units | Qty | Price | Accounting category |
 |---|---|---|---|---|---|
-| Single atom | Atom's name/description | Atom's units (rate scheme unit, or PLI units, or `'none'`) | Atom's intrinsic qty (`Material.quantity`; an ENTERED_QTY task's actual qty; `1` for ELAPSED_TIME tasks) | Atom-derived (`Material.sell_price`; an ENTERED_QTY task's `effective_rate()`; the blep roll-up total for ELAPSED_TIME) | Atom's effective category |
-| Multi-atom — uniform task bundle | `''` (UI prompts user to name) | Rate scheme `unit_label` | Summed actual quantities | Common effective rate | Uniform-or-null |
-| Multi-atom — anything else | `''` (UI prompts user to name) | `'none'` | `1` | Sum of atom amounts | Uniform-or-null (set if all atoms share one category) |
+| Single atom | Atom's name/description | Atom's units (rate scheme unit, or PLI units, or `'none'`) | Atom's intrinsic qty (`Material.quantity`; an ENTERED_QTY task's actual qty; `1` for ELAPSED_TIME tasks) | Atom-derived (`Material.sell_price`; an ENTERED_QTY task's `effective_rate()`; the blep roll-up total for ELAPSED_TIME) | Atom's effective category, or the fallback if null (Phase 3 — a null-AC Task atom) |
+| Multi-atom — uniform task bundle | `''` (UI prompts user to name) | Rate scheme `unit_label` | Summed actual quantities | Common effective rate | Uniform, or the fallback if null/mixed |
+| Multi-atom — anything else | `''` (UI prompts user to name) | `'none'` | `1` | Sum of atom amounts | Uniform, or the fallback if null/mixed |
 
 A multi-atom bundle is a "uniform task bundle" when every atom is a Task
 sharing one `RateScheme` and identical `active_modifiers`. `add_atoms_to_line_item`
 / `remove_atoms_from_line_item` re-derive the same way on an in-sync line
 item (re-summarize a uniform bundle, else keep qty and recompute the
-per-unit price).
+per-unit price) — but never touch `accounting_category` on re-derive; it's
+set once, at creation, same as every other line-item type. The fallback
+substitution in the table above is **invoice-only** — the structurally
+identical estimate/CO wizards use the same bundling logic
+(`BaseWizardService`, `estimates-and-prices.md` §8) but never stamp a
+fallback, so their equivalent table reads "Atom's effective category" /
+"Uniform-or-null" unchanged; see "Fallback accounting category stamping"
+below.
 
 The line's taxability is whatever `accounting_category.taxable` says at push time (no per-line override field exists — removed 2026-07-21).
+
+### Fallback accounting category stamping (Phase 3, 2026-08)
+
+**The model: stamping is line-local, at invoice-line construction time
+only.** Nothing upstream of an invoice line is ever touched — a `Task`
+whose own `accounting_category` is null stays null forever (unless a
+human PATCHes it directly); an estimate/CO wizard line built from that
+same null-AC atom also stays null (`estimates-and-prices.md` §10). The
+fallback is resolved and stamped exactly once, onto the invoice line
+itself, at the moment it's built. This is deliberate: the fallback is a
+*billing-time* convenience (every invoice line needs a category to push
+to QBO and compute tax), not a retroactive recategorization of the
+underlying work.
+
+**The resolve helper — `InvoiceService.resolve_line_category()`**
+(`apps/invoicing/services.py`, staticmethod). Looks up the
+`fallback_accounting_category` Configuration key (`data-constraints.md`
+§1.1) and resolves it to an active `AccountingCategory`. Raises
+`ValidationError({'accounting_category': [...]})` naming the
+Configuration key for **both** failure modes — unset/blank, and set but
+pointing at a deleted/deactivated category — since neither leaves the
+caller with a usable category. Mirrors the shape of the sibling
+`_resolve_deposit_category` (§Deposits).
+
+**Two call sites, one hook and one shared line-builder:**
+
+- **The wizard hook.** `BaseWizardService._resolve_line_category(category)`
+  (`apps/core/wizard.py`) is a classmethod hook wrapping the single
+  `accounting_category=` assignment inside `add_atoms_to_new_line_item`.
+  The base implementation is identity (returns `category` unchanged) —
+  the estimate and change-order wizards don't override it, so a
+  null-category atom bundle (single null-AC task, or a mixed bundle
+  that collapses to `None`) still produces a null-AC estimate/CO line,
+  exactly as before Phase 3. `InvoiceWizardService` overrides the hook:
+  `category` unchanged if not `None`, else
+  `InvoiceService.resolve_line_category()`. This is the **only** site
+  that stamps a fallback from a Task/Material atom bundle; re-deriving
+  an existing in-sync line (`_resync_in_sync_line_item`, adding/removing
+  atoms) never touches `accounting_category` again after creation.
+- **Agreement seeding/restore/copy — `InvoiceService._agreement_category_id(line)`**
+  (staticmethod). Given a `compose_agreement` line dict: returns
+  `line['accounting_category_id']` if set, else the fallback's pk —
+  **except** an adjustment line (`line.get('is_adjustment')`), which is
+  exempt and always returns `None` unmodified (an adjustment targets
+  other lines' categories; it has no AC concept of its own, mirroring
+  the estimate side's own adjustment-line AC exemption). Routed through
+  the single shared constructor `InvoiceService._build_agreement_line_item`
+  — used by both `seed_from_agreement` and `restore_agreement_line` (one
+  fix covers both call paths) — and independently through
+  `InvoiceService.copy_from_estimate`, which builds `InvoiceLineItem`s
+  straight from the same `compose_agreement` dicts without going through
+  `_build_agreement_line_item`.
+
+**What can never be null on an invoice line.** `add_line_item_from_pli`,
+`add_line_item_from_service`, and `add_adjustment_line` all derive AC
+from a required (non-nullable) FK (`InventoryItem.accounting_category`,
+`ServiceItem.effective_accounting_category` → `RateScheme.accounting_category`)
+— never null, never stamped. The one deliberately-unstamped path is a
+**manual hand line** (`InvoiceService.add_line_item`, `deposit=False`):
+unlike the estimate side (which requires an AC on a bare hand line at
+add-time — Decision 1, `estimates-and-prices.md` §6.4), an invoice hand
+line is never AC-checked at add-time — there's no atom to fall back
+*from*, the AC picker already excludes the fallback category from manual
+selection (`is_fallback`, `data-constraints.md` §1.1), and the send-time
+gate (below) blocks it regardless. This estimate/invoice hand-line
+discrepancy is a known, accepted asymmetry, not a bug.
+
+**`used_fallback_ac`** — `InvoiceLineItemSerializer`
+(`apps/api/invoicing/serializers.py`) exposes a `SerializerMethodField`
+that's `true` exactly when the line's current `accounting_category_id`
+equals the configured fallback's id (a live AC-id comparison, not
+provenance — correcting the category by hand, e.g. via
+`InvoiceService.update_line_item`, flips it back to `false` even though
+the line was originally fallback-stamped). Mirrors
+`AccountingCategorySerializer.get_is_fallback` (§Fallback key,
+`data-constraints.md` §1.1) exactly, sharing its
+`_resolve_fallback_category_id()` helper rather than reimplementing the
+lookup. **Context memoization:** `InvoiceViewSet.get_serializer_context()`
+adds `fallback_category_id` to context, computed once per request and
+cached on the view instance (`self._cached_fallback_category_id`) — one
+`Configuration` read per request regardless of how many lines/invoices
+serialize, not one per row. Nested `line_items` inherit the root
+serializer's context automatically (DRF reads `self.root._context`), so
+a single `InvoiceSerializer(invoice, context=...)` covers the whole
+tree; the handful of custom `@action` methods that instantiate
+`InvoiceLineItemSerializer` directly (line-items-from-service,
+line-items-from-atoms, add-atoms, remove-atoms, adjustment-lines,
+restore-line) all pass `context=self.get_serializer_context()` for the
+same memoization. `apps/api/mixins.py`'s generic `LineItemMixin`
+(shared by Estimate/Invoice/PO/CO viewsets) passes
+`context=self.get_serializer_context()` at all 4 of its serializer
+instantiation points — harmless for the other line-item serializers,
+which ignore the extra context key.
+
+**UI — the uncategorized chip and the targeted-adjustment warning**
+(`InvoiceEditView.svelte`, Edit mode only). A line with `used_fallback_ac`
+true renders a small amber `.uncategorized-chip` beside its `BackingChip`
+in the Backing column: `uncategorized → {fallback category name} ·
+{taxable|non-taxable}` when the fallback row is found in the panel's
+(unfiltered) loaded `categories` list, or a bare `uncategorized` when
+it isn't (a stale client list that hasn't refreshed since the fallback
+was reconfigured). This is a **display-only** indicator — the only
+correction control remains the existing Edit… modal's AC select; the
+chip itself has no click behavior.
+
+A percentage adjustment line with a non-empty `adjustment_target_categories`
+list (a "targeted" adjustment — an empty list means "applies to all")
+silently skips any line still sitting on the fallback category, since
+the adjustment matches by category and the fallback is never a target a
+user picks. When the invoice has **both** at least one fallback-stamped
+line and at least one targeted adjustment, a `.doc-warning` banner
+renders above the line-items table: "This invoice has uncategorized
+lines. Targeted adjustments never apply to them — categorize the lines
+or check the adjustment's targets." Purely informational; it doesn't
+block anything (the send gate, below, is the actual block).
+
+**The send gate — belt-and-suspenders.** `InvoiceEmailService._assert_all_lines_categorized`
+(the sole `draft`-exit gate, top of `send_invoice`, before any external
+call) still requires every line non-null regardless of how it got that
+way — a fallback-stamped line already satisfies it, since stamping
+happens at construction, well before send. Its message now names the
+Configuration key: "Every line item needs an accounting category before
+sending (line(s) {nums}). Categorize the line(s) directly, or configure
+the `fallback_accounting_category` setting so new lines are
+auto-categorized." `InvoicePanel.svelte`'s `send-blocked-note` mirrors
+this at the UI level ("Assign an accounting category to every line
+before sending."), disabling the Send/Resend action while any line's
+`accounting_category` is null — which, given the stamping above, is now
+reachable only via an uncorrected manual hand line. QBO push carries its
+own independent, redundant null-AC guards — see
+`quickbooks-integration.md`.
 
 ### In-sync vs. override
 

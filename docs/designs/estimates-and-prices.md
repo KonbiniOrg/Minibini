@@ -1382,6 +1382,23 @@ and the wizard's pool building. Wizard single-atom line-item creation
 pulls `category` from the atom's effective AC (for a Task, its own
 field); multi-atom creation only sets `category` if all atoms share one.
 
+**Late binding — estimate/CO lines from a null-AC atom stay null (Phase
+3, 2026-08).** A null-AC Task atom (§4) produces a null-AC
+`EstimateLineItem`/`ChangeOrderLineItem` — the wizard never substitutes
+anything in its place. `BaseWizardService` (`apps/core/wizard.py`)
+exposes a `_resolve_line_category(category)` hook wrapping the single
+`accounting_category=` assignment at line-item creation; the base
+implementation (used by both the estimate and CO wizards) is identity.
+Categorization of a null-AC line is deliberately deferred all the way
+to **invoicing** — only `InvoiceWizardService` overrides the hook to
+stamp the configured fallback category, and only on the invoice line
+itself (never retroactively on the Task or the estimate/CO line). See
+`invoicing-and-expenses.md` §"Fallback accounting category stamping"
+for the full mechanism (the resolve helper, the agreement-seeding path,
+`used_fallback_ac`, the chip/warning UI, the send gate) and
+`data-constraints.md` §1.1 for the `fallback_accounting_category`
+Configuration key.
+
 ### 10.2 What changes when AC moves
 
 Editing `RateScheme.accounting_category` is unrestricted — presets are

@@ -397,6 +397,24 @@ the raw payload" trigger. This pattern is reserved for gating a field
 subset on an otherwise-open endpoint; a whole-resource gate belongs on
 `get_permissions()` (above), not inside `validate()`.
 
+**Per-request memoized context, not per-row lookups.** When a
+serializer field needs the same expensive-ish read (a `Configuration`
+lookup, a settings query) for every row in a list response, resolve it
+once in `get_serializer_context()` and cache it on the view instance
+(e.g. `self._cached_fallback_category_id`), never inside the
+`SerializerMethodField` itself. `AccountingCategorySerializer.is_fallback`
+and `InvoiceLineItemSerializer.used_fallback_ac` (Phase 3, 2026-08 — both
+read the `fallback_accounting_category` Configuration key,
+`data-constraints.md` §1.1) are the exemplar pair: `get_serializer_context()`
+overrides on `AccountingCategoryViewSet` and `InvoiceViewSet` compute the
+id once per request; nested child serializers (e.g. an `Invoice`'s
+`line_items`) inherit the root's context automatically (DRF reads
+`self.root._context`), and the handful of `@action` methods that
+instantiate a line-item serializer directly pass
+`context=self.get_serializer_context()` explicitly for the same
+memoization. See `invoicing-and-expenses.md` §"Fallback accounting
+category stamping" for the full mechanism.
+
 ### 3.6 DELETE responses are 200 with JSON
 
 Convention: every DELETE returns HTTP 200 with a JSON body (e.g.
@@ -1809,11 +1827,18 @@ Concrete items, smallest first:
   mistakes. Concern is shared across the subclasses since it lives
   on `BaseLineItem`.
 
-- **`accounting_category` required on the line-item subclasses
-  (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`).**
-  Currently nullable (inherited from
-  `BaseLineItem`); a null AC falls back to silently tax-exempt at QBO
-  push time. Should become NOT NULL after existing rows are backfilled.
-  One project-wide migration across the subclasses — the change
-  lives in `apps/core/models.py` (`BaseLineItem`) plus a backfill step
-  per subclass.
+- **`accounting_category` required on `EstimateLineItem` /
+  `InvoiceLineItem` — RESOLVED, opposite direction (Phase 3 nullable-AC
+  plan, 2026-08).** The "make it NOT NULL, backfill, one project-wide
+  migration" idea this TODO used to track was superseded: the field
+  stays nullable by design on both subclasses. A hand line without a
+  descriptor legitimately carries no category until a human assigns one
+  (Estimate: required at add-time per Decision 1; Invoice: deferred to
+  the send gate); an atom-derived line whose atom is itself uncategorized
+  resolves at invoice-authoring time via the configured
+  `fallback_accounting_category` rather than a NOT NULL constraint —
+  see `invoicing-and-expenses.md` §"Fallback accounting category
+  stamping" and `data-constraints.md` §1.1. **`PurchaseOrderLineItem`
+  is out of scope of Phase 3** and this TODO's original NOT NULL/backfill
+  shape may still be a live intention there — see
+  `materials-inventory-and-purchasing.md`.

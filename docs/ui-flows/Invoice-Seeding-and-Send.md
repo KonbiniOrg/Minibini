@@ -236,6 +236,36 @@ This is the guardrail that keeps a category-less line from being sent
 - [ ] **Read-only invoices don't flag.** On a sent/paid invoice, a
   missing category renders as "—" with no flag.
 
+### 9a. Uncategorized-fallback chip (Phase 3, 2026-08)
+
+A **different** state than the "needs category" flag above: an
+atom-derived line whose backing Task has no category of its own is never
+left null on the invoice — it's auto-stamped with the configured
+**Fallback Accounting Category** (Settings → Accounting) the moment the
+line is built (wizard authoring, agreement seed/restore, copy-from-estimate).
+Covered end-to-end by `e2e/specs/invoice-seeding-and-send/uncategorized-fallback.spec.js`.
+
+- [ ] **Settings: designate a fallback.** Settings → Accounting →
+  Fallback Accounting Category, pick a category, Save → success message.
+- [ ] **A null-AC task's invoice line shows the chip.** A task PATCHed
+  to `accounting_category: null`, once its atom lands on an invoice line
+  (wizard or auto-seed), renders an amber `uncategorized → {fallback
+  name} · taxable|non-taxable` chip beside the Backing chip — **not**
+  the "needs category" flag (the line's AC isn't null; it's the
+  fallback).
+- [ ] **An untouched line never shows it.** A line whose atom already
+  had a real category shows no chip, no matter how many other lines on
+  the same invoice are fallback-stamped.
+- [ ] **Correcting the category clears the chip.** Edit… → pick the real
+  category → Save → chip disappears; re-fetching the invoice shows
+  `used_fallback_ac: false`.
+- [ ] **Targeted-adjustment warning.** When the invoice has at least one
+  fallback-stamped line **and** at least one adjustment with non-empty
+  target categories, a banner above the line-items table reads "This
+  invoice has uncategorized lines. Targeted adjustments never apply to
+  them — categorize the lines or check the adjustment's targets." An
+  *un*targeted adjustment (applies to all categories) never triggers it.
+
 ## 10. Tax note (current behavior)
 
 - [ ] A merged/joined line takes the **single** category assigned to
@@ -258,3 +288,4 @@ This is the guardrail that keeps a category-less line from being sent
 | Modes | Customer (zero controls) · Reorder (same rows + arrows, disabled at ends, editable-only) |
 | Category flag | null category flagged "needs category" when editable · not flagged when read-only |
 | Send-gate | Send disabled + note while any line uncategorized · assigning category enables Send · server rejects (400) a category-less send |
+| Uncategorized fallback (Phase 3) | Settings fallback designation round-trips · null-AC atom's line auto-stamped + chip shown · untouched line never shows chip · correcting AC clears chip and `used_fallback_ac` · targeted-adjustment warning shows only with both a fallback-stamped line and a targeted adjustment |

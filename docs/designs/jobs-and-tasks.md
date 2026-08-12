@@ -1744,7 +1744,12 @@ Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
    with the **stat-chip strip** right-aligned. Chips (shared
    `.stat-chips` family, app.css): Assignee (name or muted
    "Unassigned"; the name itself opens `AssignModal` when
-   `can_manage`), Est Time (`est_worker_time`), Est Qty, Actual, and
+   `can_manage`), Est Time (`est_worker_time`), Est Qty, Actual, Category
+   (Phase 3, 2026-08 — resolves `task.accounting_category` against the
+   already-loaded `categories` list by name; a null AC renders a muted
+   "uncategorized" via the same `.stat-chip-body .muted` styling the
+   Assignee chip's "Unassigned" state uses, never a blank chip — this
+   page previously showed no AC information at all), and
    the money pair Rate + Charge (green-tinted headers; only when the
    task has a rate scheme). The Est Qty chip shows for hour-unit tasks
    too, even though the normal pair-filled case (§9.5) restates Est
