@@ -16,6 +16,10 @@ const SERVICES = [
 const CATEGORIES = [
   { id: 10, code: 'LAB', name: 'Labor', taxable: false },
   { id: 20, code: 'MAT', name: 'Materials', taxable: true },
+  // The designated fallback (uncategorized) category must never be offered
+  // as an adjustment target — a fallback-stamped line is awaiting its real
+  // category, and correcting it would silently detach the adjustment.
+  { id: 30, code: 'UNC', name: 'Uncategorized', taxable: true, is_fallback: true },
 ];
 
 beforeEach(() => {
@@ -41,6 +45,22 @@ describe('AdjustmentModal', () => {
       },
     });
     expect(queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('omits the fallback category from the target-category checklist', async () => {
+    const { findByRole, queryByText, getByText } = render(AdjustmentModal, {
+      props: {
+        open: true,
+        apiBase: '/api/estimates/7',
+        categories: CATEGORIES,
+        onSaved: vi.fn(),
+        onClose: vi.fn(),
+      },
+    });
+    await findByRole('dialog');
+    getByText(/LAB - Labor/);
+    getByText(/MAT - Materials/);
+    expect(queryByText(/UNC - Uncategorized/)).toBeNull();
   });
 
   it('fetches percentage services and shows them in the picker when open', async () => {

@@ -86,7 +86,11 @@
 
       <p><strong>Target Categories</strong> <em>(leave all unchecked to apply to all)</em></p>
       <div class="category-list">
-        {#each categories as cat}
+        <!-- The fallback (uncategorized) category is never targetable: a line
+             carrying it is awaiting its real category, and correcting the
+             line would silently detach it from the adjustment. Task 6's
+             coexistence warning relies on this invariant. -->
+        {#each categories.filter((c) => !c.is_fallback) as cat}
           <label class="cat-label">
             <input
               type="checkbox"
