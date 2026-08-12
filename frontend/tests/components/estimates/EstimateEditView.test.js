@@ -304,22 +304,6 @@ describe('EstimateEditView', () => {
     expect(queryByText('Bill as its own line')).toBeNull();
   });
 
-  it('offers the next line number as max(line_number)+1, not the line count', async () => {
-    const { findByText, container } = render(EstimateEditView, {
-      props: baseProps({
-        sourcePool: poolWith([AVAILABLE_ATOM]),
-        // Two lines, but the higher line_number is 5 (a gap) — length+1
-        // would wrongly say "line 3".
-        lineItems: [backedLine({ line_number: 1 }), handLine({ line_number: 5 })],
-      }),
-    });
-    await findByText('Sand edges');
-    const checkbox = container.querySelector('input[type="checkbox"]');
-    await fireEvent.click(checkbox);
-    expect(container.textContent).toContain('line 6');
-    expect(container.textContent).not.toContain('line 3');
-  });
-
   it('a 409 on "Add selected here" clears selection, refreshes via onChanged, and shows a clear conflict message', async () => {
     api.post.mockRejectedValueOnce(conflictError());
     const onChanged = vi.fn();

@@ -12,11 +12,10 @@ describe('NewLineFromSelectedRow', () => {
 
   it('renders the doc-newline placeholder row with cta text when visible', () => {
     const { container, getByText } = render(NewLineFromSelectedRow, {
-      props: { visible: true, nextNumber: '6', onCreate: () => {} },
+      props: { visible: true, onCreate: () => {} },
     });
     expect(container.querySelector('tr.doc-newline')).not.toBeNull();
     getByText(/New line from selected/);
-    getByText(/6/);
   });
 
   it('calls onCreate when Create line is clicked', async () => {

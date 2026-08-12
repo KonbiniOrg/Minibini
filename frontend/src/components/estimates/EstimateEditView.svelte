@@ -198,15 +198,6 @@
     return Number(li.qty || 0) * Number(li.price || 0);
   }
 
-  // Next number offered by "New line from selected" — the highest existing
-  // line_number + 1, not the array length (lines can carry gaps in theory,
-  // and this is only ever a hint text, never sent to the server).
-  let nextLineNumber = $derived(
-    lineItems.length > 0
-      ? Math.max(...lineItems.map((li) => li.line_number || 0)) + 1
-      : 1
-  );
-
   // Small provenance caption under the description — where a catalog or
   // adjustment line's price actually comes from. Sourced (planned_work /
   // planned_materials / edited) lines already carry their nested
@@ -300,7 +291,6 @@
     {#if canEdit}
       <NewLineFromSelectedRow
         visible={selected.length > 0}
-        nextNumber={String(nextLineNumber)}
         onCreate={createLineFromSelected}
       />
     {/if}

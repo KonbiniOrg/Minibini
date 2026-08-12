@@ -423,15 +423,6 @@
     return referenced.reduce((sum, li) => sum + Number(li.agreement_ref.est_amount || 0), 0);
   });
 
-  // Next number offered by "New line from selected" — the highest existing
-  // line_number + 1, not the array length (lines can carry gaps in theory,
-  // and this is only ever a hint text, never sent to the server).
-  let nextLineNumber = $derived(
-    lineItems.length > 0
-      ? Math.max(...lineItems.map((li) => li.line_number || 0)) + 1
-      : 1
-  );
-
   // Small provenance caption under the description for an adjustment line —
   // hand/sourced lines already carry their nested AtomChildRows or the
   // Backing chip's est-reference for that.
@@ -534,7 +525,6 @@
     {#if canEdit}
       <NewLineFromSelectedRow
         visible={selected.length > 0}
-        nextNumber={String(nextLineNumber)}
         onCreate={createLineFromSelected}
       />
       {#each removedRefs as entry (entry.kind + ':' + entry.line_id)}

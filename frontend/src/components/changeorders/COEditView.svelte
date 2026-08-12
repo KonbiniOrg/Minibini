@@ -292,13 +292,6 @@
     };
   }
 
-  // Next number offered by "New line from selected" — the highest existing
-  // CO line_number + 1 (a hint only, never sent to the server).
-  let nextLineNumber = $derived(
-    (co.line_items || []).length > 0
-      ? Math.max(...(co.line_items || []).map((li) => li.line_number || 0)) + 1
-      : 1
-  );
 </script>
 
 <h3>Line items</h3>
@@ -450,7 +443,6 @@
     {#if canEdit}
       <NewLineFromSelectedRow
         visible={selected.length > 0}
-        nextNumber={String(nextLineNumber)}
         onCreate={createLineFromSelected}
       />
     {/if}

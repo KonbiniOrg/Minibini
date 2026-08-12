@@ -397,20 +397,6 @@ describe('InvoiceEditView', () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
-  it('offers the next line number as max(line_number)+1, not the line count', async () => {
-    const { findByText, container } = render(InvoiceEditView, {
-      props: baseProps({
-        sourcePool: poolWith([{ task_id: 1, name: 'Task', has_billable_atoms: true, atoms: [AVAILABLE_ATOM] }]),
-        lineItems: [seededLine({ line_number: 1 }), handLine({ line_number: 5 })],
-      }),
-    });
-    await findByText('Sand edges');
-    const checkbox = container.querySelector('input[type="checkbox"]');
-    await fireEvent.click(checkbox);
-    expect(container.textContent).toContain('line 6');
-    expect(container.textContent).not.toContain('line 3');
-  });
-
   it('shows a "needs category" marker on an editable line with no accounting_category', async () => {
     const { findByText } = render(InvoiceEditView, {
       props: baseProps({ lineItems: [handLine({ accounting_category: null })] }),
