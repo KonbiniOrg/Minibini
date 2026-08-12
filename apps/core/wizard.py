@@ -78,6 +78,21 @@ class BaseWizardService:
         return None
 
     @classmethod
+    def _resolve_line_category(cls, category):
+        """Hook: the accounting_category actually stamped onto a freshly
+        minted line item, given the derived `category` (None when the
+        atom(s) carry no category of their own, or a mixed-category
+        bundle collapsed to None by add_atoms_to_new_line_item).
+
+        Base/identity implementation — the estimate and change-order
+        wizards keep producing null-AC lines from null-AC atoms
+        unchanged. InvoiceWizardService overrides this to stamp the
+        configured fallback AccountingCategory (or raise) when category
+        is None, since an invoice line must always be categorized before
+        it can be sent."""
+        return category
+
+    @classmethod
     def _extra_line_kwargs(cls):
         """Extra kwargs to splat into the new line item's constructor,
         beyond the shared description/qty/units/price/accounting_category —
@@ -278,7 +293,7 @@ class BaseWizardService:
                     qty=qty,
                     units=units,
                     price=price,
-                    accounting_category=category,
+                    accounting_category=cls._resolve_line_category(category),
                     **cls._extra_line_kwargs(),
                 )
                 LineItemService.save_line_item(line_item)

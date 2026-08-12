@@ -32,6 +32,62 @@ class InvoiceService:
             )
 
     @staticmethod
+    def resolve_line_category():
+        """The configured fallback AccountingCategory instance, for
+        stamping a line whose deriving atom(s) carry no category of their
+        own — a null-AC Task atom flowing through the invoice wizard, or
+        a seeded/restored agreement line whose source estimate/CO line
+        was never categorized (Phase 3 Task 5).
+
+        Raises ValidationError naming the `fallback_accounting_category`
+        Configuration key when it is unset, blank, or points at an
+        id that no longer resolves to an active AccountingCategory (the
+        category was deleted or deactivated after being configured as the
+        fallback) — treated identically to "unconfigured" rather than a
+        distinct error, since neither case gives the caller a usable
+        category. Mirrors the shape of `_resolve_deposit_category` above.
+        """
+        from apps.core.models import AccountingCategory, Configuration
+        cfg = Configuration.objects.filter(
+            key='fallback_accounting_category').first()
+        pk = (cfg.value or '').strip() if cfg else ''
+        error = ValidationError({'accounting_category': [
+            'This work has no accounting category and no fallback is '
+            'configured. Set the fallback_accounting_category setting '
+            'or categorize the work first.']})
+        if not pk:
+            raise error
+        try:
+            return AccountingCategory.objects.get(pk=pk, is_active=True)
+        except (AccountingCategory.DoesNotExist, ValueError, TypeError):
+            raise error
+
+    @staticmethod
+    def _agreement_category_id(line):
+        """The accounting_category_id to stamp when building an
+        InvoiceLineItem from a compose_agreement line dict — the line's
+        own id, or the configured fallback's when the line (built from a
+        null-AC task atom) carries none. Shared by _build_agreement_line_item
+        (seed_from_agreement + restore_agreement_line) and
+        copy_from_estimate — every InvoiceLineItem construction site that
+        reads `accounting_category_id` straight off a compose_agreement
+        line. Raises resolve_line_category's ValidationError when a
+        fallback is needed but unconfigured/stale.
+
+        Adjustment lines are exempt: a percentage adjustment targets other
+        lines' categories rather than carrying one of its own, so
+        `accounting_category_id` is null by design there (mirrors
+        EstimateService.add_line_item's own AC-required check, which
+        already exempts `adjustment_service_id is not None`) — never
+        stamp a fallback onto it."""
+        if line.get('is_adjustment'):
+            return None
+        category_id = line.get('accounting_category_id')
+        if category_id is not None:
+            return category_id
+        return InvoiceService.resolve_line_category().pk
+
+    @staticmethod
     def _resolve_deposit_category():
         """The configured default deposit AC, or a coaching error."""
         from apps.core.models import AccountingCategory, Configuration
@@ -294,7 +350,7 @@ class InvoiceService:
                     qty=line['qty'],
                     price=line['price'],
                     units=line['units'],
-                    accounting_category_id=line.get('accounting_category_id'),
+                    accounting_category_id=InvoiceService._agreement_category_id(line),
                 )
                 if line.get('is_adjustment') and line.get('adjustment_service_id'):
                     li.adjustment_service_id = line['adjustment_service_id']
@@ -529,7 +585,7 @@ class InvoiceService:
             qty=line['qty'],
             price=line['price'],
             units=line['units'],
-            accounting_category_id=line.get('accounting_category_id'),
+            accounting_category_id=InvoiceService._agreement_category_id(line),
             agreement_estimate_line_id=line['estimate_line_id'],
             agreement_co_line_id=line['co_line_id'],
         )
@@ -1319,6 +1375,17 @@ class InvoiceWizardService(BaseWizardService):
     def _validate_draft(cls, container):
         if container.status != Invoice.STATUS_DRAFT:
             raise ValidationError('Can only modify draft invoices.')
+
+    @classmethod
+    def _resolve_line_category(cls, category):
+        """Invoice override of BaseWizardService's identity hook: a null
+        `category` (single null-AC task atom, or a mixed-category bundle
+        collapsed to None) stamps the configured fallback
+        AccountingCategory instead of leaving the line uncategorized —
+        raises if none is configured (InvoiceService.resolve_line_category)."""
+        if category is not None:
+            return category
+        return InvoiceService.resolve_line_category()
 
     @classmethod
     def _assert_atom_billable(cls, instance):

@@ -200,6 +200,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
     agreement_ref = serializers.SerializerMethodField()
     backing = serializers.SerializerMethodField()
     actuals_total = serializers.SerializerMethodField()
+    used_fallback_ac = serializers.SerializerMethodField()
 
     class Meta:
         model = InvoiceLineItem
@@ -210,7 +211,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
                         'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail',
             'sources', 'is_deposit',
-            'agreement_ref', 'backing', 'actuals_total',
+            'agreement_ref', 'backing', 'actuals_total', 'used_fallback_ac',
         ]
         read_only_fields = ['line_item_id']
 
@@ -251,6 +252,26 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
         if not found:
             return None
         return str(total.quantize(Decimal('0.01')))
+
+    def get_used_fallback_ac(self, obj):
+        """True iff a fallback AC is configured AND this line's
+        accounting_category is that exact category (Phase 3 Task 5) —
+        one Configuration read per serialization pass, not per line.
+        Mirrors AccountingCategorySerializer.get_is_fallback
+        (apps/api/templates_config/serializers.py, commit de071827):
+        reads the fallback pk from `self.context['fallback_category_id']`
+        when the view populated it (InvoiceViewSet.get_serializer_context
+        / the direct-instantiation call sites that pass context
+        explicitly), falling back to a direct (still single-query, just
+        not request-memoized) lookup for any caller that doesn't."""
+        if 'fallback_category_id' in self.context:
+            fallback_id = self.context['fallback_category_id']
+        else:
+            from apps.api.templates_config.serializers import (
+                _resolve_fallback_category_id,
+            )
+            fallback_id = _resolve_fallback_category_id()
+        return fallback_id is not None and obj.accounting_category_id == fallback_id
 
     def get_adjustment_service_detail(self, obj):
         if obj.adjustment_service_id is None:

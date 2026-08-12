@@ -202,7 +202,8 @@ class LineItemMixin:
         parent = self.get_object()
         if request.method == 'GET':
             items = self._get_line_items_qs(parent)
-            serializer = self.line_item_serializer_class(items, many=True)
+            serializer = self.line_item_serializer_class(
+                items, many=True, context=self.get_serializer_context())
             return Response(serializer.data)
 
         service = self.line_item_service_class
@@ -222,7 +223,8 @@ class LineItemMixin:
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = self.line_item_serializer_class(item)
+        serializer = self.line_item_serializer_class(
+            item, context=self.get_serializer_context())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['patch', 'delete'],
@@ -249,7 +251,8 @@ class LineItemMixin:
                 {'detail': 'Not found.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        serializer = self.line_item_serializer_class(item)
+        serializer = self.line_item_serializer_class(
+            item, context=self.get_serializer_context())
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'],
@@ -271,7 +274,8 @@ class LineItemMixin:
                 status=status.HTTP_404_NOT_FOUND,
             )
         items = self._get_line_items_qs(parent)
-        serializer = self.line_item_serializer_class(items, many=True)
+        serializer = self.line_item_serializer_class(
+            items, many=True, context=self.get_serializer_context())
         return Response(serializer.data)
 
     def _get_line_items_qs(self, parent):

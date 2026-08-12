@@ -84,6 +84,25 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             return InvoiceSummarySerializer
         return InvoiceSerializer
 
+    def get_serializer_context(self):
+        # Resolved once per request (memoized on the view instance) and
+        # handed down to every InvoiceLineItemSerializer row via context
+        # (nested `line_items` field inherits the root serializer's
+        # context automatically) — mirrors AccountingCategoryViewSet's
+        # is_fallback wiring (apps/api/templates_config/views.py,
+        # commit de071827). used_fallback_ac reads this key.
+        context = super().get_serializer_context()
+        context['fallback_category_id'] = self._fallback_category_id()
+        return context
+
+    def _fallback_category_id(self):
+        if not hasattr(self, '_cached_fallback_category_id'):
+            from apps.api.templates_config.serializers import (
+                _resolve_fallback_category_id,
+            )
+            self._cached_fallback_category_id = _resolve_fallback_category_id()
+        return self._cached_fallback_category_id
+
     def get_queryset(self):
         qs = super().get_queryset()
         job = self.request.query_params.get('job')
@@ -200,7 +219,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         except NotFoundError as e:
             return Response({'detail': str(e)},
                             status=status.HTTP_404_NOT_FOUND)
-        serializer = InvoiceLineItemSerializer(line_item)
+        serializer = InvoiceLineItemSerializer(
+            line_item, context=self.get_serializer_context())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='line-items-from-atoms')
@@ -217,7 +237,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
                  'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
                 status=409,
             )
-        serializer = InvoiceLineItemSerializer(line_item)
+        serializer = InvoiceLineItemSerializer(
+            line_item, context=self.get_serializer_context())
         return Response(serializer.data, status=201)
 
     @action(
@@ -246,7 +267,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             )
 
         line_item.refresh_from_db()
-        serializer = InvoiceLineItemSerializer(line_item)
+        serializer = InvoiceLineItemSerializer(
+            line_item, context=self.get_serializer_context())
         return Response(serializer.data, status=200)
 
     @action(
@@ -275,7 +297,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         line_item.refresh_from_db()
         return Response({
             'line_item_deleted': False,
-            'line_item': InvoiceLineItemSerializer(line_item).data,
+            'line_item': InvoiceLineItemSerializer(
+                line_item, context=self.get_serializer_context()).data,
         })
 
     @action(detail=True, methods=['post'], url_path='apply-everything')
@@ -323,7 +346,10 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             adjustment_service_id=request.data['adjustment_service'],
             target_category_ids=request.data.get('target_category_ids') or [],
         )
-        return Response(InvoiceLineItemSerializer(line).data, status=status.HTTP_201_CREATED)
+        return Response(
+            InvoiceLineItemSerializer(line, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=['get'], url_path='agreement-adjustments')
     def agreement_adjustments(self, request, pk=None):
@@ -375,7 +401,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             estimate_line_id=request.data.get('estimate_line_id'),
             co_line_id=request.data.get('co_line_id'),
         )
-        serializer = InvoiceLineItemSerializer(line)
+        serializer = InvoiceLineItemSerializer(
+            line, context=self.get_serializer_context())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'], url_path='send-defaults')

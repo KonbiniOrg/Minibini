@@ -318,6 +318,16 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.user = User.objects.create_user(username='aatn_user', password='pw')
         self.cat_labor = AccountingCategory.objects.create(code='LBR', name='Labor', is_active=True)
         self.cat_materials = AccountingCategory.objects.create(code='MAT', name='Materials', is_active=True)
+        # A mixed-category bundle (task + material, different categories)
+        # collapses to category=None in the wizard's own bundling logic;
+        # on the invoice side that now stamps the configured fallback
+        # (Phase 3 Task 5) rather than leaving the line uncategorized —
+        # several tests below build exactly such a bundle to exercise
+        # qty/units/price behavior, unrelated to categorization itself.
+        self.cat_fallback = AccountingCategory.objects.create(
+            code='FALLBACK', name='Fallback', is_active=True)
+        Configuration.objects.create(
+            key='fallback_accounting_category', value=str(self.cat_fallback.pk))
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
@@ -524,13 +534,31 @@ class AddAtomsToNewLineItemTest(TestCase):
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
         self.assertEqual(line_item.accounting_category, self.cat_labor)
 
-    def test_category_null_when_atoms_mixed(self):
+    def test_category_stamps_fallback_when_atoms_mixed(self):
+        # The wizard's own bundling logic still collapses a mixed-category
+        # bundle to category=None; on the INVOICE side (unlike estimate/CO)
+        # _resolve_line_category then stamps the configured fallback AC
+        # (set up class-wide above) rather than leaving the line
+        # uncategorized (Phase 3 Task 5).
         atoms = [
             {'type': 'task', 'id': self.task.pk},         # labor
             {'type': 'material', 'id': self.material.pk}, # materials
         ]
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
-        self.assertIsNone(line_item.accounting_category)
+        self.assertEqual(line_item.accounting_category, self.cat_fallback)
+
+    def test_mixed_atoms_no_fallback_configured_raises(self):
+        # Same mixed bundle, but with the class-wide fallback Configuration
+        # row removed — the invoice wizard must raise rather than silently
+        # persist a null-AC line.
+        Configuration.objects.filter(key='fallback_accounting_category').delete()
+        atoms = [
+            {'type': 'task', 'id': self.task.pk},         # labor
+            {'type': 'material', 'id': self.material.pk}, # materials
+        ]
+        with self.assertRaises(ValidationError) as ctx:
+            InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertIn('fallback_accounting_category', str(ctx.exception))
 
     def test_concurrent_claim_raises_claim_conflict(self):
         # Pre-claim the task atom via another line item

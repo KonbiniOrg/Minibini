@@ -34,6 +34,13 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         AppState.objects.create(key='invoice_counter', value='0')
         self.cat = AccountingCategory.objects.create(code='LBR', name='Labor')
         self.cat_mat = AccountingCategory.objects.create(code='MAT', name='Materials')
+        # test_bundle_with_material_falls_back mixes cat/cat_mat, which the
+        # wizard's own bundling logic collapses to category=None; on the
+        # invoice side that now stamps the configured fallback AC (Phase 3
+        # Task 5) rather than leaving the line uncategorized.
+        self.cat_fallback = AccountingCategory.objects.create(code='FBK', name='Fallback')
+        Configuration.objects.create(
+            key='fallback_accounting_category', value=str(self.cat_fallback.pk))
         self.contact = Contact.objects.create(
             first_name='J', last_name='D', email='j@d.com',
         )
