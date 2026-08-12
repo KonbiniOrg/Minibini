@@ -425,18 +425,21 @@ class QBOInvoiceSyncService:
     def _resolve_item_ref(line_item, client):
         """QBO Item id for this line, or None to omit ItemRef.
 
-        Raises ValidationError (via `_require_line_category`) if the line
-        carries no catalog entity to mint/adopt an Item from *and* has no
-        accounting_category of its own to fall back to — see
-        `_require_line_category` for why this line should be unreachable
-        via normal authoring flows and why the guard exists anyway.
+        Raises ValidationError (via `_require_line_category`) when the line
+        has no accounting_category — checked FIRST, before the catalog-entity
+        mint, so this resolver stays self-contained for any caller: even a
+        line whose ItemRef could come from a catalog entity still needs its
+        AC downstream (TaxCodeRef), and minting an Item before surfacing the
+        missing AC would be a wasted QBO side effect. See
+        `_require_line_category` for why this should be unreachable via
+        normal authoring flows and why the guard exists anyway.
         """
+        QBOInvoiceSyncService._require_line_category(line_item)
         entity = QBOInvoiceSyncService._catalog_entity_for_line(line_item)
         if entity is not None:
             qbo_id = QBOItemMintService.ensure_item(entity, client)
             if qbo_id:
                 return qbo_id
-        QBOInvoiceSyncService._require_line_category(line_item)
         category = line_item.accounting_category
         if category.qbo_item_id:
             return category.qbo_item_id
