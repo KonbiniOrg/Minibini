@@ -341,14 +341,14 @@ class JobTaskMixin:
 
         from apps.jobs.services import TaskService
         from apps.jobs.models import RateScheme, SchemeInactiveError
-        # Gate money-field writes on what the client actually sent — capture
-        # BEFORE prefill_accounting_category may inject a key of its own
-        # (task-owned-money Phase 1: stamp-only creation shouldn't need to
-        # name accounting_category to pass the serializer's required=True).
+        # Gate money-field writes on what the client actually sent (Phase 3:
+        # accounting_category is optional on the serializer now, so a
+        # stamp-only POST naming only `rate_scheme` needs no pre-fill to
+        # pass validation — Task.stamp_from_scheme fills the task's real AC
+        # from the chosen preset server-side, after this validates).
         raw_keys = set(request.data.keys())
-        data = self.task_serializer_class.prefill_accounting_category(request.data)
         serializer = self.task_serializer_class(
-            data=data,
+            data=request.data,
             context={**self.get_serializer_context(), 'job': job, 'raw_input_keys': raw_keys},
         )
         serializer.is_valid(raise_exception=True)

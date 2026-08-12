@@ -36,7 +36,6 @@ Per-model field checks:
                    E  valid status value
                    E  valid qty_source value
                    E  negative rate
-                   E  missing accounting_category
                    E  active_modifiers must be a list of {key, percent} dicts
   Material         E  must have description or inventory_item
                    E  negative quantity
@@ -323,7 +322,9 @@ class Command(BaseCommand):
         # unit_label, accounting_category, active_modifiers are the task's
         # own fields, not read through source_scheme (provenance only — a
         # null source_scheme from SET_NULL preset deletion is legal, no
-        # check needed).
+        # check needed). A null accounting_category is ALSO legal (Phase 3):
+        # a task may go uncategorized until invoicing, where the configured
+        # fallback AC stamps the invoice line — no check needed here either.
         for t in Task.objects.select_related('job').all():
             if not t.job_id:
                 self.errors.append(f'Task {t.pk} ({t.name}): not attached to a Job')
@@ -333,8 +334,6 @@ class Command(BaseCommand):
                 self.errors.append(f'Task {t.pk} ({t.name}): invalid qty_source "{t.qty_source}"')
             if t.rate is not None and t.rate < 0:
                 self.errors.append(f'Task {t.pk} ({t.name}): negative rate {t.rate}')
-            if not t.accounting_category_id:
-                self.errors.append(f'Task {t.pk} ({t.name}): missing accounting_category')
             self._check_task_active_modifiers_shape(t)
         # parent_task is DORMANT (better-fees spec §3; flattened by
         # jobs/0061): the field survives in the schema but no code may

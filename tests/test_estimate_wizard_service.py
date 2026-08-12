@@ -247,6 +247,32 @@ class AddAtomsToNewLineItemTest(TestCase):
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertIsNone(li.accounting_category)
 
+    def test_single_null_category_task_atom_line_is_null_and_serializes(self):
+        """Phase 3 Task 4: a task's own accounting_category can now be null
+        (cleared via PATCH — see TaskSerializer). A line composed from a
+        single such atom must land with a null accounting_category too
+        (_atom_category returns None, `categories = {None}` collapses to
+        `category = None`, same code path as today's mixed-category case —
+        no new branch needed), and neither the estimate-line serializer nor
+        `derive_estimate_backing` may crash rendering it — the estimate/CO
+        side must simply tolerate a null-AC line (Task 5 owns invoice-side
+        fallback stamping, out of scope here)."""
+        self.pt.accounting_category = None
+        self.pt.save()
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertIsNone(li.accounting_category)
+
+        from apps.api.estimates.serializers import (
+            EstimateLineItemSerializer, derive_estimate_backing,
+        )
+        data = EstimateLineItemSerializer(li).data
+        self.assertIsNone(data['accounting_category'])
+        # In-sync single-task-atom line -> 'planned_work', same
+        # classification a categorized task's line would get; nulling the
+        # AC doesn't change the backing classification.
+        self.assertEqual(derive_estimate_backing(li), 'planned_work')
+
     def test_double_claim_raises(self):
         atoms = [{'type': 'task', 'id': self.pt.pk}]
         EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)

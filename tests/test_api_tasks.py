@@ -430,6 +430,49 @@ class TaskMoneyPermissionTest(TestCase):
         self.task.refresh_from_db()
         self.assertEqual(self.task.rate, self.scheme.rate)
 
+    # --- Phase 3: accounting_category is optional end-to-end ---
+
+    def test_manager_can_clear_task_accounting_category_via_patch(self):
+        """PATCHing accounting_category=null clears it — the task goes
+        uncategorized until invoicing (Task 5 stamps the fallback AC onto
+        the invoice line then; this task stays null)."""
+        self.client.force_login(self.manager)
+        resp = self.client.patch(
+            self._task_detail_url(), data={'accounting_category': None},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertIsNone(resp.json()['accounting_category'])
+        self.task.refresh_from_db()
+        self.assertIsNone(self.task.accounting_category_id)
+
+    def test_worker_patch_with_null_accounting_category_still_403s(self):
+        """The MONEY_FIELDS gate is on the raw key's mere PRESENCE, not its
+        truthiness — a worker sending accounting_category=None must be
+        rejected exactly like sending a real pk, not waved through because
+        the value happens to be null."""
+        self.client.force_login(self.worker)
+        resp = self.client.patch(
+            self._task_detail_url(), data={'accounting_category': None},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 403, resp.content)
+
+    def test_create_with_explicit_null_accounting_category_no_longer_400s(self):
+        """Before Phase 3, accounting_category was required=True — an
+        explicit null in the create payload would 400 ("may not be null").
+        It's required=False/allow_null=True now: the explicit null is
+        accepted, and then overwritten by the stamp path regardless (same
+        as an omitted key — Task.stamp_from_scheme always runs after a
+        rate_scheme-driven create)."""
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Explicit Null AC', 'rate_scheme': self.scheme.pk,
+            'accounting_category': None,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()['accounting_category'], self.ac.pk)
+
     # --- Unauthenticated ---
     #
     # DRF coerces NotAuthenticated (401) to 403 whenever no configured

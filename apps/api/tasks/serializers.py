@@ -167,12 +167,18 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         queryset=RateScheme.objects.all(), write_only=True,
         required=False, allow_null=True,
     )
-    # Nullable on the model (Phase 3 relaxes further); the API tightens to
-    # required so every task gets a real AC — satisfied for stamp-only
-    # creation by the view pre-filling it from the chosen preset (the same
-    # value stamp_from_scheme would set) before validation runs.
+    # Nullable on the model AND, as of Phase 3, on the API: a task may
+    # legitimately carry no accounting category (categorized later, at
+    # invoicing — Task 5 stamps the configured fallback AC onto any invoice
+    # line still uncategorized when authored). CREATE still gets a real AC
+    # in the overwhelming common case via the stamp path (rate_scheme pick
+    # -> Task.stamp_from_scheme copies the preset's own accounting_category
+    # onto the task) — that path is unchanged by this relaxation. UPDATE can
+    # now explicitly clear it (PATCH accounting_category=null), which is how
+    # a task actually ends up with a null AC in practice, since create
+    # always goes through the stamp.
     accounting_category = serializers.PrimaryKeyRelatedField(
-        queryset=AccountingCategory.objects.all(), required=True,
+        queryset=AccountingCategory.objects.all(), required=False, allow_null=True,
     )
     # Provenance pointer. CREATE: set exclusively via stamp_from_scheme
     # (triggered by `rate_scheme`) — never client-settable on create, see
@@ -340,11 +346,12 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
 
     def validate(self, attrs):
         # Gate on the RAW keys the client actually sent — not
-        # `validated_data`, which the view may have pre-filled (see
-        # `prefill_accounting_category`) with a value the client never
-        # supplied. `raw_input_keys` (view-supplied context) reflects the
-        # original request body; fall back to initial_data for callers that
-        # don't provide it.
+        # `validated_data` — so a stamp-only creation (no `accounting_category`
+        # key at all; Task.stamp_from_scheme fills it server-side after
+        # validation) never trips the money-field gate just because the
+        # field is present in `attrs`. `raw_input_keys` (view-supplied
+        # context) reflects the original request body; fall back to
+        # initial_data for callers that don't provide it.
         raw_keys = self.context.get('raw_input_keys')
         if raw_keys is None:
             raw_keys = set(getattr(self, 'initial_data', {}) or {})
@@ -355,27 +362,6 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
                 + ', '.join(sorted(money_keys)) + '.'
             )
         return attrs
-
-    @staticmethod
-    def prefill_accounting_category(data):
-        """CREATE convenience: a stamp-only `rate_scheme` POST doesn't (and
-        for a worker, may not) include `accounting_category` directly, but
-        the field is `required=True` on this serializer. Since stamping
-        (`Task.stamp_from_scheme`) is about to copy the preset's own
-        accounting_category onto the task anyway, pre-fill it here so
-        required-field validation sees the value it's about to get. A
-        missing/invalid `rate_scheme` id is left alone — `rate_scheme`'s own
-        field validation (or `accounting_category` staying absent) renders
-        the real error downstream. Returns a new mapping; never mutates
-        `data` in place."""
-        if 'accounting_category' in data or not data.get('rate_scheme'):
-            return data
-        scheme = RateScheme.objects.filter(pk=data.get('rate_scheme')).first()
-        if scheme is None or scheme.accounting_category_id is None:
-            return data
-        filled = dict(data)
-        filled['accounting_category'] = scheme.accounting_category_id
-        return filled
 
     def get_can_write_money(self, obj):
         return self._can_write_money(job=obj.job)

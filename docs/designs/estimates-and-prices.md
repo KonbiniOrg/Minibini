@@ -511,7 +511,7 @@ in `docs/designs/jobs-and-tasks.md` §4.4. Recap of the billing fields:
 | `qty_source` | own field | `'elapsed_time'` / `'entered_qty'` (`Task.QTY_ELAPSED` / `QTY_ENTERED`); copied from `scheme.algorithm` at stamp time. Never `'percentage'` — percentage schemes can't stamp a task. |
 | `rate` | own field | Decimal, nullable. `effective_rate()` returns `0.00` when `None` (e.g. a task cloned or built without a scheme). |
 | `unit_label` | own field | CharField, default `'none'` |
-| `accounting_category` | own field | FK → `AccountingCategory` (PROTECT), nullable at the DB level but required by the API serializer (§10) |
+| `accounting_category` | own field | FK → `AccountingCategory` (PROTECT), nullable at the DB level and, as of Phase 3, on the API serializer too (§10) — a task may go uncategorized until invoicing |
 | `active_modifiers` | own field | JSON list of `{key, label, percent}` **snapshot** dicts — resolved at stamp time, not live scheme keys (§2.3) |
 | `source_scheme` | own field | FK → `RateScheme` (`SET_NULL`, `related_name='stamped_tasks'`) — **provenance only**, never read for money math |
 | `est_qty` | inherited from `TaskBase` | nullable on Task |
@@ -1356,17 +1356,19 @@ receiver-by-receiver behavior.
 
 `AccountingCategory` (`apps/core/models.py`) is required on
 `RateScheme` (NOT NULL). `Task` carries its **own** `accounting_category`
-(stamped from the preset at creation, then permanent — nullable at the
-DB level, but required by the API serializer, §4). `ServiceItem` still
-reads AC live off its `RateScheme` FK. Every other billable concept
-carries AC directly (Materials with no PLI; Expenses).
+(stamped from the preset at creation, but editable afterward — nullable
+at the DB level and, as of Phase 3, on the API serializer too, §4: a
+task may be cleared back to uncategorized and categorized later, at
+invoicing). `ServiceItem` still reads AC live off its `RateScheme` FK.
+Every other billable concept carries AC directly (Materials with no
+PLI; Expenses).
 
 ### 10.1 Where AC comes from
 
 | Object | AC source |
 |---|---|
 | `RateScheme` | own field, required |
-| `Task` | own field — stamped from `scheme.accounting_category` by `Task.stamp_from_scheme` at creation (§3.1); `Task.effective_accounting_category` returns it directly, no FK traversal. Nullable at the DB level; the API's `TaskSerializer` makes it `required=True`, pre-filled from the picked preset for stamp-only creation. |
+| `Task` | own field — stamped from `scheme.accounting_category` by `Task.stamp_from_scheme` at creation (§3.1); `Task.effective_accounting_category` returns it directly, no FK traversal. Nullable at the DB level and, as of Phase 3, on the API's `TaskSerializer` too (`required=False, allow_null=True`) — creation still fills it via the stamp in the overwhelming common case, but an edit may explicitly clear it back to null (categorized later, at invoicing). |
 | `ServiceItem` | `template.rate_scheme.accounting_category` (via `ServiceItem.effective_accounting_category`) — still a live FK read; ServiceItem doesn't stamp |
 | `Material` (PLI-linked) | `material.inventory_item.accounting_category` (copy/derivation; materials doc owns this) |
 | `Material` (freeform) | direct on the material |

@@ -720,11 +720,14 @@ Valid transitions:
 - **unit_label**: CharField(50), default `'none'`. Copied from
   `scheme.unit_label` at stamp time.
 - **accounting_category**: FK → AccountingCategory (PROTECT). **Nullable
-  at the DB level** (migration constraint), but `validate_data.py` flags
-  any Task missing it as an error, and the API's `TaskSerializer` makes
-  it `required=True` for every create/update — the DB-level nullability
-  exists only so historical/backfilled rows can't violate a hard
-  constraint, not because a null AC is ever legitimate going forward.
+  at the DB level and, as of Phase 3, on the API too** —
+  `TaskSerializer` is `required=False, allow_null=True`, and
+  `validate_data.py` no longer flags a missing value. Creation still
+  fills it via the stamp path (`Task.stamp_from_scheme` copies
+  `scheme.accounting_category`) in the overwhelming common case, but a
+  manager/PM/financials caller may PATCH it back to null — a legitimately
+  uncategorized task, resolved later at invoicing via the configured
+  fallback AC (`estimates-and-prices.md` §10, `quickbooks-integration.md`).
 - **active_modifiers**: JSON list of `{key, label, percent}` **snapshot**
   dicts — resolved from the preset's `modifiers` at stamp time, always a
   list of dicts (never bare keys, never a dict itself — see RateScheme

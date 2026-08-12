@@ -18,7 +18,7 @@ import TaskDetailPage from '@/routes/jobs/TaskDetailPage.svelte';
 // gates its edit-task / assign affordances on task.can_manage alone (not the
 // global atom). These tests set the global atom to false (worker) to prove the
 // per-object flag is what drives the affordances.
-function mockApi(taskOverrides = {}) {
+function mockApi(taskOverrides = {}, categories = []) {
   const task = {
     task_id: 7, name: 'Mill', status: 'pending', job: { id: 3 },
     assignee_name: null, est_qty: '2', effective_rate: '25', unit_label: 'hr',
@@ -33,7 +33,7 @@ function mockApi(taskOverrides = {}) {
     }
     if (url.startsWith('/api/jobs/3/')) return Promise.resolve({ job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress' });
     if (url.startsWith('/api/bleps/')) return Promise.resolve([]);
-    if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
+    if (url.startsWith('/api/accounting-categories/')) return Promise.resolve(categories);
     if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
     if (url.startsWith('/api/contacts/')) return Promise.resolve({});
     return Promise.resolve([]);
@@ -234,6 +234,32 @@ describe('TaskDetailPage stat chips', () => {
     expect(queryByText('Est Qty')).toBeNull();
     expect(queryByText('Scheme')).toBeNull();
     expect(container.querySelectorAll('.stat-chip.money')).toHaveLength(0);
+  });
+
+  // Phase 3 Task 4: a task's own accounting_category can be null.
+  it('shows the accounting category name in a Category chip', async () => {
+    mockApi(
+      { accounting_category: 3 },
+      [{ id: 3, code: 'LAB', name: 'Labor' }, { id: 4, code: 'MAT', name: 'Materials' }],
+    );
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByText('Category')).toBeInTheDocument();
+    await waitFor(() => expect(getByText('LAB — Labor')).toBeInTheDocument());
+  });
+
+  it('renders a muted "uncategorized" Category chip, not blank, when the task has no accounting category', async () => {
+    mockApi(
+      { accounting_category: null },
+      [{ id: 3, code: 'LAB', name: 'Labor' }],
+    );
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const header = getByText('Category');
+    const chip = header.closest('.stat-chip');
+    const body = chip.querySelector('.stat-chip-body');
+    expect(body).toHaveTextContent('uncategorized');
+    expect(body.querySelector('.muted')).not.toBeNull();
   });
 
   it('opens the assign modal from the assignee name when can_manage', async () => {

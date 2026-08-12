@@ -247,14 +247,16 @@ class ValidateDataTaskMoneyTest(TestCase):
 
     # ── accounting_category ────────────────────────────────────
 
-    def test_missing_accounting_category_on_task_is_flagged(self):
+    def test_null_accounting_category_on_task_not_flagged(self):
+        """Phase 3: a task's accounting_category is legitimately nullable —
+        categorized later, at invoicing, via the fallback AC. No longer an
+        error condition."""
         sp = self._make_sp(name='Sp-ac')
         job = self._make_job('J-VDT-012')
         task = self._make_task(job, sp, name='No-AC task')
         Task.objects.filter(pk=task.pk).update(accounting_category=None)
         output = self._run()
-        self.assertIn('missing accounting_category', output)
-        self.assertIn('No-AC task', output)
+        self.assertNotIn('missing accounting_category', output)
 
     def test_present_accounting_category_not_flagged(self):
         sp = self._make_sp(name='Sp-ac-ok')

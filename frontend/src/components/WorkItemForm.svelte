@@ -323,7 +323,9 @@
   );
 
   function categoryLabel(id) {
-    if (id == null || id === '') return '—';
+    // Phase 3: a task's own AC can legitimately be null — "uncategorized"
+    // reads as intentional (resolved at invoicing), not blank/missing data.
+    if (id == null || id === '') return 'uncategorized';
     const cat = categories.find((c) => String(c.id) === String(id));
     return cat ? `${cat.code} — ${cat.name}` : `#${id}`;
   }
@@ -400,7 +402,12 @@
         if (effectiveCanWriteMoney) {
           editPayload.rate = editRate;
           editPayload.unit_label = editUnitLabel;
-          editPayload.accounting_category = editAccountingCategory;
+          // '' is the select's explicit "none" option (Phase 3: a task's own
+          // accounting_category is nullable, categorized later at
+          // invoicing) — it must round-trip as JSON null, not the empty
+          // string. A bare '' would fail PrimaryKeyRelatedField's pk lookup
+          // server-side instead of clearing the field.
+          editPayload.accounting_category = editAccountingCategory === '' ? null : editAccountingCategory;
           // Only touch active_modifiers when we actually have the selected
           // preset's modifier definitions to resolve checked keys into
           // {key, label, percent} snapshots (the model field's real shape on
@@ -608,7 +615,11 @@
             <p>
               <label><strong>Accounting Category</strong><br>
                 <select bind:value={editAccountingCategory}>
-                  <option value="">-- select --</option>
+                  <!-- Phase 3: a task's own AC is nullable — this is a real,
+                       selectable "leave uncategorized" choice, not a
+                       disabled placeholder (the invoice-side fallback AC
+                       stamps a real category on at invoicing time). -->
+                  <option value="">— none (categorize at invoicing) —</option>
                   {#each categories.filter((c) => !c.is_fallback) as cat (cat.id)}
                     <option value={cat.id}>{cat.code} — {cat.name}</option>
                   {/each}

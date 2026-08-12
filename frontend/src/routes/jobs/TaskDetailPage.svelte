@@ -258,6 +258,17 @@
     return names.length > 0 ? `Modifiers: ${names.join(', ')}` : '';
   });
 
+  // Phase 3: a task's own accounting_category can be null (categorized
+  // later, at invoicing, via the configured fallback AC) — name-lookup
+  // against the already-loaded (unfiltered) `categories` list, same
+  // convention as WorkItemForm's categoryLabel. null renders as a muted
+  // "uncategorized" rather than blank, so it reads as an intentional state.
+  const taskCategoryName = $derived.by(() => {
+    if (task?.accounting_category == null) return null;
+    const cat = categories.find((c) => c.id === task.accounting_category);
+    return cat ? `${cat.code} — ${cat.name}` : `#${task.accounting_category}`;
+  });
+
   // Material modal handlers
   function openAddMaterial() {
     matModalMaterial = null;
@@ -367,6 +378,12 @@
             <div class="stat-chip-body" title={modifiersTooltip}>{task.source_scheme_name || '—'}</div>
           </div>
         {/if}
+        <div class="stat-chip">
+          <div class="stat-chip-header">Category</div>
+          <div class="stat-chip-body">
+            <span class:muted={!taskCategoryName}>{taskCategoryName || 'uncategorized'}</span>
+          </div>
+        </div>
         {#if task.rate != null && task.effective_rate}
           <div class="stat-chip money">
             <div class="stat-chip-header">Rate</div>

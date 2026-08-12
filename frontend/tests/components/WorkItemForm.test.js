@@ -626,6 +626,67 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
     }));
   });
 
+  // Phase 3 Task 4: a task's own accounting_category is now nullable —
+  // "categorize at invoicing" instead of forcing a pick.
+  describe('nullable accounting_category (Phase 3)', () => {
+    it('the category select offers an explicit "none" option labeled exactly "— none (categorize at invoicing) —"', async () => {
+      mockGet({ schemes: [MOD_SCHEME] });
+      const { findByLabelText } = render(WorkItemForm, {
+        props: {
+          open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+          item: STAMPED_ITEM, categories: CATEGORIES,
+        },
+      });
+      const select = await findByLabelText(/Accounting Category/);
+      const noneOption = select.querySelector('option[value=""]');
+      expect(noneOption).not.toBeNull();
+      expect(noneOption.textContent).toBe('— none (categorize at invoicing) —');
+    });
+
+    it('a task with a null accounting_category opens with the "none" option selected', async () => {
+      mockGet({ schemes: [MOD_SCHEME] });
+      const nullAcItem = { ...STAMPED_ITEM, accounting_category: null };
+      const { findByLabelText } = render(WorkItemForm, {
+        props: {
+          open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+          item: nullAcItem, categories: CATEGORIES,
+        },
+      });
+      const select = await findByLabelText(/Accounting Category/);
+      expect(select).toHaveValue('');
+    });
+
+    it('picking "none" and saving PATCHes accounting_category as null, not an empty string', async () => {
+      mockGet({ schemes: [MOD_SCHEME] });
+      const { findByLabelText, getByRole } = render(WorkItemForm, {
+        props: {
+          open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+          item: STAMPED_ITEM, categories: CATEGORIES,
+        },
+      });
+      const select = await findByLabelText(/Accounting Category/);
+      expect(select).toHaveValue('3'); // starts on the task's stamped category
+      await fireEvent.change(select, { target: { value: '' } });
+      await fireEvent.click(getByRole('button', { name: 'Save' }));
+      const call = api.patch.mock.calls.find((c) => c[0] === '/api/jobs/5/tasks/42/');
+      expect(call[1].accounting_category).toBeNull();
+    });
+
+    it('a non-money-writer sees "uncategorized" (not blank) for a null-AC task', async () => {
+      mockGet({ schemes: [MOD_SCHEME] });
+      const nullAcWorkerItem = {
+        ...STAMPED_ITEM, accounting_category: null, can_manage: false, can_write_money: false,
+      };
+      const { findByText } = render(WorkItemForm, {
+        props: {
+          open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
+          item: nullAcWorkerItem, categories: CATEGORIES,
+        },
+      });
+      expect(await findByText(/uncategorized/)).toBeInTheDocument();
+    });
+  });
+
   it('a financials-only caller (item.can_manage=false, item.can_write_money=true) still gets editable, non-greyed rate/unit/category inputs — RM browser-testing note 6', async () => {
     // The exact bug this note fixed: can_manage (can_manage_jobs atom or
     // PM) is false for a financials-only caller, but the server's actual

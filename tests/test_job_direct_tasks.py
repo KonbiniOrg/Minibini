@@ -218,8 +218,8 @@ class DirectTaskCreateAPITest(TestCase):
     def test_post_raw_int_est_worker_time_on_hour_scheme_returns_400_not_500(self):
         """Task-owned money (Phase 1, Task 8): POST /api/jobs/{id}/tasks/
         now validates through TaskSerializer before TaskService.create_direct
-        ever sees the data (money-field permission gating and the
-        required accounting_category live there) — a raw JSON int for
+        ever sees the data (money-field permission gating lives there) —
+        a raw JSON int for
         est_worker_time is no longer hand-extracted from request.data; it
         goes through DRF's own DurationField, which parses a bare number as
         whole seconds (Django's parse_duration matches a lone integer as the

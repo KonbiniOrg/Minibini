@@ -383,9 +383,8 @@ if the client actually tries to touch money. `TaskSerializer`
 Phase 1, Task 8): `MONEY_FIELDS = {'rate', 'unit_label', 'qty_source',
 'accounting_category', 'active_modifiers'}`. `validate()` checks the
 **raw keys the client actually sent** (`raw_input_keys` — the original
-request body, not `validated_data`, which the view may have pre-filled
-with a value the client never supplied — e.g. `prefill_accounting_category`)
-against `MONEY_FIELDS`; if the intersection is non-empty, it re-checks
+request body, not `validated_data`) against `MONEY_FIELDS`; if the
+intersection is non-empty, it re-checks
 `can_manage_financials` or `JobService.user_can_manage(user, job)` and
 raises DRF `PermissionDenied` if neither holds. **Presence, not value,
 triggers the gate** — a worker POSTing `active_modifiers: []` still
