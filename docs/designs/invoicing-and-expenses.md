@@ -580,10 +580,14 @@ underlying work.
 `fallback_accounting_category` Configuration key (`data-constraints.md`
 §1.1) and resolves it to an active `AccountingCategory`. Raises
 `ValidationError({'accounting_category': [...]})` naming the
-Configuration key for **both** failure modes — unset/blank, and set but
-pointing at a deleted/deactivated category — since neither leaves the
-caller with a usable category. Mirrors the shape of the sibling
-`_resolve_deposit_category` (§Deposits).
+Configuration key for every failure mode — unset/blank; set but pointing
+at a deleted/deactivated category; or set but pointing at a category
+that has since been flagged `is_deposit` (the lookup filters
+`is_active=True, is_deposit=False`, symmetric with the designation-time
+PATCH validation — a deposit category must never be stamped onto
+ordinary lines) — since none of these leaves the caller with a usable
+category. Mirrors the shape of the sibling `_resolve_deposit_category`
+(§Deposits).
 
 **Two call sites, one hook and one shared line-builder:**
 
@@ -603,10 +607,13 @@ caller with a usable category. Mirrors the shape of the sibling
 - **Agreement seeding/restore/copy — `InvoiceService._agreement_category_id(line)`**
   (staticmethod). Given a `compose_agreement` line dict: returns
   `line['accounting_category_id']` if set, else the fallback's pk —
-  **except** an adjustment line (`line.get('is_adjustment')`), which is
-  exempt and always returns `None` unmodified (an adjustment targets
-  other lines' categories; it has no AC concept of its own, mirroring
-  the estimate side's own adjustment-line AC exemption). Routed through
+  **except** an adjustment line (`line.get('is_adjustment')`), which
+  passes its `accounting_category_id` through UNMODIFIED (a real AC
+  survives — `EstimateService.add_adjustment_line` always stamps the
+  percentage scheme's AC — and a genuinely-null one stays null; the
+  exemption means "never stamp a *fallback* onto an adjustment line",
+  never "strip its AC" — the strip variant was a final-review Critical,
+  fixed 2026-08-12). Routed through
   the single shared constructor `InvoiceService._build_agreement_line_item`
   — used by both `seed_from_agreement` and `restore_agreement_line` (one
   fix covers both call paths) — and independently through

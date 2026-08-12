@@ -197,9 +197,11 @@ invoice line is constructed (`InvoiceService.resolve_line_category`,
 `apps/invoicing/services.py`) — never onto the Task or the estimate/CO line
 itself, which keep null (see `estimates-and-prices.md` §10,
 `invoicing-and-expenses.md` §"Fallback accounting category stamping"). An
-adjustment (percentage) line is exempt — it has no AC concept of its own and
-is never stamped. Unset, or pointing at a category that's since gone
-inactive, makes the stamp attempt raise a field-keyed `ValidationError`
+adjustment (percentage) line is never fallback-stamped — its own
+`accounting_category_id` passes through unmodified (real AC survives, null
+stays null). Unset, or pointing at a category that's since gone inactive or
+been flagged `is_deposit`, makes the stamp attempt raise a field-keyed
+`ValidationError`
 naming the Configuration key. The settings API (`PATCH /api/settings/`)
 rejects a value that isn't blank or an existing **active, non-deposit**
 `AccountingCategory` id (the picker itself, unlike its siblings, lists
