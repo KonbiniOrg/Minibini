@@ -8,7 +8,6 @@
     choice = null,
     estimateId,
     categories = [],
-    defaultMaterialCategoryId = null,
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -39,11 +38,7 @@
     if (!open || !choice) return;
     qty = '1'; units = 'none'; price = ''; error = '';
     description = choice.type === 'freeform' ? (choice.typed || '') : '';
-    // Freeform material prefills the AC from the config default (overridable); everything
-    // else starts blank. Keep as the raw number so Svelte 5's strict-=== option-matching
-    // in the select finds the correct option (String(id) !== id numerically).
-    accountingCategory = (choice.type === 'freeform' && choice.isMaterial && defaultMaterialCategoryId != null)
-      ? defaultMaterialCategoryId : '';
+    accountingCategory = '';
   });
 
   async function save() {
@@ -57,16 +52,15 @@
     } else if (choice.type === 'inventory') {
       payload = { inventory_item: choice.inventoryItem.inventory_item_id, qty };
     } else {
-      // Plain (non-material) hand lines require an AC before send — the document
-      // transit needs it; materials default it server-side (Plan 1 Task 4).
-      if (!accountingCategory && !choice.isMaterial) { error = 'Accounting Category is required.'; return; }
+      // Every hand line requires an AC — choosing the Materials AC is what
+      // makes it a material (is_material derives server-side, RM 2026-08-11).
+      if (!accountingCategory) { error = 'Accounting Category is required.'; return; }
       payload = {
         description,
         qty: qty || '0',
         units,
         price: price || '0',
         accounting_category: accountingCategory ? Number(accountingCategory) : null,
-        is_material: choice.isMaterial,
       };
     }
     busy = true; error = '';

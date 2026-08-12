@@ -33,8 +33,10 @@ describe('COAddLineForm', () => {
       { action: 'add', inventory_item: 22, qty: '10' });
   });
 
-  it('freeform plain line posts a manual add payload; description prefilled from typed', async () => {
-    const choice = { type: 'freeform', typed: 'Rush charge', isMaterial: false };
+  it('freeform line posts a manual add payload without is_material; description prefilled from typed', async () => {
+    // RM 2026-08-11: material-ness derives server-side from the chosen AC —
+    // the form never sends is_material.
+    const choice = { type: 'freeform', typed: 'Rush charge' };
     const { getByLabelText, getByRole } = render(COAddLineForm, {
       props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
     });
@@ -45,40 +47,15 @@ describe('COAddLineForm', () => {
     await fireEvent.click(getByRole('button', { name: /add/i }));
     expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items/',
       expect.objectContaining({
-        action: 'add', description: 'Rush charge', is_material: false,
+        action: 'add', description: 'Rush charge',
         accounting_category: 7, price: '50',
       }));
+    const [, payload] = api.post.mock.calls.at(-1);
+    expect('is_material' in payload).toBe(false);
   });
 
-  it('freeform material prefills AC from the default and carries is_material true', async () => {
-    const choice = { type: 'freeform', typed: 'plywood', isMaterial: true };
-    const { getByLabelText, getByRole } = render(COAddLineForm, {
-      props: { open: true, choice, coId: 42, categories: cats,
-        defaultMaterialCategoryId: 7, onSaved: vi.fn() },
-    });
-    expect(getByLabelText(/accounting category/i)).toHaveValue('7');
-    await fireEvent.input(getByLabelText(/quantity/i), { target: { value: '2' } });
-    await fireEvent.input(getByLabelText(/price/i), { target: { value: '30' } });
-    await fireEvent.click(getByRole('button', { name: /add/i }));
-    expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items/',
-      expect.objectContaining({ action: 'add', is_material: true, accounting_category: 7 }));
-  });
-
-  it('freeform material does not block save when no default is configured (backend fills it)', async () => {
-    const choice = { type: 'freeform', typed: 'plywood', isMaterial: true };
-    const { getByLabelText, getByRole } = render(COAddLineForm, {
-      props: { open: true, choice, coId: 42, categories: cats,
-        defaultMaterialCategoryId: null, onSaved: vi.fn() },
-    });
-    await fireEvent.input(getByLabelText(/quantity/i), { target: { value: '2' } });
-    await fireEvent.input(getByLabelText(/price/i), { target: { value: '30' } });
-    await fireEvent.click(getByRole('button', { name: /add/i }));
-    expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items/',
-      expect.objectContaining({ action: 'add', is_material: true }));
-  });
-
-  it('freeform plain line blocks save with no accounting category (send-guard rule)', async () => {
-    const choice = { type: 'freeform', typed: 'x', isMaterial: false };
+  it('freeform line blocks save with no accounting category (no material exemption)', async () => {
+    const choice = { type: 'freeform', typed: 'x' };
     const { getByLabelText, getByRole, findByText } = render(COAddLineForm, {
       props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
     });

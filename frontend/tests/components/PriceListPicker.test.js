@@ -69,26 +69,23 @@ describe('PriceListPicker (onChoose emitter)', () => {
     });
   });
 
-  it('freeform commit with the material checkbox set emits isMaterial true', async () => {
+  it('freeform commit emits typed text only — no isMaterial (checkbox retired, RM 2026-08-11)', async () => {
     const props = baseProps();
     const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: '3/4 plywood' } });
-    await fireEvent.click(await findByRole('checkbox', { name: /material/i }));
     await fireEvent.click(await findByRole('button', { name: /add line/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood', isMaterial: true });
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood' });
   });
 
-  it('clears typed text and the material toggle when reopened', async () => {
+  it('clears typed text when reopened', async () => {
     const props = baseProps();
-    const { getByPlaceholderText, getByRole, rerender } = render(PriceListPicker, { props });
+    const { getByPlaceholderText, rerender } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'partial typing' } });
-    await fireEvent.click(getByRole('checkbox', { name: /material/i }));
     expect(getByPlaceholderText(/search/i)).toHaveValue('partial typing');
     // Cancel (close), then reopen — the picker must start fresh.
     await rerender({ ...props, open: false });
     await rerender({ ...props, open: true });
     expect(getByPlaceholderText(/search/i)).toHaveValue('');
-    expect(getByRole('checkbox', { name: /material/i })).not.toBeChecked();
   });
 
   it('does not offer Add Task by default (estimate surface)', () => {
@@ -109,15 +106,15 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Custom milling', isMaterial: true });
   });
 
-  it('shows the material checkbox and Add Line button constantly, from the start', async () => {
+  it('shows the Add Line button constantly (no material checkbox on the estimate surface)', async () => {
     const props = baseProps();
-    const { getByRole } = render(PriceListPicker, { props });
-    // Constant affordances — present before anything is typed, label never changes.
-    expect(getByRole('checkbox', { name: /material/i })).toBeInTheDocument();
+    const { getByRole, queryByRole } = render(PriceListPicker, { props });
+    // Constant affordance — present before anything is typed.
+    expect(queryByRole('checkbox', { name: /material/i })).toBeNull();
     const addBtn = getByRole('button', { name: /add line/i });
     expect(addBtn).toBeInTheDocument();
     // Clicking with nothing typed still emits a freeform commit (empty typed).
     await fireEvent.click(addBtn);
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '', isMaterial: false });
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '' });
   });
 });

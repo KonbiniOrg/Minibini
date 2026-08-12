@@ -14,8 +14,6 @@
     apiBase = '',             // e.g. '/api/estimates/123' or '/api/invoices/123'
     item = null,              // line item being edited (edit mode)
     categories = [],
-    showMaterialMarker = false,        // estimate surface only
-    defaultMaterialCategoryId = null,  // AC pk from default_material_accounting_category
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -28,7 +26,6 @@
   let units = $state('none');
   let price = $state('');
   let accountingCategory = $state('');
-  let isMaterial = $state(false);
   let busy = $state(false);
   let formError = $state('');
   let fieldErrs = $state({});
@@ -43,14 +40,12 @@
         units = item.units || 'none';
         price = item.price ?? '';
         accountingCategory = item.accounting_category ?? '';
-        isMaterial = item.is_material ?? false;
       } else {
         description = '';
         qty = '';
         units = 'none';
         price = '';
         accountingCategory = '';
-        isMaterial = false;
       }
       formError = '';
       fieldErrs = {};
@@ -65,14 +60,6 @@
       units = pli.units || 'none';
       price = pli.selling_price ?? '';
       accountingCategory = pli.accounting_category ?? '';
-    }
-  }
-
-  function onMaterialToggle(event) {
-    // onchange fires before bind:checked updates isMaterial; read the DOM state directly.
-    // Keep the value as a number so Svelte's option-value comparison (===) matches cat.id.
-    if (event.target.checked && !accountingCategory && defaultMaterialCategoryId != null) {
-      accountingCategory = defaultMaterialCategoryId;
     }
   }
 
@@ -92,10 +79,10 @@
           qty: qty || '1',
         });
       } else {
-        const isMaterialLine = showMaterialMarker && isMaterial;
-        // Accounting category is required on plain (non-material) hand lines —
-        // the document/invoice transit needs it; materials default server-side.
-        if (!accountingCategory && !isMaterialLine) {
+        // Every hand line requires an AC — choosing the Materials AC is what
+        // makes it a material (is_material derives server-side, RM 2026-08-11;
+        // the old "Is this a material?" checkbox is retired).
+        if (!accountingCategory) {
           fieldErrs = { accounting_category: ['Accounting Category is required.'] };
           busy = false;
           return;
@@ -107,9 +94,6 @@
           price: price || '0',
           accounting_category: accountingCategory ? Number(accountingCategory) : null,
         };
-        if (showMaterialMarker) {
-          payload.is_material = isMaterial;
-        }
         if (mode === 'edit' && item) {
           await api.patch(`${apiBase}/line-items/${item.line_item_id}/`, payload);
         } else {
@@ -195,15 +179,6 @@
           </label>
           <FieldError errors={fieldErrs} field="accounting_category" />
         </p>
-        {#if showMaterialMarker}
-          <p>
-            <label>
-              <input type="checkbox" bind:checked={isMaterial} onchange={onMaterialToggle}>
-              Is this a material?
-            </label>
-            <FieldError errors={fieldErrs} field="is_material" />
-          </p>
-        {/if}
       {/if}
 
       <div class="buttons">

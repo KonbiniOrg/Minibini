@@ -28,6 +28,8 @@ class ChangeOrderLineItemSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'line_item_id', 'service_item_detail',
+            # Server-derived from the accounting category (RM 2026-08-11).
+            'is_material',
             # Writes go through the service (Task 6) — this serializer only
             # ever displays the CO line's adjustment triple.
             'adjustment_service', 'adjustment_percent', 'adjustment_target_categories',

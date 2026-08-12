@@ -33,7 +33,6 @@
     amended = null,
     sourcePool = null,
     categories = [],
-    defaultMaterialCategoryId = null,
   } = $props();
 
   const apiBase = $derived(`/api/change-orders/${co.change_order_id}`);
@@ -485,7 +484,6 @@
   choice={addChoice}
   coId={co.change_order_id}
   {categories}
-  {defaultMaterialCategoryId}
   onSaved={handleLineAdded}
   onClose={() => { addChoice = null; }}
 />

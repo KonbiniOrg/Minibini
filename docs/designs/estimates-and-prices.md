@@ -906,10 +906,18 @@ taxability reads `accounting_category.taxable` directly). Declared in
   (no `inventory_item`, non-adjustment) freeform line as a
   **material**: at acceptance it crystallizes into a `Material`
   (established with a reverse-markup placeholder cost — §9.1)
-  instead of staying a plain, uncrystallized hand-line. Invalid on a line that already has an
-  `inventory_item` (already a catalog material) or that has an
-  `adjustment_service` (document-only adjustments can't be materials) —
-  enforced by `EstimateService._assert_is_material_only_on_bare_line`.
+  instead of staying a plain, uncrystallized hand-line.
+  **Server-derived, never client-sent (RM 2026-08-11):**
+  `EstimateService._derive_is_material` sets it on every hand-line
+  add/update — True exactly when the line is bare and its AC is the
+  configured `default_material_accounting_category`; non-bare lines
+  (inventory/service/adjustment descriptors, or atom-backed) are forced
+  False. The old "Is this a material?" checkbox and the AC-defaulting
+  helper (`_apply_material_ac_default`) are retired; serializers expose
+  the field read-only. The CO side wraps the same derivation
+  (`ChangeOrderService._derive_is_material`), additionally forcing
+  False on non-`add` lines (remove/replace forbid the marker in
+  `clean()`).
 - `service_item` — nullable FK to `estimates.ServiceItem` (PROTECT,
   `related_name='+'`). Deferred service descriptor: the line carries the
   `ServiceItem`'s snapshotted price at authoring time, and the FK is the
@@ -2240,7 +2248,7 @@ The table foot is `NewLineFromSelectedRow` (`line-items-from-atoms`,
 then opens the Edit modal on the fresh line) and the
 original/this-CO/revised totals from the payload. Below the table:
 **"Add line"** opens the unified `PriceListPicker` (§6.4) — the same
-service / inventory / freeform (+ is-material checkbox) entry point as
+service / inventory / freeform entry point as
 the estimate detail page — followed by `COAddLineForm.svelte`
 (`components/changeorders/`, unchanged), which posts a service pick to
 `line-items-from-service/`, an inventory pick to `line-items/` (the

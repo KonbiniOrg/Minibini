@@ -176,7 +176,7 @@ Entry: estimate detail → **Show Tasks & Materials** (`#/estimates/{id}/wizard`
 | Dimension | Cases |
 |---|---|
 | Start | Start Estimate (direct, no worksheet) · gating (persona/status/live estimate) · past-quoting hint (approved estimate-less) |
-| Picker | dual-source search · no initial list · labeled rows · typed-text carry-over · estimate footer (material checkbox) vs task-surface footer (Task/Material buttons) · live cross-window search (full-item pick) |
+| Picker | dual-source search · no initial list · labeled rows · typed-text carry-over · estimate footer (Add Line — material-ness derives from the chosen AC) vs task-surface footer (Task/Material buttons) · live cross-window search (full-item pick) |
 | Estimate lines (deferred) | service (no Task yet) · inventory · freeform material (AC default) · plain hand-line (AC required) · edit/reorder/delete draft-only |
 | Task-list atoms (immediate) | service → Task · manual task (scheme pick) · material (catalog/freeform, earmark) · open to all users |
 | Crystallization | service → Task · inventory → Material+earmark · bare material → provisional Material · plain hand-line → nothing · atom-backed skip · adjustments document-only · AC send guard |

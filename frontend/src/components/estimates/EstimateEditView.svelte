@@ -33,7 +33,6 @@
     sourcePool = null,
     lineItems = [],
     categories = [],
-    defaultMaterialCategoryId = null,
     // Dark until the §6 "make deliverable" endpoint lands — a caller wires
     // this to render the per-line "→ Deliverable" action; EstimatePanel
     // doesn't wire it yet, so the button stays unrendered.
@@ -316,7 +315,6 @@
   choice={addChoice}
   estimateId={estimate.estimate_id}
   {categories}
-  {defaultMaterialCategoryId}
   onSaved={handleLineAdded}
   onClose={() => { addChoice = null; }}
 />
@@ -327,8 +325,6 @@
   apiBase={apiBase}
   item={modalItem}
   {categories}
-  showMaterialMarker={true}
-  {defaultMaterialCategoryId}
   onSaved={handleModalSaved}
   onClose={() => { modalOpen = false; }}
 />

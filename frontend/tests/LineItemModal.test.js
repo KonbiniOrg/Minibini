@@ -10,52 +10,33 @@ import { api } from '../src/lib/api.js';
 
 const categories = [{ id: 7, name: 'Materials', code: 'MAT' }];
 
-describe('LineItemModal — is-material marker', () => {
+describe('LineItemModal — material-ness derives from the AC (RM 2026-08-11)', () => {
   beforeEach(() => { api.post.mockClear(); });
 
-  it('checking material prefills the AC from the config default and posts is_material=true', async () => {
-    const { getByLabelText, getByText } = render(LineItemModal, {
+  it('offers no "Is this a material?" checkbox and posts no is_material', async () => {
+    const { getByLabelText, getByText, queryByLabelText } = render(LineItemModal, {
       props: {
-        open: true, mode: 'create', apiBase: '/api/estimates/1',
-        categories, showMaterialMarker: true, defaultMaterialCategoryId: 7,
+        open: true, mode: 'create', apiBase: '/api/estimates/1', categories,
       },
     });
 
+    expect(queryByLabelText(/Is this a material/i)).toBeNull();
+
     await fireEvent.input(getByLabelText(/Description/i), { target: { value: 'M77 ABS' } });
-    // No manual AC selection — checking "is material" fills it from the default.
-    await fireEvent.click(getByLabelText(/Is this a material/i));
-    expect(getByLabelText(/Accounting Category/i)).toHaveValue('7');
+    await fireEvent.change(getByLabelText(/Accounting Category/i), { target: { value: '7' } });
     await fireEvent.click(getByText('Save'));
 
     expect(api.post).toHaveBeenCalledTimes(1);
     const [, payload] = api.post.mock.calls[0];
-    expect(payload.is_material).toBe(true);
     expect(payload.accounting_category).toBe(7);
+    // The server derives is_material from the chosen AC — never client-sent.
+    expect('is_material' in payload).toBe(false);
   });
 
-  it('a material line does not require a manually chosen AC (default may be unset — backend fills it)', async () => {
-    const { getByLabelText, getByText } = render(LineItemModal, {
-      props: {
-        open: true, mode: 'create', apiBase: '/api/estimates/1',
-        categories, showMaterialMarker: true, defaultMaterialCategoryId: null,
-      },
-    });
-
-    await fireEvent.input(getByLabelText(/Description/i), { target: { value: 'M77 ABS' } });
-    await fireEvent.click(getByLabelText(/Is this a material/i));
-    await fireEvent.click(getByText('Save'));
-
-    // Not blocked on AC — the material branch defers to the backend default.
-    expect(api.post).toHaveBeenCalledTimes(1);
-    const [, payload] = api.post.mock.calls[0];
-    expect(payload.is_material).toBe(true);
-  });
-
-  it('a plain line (unchecked) still blocks save with no accounting category', async () => {
+  it('every manual line blocks save with no accounting category (no material exemption)', async () => {
     const { getByLabelText, getByText, queryByText } = render(LineItemModal, {
       props: {
-        open: true, mode: 'create', apiBase: '/api/estimates/1',
-        categories, showMaterialMarker: true,
+        open: true, mode: 'create', apiBase: '/api/estimates/1', categories,
       },
     });
 
@@ -64,15 +45,5 @@ describe('LineItemModal — is-material marker', () => {
 
     expect(api.post).not.toHaveBeenCalled();
     expect(queryByText(/Accounting Category is required/i)).not.toBeNull();
-  });
-
-  it('hides the checkbox when showMaterialMarker is false', () => {
-    const { queryByLabelText } = render(LineItemModal, {
-      props: {
-        open: true, mode: 'create', apiBase: '/api/invoices/1',
-        categories, showMaterialMarker: false,
-      },
-    });
-    expect(queryByLabelText(/Is this a material/i)).toBeNull();
   });
 });

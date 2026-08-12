@@ -183,11 +183,15 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         # not left provisional.
         Configuration.objects.create(
             key='default_material_markup_percent', value='25')
+        Configuration.objects.create(
+            key='default_material_accounting_category', value=str(self.mat_cat.pk))
         co = self._make_co()
+        # Choosing the Materials AC is what makes this a material line
+        # (is_material derives server-side; the checkbox is retired).
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Dragon skin', qty=Decimal('2'), price=Decimal('400.00'),
-            units='sheet', is_material=True, accounting_category=self.mat_cat.pk,
+            units='sheet', accounting_category=self.mat_cat.pk,
         )
         self._accept(co)
 
@@ -606,34 +610,46 @@ class COAuthoringParityTests(ChangeOrderAcceptanceBase):
         self.assertEqual(li.price, Decimal('100'))
         self.assertEqual(li.accounting_category, self.cat)
 
-    def test_is_material_line_defaults_ac_from_config(self):
+    def test_is_material_derives_from_the_materials_ac(self):
+        # RM 2026-08-11: the checkbox is retired — a bare add line IS a
+        # material exactly when its AC is the configured Materials AC.
         Configuration.objects.create(
             key='default_material_accounting_category', value=str(self.mat_cat.pk))
         co = self._make_co()
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Mystery membrane', qty=Decimal('1'),
-            price=Decimal('200.00'), is_material=True,
+            price=Decimal('200.00'), accounting_category=self.mat_cat.pk,
         )
-        self.assertEqual(li.accounting_category, self.mat_cat)
+        self.assertTrue(li.is_material)
+        other = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Rush', qty=Decimal('1'),
+            price=Decimal('50.00'), accounting_category=self.cat.pk,
+        )
+        self.assertFalse(other.is_material)
 
-    def test_is_material_invalid_with_inventory_item(self):
+    def test_is_material_stays_false_on_inventory_line_even_with_material_ac(self):
+        Configuration.objects.create(
+            key='default_material_accounting_category', value=str(self.mat_cat.pk))
         co = self._make_co()
-        with self.assertRaises(ValidationError):
-            ChangeOrderService.add_line_item(
-                co.pk, action=ChangeOrderLineItem.ACTION_ADD,
-                description='PLY', qty=Decimal('1'), price=Decimal('100.00'),
-                inventory_item=self.pli.pk, is_material=True,
-            )
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+            description='PLY', qty=Decimal('1'), price=Decimal('100.00'),
+            inventory_item=self.pli.pk, accounting_category=self.mat_cat.pk,
+        )
+        self.assertFalse(li.is_material)
 
     def test_seed_new_copies_crystallization_fields(self):
+        Configuration.objects.create(
+            key='default_material_accounting_category', value=str(self.mat_cat.pk))
         co = self._make_co()
         ChangeOrderService.add_line_item_from_service(
             co.pk, self.service_item.pk, Decimal('4'))
         ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Membrane', qty=Decimal('1'), price=Decimal('50.00'),
-            is_material=True, accounting_category=self.mat_cat.pk,
+            accounting_category=self.mat_cat.pk,
         )
         ChangeOrderService.mark_open(co.pk)
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_REJECTED)

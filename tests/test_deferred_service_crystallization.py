@@ -299,7 +299,13 @@ class ReviseEstimateCarriesDescriptorFieldsTest(DeferredServiceBase):
         self.service_line = EstimateService.add_line_item_from_service(
             self.estimate.pk, self.service_item.pk, Decimal('2'),
         )
-        # Add a bare is_material=True line (requires DRAFT; supply AC explicitly).
+        # Add a bare material line — is_material derives from choosing the
+        # configured Materials AC (RM 2026-08-11, checkbox retired).
+        from apps.core.models import Configuration
+        Configuration.objects.update_or_create(
+            key='default_material_accounting_category',
+            defaults={'value': str(self.cat.pk)},
+        )
         self.material_line = EstimateService.add_line_item(
             self.estimate.pk,
             description='Raw stock',
@@ -307,7 +313,6 @@ class ReviseEstimateCarriesDescriptorFieldsTest(DeferredServiceBase):
             price=Decimal('10'),
             units='ft',
             accounting_category=self.cat.pk,
-            is_material=True,
         )
         # revise_estimate requires a non-draft parent. Force OPEN bypassing
         # model validation (the estimate has no deliverable, but that guard is

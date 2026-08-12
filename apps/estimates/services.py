@@ -150,50 +150,26 @@ class EstimateService:
         return estimate
 
     @staticmethod
-    def _apply_material_ac_default(li):
-        """A material line (is_material=True) with no AC defaults to the
-        `default_material_accounting_category` Configuration value (a string
-        AccountingCategory pk). An explicitly-supplied AC is respected. Raises
-        if the marker is set, no AC was supplied, and no default is configured.
-        Plain hand-lines (is_material=False) are untouched — they still hit
-        the hand-line AC-required rule downstream."""
-        if not li.is_material or li.accounting_category_id is not None:
+    def _derive_is_material(li, *, has_sources=False):
+        """Material-ness of a bare hand line DERIVES from its accounting
+        category (RM 2026-08-11): True exactly when the AC is the configured
+        `default_material_accounting_category`. The old client-sent
+        "Is this a material?" checkbox is retired — choosing the Materials AC
+        is the gesture — so any inbound is_material value is overwritten
+        here (serializers expose the field read-only). Non-bare lines
+        (inventory/service/adjustment descriptors, or atom-backed) are never
+        bare materials."""
+        if (has_sources or li.inventory_item_id is not None
+                or li.service_item_id is not None
+                or li.adjustment_service_id is not None):
+            li.is_material = False
             return
-        from apps.core.models import AccountingCategory, Configuration
+        from apps.core.models import Configuration
         cfg = Configuration.objects.filter(
             key='default_material_accounting_category',
         ).first()
         pk = (cfg.value or '').strip() if cfg else ''
-        if not pk:
-            raise ValidationError({'accounting_category': (
-                'This material line has no accounting category and no default is '
-                'configured. Set the default_material_accounting_category setting '
-                'or supply an accounting category.'
-            )})
-        try:
-            li.accounting_category = AccountingCategory.objects.get(pk=pk)
-        except (AccountingCategory.DoesNotExist, ValueError, TypeError):
-            raise ValidationError({'accounting_category': (
-                f'The configured default material accounting category ({pk!r}) '
-                'does not exist.'
-            )})
-
-    @staticmethod
-    def _assert_is_material_only_on_bare_line(li):
-        """`is_material` is meaningful only on a bare line. A line with an
-        inventory_item is already a (catalog) material; an adjustment line is
-        document-only — the marker must not conflict with either."""
-        if not li.is_material:
-            return
-        if li.inventory_item_id is not None:
-            raise ValidationError({'is_material': (
-                'A line with an inventory item is already a material; '
-                'the "is material" marker only applies to a bare line.'
-            )})
-        if li.adjustment_service_id is not None:
-            raise ValidationError({'is_material': (
-                'An adjustment line cannot be marked as a material.'
-            )})
+        li.is_material = bool(pk) and str(li.accounting_category_id) == pk
 
     @staticmethod
     def assert_all_hand_lines_have_ac(estimate):
@@ -364,8 +340,6 @@ class EstimateService:
         from apps.core.services import LineItemService
         kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
         li = EstimateLineItem(estimate=estimate, **kwargs)
-        # Material lines (is_material=True) get their AC from config if not supplied.
-        EstimateService._apply_material_ac_default(li)
         # A freshly-added line has no sources; if it isn't an adjustment it needs an AC.
         if li.adjustment_service_id is None and li.accounting_category_id is None:
             raise ValidationError(
@@ -374,7 +348,7 @@ class EstimateService:
                     '(lines with no atom source).'
                 )}
             )
-        EstimateService._assert_is_material_only_on_bare_line(li)
+        EstimateService._derive_is_material(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li
@@ -458,8 +432,6 @@ class EstimateService:
         # Atom-backed lines (sources exist) and adjustment lines are exempt.
         is_adjustment = li.adjustment_service_id is not None
         has_source = li.sources.exists()
-        # Material lines (is_material=True) get their AC from config if not supplied.
-        EstimateService._apply_material_ac_default(li)
         if not has_source and not is_adjustment and li.accounting_category_id is None:
             raise ValidationError(
                 {'accounting_category': (
@@ -467,7 +439,7 @@ class EstimateService:
                     '(lines with no atom source).'
                 )}
             )
-        EstimateService._assert_is_material_only_on_bare_line(li)
+        EstimateService._derive_is_material(li, has_sources=has_source)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li

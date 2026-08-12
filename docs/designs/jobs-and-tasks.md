@@ -757,8 +757,9 @@ projects those lines onto the invoice. See
 The task-list page's old "Add Fee" affordance is gone too — the
 task-list "Add Work" picker now offers only **Add Task** / **Add
 Material** (§9.5); a plain money-only line can still be added on an
-Estimate/ChangeOrder document itself (unchecked "Is this a material?"
-in the estimate line-add picker), it just never becomes a job atom.
+Estimate/ChangeOrder document itself (any freeform line whose AC is
+not the configured Materials AC — the "Is this a material?" checkbox
+is retired, RM 2026-08-11), it just never becomes a job atom.
 
 ## 5. Blep (time tracking)
 

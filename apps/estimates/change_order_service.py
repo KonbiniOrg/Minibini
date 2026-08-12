@@ -448,21 +448,17 @@ class ChangeOrderService:
                 f'that invoice before amending this line.']})
 
     @staticmethod
-    def _assert_is_material_only_on_bare_line(li):
-        """`is_material` is meaningful only on a bare line — a line with an
-        inventory_item or service_item already knows its crystallization type.
-        Mirrors EstimateService._assert_is_material_only_on_bare_line."""
-        if not li.is_material:
+    def _derive_is_material(li, *, has_sources=False):
+        """CO wrapper over EstimateService._derive_is_material (RM
+        2026-08-11: material-ness derives from the AC, checkbox retired).
+        Only an ADD line can be a bare material — remove/replace lines
+        forbid the marker at the model level (clean()), so they are always
+        forced False regardless of their (inherited) AC."""
+        from apps.estimates.services import EstimateService
+        if li.action != ChangeOrderLineItem.ACTION_ADD:
+            li.is_material = False
             return
-        if li.inventory_item_id is not None:
-            raise ValidationError({'is_material': (
-                'A line with an inventory item is already a material; '
-                'the "is material" marker only applies to a bare line.'
-            )})
-        if li.service_item_id is not None:
-            raise ValidationError({'is_material': (
-                'A service line cannot be marked as a material.'
-            )})
+        EstimateService._derive_is_material(li, has_sources=has_sources)
 
     @staticmethod
     def _apply_adjustment_replace_shape(li):
@@ -596,11 +592,8 @@ class ChangeOrderService:
         from apps.estimates.services import EstimateService
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
         li = ChangeOrderLineItem(change_order=co, **kwargs)
-        # Material lines (is_material=True) get their AC from config if not
-        # supplied — same default the estimate side applies at authoring.
-        EstimateService._apply_material_ac_default(li)
         target_categories = ChangeOrderService._apply_adjustment_replace_shape(li)
-        ChangeOrderService._assert_is_material_only_on_bare_line(li)
+        ChangeOrderService._derive_is_material(li)
         li.full_clean()
         if (li.action in (ChangeOrderLineItem.ACTION_REMOVE, ChangeOrderLineItem.ACTION_REPLACE)
                 and li.target_line_item_id):
@@ -711,9 +704,8 @@ class ChangeOrderService:
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
         for field, value in kwargs.items():
             setattr(li, field, value)
-        EstimateService._apply_material_ac_default(li)
         target_categories = ChangeOrderService._apply_adjustment_replace_shape(li)
-        ChangeOrderService._assert_is_material_only_on_bare_line(li)
+        ChangeOrderService._derive_is_material(li, has_sources=li.sources.exists())
         li.full_clean()
         if (li.action in (ChangeOrderLineItem.ACTION_REMOVE, ChangeOrderLineItem.ACTION_REPLACE)
                 and li.target_line_item_id):

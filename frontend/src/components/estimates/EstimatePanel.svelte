@@ -17,7 +17,6 @@
   let changeOrders = $state([]);
   let listLoaded = $state(false);
   let categories = $state([]);
-  let defaultMaterialCategoryId = $state(null);
   let sourcePool = $state(null);
   let docLoading = $state(true);
   let error = $state('');
@@ -222,22 +221,12 @@
     }
   }
 
-  async function loadSettings() {
-    try {
-      const s = await api.get('/api/settings/');
-      const raw = s.default_material_accounting_category;
-      defaultMaterialCategoryId = raw != null ? Number(raw) : null;
-    } catch (_) {
-      defaultMaterialCategoryId = null;
-    }
-  }
 
   $effect(() => {
     if (estimateId) {
       loadEstimate();
       loadSourcePool();
       loadCategories();
-      loadSettings();
     }
   });
 
@@ -394,7 +383,6 @@
       {sourcePool}
       {lineItems}
       {categories}
-      {defaultMaterialCategoryId}
     />
   {:else if mode === 'customer'}
     <DocCustomerView

@@ -147,8 +147,9 @@ describe('ChangeOrderPanel add-line flow', () => {
     });
 
     await fireEvent.click(await findByText('Add line'));
-    // The PriceListPicker's freeform footer is visible…
-    expect(await findByText('Is this a material?')).toBeInTheDocument();
+    // The PriceListPicker's freeform footer is visible… (the "Is this a
+    // material?" checkbox is retired — material-ness derives from the AC)
+    expect(await findByText('Add Line')).toBeInTheDocument();
     // …and no gesture-modal opened underneath it — old action-select modal
     // is gone, and the new one never shows action/target selects either way.
     expect(queryByText('Add Change Order Line')).not.toBeInTheDocument();

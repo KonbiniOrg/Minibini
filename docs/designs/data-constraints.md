@@ -150,9 +150,12 @@ threshold. **Invariant: a sub-minimum close is never persisted — it is
 cancelled.** See `jobs-and-tasks.md` §4.5/§5.5.
 
 Materials: `default_material_accounting_category` (unset) — string-encoded
-`AccountingCategory` PK applied to `is_material=True` hand-lines (Estimate and
-ChangeOrder) with no explicit AC, and used to pre-fill `MaterialModal`'s
-category field (`jobs-and-tasks.md` §9.5). Editable in **Settings →
+`AccountingCategory` PK that now DEFINES hand-line material-ness
+(RM 2026-08-11): a bare Estimate/ChangeOrder hand line derives
+`is_material=True` exactly when its chosen AC matches this key
+(`EstimateService._derive_is_material`; unset ⇒ no hand line is ever a
+material). Also used to pre-fill `MaterialModal`'s category field
+(`jobs-and-tasks.md` §9.5). Editable in **Settings →
 Accounting Categories → Materials** (blank clears it). The settings API
 (`PATCH /api/settings/`) rejects a value that isn't blank or an existing
 **active** `AccountingCategory` id. See `estimates-and-prices.md` §6.4.
@@ -1090,7 +1093,7 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - **target_line_item** (optional FK → EstimateLineItem, PROTECT): required for `remove` / `replace`; must be null for `add` (enforced by `clean()`)
 - **inventory_item** (optional FK → InventoryItem, SET_NULL)
 - **service_item** (optional FK → ServiceItem, PROTECT): deferred service descriptor; crystallizes to a Task at CO acceptance (mirrors `EstimateLineItem.service_item`)
-- **is_material** (bool, default False): marks a bare line as crystallizing into an established Material (reverse-markup placeholder cost) rather than staying a document-only line (mirrors `EstimateLineItem.is_material`); authoring rejects it alongside an `inventory_item`/`service_item` and applies the `default_material_accounting_category` config default
+- **is_material** (bool, default False): marks a bare line as crystallizing into an established Material (reverse-markup placeholder cost) rather than staying a document-only line (mirrors `EstimateLineItem.is_material`); server-derived from the AC (RM 2026-08-11 — True on an `add` line whose AC is the configured `default_material_accounting_category`; forced False alongside an `inventory_item`/`service_item` and on remove/replace lines), never client-writable
 - **adjustment_service** (optional FK → RateScheme, PROTECT, added 2026-08-09):
   mirrors `EstimateLineItem.adjustment_service` field-for-field (same
   `on_delete`). Provenance/identity only.

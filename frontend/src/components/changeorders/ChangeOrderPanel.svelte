@@ -32,7 +32,6 @@
   let estimatesForNav = $state([]); // all estimate versions for this job (version subnav)
   let siblingCOs = $state([]);     // all COs for this job (used for display-status relabelling)
   let categories = $state([]);
-  let defaultMaterialCategoryId = $state(null);
   let loading = $state(true);
   let error = $state('');
 
@@ -218,15 +217,6 @@
     }
   }
 
-  async function loadSettings() {
-    try {
-      const s = await api.get('/api/settings/');
-      const raw = s.default_material_accounting_category;
-      defaultMaterialCategoryId = raw != null ? Number(raw) : null;
-    } catch (_) {
-      defaultMaterialCategoryId = null;
-    }
-  }
 
   $effect(() => {
     if (coId) {
@@ -241,7 +231,6 @@
       loadEstimatesForNav();
     }
     loadCategories();
-    loadSettings();
   });
 
   // COEditView is presentation + gestures only — every mutation it makes
@@ -404,7 +393,6 @@
       {amended}
       {sourcePool}
       {categories}
-      {defaultMaterialCategoryId}
     />
   {:else if mode === 'customer'}
     <COCustomerView
