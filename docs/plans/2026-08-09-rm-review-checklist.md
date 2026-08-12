@@ -15,6 +15,49 @@ flake). Nothing merged/pushed.
       Your two legacy accepted COs' atoms (jobs 07946, 07724) should now
       carry `descoped_by` stamps.
 
+## Earlier phases — before the CO work (very high level)
+
+The two phases that landed before fee removal: the task-owned-money
+transplant (presets) and the skeleton / three-mode surface. Added
+2026-08-11 in case the deposit-path sign-off didn't cover all of it.
+
+**Task money & presets**
+
+- [ ] A task carries its own money (rate / per-unit / algorithm shown on
+      task detail); editing a rate-scheme preset afterward does NOT change
+      existing tasks — only newly stamped ones.
+- [ ] Rate schemes are presets now: freely editable, Retire/Reactivate
+      (supersession is gone), a default preset picker in settings — and the
+      default can't be retired or deleted out from under it.
+- [ ] Edit-task modal: Rate Scheme is changeable (restamps the task), Unit
+      is a dropdown; money fields only editable with the right permission.
+- [ ] Task tables read right: units inline, hour-unit tasks show both Est
+      Time and Est Qty.
+
+**Subtasks removed**
+
+- [ ] No subtask affordances anywhere; jobs that had subtasks render flat
+      without errors.
+
+**Skeleton / three-mode surface (estimates & invoices)**
+
+- [ ] Both docs have the Views band: Edit / Customer / Reorder (Edit
+      relabels to Detail once read-only); mode remembered per document.
+- [ ] Estimate Edit is one merged table — lines with nested atoms + backing
+      chips, Uncovered-work pool below. The old two-column reconcile
+      surface is gone.
+- [ ] A new invoice auto-seeds from the accepted agreement; removing a
+      seeded line defers it (struck row + Restore, and an "Add to this
+      invoice" picker for remaining agreement lines); backing chips show
+      actuals vs estimate ("actuals = estimate ✓" when in sync).
+- [ ] One live (non-terminal) invoice per job — creating a second is
+      refused.
+- [ ] Deposit invoices: creation modal opts out of seeding, deposit drafts
+      withhold agreement offerings, and the seeded-draw button reads
+      "progress invoice".
+- [ ] Doc chrome: date chips inline on the title row, no zebra striping on
+      the doc edit tables.
+
 ## Fee removal (still unreviewed in browser)
 
 - [ ] An estimate with a plain hand line: accept it — no atom appears, the
