@@ -985,7 +985,17 @@ Enforced in `Estimate.clean()`.
   `revise_estimate` copying line items) will raise.
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work)
 - **accounting_category** (optional FK): null = silently tax-exempt;
-  auto-populated from PLI when linked
+  auto-populated from PLI when linked. Nullable at the model, but a
+  **hand line** (no `EstimateLineItemSource`, not an adjustment —
+  `adjustment_service_id` set) must carry one — enforced immediately at
+  add/update time (Decision 1, `EstimateService.add_line_item` /
+  `update_line_item`) and again at send-time
+  (`EstimateService.assert_all_hand_lines_have_ac`, `estimates-and-prices.md`
+  §15). Atom-backed lines may be null (a null-AC Task atom collapses the
+  line's category to `None`, Phase 3); adjustment lines never carry one.
+  `validate_data.check_estimate_line_categories` cross-checks the
+  hand-line rule at rest (Phase 3 Task 8); the CO parallel is
+  `check_change_order_line_categories` (§1.13a below).
 
 #### EstimateLineItemSource
 
@@ -1048,7 +1058,7 @@ Valid transitions (`ChangeOrder.VALID_TRANSITIONS`):
 - **One live CO per job**: at most one ChangeOrder per Job in `draft` or `open`.
 - **Create requires the hold flag**: `ChangeOrderService.create` raises `ValidationError` unless `job.on_hold` is set and the job has an `accepted` Estimate.
 - **Line item requirement**: cannot transition out of `draft` without at least one ChangeOrderLineItem. Enforced in `ChangeOrder.clean()`.
-- **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`) lacks an `accounting_category` — the category rides the line onto the agreement and its invoice copy, so a category-less bare line would surface as an unclassifiable charge downstream; it must be pinned before the customer can accept. Enforced in `ChangeOrder.clean()` (`ChangeOrderService.assert_all_bare_add_lines_have_ac`).
+- **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`, no `ChangeOrderLineItemSource` — an atom-backed add line is exempt, same as the estimate side) lacks an `accounting_category` — the category rides the line onto the agreement and its invoice copy, so a category-less bare line would surface as an unclassifiable charge downstream; it must be pinned before the customer can accept. `remove`/`replace` lines are out of scope (the check only ever inspects `action=add`). Enforced in `ChangeOrder.clean()` (`ChangeOrderService.assert_all_bare_add_lines_have_ac`); `validate_data.check_change_order_line_categories` cross-checks the same predicate at rest (Phase 3 Task 8).
 - **Release guard**: a held Job cannot be released (`JobService.release_job`) or cancelled while any of its COs is `draft` or `open`.
 - **Acceptance clears the hold**: on transition to `accepted`, the handler drops the job's `on_hold` flag — the job resumes its true underlying status directly (held from `in_progress` goes straight back to `in_progress`).
 - **Acceptance crystallizes/moves/retires atoms** (rewritten 2026-08-09, CO
@@ -1371,6 +1381,23 @@ Enforced in `Invoice.clean()`.
   Must only be set when `adjustment_service` is set.
 - **line_number**: auto-generated sequentially per invoice if null
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work)
+- **accounting_category** (optional FK → AccountingCategory, PROTECT):
+  nullable at the model, and not required at add-time on any path — a
+  manual hand line (`InvoiceService.add_line_item`) is never checked at
+  creation, and an agreement-seeded adjustment line is deliberately left
+  null (`InvoiceService._agreement_category_id`'s adjustment exemption).
+  What's enforced instead is the send gate:
+  `InvoiceEmailService._assert_all_lines_categorized` blocks
+  `send_invoice` — the sole `draft`-exit transition — while **any** line
+  (adjustment or not; the gate makes no exemption) is null. `cancel()`
+  bypasses the gate (`Invoice.save()` direct, per `DEAD_INVOICE_STATUSES`
+  below), so a `draft`-or-`cancelled` invoice may legitimately carry null
+  lines; every other status is only reachable by having passed the gate.
+  Every other creation path (PLI/service/wizard-atom-derived, seeded
+  non-adjustment agreement lines) stamps a real category or the
+  configured `fallback_accounting_category` (Phase 3), so it's never
+  null there either. `validate_data.check_invoice_line_categories`
+  cross-checks the status-scoped invariant at rest (Phase 3 Task 8).
 - **agreement_estimate_line** (optional FK → estimates.EstimateLineItem,
   `SET_NULL`) / **agreement_co_line** (optional FK →
   estimates.ChangeOrderLineItem, `SET_NULL`) — added 2026-08 (skeleton

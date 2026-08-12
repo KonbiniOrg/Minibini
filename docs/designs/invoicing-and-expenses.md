@@ -1807,7 +1807,18 @@ The Job P&L view consumes invoices, expenses, and bleps to compute revenue and c
 - **Spending dashboards** — vendor totals, category totals over time.
 - **QBO → Minibini reverse sync** for Purchases entered directly in QBO. CDC-based polling is the recommended path; research in the appendix below.
 - **History coverage on `Expense`.** The `Expense` model is not decorated with `@history`. Edits do not write `HistoryEntry` rows. Reimbursement state changes also live outside the audit log.
-- **`accounting_category` required on `InvoiceLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.
+- **`accounting_category` required on `InvoiceLineItem` — RESOLVED, opposite direction (Phase 3 nullable-AC plan, 2026-08).** The
+  "make it NOT NULL everywhere" migration this TODO used to track was
+  superseded: the field stays nullable by design. A hand line
+  (`InvoiceService.add_line_item`) may be null pre-send; an
+  agreement-seeded adjustment line may be null even at rest
+  (`InvoiceService._agreement_category_id`'s adjustment exemption).
+  What's actually enforced: `InvoiceEmailService._assert_all_lines_categorized`
+  blocks `send_invoice` (the sole `draft`-exit path) while any line —
+  adjustment or not — is null, so every non-`draft`/non-cancelled
+  invoice is guaranteed fully categorized.
+  `validate_data.check_invoice_line_categories` cross-checks exactly
+  that at rest (Phase 3 Task 8) — see `data-constraints.md` §1.16.
 
 ---
 

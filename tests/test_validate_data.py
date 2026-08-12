@@ -5,7 +5,10 @@ from django.core.management import call_command
 from apps.core.models import AccountingCategory
 from apps.jobs.models import RateScheme, Job, Task
 from apps.contacts.models import Contact
-from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource, ChangeOrder, ChangeOrderLineItem
+from apps.estimates.models import (
+    Estimate, EstimateLineItem, EstimateLineItemSource,
+    ChangeOrder, ChangeOrderLineItem, ChangeOrderLineItemSource,
+)
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.inventory.models import Material
 
@@ -685,3 +688,198 @@ class ValidateDataAgreementLineInvoicesTest(TestCase):
         self.assertNotIn('referenced by more than one live invoice', output)
         self.assertIn('duplicate references', output)
         self.assertIn('INV-AGRLNE-008', output)
+
+
+class ValidateDataLineItemCategoryTest(TestCase):
+    """Tests for check_estimate_line_categories(),
+    check_change_order_line_categories(), and check_invoice_line_categories()
+    (Phase 3 Task 8) — a hand/bare line requires an accounting_category
+    (mirroring EstimateService.assert_all_hand_lines_have_ac /
+    ChangeOrderService.assert_all_bare_add_lines_have_ac's real
+    enforcement); atom-backed and adjustment lines are exempt on the
+    estimate/CO side. Invoice lines are only checked once the invoice is
+    past the send-time gate (InvoiceEmailService._assert_all_lines_categorized)
+    — draft and dead (cancelled/superseded) invoices are exempt, with NO
+    adjustment-line carve-out post-gate."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='LiSvc', code='LISVC')
+        self.contact = Contact.objects.create(first_name='Li', last_name='Tester')
+        self.job = Job.objects.create(
+            job_number='J-VLC-001', name='Line Cat Job', contact=self.contact,
+        )
+        self.rs = RateScheme.objects.create(
+            name='RS-Li', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.00'), unit_label='each', accounting_category=self.ac,
+        )
+        self.adj_rs = RateScheme.objects.create(
+            name='Adj-Li', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%', accounting_category=self.ac,
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _estimate(self, number):
+        return Estimate.objects.create(job=self.job, estimate_number=number, version=1)
+
+    # ── EstimateLineItem ─────────────────────────────────────────
+
+    def test_bare_estimate_hand_line_no_ac_is_flagged(self):
+        estimate = self._estimate('EST-VLC-001')
+        li = EstimateLineItem.objects.create(estimate=estimate, description='Bare hand line')
+        output = self._run()
+        self.assertIn(f'EstimateLineItem {li.pk}', output)
+        self.assertIn('hand line', output)
+        self.assertIn('has no accounting_category', output)
+
+    def test_estimate_hand_line_with_ac_not_flagged(self):
+        estimate = self._estimate('EST-VLC-002')
+        li = EstimateLineItem.objects.create(
+            estimate=estimate, description='Has AC', accounting_category=self.ac,
+        )
+        output = self._run()
+        self.assertNotIn(f'EstimateLineItem {li.pk}', output)
+
+    def test_estimate_atom_backed_line_null_ac_not_flagged(self):
+        """Phase 3: a null-AC task atom legitimately collapses the line's
+        category to None — not a hand line, exempt."""
+        estimate = self._estimate('EST-VLC-003')
+        li = EstimateLineItem.objects.create(estimate=estimate, description='Atom-backed')
+        task = Task.objects.create(name='T', job=self.job, **_task_scheme_fields(self.rs))
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+        output = self._run()
+        self.assertNotIn(f'EstimateLineItem {li.pk}', output)
+
+    def test_estimate_adjustment_line_null_ac_not_flagged(self):
+        estimate = self._estimate('EST-VLC-004')
+        li = EstimateLineItem.objects.create(
+            estimate=estimate, description='Adjustment',
+            adjustment_service=self.adj_rs, adjustment_percent=Decimal('10.00'),
+        )
+        output = self._run()
+        self.assertNotIn(f'EstimateLineItem {li.pk}', output)
+
+    # ── ChangeOrderLineItem ──────────────────────────────────────
+
+    def _co(self, estimate, number):
+        return ChangeOrder.objects.create(
+            job=self.job, estimate=estimate, change_order_number=number,
+        )
+
+    def test_bare_co_add_line_no_ac_is_flagged(self):
+        estimate = self._estimate('EST-VLC-005')
+        co = self._co(estimate, 'CO-VLC-001')
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Bare add',
+        )
+        output = self._run()
+        self.assertIn(f'ChangeOrderLineItem {li.pk}', output)
+        self.assertIn('bare ADD line', output)
+
+    def test_co_add_line_with_ac_not_flagged(self):
+        estimate = self._estimate('EST-VLC-006')
+        co = self._co(estimate, 'CO-VLC-002')
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Has AC', accounting_category=self.ac,
+        )
+        output = self._run()
+        self.assertNotIn(f'ChangeOrderLineItem {li.pk}', output)
+
+    def test_co_add_line_atom_backed_null_ac_not_flagged(self):
+        estimate = self._estimate('EST-VLC-007')
+        co = self._co(estimate, 'CO-VLC-003')
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Atom-backed add',
+        )
+        task = Task.objects.create(name='CO T', job=self.job, **_task_scheme_fields(self.rs))
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=li,
+            source_type=ChangeOrderLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+        output = self._run()
+        self.assertNotIn(f'ChangeOrderLineItem {li.pk}', output)
+
+    def test_co_remove_line_null_ac_not_flagged(self):
+        """assert_all_bare_add_lines_have_ac only ever inspects action=ADD
+        lines — a remove line is out of scope for this check too."""
+        estimate = self._estimate('EST-VLC-008')
+        co = self._co(estimate, 'CO-VLC-004')
+        target = EstimateLineItem.objects.create(
+            estimate=estimate, description='Target', accounting_category=self.ac,
+        )
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_REMOVE,
+            target_line_item=target, description='Remove',
+        )
+        output = self._run()
+        self.assertNotIn(f'ChangeOrderLineItem {li.pk}', output)
+
+    # ── InvoiceLineItem ──────────────────────────────────────────
+
+    def test_draft_invoice_bare_line_null_ac_not_flagged(self):
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-001')
+        li = InvoiceLineItem.objects.create(invoice=invoice, description='Hand line')
+        output = self._run()
+        self.assertNotIn(f'InvoiceLineItem {li.pk}', output)
+
+    def test_cancelled_invoice_bare_line_null_ac_not_flagged(self):
+        """InvoiceService.cancel routes draft -> cancelled via Invoice.save(),
+        never through the send-time categorization gate."""
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-002')
+        li = InvoiceLineItem.objects.create(invoice=invoice, description='Hand line')
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_CANCELLED)
+        output = self._run()
+        self.assertNotIn(f'InvoiceLineItem {li.pk}', output)
+
+    def test_open_invoice_bare_line_null_ac_is_flagged(self):
+        """Open is only reachable via send_invoice, which asserts every
+        line is categorized first — a null survivor here is a gate bypass."""
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-003')
+        li = InvoiceLineItem.objects.create(invoice=invoice, description='Hand line')
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_OPEN)
+        output = self._run()
+        self.assertIn(f'InvoiceLineItem {li.pk}', output)
+        self.assertIn('past the send-time categorization gate', output)
+
+    def test_open_invoice_line_with_ac_not_flagged(self):
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-004')
+        li = InvoiceLineItem.objects.create(
+            invoice=invoice, description='Has AC', accounting_category=self.ac,
+        )
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_OPEN)
+        output = self._run()
+        self.assertNotIn(f'InvoiceLineItem {li.pk}', output)
+
+    def test_open_invoice_adjustment_line_null_ac_is_flagged(self):
+        """The send gate applies no adjustment exemption (unlike
+        InvoiceService._agreement_category_id's pre-send stamping
+        exemption) — post-gate, an adjustment line must be categorized
+        too, so this check applies no exemption either."""
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-005')
+        li = InvoiceLineItem.objects.create(
+            invoice=invoice, description='Adjustment',
+            adjustment_service=self.adj_rs, adjustment_percent=Decimal('10.00'),
+        )
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_OPEN)
+        output = self._run()
+        self.assertIn(f'InvoiceLineItem {li.pk}', output)
+
+    def test_paid_invoice_bare_line_null_ac_is_flagged(self):
+        """paid/partly-paid are only reachable from open (QBO polling), so
+        they inherit the same guarantee — checked too, not just open."""
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-006')
+        li = InvoiceLineItem.objects.create(invoice=invoice, description='Hand line')
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_PAID)
+        output = self._run()
+        self.assertIn(f'InvoiceLineItem {li.pk}', output)

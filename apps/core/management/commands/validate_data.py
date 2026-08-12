@@ -42,6 +42,11 @@ Per-model field checks:
                    W  has PLI but empty description (--fix: auto-fill)
   LineItems        E  cannot have both task and inventory_item (mutual exclusivity)
   (all 4 types)    W  negative price
+  EstimateLI       E  hand line (no atom source, not adjustment) missing accounting_category
+  ChangeOrderLI    E  bare ADD line (no descriptor/atom source) missing accounting_category
+  InvoiceLI        E  non-draft/non-dead invoice's line missing accounting_category
+                      (Task accounting_category is nullable and NOT checked —
+                      Phase 3: a task may stay uncategorized until invoicing)
   PurchaseOrder    E  valid status value
                    E  contact must have a business
                    W  non-draft: missing issued_date
@@ -120,6 +125,9 @@ class Command(BaseCommand):
         self.check_bleps_and_shifts()
         self.check_materials()
         self.check_line_items()
+        self.check_estimate_line_categories()
+        self.check_change_order_line_categories()
+        self.check_invoice_line_categories()
         self.check_purchase_orders()
         self.check_invoices()
         self.check_deliverables()
@@ -438,6 +446,110 @@ class Command(BaseCommand):
                 # Negative price
                 if li.price < 0:
                     self.warnings.append(f'{name} {li.pk}: negative price {li.price}')
+
+    # ── Line item accounting_category nullability (Phase 3) ────
+
+    def check_estimate_line_categories(self):
+        """A hand-authored estimate line (no atom source, not a percentage
+        adjustment) must carry an accounting_category —
+        EstimateService.add_line_item / update_line_item /
+        assert_all_hand_lines_have_ac (apps/estimates/services.py) all
+        enforce this at every mutation + at send-time (Decision 1). A
+        survivor with none is a save()/full_clean() bypass (fixture
+        loading, direct ORM create), not a legal state — ERROR.
+
+        Atom-backed lines (an EstimateLineItemSource exists) are exempt:
+        a null-AC Task atom legitimately collapses the line's category to
+        None (Phase 3 Task 4). Adjustment lines (`adjustment_service_id`
+        set) are exempt too: a percentage adjustment targets other lines'
+        categories, it never carries one of its own. Same predicate as
+        assert_all_hand_lines_have_ac."""
+        from apps.estimates.models import EstimateLineItem
+        for li in EstimateLineItem.objects.select_related('estimate').filter(
+            accounting_category_id__isnull=True,
+            adjustment_service_id__isnull=True,
+        ):
+            if li.sources.exists():
+                continue
+            self.errors.append(
+                f'EstimateLineItem {li.pk} (estimate {li.estimate.estimate_number}): '
+                f'hand line (no atom source, not an adjustment) has no accounting_category'
+            )
+
+    def check_change_order_line_categories(self):
+        """A bare ADD line on a change order (no service_item/inventory_item
+        descriptor, no atom source) must carry an accounting_category —
+        ChangeOrderService.assert_all_bare_add_lines_have_ac enforces this
+        at send-time. A survivor with none is a bypass, not a legal state
+        — ERROR. Remove/replace lines are out of scope (mirrors the real
+        gate: assert_all_bare_add_lines_have_ac only ever inspects
+        action=ADD lines — a non-adjustment REPLACE line's category is a
+        separate, pre-existing gap, not something Phase 3 introduced or
+        this check should invent). Descriptor-backed (service_item/
+        inventory_item) and atom-backed (sources exist) ADD lines are
+        exempt, same predicate as the real gate."""
+        from apps.estimates.models import ChangeOrderLineItem
+        for li in ChangeOrderLineItem.objects.select_related('change_order').filter(
+            action=ChangeOrderLineItem.ACTION_ADD,
+            service_item_id__isnull=True,
+            inventory_item_id__isnull=True,
+            accounting_category_id__isnull=True,
+        ):
+            if li.sources.exists():
+                continue
+            self.errors.append(
+                f'ChangeOrderLineItem {li.pk} '
+                f'(CO {li.change_order.change_order_number}): bare ADD line '
+                f'(no descriptor, no atom source) has no accounting_category'
+            )
+
+    def check_invoice_line_categories(self):
+        """An invoice line's accounting_category may be null only while its
+        invoice hasn't (yet, or ever) passed
+        InvoiceEmailService._assert_all_lines_categorized — the send-time
+        gate in apps/invoicing/services.py that requires EVERY line
+        (including adjustment lines; the gate applies no adjustment
+        exemption, unlike InvoiceService._agreement_category_id's stamping
+        exemption) to carry a category before send_invoice flips status
+        off draft.
+
+        So null is legal on:
+          - draft invoices (pre-send: a manual hand line from
+            InvoiceService.add_line_item is never required to carry an AC
+            at add-time — deferred to the send gate by design, see the
+            Phase 3 Task 5 report's "estimate/invoice hand-line
+            AC-requirement discrepancy" note — and an agreement-seeded
+            adjustment line is deliberately left null by
+            InvoiceService._agreement_category_id's adjustment exemption,
+            mirroring the estimate side's own adjustment-line exemption);
+          - cancelled/superseded invoices (InvoiceService.cancel routes a
+            draft invoice straight to cancelled via Invoice.save(), never
+            through the send gate — DEAD_INVOICE_STATUSES,
+            apps/invoicing/claims.py).
+
+        Every other status (open/partly-paid/paid/defaulted) is only
+        reachable by having passed the gate (send_invoice is the sole
+        draft-exit path; QBO polling only ever moves an already-open
+        invoice to partly-paid/paid), so a null AC surviving there is a
+        genuine gate-bypass / data corruption — ERROR. Deliberately NOT
+        scoped by adjustment vs. non-adjustment: post-gate, the gate
+        itself makes no such distinction, so neither does this check.
+
+        Task.accounting_category is separately nullable and NOT checked
+        here or anywhere in validate_data (Phase 3 Task 4) — a task may
+        stay uncategorized until invoicing, where the wizard stamps the
+        configured fallback."""
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.invoicing.claims import DEAD_INVOICE_STATUSES
+        exempt_statuses = (Invoice.STATUS_DRAFT,) + tuple(DEAD_INVOICE_STATUSES)
+        for li in InvoiceLineItem.objects.select_related('invoice').exclude(
+            invoice__status__in=exempt_statuses
+        ).filter(accounting_category_id__isnull=True):
+            self.errors.append(
+                f'InvoiceLineItem {li.pk}: no accounting_category but invoice '
+                f'{li.invoice.display_number} status is "{li.invoice.status}" '
+                f'(past the send-time categorization gate)'
+            )
 
     # ── Purchase Orders ───────────────────────────────────────
 

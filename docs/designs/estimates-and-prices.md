@@ -2833,9 +2833,19 @@ transitions the CO `draft → open`.
   estimating-related event but don't surface in the Job HistoryPanel.
   Tracked in `jobs-and-tasks.md`.
 
-- **`accounting_category` required on `EstimateLineItem`** — part of the
-  project-wide line-item AC-NOT-NULL migration tracked in
-  `architecture-and-conventions.md`.
+- **`accounting_category` required on `EstimateLineItem` — RESOLVED,
+  opposite direction (Phase 3 nullable-AC plan, 2026-08).** The "make it
+  NOT NULL everywhere" migration this TODO used to track was superseded:
+  the field stays nullable by design. Atom-backed lines (an
+  `EstimateLineItemSource` exists) may be null when the backing atom is
+  itself uncategorized; adjustment lines (`adjustment_service_id` set)
+  never carry one. What's actually required: a **hand line** (no atom
+  source, not an adjustment) must have an AC — enforced immediately at
+  add/update time (Decision 1) and again at send-time
+  (`EstimateService.assert_all_hand_lines_have_ac`, §15). The CO parallel
+  is the "AC send guard" above (§14.9). `validate_data.check_estimate_line_categories`
+  / `check_change_order_line_categories` cross-check both at rest (Phase
+  3 Task 8) — see `data-constraints.md` §1.16.
 
 - **`EstimateAcceptanceService.on_accept` review — RESOLVED (superseded
   by the 2026-08-09 Fee retirement).** The item used to ask for a review
