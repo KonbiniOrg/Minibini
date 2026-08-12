@@ -543,7 +543,7 @@ have multiple Estimates over time (revisions); only one may be
 | `open` | `STATUS_OPEN` | Sent to customer; awaiting response |
 | `accepted` | `STATUS_ACCEPTED` | Terminal. Customer accepted; one per Job |
 | `rejected` | `STATUS_REJECTED` | Terminal |
-| `expired` | `STATUS_EXPIRED` | Terminal; auto-set by the `mark_estimates_expired` scheduled command once `expiration_date` has passed (also settable manually) |
+| `expired` | `STATUS_EXPIRED` | Reactivatable (not fully terminal); auto-set by the `mark_estimates_expired` scheduled command once `expiration_date` has passed (also settable manually). `EstimateService.unexpire` (§5.2b) can walk it back to `open` |
 | `superseded` | `STATUS_SUPERSEDED` | Terminal; replaced by a new revision |
 
 Valid transitions (`Estimate.clean()`):
@@ -551,7 +551,8 @@ Valid transitions (`Estimate.clean()`):
 ```
 draft       → open, rejected
 open        → accepted, superseded, rejected, expired
-accepted, rejected, expired, superseded → (terminal)
+expired     → open                        (unexpire reactivation — §5.2b)
+accepted, rejected, superseded → (terminal)
 ```
 
 `Estimate.clean()` also enforces:
@@ -594,6 +595,76 @@ Because the transition is `open → expired`, it fires the §9.3 invariant:
 the parent Job is driven to `rejected`. The command is part of the
 scheduled-process machinery (`ScheduledProcessCommand` + cron) documented
 in `architecture-and-conventions.md` §9; it runs daily.
+
+### 5.2b Unexpiring — `EstimateService.unexpire`
+
+Clients often respond after the `est_expire_days` window closes. Unlike a
+normal terminal status, `expired` is **reactivatable**: `Estimate.clean()`'s
+`VALID_TRANSITIONS` allows `EXPIRED → OPEN`, and `Job.clean()`'s allows
+`REJECTED → SUBMITTED` (mirroring the existing `CANCELLED → IN_PROGRESS`
+"undo accidental cancel" precedent). This is an **in-place** reactivation —
+the same `Estimate` row, the same `Job` row, no duplication:
+
+```python
+EstimateService.unexpire(pk) → Estimate  # the SAME estimate, now open
+```
+
+1. Raises `ValidationError` unless the estimate is `STATUS_EXPIRED`.
+2. Sets `expiration_date = now() + est_expire_days` (Configuration key,
+   default 30) — a **fresh** window. `Estimate.save()`'s own auto-set logic
+   only stamps `expiration_date` the first time `sent_date` is set (§5.2),
+   so a bare status flip would leave the old, already-lapsed date in place;
+   `unexpire` sets it explicitly instead.
+3. Flips `status` to `OPEN` and saves. `Estimate.clean()`'s date-immutability
+   guard has a carve-out for this specific transition: `closed_date` (stamped
+   when it first went `expired`) is cleared rather than protected, since the
+   document is no longer closed. `sent_date` is left alone — the estimate
+   never went back through `draft`, so the original send date is still
+   accurate.
+4. The `open` save fires `Estimate._maybe_update_job_status` (the same
+   signal path as a first send, `draft → open`, both now share one
+   condition: `status == OPEN and old_status in (DRAFT, EXPIRED)`), which
+   drives the job `rejected → submitted` via the shared `update_job_status`
+   receiver (`apps/estimates/signals.py`). That receiver already handles a
+   job that diverged from `rejected` in the meantime (`completed`/`cancelled`
+   → no-op; already `approved`/beyond → no downgrade) — no separate guard is
+   needed in `unexpire` itself. `Job.clean()` has the matching carve-out:
+   entering `submitted` from `rejected` clears the job's `completed_date`
+   (extending the existing `reactivating` check already used for
+   `cancelled`/`work_complete → in_progress`).
+5. Records an `action` HistoryEntry on the estimate. The job-side
+   `update_job_status` receiver also picks a specific wording ("Estimate
+   {number} unexpired" instead of "... sent") when it detects the job was
+   `rejected` going into the transition.
+
+Line items, the estimate number, and the job are all untouched — this is a
+pure status reversal, not a re-authoring.
+
+**API:** `POST /api/estimates/{id}/unexpire/`, registered via
+`StatusTransitionMixin`'s `status_actions` (`apps/api/estimates/views.py`) —
+a plain in-place transition action fits that machinery exactly (it re-fetches
+and re-serializes the *same* object after the service call). 404 if not
+found; the central handler renders the plain-string `ValidationError`
+(non-expired guard) as `{'detail': ...}` per the error contract
+(`architecture-and-conventions.md` §3.9); success is 200 with the serialized
+estimate.
+
+**Permission:** `CanManageJobs | CanManageFinancials` — **not**
+`CanManageJobOrPM`. Every other estimate-mutating action on this viewset is
+PM-scoped (the job's own `project_manager` gets atom-equivalent power over
+just that job); unexpire deliberately is not — reactivating a rejected job
+is treated as a bigger call than ordinary per-job PM authority, gated on
+either of the two atoms directly (mirroring the existing
+`start_invoice_wizard` action on `JobViewSet`, which uses the same `(A | B)`
+combinator for a similarly job/financials-straddling action).
+
+Frontend: `EstimatePanel.svelte`'s **Unexpire** button — shown only on an
+`expired` estimate, gated on the `user` store's `permissions` array holding
+`can_manage_jobs` or `can_manage_financials` (a **global** atom check, not
+the per-object `estimate.can_manage` flag every other button here uses,
+since this action isn't PM-scoped). Confirms, then reloads the doc and the
+host's job header in place (`loadEstimate()` + `onJobChange()`) — no
+navigation, since it's the same estimate and job.
 
 ### 5.3 Versioning (revision)
 

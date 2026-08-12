@@ -112,6 +112,52 @@ describe('EstimatePanel toolbar actions', () => {
     expect(await findByRole('button', { name: /revise estimate/i })).toBeInTheDocument();
   });
 
+  it('offers Unexpire on an expired estimate to a can_manage_jobs holder and reloads in place', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    const est = makeEstimate({ estimate_id: 7, status: 'expired', can_manage: false });
+    mockApi(est, { versions: [est] });
+    api.post.mockResolvedValue({ estimate_id: 7, status: 'open' });
+    const onJobChange = vi.fn();
+    const { findByRole } = render(EstimatePanel, {
+      props: { job: JOB, estimateId: 7, onJobChange },
+    });
+    const btn = await findByRole('button', { name: /unexpire/i });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const getCalls = api.get.mock.calls.length;
+    await fireEvent.click(btn);
+    expect(api.post).toHaveBeenCalledWith('/api/estimates/7/unexpire/');
+    // In-place reload, not a hash navigation: no new job/estimate to jump to.
+    await vi.waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(getCalls));
+    await vi.waitFor(() => expect(onJobChange).toHaveBeenCalled());
+  });
+
+  it('offers Unexpire to a can_manage_financials holder (no can_manage_jobs)', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const est = makeEstimate({ estimate_id: 7, status: 'expired', can_manage: false });
+    mockApi(est, { versions: [est] });
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    expect(await findByRole('button', { name: /unexpire/i })).toBeInTheDocument();
+  });
+
+  it('hides Unexpire without can_manage_jobs or can_manage_financials, even as the job PM (can_manage true)', async () => {
+    // Unlike every other action here, Unexpire is NOT PM-scoped.
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'expired', can_manage: true });
+    mockApi(est, { versions: [est] });
+    const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Estimate: EST-7');
+    expect(queryByRole('button', { name: /unexpire/i })).toBeNull();
+  });
+
+  it('does not offer Unexpire on a non-expired estimate', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    const est = makeEstimate({ estimate_id: 7, status: 'open' });
+    mockApi(est, { versions: [est] });
+    const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Estimate: EST-7');
+    expect(queryByRole('button', { name: /unexpire/i })).toBeNull();
+  });
+
   it('hides Create Change Order while the job is not held (API would refuse)', async () => {
     // CO drafting happens inside a hold episode; the button only shows when
     // the click can actually succeed.

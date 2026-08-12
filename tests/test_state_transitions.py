@@ -145,14 +145,32 @@ class JobStateTransitionTest(TestCase):
         with self.assertRaises(ValidationError):
             job.save()
 
+    def test_rejected_to_submitted_valid_clears_completed_date(self):
+        """Estimate unexpire reactivates a rejected job back to submitted;
+        the stale completed_date (stamped on entry to rejected) is cleared."""
+        job = Job.objects.create(
+            job_number="JOB014B",
+            contact=self.contact,
+            status=Job.STATUS_SUBMITTED,
+        )
+        job.status = Job.STATUS_REJECTED
+        job.save()
+        self.assertIsNotNone(job.completed_date)
+
+        job.status = Job.STATUS_SUBMITTED
+        job.save()
+        self.assertEqual(job.status, Job.STATUS_SUBMITTED)
+        self.assertIsNone(job.completed_date)
+
     def test_rejected_to_any_invalid(self):
-        """Test that Rejected is a terminal state and cannot transition."""
+        """Rejected cannot transition anywhere except submitted (estimate
+        unexpire reactivation), which is intentionally excluded from this list."""
         job = Job.objects.create(
             job_number="JOB014",
             contact=self.contact,
             status=Job.STATUS_REJECTED
         )
-        for status in [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]:
+        for status in [Job.STATUS_DRAFT, Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]:
             job.status = status
             with self.assertRaises(ValidationError):
                 job.save()
@@ -837,17 +855,35 @@ class EstimateStateTransitionTest(TestCase):
             estimate.refresh_from_db()
 
     def test_expired_to_any_invalid(self):
-        """Test that Expired is a terminal state."""
+        """Expired cannot transition anywhere except open (unexpire
+        reactivation), which is intentionally excluded from this list."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST026",
             status=Estimate.STATUS_EXPIRED
         )
-        for status in [Estimate.STATUS_DRAFT, Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED, Estimate.STATUS_SUPERSEDED]:
+        for status in [Estimate.STATUS_DRAFT, Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED, Estimate.STATUS_SUPERSEDED]:
             estimate.status = status
             with self.assertRaises(ValidationError):
                 estimate.save()
             estimate.refresh_from_db()
+
+    def test_expired_to_open_valid_clears_closed_date(self):
+        """Unexpire reactivation: the stale closed_date (stamped on entry to
+        expired) is cleared."""
+        estimate = Estimate.objects.create(
+            job=self.job,
+            estimate_number="EST026B",
+            status=Estimate.STATUS_OPEN,
+        )
+        estimate.status = Estimate.STATUS_EXPIRED
+        estimate.save()
+        self.assertIsNotNone(estimate.closed_date)
+
+        estimate.status = Estimate.STATUS_OPEN
+        estimate.save()
+        self.assertEqual(estimate.status, Estimate.STATUS_OPEN)
+        self.assertIsNone(estimate.closed_date)
 
     def test_superseded_to_any_invalid(self):
         """Test that Superseded is a terminal state."""
