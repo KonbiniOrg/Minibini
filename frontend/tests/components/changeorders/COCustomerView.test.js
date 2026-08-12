@@ -129,9 +129,7 @@ describe('COCustomerView', () => {
     const added = rowFor('Widget new', 'row-added');
     expect(added).toBeTruthy();
     expect(added.querySelector('.tag-add')).toBeTruthy();
-    // Qty stacks its units beneath it (QtyUnits).
-    expect(added.textContent).toContain('5.00');
-    expect(added.querySelector('.qty-units-under').textContent).toBe('ea');
+    expect(added.textContent).toContain('5.00 ea');
   });
 
   it('omits the deliverables section entirely when the diff is empty', () => {

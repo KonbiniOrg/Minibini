@@ -16,11 +16,7 @@ describe('DocCustomerView', () => {
     });
     getByText('Estimate #123');
     getByText('Sanding');
-    // Qty stacks its units beneath it (QtyUnits) — assert within the row.
-    const sandingRow = [...container.querySelectorAll('tbody tr')]
-      .find((tr) => tr.textContent.includes('Sanding'));
-    expect(sandingRow.textContent).toContain('2');
-    expect(sandingRow.querySelector('.qty-units-under').textContent).toBe('hr');
+    getByText('2 hr');
     getByText('$25.00');
     getByText('$50.00');
     getByText('Acrylic sheet');

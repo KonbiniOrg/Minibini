@@ -3,25 +3,22 @@ import { render } from '@testing-library/svelte';
 import QtyUnits from '@/components/docsurface/QtyUnits.svelte';
 
 describe('QtyUnits', () => {
-  it('stacks units beneath the qty in muted small text', () => {
+  it('renders qty and units inline (wraps naturally when squeezed — no forced line break)', () => {
     const { container } = render(QtyUnits, { props: { qty: '2.00', units: 'hour' } });
-    expect(container.textContent).toContain('2.00');
-    const under = container.querySelector('small.qty-units-under');
-    expect(under).toBeTruthy();
-    expect(under.textContent).toBe('hour');
+    expect(container.textContent.trim()).toBe('2.00 hour');
+    expect(container.querySelector('br')).toBeNull();
   });
 
   it("omits units entirely when units is 'none'", () => {
     const { container } = render(QtyUnits, { props: { qty: '2.00', units: 'none' } });
     expect(container.textContent.trim()).toBe('2.00');
-    expect(container.querySelector('.qty-units-under')).toBeNull();
   });
 
   it('omits units when units is empty/null', () => {
     const { container } = render(QtyUnits, { props: { qty: '5', units: '' } });
-    expect(container.querySelector('.qty-units-under')).toBeNull();
+    expect(container.textContent.trim()).toBe('5');
     const { container: c2 } = render(QtyUnits, { props: { qty: '5', units: null } });
-    expect(c2.querySelector('.qty-units-under')).toBeNull();
+    expect(c2.textContent.trim()).toBe('5');
   });
 
   it("renders '-' for a missing qty (mirrors formatQtyUnits)", () => {
