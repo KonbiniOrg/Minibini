@@ -27,10 +27,12 @@ function seededLine(overrides = {}) {
     price: '25.00',
     accounting_category: 3,
     adjustment_service: null,
+    adjustment_target_categories: [],
     adjustment_service_detail: null,
     agreement_ref: agreementRef(),
     backing: 'estimate',
     actuals_total: null,
+    used_fallback_ac: false,
     sources: [],
     ...overrides,
   };
@@ -46,10 +48,12 @@ function handLine(overrides = {}) {
     price: '10.00',
     accounting_category: 3,
     adjustment_service: null,
+    adjustment_target_categories: [],
     adjustment_service_detail: null,
     agreement_ref: null,
     backing: null,
     actuals_total: null,
+    used_fallback_ac: false,
     sources: [],
     ...overrides,
   };
@@ -545,6 +549,106 @@ describe('InvoiceEditView estimate total in the Total row (RM 2026-08-10)', () =
     });
     await findByText('Hand entry');
     expect(queryByText(/^estimate \$/)).toBeNull();
+  });
+});
+
+describe('InvoiceEditView uncategorized chip (Phase 3 Task 6)', () => {
+  it('renders the chip with the fallback name and taxability for a flagged line', async () => {
+    const line = seededLine({ accounting_category: 9, used_fallback_ac: true });
+    const { findByText } = render(InvoiceEditView, {
+      props: baseProps({
+        lineItems: [line],
+        categories: [
+          { id: 3, code: 'LAB', name: 'Labor' },
+          { id: 9, code: 'UNC', name: 'Uncategorized', taxable: true, is_fallback: true },
+        ],
+      }),
+    });
+    expect(await findByText('uncategorized → Uncategorized · taxable')).toBeInTheDocument();
+  });
+
+  it('renders "non-taxable" for a non-taxable fallback category', async () => {
+    const line = seededLine({ accounting_category: 9, used_fallback_ac: true });
+    const { findByText } = render(InvoiceEditView, {
+      props: baseProps({
+        lineItems: [line],
+        categories: [{ id: 9, code: 'UNC', name: 'Uncategorized', taxable: false, is_fallback: true }],
+      }),
+    });
+    expect(await findByText('uncategorized → Uncategorized · non-taxable')).toBeInTheDocument();
+  });
+
+  it('does not render the chip when used_fallback_ac is false', async () => {
+    const line = seededLine({ used_fallback_ac: false });
+    const { findByText, queryByText } = render(InvoiceEditView, { props: baseProps({ lineItems: [line] }) });
+    await findByText('Cut parts');
+    expect(queryByText(/uncategorized/i)).toBeNull();
+  });
+
+  it('falls back to a bare "uncategorized" when the AC id is not in the loaded categories list', async () => {
+    const line = seededLine({ accounting_category: 999, used_fallback_ac: true });
+    const { findByText } = render(InvoiceEditView, {
+      props: baseProps({
+        lineItems: [line],
+        categories: [{ id: 3, code: 'LAB', name: 'Labor' }],
+      }),
+    });
+    expect(await findByText('uncategorized', { exact: true })).toBeInTheDocument();
+  });
+});
+
+describe('InvoiceEditView targeted-adjustment warning banner (Phase 3 Task 6)', () => {
+  const flaggedLine = (overrides = {}) => seededLine({ accounting_category: 9, used_fallback_ac: true, ...overrides });
+  const targetedAdjLine = (overrides = {}) => handLine({
+    line_item_id: 20, line_number: 3, description: 'Fee adjustment',
+    adjustment_service: 5, adjustment_target_categories: [3],
+    adjustment_service_detail: { name: 'Rush fee', rate: '10', algorithm: 'percentage' },
+    ...overrides,
+  });
+  const categoriesWithFallback = [
+    { id: 3, code: 'LAB', name: 'Labor' },
+    { id: 9, code: 'UNC', name: 'Uncategorized', taxable: false, is_fallback: true },
+  ];
+
+  it('shows no banner when neither an uncategorized line nor a targeted adjustment exist', async () => {
+    const { findByText, queryByText } = render(InvoiceEditView, {
+      props: baseProps({ lineItems: [seededLine(), handLine()], categories: categoriesWithFallback }),
+    });
+    await findByText('Cut parts');
+    expect(queryByText(/uncategorized lines/i)).toBeNull();
+  });
+
+  it('shows no banner with only an uncategorized line (no targeted adjustment)', async () => {
+    const { findByText, queryByText } = render(InvoiceEditView, {
+      props: baseProps({ lineItems: [flaggedLine()], categories: categoriesWithFallback }),
+    });
+    await findByText('Cut parts');
+    expect(queryByText(/uncategorized lines/i)).toBeNull();
+  });
+
+  it('shows no banner with only a targeted adjustment (no uncategorized line)', async () => {
+    const { findByText, queryByText } = render(InvoiceEditView, {
+      props: baseProps({ lineItems: [seededLine(), targetedAdjLine()], categories: categoriesWithFallback }),
+    });
+    await findByText('Cut parts');
+    expect(queryByText(/uncategorized lines/i)).toBeNull();
+  });
+
+  it('shows the banner when an uncategorized line coexists with a targeted adjustment', async () => {
+    const { findByText } = render(InvoiceEditView, {
+      props: baseProps({ lineItems: [flaggedLine(), targetedAdjLine()], categories: categoriesWithFallback }),
+    });
+    expect(await findByText(/uncategorized lines/i)).toBeInTheDocument();
+    expect(await findByText(/Targeted adjustments never apply to them/i)).toBeInTheDocument();
+  });
+
+  it('does not trigger the banner for an untargeted adjustment (empty target list applies to all)', async () => {
+    const untargeted = targetedAdjLine({ adjustment_target_categories: [] });
+    const { findByText, queryByText } = render(InvoiceEditView, {
+      props: baseProps({ lineItems: [flaggedLine(), untargeted], categories: categoriesWithFallback }),
+    });
+    await findByText('Cut parts');
+    expect(queryByText(/uncategorized lines/i)).toBeNull();
   });
 });
 

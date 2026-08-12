@@ -432,6 +432,33 @@
     const sign = pct >= 0 ? '+' : '';
     return `${sign}${pct}% ${li.adjustment_service_detail.name}`;
   }
+
+  // ── Uncategorized-line chip + targeted-adjustment warning (Phase 3 Task 6)
+  // used_fallback_ac (serializer-computed) flags a line whose accounting
+  // category is the configured fallback — the categories list this panel
+  // loads is unfiltered, so the fallback row (name/taxability) is looked up
+  // client-side by the line's own AC id. A stale/missing categories list
+  // (client hasn't refreshed since the fallback was reconfigured) degrades
+  // to a bare "uncategorized" rather than guessing.
+  function fallbackCategoryFor(li) {
+    return categories.find((c) => c.id === li.accounting_category) || null;
+  }
+  function uncategorizedChipText(li) {
+    const cat = fallbackCategoryFor(li);
+    if (!cat) return 'uncategorized';
+    return `uncategorized → ${cat.name} · ${cat.taxable ? 'taxable' : 'non-taxable'}`;
+  }
+
+  // A targeted percentage adjustment (a target list means "only these
+  // categories", never "all") silently skips any line still sitting on the
+  // fallback category — the warning below surfaces that before it bites at
+  // send/QBO-push time.
+  let hasUncategorizedLine = $derived(lineItems.some((li) => li.used_fallback_ac === true));
+  let hasTargetedAdjustment = $derived(
+    lineItems.some((li) =>
+      li.adjustment_service != null && (li.adjustment_target_categories || []).length > 0)
+  );
+  let showUncategorizedWarning = $derived(hasUncategorizedLine && hasTargetedAdjustment);
 </script>
 
 <h3>Line Items</h3>
@@ -456,6 +483,13 @@
       <button type="button" onclick={() => { agreementPickerOpen = true; }}>Add from agreement&hellip;</button>
     {/if}
   </p>
+{/if}
+
+{#if showUncategorizedWarning}
+  <div class="doc-warning">
+    This invoice has uncategorized lines. Targeted adjustments never apply to
+    them — categorize the lines or check the adjustment's targets.
+  </div>
 {/if}
 
 <table class="data-table doc-edit-table line-items-table">
@@ -486,6 +520,9 @@
         <td class="text-right">{fmtMoney(lineAmount(li))}</td>
         <td>
           <BackingChip backing={li.backing} syncedWithEstimate={isSynced(li)} />
+          {#if li.used_fallback_ac}
+            <span class="uncategorized-chip">{uncategorizedChipText(li)}</span>
+          {/if}
           {#if estReferenceText(li)}<br><small>{estReferenceText(li)}</small>{/if}
         </td>
         {#if canEdit}
@@ -671,6 +708,17 @@
      without an accounting_category — the biller must see this before the
      send-time error). */
   .needs-category { background-color: #fff8e1; color: #b45309; font-style: italic; }
+  /* Uncategorized-line chip (Phase 3 Task 6) — same shape as .backing-chip,
+     amber like .needs-category (the two mark related but distinct states:
+     no category at all vs. parked on the fallback category). */
+  .uncategorized-chip { display:inline-block; font-size:11px; font-weight:600;
+    padding:1px 8px; border-radius:999px; white-space:nowrap;
+    background:#fff8e1; color:#b45309; margin-left: 4px; }
+  /* Muted amber notice banner — informational, not the red error overlay. */
+  .doc-warning {
+    border: 1px solid #f0c36d; background: #fff8e1; color: #92620a;
+    border-radius: 6px; padding: 8px 12px; margin: 10px 0; font-size: 13px;
+  }
   .deposit-credits-section { margin-top: 20px; }
   /* Add-from-agreement picker modal header — same shell vocabulary as
      PriceListPicker's .plp-header (bleed to the box edges, divider below). */
