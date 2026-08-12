@@ -62,7 +62,9 @@ class InvoiceSendCategoryGateTest(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             InvoiceEmailService._assert_all_lines_categorized(self.invoice)
-        self.assertIn('1', str(ctx.exception))
+        msg = str(ctx.exception)
+        self.assertIn('1', msg)
+        self.assertIn('fallback_accounting_category', msg)
 
     def test_helper_names_multiple_offending_lines(self):
         """Error message includes all line numbers missing a category."""
@@ -140,5 +142,7 @@ class InvoiceSendCategoryGateTest(TestCase):
                 subject='Test',
                 body='Test body',
             )
-        self.assertIn('accounting category', str(ctx.exception).lower())
-        self.assertIn('1', str(ctx.exception))
+        msg = str(ctx.exception)
+        self.assertIn('accounting category', msg.lower())
+        self.assertIn('1', msg)
+        self.assertIn('fallback_accounting_category', msg)

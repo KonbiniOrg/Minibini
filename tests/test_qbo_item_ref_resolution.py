@@ -165,3 +165,16 @@ class ItemRefResolutionTests(TestCase):
         line = self._line(accounting_category=bare_cat)
         self.assertIsNone(
             QBOInvoiceSyncService._resolve_item_ref(line, MagicMock()))
+
+    def test_null_category_with_no_entity_raises_clear_error(self):
+        """A sourceless hand line (no catalog entity) with a null AC — the
+        entity path can't resolve an ItemRef and there's no category to
+        fall back to, so this must raise a clear ValidationError naming
+        the line rather than an AttributeError on a None category."""
+        from django.core.exceptions import ValidationError
+        line = self._line(accounting_category=None)
+        with self.assertRaises(ValidationError) as ctx:
+            QBOInvoiceSyncService._resolve_item_ref(line, MagicMock())
+        msg = str(ctx.exception)
+        self.assertIn(str(line.line_number), msg)
+        self.assertIn('fallback_accounting_category', msg)

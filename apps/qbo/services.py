@@ -4,6 +4,7 @@ from apps.core.history import record_history
 import json
 from decimal import Decimal
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 from apps.core.models import Configuration
@@ -338,6 +339,8 @@ class QBOInvoiceSyncService:
                       .select_related('accounting_category', 'inventory_item')
                       .order_by('line_number'))
         for li in line_items:
+            QBOInvoiceSyncService._require_line_category(li)
+
             line = SalesItemLine()
             line.Amount = float(li.total_amount)
             line.Description = li.description
@@ -358,6 +361,31 @@ class QBOInvoiceSyncService:
             qbo_inv.Line.append(line)
 
         return qbo_inv
+
+    @staticmethod
+    def _require_line_category(line_item):
+        """Raise ValidationError naming the offending line when it has no
+        accounting category.
+
+        Defensive guard: invoice authoring stamps the configured fallback
+        AccountingCategory onto any line whose deriving atom carries none
+        (Phase 3 Task 5), so a null-AC line should be unreachable via
+        normal authoring flows. Hand lines can still be created with a
+        null AC deliberately, though — InvoiceEmailService's send-gate
+        (`_assert_all_lines_categorized`) is the primary catch for those;
+        this is the second line of defense for any push path that reaches
+        QBO line-building without going through that gate (e.g. a retry
+        or a future direct-push caller). Without this, the line would hit
+        a bare AttributeError on `.taxable` / `.qbo_item_id` further down.
+        """
+        if line_item.accounting_category_id is None:
+            raise ValidationError(
+                f"Invoice line {line_item.line_number} "
+                f"('{line_item.description}') has no accounting category. "
+                f"Categorize the line, or configure the "
+                f"fallback_accounting_category setting, before sending to "
+                f"QBO."
+            )
 
     @staticmethod
     def _catalog_entity_for_line(line_item):
@@ -395,14 +423,22 @@ class QBOInvoiceSyncService:
 
     @staticmethod
     def _resolve_item_ref(line_item, client):
-        """QBO Item id for this line, or None to omit ItemRef."""
+        """QBO Item id for this line, or None to omit ItemRef.
+
+        Raises ValidationError (via `_require_line_category`) if the line
+        carries no catalog entity to mint/adopt an Item from *and* has no
+        accounting_category of its own to fall back to — see
+        `_require_line_category` for why this line should be unreachable
+        via normal authoring flows and why the guard exists anyway.
+        """
         entity = QBOInvoiceSyncService._catalog_entity_for_line(line_item)
         if entity is not None:
             qbo_id = QBOItemMintService.ensure_item(entity, client)
             if qbo_id:
                 return qbo_id
+        QBOInvoiceSyncService._require_line_category(line_item)
         category = line_item.accounting_category
-        if category and category.qbo_item_id:
+        if category.qbo_item_id:
             return category.qbo_item_id
         return None
 

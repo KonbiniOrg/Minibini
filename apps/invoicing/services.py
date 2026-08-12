@@ -834,7 +834,9 @@ class InvoiceEmailService:
             nums = ', '.join(str(n) for n in missing)
             raise ValidationError(
                 f'Every line item needs an accounting category before sending'
-                f' (line(s) {nums}).'
+                f' (line(s) {nums}). Categorize the line(s) directly, or'
+                f' configure the fallback_accounting_category setting so'
+                f' new lines are auto-categorized.'
             )
 
     @staticmethod
