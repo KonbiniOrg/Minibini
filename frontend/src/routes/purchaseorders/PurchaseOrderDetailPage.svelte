@@ -55,7 +55,7 @@
       po = await api.get(`/api/purchase-orders/${params.id}/`);
       const [histData, catData] = await Promise.all([
         api.get(`/api/purchase-orders/${params.id}/history/`),
-        api.get('/api/accounting-categories/?page_size=100'),
+        api.get('/api/accounting-categories/?page_size=100&exclude_fallback=true'),
       ]);
       history = histData;
       categories = catData.results || catData;

@@ -52,6 +52,15 @@ beforeEach(() => {
   clearMessage();
 });
 
+describe('PurchaseOrderDetailPage accounting categories', () => {
+  it('loads accounting categories excluding the fallback category', async () => {
+    render(PurchaseOrderDetailPage, { props: { params: { id: '7' } } });
+    await vi.waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100&exclude_fallback=true');
+    });
+  });
+});
+
 describe('PurchaseOrderDetailPage delete with sever', () => {
   it('sends sever decisions under the plural "sever_decisions" key', async () => {
     const { container } = render(PurchaseOrderDetailPage, { props: { params: { id: '7' } } });

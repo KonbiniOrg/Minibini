@@ -16,7 +16,7 @@ beforeEach(() => {
   user.set({ id: 2 });
   getPaymentAccounts.mockResolvedValue([{ qbo_account_id: 'acc1', display_name: 'Visa' }]);
   api.get.mockImplementation((url) => {
-    if (url === '/api/accounting-categories/') {
+    if (url === '/api/accounting-categories/?exclude_fallback=true') {
       return Promise.resolve({ results: [{ id: 1, name: 'Meals', qbo_expense_account_id: 'a1' }] });
     }
     if (url === '/api/users/') return Promise.resolve({ results: [{ id: 2, first_name: 'Sam', last_name: 'X', username: 'sam' }] });
@@ -30,6 +30,13 @@ beforeEach(() => {
 });
 
 describe('ExpenseForm', () => {
+  it('loads accounting categories excluding the fallback category', async () => {
+    render(ExpenseForm, { props: { onSaved: vi.fn(), onCancel: vi.fn() } });
+    await vi.waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?exclude_fallback=true');
+    });
+  });
+
   it('submits a personal expense', async () => {
     const onSaved = vi.fn();
     const { getByLabelText, findByRole, getByRole } = render(ExpenseForm, { props: { onSaved, onCancel: vi.fn() } });

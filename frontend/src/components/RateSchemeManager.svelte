@@ -53,7 +53,7 @@
         : '/api/rate-schemes/';
       const [schemeResp, catResp, unitsResp, settingsResp] = await Promise.all([
         api.get(url),
-        api.get('/api/accounting-categories/'),
+        api.get('/api/accounting-categories/?exclude_fallback=true'),
         api.get('/api/settings/units/'),
         api.get('/api/settings/'),
       ]);

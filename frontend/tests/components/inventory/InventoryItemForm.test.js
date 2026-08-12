@@ -24,6 +24,13 @@ beforeEach(() => {
 });
 
 describe('InventoryItemForm', () => {
+  it('loads accounting categories excluding the fallback category', async () => {
+    render(InventoryItemForm, { props: { onSaved: vi.fn() } });
+    await vi.waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?exclude_fallback=true');
+    });
+  });
+
   it('creates an item and omits blank selling price', async () => {
     const onSaved = vi.fn();
     const { getByRole, findByRole } = render(InventoryItemForm, { props: { onSaved } });

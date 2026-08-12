@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, within } from '@testing-library/svelte';
+import { render, fireEvent, within, waitFor } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -89,6 +89,19 @@ describe('EstimatePanel version subnav', () => {
     expect(links[1]).toHaveTextContent('EST-7-2');
     expect(links[1]).toHaveClass('active');
     expect(links[0]).not.toHaveClass('active');
+  });
+
+  it('loads accounting categories excluding the fallback category', async () => {
+    user.set({ permissions: [] });
+    const v1 = makeEstimate({ estimate_id: 7, version: 1, status: 'superseded' });
+    const v2 = makeEstimate({ estimate_id: 8, version: 2, status: 'draft' });
+    mockApi(v2, { versions: [v1, v2] });
+
+    render(EstimatePanel, { props: { job: JOB, estimateId: 8 } });
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100&exclude_fallback=true');
+    });
   });
 
   it('appends change orders after estimate versions, linking to /change-orders/:id', async () => {

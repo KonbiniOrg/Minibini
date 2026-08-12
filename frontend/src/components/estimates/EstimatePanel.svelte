@@ -214,7 +214,7 @@
 
   async function loadCategories() {
     try {
-      const resp = await api.get('/api/accounting-categories/?page_size=100');
+      const resp = await api.get('/api/accounting-categories/?page_size=100&exclude_fallback=true');
       categories = resp.results || resp;
     } catch (_) {
       categories = [];

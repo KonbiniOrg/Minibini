@@ -28,7 +28,7 @@
 
   async function loadCategories() {
     try {
-      const data = await api.get('/api/accounting-categories/');
+      const data = await api.get('/api/accounting-categories/?exclude_fallback=true');
       categories = data.results || data;
     } catch (err) {
       error = err.message || 'Could not load categories.';

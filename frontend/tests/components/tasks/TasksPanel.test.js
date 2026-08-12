@@ -50,6 +50,14 @@ describe('TasksPanel per-job can_manage', () => {
     await waitFor(() => expect(getByRole('button', { name: /add work/i })).toBeInTheDocument());
   });
 
+  it('loads accounting categories excluding the fallback category', async () => {
+    mockApi();
+    render(TasksPanel, { props: { job: makeJob() } });
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100&exclude_fallback=true');
+    });
+  });
+
   it('shows Mark Work Complete when can_manage is true (atom off)', async () => {
     mockApi();
     const { getByRole } = render(TasksPanel, { props: { job: makeJob({ can_manage: true }) } });

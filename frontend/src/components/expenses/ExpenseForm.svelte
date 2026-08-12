@@ -78,7 +78,7 @@
 
   async function loadDropdowns() {
     try {
-      const catData = await api.get('/api/accounting-categories/');
+      const catData = await api.get('/api/accounting-categories/?exclude_fallback=true');
       categories = catData.results || catData;
     } catch (_) { /* ignore */ }
 

@@ -48,6 +48,14 @@ beforeEach(() => {
 });
 
 describe('TaskDetailPage header', () => {
+  it('loads accounting categories excluding the fallback category', async () => {
+    mockApi({ status: 'in_progress' });
+    render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100&exclude_fallback=true');
+    });
+  });
+
   it('leads the title row with the task name and an activity pill', async () => {
     mockApi({ status: 'in_progress' });
     const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });

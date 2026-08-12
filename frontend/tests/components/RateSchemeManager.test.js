@@ -20,7 +20,7 @@ beforeEach(() => {
   api.delete.mockReset();
   api.get.mockImplementation((url) => {
     if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME] });
-    if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+    if (url === '/api/accounting-categories/?exclude_fallback=true') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
     if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
     if (url === '/api/settings/') return Promise.resolve(mockSettings());
     return Promise.resolve({ results: [] });
@@ -36,6 +36,13 @@ describe('RateSchemeManager', () => {
     // 'Hourly' also appears as an option in the default-preset picker, so
     // scope to the table row (cell), not a bare text match.
     expect(await findByRole('cell', { name: 'Hourly' })).toBeInTheDocument();
+  });
+
+  it('loads accounting categories excluding the fallback category', async () => {
+    render(RateSchemeManager);
+    await vi.waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?exclude_fallback=true');
+    });
   });
 
   it('shows the accounting category in the scheme row', async () => {
@@ -210,7 +217,7 @@ describe('RateSchemeManager', () => {
     };
     api.get.mockImplementation((url) => {
       if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [enteredScheme] });
-      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/accounting-categories/?exclude_fallback=true') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
       if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour', 'pc']);
       return Promise.resolve({ results: [] });
     });
@@ -260,7 +267,7 @@ describe('RateSchemeManager', () => {
     const referenced = { ...SCHEME, reference_counts: { task_count: 3, service_item_count: 1 } };
     api.get.mockImplementation((url) => {
       if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [referenced] });
-      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/accounting-categories/?exclude_fallback=true') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
       if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
       if (url === '/api/settings/') return Promise.resolve(mockSettings());
       return Promise.resolve({ results: [] });
@@ -286,7 +293,7 @@ describe('RateSchemeManager', () => {
     api.get.mockImplementation((url) => {
       if (url === '/api/rate-schemes/?include_inactive=true') return Promise.resolve({ results: [SCHEME, INACTIVE_SCHEME] });
       if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME] });
-      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/accounting-categories/?exclude_fallback=true') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
       if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
       if (url === '/api/settings/') return Promise.resolve(mockSettings());
       return Promise.resolve({ results: [] });
@@ -303,7 +310,7 @@ describe('RateSchemeManager', () => {
   it('default preset picker renders the current default from settings', async () => {
     api.get.mockImplementation((url) => {
       if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME] });
-      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/accounting-categories/?exclude_fallback=true') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
       if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
       if (url === '/api/settings/') return Promise.resolve(mockSettings({ default_rate_scheme: '1' }));
       return Promise.resolve({ results: [] });
@@ -317,7 +324,7 @@ describe('RateSchemeManager', () => {
     api.get.mockImplementation((url) => {
       if (url === '/api/rate-schemes/?include_inactive=true') return Promise.resolve({ results: [SCHEME, INACTIVE_SCHEME] });
       if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME] });
-      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/accounting-categories/?exclude_fallback=true') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
       if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
       if (url === '/api/settings/') return Promise.resolve(mockSettings());
       return Promise.resolve({ results: [] });
@@ -358,7 +365,7 @@ describe('RateSchemeManager', () => {
     const other = { ...SCHEME, rate_scheme_id: 3, name: 'Other Rate' };
     api.get.mockImplementation((url) => {
       if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME, other] });
-      if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
+      if (url === '/api/accounting-categories/?exclude_fallback=true') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
       if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour']);
       if (url === '/api/settings/') return Promise.resolve(mockSettings({ default_rate_scheme: '1' }));
       return Promise.resolve({ results: [] });
