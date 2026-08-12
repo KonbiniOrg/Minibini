@@ -1413,10 +1413,17 @@ Enforced in `Invoice.clean()`.
 - **accounting_category** (optional FK → AccountingCategory, PROTECT):
   nullable at the model, and not required at add-time on any path — a
   manual hand line (`InvoiceService.add_line_item`) is never checked at
-  creation, and an agreement-seeded adjustment line is deliberately left
-  null (`InvoiceService._agreement_category_id`'s adjustment exemption).
-  What's enforced instead is the send gate:
-  `InvoiceEmailService._assert_all_lines_categorized` blocks
+  creation. An agreement-seeded adjustment line is **not** normally
+  null: `InvoiceService._agreement_category_id` passes an adjustment
+  line's `accounting_category_id` through unmodified (never
+  fallback-stamped — an adjustment targets *other* lines' categories —
+  but never stripped to null either), and in production that value is
+  always real: `EstimateService.add_adjustment_line`/the CO equivalent
+  stamp `svc.accounting_category` off the required, non-nullable
+  PERCENTAGE `RateScheme.accounting_category` field. A null adjustment
+  AC can therefore only arise from legacy/hand-built data that bypassed
+  the real creation service. What's enforced at send time is the send
+  gate: `InvoiceEmailService._assert_all_lines_categorized` blocks
   `send_invoice` — the sole `draft`-exit transition — while **any** line
   (adjustment or not; the gate makes no exemption) is null. `cancel()`
   bypasses the gate (`Invoice.save()` direct, per `DEAD_INVOICE_STATUSES`

@@ -689,7 +689,11 @@ auto-categorized." `InvoicePanel.svelte`'s `send-blocked-note` mirrors
 this at the UI level ("Assign an accounting category to every line
 before sending."), disabling the Send/Resend action while any line's
 `accounting_category` is null — which, given the stamping above, is now
-reachable only via an uncorrected manual hand line. QBO push carries its
+reachable only via an uncorrected manual hand line, or (rarer) a seeded
+adjustment line whose source estimate/CO adjustment was itself built
+outside the real creation service (`EstimateService.add_adjustment_line`/
+the CO equivalent always stamp a real category from the RateScheme, so
+this path needs legacy/hand-built data to trigger). QBO push carries its
 own independent, redundant null-AC guards — see
 `quickbooks-integration.md`.
 
@@ -1956,9 +1960,16 @@ The Job P&L view consumes invoices, expenses, and bleps to compute revenue and c
 - **`accounting_category` required on `InvoiceLineItem` — RESOLVED, opposite direction (Phase 3 nullable-AC plan, 2026-08).** The
   "make it NOT NULL everywhere" migration this TODO used to track was
   superseded: the field stays nullable by design. A hand line
-  (`InvoiceService.add_line_item`) may be null pre-send; an
-  agreement-seeded adjustment line may be null even at rest
-  (`InvoiceService._agreement_category_id`'s adjustment exemption).
+  (`InvoiceService.add_line_item`) may be null pre-send. An
+  agreement-seeded adjustment line is **not** normally null:
+  `InvoiceService._agreement_category_id` passes an adjustment line's
+  AC through unmodified (never fallback-stamped, but never stripped to
+  null either — a final-review fix corrected an earlier bug that
+  discarded it), and in production that AC is always real
+  (`EstimateService.add_adjustment_line`/the CO equivalent stamp the
+  RateScheme's own required `accounting_category`); only legacy/
+  hand-built data that bypassed the real creation service could still
+  produce a null adjustment-line AC at rest.
   What's actually enforced: `InvoiceEmailService._assert_all_lines_categorized`
   blocks `send_invoice` (the sole `draft`-exit path) while any line —
   adjustment or not — is null, so every non-`draft`/non-cancelled

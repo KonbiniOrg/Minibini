@@ -24,10 +24,12 @@ from apps.api.invoicing.serializers import InvoiceLineItemSerializer
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, AppState, Configuration, User
 from apps.estimates.models import Estimate, EstimateLineItem
-from apps.estimates.services import EstimateWizardService
+from apps.estimates.services import EstimateService, EstimateWizardService
 from apps.inventory.models import Material
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.invoicing.services import InvoiceService, InvoiceWizardService
+from apps.invoicing.services import (
+    InvoiceEmailService, InvoiceService, InvoiceWizardService,
+)
 from apps.jobs.models import Blep, Job, RateScheme, Task
 
 
@@ -217,6 +219,77 @@ class SeedAndRestoreAgreementNullAcTest(FallbackACTestBase):
         self.assertEqual(li.accounting_category, self.cat_fallback)
 
 
+class AdjustmentLineCarriesRealAcTest(FallbackACTestBase):
+    """Final-review fix (Critical): an agreement adjustment line built
+    through the real production path — EstimateService.add_adjustment_line,
+    which stamps the PERCENTAGE RateScheme's own accounting_category (a
+    required, non-nullable field) — always carries a real AC.
+    `_agreement_category_id` must pass that AC through unmodified: never
+    null it out (the original Task 5 fix's bug — it unconditionally
+    returned None for any is_adjustment line, discarding a real AC and
+    leaving the seeded/restored/copied line blocked at send with no way
+    to fix it), and never substitute the fallback for it either (an
+    adjustment targets *other* lines' categories, so the fallback must
+    never override its own display AC).
+
+    Deliberately does NOT configure fallback_accounting_category in this
+    class — proves resolve_line_category is never even consulted for a
+    real-AC adjustment line (if it were, and none configured, these tests
+    would raise ValidationError instead of passing)."""
+
+    def setUp(self):
+        super().setUp()
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+        self.base_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, qty=Decimal('2'),
+            units='hour', description='Labor', price=Decimal('50.00'),
+            accounting_category=self.cat_labor,
+        )
+        self.rush_svc = RateScheme.objects.create(
+            name='Rush-fac', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.cat_labor,
+        )
+        # The real production path (NOT raw ORM) — stamps
+        # svc.accounting_category, exactly like the invoice-side
+        # InvoiceService.add_adjustment_line does.
+        self.adj_line = EstimateService.add_adjustment_line(
+            self.estimate, adjustment_service_id=self.rush_svc.pk,
+            target_category_ids=[self.cat_labor.pk],
+        )
+        # Estimate.clean() only allows draft -> open -> accepted, not a
+        # direct draft -> accepted jump.
+        self.estimate.status = Estimate.STATUS_OPEN
+        self.estimate.save()
+        self.estimate.status = Estimate.STATUS_ACCEPTED
+        self.estimate.save()
+
+    def test_seed_from_agreement_carries_real_adjustment_ac(self):
+        invoice = self._draft_invoice()
+        InvoiceService.seed_from_agreement(invoice)
+        adj = InvoiceLineItem.objects.get(
+            invoice=invoice, adjustment_service_id=self.rush_svc.pk)
+        self.assertEqual(adj.accounting_category, self.cat_labor)
+        # Must not block send on the seeded adjustment line's category.
+        InvoiceEmailService._assert_all_lines_categorized(invoice)
+
+    def test_restore_agreement_line_carries_real_adjustment_ac(self):
+        invoice = self._draft_invoice()
+        li = InvoiceService.restore_agreement_line(
+            invoice, estimate_line_id=self.adj_line.pk)
+        self.assertEqual(li.accounting_category, self.cat_labor)
+
+    def test_copy_from_estimate_carries_real_adjustment_ac(self):
+        invoice = self._draft_invoice()
+        InvoiceService.copy_from_estimate(invoice)
+        adj = InvoiceLineItem.objects.get(
+            invoice=invoice, adjustment_service_id=self.rush_svc.pk)
+        self.assertEqual(adj.accounting_category, self.cat_labor)
+
+
 class NoFallbackConfiguredTest(FallbackACTestBase):
     def test_no_fallback_configured_raises_naming_key(self):
         task = self._make_task('Labor', clear_category=True)
@@ -310,6 +383,21 @@ class ResolveLineCategoryHelperTest(FallbackACTestBase):
         self.assertIn('fallback_accounting_category', str(ctx.exception))
 
     def test_no_configuration_row_raises(self):
+        with self.assertRaises(ValidationError) as ctx:
+            InvoiceService.resolve_line_category()
+        self.assertIn('fallback_accounting_category', str(ctx.exception))
+
+    def test_deposit_flagged_fallback_id_raises(self):
+        # Final-review fix (Minor): a later edit to the DESIGNATED
+        # category flipping is_deposit=True must not silently start
+        # stamping a deposit-collection category onto ordinary lines —
+        # symmetric with the designation-time PATCH validation
+        # (apps/api/templates_config/views.py already rejects
+        # is_deposit=True at configure time).
+        self._configure_fallback()
+        self.cat_fallback.is_deposit = True
+        self.cat_fallback.taxable = False  # AccountingCategory.clean(): deposit implies non-taxable
+        self.cat_fallback.save()
         with self.assertRaises(ValidationError) as ctx:
             InvoiceService.resolve_line_category()
         self.assertIn('fallback_accounting_category', str(ctx.exception))

@@ -509,7 +509,6 @@ class Command(BaseCommand):
         InvoiceEmailService._assert_all_lines_categorized — the send-time
         gate in apps/invoicing/services.py that requires EVERY line
         (including adjustment lines; the gate applies no adjustment
-        exemption, unlike InvoiceService._agreement_category_id's stamping
         exemption) to carry a category before send_invoice flips status
         off draft.
 
@@ -518,10 +517,23 @@ class Command(BaseCommand):
             InvoiceService.add_line_item is never required to carry an AC
             at add-time — deferred to the send gate by design, see the
             Phase 3 Task 5 report's "estimate/invoice hand-line
-            AC-requirement discrepancy" note — and an agreement-seeded
-            adjustment line is deliberately left null by
-            InvoiceService._agreement_category_id's adjustment exemption,
-            mirroring the estimate side's own adjustment-line exemption);
+            AC-requirement discrepancy" note. An agreement-seeded
+            adjustment line is NOT normally null: in production it always
+            carries the source estimate/CO adjustment's own real AC —
+            EstimateService.add_adjustment_line / the CO equivalent both
+            stamp `svc.accounting_category` off the (required,
+            non-nullable) PERCENTAGE RateScheme field, and
+            InvoiceService._agreement_category_id passes that value
+            through unmodified (never fallback-stamped, since an
+            adjustment targets *other* lines' categories, but never
+            stripped to null either — a final-review fix corrected an
+            earlier bug where the adjustment exemption discarded the real
+            AC). A null adjustment-line AC can therefore only arise from
+            legacy/hand-built data — e.g. a raw-ORM-created
+            EstimateLineItem/ChangeOrderLineItem adjustment row that
+            bypassed the real creation service — and, once seeded onto a
+            draft invoice, still blocks send exactly like any other
+            uncategorized line);
           - cancelled/superseded invoices (InvoiceService.cancel routes a
             draft invoice straight to cancelled via Invoice.save(), never
             through the send gate — DEAD_INVOICE_STATUSES,

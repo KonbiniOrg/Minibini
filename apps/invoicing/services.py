@@ -40,12 +40,19 @@ class InvoiceService:
         was never categorized (Phase 3 Task 5).
 
         Raises ValidationError naming the `fallback_accounting_category`
-        Configuration key when it is unset, blank, or points at an
-        id that no longer resolves to an active AccountingCategory (the
-        category was deleted or deactivated after being configured as the
-        fallback) — treated identically to "unconfigured" rather than a
-        distinct error, since neither case gives the caller a usable
-        category. Mirrors the shape of `_resolve_deposit_category` above.
+        Configuration key when it is unset, blank, or points at an id
+        that no longer resolves to a usable AccountingCategory — deleted,
+        deactivated, or (new) flipped to `is_deposit=True` after being
+        configured as the fallback. The `is_deposit=False` re-check
+        mirrors the designation-time validation
+        (`apps/api/templates_config/views.py`'s `fallback_accounting_category`
+        PATCH handler already rejects `is_deposit=True` at configure time)
+        — without it here, a later edit to the designated category could
+        silently start stamping a deposit-collection category onto
+        ordinary work lines. All of these are treated identically to
+        "unconfigured" rather than distinct errors, since none gives the
+        caller a usable category. Mirrors the shape of
+        `_resolve_deposit_category` above.
         """
         from apps.core.models import AccountingCategory, Configuration
         cfg = Configuration.objects.filter(
@@ -58,7 +65,8 @@ class InvoiceService:
         if not pk:
             raise error
         try:
-            return AccountingCategory.objects.get(pk=pk, is_active=True)
+            return AccountingCategory.objects.get(
+                pk=pk, is_active=True, is_deposit=False)
         except (AccountingCategory.DoesNotExist, ValueError, TypeError):
             raise error
 
@@ -74,14 +82,22 @@ class InvoiceService:
         line. Raises resolve_line_category's ValidationError when a
         fallback is needed but unconfigured/stale.
 
-        Adjustment lines are exempt: a percentage adjustment targets other
-        lines' categories rather than carrying one of its own, so
-        `accounting_category_id` is null by design there (mirrors
-        EstimateService.add_line_item's own AC-required check, which
-        already exempts `adjustment_service_id is not None`) — never
-        stamp a fallback onto it."""
+        Adjustment lines pass their `accounting_category_id` through
+        UNTOUCHED — never fallback-stamped, but never stripped either. In
+        production an adjustment line always carries a real AC:
+        EstimateService.add_adjustment_line / InvoiceService.add_adjustment_line
+        both stamp `svc.accounting_category` from the (required,
+        non-nullable) RateScheme field, and compose_agreement passes that
+        value straight through. The fallback must never override it — an
+        adjustment targets *other* lines' categories, so silently
+        substituting the fallback here would be wrong even though the
+        line has a real AC. The reverse bug (stripping a real AC to null)
+        is exactly as wrong: a null adjustment AC only exists for
+        legacy/hand-built data, and forcing it to null here just breaks
+        `_assert_all_lines_categorized` at send with no way to fix it
+        (the exemption also skips stamping the fallback), for no benefit."""
         if line.get('is_adjustment'):
-            return None
+            return line.get('accounting_category_id')
         category_id = line.get('accounting_category_id')
         if category_id is not None:
             return category_id

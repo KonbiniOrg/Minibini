@@ -311,8 +311,11 @@ On any exception, `QBOSyncLog` records `status='failed'` with the error message,
 Step 1's `_assert_all_lines_categorized` gate (`invoicing-and-expenses.md`
 §"Fallback accounting category stamping") is the primary block — it fires
 before any external call, and given invoice-line authoring now stamps the
-configured fallback onto every atom-derived null-AC line, the gate is only
-realistically reachable via an uncorrected manual hand line. QBO push
+configured fallback onto every atom-derived null-AC line (and an
+agreement-seeded adjustment line always inherits its source estimate/CO
+adjustment's own real AC in production), the gate is only realistically
+reachable via an uncorrected manual hand line, or legacy/hand-built
+adjustment-line data that bypassed the real creation service. QBO push
 itself carries a second, independent line of defense in case that primary
 gate is ever bypassed or refactored around:
 
