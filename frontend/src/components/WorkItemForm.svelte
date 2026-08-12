@@ -609,7 +609,7 @@
               <label><strong>Accounting Category</strong><br>
                 <select bind:value={editAccountingCategory}>
                   <option value="">-- select --</option>
-                  {#each categories as cat (cat.id)}
+                  {#each categories.filter((c) => !c.is_fallback) as cat (cat.id)}
                     <option value={cat.id}>{cat.code} — {cat.name}</option>
                   {/each}
                 </select>

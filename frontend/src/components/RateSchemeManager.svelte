@@ -53,7 +53,7 @@
         : '/api/rate-schemes/';
       const [schemeResp, catResp, unitsResp, settingsResp] = await Promise.all([
         api.get(url),
-        api.get('/api/accounting-categories/?exclude_fallback=true'),
+        api.get('/api/accounting-categories/'),
         api.get('/api/settings/units/'),
         api.get('/api/settings/'),
       ]);
@@ -369,7 +369,7 @@
     <p><label><strong>Accounting Category *</strong><br>
       <select bind:value={form.accounting_category} required>
         <option value="">-- select --</option>
-        {#each categories as cat (cat.id)}
+        {#each categories.filter((c) => !c.is_fallback) as cat (cat.id)}
           <option value={cat.id}>{cat.code} — {cat.name}</option>
         {/each}
       </select>

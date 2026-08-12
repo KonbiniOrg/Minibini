@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
@@ -153,6 +153,22 @@ describe('LineItemModal', () => {
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(await findByRole('alert')).toHaveTextContent('Estimate is not editable.');
+  });
+
+  it('omits an is_fallback category from the Accounting Category picker', async () => {
+    const categoriesWithFallback = [
+      ...SAMPLE_CATEGORIES,
+      { id: 13, code: 'FBK', name: 'Fallback', is_fallback: true },
+    ];
+    const { getByLabelText, queryByRole } = render(LineItemModal, {
+      props: {
+        open: true, mode: 'create', apiBase: '/api/estimates/7',
+        categories: categoriesWithFallback,
+      },
+    });
+    const select = getByLabelText(/Accounting Category/);
+    expect(within(select).getByRole('option', { name: 'LAB - Labor' })).toBeInTheDocument();
+    expect(within(select).queryByRole('option', { name: 'FBK - Fallback' })).not.toBeInTheDocument();
   });
 
   it('closes via onClose', async () => {

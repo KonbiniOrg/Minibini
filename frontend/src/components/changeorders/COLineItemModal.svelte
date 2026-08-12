@@ -190,7 +190,7 @@
             <label><strong>Accounting Category *</strong><br>
               <select bind:value={accountingCategory}>
                 <option value="">-- Select --</option>
-                {#each categories as cat}
+                {#each categories.filter((c) => !c.is_fallback) as cat}
                   <option value={cat.id}>{cat.code} - {cat.name}</option>
                 {/each}
               </select>

@@ -248,7 +248,7 @@ describe('ChangeOrderPanel in the job workspace', () => {
 });
 
 describe('ChangeOrderPanel mode bar', () => {
-  it('loads accounting categories excluding the fallback category', async () => {
+  it('loads accounting categories from the unfiltered endpoint (no exclude_fallback param)', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     const co = makeCO({ can_manage: true, status: 'draft' });
     mockApiFull(co, EMPTY_AMENDED);
@@ -256,7 +256,7 @@ describe('ChangeOrderPanel mode bar', () => {
     render(ChangeOrderPanel, { props: { job: JOB, coId: '3' } });
 
     await waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100&exclude_fallback=true');
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100');
     });
   });
 

@@ -97,7 +97,7 @@ describe('InvoicePanel draft placeholder identity', () => {
     await findByText('Invoice: Draft — JOB-9');
   });
 
-  it('loads accounting categories excluding the fallback category', async () => {
+  it('loads accounting categories from the unfiltered endpoint (no exclude_fallback param)', async () => {
     user.set({ permissions: [] });
     const draft = makeInvoice({
       invoice_number: null, display_number: 'Draft — JOB-9', status: 'draft',
@@ -105,7 +105,7 @@ describe('InvoicePanel draft placeholder identity', () => {
     mockApi(draft, { invoices: [draft] });
     render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100&exclude_fallback=true');
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100');
     });
   });
 });

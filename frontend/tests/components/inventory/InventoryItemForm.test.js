@@ -24,11 +24,27 @@ beforeEach(() => {
 });
 
 describe('InventoryItemForm', () => {
-  it('loads accounting categories excluding the fallback category', async () => {
+  it('loads accounting categories from the unfiltered endpoint (no exclude_fallback param)', async () => {
     render(InventoryItemForm, { props: { onSaved: vi.fn() } });
     await vi.waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?exclude_fallback=true');
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/');
     });
+  });
+
+  it('omits an is_fallback category from the category picker', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/settings/units/')) return Promise.resolve(['none', 'ea', 'sheet']);
+      if (url.startsWith('/api/accounting-categories/')) {
+        return Promise.resolve({ results: [
+          ...CATS,
+          { id: 8, code: 'FBK', name: 'Fallback', is_fallback: true },
+        ] });
+      }
+      return Promise.resolve({ results: [] });
+    });
+    const { findByRole, queryByRole } = render(InventoryItemForm, { props: { onSaved: vi.fn() } });
+    expect(await findByRole('option', { name: /Materials/ })).toBeInTheDocument();
+    expect(queryByRole('option', { name: /Fallback/ })).not.toBeInTheDocument();
   });
 
   it('creates an item and omits blank selling price', async () => {

@@ -16,7 +16,7 @@ beforeEach(() => {
   user.set({ id: 2 });
   getPaymentAccounts.mockResolvedValue([{ qbo_account_id: 'acc1', display_name: 'Visa' }]);
   api.get.mockImplementation((url) => {
-    if (url === '/api/accounting-categories/?exclude_fallback=true') {
+    if (url === '/api/accounting-categories/') {
       return Promise.resolve({ results: [{ id: 1, name: 'Meals', qbo_expense_account_id: 'a1' }] });
     }
     if (url === '/api/users/') return Promise.resolve({ results: [{ id: 2, first_name: 'Sam', last_name: 'X', username: 'sam' }] });
@@ -30,11 +30,29 @@ beforeEach(() => {
 });
 
 describe('ExpenseForm', () => {
-  it('loads accounting categories excluding the fallback category', async () => {
+  it('loads accounting categories from the unfiltered endpoint (no exclude_fallback param)', async () => {
     render(ExpenseForm, { props: { onSaved: vi.fn(), onCancel: vi.fn() } });
     await vi.waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?exclude_fallback=true');
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/');
     });
+  });
+
+  it('omits an is_fallback category from the category picker', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/accounting-categories/') {
+        return Promise.resolve({ results: [
+          { id: 1, name: 'Meals', qbo_expense_account_id: 'a1' },
+          { id: 2, name: 'Fallback', qbo_expense_account_id: 'a2', is_fallback: true },
+        ] });
+      }
+      if (url === '/api/users/') return Promise.resolve({ results: [{ id: 2, first_name: 'Sam', last_name: 'X', username: 'sam' }] });
+      if (url.startsWith('/api/jobs/?search')) return Promise.resolve({ results: [] });
+      if (url.startsWith('/api/inventory/')) return Promise.resolve({ results: [] });
+      return Promise.resolve({ results: [] });
+    });
+    const { findByRole, queryByRole } = render(ExpenseForm, { props: { onSaved: vi.fn(), onCancel: vi.fn() } });
+    expect(await findByRole('option', { name: 'Meals' })).toBeInTheDocument();
+    expect(queryByRole('option', { name: 'Fallback' })).not.toBeInTheDocument();
   });
 
   it('submits a personal expense', async () => {

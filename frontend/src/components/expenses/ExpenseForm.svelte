@@ -69,7 +69,9 @@
 
   // Dropdown sources
   let categories = $state([]);
-  let linkedCategories = $derived(categories.filter(c => c.qbo_expense_account_id));
+  let linkedCategories = $derived(
+    categories.filter(c => c.qbo_expense_account_id && !c.is_fallback)
+  );
   let paymentAccounts = $state([]);
   let workers = $state([]);
 
@@ -78,7 +80,7 @@
 
   async function loadDropdowns() {
     try {
-      const catData = await api.get('/api/accounting-categories/?exclude_fallback=true');
+      const catData = await api.get('/api/accounting-categories/');
       categories = catData.results || catData;
     } catch (_) { /* ignore */ }
 

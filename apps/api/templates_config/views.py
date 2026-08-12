@@ -21,6 +21,7 @@ from .serializers import (
     WorkTemplateSerializer, ServiceItemSerializer,
     ConfigurationSerializer, AccountingCategorySerializer,
     TemplateMaterialAssociationSerializer,
+    _resolve_fallback_category_id,
 )
 
 
@@ -137,15 +138,23 @@ class AccountingCategoryViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         qs = AccountingCategory.objects.all()
         if self.action == 'list' and \
                 self.request.query_params.get('exclude_fallback') == 'true':
-            raw = Configuration.objects.filter(
-                key='fallback_accounting_category').values_list(
-                'value', flat=True).first()
-            if raw:
-                try:
-                    qs = qs.exclude(pk=int(raw))
-                except (TypeError, ValueError):
-                    pass
+            fallback_id = self._fallback_category_id()
+            if fallback_id is not None:
+                qs = qs.exclude(pk=fallback_id)
         return qs
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        # Resolved once per request (memoized on the view instance) and
+        # handed to every row's serializer via context, rather than each
+        # row re-querying Configuration for is_fallback.
+        context['fallback_category_id'] = self._fallback_category_id()
+        return context
+
+    def _fallback_category_id(self):
+        if not hasattr(self, '_cached_fallback_category_id'):
+            self._cached_fallback_category_id = _resolve_fallback_category_id()
+        return self._cached_fallback_category_id
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):

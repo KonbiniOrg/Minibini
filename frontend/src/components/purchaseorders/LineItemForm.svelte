@@ -141,7 +141,7 @@
         <label for="accounting_category"><strong>Category</strong></label><br>
         <select id="accounting_category" bind:value={form.accounting_category}>
           <option value="">-- None --</option>
-          {#each categories as cat}
+          {#each categories.filter((c) => !c.is_fallback) as cat}
             <option value={cat.id}>{cat.name}</option>
           {/each}
         </select>

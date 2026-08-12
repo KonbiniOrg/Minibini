@@ -91,7 +91,7 @@ describe('EstimatePanel version subnav', () => {
     expect(links[0]).not.toHaveClass('active');
   });
 
-  it('loads accounting categories excluding the fallback category', async () => {
+  it('loads accounting categories from the unfiltered endpoint (no exclude_fallback param)', async () => {
     user.set({ permissions: [] });
     const v1 = makeEstimate({ estimate_id: 7, version: 1, status: 'superseded' });
     const v2 = makeEstimate({ estimate_id: 8, version: 2, status: 'draft' });
@@ -100,7 +100,7 @@ describe('EstimatePanel version subnav', () => {
     render(EstimatePanel, { props: { job: JOB, estimateId: 8 } });
 
     await waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100&exclude_fallback=true');
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100');
     });
   });
 

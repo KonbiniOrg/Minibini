@@ -53,10 +53,10 @@ beforeEach(() => {
 });
 
 describe('PurchaseOrderDetailPage accounting categories', () => {
-  it('loads accounting categories excluding the fallback category', async () => {
+  it('loads accounting categories from the unfiltered endpoint (no exclude_fallback param)', async () => {
     render(PurchaseOrderDetailPage, { props: { params: { id: '7' } } });
     await vi.waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100&exclude_fallback=true');
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100');
     });
   });
 });

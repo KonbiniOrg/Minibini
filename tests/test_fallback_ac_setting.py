@@ -123,3 +123,52 @@ class ExcludeFallbackQueryParamTest(TestCase):
         names = self._names(resp)
         self.assertIn('Fallback Category', names)
         self.assertIn('Other Category', names)
+
+
+class IsFallbackSerializerFieldTest(TestCase):
+    """`is_fallback` on AccountingCategorySerializer marks exactly the
+    Configuration-designated row (and is False for every row when no
+    fallback is configured) — the mechanism the SPA now uses to filter
+    picker `<select>` options client-side while keeping name-lookup paths
+    (which read the unfiltered list) intact."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='cfg3', password='pw')
+        self.user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_config'))
+        self.client = APIClient()
+        self.client.login(username='cfg3', password='pw')
+        self.fallback_cat = AccountingCategory.objects.create(
+            code='FBK2', name='Fallback Category 2', taxable=True)
+        self.other_cat = AccountingCategory.objects.create(
+            code='OTH2', name='Other Category 2', taxable=True)
+
+    def _rows(self, resp):
+        data = resp.json()
+        return data.get('results') if isinstance(data, dict) else data
+
+    def test_marks_exactly_the_designated_row(self):
+        Configuration.objects.update_or_create(
+            key='fallback_accounting_category',
+            defaults={'value': str(self.fallback_cat.pk)})
+        resp = self.client.get('/api/accounting-categories/')
+        self.assertEqual(resp.status_code, 200)
+        by_id = {r['id']: r['is_fallback'] for r in self._rows(resp)}
+        self.assertTrue(by_id[self.fallback_cat.pk])
+        self.assertFalse(by_id[self.other_cat.pk])
+
+    def test_all_false_when_no_key_configured(self):
+        Configuration.objects.filter(key='fallback_accounting_category').delete()
+        resp = self.client.get('/api/accounting-categories/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(
+            all(not r['is_fallback'] for r in self._rows(resp)))
+
+    def test_retrieve_marks_the_designated_row(self):
+        Configuration.objects.update_or_create(
+            key='fallback_accounting_category',
+            defaults={'value': str(self.fallback_cat.pk)})
+        resp = self.client.get(
+            f'/api/accounting-categories/{self.fallback_cat.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()['is_fallback'])

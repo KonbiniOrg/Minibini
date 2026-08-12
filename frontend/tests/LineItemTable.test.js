@@ -60,4 +60,22 @@ describe('LineItemTable category cell — needs-category flag', () => {
     const flaggedCell = container.querySelector('td.needs-category');
     expect(flaggedCell).toBeNull();
   });
+
+  it('still resolves the name of a category flagged is_fallback (display paths read the unfiltered list)', () => {
+    // Pickers (LineItemModal/AddLineForm selects) omit an is_fallback
+    // category from their <option> lists, but a line already carrying
+    // that category must still show its name here — this table never
+    // filters `categories`, it only looks a name up by id.
+    const fallbackCategories = [
+      { id: 7, name: 'Labor', taxable: false },
+      { id: 9, name: 'Fallback', taxable: false, is_fallback: true },
+    ];
+    const items = [{ ...lineItems[0], accounting_category: 9 }];
+    const { getByText, container } = render(LineItemTable, {
+      props: { lineItems: items, categories: fallbackCategories, canEdit: true },
+    });
+    expect(getByText('Fallback')).toBeTruthy();
+    const flaggedCell = container.querySelector('td.needs-category');
+    expect(flaggedCell).toBeNull();
+  });
 });

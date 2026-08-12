@@ -50,11 +50,11 @@ describe('TasksPanel per-job can_manage', () => {
     await waitFor(() => expect(getByRole('button', { name: /add work/i })).toBeInTheDocument());
   });
 
-  it('loads accounting categories excluding the fallback category', async () => {
+  it('loads accounting categories from the unfiltered endpoint (no exclude_fallback param)', async () => {
     mockApi();
     render(TasksPanel, { props: { job: makeJob() } });
     await waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100&exclude_fallback=true');
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100');
     });
   });
 
