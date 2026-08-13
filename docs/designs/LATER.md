@@ -129,6 +129,25 @@ Status coupling, transitions, and what a job may do at each stage.
   _Done when:_ `ServiceItem.description` is removed (migration + code + fixtures) and specifics are
   sourced from the Task/line description everywhere.
 
+- **Lost gesture: re-express a line's qty/units while retaining its total
+  (the old wizard could).** — _added 2026-08-12 (RM)_
+  The retired two-column reconcile wizard let you rejigger a line's
+  quantity/price and keep the amount — e.g. a line merged from several
+  hour-based tasks (total $1,800 over 12 hours) re-expressed as "3 ea @
+  $600". Today's `LineItemModal` field-edit treats qty and price as
+  independent inputs, so changing qty changes the amount and the
+  estimator divides by hand; the backing chip flips to `edited` either
+  way. RM feels the lack exactly on multi-task hour bundles being turned
+  into a different quantity of "ea". Shape TBD — candidates: a
+  "keep total" toggle in the edit modal (editing qty re-derives price =
+  amount ÷ qty, and vice versa); prefilling price from `backing_total ÷
+  qty` as you type; or a dedicated "re-express as…" helper on backed
+  lines. Applies to the estimate edit modal first; the invoice/CO
+  modals share the component, so whatever ships should land for all
+  three.
+  _Done when:_ RM picks a shape and a backed line can be re-expressed in
+  new qty/units with its total preserved, without hand arithmetic.
+
 ## Change orders
 
 The CO surface and its estimate-parallel code.
