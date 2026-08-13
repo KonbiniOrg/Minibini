@@ -129,6 +129,21 @@ Status coupling, transitions, and what a job may do at each stage.
   _Done when:_ `ServiceItem.description` is removed (migration + code + fixtures) and specifics are
   sourced from the Task/line description everywhere.
 
+- **Estimate-first task creation is awkward — consider a tasks-from-estimate
+  view (invoice-view-shaped).** — _added 2026-08-12 (RM)_
+  When the estimate exists before the tasks, there's no surface that helps:
+  the task screen can't see the estimate's lines, so the planner re-types
+  work the estimate already describes. RM sketch: a view like the invoice
+  edit view where TASKS are created from the estimate line items — seeded
+  suggestions per line, freely modified/added to before committing — which
+  would also mint the estimate-line↔task link (claims) so actuals reconcile
+  later. Overlaps with acceptance crystallization (service lines already
+  become Tasks at accept) — the gap is hand/planned lines and pre-accept
+  planning; design needed before building.
+  _Done when:_ RM and a design session settle the surface (or fold it into
+  the next UI rethink — see 2026-08-12 session note that the better-fees
+  UI needs a rethink overall).
+
 - **Lost gesture: re-express a line's qty/units while retaining its total
   (the old wizard could).** — _added 2026-08-12 (RM)_
   The retired two-column reconcile wizard let you rejigger a line's
@@ -331,6 +346,31 @@ The CO surface and its estimate-parallel code.
 
 
 ## Invoicing, expenses & payments
+
+- **Converter invoices carry no agreement-line refs → re-seeding duplicates
+  them.** — _added 2026-08-12 (RM sighting, root-caused in session)_
+  `build_invoices` emits invoice lines with `agreement_estimate_line`/
+  `agreement_co_line` NULL (the skeleton-phase rail postdates the
+  converter's invoice builder), so on converted jobs a sent-but-unpaid
+  legacy invoice claims no agreement lines — Start Invoice then seeds the
+  FULL agreement again, visually identical to the open invoice (dev
+  evidence: job 29's invoice 22, open, 7 lines, 0 refs). The app invariant
+  (`remaining_agreement_lines` over `LIVE_INVOICE_STATUSES`) is correct;
+  the data predates it. Fix candidates: converter emits synthetic agreement
+  refs for its invoice lines (same spirit as `build_synthetic_estimate_
+  sources`, with the same fuzzy-correspondence caveat), and/or a dev-DB
+  repair pass (Claude drafts SQL, RM runs). `tests.test_neals_builders`
+  mandatory; nealseed/nealsmall untouched.
+  _Done when:_ converted open invoices hold their agreement lines so a
+  second invoice only offers what's genuinely unbilled.
+
+- **Bring back Delete Draft for estimates and invoices.** — _added
+  2026-08-12 (RM)_
+  The old surfaces had a discard-draft affordance; the three-mode redesign
+  lost it (the backend `discard_draft` services still exist for both
+  documents). Re-add the button on draft estimates + draft invoices —
+  irreversible, so it keeps a confirm.
+  _Done when:_ a draft estimate/invoice can be discarded from its page.
 
 Billing mechanics and money-record lifecycle.
 
