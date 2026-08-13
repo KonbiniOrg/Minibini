@@ -84,6 +84,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           allenvs: "true"
+          envs: DATABASE_PASSWORD,QBO_CLIENT_SECRET,QBO_CLIENT_ID,QBO_REDIRECT_URI,EMAIL_USERNAME,EMAIL_PASSWORD,VERSION
           script: |
             touch i-was-here.txt
             set > i-was-here.txt
