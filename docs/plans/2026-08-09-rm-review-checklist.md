@@ -17,6 +17,12 @@ One new migration (deliverables/0003) — `python manage.py migrate` on dev.
 - [ ] Revise the estimate → the deliverable follows the revision (Make
       Deliverable stays suppressed on the copied line).
 
+## Invoice remove-line rework (added 2026-08-12)
+
+- [ ] Removing a seeded invoice line now just drops it — no struck
+      in-table row; "Add from agreement" appears immediately and is the
+      one restore path.
+
 ## Phase 3 — nullable task AC + fallback stamping (added 2026-08-12)
 
 No new migrations — no dev migrate step needed for this phase.

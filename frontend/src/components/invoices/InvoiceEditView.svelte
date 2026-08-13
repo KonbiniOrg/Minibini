@@ -143,46 +143,19 @@
 
   // ── Remove from invoice (never "delete" in user-facing text) ─────────────
   // Single-phase: the invoice line-item DELETE has no two-phase confirm gate
-  // (draft-only, and an agreement-backed line is freely re-addable via
-  // Restore below). The server-side delete already releases the agreement
-  // reference and mirrored claims (InvoiceService.remove_line) — the struck
-  // row here is purely a client-side memory of what used to be on this
-  // line, for the current edit-view session, so Restore has something to
-  // show and re-add.
-  let removedRefs = $state([]);
-
+  // (draft-only, and an agreement-backed line is freely re-addable). The
+  // server-side delete releases the agreement reference and mirrored claims
+  // (InvoiceService.remove_line), so the line simply reappears in the
+  // "Add from agreement" section below — that section is the single restore
+  // path (RM 2026-08-12: the old in-table struck rows duplicated it and
+  // confused an emptied invoice).
   async function handleRemoveItem(li) {
     try {
       await api.delete(`${apiBase}/line-items/${li.line_item_id}/`);
-      if (li.agreement_ref) {
-        removedRefs = [...removedRefs, {
-          kind: li.agreement_ref.kind,
-          line_id: li.agreement_ref.line_id,
-          description: li.description,
-          qty: li.qty,
-          units: li.units,
-          price: li.price,
-          amount: lineAmount(li),
-        }];
-      }
       loadRemaining();
       onChanged();
     } catch (e) {
       showError(errorMessage(e, 'Could not remove this line from the invoice.'));
-    }
-  }
-
-  async function handleRestore(entry) {
-    try {
-      const payload = entry.kind === 'estimate'
-        ? { estimate_line_id: entry.line_id }
-        : { co_line_id: entry.line_id };
-      await api.post(`${apiBase}/restore-line/`, payload);
-      removedRefs = removedRefs.filter((r) => r !== entry);
-      loadRemaining();
-      onChanged();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not restore this line.'));
     }
   }
 
@@ -564,17 +537,6 @@
         visible={selected.length > 0}
         onCreate={createLineFromSelected}
       />
-      {#each removedRefs as entry (entry.kind + ':' + entry.line_id)}
-        <tr class="doc-offdoc">
-          <td></td>
-          <td class="preserve-breaks">{entry.description}</td>
-          <td class="text-right"><QtyUnits qty={entry.qty} units={entry.units} /></td>
-          <td class="text-right">{fmtMoney(entry.price)}</td>
-          <td class="text-right">{fmtMoney(entry.amount)}</td>
-          <td></td>
-          <td><button type="button" onclick={() => handleRestore(entry)}>Restore</button></td>
-        </tr>
-      {/each}
     {/if}
   </tbody>
   <tfoot>

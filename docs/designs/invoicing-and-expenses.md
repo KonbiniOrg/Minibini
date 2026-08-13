@@ -413,8 +413,8 @@ line not found.')` if absent), re-checks the invariant, and builds/
 mirrors/re-derives the line the same way `seed_from_agreement` does for
 one line (steps 3-5 above, including the actuals re-derivation). This is
 the **"add from agreement"** picker's backing call — it lists exactly
-the remaining lines not already on the draft (see the struck-row UI
-below).
+the remaining lines not already on the draft — since 2026-08-12 the
+picker is the ONLY restore path (the in-table struck rows are gone).
 
 ### `remove_line(invoice, line_item)`
 
@@ -461,8 +461,8 @@ from estimate"** (`POST .../copy-from-estimate/`) calls the pre-existing
 `InvoiceService.copy_from_estimate` (below), which copies
 `compose_agreement` values onto plain lines **without** writing
 `agreement_estimate_line`/`agreement_co_line` refs or mirroring claims —
-those lines get no `agreement_ref`, no est-vs-actual reference, no
-Restore, and read `backing: null` until something claims them by hand.
+those lines get no `agreement_ref`, no est-vs-actual reference, and
+read `backing: null` until something claims them by hand.
 Both buttons predate this phase and were **not** changed by it; they
 remain because their zero-lines precondition still occasionally holds.
 
@@ -473,25 +473,19 @@ remain because their zero-lines precondition still occasionally holds.
 | `GET /api/invoices/{id}/remaining-agreement-lines/` | Returns `{lines: [...]}` — the picker's feed; each `compose_agreement` line dict with Decimals stringified. Permission: `CanManageFinancials`. |
 | `POST /api/invoices/{id}/restore-line/` | Body: `{estimate_line_id}` or `{co_line_id}` (exactly one). 201 with the serialized new `InvoiceLineItem`. Permission: `CanManageFinancials`. |
 
-### Frontend: restore / "Remove from invoice" struck rows
+### Frontend: "Remove from invoice" (no struck rows — reworked 2026-08-12)
 
-`InvoiceEditView.svelte` keeps its own **client-side, session-local**
-list of removed agreement-backed lines (`removedRefs`, a `$state`
-array) — not a server list. `handleRemoveItem` calls `DELETE
-.../line-items/{id}/` (single-phase, no confirm — the word "delete"
-never appears; the button reads **"Remove from invoice"**); if the
-removed line carried an `agreement_ref`, its `{kind, line_id,
-description, qty_display, price, amount}` is pushed onto `removedRefs`
-and rendered as a struck `tr.doc-offdoc` row (amounts parenthesized in
-spirit, description/qty/price/amount still legible, dashed-hatched
-background) with a **Restore** button. Restore POSTs `/restore-line/`
-with `{estimate_line_id}` or `{co_line_id}` per the entry's `kind`, then
-drops it from `removedRefs`. A hand line (no `agreement_ref`) simply
-vanishes on Remove — the server-side delete already released whatever
-it needed to release; there's nothing to restore. Either way the line
-reseeds on the **next** invoice's `seed_from_agreement` regardless of
-whether it was ever restored on this one — removal always frees the
-agreement line for `remaining_agreement_lines`.
+`handleRemoveItem` calls `DELETE .../line-items/{id}/` (single-phase, no
+confirm — the word "delete" never appears; the button reads **"Remove
+from invoice"**) and the row simply drops off the table. The old
+session-local struck `tr.doc-offdoc` rows with an in-table **Restore**
+button are GONE (RM 2026-08-12): they duplicated the "Add from
+agreement" picker and read confusingly on an invoice emptied of lines.
+The picker is the single restore path — removal frees the agreement
+line (`remaining_agreement_lines`), so it reappears there immediately
+(`loadRemaining` runs right after the delete), and on the next
+invoice's `seed_from_agreement` regardless. `/restore-line/` remains
+the picker's backing endpoint, unchanged.
 
 ---
 

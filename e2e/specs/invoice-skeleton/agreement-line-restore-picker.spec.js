@@ -1,7 +1,7 @@
 // better-fees skeleton phase fix-wave — the "Add from agreement…" restore
 // picker (GET /api/invoices/{id}/remaining-agreement-lines/ +
 // POST .../restore-line/) is the PERSISTENT alternative to the session-only
-// struck-row Restore that seeded-invoice.spec.js exercises: that struck row
+// in-table restore path that seeded-invoice.spec.js once exercised: struck rows
 // lives only in InvoiceEditView's local `removedRefs` state, so a reload (or
 // a mode flip) loses it. This spec proves the server-backed picker survives
 // exactly that: remove a seeded line, reload the page to kill the
@@ -66,17 +66,10 @@ test('Add from agreement picker: remove a line, reload, restore it from the pick
     await expect(addFromAgreementBtn()).toHaveCount(0);
   });
 
-  await test.step('Remove the line: struck row + session-local Restore appear', async () => {
+  await test.step('Remove the line: no struck row — the picker button appears immediately (RM 2026-08-12)', async () => {
     await lineRow().getByRole('button', { name: 'Remove from invoice' }).click();
     await expect(lineRow()).toHaveCount(0);
-    await expect(page.locator('tr.doc-offdoc').filter({ hasText: line.description })).toBeVisible();
-  });
-
-  await test.step('Reload: the session-local struck row is gone, but the picker button is offered', async () => {
-    await page.reload();
-    await expect(page.getByRole('heading', { name: 'Line Items' })).toBeVisible();
     await expect(page.locator('tr.doc-offdoc')).toHaveCount(0);
-    await expect(lineRow()).toHaveCount(0);
     await expect(addFromAgreementBtn()).toBeVisible();
   });
 

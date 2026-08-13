@@ -185,12 +185,11 @@ describe('InvoiceEditView', () => {
     expect(queryByRole('button', { name: 'Use actuals' })).toBeNull();
   });
 
-  it('removing a line renders the struck row with Restore wired to restore-line, and the totals row excludes it', async () => {
+  it('removing a line leaves NO struck row — Add from agreement is the single restore path (RM 2026-08-12)', async () => {
     api.delete.mockResolvedValue({ message: 'Line item deleted.' });
-    api.post.mockResolvedValue({});
     const onChanged = vi.fn();
     const line = seededLine();
-    const { findByText, container } = render(InvoiceEditView, {
+    const { findByText, container, queryByText } = render(InvoiceEditView, {
       props: baseProps({ lineItems: [line], onChanged }),
     });
     await findByText('Cut parts');
@@ -200,22 +199,8 @@ describe('InvoiceEditView', () => {
 
     expect(api.delete).toHaveBeenCalledWith('/api/invoices/5/line-items/1/');
     expect(onChanged).toHaveBeenCalled();
-
-    const struckRow = container.querySelector('tr.doc-offdoc');
-    expect(struckRow).not.toBeNull();
-    expect(struckRow.textContent).toContain('Cut parts');
-
-    // The line no longer exists server-side (removed from the `lineItems`
-    // prop by the parent's refresh, as onChanged would trigger) — simulate
-    // that here directly, since this test doesn't re-render via a real
-    // parent. The totals footer must not count the struck row either way:
-    // it only ever sums over the `lineItems` prop, never `removedRefs`.
-    const totalCell = container.querySelector('tr.grand td.text-right strong');
-    expect(totalCell.textContent).toBe('$50.00');
-
-    const restoreBtn = await findByText('Restore');
-    await fireEvent.click(restoreBtn);
-    expect(api.post).toHaveBeenCalledWith('/api/invoices/5/restore-line/', { estimate_line_id: 30 });
+    expect(container.querySelector('tr.doc-offdoc')).toBeNull();
+    expect(queryByText('Restore')).toBeNull();
   });
 
   it('never renders the word "delete" anywhere', async () => {

@@ -7,7 +7,7 @@
 // a draft whose lines already carry the estimate's values, one line backed
 // by a just-completed task showing the "actuals" BackingChip (its mirrored
 // source is in sync with the line's price), a sibling line whose task is
-// still untouched showing "estimate". It then exercises Remove/Restore,
+// still untouched showing "estimate". It then exercises Remove + picker restore,
 // confirms Customer mode strips all controls, and reaches the Send gate.
 //
 // Built fresh (job + 2 tasks + accepted estimate) rather than hunted from
@@ -101,13 +101,17 @@ test('seeded invoice: agreement-backed lines, actuals vs estimate backing, remov
     await expect(otherRow().locator('.backing-chip')).toHaveText('estimate');
   });
 
-  await test.step('Remove a line: it drops off the doc and appears as a restorable row', async () => {
+  await test.step('Remove a line: it drops clean (no struck row); Add from agreement restores it', async () => {
     await otherRow().getByRole('button', { name: 'Remove from invoice' }).click();
     await expect(otherRow()).toHaveCount(0);
-    const removedRow = page.locator('tr.doc-offdoc').filter({ hasText: otherLine.description });
-    await expect(removedRow).toBeVisible();
-    await removedRow.getByRole('button', { name: 'Restore' }).click();
     await expect(page.locator('tr.doc-offdoc')).toHaveCount(0);
+
+    await page.getByRole('button', { name: /Add from agreement/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add from agreement' });
+    await dialog.locator('tr').filter({ hasText: otherLine.description })
+      .getByRole('button', { name: 'Add to this invoice' }).click();
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    await expect(dialog).toBeHidden();
     await expect(otherRow()).toBeVisible();
   });
 
