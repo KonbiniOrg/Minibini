@@ -347,3 +347,90 @@ describe('EstimateEditView', () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 });
+
+describe('EstimateEditView Make Deliverable (spec §6)', () => {
+  const LINKED = [{ id: 9, description: '3 chairs', qty_ordered: '3.00', units: 'ea' }];
+
+  it('renders the button when wired and no deliverable is linked; click calls the handler', async () => {
+    const onMakeDeliverable = vi.fn();
+    const { findByText, getByRole } = render(EstimateEditView, {
+      props: baseProps({ onMakeDeliverable, lineItems: [handLine({ linked_deliverables: [] })] }),
+    });
+    await findByText('Hand entry');
+    await fireEvent.click(getByRole('button', { name: 'Make Deliverable' }));
+    expect(onMakeDeliverable).toHaveBeenCalledTimes(1);
+  });
+
+  it('suppresses the button on a line that already has a linked deliverable', async () => {
+    const { findByText, queryByRole } = render(EstimateEditView, {
+      props: baseProps({
+        onMakeDeliverable: vi.fn(),
+        lineItems: [handLine({ linked_deliverables: LINKED, qty: '3', units: 'ea' })],
+      }),
+    });
+    await findByText('Hand entry');
+    expect(queryByRole('button', { name: 'Make Deliverable' })).toBeNull();
+  });
+
+  it('shows a passive mismatch caption when the linked deliverable qty/units drift', async () => {
+    const { findByText, queryByText, rerender } = render(EstimateEditView, {
+      props: baseProps({
+        lineItems: [handLine({ linked_deliverables: LINKED, qty: '5', units: 'ea' })],
+      }),
+    });
+    await findByText(/deliverable: 3.00 ea/);
+    // In-sync line: no caption.
+    await rerender(baseProps({
+      lineItems: [handLine({ linked_deliverables: LINKED, qty: '3', units: 'ea' })],
+    }));
+    expect(queryByText(/deliverable: 3.00 ea/)).toBeNull();
+  });
+
+  it('Remove on a linked line opens the choice dialog; "remove both" sends delete_deliverables=true', async () => {
+    api.delete.mockResolvedValue({ message: 'ok' });
+    const { findByText, getAllByRole, getByRole } = render(EstimateEditView, {
+      props: baseProps({
+        lineItems: [handLine({ linked_deliverables: LINKED, qty: '3', units: 'ea' })],
+      }),
+    });
+    await findByText('Hand entry');
+    const removeBtn = getAllByRole('button', { name: 'Remove' })
+      .find((b) => !b.closest('[role="dialog"]'));
+    await fireEvent.click(removeBtn);
+    await findByText(/Remove the deliverable as well\?/);
+    await fireEvent.click(getByRole('button', { name: 'Remove line and deliverable' }));
+    expect(api.delete).toHaveBeenCalledWith(
+      '/api/estimates/7/line-items/2/?delete_deliverables=true');
+  });
+
+  it('"keep deliverable" deletes the line without the param; Cancel deletes nothing', async () => {
+    api.delete.mockResolvedValue({ message: 'ok' });
+    const { findByText, getAllByRole, getByRole, queryByText } = render(EstimateEditView, {
+      props: baseProps({
+        lineItems: [handLine({ linked_deliverables: LINKED, qty: '3', units: 'ea' })],
+      }),
+    });
+    await findByText('Hand entry');
+    await fireEvent.click(getAllByRole('button', { name: 'Remove' })[0]);
+    await findByText(/Remove the deliverable as well\?/);
+    await fireEvent.click(getByRole('button', { name: 'Cancel' }));
+    expect(api.delete).not.toHaveBeenCalled();
+    expect(queryByText(/Remove the deliverable as well\?/)).toBeNull();
+
+    await fireEvent.click(getAllByRole('button', { name: 'Remove' })[0]);
+    await findByText(/Remove the deliverable as well\?/);
+    await fireEvent.click(getByRole('button', { name: 'Remove line, keep deliverable' }));
+    expect(api.delete).toHaveBeenCalledWith('/api/estimates/7/line-items/2/');
+  });
+
+  it('an unlinked line removes directly with no dialog', async () => {
+    api.delete.mockResolvedValue({ message: 'ok' });
+    const { findByText, getAllByRole, queryByText } = render(EstimateEditView, {
+      props: baseProps({ lineItems: [handLine({ linked_deliverables: [] })] }),
+    });
+    await findByText('Hand entry');
+    await fireEvent.click(getAllByRole('button', { name: 'Remove' })[0]);
+    expect(queryByText(/Remove the deliverable as well\?/)).toBeNull();
+    expect(api.delete).toHaveBeenCalledWith('/api/estimates/7/line-items/2/');
+  });
+});

@@ -1,5 +1,19 @@
 # RM browser-review checklist — feature/better-fees (delete when done)
 
+## Make Deliverable button (added 2026-08-12)
+
+One new migration (deliverables/0003) — `python manage.py migrate` on dev.
+
+- [ ] Draft estimate, any line: "Make Deliverable" in Actions copies
+      description/qty/units into a job deliverable; the button then
+      disappears on that line (comes back if you delete the deliverable).
+- [ ] Drift the line's qty after making one → passive amber
+      "deliverable: N units" caption on the line (nothing syncs).
+- [ ] Remove a linked line → three-way dialog: remove both / keep
+      deliverable (unlinks) / cancel.
+- [ ] Revise the estimate → the deliverable follows the revision (Make
+      Deliverable stays suppressed on the copied line).
+
 ## Phase 3 — nullable task AC + fallback stamping (added 2026-08-12)
 
 No new migrations — no dev migrate step needed for this phase.

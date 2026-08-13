@@ -1707,6 +1707,14 @@ customer-facing manifest distinct from billing line items.
   Changes via direct edit of the live list (pre-send) or via the
   draft-CO edit-in-place flow. Anchored once shipped (see below).
 - **units** (required, max 50 chars): drawn from `Configuration['units_list']`
+- **source_line** (optional FK → EstimateLineItem, SET_NULL,
+  `related_name='deliverables'`; added 2026-08-12, migration
+  deliverables/0003): provenance for the Make Deliverable button — the
+  estimate line this deliverable was copied from. Display/suppression/
+  mismatch-badging only, never a compute path; `revise_estimate` re-points
+  it to the revision's copied line; deleting the line either unlinks
+  (default) or deletes the deliverable too
+  (`EstimateService.delete_line_item(delete_linked_deliverables=True)`).
 - **sort_order** (PositiveInteger): auto-assigned to next slot on save when
   unset (10, 20, 30, …). Renumbered to a contiguous sequence after a
   service-driven delete.

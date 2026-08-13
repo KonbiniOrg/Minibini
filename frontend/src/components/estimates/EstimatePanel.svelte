@@ -184,6 +184,17 @@
     await Promise.all([loadEstimate({ silent: true }), loadSourcePool()]);
   }
 
+  // Make Deliverable (better-fees §6): mint a Deliverable from the line and
+  // silently refresh so the button suppresses itself via linked_deliverables.
+  async function handleMakeDeliverable(li) {
+    try {
+      await api.post(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/make-deliverable/`);
+      await loadEstimate({ silent: true });
+    } catch (e) {
+      showError(errorMessage(e, 'Could not make a deliverable from this line.'));
+    }
+  }
+
   // Value-keyed: the glue (JobEstimatePage) assigns a new `job` object on
   // every loadJob() run, even when the job itself hasn't changed. Deriving
   // jobId memoizes on the value, so the effect below only reruns when the
@@ -383,6 +394,7 @@
       {sourcePool}
       {lineItems}
       {categories}
+      onMakeDeliverable={canEdit ? handleMakeDeliverable : null}
     />
   {:else if mode === 'customer'}
     <DocCustomerView

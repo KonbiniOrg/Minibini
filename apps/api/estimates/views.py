@@ -107,6 +107,30 @@ class EstimateViewSet(
     # hand-lines stay document-only); atom-backed lines still come
     # via line-items-from-atoms / add-atoms.
 
+    def line_item_delete_kwargs(self, request):
+        # The Make Deliverable dialog's "remove both" choice (RM 2026-08-12):
+        # ?delete_deliverables=true also deletes deliverables minted from the
+        # line; omitted, the SET_NULL FK leaves them unlinked.
+        if request.query_params.get('delete_deliverables') == 'true':
+            return {'delete_linked_deliverables': True}
+        return {}
+
+    @action(detail=True, methods=['post'],
+            url_path=r'line-items/(?P<item_id>[0-9]+)/make-deliverable',
+            url_name='line-item-make-deliverable')
+    def make_deliverable(self, request, pk=None, item_id=None):
+        """The Make Deliverable button (better-fees spec §6): copy this line's
+        description/qty/units into a new Deliverable on the job, linked back
+        via the source_line provenance FK (which suppresses the button)."""
+        from apps.api.deliverables.serializers import DeliverableSerializer
+        from apps.deliverables.services import DeliverableService
+        estimate = self.get_object()
+        item = self._get_line_item_or_404(estimate, item_id)
+        deliverable = DeliverableService.create_from_estimate_line(item)
+        serializer = DeliverableSerializer(
+            deliverable, context=self.get_serializer_context())
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['post'], url_path='revise')
     def revise(self, request, pk=None):
         try:

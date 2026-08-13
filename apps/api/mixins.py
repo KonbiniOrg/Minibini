@@ -197,6 +197,14 @@ class LineItemMixin:
     line_item_parent_field = None
     line_item_service_class = None
 
+    def line_item_delete_kwargs(self, request):
+        """Extra kwargs for the service's delete_line_item, derived from the
+        DELETE request. Default: none. A viewset overrides this to translate
+        surface-specific query params (e.g. the estimate's
+        ?delete_deliverables=true) — keeps the generic mixin signature-stable
+        for services that accept no extras."""
+        return {}
+
     @action(detail=True, methods=['get', 'post'], url_path='line-items', url_name='line-items')
     def line_items(self, request, pk=None):
         parent = self.get_object()
@@ -236,7 +244,8 @@ class LineItemMixin:
 
         if request.method == 'DELETE':
             try:
-                service.delete_line_item(item.pk)
+                service.delete_line_item(
+                    item.pk, **self.line_item_delete_kwargs(request))
             except NotFoundError:
                 return Response(
                     {'detail': 'Not found.'},

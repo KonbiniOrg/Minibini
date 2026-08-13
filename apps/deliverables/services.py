@@ -117,6 +117,29 @@ class DeliverableService:
 
     @staticmethod
     @transaction.atomic
+    def create_from_estimate_line(line_item):
+        """The Make Deliverable button (better-fees spec §6): copy the line's
+        description/qty/units into a new Deliverable on the line's job, linked
+        back via the `source_line` provenance FK. Provenance only — no sync;
+        the FK is what suppresses re-offering the button on this line."""
+        job = line_item.estimate.job
+        DeliverableService._assert_editable(job)
+        if line_item.deliverables.exists():
+            raise ValidationError(
+                'This line already has a deliverable made from it.')
+        d = Deliverable(
+            job=job,
+            description=line_item.description,
+            qty_ordered=line_item.qty,
+            units=line_item.units,
+            source_line=line_item,
+        )
+        d.full_clean()
+        d.save()
+        return d
+
+    @staticmethod
+    @transaction.atomic
     def update(*, deliverable, **fields):
         DeliverableService._assert_editable(deliverable.job)
         if ShipmentItem.objects.filter(deliverable=deliverable).exists():

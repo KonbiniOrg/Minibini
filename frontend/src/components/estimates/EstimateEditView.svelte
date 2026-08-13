@@ -10,6 +10,7 @@
   import { formatQtyUnits } from '../../lib/format.js';
   import { fmtMoney } from '../../lib/taskTotals.js';
   import AdjustmentModal from '../AdjustmentModal.svelte';
+  import Modal from '../Modal.svelte';
   import LineItemModal from '../LineItemModal.svelte';
   import PriceListPicker from '../PriceListPicker.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
@@ -33,9 +34,10 @@
     sourcePool = null,
     lineItems = [],
     categories = [],
-    // Dark until the §6 "make deliverable" endpoint lands — a caller wires
-    // this to render the per-line "→ Deliverable" action; EstimatePanel
-    // doesn't wire it yet, so the button stays unrendered.
+    // The Make Deliverable button (better-fees §6): EstimatePanel wires
+    // this to POST line-items/{id}/make-deliverable/. Suppressed per line
+    // once a linked deliverable exists (linked_deliverables from the
+    // serializer — the source_line provenance FK).
     onMakeDeliverable = null,
   } = $props();
 
@@ -71,15 +73,39 @@
   }
 
   // ── Remove (never "delete" in user-facing text) ──────────────────────────
-  // Single-phase: the estimate line-item DELETE has no two-phase confirm
-  // gate (drafts-only, freely re-addable via the uncovered-work pool).
-  async function handleRemoveItem(li) {
+  // Single-phase for ordinary lines (drafts-only, freely re-addable via the
+  // uncovered-work pool). A line with a deliverable made from it first asks
+  // whether the deliverable goes too (RM 2026-08-12) — deleting a persisted
+  // deliverable is the irreversible half, so that choice gets a dialog.
+  let removeDialogLine = $state(null);
+
+  function handleRemoveItem(li) {
+    if ((li.linked_deliverables || []).length > 0) {
+      removeDialogLine = li;
+      return;
+    }
+    removeLine(li, { deleteDeliverables: false });
+  }
+
+  async function removeLine(li, { deleteDeliverables }) {
+    removeDialogLine = null;
+    const suffix = deleteDeliverables ? '?delete_deliverables=true' : '';
     try {
-      await api.delete(`${apiBase}/line-items/${li.line_item_id}/`);
+      await api.delete(`${apiBase}/line-items/${li.line_item_id}/${suffix}`);
       onChanged();
     } catch (e) {
       showError(errorMessage(e, 'Could not remove line item.'));
     }
+  }
+
+  // Qty/units drift between a line and its linked deliverable — passive
+  // mismatch caption only, never a sync (spec §6).
+  function deliverableMismatch(li) {
+    const d = (li.linked_deliverables || [])[0];
+    if (!d) return null;
+    const drifted = Number(d.qty_ordered) !== Number(li.qty)
+      || (d.units || 'none') !== (li.units || 'none');
+    return drifted ? d : null;
   }
 
   // ── Uncovered work pool → selection → add-atoms / line-items-from-atoms ──
@@ -247,6 +273,9 @@
             <br><small class="needs-category">needs category</small>
           {/if}
           {#if provenanceText(li)}<br><small>{provenanceText(li)}</small>{/if}
+          {#if deliverableMismatch(li)}
+            <br><small class="deliv-mismatch">deliverable: {deliverableMismatch(li).qty_ordered} {deliverableMismatch(li).units}</small>
+          {/if}
         </td>
         <td class="text-right"><QtyUnits qty={li.qty} units={li.units} /></td>
         <td class="text-right">{fmtMoney(li.price)}</td>
@@ -266,8 +295,8 @@
                 <button type="button" onclick={() => addSelectedToLine(li)}>Add selected here</button>
               {/if}
             {/if}
-            {#if onMakeDeliverable}
-              <button type="button" onclick={() => onMakeDeliverable(li)}>&rarr; Deliverable</button>
+            {#if onMakeDeliverable && (li.linked_deliverables || []).length === 0}
+              <button type="button" onclick={() => onMakeDeliverable(li)}>Make Deliverable</button>
             {/if}
           </td>
         {/if}
@@ -337,6 +366,26 @@
   onClose={() => { adjustmentModalOpen = false; }}
 />
 
+<Modal open={removeDialogLine != null} onCancel={() => { removeDialogLine = null; }} label="Remove line">
+  {#if removeDialogLine}
+    <h3>Remove line</h3>
+    <p>
+      A deliverable was made from this line
+      ("{(removeDialogLine.linked_deliverables[0] || {}).description}").
+      Remove the deliverable as well?
+    </p>
+    <div class="remove-dialog-buttons">
+      <button type="button" onclick={() => removeLine(removeDialogLine, { deleteDeliverables: true })}>
+        Remove line and deliverable
+      </button>
+      <button type="button" onclick={() => removeLine(removeDialogLine, { deleteDeliverables: false })}>
+        Remove line, keep deliverable
+      </button>
+      <button type="button" onclick={() => { removeDialogLine = null; }}>Cancel</button>
+    </div>
+  {/if}
+</Modal>
+
 <style>
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
@@ -344,4 +393,7 @@
      without an accounting_category — the estimator must see this before the
      send-time error). */
   .needs-category { background-color: #fff8e1; color: #b45309; font-style: italic; }
+  /* Passive qty/units drift note between a line and its linked deliverable. */
+  .deliv-mismatch { color: #b45309; }
+  .remove-dialog-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 </style>

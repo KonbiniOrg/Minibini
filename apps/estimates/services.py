@@ -269,6 +269,12 @@ class EstimateService:
             for src in li.sources.all():
                 src.estimate_line_item = new_li
                 src.save()
+            # Re-point deliverable provenance the same way (RM 2026-08-12):
+            # a deliverable minted from this line follows the live agreement,
+            # so Make Deliverable stays suppressed on the revision's copy.
+            for d in li.deliverables.all():
+                d.source_line = new_li
+                d.save(update_fields=['source_line', 'updated_at'])
 
         # Supersede parent
         parent.status = Estimate.STATUS_SUPERSEDED
@@ -475,8 +481,14 @@ class EstimateService:
         return LineItemService.reorder_line_item(li, direction)
 
     @staticmethod
-    def delete_line_item(line_item_id):
-        """Delete an estimate line item and renumber — validates draft status."""
+    def delete_line_item(line_item_id, *, delete_linked_deliverables=False):
+        """Delete an estimate line item and renumber — validates draft status.
+
+        `delete_linked_deliverables`: the Make Deliverable dialog's "remove
+        both" choice (RM 2026-08-12) — deliverables minted from this line
+        (`source_line` FK) are deleted through DeliverableService (its
+        editability + shipped-frozen guards apply). Default False: the FK is
+        SET_NULL, so the deliverable survives unlinked."""
         from apps.core.services import LineItemService
         try:
             li = EstimateLineItem.objects.get(pk=line_item_id)
@@ -486,7 +498,12 @@ class EstimateService:
             raise ValidationError(
                 'Cannot modify line items on a non-draft estimate.'
             )
-        return LineItemService.delete_line_item_with_renumber(li)
+        with transaction.atomic():
+            if delete_linked_deliverables:
+                from apps.deliverables.services import DeliverableService
+                for d in list(li.deliverables.all()):
+                    DeliverableService.delete(deliverable=d)
+            return LineItemService.delete_line_item_with_renumber(li)
 
     @staticmethod
     def discard_draft(estimate):

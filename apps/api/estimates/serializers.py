@@ -171,6 +171,7 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
     service_item_detail = serializers.SerializerMethodField()
     backing = serializers.SerializerMethodField()
     backing_total = serializers.SerializerMethodField()
+    linked_deliverables = serializers.SerializerMethodField()
 
     class Meta:
         model = EstimateLineItem
@@ -180,12 +181,26 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'accounting_category',
             'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail', 'service_item_detail',
-            'sources', 'backing', 'backing_total',
+            'sources', 'backing', 'backing_total', 'linked_deliverables',
         ]
         # is_material is server-derived from the accounting category
         # (EstimateService._derive_is_material, RM 2026-08-11) — never
         # client-writable.
         read_only_fields = ['line_item_id', 'is_material']
+
+    def get_linked_deliverables(self, obj):
+        # Deliverables minted from this line via Make Deliverable (the
+        # source_line provenance FK) — drives button suppression and the
+        # qty-mismatch caption in the estimate edit view.
+        return [
+            {
+                'id': d.pk,
+                'description': d.description,
+                'qty_ordered': str(d.qty_ordered),
+                'units': d.units,
+            }
+            for d in obj.deliverables.all()
+        ]
 
     def get_backing(self, obj):
         return derive_estimate_backing(obj)

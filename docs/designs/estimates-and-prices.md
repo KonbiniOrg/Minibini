@@ -1614,17 +1614,32 @@ such as an open edit modal or the current pool selection; see
   `LineItemModal` in field-edit mode — editing price flips `backing` to
   `'edited'`), **Remove** (`DELETE .../line-items/{id}/`, single-phase —
   the estimate has no two-phase confirm gate here since a removed line
-  is freely re-addable via the uncovered-work pool below), and — only
-  while the ticked-selection is non-empty — **"Add selected here"**
-  (`POST .../line-items/{id}/add-atoms/`). **The word "delete" does not
-  appear anywhere on this surface** — Remove releases the line's
-  backing work untouched, it does not destroy the atoms.
-- **"→ Deliverable" — ships dark.** The view accepts an
-  `onMakeDeliverable` prop and renders a per-line **"→ Deliverable"**
-  button only when a caller supplies it (the A3 no-dead-buttons rule,
-  `architecture-and-conventions.md` §5.5b); `EstimatePanel` does not
-  wire it yet, so the button is currently unrendered everywhere. It is
-  reserved for the §6 make-a-deliverable endpoint, a later phase.
+  is freely re-addable via the uncovered-work pool below — EXCEPT a line
+  with a linked deliverable, which opens a three-way dialog: "Remove
+  line and deliverable" (`?delete_deliverables=true`), "Remove line,
+  keep deliverable" (the SET_NULL FK just unlinks), or Cancel — deleting
+  a persisted deliverable is the irreversible half, RM 2026-08-12), and
+  — only while the ticked-selection is non-empty — **"Add selected
+  here"** (`POST .../line-items/{id}/add-atoms/`). **The word "delete"
+  does not appear anywhere on this surface** — Remove releases the
+  line's backing work untouched, it does not destroy the atoms.
+- **"Make Deliverable"** (built 2026-08-12 — spec §6; label per RM,
+  placeholder until a better one lands). Per-line button, wired by
+  `EstimatePanel` while `canEdit`, POSTing
+  `.../line-items/{id}/make-deliverable/` →
+  `DeliverableService.create_from_estimate_line`: copies the line's
+  description/qty/units into a new Deliverable on the job with a
+  `source_line` provenance FK (SET_NULL, `related_name='deliverables'`)
+  — provenance only, no sync, no compute path. The FK drives:
+  **suppression** (the button hides on a line whose
+  `linked_deliverables` is non-empty — the serializer exposes
+  `{id, description, qty_ordered, units}` per linked deliverable),
+  a **passive mismatch caption** (`deliverable: {qty} {units}`, amber,
+  when the line's qty/units drift from the deliverable's — a human
+  reconciles; nothing syncs), and the Remove dialog above.
+  `revise_estimate` RE-POINTS `source_line` to the copied line (same
+  move as claim rows), so suppression follows the live revision.
+  Availability follows `DeliverableService.is_editable` server-side.
 - **Uncovered-work pool** (`UncoveredWorkSection`, title "Uncovered
   work") — fed from `GET .../source-pool/`, filtered to atoms this
   estimate hasn't already claimed (`claimed_by_current` excluded — those

@@ -1900,6 +1900,15 @@ see §12.2 and §12.9).
   consumed materials). One Job has 0+ Deliverables. Listed on the Job
   detail page (always visible, sub-header column) and on every customer-
   facing packing list.
+  Carries an optional `source_line` provenance FK (SET_NULL →
+  `EstimateLineItem`, added 2026-08-12, migration deliverables/0003) set
+  by the estimate edit view's **Make Deliverable** button
+  (`DeliverableService.create_from_estimate_line` — copies
+  description/qty/units; refuses a second make on the same line).
+  Provenance only: no sync, no compute path. `revise_estimate` re-points
+  it to the revision's copied line; deleting the line offers deleting
+  the deliverable too (three-way dialog) or unlinks it. See
+  `estimates-and-prices.md` §12 for the surface.
 - **Shipment**: a single fulfillment event for a Job. Holds 1+
   `ShipmentItem` rows that each reference one Deliverable + a qty.
   Multiple Shipments per Job support phased delivery / backorders.
