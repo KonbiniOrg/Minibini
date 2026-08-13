@@ -1636,7 +1636,16 @@ such as an open edit modal or the current pool selection; see
   `{id, description, qty_ordered, units}` per linked deliverable),
   a **passive mismatch caption** (`deliverable: {qty} {units}`, amber,
   when the line's qty/units drift from the deliverable's — a human
-  reconciles; nothing syncs), and the Remove dialog above.
+  reconciles; nothing auto-syncs), the Remove dialog above, and the
+  **edit dialog** (RM 2026-08-12): saving an edit that touches
+  description/qty/units on a linked line first asks "Update it to match
+  these changes?" — "Save and update deliverable" rides the PATCH as
+  `?update_deliverables=true`
+  (`EstimateService.update_line_item(update_linked_deliverables=True)` →
+  `DeliverableService.update`, so editability/shipped-frozen guards
+  apply), "Save, keep deliverable as is" saves the line alone, Back
+  returns to the form. Price-only edits never ask (deliverables carry no
+  price). The update choice also refreshes the job-context band.
   `revise_estimate` RE-POINTS `source_line` to the copied line (same
   move as claim rows), so suppression follows the live revision.
   Availability follows `DeliverableService.is_editable` server-side.

@@ -422,8 +422,15 @@ class EstimateService:
         return li
 
     @staticmethod
-    def update_line_item(line_item_id, **kwargs):
-        """Update an estimate line item — validates draft status."""
+    def update_line_item(line_item_id, *, update_linked_deliverables=False, **kwargs):
+        """Update an estimate line item — validates draft status.
+
+        `update_linked_deliverables`: the Make Deliverable edit dialog's
+        "update both" choice (RM 2026-08-12) — deliverables minted from this
+        line sync their description/qty_ordered/units to the line's new
+        values through DeliverableService.update (its editability +
+        shipped-frozen guards apply). Default False: the deliverable keeps
+        its own values (drift shows as the passive mismatch caption)."""
         try:
             li = EstimateLineItem.objects.get(pk=line_item_id)
         except EstimateLineItem.DoesNotExist:
@@ -447,7 +454,17 @@ class EstimateService:
             )
         EstimateService._derive_is_material(li, has_sources=has_source)
         li.full_clean()
-        LineItemService.save_line_item(li)
+        with transaction.atomic():
+            LineItemService.save_line_item(li)
+            if update_linked_deliverables:
+                from apps.deliverables.services import DeliverableService
+                for d in list(li.deliverables.all()):
+                    DeliverableService.update(
+                        deliverable=d,
+                        description=li.description,
+                        qty_ordered=li.qty,
+                        units=li.units,
+                    )
         return li
 
     @staticmethod

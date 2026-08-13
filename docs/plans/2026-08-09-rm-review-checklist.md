@@ -11,6 +11,9 @@ One new migration (deliverables/0003) — `python manage.py migrate` on dev.
       "deliverable: N units" caption on the line (nothing syncs).
 - [ ] Remove a linked line → three-way dialog: remove both / keep
       deliverable (unlinks) / cancel.
+- [ ] Edit a linked line's qty/description/units → dialog asks "Update it
+      to match these changes?" (update both / keep / back); price-only
+      edits don't ask. Choosing update refreshes the band's row live.
 - [ ] Revise the estimate → the deliverable follows the revision (Make
       Deliverable stays suppressed on the copied line).
 

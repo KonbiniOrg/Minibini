@@ -49,6 +49,7 @@
       }
       formError = '';
       fieldErrs = {};
+      deliverableChoiceOpen = false;
     }
   });
 
@@ -63,7 +64,28 @@
     }
   }
 
-  async function save() {
+  // Make Deliverable edit dialog (RM 2026-08-12): when an edited line has a
+  // deliverable made from it AND the edit touches what the deliverable
+  // mirrors (description/qty/units — never price), Save first asks whether
+  // the deliverable should update too. The choice rides the PATCH as
+  // ?update_deliverables=true; onSaved receives {deliverablesUpdated} so the
+  // estimate surface can refresh the job-context band.
+  let deliverableChoiceOpen = $state(false);
+
+  function deliverableRelevantChange() {
+    if (mode !== 'edit' || !item) return false;
+    if (!(item.linked_deliverables || []).length) return false;
+    return description !== (item.description ?? '')
+      || Number(qty || 0) !== Number(item.qty || 0)
+      || (units || 'none') !== (item.units || 'none');
+  }
+
+  async function save({ updateDeliverables = null } = {}) {
+    if (updateDeliverables === null && deliverableRelevantChange()) {
+      deliverableChoiceOpen = true;
+      return;
+    }
+    deliverableChoiceOpen = false;
     busy = true;
     formError = '';
     fieldErrs = {};
@@ -95,12 +117,13 @@
           accounting_category: accountingCategory ? Number(accountingCategory) : null,
         };
         if (mode === 'edit' && item) {
-          await api.patch(`${apiBase}/line-items/${item.line_item_id}/`, payload);
+          const suffix = updateDeliverables ? '?update_deliverables=true' : '';
+          await api.patch(`${apiBase}/line-items/${item.line_item_id}/${suffix}`, payload);
         } else {
           await api.post(`${apiBase}/line-items/`, payload);
         }
       }
-      onSaved();
+      onSaved({ deliverablesUpdated: updateDeliverables === true });
     } catch (e) {
       const t = triageError(e);
       if (t.overlay) {
@@ -181,7 +204,29 @@
         </p>
       {/if}
 
-      <div class="buttons">
+      {#if deliverableChoiceOpen}
+        <div class="deliverable-choice">
+          <p>
+            A deliverable was made from this line
+            ("{((item?.linked_deliverables || [])[0] || {}).description}").
+            Update it to match these changes?
+          </p>
+          <div class="buttons">
+            <button type="button" disabled={busy}
+              onclick={() => save({ updateDeliverables: true })}>
+              Save and update deliverable
+            </button>
+            <button type="button" disabled={busy}
+              onclick={() => save({ updateDeliverables: false })}>
+              Save, keep deliverable as is
+            </button>
+            <button type="button" disabled={busy}
+              onclick={() => { deliverableChoiceOpen = false; }}>Back</button>
+          </div>
+        </div>
+      {/if}
+
+      <div class="buttons" hidden={deliverableChoiceOpen}>
         <button type="submit" disabled={busy}>Save</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>

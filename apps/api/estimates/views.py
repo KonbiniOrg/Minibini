@@ -107,6 +107,14 @@ class EstimateViewSet(
     # hand-lines stay document-only); atom-backed lines still come
     # via line-items-from-atoms / add-atoms.
 
+    def line_item_update_kwargs(self, request):
+        # The Make Deliverable edit dialog's "update both" choice (RM
+        # 2026-08-12): ?update_deliverables=true syncs linked deliverables'
+        # description/qty/units to the line's new values.
+        if request.query_params.get('update_deliverables') == 'true':
+            return {'update_linked_deliverables': True}
+        return {}
+
     def line_item_delete_kwargs(self, request):
         # The Make Deliverable dialog's "remove both" choice (RM 2026-08-12):
         # ?delete_deliverables=true also deletes deliverables minted from the

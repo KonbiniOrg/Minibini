@@ -1714,7 +1714,10 @@ customer-facing manifest distinct from billing line items.
   mismatch-badging only, never a compute path; `revise_estimate` re-points
   it to the revision's copied line; deleting the line either unlinks
   (default) or deletes the deliverable too
-  (`EstimateService.delete_line_item(delete_linked_deliverables=True)`).
+  (`EstimateService.delete_line_item(delete_linked_deliverables=True)`);
+  editing the line optionally syncs description/qty_ordered/units onto the
+  deliverable (`update_line_item(update_linked_deliverables=True)`, the
+  edit dialog's "update both" choice — one-shot copy, not a standing sync).
 - **sort_order** (PositiveInteger): auto-assigned to next slot on save when
   unset (10, 20, 30, …). Renumbered to a contiguous sequence after a
   service-driven delete.

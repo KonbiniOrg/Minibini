@@ -64,6 +64,26 @@ test('Make Deliverable mints a linked deliverable, suppresses itself, and line r
     expect(minted.units).toBe('ea');
   });
 
+  await test.step('Editing a linked line asks; "update deliverable" syncs it and the band shows the new qty', async () => {
+    const rowA = lineRow(`${stamp} chairs`);
+    await rowA.getByRole('button', { name: 'Edit' }).click();
+    const modal = page.getByRole('dialog');
+    await modal.getByLabel('Quantity').fill('5');
+    await modal.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(modal).toContainText('Update it to match these changes?');
+    await modal.getByRole('button', { name: 'Save and update deliverable' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    const band = page.locator('.context-band .deliverables-panel');
+    await expect(band.locator('tr').filter({ hasText: `${stamp} chairs` }))
+      .toContainText('5');
+
+    const deliverables = await api.get(`/api/jobs/${job.job_id}/deliverables/`);
+    const rows = deliverables.results || deliverables;
+    const synced = rows.find((d) => d.description === `${stamp} chairs`);
+    expect(Number(synced.qty_ordered)).toBe(5);
+  });
+
   await test.step('Removing a linked line: "keep deliverable" leaves it on the job', async () => {
     const rowA = lineRow(`${stamp} chairs`);
     await rowA.getByRole('button', { name: 'Remove' }).click();

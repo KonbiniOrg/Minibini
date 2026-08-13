@@ -70,10 +70,13 @@
     modalItem = li;
     modalOpen = true;
   }
-  function handleModalSaved() {
+  function handleModalSaved(result) {
     modalOpen = false;
     modalItem = null;
     onChanged();
+    // The edit dialog updated the linked deliverable — refresh the job so
+    // the context band's Deliverables panel shows the new values.
+    if (result?.deliverablesUpdated) onDeliverablesChanged();
   }
 
   // ── Remove (never "delete" in user-facing text) ──────────────────────────

@@ -197,6 +197,11 @@ class LineItemMixin:
     line_item_parent_field = None
     line_item_service_class = None
 
+    def line_item_update_kwargs(self, request):
+        """Extra kwargs for the service's update_line_item, derived from the
+        PATCH request — same contract as line_item_delete_kwargs below."""
+        return {}
+
     def line_item_delete_kwargs(self, request):
         """Extra kwargs for the service's delete_line_item, derived from the
         DELETE request. Default: none. A viewset overrides this to translate
@@ -254,7 +259,8 @@ class LineItemMixin:
             return Response({'message': 'Line item deleted.'})
 
         try:
-            item = service.update_line_item(item.pk, **request.data)
+            item = service.update_line_item(
+                item.pk, **self.line_item_update_kwargs(request), **request.data)
         except NotFoundError:
             return Response(
                 {'detail': 'Not found.'},

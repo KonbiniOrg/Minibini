@@ -153,3 +153,51 @@ class MakeDeliverableAPITest(MakeDeliverableBase):
         self.assertEqual(resp.status_code, 200, resp.data)
         d.refresh_from_db()
         self.assertIsNone(d.source_line)
+
+
+class UpdateLineWithDeliverableTest(MakeDeliverableBase):
+    def test_default_update_leaves_deliverable_untouched(self):
+        d = DeliverableService.create_from_estimate_line(self.line)
+        EstimateService.update_line_item(self.line.pk, qty=Decimal('5'))
+        d.refresh_from_db()
+        self.assertEqual(d.qty_ordered, Decimal('3'))
+
+    def test_update_with_flag_syncs_description_qty_units(self):
+        d = DeliverableService.create_from_estimate_line(self.line)
+        EstimateService.update_line_item(
+            self.line.pk, description='5 stools, oak', qty=Decimal('5'),
+            units='ea', update_linked_deliverables=True)
+        d.refresh_from_db()
+        self.assertEqual(d.description, '5 stools, oak')
+        self.assertEqual(d.qty_ordered, Decimal('5'))
+        self.assertEqual(d.units, 'ea')
+
+    def test_api_patch_with_param_syncs(self):
+        client = APIClient()
+        manager = grant_atoms(
+            User.objects.create_user(username='mkdel_upd', password='x'),
+            'can_manage_jobs')
+        client.force_authenticate(user=manager)
+        d = DeliverableService.create_from_estimate_line(self.line)
+        resp = client.patch(
+            f'/api/estimates/{self.estimate.pk}/line-items/{self.line.pk}/'
+            f'?update_deliverables=true',
+            {'qty': '7'}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        d.refresh_from_db()
+        self.assertEqual(d.qty_ordered, Decimal('7'))
+
+    def test_api_patch_without_param_does_not_sync(self):
+        client = APIClient()
+        manager = grant_atoms(
+            User.objects.create_user(username='mkdel_upd2', password='x'),
+            'can_manage_jobs')
+        client.force_authenticate(user=manager)
+        d = DeliverableService.create_from_estimate_line(self.line)
+        resp = client.patch(
+            f'/api/estimates/{self.estimate.pk}/line-items/{self.line.pk}/',
+            {'qty': '7'}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        d.refresh_from_db()
+        self.assertEqual(d.qty_ordered, Decimal('3'))
+
