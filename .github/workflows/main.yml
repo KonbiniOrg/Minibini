@@ -62,7 +62,9 @@ jobs:
             ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKERHUB_PROJECT_NAME }}:latest
             ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKERHUB_PROJECT_NAME }}:${{ steps.meta.outputs.SHORT_SHA }}
             ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKERHUB_PROJECT_NAME }}:0.1.${{ github.run_number }}
-          cache-from: type=local,src=/tmp/.buildx-cache
+          #cache-from: type=local,src=/tmp/.buildx-cache
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKERHUB_PROJECT_NAME }}:latest
+          cache-to: type=inline,mode=min
 
       # 7. copy docker compose to tov
       - name: Copy files via SSH
