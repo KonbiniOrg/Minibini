@@ -83,6 +83,16 @@ def _revision_index(row):
     return P.revision_parts(ref)[1]
 
 
+def _canon_unit_label(label):
+    """Seed hygiene (RM 2026-08-12): 'hours' in any case/whitespace collapses
+    to the canonical 'hour'. Plural drift here propagates into every task
+    money-block stamped from the scheme and silently defeats the SPA's
+    hour-unit single-field collapse, which keys on exactly 'hour'."""
+    if isinstance(label, str) and label.strip().lower() == 'hours':
+        return 'hour'
+    return label
+
+
 def build_seed(c):
     """Emit core.user, core.accountingcategory and jobs.ratescheme records
     verbatim from the nealseed fixture.
@@ -121,6 +131,7 @@ def build_seed(c):
         if model == 'core.accountingcategory':
             c.ac_by_code[fields['code']] = rec.get('pk')
         elif model == 'jobs.ratescheme':
+            fields['unit_label'] = _canon_unit_label(fields.get('unit_label'))
             c.scheme_by_name[fields['name']] = rec.get('pk')
             c.scheme_fields_by_pk[rec.get('pk')] = fields
             if isinstance(rec.get('pk'), int):

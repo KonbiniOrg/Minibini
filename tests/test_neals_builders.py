@@ -127,6 +127,20 @@ class BaseBuildersTest(unittest.TestCase):
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
+class CanonUnitLabelTest(unittest.TestCase):
+    """RM 2026-08-12: seed rate-scheme unit labels self-heal 'hours' -> 'hour'
+    (plural drift breaks the SPA's hour-unit single-field collapse)."""
+
+    def test_hours_drops_the_s(self):
+        self.assertEqual(build._canon_unit_label('hours'), 'hour')
+        self.assertEqual(build._canon_unit_label('Hours'), 'hour')
+        self.assertEqual(build._canon_unit_label(' HOURS '), 'hour')
+
+    def test_everything_else_passes_through(self):
+        for label in ('hour', 'min', 'ea', 'none', 'sq ft', '', None):
+            self.assertEqual(build._canon_unit_label(label), label)
+
+
 class UniqueEmailTest(unittest.TestCase):
     def test_first_occurrence_keeps_the_original(self):
         seen = set()
