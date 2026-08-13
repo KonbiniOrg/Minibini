@@ -28,19 +28,27 @@ jobs:
           key: ${{ runner.os }}-buildx-${{ github.sha }}
           restore-keys: ${{ runner.os }}-buildx-
 
-      # 5. Extract metadata
-      - name: Extract metadata
-        id: meta
-        run: |
-          echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> "$GITHUB_OUTPUT"
-          echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-
       # 8. Login to Docker Hub
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 5. Extract metadata
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+        run: |
+          echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> "$GITHUB_OUTPUT"
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       # 9. Build and push prod image
       - name: Build and push production image
@@ -93,6 +101,7 @@ jobs:
             docker compose run --rm minibini_django python manage.py loaddata fixtures/large_datasets/nealsmall.json
             docker compose up -d --pull always  minibini_django
             docker compose up -d --pull always  minibini_vite
+            docker compose restart -d --pull always  cron
       # 9. send shannon email if the action fails
       - name: email shannon on failure
         uses: dawidd6/action-send-mail@v3.6.0
