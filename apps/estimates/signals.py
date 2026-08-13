@@ -58,7 +58,13 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             defaults={'first_name': 'System', 'is_active': False},
         )
         if new_job_status == Job.STATUS_SUBMITTED:
-            action_desc = f"Estimate {estimate.estimate_number} sent"
+            # job.status here is still the PRE-update value (refreshed above,
+            # not yet written) — REJECTED means this is unexpire's
+            # reactivation, not a first send.
+            if job.status == Job.STATUS_REJECTED:
+                action_desc = f"Estimate {estimate.estimate_number} unexpired"
+            else:
+                action_desc = f"Estimate {estimate.estimate_number} sent"
         elif new_job_status == Job.STATUS_APPROVED:
             action_desc = f"Estimate {estimate.estimate_number} accepted"
         elif new_job_status == Job.STATUS_REJECTED:

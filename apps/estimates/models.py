@@ -55,7 +55,7 @@ class Estimate(models.Model):
             Estimate.STATUS_OPEN: [Estimate.STATUS_ACCEPTED, Estimate.STATUS_SUPERSEDED, Estimate.STATUS_REJECTED, Estimate.STATUS_EXPIRED],
             Estimate.STATUS_ACCEPTED: [],  # Terminal state
             Estimate.STATUS_REJECTED: [],  # Terminal state
-            Estimate.STATUS_EXPIRED: [],  # Terminal state
+            Estimate.STATUS_EXPIRED: [Estimate.STATUS_OPEN],  # reactivatable (unexpire)
             Estimate.STATUS_SUPERSEDED: [],  # Terminal state
         }
 
@@ -72,7 +72,17 @@ class Estimate(models.Model):
                 if old_estimate.sent_date and self.sent_date != old_estimate.sent_date:
                     self.sent_date = old_estimate.sent_date
 
-                if old_estimate.closed_date and self.closed_date != old_estimate.closed_date:
+                # Reactivating (expired -> open, unexpire) legitimately clears
+                # the stale closed_date -- it's no longer a closed document.
+                # (sent_date stays: it never went back through draft, so the
+                # original send date is still accurate.)
+                reactivating = (
+                    old_status == Estimate.STATUS_EXPIRED
+                    and self.status == Estimate.STATUS_OPEN
+                )
+                if reactivating:
+                    self.closed_date = None
+                elif old_estimate.closed_date and self.closed_date != old_estimate.closed_date:
                     self.closed_date = old_estimate.closed_date
 
                 # If status hasn't changed, no validation needed
@@ -172,8 +182,12 @@ class Estimate(models.Model):
         """Send signal to update job status if the change is relevant."""
         from apps.estimates.signals import estimate_status_changed_for_job, estimate_accepted
 
-        # Signal when estimate is sent (draft → open): job should become submitted
-        if self.status == Estimate.STATUS_OPEN and old_status == Estimate.STATUS_DRAFT:
+        # Signal when the estimate becomes open — first send (draft → open) or
+        # reactivation (expired → open, unexpire): job should become/return to
+        # submitted, awaiting the customer again.
+        if self.status == Estimate.STATUS_OPEN and old_status in (
+            Estimate.STATUS_DRAFT, Estimate.STATUS_EXPIRED,
+        ):
             from apps.jobs.models import Job
             estimate_status_changed_for_job.send(
                 sender=self.__class__,

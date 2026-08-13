@@ -161,6 +161,8 @@ class UniqueEmailTest(unittest.TestCase):
                          'test+info2@robot-six.com')
 
 
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
 class ContactBuildersTest(unittest.TestCase):
     def setUp(self):
         self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=10)
@@ -2160,6 +2162,8 @@ class JobDateSwapTest(unittest.TestCase):
         self.assertLess(f['created_date'], f['start_date'])
 
 
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
 class InvoiceDatesAndPaidAmountTest(unittest.TestCase):
     """sent_date for open/paid; qbo_amount_paid (per-invoice line total) for paid."""
 

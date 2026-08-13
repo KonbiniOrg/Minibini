@@ -11,7 +11,7 @@ from apps.api.mixins import (
     LineItemMixin,
     StatusTransitionMixin,
 )
-from apps.api.permissions import CanManageJobOrPM
+from apps.api.permissions import CanManageFinancials, CanManageJobOrPM, CanManageJobs
 from apps.core.services import NotFoundError, ServiceError
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import (
@@ -40,6 +40,11 @@ class EstimateViewSet(
             return [IsAuthenticated()]
         if self.action in mixed_actions and self.request.method == 'GET':
             return [IsAuthenticated()]
+        if self.action == 'unexpire':
+            # Reactivating a rejected job is a bigger call than the usual
+            # per-job PM scope covers — gated on the can_manage_jobs or
+            # can_manage_financials atom directly, not CanManageJobOrPM.
+            return [IsAuthenticated(), (CanManageJobs | CanManageFinancials)()]
         return [IsAuthenticated(), CanManageJobOrPM()]
 
     # Line item mixin config
@@ -50,6 +55,7 @@ class EstimateViewSet(
     # Status actions
     status_actions = {
         'mark-open': {'service': EstimateService.mark_open},
+        'unexpire': {'service': EstimateService.unexpire},
     }
 
     def get_queryset(self):

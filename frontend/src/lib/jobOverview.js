@@ -392,20 +392,23 @@ function dueStatOf(due) {
 // ---------------------------------------------------------------------------
 const NEEDS_ORDERING_KEYS = ['needed', 'needs-pricing'];
 const NOT_ARRIVED_KEYS = ['ordered', 'awaiting-customer'];
+export const MATERIAL_SHORT_LIST_MAX = 3;    // > this many short materials → collapse the tail into "+N more"
 
 function materialsCoverage(materials) {
   if (!materials.length) return null;   // no materials → omit the stat entirely
-  let needsOrdering = 0;
+  const needsOrdering = [];
   let notArrived = 0;
   for (const m of materials) {
     const key = materialStatus(m).key;
-    if (NEEDS_ORDERING_KEYS.includes(key)) needsOrdering += 1;
+    if (NEEDS_ORDERING_KEYS.includes(key)) needsOrdering.push(m.description || 'unnamed material');
     else if (NOT_ARRIVED_KEYS.includes(key)) notArrived += 1;
   }
-  const ordering = `${needsOrdering} need${needsOrdering === 1 ? 's' : ''} ordering`;
   const arriving = `${notArrived} not yet arrived`;
 
-  if (needsOrdering > 0) {
+  if (needsOrdering.length > 0) {
+    const shown = needsOrdering.slice(0, MATERIAL_SHORT_LIST_MAX).join(', ');
+    const extra = needsOrdering.length - MATERIAL_SHORT_LIST_MAX;
+    const ordering = extra > 0 ? `${shown} +${extra} more` : shown;
     const parts = [ordering];
     if (notArrived > 0) parts.push(arriving);
     return { label: 'SHORT', tone: 'bad', sub: parts.join(' · ') };

@@ -1923,6 +1923,33 @@ A standalone invoice list is available at `#/invoices` — see "Invoice list pag
 | Per-user reimbursement panel | `frontend/src/components/expenses/UserReimbursementPanel.svelte` |
 | Global expense list | `frontend/src/routes/expenses/ExpenseListPage.svelte` (route `#/expenses`) |
 | Per-user reimbursement page | `frontend/src/routes/reimbursements/ReimbursementDetailPage.svelte` (route `#/reimbursements/:user_id`) |
+| Job Task list's "Expenses" section | `TaskTree.svelte` (via `TasksPanel.svelte`), job-scoped |
+
+**Job Task list's Expenses section** (2026-08-07): the same job-scoped
+`/api/expenses/?job=` fetch `ExpenseListPage.svelte` and `TaskTree.svelte`
+have always shared, but `TaskTree`'s expense rows only offered **edit**
+until this pass — there was no way to delete or reject an expense without
+navigating to the standalone `/expenses` list, which has no job filter.
+`TaskTree.svelte`'s `expenseRow` snippet now takes `onDeleteExpense` /
+`onRejectExpense` callbacks (both default `null` — hidden unless wired,
+same convention as the material-op callbacks) and, mirroring
+`ExpenseListPage.svelte` exactly:
+- Gates **delete** on `onDeleteExpense` being wired **and**
+  `$canManageFinancials` (imported directly in `TaskTree.svelte`, same
+  idiom as `MaterialRow.svelte`'s Order-button gate — not threaded down as
+  a boolean prop).
+- Gates **reject** on the same two conditions **plus**
+  `payment_method === 'personal' && status === 'submitted'`.
+- Replaces the whole actions cell (edit included) with a **"billed —
+  locked"** note when `exp.invoice` is set, matching
+  `ExpenseListPage.svelte`'s all-or-nothing lock — `TaskTree`'s edit
+  button was previously ungated on invoice status, which this closes.
+
+`TasksPanel.svelte` wires both callbacks (`handleDeleteExpense` /
+`handleRejectExpense`) with the same confirm-copy + `reload()` pattern as
+its existing `handleDeleteTask`/`handleCancelTask` handlers, calling
+`DELETE /api/expenses/{id}/` and `POST /api/expenses/{id}/reject/`
+respectively.
 
 The home card surface (self-service personal expense submission) consumes the same `ExpenseForm.svelte`. A Bookkeeper sees an "Expenses" sidebar link; a Worker does not. Owners see the same `UserReimbursementPanel.svelte` embedded as an Expenses tab on the User Detail page.
 

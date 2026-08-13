@@ -56,7 +56,9 @@ test('§3 an unpriced material drives Coverage to SHORT', async ({ page }) => {
   await expect(stat).toHaveCount(1);
   await expect(stat.locator('.stat-value')).toHaveText(/SHORT/);
   await expect(stat.locator('.stat-value')).toHaveClass(/clock-bad/);
-  await expect(stat.locator('.stat-sub')).toHaveText(/1 needs ordering/);
+  // 2026-08-07: the sub-line now names the short material instead of a bare
+  // count, so the SHORT headline answers "which material" without a click.
+  await expect(stat.locator('.stat-sub')).toHaveText('unpriced stock');
 });
 
 test('§3 material awaited from the customer reads WAITING, not SHORT', async ({ page }) => {

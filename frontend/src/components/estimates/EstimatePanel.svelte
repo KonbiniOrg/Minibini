@@ -9,6 +9,7 @@
   import DocReorderView from '../docsurface/DocReorderView.svelte';
   import EstimateEditView from './EstimateEditView.svelte';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
+  import { user } from '../../stores/auth.js';
 
   let { job, estimateId, onJobChange = () => {} } = $props();
 
@@ -23,6 +24,15 @@
 
   // Per-object gate: atom-holder OR this job's project_manager (server-computed).
   const canManageJobs = $derived(estimate?.can_manage ?? false);
+
+  // Unexpire is gated globally on can_manage_jobs OR can_manage_financials —
+  // NOT per-job PM scope like every other action here (reactivating a
+  // rejected job is a bigger call than the usual PM authority covers).
+  const canUnexpire = $derived(
+    ($user?.permissions?.includes('can_manage_jobs')
+      || $user?.permissions?.includes('can_manage_financials'))
+    ?? false,
+  );
 
   // Send Estimate (draft → open) is handled by the mark-open action, not the dropdown.
   const VALID_TRANSITIONS = {
@@ -46,6 +56,25 @@
     } catch (e) {
       showError(errorMessage(e, 'Could not revise estimate.'));
       revising = false;
+    }
+  }
+
+  // Unexpire is an in-place reactivation (expired -> open, same estimate and
+  // job — no navigation needed): reload the doc and the host's job header,
+  // same pattern as the status pill.
+  let unexpiring = $state(false);
+
+  async function handleUnexpire() {
+    if (!confirm('Give this estimate a fresh 30-day window and move the job back to submitted?')) return;
+    unexpiring = true;
+    try {
+      await api.post(`/api/estimates/${estimate.estimate_id}/unexpire/`);
+      await loadEstimate();
+      onJobChange();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not unexpire estimate.'));
+    } finally {
+      unexpiring = false;
     }
   }
 
@@ -346,6 +375,11 @@
     {#if canManageJobs && estimate.status === 'open'}
       <button type="button" onclick={handleRevise} disabled={revising}>
         {revising ? 'Revising...' : 'Revise Estimate'}
+      </button>
+    {/if}
+    {#if canUnexpire && estimate.status === 'expired'}
+      <button type="button" onclick={handleUnexpire} disabled={unexpiring}>
+        {unexpiring ? 'Unexpiring...' : 'Unexpire'}
       </button>
     {/if}
     <!-- Only the FIRST change order is created from the accepted estimate —

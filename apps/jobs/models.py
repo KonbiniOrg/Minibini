@@ -133,7 +133,7 @@ class Job(AbstractWorkContainer):
             Job.STATUS_APPROVED: [Job.STATUS_IN_PROGRESS, Job.STATUS_CANCELLED],
             Job.STATUS_IN_PROGRESS: [Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED],
             Job.STATUS_WORK_COMPLETE: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_IN_PROGRESS],
-            Job.STATUS_REJECTED: [],  # Terminal state
+            Job.STATUS_REJECTED: [Job.STATUS_SUBMITTED],  # reactivatable (estimate unexpire)
             Job.STATUS_COMPLETED: [],  # Terminal state
             Job.STATUS_CANCELLED: [Job.STATUS_IN_PROGRESS],  # reactivatable (undo accidental cancel)
         }
@@ -152,8 +152,10 @@ class Job(AbstractWorkContainer):
                     self.start_date = old_job.start_date
 
                 reactivating = (
-                    old_status in (Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED)
-                    and self.status == Job.STATUS_IN_PROGRESS
+                    (old_status in (Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED)
+                     and self.status == Job.STATUS_IN_PROGRESS)
+                    or (old_status == Job.STATUS_REJECTED
+                        and self.status == Job.STATUS_SUBMITTED)
                 )
                 if reactivating:
                     # Reactivating a closed job — it is active again, so it

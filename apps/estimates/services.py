@@ -219,6 +219,48 @@ class EstimateService:
 
     @staticmethod
     @transaction.atomic
+    def unexpire(pk):
+        """Reactivate a lapsed estimate in place: expired -> open, same
+        estimate and job (no duplication). `Estimate.save()` walks the job
+        rejected -> submitted via the same signal that first sent it
+        (Estimate._maybe_update_job_status, apps/estimates/models.py) — that
+        receiver already no-ops correctly if the job diverged from rejected
+        in the meantime (completed/cancelled, or already advanced past
+        submitted), so this needs no extra job-side guard of its own.
+
+        Gives a FRESH est_expire_days window rather than reusing the old
+        (already-lapsed) expiration_date — Estimate.save() only auto-sets
+        expiration_date the first time sent_date is set, so a bare status
+        flip would leave the old, already-past date in place.
+        """
+        try:
+            estimate = Estimate.objects.get(pk=pk)
+        except Estimate.DoesNotExist:
+            raise NotFoundError(f'Estimate {pk} not found')
+        if estimate.status != Estimate.STATUS_EXPIRED:
+            raise ValidationError('Only expired estimates can be unexpired.')
+
+        from datetime import timedelta
+        from django.utils import timezone
+        from apps.core.models import Configuration
+        try:
+            expire_days = int(Configuration.objects.get(key='est_expire_days').value)
+        except (Configuration.DoesNotExist, ValueError):
+            expire_days = 30
+
+        estimate.status = Estimate.STATUS_OPEN
+        estimate.expiration_date = timezone.now() + timedelta(days=expire_days)
+        estimate.save()  # closed_date clears via the reactivating carve-out in clean()
+
+        record_history(
+            entry_type='action', object_type='estimate', object_id=estimate.pk,
+            changes={'_action': f'Estimate {estimate.estimate_number} unexpired'},
+        )
+
+        return estimate
+
+    @staticmethod
+    @transaction.atomic
     def revise_estimate(pk):
         """Create a new revision of an estimate, copying line items and superseding parent."""
         try:

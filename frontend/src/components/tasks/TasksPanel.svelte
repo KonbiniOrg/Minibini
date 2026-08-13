@@ -34,6 +34,26 @@
     editingExpense = exp;
     expenseModalOpen = true;
   }
+  async function handleDeleteExpense(exp) {
+    if (!confirm('Delete this expense? If synced, the QBO Purchase is voided.')) return;
+    try {
+      await api.delete(`/api/expenses/${exp.id}/`);
+      await reload();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not delete expense.'));
+    }
+  }
+
+  async function handleRejectExpense(exp) {
+    if (!confirm('Reject this expense? It will not be reimbursed.')) return;
+    try {
+      await api.post(`/api/expenses/${exp.id}/reject/`);
+      await reload();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not reject expense.'));
+    }
+  }
+
   let materialModalMode = $state('create');
   let materialModalMaterial = $state(null);
   let materialModalTaskId = $state(null);
@@ -373,6 +393,8 @@
     onMoveMaterial={handleMoveMaterial}
     expenses={jobExpenses}
     onEditExpense={openEditExpense}
+    onDeleteExpense={handleDeleteExpense}
+    onRejectExpense={handleRejectExpense}
     bind:selectedTaskId
   />
 
