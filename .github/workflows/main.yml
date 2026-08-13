@@ -38,17 +38,17 @@ jobs:
       # 5. Extract metadata
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-        # run: |
-        #   echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> "$GITHUB_OUTPUT"
-        #   echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+#         uses: docker/metadata-action@v5
+#         with:
+#           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+#           tags: |
+#             type=semver,pattern={{version}}
+#             type=semver,pattern={{major}}.{{minor}}
+#             type=sha,prefix=sha-
+#             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+        run: |
+           echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> "$GITHUB_OUTPUT"
+           echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       # 9. Build and push prod image
       - name: Build and push production image
@@ -61,7 +61,7 @@ jobs:
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKERHUB_PROJECT_NAME }}:latest
             ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKERHUB_PROJECT_NAME }}:${{ steps.meta.outputs.SHORT_SHA }}
-            ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKERHUB_PROJECT_NAME }}:${{ github.run_number }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKERHUB_PROJECT_NAME }}:0.1.${{ github.run_number }}
           cache-from: type=local,src=/tmp/.buildx-cache
 
       # 7. copy docker compose to tov
