@@ -164,7 +164,7 @@ describe('EstimatePanel toolbar actions', () => {
     const est = makeEstimate({ estimate_id: 7, status: 'expired', can_manage: true });
     mockApi(est, { versions: [est] });
     const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    await findByText('Estimate: EST-7');
+    await findByText(/Estimate: EST-7-\d/);
     expect(queryByRole('button', { name: /unexpire/i })).toBeNull();
   });
 
@@ -173,7 +173,7 @@ describe('EstimatePanel toolbar actions', () => {
     const est = makeEstimate({ estimate_id: 7, status: 'open' });
     mockApi(est, { versions: [est] });
     const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    await findByText('Estimate: EST-7');
+    await findByText(/Estimate: EST-7-\d/);
     expect(queryByRole('button', { name: /unexpire/i })).toBeNull();
   });
 
