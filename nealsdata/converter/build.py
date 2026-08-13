@@ -1782,6 +1782,74 @@ def build_synthetic_estimate_sources(c):
             _emit_estimate_line_item_source(c, li['pk'], 'task', t['pk'])
 
 
+def build_invoice_agreement_refs(c):
+    """Emit agreement_estimate_line refs on converted invoice lines
+    (RM 2026-08-12): without them a converted open invoice claims no
+    agreement lines, so the app's one-live-invoice-per-agreement-line
+    invariant (remaining_agreement_lines) sees everything as unbilled and
+    Start Invoice re-seeds the FULL agreement — a visually identical twin.
+
+    Heuristic linkage, same spirit (and the same fuzzy-correspondence
+    caveat) as build_synthetic_estimate_sources: an invoice line matches
+    the SAME job's latest estimate's line by exact stripped description.
+    Adjustment estimate lines are never matched (they carry
+    adjustment_service; the app's seeding refs them separately and the
+    converter has no basis to). Runs after reconcile — refs are only
+    emitted when the latest estimate reconciled to accepted (the agreement
+    exists), and only for non-cancelled invoices (cancelled ones don't
+    claim). One live claim per estimate line: invoices iterate in pk order
+    and the first matching line wins, per job.
+    """
+    est_status = {f['pk']: f['fields']['status']
+                  for f in c.fixture_data if f['model'] == 'estimates.estimate'}
+
+    # base_ref -> {description: est_line_pk} for the latest ACCEPTED estimate.
+    desc_maps = {}
+    for base_ref, est_list in c.estimates.items():
+        if not est_list:
+            continue
+        latest = max(est_list, key=lambda e: e['version'])
+        if est_status.get(latest['est_pk']) != 'accepted':
+            continue
+        mapping = {}
+        for li in c.line_items.get(latest['est_pk'], []):
+            desc = (li['description'] or '').strip()
+            # First line wins on duplicate descriptions (deterministic).
+            if desc and desc not in mapping:
+                mapping[desc] = li['line_item_pk']
+        desc_maps[base_ref] = mapping
+
+    # invoice pk -> (base_ref, status); line fixtures grouped by invoice.
+    inv_meta = {f['pk']: f['fields'] for f in c.fixture_data
+                if f['model'] == 'invoicing.invoice'}
+    inv_base = {}
+    for base_ref, job_info in c.jobs.items():
+        job_pk = job_info['job_pk']
+        for pk, fields in inv_meta.items():
+            if fields['job'] == job_pk:
+                inv_base[pk] = base_ref
+
+    claimed = {}  # base_ref -> set of claimed est_line_pks
+    line_fixtures = [f for f in c.fixture_data
+                     if f['model'] == 'invoicing.invoicelineitem']
+    for f in sorted(line_fixtures, key=lambda f: (f['fields']['invoice'], f['pk'])):
+        inv_pk = f['fields']['invoice']
+        base_ref = inv_base.get(inv_pk)
+        if base_ref is None or base_ref not in desc_maps:
+            continue
+        if inv_meta[inv_pk].get('status') == 'cancelled':
+            continue
+        desc = (f['fields'].get('description') or '').strip()
+        est_line_pk = desc_maps[base_ref].get(desc)
+        if est_line_pk is None:
+            continue
+        taken = claimed.setdefault(base_ref, set())
+        if est_line_pk in taken:
+            continue  # one live invoice per agreement line
+        taken.add(est_line_pk)
+        f['fields']['agreement_estimate_line'] = est_line_pk
+
+
 def build_invoice_line_item_sources(c):
     """Emit invoicing.invoicelineitemsource rows linking InvoiceLineItems to
     Tasks / Materials on the Job.

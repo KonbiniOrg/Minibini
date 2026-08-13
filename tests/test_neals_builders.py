@@ -746,6 +746,75 @@ class InvoiceBuilderTest(unittest.TestCase):
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class InvoiceAgreementRefsTest(unittest.TestCase):
+    """RM 2026-08-12: converted invoice lines carry agreement_estimate_line
+    refs (description-matched to the job's latest ACCEPTED estimate) so
+    the one-live-invoice-per-agreement-line invariant holds on converted
+    jobs — without them, Start Invoice re-seeds the full agreement next to
+    an open legacy invoice."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=20)
+        cls.c.loader.load()
+        cls.c.csv_cards = cls.c.csv_loader.load()
+        cls.c.spine = cls.c.select_spine()
+        build.build_seed(cls.c)
+        build.build_contacts_and_businesses(cls.c)
+        build.build_jobs(cls.c)
+        build.build_estimates(cls.c)
+        build.derive_atoms(cls.c)
+        build.build_invoices(cls.c)
+        reconcile.reconcile(cls.c)
+        build.build_invoice_agreement_refs(cls.c)
+
+    def _m(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_refs_point_at_the_same_jobs_latest_accepted_estimate(self):
+        est_by_pk = {f['pk']: f['fields'] for f in self._m('estimates.estimate')}
+        est_line_by_pk = {f['pk']: f['fields']
+                          for f in self._m('estimates.estimatelineitem')}
+        inv_by_pk = {f['pk']: f['fields'] for f in self._m('invoicing.invoice')}
+        latest_by_job = {}
+        for pk, fields in est_by_pk.items():
+            cur = latest_by_job.get(fields['job'])
+            if cur is None or fields['version'] > est_by_pk[cur]['version']:
+                latest_by_job[fields['job']] = pk
+
+        refs = 0
+        for f in self._m('invoicing.invoicelineitem'):
+            ref = f['fields'].get('agreement_estimate_line')
+            if ref is None:
+                continue
+            refs += 1
+            inv = inv_by_pk[f['fields']['invoice']]
+            est_line = est_line_by_pk[ref]
+            est = est_by_pk[est_line['estimate']]
+            self.assertEqual(est['job'], inv['job'],
+                             f"line {f['pk']} refs another job's estimate line")
+            self.assertEqual(est_line['estimate'], latest_by_job[inv['job']])
+            self.assertEqual(est['status'], 'accepted')
+            self.assertNotEqual(inv.get('status'), 'cancelled')
+            self.assertIsNone(est_line.get('adjustment_service'))
+        # Sanity: the heuristic actually fires on the real dataset.
+        self.assertGreater(refs, 0)
+
+    def test_one_live_invoice_per_agreement_line(self):
+        seen = {}
+        for f in self._m('invoicing.invoicelineitem'):
+            ref = f['fields'].get('agreement_estimate_line')
+            if ref is None:
+                continue
+            inv_pk = f['fields']['invoice']
+            self.assertNotIn(
+                ref, seen,
+                f'estimate line {ref} referenced by invoices {seen.get(ref)} and {inv_pk}')
+            seen[ref] = inv_pk
+
+
 class ReconcileTest(unittest.TestCase):
     def setUp(self):
         self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=20)

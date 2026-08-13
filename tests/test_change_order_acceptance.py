@@ -664,6 +664,85 @@ class COAuthoringParityTests(ChangeOrderAcceptanceBase):
         self.assertEqual(mat_copy.accounting_category, self.mat_cat)
 
 
+class ReplaceInheritsTargetAcTest(ChangeOrderAcceptanceBase):
+    """A REPLACE line authored without an AC inherits its target's
+    (2026-08-12 — closes the gap Task 8 flagged: replace lines had no AC
+    rule anywhere, so an accepted AC-less replacement became a null-AC
+    agreement line and every later invoice seed demanded the fallback)."""
+
+    def test_replace_without_ac_inherits_targets(self):
+        line, _task = self._task_backed_line()
+        co = self._make_co()
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=line.pk, description='Revised',
+            qty=Decimal('2'), units='hour', price=Decimal('120.00'),
+        )
+        self.assertEqual(li.accounting_category_id, line.accounting_category_id)
+
+    def test_replace_with_explicit_ac_is_respected(self):
+        line, _task = self._task_backed_line()
+        co = self._make_co()
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=line.pk, description='Revised',
+            qty=Decimal('2'), units='hour', price=Decimal('120.00'),
+            accounting_category=self.mat_cat.pk,
+        )
+        self.assertEqual(li.accounting_category_id, self.mat_cat.pk)
+
+
+class SeedNewEmptyTest(ChangeOrderAcceptanceBase):
+    """RM 2026-08-12: 'Start new change order' offers a choice — seed from
+    the prior CO's lines, or start empty. seed_new(empty=True) is the
+    empty half: same parent lineage, zero copied lines."""
+
+    def test_seed_new_empty_copies_nothing_but_keeps_lineage(self):
+        co = self._make_co()
+        ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Extra scope', qty=Decimal('1'), price=Decimal('50.00'),
+            accounting_category=self.cat.pk,
+        )
+        ChangeOrderService.mark_open(co.pk)
+        ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_REJECTED)
+
+        new_co = ChangeOrderService.seed_new(co.pk, empty=True)
+        self.assertEqual(new_co.parent_id, co.pk)
+        self.assertEqual(new_co.estimate_id, co.estimate_id)
+        self.assertEqual(new_co.status, ChangeOrder.STATUS_DRAFT)
+        self.assertEqual(
+            ChangeOrderLineItem.objects.filter(change_order=new_co).count(), 0)
+
+    def test_seed_new_endpoint_empty_body_flag(self):
+        from rest_framework.test import APIClient
+        from apps.core.models import User
+        from tests.base import grant_atoms
+        client = APIClient()
+        manager = grant_atoms(
+            User.objects.create_user(username='co_seed_empty', password='x'),
+            'can_manage_jobs')
+        client.force_authenticate(user=manager)
+
+        co = self._make_co()
+        ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Extra scope', qty=Decimal('1'), price=Decimal('50.00'),
+            accounting_category=self.cat.pk,
+        )
+        ChangeOrderService.mark_open(co.pk)
+        ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_REJECTED)
+
+        resp = client.post(
+            f'/api/change-orders/{co.pk}/seed-new/', {'empty': True}, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(len(resp.data['line_items']), 0)
+
+        resp2 = client.post(f'/api/change-orders/{co.pk}/seed-new/', {}, format='json')
+        self.assertEqual(resp2.status_code, 201, resp2.data)
+        self.assertEqual(len(resp2.data['line_items']), 1)
+
+
 class COAgreementBillingTests(ChangeOrderAcceptanceBase):
     """The agreement still carries CO document lines (no atom behind them).
     The source_fee_id agreement channel is gone: line dicts carry no such

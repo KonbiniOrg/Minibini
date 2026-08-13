@@ -141,6 +141,10 @@ class NealsDataConverter:
         # statuses and consumption states (only settled work links to an
         # invoice — the app's billability line).
         build.build_invoice_line_item_sources(self)
+        # After reconcile (estimate statuses final): converted invoice lines
+        # claim their agreement lines so the one-live-invoice-per-line
+        # invariant holds on converted jobs (RM 2026-08-12).
+        build.build_invoice_agreement_refs(self)
         # Test-data synthesis (late, after atoms/bleps/purchasing are settled):
         # round-robin assign each job's unclaimed Tasks as synthetic sources of
         # its estimate lines so the Client View projects atoms.

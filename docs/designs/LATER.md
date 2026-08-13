@@ -361,6 +361,11 @@ The CO surface and its estimate-parallel code.
   sources`, with the same fuzzy-correspondence caveat), and/or a dev-DB
   repair pass (Claude drafts SQL, RM runs). `tests.test_neals_builders`
   mandatory; nealseed/nealsmall untouched.
+  _Converter half DONE 2026-08-12_ (`build_invoice_agreement_refs`:
+  description-matched to the latest accepted estimate, one live invoice
+  per line, cancelled invoices skipped; builders 132 OK + fixture suite).
+  Remaining: RM reseeds dev (or a repair pass for the existing rows) —
+  loaded data stays ref-less until then.
   _Done when:_ converted open invoices hold their agreement lines so a
   second invoice only offers what's genuinely unbilled.
 

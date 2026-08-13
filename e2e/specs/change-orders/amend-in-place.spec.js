@@ -325,6 +325,14 @@ test('§6 Accepting a CO crystallizes the amendment: job un-holds, estimate read
     // Terminal toolbar replaces the open one only once the PATCH lands.
     await expect(page.getByRole('button', { name: 'Start new change order' })).toBeVisible();
 
+    // Start-new choice dialog (RM 2026-08-12): this CO has lines, so the
+    // click asks; Cancel backs out without creating anything.
+    await page.getByRole('button', { name: 'Start new change order' }).click();
+    const startDialog = page.getByRole('dialog', { name: 'Start new change order' });
+    await expect(startDialog).toContainText('or start empty?');
+    await startDialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(startDialog).toBeHidden();
+
     await expect.poll(async () => (await jobDetail()).on_hold).toBe(false);
 
     await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);

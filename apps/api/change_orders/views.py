@@ -211,9 +211,12 @@ class ChangeOrderViewSet(
 
     @action(detail=True, methods=['post'], url_path='seed-new', url_name='seed-new')
     def seed_new(self, request, pk=None):
-        """Create a new draft CO by copying all line items from an existing CO."""
+        """Create a new draft CO from an existing one — copying its line
+        items by default, or empty with body {'empty': true} (the start-new
+        choice dialog's two halves, RM 2026-08-12)."""
         try:
-            new_co = ChangeOrderService.seed_new(pk)
+            new_co = ChangeOrderService.seed_new(
+                pk, empty=bool(request.data.get('empty')))
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
         serializer = self.get_serializer(new_co)

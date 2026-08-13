@@ -2465,7 +2465,13 @@ login.
     stays held).
   - `POST …/request-changes/` (body `{reason}`) →
     `ChangeOrderService.request_changes`: supersede the open CO and
-    `seed_new` a fresh draft, job stays held.
+    `seed_new` a fresh draft, job stays held. (Shop-side, the terminal
+  toolbar's **Start new change order** button asks — when the prior CO
+  has lines — whether to seed the new draft from them (adds/removes/
+  replaces incl. adjustment amendments; prices recomputed on the new
+  basis) or start empty (`seed_new(empty=True)`, body `{empty: true}` on
+  the seed-new endpoint); a line-less CO skips the dialog. RM
+  2026-08-12.)
 - **Actionability.** A CO is actionable only when `status == open` and
   its job is held (`co.job.on_hold` — the CO analog of an estimate
   being `open` with its job `submitted`). A click that races a shop

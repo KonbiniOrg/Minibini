@@ -457,3 +457,61 @@ describe('ChangeOrderPanel reorder mode', () => {
     expect(await findByText('CO 1 — Sand edges')).toBeInTheDocument();
   });
 });
+
+describe('ChangeOrderPanel start-new choice dialog (RM 2026-08-12)', () => {
+  const LINE = {
+    line_item_id: 21, action: 'add', line_number: 1, description: 'Extra',
+    qty: '1.00', units: 'ea', price: '50.00', accounting_category: 5,
+  };
+
+  it('a terminal CO with lines opens the dialog; "start from this" POSTs empty:false', async () => {
+    user.set({ permissions: [] });
+    mockApi(makeCO({ status: 'rejected', line_items: [LINE] }));
+    api.post.mockResolvedValue({ change_order_id: 99 });
+
+    const { findByRole, findByText } = render(ChangeOrderPanel, {
+      props: { job: JOB, coId: '3' },
+    });
+    await fireEvent.click(await findByRole('button', { name: 'Start new change order' }));
+    await findByText(/start empty\?/);
+    await fireEvent.click(await findByRole('button', { name: 'Start from this change order' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/api/change-orders/3/seed-new/', { empty: false }));
+  });
+
+  it('"Start empty" POSTs empty:true; Cancel closes without posting', async () => {
+    user.set({ permissions: [] });
+    mockApi(makeCO({ status: 'rejected', line_items: [LINE] }));
+    api.post.mockResolvedValue({ change_order_id: 99 });
+
+    const { findByRole, findByText, queryByText } = render(ChangeOrderPanel, {
+      props: { job: JOB, coId: '3' },
+    });
+    await fireEvent.click(await findByRole('button', { name: 'Start new change order' }));
+    await findByText(/start empty\?/);
+    await fireEvent.click(await findByRole('button', { name: 'Cancel' }));
+    expect(api.post).not.toHaveBeenCalled();
+    expect(queryByText(/start empty\?/)).toBeNull();
+
+    await fireEvent.click(await findByRole('button', { name: 'Start new change order' }));
+    await findByText(/start empty\?/);
+    await fireEvent.click(await findByRole('button', { name: 'Start empty' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/api/change-orders/3/seed-new/', { empty: true }));
+  });
+
+  it('a line-less terminal CO skips the dialog and POSTs empty:true directly', async () => {
+    user.set({ permissions: [] });
+    mockApi(makeCO({ status: 'rejected', line_items: [] }));
+    api.post.mockResolvedValue({ change_order_id: 99 });
+
+    const { findByRole, queryByText } = render(ChangeOrderPanel, {
+      props: { job: JOB, coId: '3' },
+    });
+    await fireEvent.click(await findByRole('button', { name: 'Start new change order' }));
+    expect(queryByText(/start empty\?/)).toBeNull();
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/api/change-orders/3/seed-new/', { empty: true }));
+  });
+});
+

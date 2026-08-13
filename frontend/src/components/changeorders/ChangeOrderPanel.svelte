@@ -14,6 +14,7 @@
   import COEditView from './COEditView.svelte';
   import COCustomerView from './COCustomerView.svelte';
   import DocModeBar from '../docsurface/DocModeBar.svelte';
+  import Modal from '../Modal.svelte';
   import DocReorderView from '../docsurface/DocReorderView.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import { buildEstimateDocItems, changeOrderDisplayStatus } from '../../lib/estimateDocs.js';
@@ -275,11 +276,26 @@
     }
   }
 
-  async function seedNew() {
-    // No confirm: the new draft CO is trivially discardable.
+  // Start-new choice (RM 2026-08-12): a terminal CO with lines offers
+  // seeding the new draft from them (adds/removes/replaces incl. adjustment
+  // amendments) or starting empty. A line-less CO skips the dialog — the
+  // two paths are identical there.
+  let startNewDialogOpen = $state(false);
+
+  function seedNew() {
+    if ((co.line_items || []).length > 0) {
+      startNewDialogOpen = true;
+      return;
+    }
+    startNew({ empty: true });
+  }
+
+  async function startNew({ empty }) {
+    startNewDialogOpen = false;
     actionBusy = true;
     try {
-      const newCo = await api.post(`/api/change-orders/${co.change_order_id}/seed-new/`);
+      const newCo = await api.post(
+        `/api/change-orders/${co.change_order_id}/seed-new/`, { empty });
       window.location.hash = `/jobs/${co.job}/change-order/${newCo.change_order_id}`;
     } catch (e) {
       showError(errorMessage(e, 'Could not create new change order.'));
@@ -414,8 +430,23 @@
   </div>
 {/if}
 
+<Modal open={startNewDialogOpen} onCancel={() => { startNewDialogOpen = false; }} label="Start new change order">
+  <h3>Start new change order</h3>
+  <p>
+    Start it from this change order's lines and adjustments, or start empty?
+  </p>
+  <div class="start-new-buttons">
+    <button type="button" disabled={actionBusy}
+      onclick={() => startNew({ empty: false })}>Start from this change order</button>
+    <button type="button" disabled={actionBusy}
+      onclick={() => startNew({ empty: true })}>Start empty</button>
+    <button type="button" onclick={() => { startNewDialogOpen = false; }}>Cancel</button>
+  </div>
+</Modal>
+
 <style>
   .error { color: #a8071a; padding: 16px; }
+  .start-new-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
   /* .toolbar / .page-title come from app.css. */
 

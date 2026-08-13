@@ -17,6 +17,18 @@ One new migration (deliverables/0003) — `python manage.py migrate` on dev.
 - [ ] Revise the estimate → the deliverable follows the revision (Make
       Deliverable stays suppressed on the copied line).
 
+## CO start-new dialog + converter invoice refs (added 2026-08-12)
+
+- [ ] On a rejected (or any terminal) CO with lines: "Start new change
+      order" asks — start from this CO's lines/adjustments, or start
+      empty. Cancel backs out.
+- [ ] Replace… without touching the category: the replacement inherits
+      the original line's AC (no more null-AC agreement lines from COs).
+- [ ] Converter now emits agreement refs on invoice lines (description-
+      matched to the accepted estimate) — after your next reseed, a job
+      with an open legacy invoice should NOT re-offer its billed lines on
+      Start Invoice. (Existing dev rows stay ref-less until reseeded.)
+
 ## Invoice remove-line rework (added 2026-08-12)
 
 - [ ] Removing a seeded invoice line now just drops it — no struck

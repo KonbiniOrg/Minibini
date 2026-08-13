@@ -1159,6 +1159,7 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
      `recompute_adjustment_replaces` clears a stale triple automatically
      when a line is retargeted away from an adjustment target.
 - `clean()` also rejects `service_item` / `is_material` on `remove` lines (display-only; never crystallize)
+- A `replace` line authored without an `accounting_category` inherits its target's at add time (2026-08-12 — an AC-less replacement would become a null-AC agreement line at acceptance and demand the fallback on every later invoice seed); an explicit AC wins
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
 
 #### ChangeOrderLineItemSource

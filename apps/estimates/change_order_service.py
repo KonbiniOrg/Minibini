@@ -317,8 +317,12 @@ class ChangeOrderService:
 
     @staticmethod
     @transaction.atomic
-    def seed_new(pk, move_claims=False):
+    def seed_new(pk, move_claims=False, empty=False):
         """Create a new draft CO by copying all line items from an existing (terminal) CO.
+
+        ``empty``: skip the line copy entirely (RM 2026-08-12 — the "Start
+        empty" half of the start-new choice dialog); the new draft keeps
+        the parent/estimate lineage but starts with zero lines.
 
         The source CO retains its status. The new CO gets parent=source.
         Line items are copied directly (no renumbering); each copy carries
@@ -365,7 +369,9 @@ class ChangeOrderService:
             parent=src,
         )
 
-        for li in ChangeOrderLineItem.objects.filter(change_order=src):
+        source_lines = ([] if empty
+                        else ChangeOrderLineItem.objects.filter(change_order=src))
+        for li in source_lines:
             is_replace = li.action == ChangeOrderLineItem.ACTION_REPLACE
             new_li = ChangeOrderLineItem(
                 change_order=new_co,
@@ -592,6 +598,15 @@ class ChangeOrderService:
         from apps.estimates.services import EstimateService
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
         li = ChangeOrderLineItem(change_order=co, **kwargs)
+        # A replace line authored without an AC inherits its target's
+        # (2026-08-12): the replacement is the same commercial line under new
+        # terms, and an AC-less replacement would otherwise become a null-AC
+        # agreement line at acceptance, demanding the fallback on every
+        # later invoice seed. An explicitly supplied AC still wins.
+        if (li.action == ChangeOrderLineItem.ACTION_REPLACE
+                and li.accounting_category_id is None
+                and li.target_line_item_id is not None):
+            li.accounting_category_id = li.target_line_item.accounting_category_id
         target_categories = ChangeOrderService._apply_adjustment_replace_shape(li)
         ChangeOrderService._derive_is_material(li)
         li.full_clean()
