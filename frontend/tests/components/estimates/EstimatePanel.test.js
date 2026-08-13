@@ -597,3 +597,28 @@ describe('EstimatePanel create-line-from-selected integration (silent refresh)',
     expect(container.textContent).toContain('Add line');
   });
 });
+
+describe('EstimatePanel Make Deliverable refresh chain', () => {
+  it('POSTs make-deliverable and fires onJobChange so the deliverables band reloads', async () => {
+    const estimate = makeEstimate({
+      line_items: [{
+        line_item_id: 31, line_number: 1, description: 'Chairs', qty: '3',
+        units: 'ea', price: '500.00', accounting_category: 3, sources: [],
+        backing: 'hand', linked_deliverables: [],
+      }],
+    });
+    mockApi(estimate);
+    api.post = vi.fn().mockResolvedValue({ id: 9 });
+    const onJobChange = vi.fn();
+    const { findByRole } = render(EstimatePanel, {
+      props: { job: JOB, estimateId: 7, onJobChange },
+    });
+    const btn = await findByRole('button', { name: 'Make Deliverable' });
+    await fireEvent.click(btn);
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/estimates/7/line-items/31/make-deliverable/');
+      expect(onJobChange).toHaveBeenCalled();
+    });
+  });
+});

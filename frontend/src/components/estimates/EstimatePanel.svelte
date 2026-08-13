@@ -190,6 +190,9 @@
     try {
       await api.post(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/make-deliverable/`);
       await loadEstimate({ silent: true });
+      // Refresh the host job so the context band's Deliverables panel shows
+      // the new row (its load effect keys on the job object identity).
+      onJobChange();
     } catch (e) {
       showError(errorMessage(e, 'Could not make a deliverable from this line.'));
     }
@@ -395,6 +398,7 @@
       {lineItems}
       {categories}
       onMakeDeliverable={canEdit ? handleMakeDeliverable : null}
+      onDeliverablesChanged={onJobChange}
     />
   {:else if mode === 'customer'}
     <DocCustomerView

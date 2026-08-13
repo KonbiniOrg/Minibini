@@ -2,7 +2,11 @@
   import { api } from '../../lib/api.js';
   import DeliverablesEditModal from './DeliverablesEditModal.svelte';
 
-  let { jobId, canManage = false } = $props();
+  // `job`: the host page's job object. Purely a refresh signal — every
+  // onJobChange up the chain re-fetches the job, and the new object identity
+  // re-runs our load effect (the standard props-down/callback-up partial
+  // refresh; e.g. Make Deliverable on the estimate below this band).
+  let { jobId, canManage = false, job = null } = $props();
 
   let deliverables = $state([]);
   let editability = $state({ editable: false, reason: null });
@@ -24,6 +28,7 @@
   }
 
   $effect(() => {
+    job; // dependency: reload when the host refreshes the job
     if (jobId) load();
   });
 

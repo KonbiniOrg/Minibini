@@ -39,6 +39,10 @@
     // once a linked deliverable exists (linked_deliverables from the
     // serializer — the source_line provenance FK).
     onMakeDeliverable = null,
+    // Fired when a gesture here changes the JOB's deliverables (the remove
+    // dialog's "remove both") — the panel chains it to onJobChange so the
+    // context band's Deliverables panel refreshes.
+    onDeliverablesChanged = () => {},
   } = $props();
 
   const apiBase = $derived(`/api/estimates/${estimate.estimate_id}`);
@@ -93,6 +97,7 @@
     try {
       await api.delete(`${apiBase}/line-items/${li.line_item_id}/${suffix}`);
       onChanged();
+      if (deleteDeliverables) onDeliverablesChanged();
     } catch (e) {
       showError(errorMessage(e, 'Could not remove line item.'));
     }

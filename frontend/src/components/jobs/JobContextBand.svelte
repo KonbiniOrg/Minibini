@@ -34,7 +34,7 @@
         <div class="panel-head">Description</div>
         <div class="panel-scroll preserve-breaks">{job.description || '—'}</div>
       </div>
-      <DeliverablesSection jobId={job.job_id} canManage={job.can_manage} />
+      <DeliverablesSection jobId={job.job_id} canManage={job.can_manage} {job} />
       <div class="panel">
         <div class="panel-head">Email</div>
         <EmailPanel {emails} showHeading={false} />

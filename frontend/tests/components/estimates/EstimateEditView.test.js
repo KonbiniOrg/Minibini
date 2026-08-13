@@ -423,6 +423,29 @@ describe('EstimateEditView Make Deliverable (spec §6)', () => {
     expect(api.delete).toHaveBeenCalledWith('/api/estimates/7/line-items/2/');
   });
 
+  it('"remove both" fires onDeliverablesChanged; "keep" does not', async () => {
+    api.delete.mockResolvedValue({ message: 'ok' });
+    const onDeliverablesChanged = vi.fn();
+    const { findByText, getAllByRole, getByRole } = render(EstimateEditView, {
+      props: baseProps({
+        onDeliverablesChanged,
+        lineItems: [handLine({ linked_deliverables: LINKED, qty: '3', units: 'ea' })],
+      }),
+    });
+    await findByText('Hand entry');
+    await fireEvent.click(getAllByRole('button', { name: 'Remove' })[0]);
+    await findByText(/Remove the deliverable as well\?/);
+    await fireEvent.click(getByRole('button', { name: 'Remove line, keep deliverable' }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onDeliverablesChanged).not.toHaveBeenCalled();
+
+    await fireEvent.click(getAllByRole('button', { name: 'Remove' })[0]);
+    await findByText(/Remove the deliverable as well\?/);
+    await fireEvent.click(getByRole('button', { name: 'Remove line and deliverable' }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onDeliverablesChanged).toHaveBeenCalledTimes(1);
+  });
+
   it('an unlinked line removes directly with no dialog', async () => {
     api.delete.mockResolvedValue({ message: 'ok' });
     const { findByText, getAllByRole, queryByText } = render(EstimateEditView, {

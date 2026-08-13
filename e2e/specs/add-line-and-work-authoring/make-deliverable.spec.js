@@ -37,12 +37,24 @@ test('Make Deliverable mints a linked deliverable, suppresses itself, and line r
       .filter({ hasText: desc })
       .filter({ has: page.locator('button', { hasText: 'Edit' }) });
 
-  await test.step('Button mints the deliverable and suppresses itself', async () => {
+  await test.step('Button mints the deliverable, suppresses itself, and the job-context Deliverables panel above shows it live', async () => {
     await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
+    // Ensure the job-context band is expanded so the Deliverables panel shows.
+    const toggle = page.locator('.context-band-toggle');
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+      await toggle.click();
+    }
+    const band = page.locator('.context-band .deliverables-panel');
+    await expect(band).toBeVisible();
+    await expect(band).not.toContainText(`${stamp} chairs`);
+
     const rowA = lineRow(`${stamp} chairs`);
     await expect(rowA.getByRole('button', { name: 'Make Deliverable' })).toBeVisible();
     await rowA.getByRole('button', { name: 'Make Deliverable' }).click();
     await expect(rowA.getByRole('button', { name: 'Make Deliverable' })).toHaveCount(0);
+
+    // The band refreshes in place — no reload (RM 2026-08-12).
+    await expect(band).toContainText(`${stamp} chairs`);
 
     const deliverables = await api.get(`/api/jobs/${job.job_id}/deliverables/`);
     const rows = deliverables.results || deliverables;
@@ -75,6 +87,9 @@ test('Make Deliverable mints a linked deliverable, suppresses itself, and line r
     await expect(dialog).toContainText('Remove the deliverable as well?');
     await dialog.getByRole('button', { name: 'Remove line and deliverable' }).click();
     await expect(lineRow(`${stamp} table`)).toHaveCount(0);
+    // The band drops the row live too.
+    await expect(page.locator('.context-band .deliverables-panel'))
+      .not.toContainText(`${stamp} table`);
 
     const deliverables = await api.get(`/api/jobs/${job.job_id}/deliverables/`);
     const rows = deliverables.results || deliverables;
