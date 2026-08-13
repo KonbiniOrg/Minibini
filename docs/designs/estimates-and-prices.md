@@ -1640,6 +1640,11 @@ such as an open edit modal or the current pool selection; see
   `revise_estimate` RE-POINTS `source_line` to the copied line (same
   move as claim rows), so suppression follows the live revision.
   Availability follows `DeliverableService.is_editable` server-side.
+  Both deliverable-touching gestures (the button; the dialog's "remove
+  both") also fire `onJobChange`, and `DeliverablesSection`'s load
+  effect keys on the job object identity — so the job-context band's
+  Deliverables panel above refreshes in place (the standard
+  props-down/callback-up partial-refresh chain).
 - **Uncovered-work pool** (`UncoveredWorkSection`, title "Uncovered
   work") — fed from `GET .../source-pool/`, filtered to atoms this
   estimate hasn't already claimed (`claimed_by_current` excluded — those
