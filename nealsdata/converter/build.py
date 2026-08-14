@@ -1765,8 +1765,12 @@ def build_synthetic_estimate_sources(c):
             continue
         if f['pk'] in sourced_lines:
             continue  # already owns an atom (e.g. a Material) — don't double-source
-        if est_status.get(f['fields']['estimate']) == 'superseded':
-            continue  # claims live on the latest revision only (revise moves them)
+        if est_status.get(f['fields']['estimate']) in ('superseded', 'rejected'):
+            # Claims live on the latest revision only (revise moves them),
+            # and a REJECTED estimate released its claims (in-app,
+            # ESTIMATE_DEAD_STATUSES). Expired estimates KEEP theirs
+            # (RM 2026-08-13 — reactivatable via unexpire).
+            continue
         job_pk = est_to_job.get(f['fields']['estimate'])
         if job_pk is not None:
             lines_by_job.setdefault(job_pk, []).append(f)

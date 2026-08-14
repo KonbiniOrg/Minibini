@@ -17,6 +17,15 @@ One new migration (deliverables/0003) — `python manage.py migrate` on dev.
 - [ ] Revise the estimate → the deliverable follows the revision (Make
       Deliverable stays suppressed on the copied line).
 
+## Expiry keeps estimate claims (added 2026-08-13)
+
+- [ ] Expire an estimate (or find one expired): its lines KEEP their
+      backing; the atoms show "claimed by estimate N" in other docs'
+      pools until you reject/supersede it. Unexpire brings it back with
+      backing intact.
+- [ ] Rejecting still releases (atoms free again). CO expiry unchanged
+      (still releases).
+
 ## CO start-new dialog + converter invoice refs (added 2026-08-12)
 
 - [ ] On a rejected (or any terminal) CO with lines: "Start new change

@@ -82,11 +82,28 @@ class EstimateReleasesClaimsTest(DeadDocumentBase):
 
         self.assertEqual(self._task_claims(), 0)
 
-    def test_expiring_an_open_estimate_releases_its_claims(self):
+    def test_expiring_an_open_estimate_KEEPS_its_claims(self):
+        # RM 2026-08-13: expiry no longer releases — an expired estimate is
+        # reactivatable in place (unexpire, main's estimate-renewal feature),
+        # so it holds its work pending renewal. Freeing the atoms requires
+        # actually killing the document (reject) or superseding it.
         est = self._estimate_claiming_task()
         est.status = Estimate.STATUS_EXPIRED
         est.save()
-        self.assertEqual(self._task_claims(), 0)
+        self.assertEqual(self._task_claims(), 1)
+
+    def test_unexpired_estimate_still_has_its_claims(self):
+        from apps.core.models import Configuration
+        from apps.estimates.services import EstimateService
+        Configuration.objects.update_or_create(
+            key='est_expire_days', defaults={'value': '30'})
+        est = self._estimate_claiming_task()
+        est.status = Estimate.STATUS_EXPIRED
+        est.save()
+        EstimateService.unexpire(est.pk)
+        est.refresh_from_db()
+        self.assertEqual(est.status, Estimate.STATUS_OPEN)
+        self.assertEqual(self._task_claims(), 1)
 
     def test_rejecting_a_draft_estimate_releases_its_claims(self):
         # draft -> rejected is a legal transition; it kills the document just

@@ -172,9 +172,9 @@ class Estimate(models.Model):
             # save() so every writer is covered (portal decline, expiry
             # sweep, status actions, admin).
             from apps.estimates.claims import (
-                DEAD_DOCUMENT_STATUSES, release_estimate_claims,
+                ESTIMATE_DEAD_STATUSES, release_estimate_claims,
             )
-            if self.status in DEAD_DOCUMENT_STATUSES:
+            if self.status in ESTIMATE_DEAD_STATUSES:
                 release_estimate_claims(self)
             self._maybe_update_job_status(old_status)
 
@@ -355,9 +355,9 @@ class ChangeOrder(models.Model):
         # A dead CO releases its atom claims, same rule as Estimate above.
         if old_status and old_status != self.status:
             from apps.estimates.claims import (
-                DEAD_DOCUMENT_STATUSES, release_change_order_claims,
+                CO_DEAD_STATUSES, release_change_order_claims,
             )
-            if self.status in DEAD_DOCUMENT_STATUSES:
+            if self.status in CO_DEAD_STATUSES:
                 release_change_order_claims(self)
 
     def __str__(self):

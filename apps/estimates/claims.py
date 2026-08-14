@@ -129,7 +129,18 @@ class EstimateClaimService:
 # Called from Estimate.save() / ChangeOrder.save() rather than a service, so
 # every writer is covered — the portal decline endpoints, the expiry sweep,
 # the status-transition actions, and the admin all go through save().
-DEAD_DOCUMENT_STATUSES = ('rejected', 'expired')
+#
+# Split per document (RM 2026-08-13): an ESTIMATE keeps its claims on
+# expiry, because expiry is reactivatable in place (unexpire, the
+# estimate-renewal feature) — an expired quote holds its work pending
+# renewal, and freeing the atoms means actually killing the document
+# (reject) or superseding it. A CHANGE ORDER has no revival path, so its
+# expiry still releases.
+ESTIMATE_DEAD_STATUSES = ('rejected',)
+CO_DEAD_STATUSES = ('rejected', 'expired')
+# Back-compat alias (docstrings/comments reference it); prefer the
+# per-document constants above.
+DEAD_DOCUMENT_STATUSES = CO_DEAD_STATUSES
 
 
 def release_estimate_claims(estimate):

@@ -23,25 +23,6 @@ proper issue.
 
 Status coupling, transitions, and what a job may do at each stage.
 
-- **Unexpire resurrects an estimate whose claims are gone.** — _added
-  2026-08-13 (merge of main's estimate-renewal feature)_
-  `expired` is in `DEAD_DOCUMENT_STATUSES`, so expiry DELETES the
-  estimate's `EstimateLineItemSource` rows (`release_estimate_claims`).
-  Main's new unexpire (`POST /api/estimates/{id}/unexpire/`, expired →
-  open) flips the status back but cannot restore the claims — the
-  unexpired estimate's atom-backed lines come back source-less: backing
-  reads "none", the atoms sit unclaimed in every pool (another doc can
-  take them), and invoice seeding treats those lines as hand lines while
-  the same atoms stay separately billable (double-billing risk). This gap
-  exists on main too; it just bites harder under better-fees semantics.
-  Options: stop releasing claims on expiry (an expired quote awaiting
-  renewal holds its work — simplest, but blocks atoms until
-  rejected/superseded), snapshot claims at expiry for restore-on-unexpire,
-  or accept + surface the source-less state loudly. One for the UI
-  rethink/design pass.
-  _Done when:_ RM picks a direction and an unexpired estimate's lines are
-  either re-backed or honestly labeled.
-
 - **Sending an estimate with no deliverables should at least require a
   confirm.** — _added 2026-08-11 (RM)_
   RM: "if an estimate is to be sent and there are no deliverables

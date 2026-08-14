@@ -917,11 +917,13 @@ class SyntheticEstimateSourcesTest(unittest.TestCase):
                          for f in self._models('estimates.estimatelineitem')}
         for s in self._models('estimates.estimatelineitemsource'):
             est_pk = line_estimate[s['fields']['estimate_line_item']]
-            self.assertNotEqual(
-                est_status[est_pk], 'superseded',
+            self.assertNotIn(
+                est_status[est_pk], ('superseded', 'rejected'),
                 f"source {s['pk']} claims {s['fields']['source_type']} "
-                f"{s['fields']['source_pk']} on a line of superseded "
-                f"estimate {est_pk}")
+                f"{s['fields']['source_pk']} on a line of "
+                f"{est_status[est_pk]} estimate {est_pk} — superseded moved "
+                f"its claims to the revision; rejected released them. "
+                f"(Expired estimates legitimately KEEP claims, RM 2026-08-13.)")
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
