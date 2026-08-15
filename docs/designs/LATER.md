@@ -141,8 +141,8 @@ Status coupling, transitions, and what a job may do at each stage.
   become Tasks at accept) — the gap is hand/planned lines and pre-accept
   planning; design needed before building.
   _Design settled 2026-08-14:_ absorbed into the estimate/planning joint
-  surface as the per-line "Plan work" gesture, available on draft AND
-  accepted claimless lines (no separate view) — see
+  surface as the per-line "Plan work" gesture, available on draft, open,
+  AND accepted claimless lines (no separate view) — see
   `docs/plans/2026-08-14-estimate-planning-surface.md` §2/§4.
   _Done when:_ that spec ships and this entry's flow works in the browser.
 

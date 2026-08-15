@@ -96,23 +96,21 @@ fixed there. Do not build any scheme-guessing beyond this ladder.
 
 ### 4. No draft-only wall — the post-acceptance gap
 
-The same **Plan work** gesture works on an **accepted** estimate's
-claimless lines. This fills the acceptance→release-to-floor phase — the
-task-first process run in reverse, on the far side of acceptance — and
-absorbs the "tasks-from-estimate view" LATER sketch as a gesture on the
-existing surface instead of a new page. The joint surface stays available
-there with **estimate lines frozen** (document immutable; planning half
-alive).
+The same **Plan work** gesture works on an **open or accepted** estimate's
+claimless lines (RM 2026-08-15: "let Open estimates have the same planning
+affordances as Accepted, there's no real reason to limit that"). This
+fills the acceptance→release-to-floor phase — the task-first process run
+in reverse, on the far side of acceptance — and covers pre-approval
+planning while the customer decides. It absorbs the "tasks-from-estimate
+view" LATER sketch as a gesture on the existing surface instead of a new
+page. The joint surface stays available there with **estimate lines
+frozen** (document immutable; planning half alive).
 
 - Requires a sanctioned post-draft claim-mint path (today's wizard
-  service is `_validate_draft`-gated): planning an accepted line mints
-  task + `EstimateLineItemSource` claim. Scope it narrowly — claimless
-  accepted lines only; no line mutation.
-- **`open` (sent, customer deciding) is deliberately excluded**: Plan
-  work runs on `draft` and `accepted` only. Pre-approval work on an open
-  estimate can still be planned from the task page as today; extending
-  the gesture to `open` is a one-line relaxation later if practice wants
-  it.
+  service is `_validate_draft`-gated): planning an open/accepted line
+  mints task + `EstimateLineItemSource` claim. Scope it narrowly —
+  claimless lines on live (`open`/`accepted`) estimates only; no line
+  mutation. Dead statuses (rejected, superseded) get nothing.
 - **Duplicate guard:** acceptance-time crystallization must skip service
   lines that already carry task claims (pre-planned before send) — same
   shape as CO acceptance's re-claimed-atom skip.
