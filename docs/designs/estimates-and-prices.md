@@ -2991,3 +2991,42 @@ transitions the CO `draft → open`.
   crystallizes nothing and stays a document line, transiting to invoices
   via an agreement-line reference instead (§4.5). This is the settled
   shape, not an open review item.
+
+## Appendix: the fifteen shapes — everything the shop estimates and works
+
+RM's canonical list (2026-08 better-fees design sessions; recovered from
+session transcripts 2026-08-14 after its original home, the superseded
+task-owned-money spec, was deleted). This is the acceptance test for any
+design touching estimating, planning, or invoicing: every shape must have
+a sane path through the surface being designed.
+
+1. **N finished items we manufacture** — the deep case ("the most complex
+   problem"): the estimate's structure emerges from digging into the
+   tasks; may reduce to combinations of the shapes below, or split
+   design / prototyping / finished-object work — multiple tasks
+   coalescing into one or more estimate lines.
+2. **A material we're reselling.**
+3. **Making N parts from a particular material** (may or may not also
+   sell the material).
+4. **Setup fee** — flat.
+5. **Delivery** — usually flat.
+6. **CAD/design time** — hourly.
+7. **Engraving** (router or laser) — preset.
+8. **Cutting charges of various sorts** — usually produce N parts;
+   machine-minutes entered-qty, translated to per-piece.
+9. **Jigs we may keep for re-use.**
+10. **Specialized tools owned by us afterwards, funded by the customer.**
+11. **Outsourced work** (powder coating, waterjet) — PO reconciliation.
+12. **Site visits** — priced up front.
+13. **Untracked consumables** (glue, staples, paint, nuts and bolts).
+14. **Deposits.**
+15. **Credits.**
+
+Resolved shapes (better-fees): setup/delivery/site-visits → flat tasks;
+cutting/engraving → presets with modifiers; CAD → hourly task;
+jigs/tooling → ordinary tasks+materials (no asset registry — RM's call);
+outsourced → PO reconciliation (Phase 5); consumables/credits → signed
+hand lines; deposits built. #1 drove the quantity-structures/priced-
+deliverable discussions and the 2026-08-14 estimate/planning joint
+surface design (`docs/plans/2026-08-14-estimate-planning-surface.md`
+while in flight).
