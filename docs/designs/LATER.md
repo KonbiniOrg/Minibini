@@ -396,6 +396,34 @@ The CO surface and its estimate-parallel code.
   _Done when:_ converted open invoices hold their agreement lines so a
   second invoice only offers what's genuinely unbilled.
 
+- **"Unbilled work" pool shows descoped atoms — wording tension.** —
+  _added 2026-08-14 (RM, post-rename review)_
+  A "descoped by CO-2" atom renders in the invoice edit's pool. Showing
+  descoped-but-completed work there is by design (recorded actuals stay
+  billable after a CO removes the line), but under the new title
+  "Unbilled work" the row now reads as "work that should be billed",
+  which a descoped atom may deliberately not be. Decide presentation:
+  keep the badge as sufficient signal, sub-group descoped rows, or
+  retitle/annotate. Fold into the invoice-side design pass below.
+  _Done when:_ the descoped rows' billability reads unambiguously in
+  the pool.
+
+- **Invoice edit needs the estimate side, not just actuals — the
+  estimated-vs-actual composition problem.** — _added 2026-08-14 (RM)_
+  RM, reviewing the redesigned invoice surface: the confusion is about
+  "combining BOTH estimate and actual work, how to sort that cleanly. I
+  want to be able to see what was estimated, and what was actually done,
+  so I know how to invoice. And once the invoice lines have been
+  started, I need to know which parts of the estimate and actuals went
+  in them. RN we've only got the actuals." (The line table shows
+  backing/Use-estimate/Use-actuals per line, but the pool and the
+  per-line composition view are actuals-only.) RM: "I am not, tbh,
+  totally sure this is possible." Explicitly sequenced AFTER the
+  estimate/task planning-surface design pass — take this up as the
+  invoice-side twin of that discussion.
+  _Done when:_ a design session settles how the invoice surface shows
+  estimated vs actual per line and per pool row (or records why not).
+
 - **Bring back Delete Draft for estimates and invoices.** — _added
   2026-08-12 (RM)_
   The old surfaces had a discard-draft affordance; the three-mode redesign
