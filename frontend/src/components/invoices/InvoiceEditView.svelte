@@ -20,6 +20,7 @@
   import AgreementAdjustmentsPanel from './AgreementAdjustmentsPanel.svelte';
   import BackingChip from '../docsurface/BackingChip.svelte';
   import AtomChildRow from '../docsurface/AtomChildRow.svelte';
+  import AtomCaptionRow from '../docsurface/AtomCaptionRow.svelte';
   import UncoveredWorkSection from '../docsurface/UncoveredWorkSection.svelte';
   import NewLineFromSelectedRow from '../docsurface/NewLineFromSelectedRow.svelte';
   import QtyUnits from '../docsurface/QtyUnits.svelte';
@@ -473,7 +474,7 @@
       <th class="text-right">Qty</th>
       <th class="text-right">Price</th>
       <th class="text-right">Amount</th>
-      <th>Backing</th>
+      <th>Based on</th>
       {#if canEdit}<th>Actions</th>{/if}
     </tr>
   </thead>
@@ -514,6 +515,11 @@
           </td>
         {/if}
       </tr>
+      <AtomCaptionRow
+        sources={li.sources || []}
+        colspanBefore={1}
+        colspan={5 + (canEdit ? 1 : 0)}
+      />
       {#each li.sources || [] as source (source.source_id)}
         <AtomChildRow
           atom={{
@@ -555,13 +561,13 @@
 {#if canEdit}
   {#if !isDepositInvoice}
     <UncoveredWorkSection
-      title="Uncovered work"
+      title="Unbilled work"
       subtitle="Tasks, materials, and expenses from this job not yet on this invoice."
       rows={uncoveredRows}
       bind:selected
       directLabel="Bill as its own line"
       onDirect={billDirect}
-      emptyText="No uncovered billable items."
+      emptyText="No unbilled items."
     />
   {/if}
 

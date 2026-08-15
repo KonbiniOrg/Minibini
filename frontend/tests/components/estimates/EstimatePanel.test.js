@@ -355,9 +355,9 @@ describe('EstimatePanel mode bar labels', () => {
     });
 
     await findByText('Line Items');
-    expect(await findByText('Edit')).toBeInTheDocument();
-    expect(await findByText('Customer')).toBeInTheDocument();
-    expect(await findByText('Reorder')).toBeInTheDocument();
+    expect(await findByText('Edit view')).toBeInTheDocument();
+    expect(await findByText('Customer view')).toBeInTheDocument();
+    expect(await findByText('Reorder view')).toBeInTheDocument();
     expect(queryByText('Show Tasks & Materials')).toBeNull();
     expect(queryByText('Reconcile')).toBeNull();
     expect(queryByText('Plan')).toBeNull();
@@ -373,10 +373,10 @@ describe('EstimatePanel mode bar labels', () => {
     });
 
     await findByText('Line Items');
-    expect(await findByText('Detail')).toBeInTheDocument();
-    expect(await findByText('Customer')).toBeInTheDocument();
-    expect(queryByText('Edit')).toBeNull();
-    expect(queryByText('Reorder')).toBeNull();
+    expect(await findByText('Detail view')).toBeInTheDocument();
+    expect(await findByText('Customer view')).toBeInTheDocument();
+    expect(queryByText('Edit view')).toBeNull();
+    expect(queryByText('Reorder view')).toBeNull();
   });
 });
 
@@ -466,16 +466,16 @@ describe('EstimatePanel mode bar', () => {
     await findByText('Cut');
 
     const modeBar = () => container.querySelector('.doc-mode-bar');
-    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Customer' }));
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Customer view' }));
     expect(await findByText('Estimate EST-7-1')).toBeInTheDocument();
     expect(queryByText('Add line')).toBeNull();
     expect(getJobWs(9).modes['est:7']).toBe('customer');
 
-    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Reorder' }));
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Reorder view' }));
     expect(container.querySelectorAll('.doc-reorder-arrows').length).toBeGreaterThan(0);
     expect(getJobWs(9).modes['est:7']).toBe('reorder');
 
-    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Edit' }));
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Edit view' }));
     expect(await findByText('Add line')).toBeInTheDocument();
     expect(getJobWs(9).modes['est:7']).toBe('edit');
   });
@@ -487,7 +487,7 @@ describe('EstimatePanel mode bar', () => {
     const { container, findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     await findByText('Add line');
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).getByRole('button', { name: 'Edit view' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('normalizes a remembered "lines" (old two-mode panel) to Edit mode', async () => {
@@ -497,7 +497,7 @@ describe('EstimatePanel mode bar', () => {
     const { container, findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     await findByText('Add line');
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).getByRole('button', { name: 'Edit view' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('does NOT restore from an INVOICE with the same numeric id (namespaced keys)', async () => {
@@ -510,7 +510,7 @@ describe('EstimatePanel mode bar', () => {
     const { container, findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     await findByText('Add line');
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).getByRole('button', { name: 'Edit view' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('falls back to Detail when "reorder" was remembered but the estimate is no longer editable', async () => {
@@ -521,8 +521,8 @@ describe('EstimatePanel mode bar', () => {
     await findByText('Cut');
     expect(queryByText('Add line')).toBeNull(); // not editable — the mode shows as Detail
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Detail' })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(modeBar).queryByRole('button', { name: 'Reorder' })).toBeNull();
+    expect(within(modeBar).getByRole('button', { name: 'Detail view' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).queryByRole('button', { name: 'Reorder view' })).toBeNull();
   });
 });
 

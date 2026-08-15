@@ -55,7 +55,7 @@ test('three-mode estimate surface: merge into a new line, reorder it, customer v
   const mergedName = `${stamp} merged planned work`;
 
   await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
-  await expect(page.getByRole('heading', { name: 'Uncovered work' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Unquoted work' })).toBeVisible();
 
   await test.step('Edit mode: tick two uncovered work rows and create a merged line', async () => {
     const rowA = page.locator('tr').filter({ hasText: taskAName });

@@ -49,7 +49,28 @@
      of minting another grey. */
   --border-control: #d1d5db;
   --border-subtle: #e5e7eb;
+
+  /* Document colorways (RM-approved palette, 2026-08-14). Four page-level
+     tokens paint an area's chrome — table header band, zebra stripe,
+     subnav/mode bands, grand-total rows, stat-chip headers, modal chrome,
+     pool heading — so which-page-am-I-on reads at a glance. A job-area
+     surface opts in via a .cw-* class (JobShell's `colorway` prop wraps the
+     page content); these :root values are the legacy house teal, so
+     unclassed (non-Job) pages look exactly as before. */
+  --doc-accent: #115e59;
+  --doc-soft: #f0fdfa;
+  --doc-border: #99f6e4;
+  --doc-faint: #f8f9fa;
 }
+
+/* The colorways: estimate/CO = indigo, tasks/materials = amber, invoice =
+   sage (green = money), neutral = the near-grey for the less-trafficked
+   job areas (POs, shipments, history, email). Keep these hues away from
+   the status palette's meanings — they are place, not state. */
+.cw-estimate { --doc-accent: #3e30a3; --doc-soft: #eff0fe; --doc-border: #cacdfb; --doc-faint: #f9f9fe; }
+.cw-tasks    { --doc-accent: #854d0e; --doc-soft: #faf7db; --doc-border: #fde68a; --doc-faint: #fffef8; }
+.cw-invoice  { --doc-accent: #4a6741; --doc-soft: #f2f7ef; --doc-border: #c8dcc0; --doc-faint: #fafcf8; }
+.cw-neutral  { --doc-accent: #555e5c; --doc-soft: #f1f4f3; --doc-border: #d4dad8; --doc-faint: #f9fafa; }
 
 body {
   margin: 0;
@@ -120,11 +141,12 @@ dd {
  * The light grey cell border comes from the global `table, th, td` rule above.
  */
 .data-table { width: 100%; font-size: 14px; }
-.data-table th { text-align: left; font-weight: 600; padding: 8px 16px; background: #f0fdfa; color: #115e59; border-bottom: 2px solid #99f6e4; }
+.data-table th { text-align: left; font-weight: 600; padding: 8px 16px; background: var(--doc-soft); color: var(--doc-accent); border-bottom: 2px solid var(--doc-border); }
 .data-table td { padding: 8px 16px; }
-/* Subtle zebra striping. `:where()` keeps specificity at zero, so a table's own
- * row classes (e.g. .material-row) override it without a fight. */
-:where(.data-table) tbody tr:nth-child(even) { background: #f8f9fa; }
+/* Subtle zebra striping — the palest tint of the surface's colorway.
+ * `:where()` keeps specificity at zero, so a table's own row classes
+ * (e.g. .material-row) override it without a fight. */
+:where(.data-table) tbody tr:nth-child(even) { background: var(--doc-faint); }
 
 /*
  * Status pills. ONE source of truth for status badge/select coloring — the
@@ -243,14 +265,19 @@ dd {
   outline-offset: 2px;
 }
 
-/* Block accents — six distinguishable mid-saturation hues. Deliberately not
-   the clock palette (red/amber/green stay signals; a border is identity). */
-.summary-block.accent-scope     { --block-accent: #7c3aed; } /* violet */
-.summary-block.accent-work      { --block-accent: #2563eb; } /* blue */
-.summary-block.accent-materials { --block-accent: #0d9488; } /* teal */
+/* Block accents — aligned with the document colorways (2026-08-14) so the
+   overview teaches the same hue language as the pages it links to: Scope
+   wears the estimate indigo, Work/Materials are amber siblings (both live
+   on the amber task surface), Invoicing wears the invoice sage. Spend and
+   Delivery map to neutral areas, so they keep distinguishing hues no
+   colorway claims (pink, teal). Still deliberately not the clock palette
+   (red/amber-warning/green stay signals; a border is identity). */
+.summary-block.accent-scope     { --block-accent: #3e30a3; } /* estimate indigo */
+.summary-block.accent-work      { --block-accent: #a16207; } /* amber (bright) */
+.summary-block.accent-materials { --block-accent: #854d0e; } /* amber (deep) */
 .summary-block.accent-spend     { --block-accent: #db2777; } /* pink */
-.summary-block.accent-invoicing { --block-accent: #059669; } /* emerald */
-.summary-block.accent-delivery  { --block-accent: #ea580c; } /* orange */
+.summary-block.accent-invoicing { --block-accent: #4a6741; } /* invoice sage */
+.summary-block.accent-delivery  { --block-accent: #0d9488; } /* teal */
 
 /* Active block: rich card, accent left edge carried (softened) around the
    1px ring, shadow. Full stat layout. */
@@ -446,6 +473,12 @@ dd {
 .doc-atom-row td { font-size:12.5px; color:#6b6e71; padding:4px 10px;
   background:#f7f7f5; border-bottom:1px dotted #e8e6e1; }
 .doc-atom-row td:first-child { padding-left: 34px; }
+/* Caption row above a line's atom child rows ("based on 2 tasks:") — same
+   tint family as the rows it introduces, so the "Based on" chip and the
+   grey rows visibly become two views of one fact. */
+.doc-atom-caption td { font-size:11px; font-style:italic; color:#8a8d90;
+  background:#f7f7f5; border-bottom:1px dotted #e8e6e1;
+  padding:3px 10px 1px 22px; }
 .doc-offdoc td { color:#6b6e71; border-bottom:1px dashed #d8d6d0;
   background:repeating-linear-gradient(-45deg, transparent 0 8px, #f0efec 8px 16px); }
 .doc-newline td { border-top:2px dashed #d8d6d0; border-bottom:2px dashed #d8d6d0; }
@@ -460,22 +493,19 @@ dd {
 /* Rides the right end of the document title row (.toolbar is flex). */
 .doc-stat-chips { margin-left: auto; }
 .doc-newline .cta { color:#2e6e73; font-weight:600; }
-/* "Views" band — same grey band as the doc subnav. The switchers are centred
-   text chips (no button chrome, saving the vertical space buttons cost); the
-   active one reads like the subnav's active document: darker text on a
-   lighter fill spanning the band height. The "Views" label pins left, out of
-   the centred group's flow, mirroring .doc-subnav-trailing on the right. */
+/* View-mode band — same band family as the doc subnav, tinted by the
+   surface's colorway. The switchers are centred text chips (no button
+   chrome, saving the vertical space buttons cost) labeled "… view"
+   ("Edit view" / "Customer view" / "Reorder view" — RM 2026-08-14: the
+   suffix replaces the old standalone "Views" band label, which was too
+   far from the chips to bind to them); the active one reads like the
+   subnav's active document: darker text on a lighter fill spanning the
+   band height. */
 .doc-mode-bar {
   position: relative;
   display: flex; justify-content: center; align-items: stretch; gap: 14px;
-  background: #eef2f7; border-bottom: 1px solid #cbd5e1;
+  background: var(--doc-soft); border-bottom: 1px solid var(--doc-border);
   padding: 0 10px;
-}
-.doc-mode-bar-label {
-  position: absolute; left: 10px; top: 0; bottom: 0;
-  display: flex; align-items: center;
-  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
-  color: #64748b;
 }
 .doc-mode-bar button {
   display: inline-flex; align-items: center;
@@ -483,7 +513,28 @@ dd {
   font-size: 13px; color: #475569; padding: 7px 8px;
 }
 .doc-mode-bar button:hover { color: #1f2937; background: none; }
-.doc-mode-bar button[aria-pressed="true"] { color: #0f172a; background: #f8fafc; }
+.doc-mode-bar button[aria-pressed="true"] { color: #0f172a; background: rgba(255,255,255,0.7); }
+/* The pool heading ("Unquoted work" / "Unbilled work") wears the surface
+   accent — the section only ever renders inside a colorway scope. */
+.uncovered-work-section h3 { color: var(--doc-accent); }
+/* Colorway-scoped chrome. These only fire inside a .cw-* surface, so
+   non-Job pages keep their existing grey chips and plain modals.
+   - stat-chip headers join the band family (`.money`'s green wins the
+     specificity tie on purpose — money stays money);
+   - modal titles + the Modal shell's grab bar tint per area, so an Edit
+     Line Item modal says which document family it belongs to. `div.grab-bar`
+     out-specifies Modal.svelte's scoped rule (component styles load after
+     app.css, so a bare tie would lose). */
+:is(.cw-estimate, .cw-tasks, .cw-invoice, .cw-neutral) .stat-chip-header {
+  background: var(--doc-soft); border-bottom-color: var(--doc-border);
+  color: var(--doc-accent);
+}
+:is(.cw-estimate, .cw-tasks, .cw-invoice, .cw-neutral) .modal h3 {
+  color: var(--doc-accent);
+}
+:is(.cw-estimate, .cw-tasks, .cw-invoice, .cw-neutral) div.grab-bar {
+  background-color: var(--doc-soft); border-bottom-color: var(--doc-border);
+}
 /* An uncovered-work row that isn't billable yet (e.g. its task isn't
  * complete). Dimmed rather than hidden — visible so the user knows it
  * exists, disabled so it can't be selected. */
@@ -491,7 +542,7 @@ dd {
 .doc-unselectable-row .backing-chip { opacity: 0.7; }
 /* Grand-total footer row shared by the collapsed customer/reorder document
  * views (DocCustomerView, DocReorderView). */
-tr.grand td { font-weight:600; border-top:2px solid #99f6e4; background:#f0fdfa; }
+tr.grand td { font-weight:600; border-top:2px solid var(--doc-border); background:var(--doc-soft); }
 
 /* =========================== 3. PAGE KINDS — II. banner-page vocabulary == */
 /* Pages that render a full-bleed banner (JobHeader / CustomerHeader) with
@@ -643,8 +694,8 @@ tr.grand td { font-weight:600; border-top:2px solid #99f6e4; background:#f0fdfa;
  */
 .doc-subnav {
   position: relative;              /* anchors the absolutely-placed caret */
-  background: #eef2f7;             /* a distinct band, cooler than the nav rail */
-  border-bottom: 1px solid #cbd5e1;
+  background: var(--doc-soft);     /* the surface's colorway band */
+  border-bottom: 1px solid var(--doc-border);
   /* No vertical padding — the chips carry it, so the active chip's fill spans
      the full band height. 10px side gutter only. */
   padding: 0 10px;
@@ -678,7 +729,7 @@ tr.grand td { font-weight:600; border-top:2px solid #99f6e4; background:#f0fdfa;
 }
 .doc-subnav-link:hover { color: #1f2937; }
 .doc-subnav-link.active {
-  color: #0f172a; background: #f8fafc;
+  color: #0f172a; background: rgba(255,255,255,0.7);
 }
 .doc-subnav-pill {
   font-size: 10px; padding: 1px 8px; margin-left: 4px;

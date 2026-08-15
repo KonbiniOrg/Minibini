@@ -8,8 +8,8 @@
 
   // colspanAfter: additive empty cells rendered AFTER the qty/rate/amount
   // content and BEFORE the onRemove cell — lets a caller with more trailing
-  // columns than this row's own content (e.g. a Backing column ahead of an
-  // Actions column) keep the Remove button landing under the right header.
+  // columns than this row's own content (e.g. a "Based on" column ahead of
+  // an Actions column) keep the Remove button landing under the right header.
   let { atom, colspanBefore = 0, colspanAfter = 0, onRemove = null, note = '' } = $props();
 </script>
 

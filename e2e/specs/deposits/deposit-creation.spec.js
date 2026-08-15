@@ -89,7 +89,7 @@ test('§1 Creating a deposit invoice: states 1→2→3', async ({ page }) => {
   });
 
   await test.step('The all-deposit draft withholds the Uncovered work pool (RM 2026-08-09)', async () => {
-    await expect(page.getByRole('heading', { name: 'Uncovered work' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Unbilled work' })).toHaveCount(0);
   });
 
   await test.step('State 3 (draft has lines): the deposit action is suppressed entirely', async () => {

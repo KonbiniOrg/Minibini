@@ -870,14 +870,15 @@ delta-document sibling to `DocCustomerView` rather than a direct
 consumer of it), the invoice side in `invoicing-and-expenses.md`
 (Agreement-line references and seeding, Backing model).
 
-**The eight components:**
+**The nine components:**
 
 | Component | Role |
 |---|---|
-| `DocModeBar.svelte` | The Edit/Customer/Reorder switcher — one `<button aria-pressed>` per mode; `{ mode, onMode, modes, labels }`. |
+| `DocModeBar.svelte` | The view-mode switcher — one `<button aria-pressed>` per mode; `{ mode, onMode, modes, labels }`. Labels carry the " view" suffix ("Edit view" / "Customer view" / "Reorder view", "Detail view" read-only) — the old standalone "Views" band label was dropped 2026-08-14. |
 | `BackingChip.svelte` | Renders a document line's derived `backing` enum as a labeled pill; `{ backing, syncedWithEstimate }`. Estimate and invoice ship different enum value sets through the same component. |
 | `AtomChildRow.svelte` | One indented `<tr class="doc-atom-row">` nested under a line for each of its claimed source atoms; `{ atom, colspanBefore, colspanAfter, onRemove, note }`. |
-| `UncoveredWorkSection.svelte` | The checkbox-selectable pool of not-yet-billed job atoms below the line-items table; `{ title, subtitle, rows, selected (bindable), directLabel, onDirect, emptyText }`. Each row optionally carries a `chip` (`{label, cls}`) for provenance markers (invoiced-elsewhere, cancelled, struck-from-agreement — invoice side; see `invoicing-and-expenses.md`). |
+| `AtomCaptionRow.svelte` | The caption row above a line's atom child rows — "based on 2 tasks:" — tying the "Based on" chip and the grey rows together as one fact; `{ sources, colspanBefore, colspan }`. Renders nothing for a sourceless line. Added 2026-08-14 (vocab pass). |
+| `UncoveredWorkSection.svelte` | The checkbox-selectable pool of not-yet-billed job atoms below the line-items table; `{ title, subtitle, rows, selected (bindable), directLabel, onDirect, emptyText }`. Titled **"Unquoted work"** on estimates/COs and **"Unbilled work"** on invoices (2026-08-14 vocab pass — "uncovered" read as *revealed*, not *not-yet-covered*; the component keeps its internal name). Each row optionally carries a `chip` (`{label, cls}`) for provenance markers (invoiced-elsewhere, cancelled, struck-from-agreement — invoice side; see `invoicing-and-expenses.md`). |
 | `NewLineFromSelectedRow.svelte` | The dashed placeholder `<tr class="doc-newline">` footer row offering "＋ New line from selected"; `{ visible, nextNumber, onCreate }`. |
 | `QtyUnits.svelte` | Qty-cell content for document line items: qty and units inline, wrapping naturally when the column is squeezed (RM 2026-08-11 — never a forced second line); units `'none'`/empty omitted, missing qty renders `-`. Used by every doc line table (edit + customer, all three doc types); the single seam for styling qty cells later. `lib/format.js formatQtyUnits` remains the plain-string variant for the atom child/pool rows. |
 | `DocCustomerView.svelte` | The collapsed, read-only Customer-mode projection — `#`/description/qty/price/amount + a grand-total row, zero interactive elements; `{ title, lines, grandTotal }` (lines carry `qty`/`units`, rendered via `QtyUnits`). |

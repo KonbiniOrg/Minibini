@@ -39,7 +39,7 @@
 
 {#if error}<p class="error">{error}</p>
 {:else if job}
-  <JobShell {job} {contact} current="emails" onJobChange={loadJob}>
+  <JobShell {job} {contact} current="emails" colorway="cw-neutral" onJobChange={loadJob}>
     <div class="page-body">
       <EmailPanel {emails} />
     </div>

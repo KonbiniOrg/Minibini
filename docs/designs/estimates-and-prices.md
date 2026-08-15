@@ -1678,7 +1678,9 @@ such as an open edit modal or the current pool selection; see
   catalog-sourced line, and a **`needs category`** amber marker when
   `accounting_category` is null on an editable line — the same send-gate
   precondition the old ⚠ marker used to carry), Qty, Price, Amount,
-  **Backing** (a `BackingChip`, §9.2 vocabulary below), and — while
+  **Based on** (a `BackingChip`; the column header was renamed from
+  "Backing" in the 2026-08-14 vocab pass — code keeps the `backing`
+  name; §9.2 vocabulary below), and — while
   `canEdit` or a caller has wired `onMakeDeliverable` (currently no
   caller does; see below) — Actions.
 - **Backing chip + reference.** Every line renders its derived
@@ -1687,7 +1689,8 @@ such as an open edit modal or the current pool selection; see
   caption — the reference figure "today's ⚠ out-of-sync made a
   first-class chip" per the design doc.
 - **Atom nest.** Each line's `sources` render as indented
-  `AtomChildRow`s directly beneath it — kind tag (task/material),
+  `AtomChildRow`s directly beneath it, introduced by an
+  `AtomCaptionRow` ("based on 2 tasks:", 2026-08-14) — kind tag (task/material),
   description, qty/rate/amount, and (while `canEdit`) a per-atom
   **Remove** button that calls `remove-atoms`.
 - **Per-line actions (while `canEdit`):** **Edit** (opens
@@ -2381,7 +2384,8 @@ the estimate detail page — followed by `COAddLineForm.svelte`
 (`components/changeorders/`, unchanged), which posts a service pick to
 `line-items-from-service/`, an inventory pick to `line-items/` (the
 from-pli path), and a freeform line manually with AC + `is_material`;
-then `UncoveredWorkSection` (title "Uncovered work") over the CO's
+then `UncoveredWorkSection` (title "Unquoted work" since the 2026-08-14
+vocab pass; subtitle "…not in the current agreement") over the CO's
 `source-pool`. The view filters out pool atoms whose `claimed_by_other`
 claim names this CO's own estimate (`claiming_estimate_id ===
 co.estimate`) — those display nested under their agreement line above,

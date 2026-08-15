@@ -106,7 +106,7 @@ test('§4 "Struck from agreement" badge in Show Billables', async ({ page }) => 
 
   await test.step('Uncovered work: the struck atom row wears the badge', async () => {
     await page.goto(`/#/jobs/${job.job_id}/invoice/${invoice.invoice_id}`);
-    await expect(page.getByRole('heading', { name: 'Uncovered work' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Unbilled work' })).toBeVisible();
     const strikeRow = page.locator('.uncovered-work-section tr').filter({ hasText: strike.task.name });
     await expect(strikeRow).toBeVisible();
     // "CO-1" derives from the CO number's trailing "-CO<n>" suffix

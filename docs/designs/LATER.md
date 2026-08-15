@@ -144,6 +144,33 @@ Status coupling, transitions, and what a job may do at each stage.
   the next UI rethink — see 2026-08-12 session note that the better-fees
   UI needs a rethink overall).
 
+- **The full-view pale-yellow body background is a placeholder RM dislikes.** —
+  _added 2026-08-14 (RM, colorway mockup review)_
+  `body[data-view-mode="full"] { background-color: #fffde6 }` (app.css) was
+  only ever a placeholder ("it looks awful"). Replace when the full/lite
+  visual split gets its design pass — RM explicitly deferred thinking about
+  that split for now, so don't change it piecemeal.
+  _Done when:_ the full/lite pass picks real backgrounds and the yellow is gone.
+
+- **Estimate edit view ignores task reordering.** — _added 2026-08-14 (RM)_
+  The uncovered-work pool lists tasks in PK order: `_pool_atoms`
+  (`apps/estimates/services.py` ~L1168) queries `Task.objects.filter(job=job)`
+  with no `order_by`, and `Task.Meta` has no default ordering — so the
+  board's `sort_order` reordering never reaches the estimate edit view (or
+  the CO pool, which shares the walk; check the invoice pool's walk for the
+  same gap). Fix shape: `.order_by('sort_order', 'pk')` in the shared walk(s).
+  _Done when:_ the estimate/CO (and invoice, if affected) pools list tasks
+  in the same order as the task list.
+
+- **Single-atom "New line from selected" shouldn't need the modal.** —
+  _added 2026-08-14 (RM, estimate-confusion walkthrough)_
+  When one task/material is selected and made into a line, all the line's
+  data is already on the atom (description, qty, units, rate, AC) — skip
+  the modal and create the line directly; the user edits the line item
+  afterward if they want it different. The modal stays for multi-atom
+  merges (where qty/units/description genuinely need choosing).
+  _Done when:_ single-atom line creation is one click, no modal.
+
 - **Lost gesture: re-express a line's qty/units while retaining its total
   (the old wizard could).** — _added 2026-08-12 (RM)_
   The retired two-column reconcile wizard let you rejigger a line's

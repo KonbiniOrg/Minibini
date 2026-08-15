@@ -303,7 +303,7 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if task}
-  <JobShell {job} {contact} current="tasks" onJobChange={refresh}>
+  <JobShell {job} {contact} current="tasks" colorway="cw-tasks" onJobChange={refresh}>
   <!-- Task header: crumbs, pill + title left, stat chips right -->
   <div class="task-head">
     <!-- No task-list crumb: the nav rail's Tasks link covers it. -->
@@ -578,7 +578,7 @@
   .materials-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 8px; }
   /* Headerless radio column — just wide enough for the radio button. */
   .move-col { width: 24px; }
-  .materials-table th { padding: 6px 10px; text-align: left; background: #fefce8; }
+  .materials-table th { padding: 6px 10px; text-align: left; background: var(--doc-soft); color: var(--doc-accent); }
   .materials-table td { padding: 6px 10px; }
   .text-right { text-align: right; }
   /* Row buttons use .row-actions, INVOICED uses .badge-invoiced (app.css). */

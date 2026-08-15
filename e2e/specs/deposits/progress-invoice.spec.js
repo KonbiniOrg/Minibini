@@ -65,7 +65,7 @@ test('§7.2 progress invoice: relabel on a live-invoiced job, unseeded all-depos
 
   await test.step('The all-deposit draft withholds Uncovered work and Add from agreement', async () => {
     await expect(page.getByRole('heading', { name: 'Line Items' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Uncovered work' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Unbilled work' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Add from agreement/ })).toHaveCount(0);
   });
 

@@ -222,8 +222,14 @@
      still renders itself (expenses, section headers, footer). */
   .expense-row { background: #f0fdf4; }
   .expense-marker { color: #166534; font-weight: 600; margin-right: 4px; }
-  .grand-total-row { background: #ecfdf5; border-top: 2px solid #99f6e4; }
-  .job-materials-header td { background: #fef9c3; padding-top: 8px; }
+  /* Colorway-token bands (amber via .cw-tasks on the task pages; teal
+     defaults elsewhere). The section-header row is the 60%-soft tier —
+     an in-table divider, deliberately lighter than the header band. */
+  .grand-total-row { background: var(--doc-soft); border-top: 2px solid var(--doc-border); }
+  .job-materials-header td {
+    background: color-mix(in srgb, var(--doc-soft) 60%, #fff);
+    color: var(--doc-accent); padding-top: 8px;
+  }
 
   .actions-cell {
     max-width: 12em;

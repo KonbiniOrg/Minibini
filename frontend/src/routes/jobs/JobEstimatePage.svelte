@@ -61,7 +61,7 @@
 
 {#if error}<p class="error">{error}</p>
 {:else if job}
-  <JobShell {job} {contact} current="estimate" onJobChange={loadJob}>
+  <JobShell {job} {contact} current="estimate" colorway="cw-estimate" onJobChange={loadJob}>
     <EstimatePanel {job} estimateId={docId} onJobChange={loadJob} />
   </JobShell>
 {:else}<p>Loading…</p>{/if}

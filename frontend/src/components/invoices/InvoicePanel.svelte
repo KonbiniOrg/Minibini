@@ -43,7 +43,7 @@
   // Read-only documents relabel the mode: same surface, but it's now the
   // shop-facing Detail view, not an editor (RM 2026-08-09).
   let modeLabels = $derived(
-    { edit: canEditLineItems ? 'Edit' : 'Detail', customer: 'Customer', reorder: 'Reorder' });
+    { edit: canEditLineItems ? 'Edit view' : 'Detail view', customer: 'Customer view', reorder: 'Reorder view' });
   $effect(() => {
     if (invoice && String(invoice.invoice_id) === String(invoiceId)
         && modeInitializedFor !== String(invoiceId)) {

@@ -153,7 +153,7 @@
   // Same surface either way; once the document can't be edited the mode is a
   // read-only shop-facing view, so the label says what it now is (RM 2026-08-09).
   let modeLabels = $derived(
-    { edit: canEdit ? 'Edit' : 'Detail', customer: 'Customer', reorder: 'Reorder' });
+    { edit: canEdit ? 'Edit view' : 'Detail view', customer: 'Customer view', reorder: 'Reorder view' });
   $effect(() => {
     if (estimate && String(estimate.estimate_id) === String(estimateId)
         && modeInitializedFor !== String(estimateId)) {

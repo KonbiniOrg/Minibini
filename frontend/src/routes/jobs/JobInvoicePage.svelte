@@ -61,7 +61,7 @@
 
 {#if error}<p class="error">{error}</p>
 {:else if job}
-  <JobShell {job} {contact} current="invoice" onJobChange={loadJob}>
+  <JobShell {job} {contact} current="invoice" colorway="cw-invoice" onJobChange={loadJob}>
     <InvoicePanel {job} invoiceId={docId} onJobChange={loadJob} />
   </JobShell>
 {:else}<p>Loading…</p>{/if}

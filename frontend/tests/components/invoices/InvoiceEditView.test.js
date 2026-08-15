@@ -306,7 +306,7 @@ describe('InvoiceEditView', () => {
     // It shows up in the dedicated Deposit credits section, not the
     // generic uncovered-work pick list.
     expect(await findByText('Deposit credits')).toBeInTheDocument();
-    expect(queryByText('No uncovered billable items.')).toBeInTheDocument();
+    expect(queryByText('No unbilled items.')).toBeInTheDocument();
   });
 
   it('renders an INVOICED-elsewhere chip, dim and unselectable, for a claimed_by_other atom', async () => {
@@ -428,7 +428,7 @@ describe('InvoiceEditView', () => {
         props: baseProps({ lineItems: [depositLine()], sourcePool: poolWith([{ task_id: 7, name: 'Build', atoms: [AVAILABLE_ATOM] }]) }),
       });
       await findByText('Deposit on JOB-9');
-      expect(queryByText('Uncovered work')).toBeNull();
+      expect(queryByText('Unbilled work')).toBeNull();
       expect(queryByText(/Add from agreement/)).toBeNull();
       expect(queryByText('Sand edges')).toBeNull();
     });
@@ -439,7 +439,7 @@ describe('InvoiceEditView', () => {
         props: baseProps({ lineItems: [depositLine(), seededLine({ line_item_id: 10, line_number: 2 })], sourcePool: poolWith([{ task_id: 7, name: 'Build', atoms: [AVAILABLE_ATOM] }]) }),
       });
       await findByText('Deposit on JOB-9');
-      expect(queryByText('Uncovered work')).not.toBeNull();
+      expect(queryByText('Unbilled work')).not.toBeNull();
       expect(await findByText(/Add from agreement/)).toBeInTheDocument();
     });
   });

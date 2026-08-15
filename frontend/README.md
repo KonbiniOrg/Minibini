@@ -322,10 +322,22 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   `z-index: var(--z-modal)` etc. rather than bare numbers. Self-contained local
   stacks (the schedule lane stack; the JobHeader / hold-reason popover) keep
   their own small values and are intentionally off this global ladder.
+- **Document colorways (`--doc-*` tokens):** four page-level custom
+  properties — `--doc-accent`, `--doc-soft`, `--doc-border`, `--doc-faint`
+  (zebra) — paint an area's chrome: the `.data-table` header band, zebra
+  stripe, `.doc-subnav`/`.doc-mode-bar` bands, `tr.grand` totals, pool
+  heading, stat-chip headers, and modal titles/grab bar. Job-area pages opt
+  in via JobShell's `colorway` prop (`cw-estimate` indigo for estimates/COs,
+  `cw-tasks` amber, `cw-invoice` sage, `cw-neutral` near-grey for
+  POs/shipments/history/email); the `:root` defaults are the legacy house
+  teal, so unclassed (non-Job) pages are unchanged. Hues are *place, not
+  state* — never reuse them for status meaning. Palette lives in
+  `css/app.css` (RM-approved 2026-08-14).
 - **Tables:** don't use the `border="1"` attribute (the light grey cell border
   comes from the global `table, th, td` rule). For a table full of data, opt into
-  the house style with `class="data-table"` — full-width, padded cells, a teal
-  header band, and a subtle grey zebra stripe. The stripe is defined with
+  the house style with `class="data-table"` — full-width, padded cells, a
+  colorway-tinted header band (teal by default — see Document colorways
+  above), and a subtle zebra stripe in the colorway's palest tint. The stripe is defined with
   `:where(.data-table)` (zero specificity) so a table's own row classes (e.g.
   `.subtask-row`) override it without a fight; components may add scoped styles to
   tweak any `.data-table`. Tables that aren't tabular data (layout, key-value

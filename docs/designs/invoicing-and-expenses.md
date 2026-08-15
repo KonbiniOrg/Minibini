@@ -659,7 +659,7 @@ which ignore the extra context key.
 **UI — the uncategorized chip and the targeted-adjustment warning**
 (`InvoiceEditView.svelte`, Edit mode only). A line with `used_fallback_ac`
 true renders a small amber `.uncategorized-chip` beside its `BackingChip`
-in the Backing column: `uncategorized → {fallback category name} ·
+in the "Based on" column: `uncategorized → {fallback category name} ·
 {taxable|non-taxable}` when the fallback row is found in the panel's
 (unfiltered) loaded `categories` list, or a bare `uncategorized` when
 it isn't (a stale client list that hasn't refreshed since the fallback
@@ -822,7 +822,7 @@ On `open` or `partly-paid` invoices a disabled **"Revise (coming soon)"** placeh
 **Design authority:** `docs/plans/2026-08-06-better-fees.md` §7.3
 ("actuals by default") and §9.2 (the chip vocabulary). Every invoice
 line carries a **backing** — what its amount currently stands on —
-rendered as the "Backing" column's `BackingChip`. Both fields below are
+rendered as the "Based on" column's `BackingChip` (column header renamed from "Backing", 2026-08-14 vocab pass; code keeps the `backing` name). Both fields below are
 `SerializerMethodField`s on `InvoiceLineItemSerializer`
 (`apps/api/invoicing/serializers.py`) — **never stored**, recomputed on
 every read from the line's own state.
@@ -943,9 +943,9 @@ wizard in-sync rule, so the invoice total visibly moves the moment work
 attaches — attachment IS a billing decision, reversible by detaching or
 by **Use estimate**.
 
-### Uncovered-work section chips
+### Unbilled-work section chips
 
-`InvoiceEditView`'s `UncoveredWorkSection` (title "Uncovered work") is
+`InvoiceEditView`'s `UncoveredWorkSection` (title "Unbilled work" since the 2026-08-14 vocab pass; empty state "No unbilled items.") is
 fed from `GET .../source-pool/`, flattened and filtered to atoms not
 already claimed by this invoice (`claimed_by_current` rows are the
 `AtomChildRow` nests above, not pool rows) and excluding the "Deposit
@@ -1165,7 +1165,7 @@ below (unseeded draft + deposit-rail line) and no invoice type is stored
 `InvoiceEditView`, an invoice whose lines are **all deposit lines** (≥1;
 derived per render from the line serializer's `is_deposit` — content,
 never a stored type, per the no-invoice-mode principle) hides the
-**Uncovered work** pool and the **Add from agreement…** picker button —
+**Unbilled work** pool and the **Add from agreement…** picker button —
 advance money bills against the job as a whole, never against atoms. A
 mixed invoice (deposit line alongside ordinary lines) keeps both
 offerings. The Deposit credits section is unaffected.

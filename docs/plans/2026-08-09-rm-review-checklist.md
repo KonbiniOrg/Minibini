@@ -194,3 +194,26 @@ Multi-CO chain guards (billed-on guard, duplicate targets, target-ownership
 check), per-row billed-on query perf, cross-lens claim race (estimate vs CO
 double-claim under race), PDF/portal still baseline on the flat estimate
 (single-CO fine), "→ Deliverable" button next cycle.
+
+## Vocab + orientation pass (2026-08-14 — colorways, "Based on", pool renames)
+
+- [ ] **Colorways**: estimate/CO pages tinted indigo, task list + task detail
+      amber, invoice pages sage; PO/shipments/history/email pages the muted
+      near-grey; non-Job pages (contacts, catalog, settings…) unchanged teal.
+      Check the tint reaches: subnav band, view-mode bar, table header bands,
+      zebra stripes (palest tint), grand-total rows, date/stat chip headers,
+      pool heading, and modal titles + grab bar (open Edit Line Item on an
+      estimate vs an invoice — headers should differ).
+- [ ] **View labels**: the standalone "Views" caption is gone; chips read
+      "Edit view / Customer view / Reorder view" ("Detail view" when locked).
+- [ ] **Pool renames**: "Unquoted work" on estimates and COs (CO subtitle:
+      "…not in the current agreement"), "Unbilled work" on invoices; the word
+      "covered" appears nowhere.
+- [ ] **"Based on" column** (was "Backing"), with a caption row above each
+      line's grey atom rows: "based on 2 tasks:" / "based on 1 material:" /
+      mixed → "items".
+- [ ] **Job overview accents realigned**: Scope indigo, Work bright-amber,
+      Materials deep-amber, Spend pink (unchanged), Invoicing sage, Delivery
+      teal.
+- [ ] Task page: materials tables ride the amber band; the in-table
+      "Materials (no task)" divider is the lighter 60% tier (deliberate).

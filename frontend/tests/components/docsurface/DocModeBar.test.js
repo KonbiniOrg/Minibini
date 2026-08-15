@@ -9,16 +9,17 @@ describe('DocModeBar', () => {
     });
     const buttons = container.querySelectorAll('button');
     expect(buttons).toHaveLength(3);
-    expect(buttons[0].textContent.trim()).toBe('Edit');
-    expect(buttons[1].textContent.trim()).toBe('Customer');
-    expect(buttons[2].textContent.trim()).toBe('Reorder');
+    expect(buttons[0].textContent.trim()).toBe('Edit view');
+    expect(buttons[1].textContent.trim()).toBe('Customer view');
+    expect(buttons[2].textContent.trim()).toBe('Reorder view');
   });
 
-  it('labels the band "Views"', () => {
-    const { getByText } = render(DocModeBar, {
+  it('has no standalone band label — the " view" suffix replaced it (RM 2026-08-14)', () => {
+    const { queryByText, container } = render(DocModeBar, {
       props: { mode: 'edit', onMode: () => {} },
     });
-    expect(getByText('Views')).toBeInTheDocument();
+    expect(queryByText('Views')).toBeNull();
+    expect(container.querySelector('.doc-mode-bar-label')).toBeNull();
   });
 
   it('sets aria-pressed="true" on active button', () => {

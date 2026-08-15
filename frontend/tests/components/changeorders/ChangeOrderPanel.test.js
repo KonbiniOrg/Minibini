@@ -269,15 +269,15 @@ describe('ChangeOrderPanel mode bar', () => {
     await findByText('Line items');
 
     const modeBar = () => container.querySelector('.doc-mode-bar');
-    expect(within(modeBar()).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
-    expect(within(modeBar()).getByRole('button', { name: 'Customer' })).toBeInTheDocument();
-    expect(within(modeBar()).getByRole('button', { name: 'Reorder' })).toBeInTheDocument();
+    expect(within(modeBar()).getByRole('button', { name: 'Edit view' })).toBeInTheDocument();
+    expect(within(modeBar()).getByRole('button', { name: 'Customer view' })).toBeInTheDocument();
+    expect(within(modeBar()).getByRole('button', { name: 'Reorder view' })).toBeInTheDocument();
 
-    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Customer' }));
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Customer view' }));
     expect(await findByText('Change Order CO-3')).toBeInTheDocument();
     expect(getJobWs(9).modes['co:3']).toBe('customer');
 
-    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Edit' }));
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Edit view' }));
     expect(await findByText('Line items')).toBeInTheDocument();
     expect(getJobWs(9).modes['co:3']).toBe('edit');
   });
@@ -291,10 +291,10 @@ describe('ChangeOrderPanel mode bar', () => {
     await findByText('Line items');
 
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Detail' })).toBeInTheDocument();
-    expect(within(modeBar).getByRole('button', { name: 'Customer' })).toBeInTheDocument();
-    expect(within(modeBar).queryByRole('button', { name: 'Edit' })).toBeNull();
-    expect(within(modeBar).queryByRole('button', { name: 'Reorder' })).toBeNull();
+    expect(within(modeBar).getByRole('button', { name: 'Detail view' })).toBeInTheDocument();
+    expect(within(modeBar).getByRole('button', { name: 'Customer view' })).toBeInTheDocument();
+    expect(within(modeBar).queryByRole('button', { name: 'Edit view' })).toBeNull();
+    expect(within(modeBar).queryByRole('button', { name: 'Reorder view' })).toBeNull();
   });
 
   it('offers only Detail / Customer once the CO is no longer a draft', async () => {
@@ -306,9 +306,9 @@ describe('ChangeOrderPanel mode bar', () => {
     await findByText('Line items');
 
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Detail' })).toBeInTheDocument();
-    expect(within(modeBar).queryByRole('button', { name: 'Edit' })).toBeNull();
-    expect(within(modeBar).queryByRole('button', { name: 'Reorder' })).toBeNull();
+    expect(within(modeBar).getByRole('button', { name: 'Detail view' })).toBeInTheDocument();
+    expect(within(modeBar).queryByRole('button', { name: 'Edit view' })).toBeNull();
+    expect(within(modeBar).queryByRole('button', { name: 'Reorder view' })).toBeNull();
   });
 
   it('falls back to Detail when "reorder" was remembered but the CO is no longer editable', async () => {
@@ -320,7 +320,7 @@ describe('ChangeOrderPanel mode bar', () => {
     const { container, findByText } = render(ChangeOrderPanel, { props: { job: JOB, coId: '3' } });
     await findByText('Line items');
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Detail' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).getByRole('button', { name: 'Detail view' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('restores a remembered "customer" mode on mount', async () => {
@@ -345,7 +345,7 @@ describe('ChangeOrderPanel deliverables in edit mode only', () => {
     expect(queryByText('+ New deliverable')).toBeInTheDocument();
 
     const modeBar = container.querySelector('.doc-mode-bar');
-    await fireEvent.click(within(modeBar).getByRole('button', { name: 'Customer' }));
+    await fireEvent.click(within(modeBar).getByRole('button', { name: 'Customer view' }));
     await findByText('Change Order CO-3');
     expect(queryByText('+ New deliverable')).toBeNull();
   });
@@ -420,7 +420,7 @@ describe('ChangeOrderPanel reorder mode', () => {
     await findByText('Line items');
 
     const modeBar = container.querySelector('.doc-mode-bar');
-    await fireEvent.click(within(modeBar).getByRole('button', { name: 'Reorder' }));
+    await fireEvent.click(within(modeBar).getByRole('button', { name: 'Reorder view' }));
     await findByText(/CO 1 — Add A/);
 
     const rows = Array.from(container.querySelectorAll('.doc-reorder-arrows'));
@@ -452,7 +452,7 @@ describe('ChangeOrderPanel reorder mode', () => {
     const { container, findByText } = render(ChangeOrderPanel, { props: { job: JOB, coId: '3' } });
     await findByText('Line items');
     const modeBar = container.querySelector('.doc-mode-bar');
-    await fireEvent.click(within(modeBar).getByRole('button', { name: 'Reorder' }));
+    await fireEvent.click(within(modeBar).getByRole('button', { name: 'Reorder view' }));
 
     expect(await findByText('CO 1 — Sand edges')).toBeInTheDocument();
   });

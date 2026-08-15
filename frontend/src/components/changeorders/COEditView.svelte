@@ -16,6 +16,7 @@
   import LinkifiedText from '../LinkifiedText.svelte';
   import BackingChip from '../docsurface/BackingChip.svelte';
   import AtomChildRow from '../docsurface/AtomChildRow.svelte';
+  import AtomCaptionRow from '../docsurface/AtomCaptionRow.svelte';
   import UncoveredWorkSection from '../docsurface/UncoveredWorkSection.svelte';
   import NewLineFromSelectedRow from '../docsurface/NewLineFromSelectedRow.svelte';
   import QtyUnits from '../docsurface/QtyUnits.svelte';
@@ -308,7 +309,7 @@
       <th class="text-right">Qty</th>
       <th class="text-right">Price</th>
       <th class="text-right">Amount</th>
-      <th>Backing</th>
+      <th>Based on</th>
       {#if canEdit}<th>Actions</th>{/if}
     </tr>
   </thead>
@@ -345,6 +346,10 @@
             </td>
           {/if}
         </tr>
+        <AtomCaptionRow
+          sources={row.sources || []}
+          colspan={5 + (canEdit ? 1 : 0)}
+        />
         {#each row.sources || [] as source (source.source_id)}
           <AtomChildRow
             atom={atomFromSource(source)}
@@ -394,6 +399,10 @@
           <td></td>
           {#if canEdit}<td></td>{/if}
         </tr>
+        <AtomCaptionRow
+          sources={row.sources || []}
+          colspan={5 + (canEdit ? 1 : 0)}
+        />
         {#each row.sources || [] as source (source.source_id)}
           <AtomChildRow
             atom={atomFromSource(source)}
@@ -429,6 +438,10 @@
             </td>
           {/if}
         </tr>
+        <AtomCaptionRow
+          sources={row.sources || []}
+          colspan={5 + (canEdit ? 1 : 0)}
+        />
         {#each row.sources || [] as source (source.source_id)}
           <AtomChildRow
             atom={atomFromSource(source)}
@@ -467,13 +480,13 @@
 
 {#if canEdit}
   <UncoveredWorkSection
-    title="Uncovered work"
-    subtitle="Tasks and materials from this job not covered by the agreement."
+    title="Unquoted work"
+    subtitle="Tasks and materials from this job not in the current agreement."
     rows={uncoveredRows}
     bind:selected
     directLabel="Add as its own line"
     onDirect={billDirect}
-    emptyText="No uncovered tasks or materials."
+    emptyText="No unquoted tasks or materials."
   />
 {/if}
 

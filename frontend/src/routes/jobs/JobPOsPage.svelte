@@ -22,7 +22,7 @@
 
 {#if error}<p class="error">{error}</p>
 {:else if job}
-  <JobShell {job} {contact} current="pos" onJobChange={loadJob}>
+  <JobShell {job} {contact} current="pos" colorway="cw-neutral" onJobChange={loadJob}>
     <POPanel {job} />
   </JobShell>
 {:else}<p>Loading…</p>{/if}

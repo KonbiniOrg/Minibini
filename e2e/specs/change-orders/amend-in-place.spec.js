@@ -228,7 +228,7 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
   });
 
   await test.step('Customer mode shows the whole amended agreement (untouched lines included) with Previous / New / Change totals', async () => {
-    await page.locator('.doc-mode-bar').getByRole('button', { name: 'Customer', exact: true }).click();
+    await page.locator('.doc-mode-bar').getByRole('button', { name: 'Customer view', exact: true }).click();
     const view = page.locator('.co-customer-view');
     await expect(view).toBeVisible();
 
@@ -261,7 +261,7 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
   });
 
   await test.step('Reorder mode moves a CO line', async () => {
-    await page.locator('.doc-mode-bar').getByRole('button', { name: 'Reorder', exact: true }).click();
+    await page.locator('.doc-mode-bar').getByRole('button', { name: 'Reorder view', exact: true }).click();
     const view = page.locator('.doc-customer-view');
     await expect(view).toBeVisible();
 
@@ -351,7 +351,7 @@ test('§6 Accepting a CO crystallizes the amendment: job un-holds, estimate read
     const invoice = await api.post('/api/invoices/', { job: job.job_id });
 
     await page.goto(`/#/jobs/${job.job_id}/invoice/${invoice.invoice_id}`);
-    await expect(page.getByRole('heading', { name: 'Uncovered work' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Unbilled work' })).toBeVisible();
     const struckRow = page.locator('.uncovered-work-section tr').filter({ hasText: tasks.Remove.name });
     await expect(struckRow.getByText(`descoped by ${shortLabel}`)).toBeVisible();
 

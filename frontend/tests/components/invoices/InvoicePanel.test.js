@@ -658,9 +658,9 @@ describe('InvoicePanel mode bar', () => {
     mockApi(makeInvoice({ invoice_id: 5, status: 'draft', line_items: [LINE] }));
     const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Line Items');
-    expect(await findByText('Edit')).toBeInTheDocument();
-    expect(await findByText('Customer')).toBeInTheDocument();
-    expect(await findByText('Reorder')).toBeInTheDocument();
+    expect(await findByText('Edit view')).toBeInTheDocument();
+    expect(await findByText('Customer view')).toBeInTheDocument();
+    expect(await findByText('Reorder view')).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/Show Billables|Reconcile|Send all to Invoice/);
   });
 
@@ -669,10 +669,10 @@ describe('InvoicePanel mode bar', () => {
     mockApi(makeInvoice({ invoice_id: 5, status: 'open', line_items: [LINE] }));
     const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Invoice: INV-5');
-    expect(await findByText('Detail')).toBeInTheDocument();
-    expect(await findByText('Customer')).toBeInTheDocument();
-    expect(queryByText('Edit')).toBeNull();
-    expect(queryByText('Reorder')).toBeNull();
+    expect(await findByText('Detail view')).toBeInTheDocument();
+    expect(await findByText('Customer view')).toBeInTheDocument();
+    expect(queryByText('Edit view')).toBeNull();
+    expect(queryByText('Reorder view')).toBeNull();
   });
 
   it('switches between Edit / Customer / Reorder views in place and persists the choice per docId', async () => {
@@ -682,16 +682,16 @@ describe('InvoicePanel mode bar', () => {
     await findByText('Cut');
 
     const modeBar = () => container.querySelector('.doc-mode-bar');
-    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Customer' }));
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Customer view' }));
     expect(await findByText('Invoice INV-5')).toBeInTheDocument();
     expect(queryByText('Add Line Item')).toBeNull();
     expect(getJobWs(9).modes['inv:5']).toBe('customer');
 
-    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Reorder' }));
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Reorder view' }));
     expect(container.querySelectorAll('.doc-reorder-arrows').length).toBeGreaterThan(0);
     expect(getJobWs(9).modes['inv:5']).toBe('reorder');
 
-    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Edit' }));
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Edit view' }));
     expect(await findByText('Add Line Item')).toBeInTheDocument();
     expect(getJobWs(9).modes['inv:5']).toBe('edit');
   });
@@ -703,7 +703,7 @@ describe('InvoicePanel mode bar', () => {
     const { container, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Add Line Item');
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).getByRole('button', { name: 'Edit view' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('normalizes a remembered "lines" (old two-mode panel) to Edit mode', async () => {
@@ -713,7 +713,7 @@ describe('InvoicePanel mode bar', () => {
     const { container, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Add Line Item');
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).getByRole('button', { name: 'Edit view' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('does NOT restore from an ESTIMATE with the same numeric id (namespaced keys)', async () => {
@@ -723,7 +723,7 @@ describe('InvoicePanel mode bar', () => {
     const { container, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Add Line Item');
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).getByRole('button', { name: 'Edit view' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('falls back to Detail when "reorder" was remembered but the invoice is no longer editable', async () => {
@@ -734,8 +734,8 @@ describe('InvoicePanel mode bar', () => {
     await findByText('Cut');
     expect(queryByText('Add Line Item')).toBeNull(); // not editable — the mode shows as Detail
     const modeBar = container.querySelector('.doc-mode-bar');
-    expect(within(modeBar).getByRole('button', { name: 'Detail' })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(modeBar).queryByRole('button', { name: 'Reorder' })).toBeNull();
+    expect(within(modeBar).getByRole('button', { name: 'Detail view' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).queryByRole('button', { name: 'Reorder view' })).toBeNull();
   });
 });
 
