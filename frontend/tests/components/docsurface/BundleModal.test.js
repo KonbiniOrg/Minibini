@@ -29,6 +29,16 @@ const UNIFORM_TASK_ATOMS = [
   { type: 'task', id: 3, description: 'Cut C', qty: '4', units: 'hour', rate: '25.00', amount: '100.00' },
 ];
 
+// Fractional two-decimal quantities (real time-tracked hours) — plain
+// float addition of three 1.10s produces "3.3000000000000003"; the seed
+// must round to "3.30" so an un-retouched submit doesn't get rejected by
+// the DecimalField(decimal_places=2).
+const FRACTIONAL_UNIFORM_TASK_ATOMS = [
+  { type: 'task', id: 1, description: 'Cut A', qty: '1.1', units: 'hour', rate: '25.00', amount: '27.50' },
+  { type: 'task', id: 2, description: 'Cut B', qty: '1.1', units: 'hour', rate: '25.00', amount: '27.50' },
+  { type: 'task', id: 3, description: 'Cut C', qty: '1.1', units: 'hour', rate: '25.00', amount: '27.50' },
+];
+
 // Same rate but a differing unit — must NOT be treated as uniform.
 const DIFFERING_UNITS_ATOMS = [
   { type: 'task', id: 1, description: 'Cut A', qty: '4', units: 'hour', rate: '25.00', amount: '100.00' },
@@ -110,6 +120,31 @@ describe('BundleModal', () => {
     // Uniform seed keeps the invariant true from the start: 12 * $25 = $300 = total.
     const checkbox = await findByLabelText(/keep total/i);
     expect(checkbox.closest('label').textContent).toContain('$300.00');
+  });
+
+  it('fractional uniform multi-atom seed rounds the summed qty to two decimals (no binary-float garbage)', async () => {
+    const { findByRole, findByLabelText } = render(BundleModal, {
+      props: baseProps({ atoms: FRACTIONAL_UNIFORM_TASK_ATOMS }),
+    });
+    await findByRole('dialog');
+    const qtyInput = await findByLabelText(/Quantity/);
+    // Exact string, not the "3.3000000000000003" plain float addition would
+    // produce (1.1 + 1.1 + 1.1 in IEEE-754 binary floating point).
+    expect(qtyInput.value).toBe('3.30');
+    expect(qtyInput).toHaveValue(3.3);
+  });
+
+  it('POSTs the rounded qty when a fractional uniform bundle is submitted untouched', async () => {
+    const { findByRole } = render(BundleModal, {
+      props: baseProps({ atoms: FRACTIONAL_UNIFORM_TASK_ATOMS }),
+    });
+    const dialog = await findByRole('dialog');
+    await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
+
+    expect(api.post).toHaveBeenCalledWith('/api/estimates/7/line-items-from-atoms/', {
+      atoms: [{ type: 'task', id: 1 }, { type: 'task', id: 2 }, { type: 'task', id: 3 }],
+      overrides: { description: '', qty: '3.30', units: 'hour', price: '25.00' },
+    });
   });
 
   it('same rate but differing units is NOT treated as uniform: falls back to the lump seed', async () => {

@@ -70,7 +70,12 @@
     if (allTasks && selectedAtoms[0].rate != null && units.size === 1 && rates.size === 1) {
       const qty = selectedAtoms.reduce((sum, a) => sum + (Number(a.qty) || 0), 0);
       return {
-        description: '', qty: String(qty),
+        // Round to cents-equivalent precision like the lump branch's
+        // total.toFixed(2) below — plain float addition of two-decimal
+        // quantities (e.g. three 1.10s) produces binary-float garbage
+        // ("3.3000000000000003") that a DecimalField(decimal_places=2)
+        // rejects on submit if the user never touches the field.
+        description: '', qty: qty.toFixed(2),
         units: selectedAtoms[0].units || 'none', price: selectedAtoms[0].rate,
       };
     }
