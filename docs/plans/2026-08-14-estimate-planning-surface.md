@@ -1,6 +1,14 @@
 # Estimate/Planning joint surface — design
 
-**Status:** design settled with RM 2026-08-14 (this session); awaiting RM
+**Status: SUPERSEDED 2026-08-15** by
+`2026-08-15-estimating-structure.md` (claims by construction). This
+design was implemented in full on branch `feature/planning-surface`
+(abandoned at `c231c8de`, kept for reference/salvage) and failed RM's
+hands-on testing — the freeform claim attachment and dual catalog doors
+it permitted produced overlapping/faithless states (see the successor
+spec's post-mortem). Retained for the record.
+
+**Original status:** design settled with RM 2026-08-14 (this session); awaiting RM
 review of this write-up before any implementation planning.
 **Branch:** TBD — RM creates the working branch when implementation starts.
 Disposable plan doc; durable record lands in `docs/designs/`
