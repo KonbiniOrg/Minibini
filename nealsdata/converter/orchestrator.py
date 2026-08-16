@@ -149,6 +149,11 @@ class NealsDataConverter:
         # round-robin assign each job's unclaimed Tasks as synthetic sources of
         # its estimate lines so the Client View projects atoms.
         build.build_synthetic_estimate_sources(self)
+        # After synthetic sourcing (sourcing final): mark any hand line still
+        # sourceless on an accepted estimate of an approved-or-beyond job as
+        # declined, so no phantom checklist item surfaces on converted data
+        # (ES Task 9, mirrors EstimateService.unanswered_lines).
+        build.build_checklist_declines(self)
         build.build_history(self)     # last: emit a created entry per tracked object
         self._write_json()
         if self.verbose:

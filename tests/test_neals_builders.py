@@ -1689,6 +1689,47 @@ class ConvertedStateInvariantsTest(unittest.TestCase):
         self.assertEqual(offenders, [],
                          f'invoices on pre-approval jobs: {offenders}')
 
+    def test_no_unanswered_lines_on_accepted_estimates_of_approved_plus_jobs(self):
+        # Task 5's answeredness rule (EstimateService.unanswered_lines): on
+        # an ACCEPTED estimate, a line is UNANSWERED iff non-adjustment,
+        # non-deposit, carries no EstimateLineItemSource, and
+        # work_declined=False. A converted job sitting at approved-or-beyond
+        # must never surface a phantom checklist item — build_checklist_declines
+        # (ES Task 9) marks every such line work_declined=True during
+        # conversion so JobService.maybe_auto_release's invariant holds
+        # without a data-repair pass.
+        approved_or_beyond = {'approved', 'in_progress', 'work_complete',
+                              'completed', 'cancelled'}
+        deposit_acs = {f['pk'] for f in self.data
+                       if f['model'] == 'core.accountingcategory'
+                       and f['fields'].get('is_deposit')}
+        sourced = {f['fields']['estimate_line_item'] for f in self.data
+                  if f['model'] == 'estimates.estimatelineitemsource'}
+        estimates = {f['pk']: f['fields'] for f in self.data
+                    if f['model'] == 'estimates.estimate'}
+        offenders = []
+        for f in self.data:
+            if f['model'] != 'estimates.estimatelineitem':
+                continue
+            fields = f['fields']
+            est = estimates.get(fields['estimate'])
+            if est is None or est.get('status') != 'accepted':
+                continue
+            if self.jobs.get(est['job'], {}).get('status') not in approved_or_beyond:
+                continue
+            if fields.get('adjustment_service') is not None:
+                continue
+            if fields.get('accounting_category') in deposit_acs:
+                continue
+            if f['pk'] in sourced:
+                continue
+            if fields.get('work_declined'):
+                continue
+            offenders.append((f['pk'], fields['estimate']))
+        self.assertEqual(
+            offenders, [],
+            f'unanswered lines on accepted estimates of approved+ jobs: {offenders}')
+
     def test_earmarks_covered_by_qty_on_hand(self):
         items = {f['pk']: f['fields'] for f in self.data
                  if f['model'] == 'inventory.inventoryitem'}

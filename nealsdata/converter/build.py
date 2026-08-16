@@ -1786,6 +1786,77 @@ def build_synthetic_estimate_sources(c):
             _emit_estimate_line_item_source(c, li['pk'], 'task', t['pk'])
 
 
+def build_checklist_declines(c):
+    """Compat/consistency pass (ES Task 9, 2026-08-15): the app's
+    acceptance checklist (EstimateService.unanswered_lines) flags any
+    non-adjustment, non-deposit line on an ACCEPTED estimate that carries
+    no EstimateLineItemSource and isn't work_declined as still owing a
+    work decision, and JobService.maybe_auto_release blocks an APPROVED
+    job from walking to IN_PROGRESS while any exist. build_synthetic_estimate_sources
+    only sources as many lines as a job has unclaimed Tasks — surplus
+    lines stay sourceless — so a converted job already sitting at
+    approved-or-beyond would surface phantom checklist items the running
+    app never asked about (and never could have: draft/submitted/rejected
+    jobs can't hold an accepted estimate in the first place).
+
+    Mark every remaining sourceless, non-adjustment, non-deposit,
+    non-catalog-identity line on such an estimate work_declined=True — the
+    "no work behind this line, on purpose" answer — so regenerated data is
+    checklist-consistent without a data-repair pass. (No converter-emitted
+    EstimateLineItem ever carries a catalog identity — service_item/
+    inventory_item/is_material are only set at accept-time crystallization
+    in the running app — but the check mirrors EstimateService.decline_line_item's
+    exclusions for safety.)
+
+    Runs after build_synthetic_estimate_sources (sourcing must be final)
+    and therefore after reconcile too (job/estimate statuses final).
+    """
+    # Statuses reachable only via/after the approved gate — see Job's
+    # ALLOWED_TRANSITIONS (jobs/models.py): draft/submitted/rejected can
+    # never hold an accepted estimate that has passed this gate. (Pure-JSON
+    # pass — no Django import here, so status values are string literals
+    # mirroring Job's constants, same convention as build_invoice_agreement_refs.)
+    _APPROVED_OR_BEYOND = {
+        'approved', 'in_progress', 'work_complete', 'completed', 'cancelled',
+    }
+
+    job_status = {f['pk']: f['fields']['status']
+                  for f in c.fixture_data if f['model'] == 'jobs.job'}
+    est_job = {f['pk']: f['fields']['job']
+               for f in c.fixture_data if f['model'] == 'estimates.estimate'}
+    est_status = {f['pk']: f['fields']['status']
+                  for f in c.fixture_data if f['model'] == 'estimates.estimate'}
+    deposit_acs = {f['pk'] for f in c.fixture_data
+                   if f['model'] == 'core.accountingcategory'
+                   and f['fields'].get('is_deposit')}
+    sourced_lines = {
+        f['fields']['estimate_line_item']
+        for f in c.fixture_data
+        if f['model'] == 'estimates.estimatelineitemsource'
+    }
+
+    for f in c.fixture_data:
+        if f['model'] != 'estimates.estimatelineitem':
+            continue
+        fields = f['fields']
+        est_pk = fields['estimate']
+        if est_status.get(est_pk) != 'accepted':
+            continue
+        if job_status.get(est_job.get(est_pk)) not in _APPROVED_OR_BEYOND:
+            continue
+        if f['pk'] in sourced_lines:
+            continue
+        if fields.get('adjustment_service') is not None:
+            continue
+        if fields.get('accounting_category') in deposit_acs:
+            continue
+        if (fields.get('service_item') is not None
+                or fields.get('inventory_item') is not None
+                or fields.get('is_material')):
+            continue
+        fields['work_declined'] = True
+
+
 def build_invoice_agreement_refs(c):
     """Emit agreement_estimate_line refs on converted invoice lines
     (RM 2026-08-12): without them a converted open invoice claims no
