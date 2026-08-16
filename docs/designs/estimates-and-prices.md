@@ -1245,7 +1245,7 @@ the document, §6.4/§11.3.)
 | Method | Purpose |
 |---|---|
 | `get_source_pool(estimate)` | Walks the estimate's **Job's** Tasks and Materials, returns a flat pool of atoms. Each atom carries `type` (`'task'`/`'material'`), `id`, `description`, the `qty`/`rate`/`units`/`amount` breakdown, `category_id`, and claim state: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). Task amounts use `compute_estimate_amount` (`est_qty`). **Cancelled tasks are excluded** — estimates project planned work, and a cancelled task is not planned work (the *invoice* pool is the opposite: recorded actuals on a cancelled task stay billable — see `invoicing-and-expenses.md`). |
-| `add_atoms_to_new_line_item(estimate, atoms)` | Creates a new `EstimateLineItem` with a source row per atom. Single-atom case copies atom's description/units/qty/price; multi-atom case summarizes a uniform same-scheme task bundle, else falls back to blanks (see §6.3). |
+| `add_atoms_to_new_line_item(estimate, atoms, *, overrides=None)` | Creates a new `EstimateLineItem` with a source row per atom. Single-atom case copies atom's description/units/qty/price; multi-atom case summarizes a uniform same-scheme task bundle, else falls back to blanks (see §6.3). `overrides` (Task 8, bundle modal): optional `{'description','qty','units','price'}` applied over the derived defaults before save — a partial dict merges onto the derivation field-by-field; an unknown key raises a plain `ValidationError` (→ `{'detail': ...}` 400). Draft-gating and claim/atomicity behavior are unchanged by overrides. |
 | `send_all_atoms(estimate)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines. `POST /api/estimates/{id}/send-all-atoms/` → `{'created': N}`; the wizard's "Send all to Estimate" button. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), it is re-derived: a uniform same-scheme task bundle is re-summarized (units/qty/price), otherwise qty is kept and the per-unit price recomputed. An overridden line item is left untouched. |
 | `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Same re-derive-if-in-sync rule as `add_atoms_to_line_item`. Deletes the line item if no sources remain. |
@@ -1269,11 +1269,16 @@ Estimate wizard endpoints live on `EstimateViewSet`
 | Verb + path | Action method | Calls |
 |---|---|---|
 | `GET /api/estimates/{id}/source-pool/` | `source_pool` | `EstimateWizardService.get_source_pool(estimate)` — drawn from the job's Tasks/Materials |
-| `POST /api/estimates/{id}/line-items-from-atoms/` | `line_items_from_atoms` | `add_atoms_to_new_line_item(estimate, atoms)` |
+| `POST /api/estimates/{id}/line-items-from-atoms/` | `line_items_from_atoms` | `add_atoms_to_new_line_item(estimate, atoms, overrides=overrides)` |
 | `POST /api/estimates/{id}/line-items/{lid}/add-atoms/` | `add_atoms` | `add_atoms_to_line_item(line_item, atoms)` |
 | `POST /api/estimates/{id}/line-items/{lid}/remove-atoms/` | `remove_atoms` | `remove_atoms_from_line_item(line_item, source_ids)` |
 
 Request body shape for atoms: `{atoms: [{type: 'task'|'material', id: N}, ...]}`.
+`line-items-from-atoms` also accepts an optional `overrides` body key
+(Task 8, bundle modal): `{atoms: [...], overrides: {description, qty,
+units, price}}` — see §8.1. The change-order equivalent
+(`POST /api/change-orders/{id}/line-items-from-atoms/`, §14.8) grows the
+same key.
 
 The estimate itself is created directly on the job — `POST /api/estimates/`
 with `{job}` (→ `EstimateService.create_for_job`), surfaced in the SPA as
@@ -1299,7 +1304,7 @@ conventions.
 | Component | Path | Role |
 |---|---|---|
 | `EstimateEditView.svelte` | `frontend/src/components/estimates/` | The estimate's **Edit** mode — one merged surface: the line-items table (each row's atom claims nested via `AtomChildRow`) plus an `UncoveredWorkSection` pool below it. Presentation + gestures only; `EstimatePanel` owns data loading. See §12. |
-| `docsurface/*` kit | `frontend/src/components/docsurface/` | Eight shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `QtyUnits`, `DocCustomerView`, `DocReorderView`) consumed by the estimate, invoice, **and CO** (§14.9a) edit surfaces. Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched. `QtyUnits` (2026-08-11) renders a line's qty + units in every doc line table — inline, wrapping when squeezed; units `'none'` omitted. |
+| `docsurface/*` kit | `frontend/src/components/docsurface/` | Nine shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `BundleModal`, `QtyUnits`, `DocCustomerView`, `DocReorderView`) consumed by the estimate, invoice, **and CO** (§14.9a) edit surfaces. Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched. `QtyUnits` (2026-08-11) renders a line's qty + units in every doc line table — inline, wrapping when squeezed; units `'none'` omitted. `BundleModal` (Task 8, 2026-08-15) is the estimate/CO "bundle into line" authoring modal — see §12.1a. `NewLineFromSelectedRow` takes an optional `buttonLabel` prop (default `"Create line"`) so the estimate/CO surfaces can read "Bundle into line…" while the invoice surface (unchanged one-click flow) keeps the default. |
 | `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines via **Add line** + per-line **Edit**. |
 
 The invoice side is structurally parallel — same source pool, add-atoms,
@@ -1745,20 +1750,69 @@ such as an open edit modal or the current pool selection; see
   estimate …" note instead of a checkbox. `directLabel="Add as its own
   line"` bills one atom directly (`onDirect` → `billDirect`, one POST to
   `line-items-from-atoms`, then opens the new line's Edit modal).
-- **Object-first composition.** Ticking any pool row makes **every**
-  line's Actions cell offer "Add selected here" and reveals the table's
-  dashed footer placeholder, `NewLineFromSelectedRow` ("＋ New line from
-  selected", labeled with the next line number). Its **Create line**
-  button (`createLineFromSelected`) POSTs `line-items-from-atoms` with
-  the ticked atoms, then — after awaiting the panel's silent refresh so
-  the modal opens against the server's authoritative copy — opens
-  `LineItemModal` on the new line immediately, same as the single-atom
-  "Add as its own line" path.
+- **Object-first composition.** Ticking any pool row reveals the
+  table's dashed footer placeholder, `NewLineFromSelectedRow` ("＋ New
+  line from selected"). Its button — labeled **"Bundle into line…"**
+  here (the invoice edit view keeps the default "Create line" label
+  and its original one-click behavior, unchanged by Task 8) — opens
+  `BundleModal` (§12.1a) rather than POSTing directly. The single-atom
+  case opens the modal too (same gesture either way; the modal is just
+  seeded from that one atom's values), unlike the still-unchanged
+  single-atom "Add as its own line" pool-row action (`billDirect`),
+  which stays a direct POST + `LineItemModal` edit landing.
 - **409 handling.** A claim conflict (another session claimed an atom
-  between pool load and POST) clears the selection, awaits a refresh,
-  and shows a specific "…refreshed" message via the global overlay
-  rather than the generic error text (`handleMutationError`,
+  between pool load and POST) is surfaced by `BundleModal` via its
+  `onConflict` callback — the modal itself has no pool/selection state
+  to reconcile, so it hands the error back to `EstimateEditView`, which
+  closes the modal, clears the selection, awaits a refresh, and shows a
+  specific "…refreshed" message via the global overlay rather than the
+  generic error text (`handleMutationError`,
   `architecture-and-conventions.md` §5.5b's 409-refresh idiom).
+
+### 12.1a BundleModal (Task 8: draft-time composition + keep-the-total)
+
+`BundleModal.svelte` (`docsurface/`) is the authoring step "New line
+from selected" opens on the estimate and CO edit surfaces (invoice
+untouched — see above). It is self-contained like `AdjustmentModal`/
+`LineItemModal`: it owns its own POST to
+`${apiBase}/line-items-from-atoms/`, not a callback the parent runs.
+
+- **Props:** `open`, `atoms` (the selected atoms in raw source-pool
+  shape — `{type, id, description, qty, units, rate, amount}`, read
+  straight off `sourcePool.atoms` filtered by the ticked ids; the
+  picklist's own `uncoveredRows` only carries a formatted
+  `qty_display`, not the raw fields the modal needs), `apiBase`,
+  `onCreated(newLine)`, `onConflict(err)` (409 only — see above),
+  `onClose`.
+- **Display:** each selected atom's kind tag / description / qty /
+  amount (reusing the `atomKindTag`/`fmtMoney`/`formatQtyUnits`
+  idioms), plus the summed total.
+- **Authoring fields:** description, qty, units, price — seeded from
+  the single atom's own values when exactly one is selected; for 2+
+  atoms, seeded as a plain lump sum (`qty=1`, `units='none'`,
+  `price=`the summed total) rather than trying to mirror the backend's
+  uniform-bundle detection (§8.1) — keep-total's qty→price
+  re-derivation is the tool for reshaping that lump sum, so there's no
+  need to guess a "smarter" starting split client-side.
+- **Keep-the-total gesture, ON by default:** while the "keep total $X"
+  checkbox is checked, editing qty re-derives `price = total ÷ qty`
+  (rounded to cents). Editing price directly is a **one-way** exit —
+  it unchecks keep-total rather than reverse-deriving qty (RM's
+  simpler rule: qty→price only, avoiding divide-by-zero/qty-churn).
+  Re-checking the box re-derives price from the current qty so the
+  invariant (`price × qty == total` whenever checked) always holds the
+  moment it's checked. Qty of `0`/empty never divides by zero (the
+  re-derivation is skipped) and disables the Create button.
+- **Submit:** `POST line-items-from-atoms` with
+  `{atoms: [{type, id}, ...], overrides: {description, qty, units,
+  price}}` — i.e. it **always** sends all four fields as overrides
+  (not just the ones the user touched), since the modal's displayed
+  values are the authored truth regardless of how closely they mirror
+  the backend's own (unused, once overrides are present) derivation.
+  On success, calls `onCreated(newLine)`; the parent view closes the
+  modal, clears `selected`, and calls `onChanged()` — no follow-up
+  `LineItemModal` edit landing (the bundle modal *is* the authoring
+  step).
 
 ### 12.2 Backing chips (design doc §9.2 vocabulary)
 
@@ -2308,7 +2362,8 @@ are resolved).
   the estimate's `source-pool` (§8), with claims unioned across both
   the estimate and CO lenses (uncovered-work rows in `COEditView`)
 - `POST /api/change-orders/{id}/line-items-from-atoms/` — create a new
-  `add` line from a set of atoms (mirrors §8's estimate action)
+  `add` line from a set of atoms (mirrors §8's estimate action); accepts
+  the same optional `overrides` body key (Task 8, §12.1a)
 - `POST /api/change-orders/{id}/line-items/{lid}/add-atoms/` /
   `POST /api/change-orders/{id}/line-items/{lid}/remove-atoms/` —
   append/detach atoms on an existing CO line (409 `atoms_already_claimed`
@@ -2372,12 +2427,14 @@ Row kinds, per `compose_amended_agreement`'s row `kind`:
   **Undo**.
 - `added` — CO-tinted, tagged `CO {co_index}`, its own `AtomChildRow`s
   (detachable via `remove-atoms`) and `BackingChip`; actions **Edit** /
-  **Remove**, plus **Add selected here** while the uncovered-work
-  selection is non-empty (`add-atoms`).
+  **Remove**. (The Task 6 attach-to-existing-line gesture is retired —
+  composing atoms into a line happens only via the pool's dashed
+  "New line from selected" row below, never a per-row attach.)
 
-The table foot is `NewLineFromSelectedRow` (`line-items-from-atoms`,
-then opens the Edit modal on the fresh line) and the
-original/this-CO/revised totals from the payload. Below the table:
+The table foot is `NewLineFromSelectedRow`, labeled **"Bundle into
+line…"** here — same swap and `BundleModal` (§12.1a) as the estimate
+edit view — and the original/this-CO/revised totals from the payload.
+Below the table:
 **"Add line"** opens the unified `PriceListPicker` (§6.4) — the same
 service / inventory / freeform entry point as
 the estimate detail page — followed by `COAddLineForm.svelte`

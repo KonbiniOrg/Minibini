@@ -578,10 +578,11 @@ describe('EstimatePanel create-line-from-selected integration (silent refresh)',
   // create-line -> edit-modal handoff only "worked" in EstimateEditView's own
   // unit test because that test's onChanged mock does nothing. Wired through
   // the real EstimatePanel, the old (non-silent) refresh flipped docLoading
-  // synchronously, which tore down and remounted EstimateEditView — resetting
-  // modalOpen before the user ever saw the naming modal. This test exercises
-  // the full tick -> Create line -> modal-visible path against the real panel.
-  it('tick a pool atom, "Create line" survives the refresh (no full-panel reload) and opens the edit modal', async () => {
+  // synchronously, which tore down and remounted EstimateEditView. This test
+  // exercises the full tick -> Bundle into line… -> Create line path against
+  // the real panel (Task 8: the gesture now routes through BundleModal
+  // rather than straight to the edit modal).
+  it('tick a pool atom, bundle it into a line, and the refresh survives without a full-panel reload', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
 
     const LINE = {
@@ -595,7 +596,7 @@ describe('EstimatePanel create-line-from-selected integration (silent refresh)',
       claiming_estimate_id: null, claiming_estimate_number: null,
     };
     const NEW_LINE = {
-      line_item_id: 99, line_number: 2, description: '', qty: '1', units: 'hour',
+      line_item_id: 99, line_number: 2, description: 'Sand edges', qty: '1', units: 'hour',
       price: '30.00', accounting_category: null, sources: [], backing: 'planned_work', backing_total: '30.00',
     };
 
@@ -613,6 +614,7 @@ describe('EstimatePanel create-line-from-selected integration (silent refresh)',
       if (url.startsWith('/api/estimates/?job=')) return Promise.resolve({ results: [makeEstimate()] });
       if (url.startsWith('/api/change-orders/?job=')) return Promise.resolve({ results: [] });
       if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour', 'ea']);
       if (url.startsWith('/api/settings/')) return Promise.resolve({});
       return Promise.resolve({});
     });
@@ -629,16 +631,26 @@ describe('EstimatePanel create-line-from-selected integration (silent refresh)',
 
     const checkbox = container.querySelector('input[type="checkbox"]');
     await fireEvent.click(checkbox);
-    const createBtn = await findByText(/create line/i);
-    await fireEvent.click(createBtn);
+    const bundleBtn = await findByText(/bundle into line/i);
+    await fireEvent.click(bundleBtn);
 
     const dialog = await findByRole('dialog');
     expect(dialog).toBeInTheDocument();
-    expect(within(dialog).getByText('Edit Line Item')).toBeInTheDocument();
+    await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
+
+    // The bundle modal closes once the create succeeds and the refreshed
+    // line shows up — proof the panel's silent refresh didn't tear down
+    // EstimateEditView mid-gesture (same regression this test originally
+    // guarded, just through the new gesture). "Sand edges" also still
+    // appears in the (statically-mocked) pool below, so scope the check to
+    // the line-items table itself.
+    await waitFor(() => expect(container.querySelector('[role="dialog"]')).toBeNull());
+    const linesTable = container.querySelector('table.line-items-table');
+    expect(await within(linesTable).findByText('Sand edges')).toBeInTheDocument();
 
     // The panel must never have blanked to the full "Loading…" state, and
-    // the edit view (Add line, etc.) must still be there behind the modal —
-    // proof EstimateEditView was never torn down mid-gesture.
+    // the edit view (Add line, etc.) must still be there — proof
+    // EstimateEditView was never torn down mid-gesture.
     expect(container.textContent).not.toContain('Loading...');
     expect(container.textContent).toContain('Add line');
   });

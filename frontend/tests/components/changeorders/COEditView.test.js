@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -228,12 +228,14 @@ describe('COEditView Undo / Remove gestures', () => {
 });
 
 describe('COEditView new-line-from-selected', () => {
-  it('ticking a pool row and creating a line POSTs line-items-from-atoms', async () => {
+  it('ticking a pool row and clicking "Bundle into line…" opens BundleModal seeded from the atom, and Create POSTs overrides', async () => {
     api.post.mockResolvedValue({
-      line_item_id: 99, line_number: 4, description: '', qty: '1', units: 'hour', price: '0.00',
+      line_item_id: 99, line_number: 4, description: 'Sand edges', qty: '1', units: 'hour', price: '30.00',
     });
+    const onChanged = vi.fn();
     const { findByText, findByRole, container } = render(COEditView, {
       props: baseProps({
+        onChanged,
         sourcePool: {
           atoms: [{
             type: 'task', id: 41, description: 'Sand edges', qty: '1', rate: '30.00',
@@ -247,13 +249,25 @@ describe('COEditView new-line-from-selected', () => {
     const checkbox = container.querySelector('input[type="checkbox"]');
     await fireEvent.click(checkbox);
 
-    const createBtn = await findByRole('button', { name: /create line/i });
-    await fireEvent.click(createBtn);
+    const bundleBtn = await findByRole('button', { name: /bundle into line/i });
+    await fireEvent.click(bundleBtn);
+
+    const dialog = await findByRole('dialog');
+    // Seeded from the single selected atom.
+    expect(within(dialog).getByLabelText(/Quantity/)).toHaveValue(1);
+    expect(within(dialog).getByLabelText(/Price/)).toHaveValue(30);
+
+    await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
 
     expect(api.post).toHaveBeenCalledWith(
       '/api/change-orders/3/line-items-from-atoms/',
-      { atoms: [{ type: 'task', id: 41 }] },
+      {
+        atoms: [{ type: 'task', id: 41 }],
+        overrides: { description: 'Sand edges', qty: '1', units: 'hour', price: '30.00' },
+      },
     );
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('never shows "Add selected here" on an added row, even with a pool atom ticked', async () => {

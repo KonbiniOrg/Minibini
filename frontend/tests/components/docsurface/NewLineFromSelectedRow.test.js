@@ -26,4 +26,14 @@ describe('NewLineFromSelectedRow', () => {
     await fireEvent.click(getByText('Create line'));
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
+
+  it('renders a custom buttonLabel when given (estimate/CO surfaces read "Bundle into line…")', () => {
+    const { getByText, queryByText } = render(NewLineFromSelectedRow, {
+      props: { visible: true, onCreate: () => {}, buttonLabel: 'Bundle into line…' },
+    });
+    getByText('Bundle into line…');
+    expect(queryByText('Create line')).toBeNull();
+    // The cta text is unaffected by the button label override.
+    getByText(/New line from selected/);
+  });
 });

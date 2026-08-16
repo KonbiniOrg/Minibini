@@ -313,6 +313,137 @@ class AddAtomsToNewLineItemTest(TestCase):
             EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
 
 
+class AddAtomsToNewLineItemOverridesTest(TestCase):
+    """Task 8: bundle-modal authoring overrides applied over each derivation
+    shape (single-atom copy, multi-atom uniform bundle, multi-atom
+    fallback), partial merge, unknown-key rejection, and unchanged
+    claims/draft-gating."""
+
+    def setUp(self):
+        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
+        Configuration.objects.create(key='estimate_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
+        self.cat = AccountingCategory.objects.create(name='Labor', code='LAB', is_active=True)
+        self.cat2 = AccountingCategory.objects.create(name='Materials', code='MAT', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.pt = Task(job=self.job, name='Setup', est_qty=Decimal('2'))
+        self.pt.stamp_from_scheme(self.scheme)
+        self.pt.save()
+        self.pt2 = Task(job=self.job, name='Cutting', est_qty=Decimal('1'))
+        self.pt2.stamp_from_scheme(self.scheme)
+        self.pt2.save()
+        self.pm = Material.objects.create(
+            job=self.job, description='steel', quantity=Decimal('3'),
+            sell_price=Decimal('5'), accounting_category=self.cat2,
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+
+    def test_overrides_apply_over_single_atom_derivation(self):
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, atoms,
+            overrides={'description': 'Custom desc', 'qty': Decimal('4'),
+                       'units': 'ea', 'price': Decimal('50.00')},
+        )
+        self.assertEqual(li.description, 'Custom desc')
+        self.assertEqual(li.qty, Decimal('4'))
+        self.assertEqual(li.units, 'ea')
+        self.assertEqual(li.price, Decimal('50.00'))
+        # Sources are unaffected by authoring overrides.
+        self.assertEqual(li.sources.count(), 1)
+
+    def test_overrides_apply_over_multi_atom_uniform_bundle(self):
+        # pt + pt2 share the same scheme -> uniform bundle summary
+        # (qty=3, price=100, units='hour') absent overrides.
+        atoms = [
+            {'type': 'task', 'id': self.pt.pk},
+            {'type': 'task', 'id': self.pt2.pk},
+        ]
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, atoms,
+            overrides={'qty': Decimal('1'), 'price': Decimal('300.00')},
+        )
+        self.assertEqual(li.qty, Decimal('1'))
+        self.assertEqual(li.price, Decimal('300.00'))
+        # units left at the derived value ('hour') since not overridden.
+        self.assertEqual(li.units, 'hour')
+        self.assertEqual(li.sources.count(), 2)
+
+    def test_overrides_apply_over_multi_atom_fallback(self):
+        # task + material -> fallback (units='none', qty=1, price=total).
+        atoms = [
+            {'type': 'task', 'id': self.pt.pk},
+            {'type': 'material', 'id': self.pm.pk},
+        ]
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, atoms,
+            overrides={'description': 'Bundle', 'qty': Decimal('2'),
+                       'units': 'set', 'price': Decimal('107.50')},
+        )
+        self.assertEqual(li.description, 'Bundle')
+        self.assertEqual(li.qty, Decimal('2'))
+        self.assertEqual(li.units, 'set')
+        self.assertEqual(li.price, Decimal('107.50'))
+
+    def test_partial_override_merges_onto_derivation(self):
+        # Only qty overridden; description/units/price keep the single-atom
+        # derived defaults.
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, atoms, overrides={'qty': Decimal('7')},
+        )
+        self.assertEqual(li.qty, Decimal('7'))
+        self.assertEqual(li.description, self.pt.name)
+        self.assertEqual(li.units, 'hour')
+        self.assertEqual(li.price, Decimal('100'))
+
+    def test_no_overrides_key_behaves_exactly_as_before(self):
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertEqual(li.qty, Decimal('2'))
+        self.assertEqual(li.price, Decimal('100'))
+
+    def test_unknown_override_key_raises_validation_error(self):
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateWizardService.add_atoms_to_new_line_item(
+                self.estimate, atoms, overrides={'bogus_field': 'x'},
+            )
+        self.assertIn('bogus_field', str(ctx.exception))
+        # And nothing was created.
+        self.assertEqual(EstimateLineItem.objects.filter(estimate=self.estimate).count(), 0)
+
+    def test_claim_conflict_still_raised_with_overrides(self):
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, atoms, overrides={'qty': Decimal('9')},
+        )
+        with self.assertRaises(EstimateClaimConflict):
+            EstimateWizardService.add_atoms_to_new_line_item(
+                self.estimate, atoms, overrides={'qty': Decimal('9')},
+            )
+
+    def test_draft_gating_still_enforced_with_overrides(self):
+        Estimate.objects.filter(pk=self.estimate.pk).update(status=Estimate.STATUS_OPEN)
+        self.estimate.refresh_from_db()
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        with self.assertRaises(ValidationError):
+            EstimateWizardService.add_atoms_to_new_line_item(
+                self.estimate, atoms, overrides={'qty': Decimal('9')},
+            )
+
+
 class AddAtomsToExistingLineItemTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')

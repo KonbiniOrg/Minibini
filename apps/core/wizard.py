@@ -11,6 +11,7 @@ Methods are classmethods so `cls` resolves the subclass's hooks/config.
 
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.db import transaction, IntegrityError
 
 
@@ -252,10 +253,22 @@ class BaseWizardService:
 
     # ── public: line items from atoms ──────────────────────────────────
     @classmethod
-    def add_atoms_to_new_line_item(cls, container, atoms):
+    def add_atoms_to_new_line_item(cls, container, atoms, *, overrides=None):
         """Create a new line item on `container` with the given atoms as
-        sources. `atoms` is a list of {'type': str, 'id': N} dicts."""
+        sources. `atoms` is a list of {'type': str, 'id': N} dicts.
+
+        overrides: optional {'description','qty','units','price'} applied
+        over the derived defaults before save (bundle-modal authoring). A
+        provided qty/price pair wins; partial overrides merge onto the
+        derivation. Claims/atomicity unchanged."""
         cls._validate_draft(container)
+
+        if overrides:
+            unknown = set(overrides) - {'description', 'qty', 'units', 'price'}
+            if unknown:
+                raise ValidationError(
+                    f"Unknown override field(s): {', '.join(sorted(unknown))}."
+                )
 
         instances = [cls._resolve_atom(a) for a in atoms]
         for inst in instances:
@@ -283,6 +296,16 @@ class BaseWizardService:
                 units = 'none'
                 qty = Decimal('1')
                 price = total_price
+
+        if overrides:
+            if 'description' in overrides:
+                description = overrides['description']
+            if 'qty' in overrides:
+                qty = overrides['qty']
+            if 'units' in overrides:
+                units = overrides['units']
+            if 'price' in overrides:
+                price = overrides['price']
 
         from apps.core.services import LineItemService
         try:

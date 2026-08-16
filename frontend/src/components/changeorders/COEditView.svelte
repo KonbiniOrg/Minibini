@@ -19,6 +19,7 @@
   import AtomCaptionRow from '../docsurface/AtomCaptionRow.svelte';
   import UncoveredWorkSection from '../docsurface/UncoveredWorkSection.svelte';
   import NewLineFromSelectedRow from '../docsurface/NewLineFromSelectedRow.svelte';
+  import BundleModal from '../docsurface/BundleModal.svelte';
   import QtyUnits from '../docsurface/QtyUnits.svelte';
 
   // Atom rows carry description/qty/price/amount (4, no leading # column in
@@ -236,16 +237,28 @@
     modalOpen = true;
   }
 
-  async function createLineFromSelected() {
-    try {
-      const newLine = await api.post(`${apiBase}/line-items-from-atoms/`, {
-        atoms: parseSelected(selected),
-      });
-      selected = [];
-      await openModalForCreatedLine(newLine);
-    } catch (e) {
-      await handleMutationError(e, 'Could not create a line from the selected atoms.');
-    }
+  // Bundle modal (Task 8): the dashed row's action opens BundleModal seeded
+  // with the selected atoms' raw pool data (sourcePool.atoms carries the
+  // qty/units/rate/amount BundleModal needs — uncoveredRows only has the
+  // formatted qty_display used for the picklist). The single-atom case
+  // still opens the modal (consistent gesture; the seed is just that
+  // atom's values) rather than the old direct-POST-then-edit-modal flow.
+  let bundleModalOpen = $state(false);
+  let bundleAtoms = $derived(
+    (sourcePool?.atoms || []).filter((a) => selected.includes(atomRowId(a)))
+  );
+
+  function openBundleModal() {
+    bundleModalOpen = true;
+  }
+  function handleBundleCreated() {
+    bundleModalOpen = false;
+    selected = [];
+    onChanged();
+  }
+  async function handleBundleConflict(e) {
+    bundleModalOpen = false;
+    await handleMutationError(e, 'Could not create a line from the selected atoms.');
   }
 
   async function billDirect(rowId) {
@@ -440,7 +453,8 @@
     {#if canEdit}
       <NewLineFromSelectedRow
         visible={selected.length > 0}
-        onCreate={createLineFromSelected}
+        onCreate={openBundleModal}
+        buttonLabel="Bundle into line…"
       />
     {/if}
   </tbody>
@@ -502,6 +516,15 @@
   {categories}
   onSaved={handleModalSaved}
   onClose={() => { modalOpen = false; }}
+/>
+
+<BundleModal
+  open={bundleModalOpen}
+  atoms={bundleAtoms}
+  {apiBase}
+  onCreated={handleBundleCreated}
+  onConflict={handleBundleConflict}
+  onClose={() => { bundleModalOpen = false; }}
 />
 
 <style>

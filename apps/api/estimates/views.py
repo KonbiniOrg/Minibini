@@ -195,8 +195,10 @@ class EstimateViewSet(
         """Create a new estimate line item from a list of atoms."""
         estimate = self.get_object()
         atoms = request.data.get('atoms', [])
+        overrides = request.data.get('overrides')
         try:
-            line_item = EstimateWizardService.add_atoms_to_new_line_item(estimate, atoms)
+            line_item = EstimateWizardService.add_atoms_to_new_line_item(
+                estimate, atoms, overrides=overrides)
         except EstimateClaimConflict as e:
             return Response(
                 {'detail': 'Some of these atoms are already claimed by another estimate.',

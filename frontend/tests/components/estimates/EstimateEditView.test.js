@@ -177,27 +177,45 @@ describe('EstimateEditView', () => {
     expect(row.querySelector('input[type="checkbox"]')).toBeDisabled();
   });
 
-  it('"New line from selected" POSTs line-items-from-atoms then opens the edit modal', async () => {
-    api.post.mockResolvedValue({ line_item_id: 99, line_number: 2, description: '', qty: '1', units: 'hour', price: '30.00', sources: [] });
-    const { findByRole, findByText, getByText, container } = render(EstimateEditView, {
+  it('"Bundle into line…" opens BundleModal seeded from the atom, and Create POSTs overrides + refreshes', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour', 'ea']);
+      return Promise.resolve({ results: [] });
+    });
+    api.post.mockResolvedValue({ line_item_id: 99, line_number: 2, description: 'Sand edges', qty: '1', units: 'hour', price: '30.00', sources: [] });
+    const onChanged = vi.fn();
+    const { findByRole, findByText, container } = render(EstimateEditView, {
       props: baseProps({
         sourcePool: poolWith([AVAILABLE_ATOM]),
         lineItems: [backedLine()],
+        onChanged,
       }),
     });
     await findByText('Sand edges');
     const checkbox = container.querySelector('input[type="checkbox"]');
     await fireEvent.click(checkbox);
 
-    const createBtn = await findByRole('button', { name: /create line/i });
-    await fireEvent.click(createBtn);
+    const bundleBtn = await findByRole('button', { name: /bundle into line/i });
+    await fireEvent.click(bundleBtn);
+
+    const dialog = await findByRole('dialog');
+    // Seeded from the single selected atom (AVAILABLE_ATOM: qty=1, rate=$30, hour).
+    expect(within(dialog).getByLabelText(/Quantity/)).toHaveValue(1);
+    expect(within(dialog).getByLabelText(/Price/)).toHaveValue(30);
+
+    await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
 
     expect(api.post).toHaveBeenCalledWith(
       '/api/estimates/7/line-items-from-atoms/',
-      { atoms: [{ type: 'task', id: 41 }] },
+      {
+        atoms: [{ type: 'task', id: 41 }],
+        overrides: { description: 'Sand edges', qty: '1', units: 'hour', price: '30.00' },
+      },
     );
-    expect(await findByRole('dialog')).toBeInTheDocument();
-    getByText('Edit Line Item');
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
+    // The bundle modal closes on success — no lingering dialog, no separate
+    // edit-modal follow-up (the bundle modal IS the authoring step).
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('Remove calls the DELETE endpoint (single-phase, no confirm param)', async () => {
@@ -291,7 +309,11 @@ describe('EstimateEditView', () => {
     expect(queryByText('Bill as its own line')).toBeNull();
   });
 
-  it('a 409 on "New line from selected" refreshes via onChanged and shows a clear conflict message', async () => {
+  it('a 409 on the bundle modal\'s Create refreshes via onChanged and shows a clear conflict message', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour', 'ea']);
+      return Promise.resolve({ results: [] });
+    });
     api.post.mockRejectedValueOnce(conflictError());
     const onChanged = vi.fn();
     const { findByRole, findByText, container } = render(EstimateEditView, {
@@ -304,12 +326,13 @@ describe('EstimateEditView', () => {
     await findByText('Sand edges');
     const checkbox = container.querySelector('input[type="checkbox"]');
     await fireEvent.click(checkbox);
-    const createBtn = await findByRole('button', { name: /create line/i });
-    await fireEvent.click(createBtn);
+    await fireEvent.click(await findByRole('button', { name: /bundle into line/i }));
+    const dialog = await findByRole('dialog');
+    await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
 
     await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(get(overlayMessage)?.text).toMatch(/claimed/i);
-    // The conflict path must not also open the edit modal (there is no new line).
+    // The conflict path closes the bundle modal (there is no new line).
     expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 });

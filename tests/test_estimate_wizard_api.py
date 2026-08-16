@@ -73,6 +73,33 @@ class EstimateWizardAPITest(TestCase):
         self.assertEqual(resp.status_code, 409)
         self.assertEqual(resp.json()['code'], 'atoms_already_claimed')
 
+    def test_line_items_from_atoms_applies_overrides(self):
+        """Task 8: bundle-modal overrides body key passes through and wins
+        over the derived defaults."""
+        url = f'/api/estimates/{self.estimate.pk}/line-items-from-atoms/'
+        payload = {
+            'atoms': [{'type': 'task', 'id': self.pt.pk}],
+            'overrides': {'description': 'Bundled setup', 'qty': '5',
+                          'units': 'ea', 'price': '42.50'},
+        }
+        resp = self.client.post(url, payload, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data['description'], 'Bundled setup')
+        self.assertEqual(Decimal(resp.data['qty']), Decimal('5'))
+        self.assertEqual(resp.data['units'], 'ea')
+        self.assertEqual(Decimal(resp.data['price']), Decimal('42.50'))
+
+    def test_line_items_from_atoms_unknown_override_key_returns_400(self):
+        url = f'/api/estimates/{self.estimate.pk}/line-items-from-atoms/'
+        payload = {
+            'atoms': [{'type': 'task', 'id': self.pt.pk}],
+            'overrides': {'nonsense': 'x'},
+        }
+        resp = self.client.post(url, payload, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('detail', resp.json())
+        self.assertEqual(EstimateLineItem.objects.filter(estimate=self.estimate).count(), 0)
+
     def test_add_atoms_to_existing_line_item(self):
         li = EstimateWizardService.add_atoms_to_new_line_item(
             self.estimate, [{'type': 'task', 'id': self.pt.pk}],
