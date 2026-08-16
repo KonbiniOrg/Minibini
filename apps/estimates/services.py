@@ -477,6 +477,20 @@ class EstimateService:
             li = EstimateLineItem.objects.get(pk=line_item_id)
         except EstimateLineItem.DoesNotExist:
             raise NotFoundError(f'EstimateLineItem {line_item_id} not found')
+
+        # work_declined is the acceptance-checklist "no work needed" mark —
+        # uniquely among line fields it is set-able on an ACCEPTED estimate
+        # (all other fields stay draft-only, handled below). A body mixing
+        # it with any other field is refused outright, on any estimate
+        # status, so the two update paths never blur together.
+        if 'work_declined' in kwargs:
+            if set(kwargs.keys()) != {'work_declined'}:
+                raise ValidationError(
+                    'work_declined must be updated on its own, not combined '
+                    'with other line-item fields.'
+                )
+            return EstimateService._set_work_declined(li, kwargs['work_declined'])
+
         if li.estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only modify line items on draft estimates.')
         from apps.core.services import LineItemService
@@ -507,6 +521,40 @@ class EstimateService:
                         qty_ordered=li.qty,
                         units=li.units,
                     )
+        return li
+
+    @staticmethod
+    def _set_work_declined(li, value):
+        """The acceptance-checklist "no work needed" mark (design doc
+        2026-08-15 "estimating structure"): reversible, set-able ONLY while
+        the parent estimate is accepted — draft lines are still editable
+        via the normal update path above (so a work_declined PATCH there is
+        refused, not silently accepted as a plain field write), and open is
+        deliberately inert (decisions wait for the checklist). Refused for
+        any line that isn't a plain hand line: atom-backed (has sources),
+        an adjustment, a deposit line, or carrying a catalog identity
+        (service_item / inventory_item / is_material) — those crystallize
+        instead of being declined."""
+        if li.estimate.status != Estimate.STATUS_ACCEPTED:
+            raise ValidationError(
+                'work_declined can only be set on an accepted estimate.'
+            )
+        if li.sources.exists():
+            raise ValidationError(
+                'Cannot decline a line item that already has claimed work.'
+            )
+        if li.adjustment_service_id is not None:
+            raise ValidationError('Cannot decline an adjustment line item.')
+        if li.accounting_category_id and li.accounting_category.is_deposit:
+            raise ValidationError('Cannot decline a deposit line item.')
+        if li.service_item_id is not None or li.inventory_item_id is not None or li.is_material:
+            raise ValidationError(
+                'Cannot decline a line item with a catalog identity.'
+            )
+        from apps.core.services import LineItemService
+        li.work_declined = value
+        li.full_clean()
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod

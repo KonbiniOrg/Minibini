@@ -595,6 +595,16 @@ class EstimateLineItem(BaseLineItem):
         related_name='+',
         help_text='Deferred service descriptor: crystallizes to a Task at acceptance.',
     )
+    work_declined = models.BooleanField(
+        default=False,
+        help_text=(
+            'The "no work needed" answer on the acceptance checklist: a job '
+            'manager marks a plain hand line (no sources, not an adjustment, '
+            'not a deposit line, no catalog identity) as declined instead of '
+            'minting a task from it. Set-able only while the estimate is '
+            'accepted; reversible (false = unanswered again).'
+        ),
+    )
 
     class Meta:
         db_table = 'est_li'

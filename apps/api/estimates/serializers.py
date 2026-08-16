@@ -182,6 +182,7 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail', 'service_item_detail',
             'sources', 'backing', 'backing_total', 'linked_deliverables',
+            'work_declined',
         ]
         # is_material is server-derived from the accounting category
         # (EstimateService._derive_is_material, RM 2026-08-11) — never
