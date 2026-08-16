@@ -433,15 +433,24 @@
 </table>
 
 {#if canEdit}
-  <UncoveredWorkSection
-    title="Unquoted work"
-    subtitle="Tasks and materials from this job not yet on this estimate."
-    rows={uncoveredRows}
-    bind:selected
-    directLabel="Add as its own line"
-    onDirect={billDirect}
-    emptyText="No unquoted tasks or materials."
-  />
+  {#if uncoveredRows.length === 0}
+    <!-- Empty pool: the whole section gives way to a plan-first pointer
+         (RM 2026-08-16) — a heading over an empty table taught nothing. -->
+    <p class="pool-empty-hint">
+      To build an estimate based on tasks and materials, add them in the
+      Tasks pane and they'll be listed below for line item reference.
+    </p>
+  {:else}
+    <UncoveredWorkSection
+      title="Unquoted work"
+      subtitle="Tasks and materials from this job not yet on this estimate."
+      rows={uncoveredRows}
+      bind:selected
+      directLabel="Add as its own line"
+      onDirect={billDirect}
+      emptyText="No unquoted tasks or materials."
+    />
+  {/if}
 {/if}
 
 <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />
@@ -521,6 +530,7 @@
 <style>
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
+  .pool-empty-hint { margin-top: 16px; color: #6b7280; font-size: 14px; }
   /* Matches the old LineItemTable's needs-category marker (send is blocked
      without an accounting_category — the estimator must see this before the
      send-time error). */

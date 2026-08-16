@@ -306,25 +306,16 @@
     }
   }
 
-  // Waits for the parent's (silent) refresh so `lineItems` reflects the
-  // server's authoritative copy of the just-created line, then opens the
-  // edit modal against THAT object — falling back to the raw POST response
-  // if the refreshed list doesn't contain it for some reason. Opening the
-  // modal only after the refresh resolves (never before) is what keeps this
-  // reliable now that InvoicePanel's refresh no longer unmounts this view.
-  async function openModalForCreatedLine(newLine) {
-    await onChanged();
-    modalItem = lineItems.find((li) => li.line_item_id === newLine.line_item_id) || newLine;
-    modalOpen = true;
-  }
-
+  // No post-create edit modal on either creation gesture (RM 2026-08-16,
+  // matching the estimate/CO surfaces): the line is complete as created;
+  // editing is the user's decision via the row's own Edit button.
   async function createLineFromSelected() {
     try {
-      const newLine = await api.post(`${apiBase}/line-items-from-atoms/`, {
+      await api.post(`${apiBase}/line-items-from-atoms/`, {
         atoms: parseSelected(selected),
       });
       selected = [];
-      await openModalForCreatedLine(newLine);
+      await onChanged();
     } catch (e) {
       await handleMutationError(e, 'Could not create a line from the selected atoms.');
     }
@@ -332,10 +323,10 @@
 
   async function billDirect(rowId) {
     try {
-      const newLine = await api.post(`${apiBase}/line-items-from-atoms/`, {
+      await api.post(`${apiBase}/line-items-from-atoms/`, {
         atoms: parseSelected([rowId]),
       });
-      await openModalForCreatedLine(newLine);
+      await onChanged();
     } catch (e) {
       await handleMutationError(e, 'Could not create a line from this atom.');
     }

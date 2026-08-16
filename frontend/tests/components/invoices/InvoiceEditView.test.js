@@ -240,12 +240,14 @@ describe('InvoiceEditView', () => {
     expect(container.textContent).toContain('New line from selected');
   });
 
-  it('"New line from selected" POSTs line-items-from-atoms then opens the edit modal', async () => {
+  it('"New line from selected" POSTs line-items-from-atoms with NO post-create edit modal (RM 2026-08-16)', async () => {
     api.post.mockResolvedValue({ line_item_id: 99, line_number: 2, description: '', qty: '1', units: 'hour', price: '30.00', sources: [] });
-    const { findByRole, findByText, getByText } = render(InvoiceEditView, {
+    const onChanged = vi.fn();
+    const { findByRole, findByText, queryByRole } = render(InvoiceEditView, {
       props: baseProps({
         sourcePool: poolWith([{ task_id: 1, name: 'Task', has_billable_atoms: true, atoms: [AVAILABLE_ATOM] }]),
         lineItems: [seededLine()],
+        onChanged,
       }),
     });
     await findByText('Sand edges');
@@ -259,8 +261,8 @@ describe('InvoiceEditView', () => {
       '/api/invoices/5/line-items-from-atoms/',
       { atoms: [{ type: 'task', id: 41 }] },
     );
-    expect(await findByRole('dialog')).toBeInTheDocument();
-    getByText('Edit Line Item');
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(queryByRole('dialog')).toBeNull();
   });
 
   it('a 409 on "New line from selected" refreshes via onChanged and shows a clear conflict message', async () => {
