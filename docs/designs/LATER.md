@@ -21,6 +21,25 @@ proper issue.
 
 ## Job & estimate lifecycle (decisions)
 
+- **Entering a flat fee is not intuitive.** — _added 2026-08-16 (RM,
+  estimating-structure review)_
+  Two compounding gaps. (1) There is no "flat" RateScheme algorithm and
+  nothing explains the intended shapes: a one-off flat fee is a plain
+  hand line (qty 1 × price; the line carries the money, then
+  mint-or-decline at acceptance), and a repeatable one is a ServiceItem
+  over an `entered_qty` scheme at qty 1 — neither is discoverable; RM
+  went looking for a flat algorithm. (2) The scheme-vs-catalog split is
+  a walkable dead end: RM created RateScheme "Setup fee" ($110/ea,
+  entered_qty) expecting it in the catalog search — but schemes are
+  never searchable, only ServiceItems/inventory items are, and the
+  scheme-creation surface gives no hint that a Service Item must wrap a
+  scheme to make it pickable. Fix candidates: an "also create a Service
+  Item for this scheme" affordance (or prompt) at scheme creation; copy
+  on the scheme manager explaining the split; a flat-fee example in the
+  estimating docs/UI.
+  _Done when:_ RM picks a direction and a new user can enter both flat-fee
+  shapes without this explanation._
+
 Status coupling, transitions, and what a job may do at each stage.
 
 - **Sending an estimate with no deliverables should at least require a
