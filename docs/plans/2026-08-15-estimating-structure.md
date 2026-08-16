@@ -145,9 +145,20 @@ Save-&-add-another once that ships); no multi-attach ever returns.
 - **Auto-release edge**: an accepted-now/start-later job walks onto the
   floor as soon as its checklist completes; RM accepts this (on_hold
   exists for genuine deferral).
-- **Transition/compat**: jobs already `approved` when this ships have no
-  checklist state; they must not strand — define a backfill rule
-  (probably: existing approved jobs count as all-answered).
+- **Transition/compat — SETTLED (RM 2026-08-15)**: existing approved
+  jobs count as all-answered; no data-repair pass needed (pre-production,
+  RM regenerates the dev dataset). Whatever representation "answered"
+  gets, the rule must hold for rows that predate it (e.g. treat
+  no-mark-on-an-already-approved-job as answered, or backfill at
+  migration time — implementer's choice, tested either way).
+  **Converter**: update the nealsdata converter in the same pass so
+  regenerated datasets are checklist-consistent — converted jobs at
+  `approved`/`in_progress`+ must not surface phantom unanswered hand
+  lines (their estimate hand lines get the answered/declined mark, or
+  whatever the representation's equivalent is). Converter changes MUST
+  run `tests.test_neals_builders`; `nealsmall.json`/nealseed stay
+  RM-managed — never regenerate those; `converted.json` is the
+  regenerable artifact.
 - **`maybe_complete_if_resolved` cascade** (from the release-to-floor
   LATER entry): with auto-release replacing the manual edge, re-check
   that a never-worked job's completion walk stays coherent.
