@@ -61,16 +61,15 @@ describe('JobHeader status pill', () => {
     expect(select.value).toBe('in_progress');
   });
 
-  it('labels the approved→in_progress transition "Release to floor" and patches it directly', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm');
+  it('does not offer the retired manual release-to-floor option on an approved job', () => {
+    // Task 6: approved→in_progress is auto-release-only now — the pill no
+    // longer offers a manual "release to floor" gesture.
     const approvedJob = { ...job, status: 'approved' };
     const { getByRole } = render(JobHeader, { props: { job: approvedJob } });
     const select = getByRole('combobox');
-    expect(optionLabels(select)).toContain('Release to floor');
-    await fireEvent.change(select, { target: { value: 'in_progress' } });
-    expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { status: 'in_progress' });
-    expect(confirmSpy).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
+    expect(optionValues(select)).not.toContain('in_progress');
+    expect(optionLabels(select)).not.toContain('Release to floor');
+    expect(optionValues(select)).toContain('cancelled');
   });
 
   it('does not offer Hold for pre-approval jobs', () => {
@@ -154,18 +153,21 @@ describe('JobHeader direct-approval gate (has_estimates)', () => {
 describe('JobHeader pill display after a transition', () => {
   it('shows the NEW current status once the job prop updates — not the next transition', async () => {
     // Native selects keep their selected INDEX when options re-render. The
-    // user picks index 1 ("Release to floor"); after the reload index 1 holds
-    // "Work Complete" — an uncontrolled select then displays a status one
-    // step ahead of reality (RM saw approved→"Work Complete" in one click).
+    // user picks index 1 ("Approved"); after the reload index 1 holds
+    // "Rejected" — an uncontrolled select then displays a status one step
+    // ahead of reality (RM saw approved→"Work Complete" in one click, before
+    // this was pinned against the approved→in_progress pill option; the
+    // gesture the bug was found on is retired, but the underlying index bug
+    // still needs a regression pin, so this now drives submitted→approved).
     api.patch.mockResolvedValue({});
-    const approvedJob = { ...job, status: 'approved' };
-    const { getByRole, rerender } = render(JobHeader, { props: { job: approvedJob } });
+    const submittedJob = { ...job, status: 'submitted', has_estimates: false };
+    const { getByRole, rerender } = render(JobHeader, { props: { job: submittedJob } });
     const select = getByRole('combobox');
-    await fireEvent.change(select, { target: { value: 'in_progress' } });
+    await fireEvent.change(select, { target: { value: 'approved' } });
     expect(api.patch).toHaveBeenCalledTimes(1);
     // Parent reloads and hands back the updated job.
-    await rerender({ job: { ...job, status: 'in_progress' } });
-    expect(select.value).toBe('in_progress');
+    await rerender({ job: { ...job, status: 'approved' } });
+    expect(select.value).toBe('approved');
     expect(select.selectedIndex).toBe(0);
   });
 });
@@ -320,10 +322,10 @@ describe('JobHeader per-job can_manage gating', () => {
     expect(queryByRole('button', { name: 'Edit' })).toBeNull();
   });
 
-  it('offers Release to floor in the pill for an approved job when job.can_manage is true', () => {
+  it('offers the pill transitions for an approved job when job.can_manage is true', () => {
     user.set({ permissions: [] });
     const approvedPmJob = { ...job, status: 'approved', can_manage: true };
     const { getByRole } = render(JobHeader, { props: { job: approvedPmJob } });
-    expect(optionLabels(getByRole('combobox'))).toContain('Release to floor');
+    expect(optionValues(getByRole('combobox'))).toContain('cancelled');
   });
 });

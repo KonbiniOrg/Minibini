@@ -154,9 +154,13 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         release-to-floor step."""
         from apps.estimates.change_order_service import ChangeOrderService
         from apps.jobs.services import JobService
-        # Rebuild the hold from in_progress.
+        # Rebuild the hold from in_progress. (Task 6: the manual
+        # approved->in_progress edge is retired for real callers, but this
+        # is test-fixture arrangement, not the gesture under test — use
+        # system_transition=True to build the starting state.)
         JobService.release_job(self.job.pk)
-        JobService.update_job(self.job.pk, status=Job.STATUS_IN_PROGRESS)
+        JobService.update_job(self.job.pk, status=Job.STATUS_IN_PROGRESS,
+                              system_transition=True)
         JobService.hold_job(self.job.pk, 'CO editing')
         co = ChangeOrderService.create(job_id=self.job.pk)
         _add_co_line(co)

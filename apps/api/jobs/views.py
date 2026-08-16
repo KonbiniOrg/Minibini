@@ -244,9 +244,13 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         if blockers:
             return Response({'blockers': blockers})
         try:
-            # Walk approved → in_progress → work_complete if needed.
+            # Walk approved → in_progress → work_complete if needed. The
+            # in_progress hop here is a system-driven intermediate step of
+            # this composite action, not a manual release — same reasoning
+            # as JobService.maybe_complete_if_resolved's walk.
             if job.status == Job.STATUS_APPROVED:
-                job = JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
+                job = JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS,
+                                               system_transition=True)
             job = JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
         except NotFoundError:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)

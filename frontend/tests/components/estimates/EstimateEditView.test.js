@@ -114,8 +114,11 @@ describe('EstimateEditView', () => {
     expect(atomRow.textContent).toContain('$25.00');
   });
 
-  it('ticking a pool row makes every line grow "Add selected here" and the placeholder row appears', async () => {
-    const { findByText, findAllByText, container } = render(EstimateEditView, {
+  it('ticking a pool row shows the "New line from selected" placeholder row, never a per-line attach gesture', async () => {
+    // Task 6: "Add selected here" (attach pool atoms to an existing line) is
+    // retired — composing atoms into lines happens only via the bundle
+    // modal / "New line from selected", never an in-table attach.
+    const { findByText, container } = render(EstimateEditView, {
       props: baseProps({
         sourcePool: poolWith([AVAILABLE_ATOM]),
         lineItems: [backedLine(), handLine()],
@@ -127,8 +130,7 @@ describe('EstimateEditView', () => {
     const checkbox = container.querySelector('input[type="checkbox"]');
     await fireEvent.click(checkbox);
 
-    const addHereButtons = await findAllByText('Add selected here');
-    expect(addHereButtons).toHaveLength(2);
+    expect(container.textContent).not.toContain('Add selected here');
     expect(container.textContent).toContain('New line from selected');
   });
 
@@ -167,27 +169,6 @@ describe('EstimateEditView', () => {
     const row = container.querySelector('tr.doc-unselectable-row');
     expect(row).not.toBeNull();
     expect(row.querySelector('input[type="checkbox"]')).toBeDisabled();
-  });
-
-  it('clicking a line\'s "Add selected here" POSTs add-atoms with the ticked ids', async () => {
-    api.post.mockResolvedValue({});
-    const { findByText, findAllByText, container } = render(EstimateEditView, {
-      props: baseProps({
-        sourcePool: poolWith([AVAILABLE_ATOM]),
-        lineItems: [backedLine()],
-      }),
-    });
-    await findByText('Sand edges');
-    const checkbox = container.querySelector('input[type="checkbox"]');
-    await fireEvent.click(checkbox);
-
-    const [addHereBtn] = await findAllByText('Add selected here');
-    await fireEvent.click(addHereBtn);
-
-    expect(api.post).toHaveBeenCalledWith(
-      '/api/estimates/7/line-items/1/add-atoms/',
-      { atoms: [{ type: 'task', id: 41 }] },
-    );
   });
 
   it('"New line from selected" POSTs line-items-from-atoms then opens the edit modal', async () => {
@@ -302,27 +283,6 @@ describe('EstimateEditView', () => {
     });
     expect(await findByText('Add as its own line')).toBeInTheDocument();
     expect(queryByText('Bill as its own line')).toBeNull();
-  });
-
-  it('a 409 on "Add selected here" clears selection, refreshes via onChanged, and shows a clear conflict message', async () => {
-    api.post.mockRejectedValueOnce(conflictError());
-    const onChanged = vi.fn();
-    const { findByText, findAllByText, container } = render(EstimateEditView, {
-      props: baseProps({
-        sourcePool: poolWith([AVAILABLE_ATOM]),
-        lineItems: [backedLine()],
-        onChanged,
-      }),
-    });
-    await findByText('Sand edges');
-    const checkbox = container.querySelector('input[type="checkbox"]');
-    await fireEvent.click(checkbox);
-    const [addHereBtn] = await findAllByText('Add selected here');
-    await fireEvent.click(addHereBtn);
-
-    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
-    expect(get(overlayMessage)?.kind).toBe('error');
-    expect(get(overlayMessage)?.text).toMatch(/claimed/i);
   });
 
   it('a 409 on "New line from selected" refreshes via onChanged and shows a clear conflict message', async () => {

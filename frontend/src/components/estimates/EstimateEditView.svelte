@@ -170,18 +170,6 @@
     }
   }
 
-  async function addSelectedToLine(li) {
-    try {
-      await api.post(`${apiBase}/line-items/${li.line_item_id}/add-atoms/`, {
-        atoms: parseSelected(selected),
-      });
-      selected = [];
-      onChanged();
-    } catch (e) {
-      await handleMutationError(e, 'Could not add the selected atoms to this line.');
-    }
-  }
-
   // Waits for the parent's (silent) refresh so `lineItems` reflects the
   // server's authoritative copy of the just-created line, then opens the
   // edit modal against THAT object — falling back to the raw POST response
@@ -300,9 +288,6 @@
             {#if canEdit}
               <button type="button" onclick={() => openEditItem(li)}>Edit</button>
               <button type="button" onclick={() => handleRemoveItem(li)}>Remove</button>
-              {#if selected.length > 0}
-                <button type="button" onclick={() => addSelectedToLine(li)}>Add selected here</button>
-              {/if}
             {/if}
             {#if onMakeDeliverable && (li.linked_deliverables || []).length === 0}
               <button type="button" onclick={() => onMakeDeliverable(li)}>Make Deliverable</button>

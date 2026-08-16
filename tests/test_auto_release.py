@@ -20,6 +20,7 @@ suite for cheaper single-field arrangement, does NOT fire it).
 """
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from apps.contacts.models import Contact
@@ -285,6 +286,27 @@ class MarkWorkStartedUnchangedTest(AutoReleaseBase):
         JobService.mark_work_started(job)
         job.refresh_from_db()
         self.assertEqual(job.status, Job.STATUS_DRAFT)
+
+
+class ManualReleaseBlockedTest(AutoReleaseBase):
+    """Task 6: the manual release-to-floor gesture is retired — a direct
+    PATCH-style `approved -> in_progress` write (system_transition=False,
+    the default) must be refused. System-side callers
+    (system_transition=True, e.g. maybe_auto_release) are unaffected — the
+    rest of this module already proves that half."""
+
+    def test_manual_approved_to_in_progress_is_refused(self):
+        job = self._job('MANUAL', status=Job.STATUS_APPROVED)
+        with self.assertRaises(ValidationError):
+            JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_APPROVED)
+
+    def test_system_transition_approved_to_in_progress_still_works(self):
+        job = self._job('SYS', status=Job.STATUS_APPROVED)
+        updated = JobService.update_job(
+            job.pk, status=Job.STATUS_IN_PROGRESS, system_transition=True)
+        self.assertEqual(updated.status, Job.STATUS_IN_PROGRESS)
 
 
 class PreClaimedCatalogLineAcceptanceSkipTest(AutoReleaseBase):

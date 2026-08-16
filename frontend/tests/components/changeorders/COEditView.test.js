@@ -255,6 +255,32 @@ describe('COEditView new-line-from-selected', () => {
       { atoms: [{ type: 'task', id: 41 }] },
     );
   });
+
+  it('never shows "Add selected here" on an added row, even with a pool atom ticked', async () => {
+    // Task 6: the attach-to-existing-line gesture is retired everywhere
+    // (estimate + CO); composing atoms into lines happens only via
+    // "New line from selected" / the bundle modal.
+    const { findByText, container } = render(COEditView, {
+      props: baseProps({
+        amended: amendedPayload([ADDED_ROW]),
+        sourcePool: {
+          atoms: [{
+            type: 'task', id: 41, description: 'Sand edges', qty: '1', rate: '30.00',
+            amount: '30.00', units: 'hour', state: 'available',
+            claiming_change_order_number: null, claiming_estimate_number: null,
+          }],
+        },
+      }),
+    });
+    await findByText('Sand edges');
+    expect(container.textContent).not.toContain('Add selected here');
+
+    const checkbox = container.querySelector('input[type="checkbox"]');
+    await fireEvent.click(checkbox);
+
+    expect(container.textContent).not.toContain('Add selected here');
+    expect(container.textContent).toContain('New line from selected');
+  });
 });
 
 describe('COEditView Replace… gestures', () => {

@@ -567,6 +567,20 @@ class JobService:
                 'the job status directly.'
             )
 
+        # Manual release-to-floor is retired: approved -> in_progress now
+        # happens only via auto-release (every checklist line answered) or
+        # another system-driven walk (timeslip-start, work-complete's
+        # intermediate hop, invoice-completion cascade) — never a direct
+        # status edit. Mirrors the direct-approval gate above.
+        if (status_changed and old_status == Job.STATUS_APPROVED
+                and job.status == Job.STATUS_IN_PROGRESS
+                and not system_transition):
+            raise ValidationError(
+                'Release to the floor happens automatically once the '
+                'estimate\'s checklist is fully answered — it cannot be '
+                'set directly.'
+            )
+
         # A held job is parked: no status changes except cancellation, which
         # (like release) requires any live change order to be resolved first
         # and drops the flag as part of the transition.
@@ -861,7 +875,8 @@ class JobService:
         # only the loose-material-stranded approved/in_progress cases arrive
         # here short of work_complete; their materials were just released).
         if job.status == Job.STATUS_APPROVED:
-            job = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
+            job = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS,
+                                        system_transition=True)
         if job.status == Job.STATUS_IN_PROGRESS:
             job = JobService.update_job(job.pk, status=Job.STATUS_WORK_COMPLETE)
         job = JobService.update_job(job.pk, status=Job.STATUS_COMPLETED)
@@ -884,7 +899,8 @@ class JobService:
         status — pre-APPROVED jobs are left alone, and the state machine
         forbids a direct jump from DRAFT/SUBMITTED to IN_PROGRESS."""
         if job.status == Job.STATUS_APPROVED:
-            JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
+            JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS,
+                                     system_transition=True)
 
     @staticmethod
     def maybe_auto_release(job):
@@ -1474,7 +1490,8 @@ class TaskLifecycleService:
         if all_terminal:
             try:
                 if job.status == Job.STATUS_APPROVED:
-                    JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
+                    JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS,
+                                             system_transition=True)
                 JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
             except ValidationError:
                 pass  # Pending task-less materials block auto-advance; task completion itself succeeds.

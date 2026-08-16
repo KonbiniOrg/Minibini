@@ -216,18 +216,6 @@
     }
   }
 
-  async function addSelectedToLine(row) {
-    try {
-      await api.post(`${apiBase}/line-items/${row.co_line_id}/add-atoms/`, {
-        atoms: parseSelected(selected),
-      });
-      selected = [];
-      onChanged();
-    } catch (e) {
-      await handleMutationError(e, 'Could not add the selected atoms to this line.');
-    }
-  }
-
   // Waits for the parent's (silent) refresh so `co.line_items` reflects the
   // server's authoritative copy of the just-created line, then opens the
   // edit modal against it — falling back to the raw POST response if the
@@ -432,9 +420,6 @@
             <td>
               <button type="button" onclick={() => openEditAdded(row)}>Edit</button>
               <button type="button" onclick={() => deleteCOLine(row.co_line_id, 'Could not remove line item.')}>Remove</button>
-              {#if selected.length > 0}
-                <button type="button" onclick={() => addSelectedToLine(row)}>Add selected here</button>
-              {/if}
             </td>
           {/if}
         </tr>

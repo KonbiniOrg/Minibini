@@ -28,10 +28,17 @@
   // →completed/→cancelled). The pill also carries *trigger* options that are
   // not statuses (values prefixed __): "Hold…" opens the reason modal and
   // "Release hold" posts the release — on_hold stays a flag, never a status.
+  //
+  // approved→in_progress ("release to floor") is deliberately absent: the
+  // manual gesture is retired (docs/plans/2026-08-15-estimating-structure.md
+  // "Auto-release replaces release to floor") — the job advances on its own
+  // once the estimate's checklist is fully answered. The model edge itself
+  // stays (JobService.update_job still refuses a manual PATCH, but system
+  // transitions — auto-release, timeslip-start — use it).
   const VALID_TRANSITIONS = {
     draft: ['submitted', 'rejected'],
     submitted: ['approved', 'rejected'],
-    approved: ['in_progress', 'cancelled'],
+    approved: ['cancelled'],
     in_progress: ['work_complete', 'cancelled'],
     work_complete: ['in_progress'],
     rejected: [],
@@ -54,10 +61,11 @@
     return STATUS_LABELS[s] || s;
   }
 
-  // Trigger labels: the pill names the *act*, not the resulting status, where
-  // the act is the clearer read (releasing an approved job to the floor).
+  // Trigger labels: the pill names the *act*, not the resulting status, for
+  // triggers where the act is the clearer read. (approved→in_progress used
+  // to be one of these — "Release to floor" — but that manual gesture is
+  // retired; see VALID_TRANSITIONS above.)
   function transitionLabel(next) {
-    if (job.status === 'approved' && next === 'in_progress') return 'Release to floor';
     return statusLabel(next);
   }
 
