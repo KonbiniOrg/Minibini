@@ -52,6 +52,34 @@
   );
   let qtyValid = $derived(qty !== '' && Number.isFinite(Number(qty)) && Number(qty) > 0);
 
+  // Mirrors BaseWizardService._uniform_money_bundle (apps/core/wizard.py) —
+  // see that method's docstring for the authoritative rule. This is an
+  // APPROXIMATION: the source-pool atom shape only exposes each task's
+  // effective_rate + unit_label, not the raw stamped `rate`/
+  // `active_modifiers` the backend actually compares, so this checks
+  // "all tasks, same units, same effective rate" instead. That's fine for
+  // seeding purposes only — the modal always sends description/qty/units/
+  // price as explicit overrides (WYSIWYG), so a seed that doesn't exactly
+  // match the backend's own (now-unused, once overrides are present)
+  // derivation can never cause the created line to differ from what's
+  // displayed. If wizard.py's uniformity rule changes, check this too.
+  function deriveMultiAtomSeed(selectedAtoms, summedTotal) {
+    const allTasks = selectedAtoms.every((a) => a.type === 'task');
+    const units = new Set(selectedAtoms.map((a) => a.units || 'none'));
+    const rates = new Set(selectedAtoms.map((a) => a.rate));
+    if (allTasks && selectedAtoms[0].rate != null && units.size === 1 && rates.size === 1) {
+      const qty = selectedAtoms.reduce((sum, a) => sum + (Number(a.qty) || 0), 0);
+      return {
+        description: '', qty: String(qty),
+        units: selectedAtoms[0].units || 'none', price: selectedAtoms[0].rate,
+      };
+    }
+    // Not a uniform task bundle (mixed atom types, or differing units/rate)
+    // — plain lump sum. Keep-total's qty->price re-derivation is the tool
+    // for reshaping this, so there's no need to guess further here.
+    return { description: '', qty: '1', units: 'none', price: summedTotal.toFixed(2) };
+  }
+
   $effect(() => {
     if (open) {
       keepTotal = true;
@@ -64,15 +92,11 @@
         units = a.units || 'none';
         price = a.rate ?? '';
       } else {
-        // Multi-atom seed is a deliberately plain lump sum (qty=1, price=
-        // total) rather than trying to mirror the backend's uniform-bundle
-        // detection — keep-total's qty->price re-derivation is exactly the
-        // tool for reshaping that lump sum, so there's no need to guess a
-        // "smarter" starting split here.
-        description = '';
-        qty = '1';
-        units = 'none';
-        price = total.toFixed(2);
+        const seed = deriveMultiAtomSeed(atoms, total);
+        description = seed.description;
+        qty = seed.qty;
+        units = seed.units;
+        price = seed.price;
       }
     }
   });

@@ -20,6 +20,21 @@ const MULTI_ATOMS = [
   { type: 'material', id: 9, description: 'Steel', qty: '3', units: 'none', rate: '5.00', amount: '15.00' },
 ];
 
+// Three same-rate, same-unit tasks — the client-side mirror of
+// BaseWizardService._uniform_money_bundle (apps/core/wizard.py) should
+// seed qty=12 (summed), units='hour', price='25.00' (the shared rate).
+const UNIFORM_TASK_ATOMS = [
+  { type: 'task', id: 1, description: 'Cut A', qty: '4', units: 'hour', rate: '25.00', amount: '100.00' },
+  { type: 'task', id: 2, description: 'Cut B', qty: '4', units: 'hour', rate: '25.00', amount: '100.00' },
+  { type: 'task', id: 3, description: 'Cut C', qty: '4', units: 'hour', rate: '25.00', amount: '100.00' },
+];
+
+// Same rate but a differing unit — must NOT be treated as uniform.
+const DIFFERING_UNITS_ATOMS = [
+  { type: 'task', id: 1, description: 'Cut A', qty: '4', units: 'hour', rate: '25.00', amount: '100.00' },
+  { type: 'task', id: 2, description: 'Cut B', qty: '4', units: 'ea', rate: '25.00', amount: '100.00' },
+];
+
 function conflictError() {
   return Object.assign(new Error('Some atoms were claimed by another estimate.'), {
     status: 409,
@@ -73,12 +88,37 @@ describe('BundleModal', () => {
     expect(await findByLabelText(/Price/)).toHaveValue(30);
   });
 
-  it('multi-atom seed: description blank, qty=1, price=the summed total', async () => {
+  it('mixed multi-atom seed (task + material) stays a lump: description blank, qty=1, price=summed total', async () => {
     const { findByRole, findByLabelText } = render(BundleModal, { props: baseProps({ atoms: MULTI_ATOMS }) });
     await findByRole('dialog');
     expect(await findByLabelText(/Description/)).toHaveValue('');
     expect(await findByLabelText(/Quantity/)).toHaveValue(1);
     expect(await findByLabelText(/Price/)).toHaveValue(75);
+  });
+
+  it('uniform multi-atom seed (same-rate, same-unit tasks): qty=summed, units=shared, price=shared rate', async () => {
+    const { findByRole, findByLabelText } = render(BundleModal, {
+      props: baseProps({ atoms: UNIFORM_TASK_ATOMS }),
+    });
+    await findByRole('dialog');
+    expect(await findByLabelText(/Description/)).toHaveValue('');
+    // 4 + 4 + 4 = 12 hours, at the shared $25.00 rate.
+    expect(await findByLabelText(/Quantity/)).toHaveValue(12);
+    expect(await findByLabelText(/Price/)).toHaveValue(25);
+    const units = await findByLabelText(/Units/);
+    expect(units).toHaveValue('hour');
+    // Uniform seed keeps the invariant true from the start: 12 * $25 = $300 = total.
+    const checkbox = await findByLabelText(/keep total/i);
+    expect(checkbox.closest('label').textContent).toContain('$300.00');
+  });
+
+  it('same rate but differing units is NOT treated as uniform: falls back to the lump seed', async () => {
+    const { findByRole, findByLabelText } = render(BundleModal, {
+      props: baseProps({ atoms: DIFFERING_UNITS_ATOMS }),
+    });
+    await findByRole('dialog');
+    expect(await findByLabelText(/Quantity/)).toHaveValue(1);
+    expect(await findByLabelText(/Price/)).toHaveValue(200); // 100 + 100
   });
 
   it('keep-total is ON by default and shows the target amount', async () => {

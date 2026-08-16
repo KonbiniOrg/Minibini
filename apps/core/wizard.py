@@ -187,7 +187,16 @@ class BaseWizardService:
         Uniformity is judged on the tasks' own money fields, not on
         `source_scheme` provenance — two tasks stamped from different
         presets (or one stamped and one hand-edited) still bundle if their
-        current rate/unit/modifiers agree (task-owned-money Phase 1)."""
+        current rate/unit/modifiers agree (task-owned-money Phase 1).
+
+        Mirrored client-side (approximately — the source-pool atom shape
+        exposes effective_rate + unit_label but not the raw stamped
+        `rate`/`active_modifiers` this method compares) by BundleModal's
+        `deriveMultiAtomSeed`
+        (frontend/src/components/docsurface/BundleModal.svelte) to seed
+        the bundle modal's qty/units/price fields for a uniform multi-atom
+        selection. If this method's uniformity rule changes, check that
+        seed function too."""
         task_model = cls._task_model()
         if not instances or not all(isinstance(i, task_model) for i in instances):
             return None
