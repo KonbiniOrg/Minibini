@@ -220,26 +220,6 @@
     }
   }
 
-  // Waits for the parent's (silent) refresh so `co.line_items` reflects the
-  // server's authoritative copy of the just-created line, then opens the
-  // edit modal against it — falling back to the raw POST response if the
-  // refreshed list doesn't contain it for some reason (mirrors
-  // EstimateEditView's openModalForCreatedLine).
-  async function openModalForCreatedLine(newLine) {
-    await onChanged();
-    const li = (co.line_items || []).find((x) => x.line_item_id === newLine.line_item_id) || newLine;
-    modalLineItemId = li.line_item_id;
-    modalTargetLineItem = null;
-    modalVariant = 'edit-fields';
-    modalInitialDescription = li.description || '';
-    modalInitialQty = li.qty ?? '';
-    modalInitialUnits = li.units || 'none';
-    modalInitialPrice = li.price ?? '';
-    modalInitialAC = li.accounting_category ?? '';
-    modalNeedsAC = true;
-    modalOpen = true;
-  }
-
   // Bundle modal (Task 8): the dashed row's action opens BundleModal seeded
   // with the selected atoms' raw pool data (sourcePool.atoms carries the
   // qty/units/rate/amount BundleModal needs — uncoveredRows only has the
@@ -266,10 +246,13 @@
 
   async function billDirect(rowId) {
     try {
-      const newLine = await api.post(`${apiBase}/line-items-from-atoms/`, {
+      // Create the line and stop — no post-create edit modal (RM
+      // 2026-08-16): the line is complete as projected; editing is the
+      // user's decision via the row's own Edit button.
+      await api.post(`${apiBase}/line-items-from-atoms/`, {
         atoms: parseSelected([rowId]),
       });
-      await openModalForCreatedLine(newLine);
+      await onChanged();
     } catch (e) {
       await handleMutationError(e, 'Could not create a line from this atom.');
     }

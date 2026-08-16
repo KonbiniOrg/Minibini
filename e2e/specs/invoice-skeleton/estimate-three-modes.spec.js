@@ -88,8 +88,8 @@ test('three-mode estimate surface: merge into a new line, reorder it, customer v
   await test.step('A single uncovered atom can be billed directly as its own line', async () => {
     const rowC = page.locator('tr').filter({ hasText: taskCName });
     await rowC.getByRole('button', { name: 'Add as its own line' }).click();
-    await expect(page.getByRole('heading', { name: 'Edit Line Item' })).toBeVisible();
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    // No post-create edit modal (RM 2026-08-16): the line just appears;
+    // editing is the user's decision via the row's own Edit button.
     await expect(page.getByRole('heading', { name: 'Edit Line Item' })).toHaveCount(0);
 
     const row = lineRow(taskCName);
