@@ -592,6 +592,15 @@ class ChangeOrderService:
             co = ChangeOrder.objects.get(pk=co_pk)
         except ChangeOrder.DoesNotExist:
             raise NotFoundError(f'ChangeOrder {co_pk} not found')
+        # work_declined is an EstimateLineItem-only field (the acceptance
+        # checklist's mark); ChangeOrderLineItem has no such column, so
+        # forwarding it into the constructor below would TypeError into a
+        # raw 500. Reject it explicitly instead, in the same contract shape
+        # as every other creation-time refusal here.
+        if 'work_declined' in kwargs:
+            raise ValidationError(
+                'work_declined is not a valid field for change order line items.'
+            )
         if co.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft change orders.')
         from apps.core.services import LineItemService

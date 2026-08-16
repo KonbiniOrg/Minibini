@@ -14,8 +14,12 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.contacts.models import Contact
-from apps.core.models import AccountingCategory, User
-from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource
+from apps.core.models import AccountingCategory, Configuration, User
+from apps.estimates.change_order_service import ChangeOrderService
+from apps.estimates.models import (
+    ChangeOrder, ChangeOrderLineItem, Estimate, EstimateLineItem,
+    EstimateLineItemSource, ServiceItem,
+)
 from apps.estimates.services import EstimateService
 from apps.inventory.models import InventoryItem
 from apps.jobs.models import Job, RateScheme, Task
@@ -169,6 +173,84 @@ class WorkDeclinedServiceLevelTest(WorkDeclinedSetup):
         self._accept()
         with self.assertRaises(ValidationError):
             EstimateService.update_line_item(catalog_line.pk, work_declined=True)
+
+    def test_refused_for_service_item_line(self):
+        scheme = RateScheme.objects.create(
+            name='Setup', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
+        )
+        service_item = ServiceItem.objects.create(
+            template_name='Setup Service', rate_scheme=scheme,
+        )
+        svc_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=2, description='Deferred service',
+            qty=Decimal('1'), price=Decimal('100.00'),
+            accounting_category=self.cat, service_item=service_item,
+        )
+        self._accept()
+        with self.assertRaises(ValidationError):
+            EstimateService.update_line_item(svc_line.pk, work_declined=True)
+
+    def test_refused_for_is_material_line(self):
+        material_cat = AccountingCategory.objects.create(
+            name='Materials', code='WD-MAT', is_active=True,
+        )
+        Configuration.objects.create(
+            key='default_material_accounting_category', value=str(material_cat.pk),
+        )
+        material_line = EstimateService.add_line_item(
+            self.estimate.pk, description='Bare material', qty=Decimal('1'),
+            price=Decimal('15.00'), accounting_category=material_cat.pk,
+        )
+        self.assertTrue(material_line.is_material)
+        self._accept()
+        with self.assertRaises(ValidationError):
+            EstimateService.update_line_item(material_line.pk, work_declined=True)
+
+
+class WorkDeclinedCreatePathTest(WorkDeclinedSetup):
+    """work_declined must never be settable at line-creation time — it
+    answers a question that only exists for a line that's already been
+    created and the estimate accepted."""
+
+    def test_add_line_item_rejects_work_declined(self):
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.add_line_item(
+                self.estimate.pk, description='Sneaky', qty=Decimal('1'),
+                price=Decimal('5.00'), accounting_category=self.cat.pk,
+                work_declined=True,
+            )
+        self.assertIn('creation', str(ctx.exception).lower())
+        self.assertEqual(
+            EstimateLineItem.objects.filter(estimate=self.estimate).count(), 1,
+        )  # only the setUp hand_line — nothing got created
+
+    def test_add_line_item_rejects_work_declined_even_with_catalog_identity(self):
+        """The finding's exact repro: inventory_item + work_declined:true
+        must not create an already-declined catalog line."""
+        item = InventoryItem.objects.create(
+            code='WD-ITEM-CREATE-1', accounting_category=self.cat,
+            selling_price=Decimal('20.00'),
+        )
+        with self.assertRaises(ValidationError):
+            EstimateService.add_line_item(
+                self.estimate.pk, description='Catalog pick', qty=Decimal('1'),
+                price=Decimal('20.00'), accounting_category=self.cat.pk,
+                inventory_item=item.pk, work_declined=True,
+            )
+        self.assertFalse(
+            EstimateLineItem.objects.filter(inventory_item=item).exists()
+        )
+
+    def test_change_order_add_line_item_rejects_work_declined(self):
+        co = ChangeOrder.objects.create(job=self.job, estimate=self.estimate)
+        with self.assertRaises(ValidationError):
+            ChangeOrderService.add_line_item(
+                co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+                description='Sneaky CO line',
+                qty=Decimal('1'), price=Decimal('5.00'),
+                accounting_category=self.cat.pk, work_declined=True,
+            )
 
 
 class WorkDeclinedAPITest(WorkDeclinedSetup):

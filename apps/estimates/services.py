@@ -383,6 +383,15 @@ class EstimateService:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {estimate_pk} not found')
+        # work_declined is the acceptance-checklist mark — it answers a
+        # question that doesn't exist yet for a line that hasn't been
+        # created. Reject rather than silently strip: this model's field
+        # existing at all means a bare `EstimateLineItem(**kwargs)` would
+        # otherwise happily set it at creation time, on a draft estimate,
+        # bypassing both the accepted-only gate and the four refusals in
+        # _set_work_declined.
+        if 'work_declined' in kwargs:
+            raise ValidationError('work_declined cannot be set at line creation.')
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft estimates.')
         from apps.core.services import LineItemService
