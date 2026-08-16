@@ -4,9 +4,9 @@
 // Reorder) that replaced the old two-mode lines/wizard toggle.
 //
 // This spec drives the estimator's core Edit-mode gesture end to end: tick
-// two uncovered work rows, "New line from selected" (the "Create line"
-// button in NewLineFromSelectedRow's placeholder row), name the merged line
-// in the edit modal, and see it come back with a "planned work" BackingChip
+// two uncovered work rows, "Bundle into line…" (NewLineFromSelectedRow's
+// placeholder-row button, Task 8) opens BundleModal; name the merged line
+// there and Create, and see it come back with a "planned work" BackingChip
 // (apps/api/estimates/serializers.py derive_estimate_backing rule 3 — an
 // in-sync task-sourced line). A second, single-atom line ("Add as its own
 // line") gives the doc two lines to exercise Reorder mode's up/down arrows
@@ -64,17 +64,13 @@ test('three-mode estimate surface: merge into a new line, reorder it, customer v
     await rowB.locator('input[type="checkbox"]').check();
 
     await expect(page.getByText('＋ New line from selected')).toBeVisible();
-    await page.getByRole('button', { name: 'Create line' }).click();
+    await page.getByRole('button', { name: 'Bundle into line…' }).click();
 
-    await expect(page.getByRole('heading', { name: 'Edit Line Item' })).toBeVisible();
-    await page.getByLabel(/Description/).fill(mergedName);
-    // Two different atoms MIGHT land on different accounting categories
-    // (category collapses to null when they disagree) — pick one explicitly
-    // so Save never trips the modal's own required-category validation,
-    // same as a real estimator naming a merged line.
-    await page.getByLabel(/Accounting Category/).selectOption({ index: 1 });
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Edit Line Item' })).toHaveCount(0);
+    const modal = page.getByRole('dialog');
+    await expect(modal).toContainText('Bundle into line');
+    await modal.getByLabel('Description').fill(mergedName);
+    await modal.getByRole('button', { name: 'Create line' }).click();
+    await expect(modal).toBeHidden();
   });
 
   // Scoped to rows carrying a BackingChip — the parent line row, never the

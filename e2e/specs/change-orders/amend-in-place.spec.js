@@ -192,7 +192,7 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
     await expect(tfoot).toContainText(fmtTotal(after.revised_total));
   });
 
-  await test.step('"New line from selected" in Uncovered work adds a tinted CO add row carrying the atom', async () => {
+  await test.step('"Bundle into line…" in Uncovered work adds a tinted CO add row carrying the atom', async () => {
     const pool = page.locator('.uncovered-work-section');
     const poolRow = pool.locator('tbody tr').filter({ hasText: tasks.Uncovered.name });
     await expect(poolRow).toBeVisible();
@@ -200,12 +200,11 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
 
     const createRow = page.locator('tr.doc-newline');
     await expect(createRow).toBeVisible();
-    await createRow.getByRole('button', { name: 'Create line' }).click();
+    await createRow.getByRole('button', { name: 'Bundle into line…' }).click();
 
     const dialog = page.getByRole('dialog');
-    await expect(dialog).toContainText('Edit Line');
-    await dialog.getByLabel(/Accounting Category/).selectOption({ index: 1 });
-    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(dialog).toContainText('Bundle into line');
+    await dialog.getByRole('button', { name: 'Create line' }).click();
     await expect(dialog).toBeHidden();
 
     const after = await amended();
