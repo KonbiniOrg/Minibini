@@ -1053,10 +1053,15 @@ class JobDetailInvoiceFieldTest(TestCase):
         # +1 for `has_estimates` (2026-07-19): the job-detail serializer runs one
         # estimate_set.exists() so the header pill can offer direct Approved only
         # on estimate-less jobs (approval otherwise flows from estimate acceptance).
+        # +1 for `has_accepted_estimate` (final-review fix, 2026-08-16): a second
+        # estimate_set.filter(status=ACCEPTED).exists() so the header pill can
+        # offer the manual approved -> in_progress edge only on jobs with no
+        # accepted estimate (mirrors JobService.update_job's guard) — distinct
+        # from has_estimates (any estimate, any status).
         # If the jobs viewset gains new prefetches/annotations this number may need
         # updating — update it together with a comment explaining why the count changed.
         self.assertEqual(
-            count_one, 16,
-            f'Absolute query count for job-detail changed: expected 16, got {count_one}. '
+            count_one, 17,
+            f'Absolute query count for job-detail changed: expected 17, got {count_one}. '
             f'Update this pin if the viewset legitimately changed (add a comment explaining why).',
         )

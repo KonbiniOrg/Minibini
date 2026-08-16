@@ -110,8 +110,10 @@ class EstimateViewSet(
     # 'line_items' stays in get_permissions' mixed_actions so GET is IsAuthenticated
     # and POST requires CanManageJobOrPM. Direct line authoring is supported again
     # (typed hand-lines crystallize into Tasks/Materials at acceptance; plain
-    # hand-lines stay document-only); atom-backed lines still come
-    # via line-items-from-atoms / add-atoms.
+    # hand-lines stay document-only); atom-backed lines still come via
+    # line-items-from-atoms (composing a NEW line) — attaching atoms onto an
+    # EXISTING line (add-atoms) is retired, API-level, docs/plans/
+    # 2026-08-15-estimating-structure.md "Removals".
 
     def line_item_update_kwargs(self, request):
         # The Make Deliverable edit dialog's "update both" choice (RM
@@ -207,32 +209,6 @@ class EstimateViewSet(
             )
         serializer = EstimateLineItemSerializer(line_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(
-        detail=True, methods=['post'],
-        url_path=r'line-items/(?P<line_item_pk>[^/.]+)/add-atoms',
-    )
-    def add_atoms(self, request, pk=None, line_item_pk=None):
-        """Append atoms to an existing line item."""
-        estimate = self.get_object()
-        try:
-            line_item = EstimateLineItem.objects.get(pk=line_item_pk, estimate=estimate)
-        except EstimateLineItem.DoesNotExist:
-            return Response({'detail': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        atoms = request.data.get('atoms', [])
-        try:
-            EstimateWizardService.add_atoms_to_line_item(line_item, atoms)
-        except EstimateClaimConflict as e:
-            return Response(
-                {'detail': 'Some of these atoms are already claimed by another estimate.',
-                 'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        line_item.refresh_from_db()
-        serializer = EstimateLineItemSerializer(line_item)
-        return Response(serializer.data)
 
     @action(
         detail=True, methods=['post'],

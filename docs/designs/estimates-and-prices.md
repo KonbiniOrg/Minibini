@@ -1277,8 +1277,17 @@ Estimate wizard endpoints live on `EstimateViewSet`
 |---|---|---|
 | `GET /api/estimates/{id}/source-pool/` | `source_pool` | `EstimateWizardService.get_source_pool(estimate)` — drawn from the job's Tasks/Materials |
 | `POST /api/estimates/{id}/line-items-from-atoms/` | `line_items_from_atoms` | `add_atoms_to_new_line_item(estimate, atoms, overrides=overrides)` |
-| `POST /api/estimates/{id}/line-items/{lid}/add-atoms/` | `add_atoms` | `add_atoms_to_line_item(line_item, atoms)` |
 | `POST /api/estimates/{id}/line-items/{lid}/remove-atoms/` | `remove_atoms` | `remove_atoms_from_line_item(line_item, source_ids)` |
+
+**Removed (final-review fix, 2026-08-16, docs/plans/2026-08-15-estimating-
+structure.md "Removals"):** `POST /api/estimates/{id}/line-items/{lid}/
+add-atoms/` ("Add selected here" — attaching pool atoms onto an already-
+existing line) is gone at the API level; composing atoms into a line only
+ever happens via `line-items-from-atoms` (a NEW line, through the bundle
+modal). The change-order equivalent (§14.8) is retired the same way. The
+underlying `add_atoms_to_line_item` service method is unchanged and still
+shared by the invoice side (§8.4 below / `invoicing-and-expenses.md`),
+which keeps its own `add-atoms` endpoint.
 
 Request body shape for atoms: `{atoms: [{type: 'task'|'material', id: N}, ...]}`.
 `line-items-from-atoms` also accepts an optional `overrides` body key
@@ -2280,9 +2289,11 @@ is exempt from the bare-add-line AC send guard (§14.4 above —
 since a claimed atom already carries its own AC.
 
 Endpoints (§14.8): `GET .../source-pool/`, `POST .../line-items-from-atoms/`,
-`POST .../line-items/{lid}/add-atoms/`, `POST .../line-items/{lid}/remove-atoms/`
-— identical body/response shape to the estimate wizard's equivalents, 409
-`atoms_already_claimed` on a claim conflict. Each mutating action also
+`POST .../line-items/{lid}/remove-atoms/` — identical body/response shape
+to the estimate wizard's equivalents, 409 `atoms_already_claimed` on a
+claim conflict. (`POST .../line-items/{lid}/add-atoms/` is retired
+API-level, §8.3 above — `add_atoms_to_line_item`'s add-lines-only override
+stays as service-layer behavior, just unreachable via HTTP now.) Each mutating action also
 re-runs `ChangeOrderService.recompute_adjustment_replaces(co)` (§14.4c,
 "Adjustment-replace amendment") so claiming/releasing an atom on a line an
 adjustment-replace targets recomputes that percentage immediately.
@@ -2553,10 +2564,12 @@ are resolved).
 - `POST /api/change-orders/{id}/line-items-from-atoms/` — create a new
   `add` line from a set of atoms (mirrors §8's estimate action); accepts
   the same optional `overrides` body key (Task 8, §12.1a)
-- `POST /api/change-orders/{id}/line-items/{lid}/add-atoms/` /
-  `POST /api/change-orders/{id}/line-items/{lid}/remove-atoms/` —
-  append/detach atoms on an existing CO line (409 `atoms_already_claimed`
-  on a claim conflict, same contract as the estimate side)
+- `POST /api/change-orders/{id}/line-items/{lid}/remove-atoms/` — detach
+  atoms from an existing CO line (409 `atoms_already_claimed` on a claim
+  conflict, same contract as the estimate side). The sibling `add-atoms/`
+  action (append onto an existing line) is retired API-level (2026-08-16
+  final-review fix) — composing atoms into a line only happens via
+  `line-items-from-atoms` above, never an in-table attach.
 - `GET /api/change-orders/{id}/send-defaults/` — pre-populated
   send-to-customer form fields (to / subject / body with the portal
   link; `attachments_preview` lists the auto-attached CO PDF)

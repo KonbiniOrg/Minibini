@@ -176,6 +176,76 @@ class MaybeAutoReleaseAllCatalogTest(AutoReleaseBase):
         self.assertTrue(Task.objects.filter(job=job).exists())
 
 
+class MaybeAutoReleaseZeroLinesTest(AutoReleaseBase):
+    """Finding 5b (final review): a zero-line accepted estimate still
+    auto-releases — vacuously, `unanswered_lines` is empty because there
+    are no lines at all to be unanswered, so the checklist is trivially
+    satisfied. Pins the current (intentional) behavior.
+
+    A REAL draft->open->accepted walk can't reach zero lines (the model
+    refuses to leave draft without at least one line item — see
+    Estimate.save()'s VALID_TRANSITIONS check), so this drives status
+    straight to ACCEPTED (the same bypass style as UnansweredLinesTest
+    above) and calls maybe_auto_release directly — the same call every
+    real trigger point (on_accept, mint, decline) makes."""
+
+    def test_zero_line_estimate_releases(self):
+        job = self._job('ZERO', status=Job.STATUS_APPROVED)
+        estimate = self._estimate(job, 'ZERO')
+        Estimate.objects.filter(pk=estimate.pk).update(status=Estimate.STATUS_ACCEPTED)
+
+        self.assertFalse(EstimateService.unanswered_lines(estimate).exists())
+        JobService.maybe_auto_release(job)
+        job.refresh_from_db()
+
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
+        self.assertFalse(Task.objects.filter(job=job).exists())
+
+
+class CancelledMintedTaskStillAnsweredTest(AutoReleaseBase):
+    """Finding 4 (final review, RM-requested pin — spec's open questions
+    "Bad mint recovery"): a minted task that is later CANCELLED must NOT
+    reopen its line's checklist state. Cancelling a task never touches the
+    EstimateLineItemSource claim row, so the line stays answered and the
+    job stays released — the recovery path for a bad mint is editing (or
+    re-minting under a fresh line), never an implicit reopen."""
+
+    def test_cancel_minted_task_leaves_line_answered_and_job_released(self):
+        from apps.jobs.services import TaskLifecycleService
+
+        job = self._job('CANCELMINT')
+        estimate = self._estimate(job, 'CANCELMINT')
+        line = self._plain_line(estimate, 1)
+
+        self._accept_for_real(estimate)
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_APPROVED)
+
+        task = self._make_task(job)
+        # An unrelated still-pending task, so cancelling `task` below
+        # doesn't ALSO trip the (unrelated) all-tasks-terminal auto-advance
+        # to work_complete (TaskLifecycleService._check_job_work_complete) —
+        # this test is about the checklist claim surviving cancellation,
+        # not that cascade.
+        self._make_task(job, name='Other still-pending work')
+        MintService.claim_atom_for_line(line, EstimateLineItemSource.SOURCE_TASK, task.pk)
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
+        self.assertFalse(EstimateService.unanswered_lines(estimate).exists())
+
+        TaskLifecycleService.cancel_task(task.pk)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, Task.STATUS_CANCELLED)
+        # The claim row survives cancellation — the line is still answered.
+        self.assertTrue(
+            EstimateLineItemSource.objects.filter(
+                estimate_line_item=line, source_pk=task.pk).exists())
+        self.assertFalse(EstimateService.unanswered_lines(estimate).exists())
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
+
+
 class MaybeAutoReleaseMixedTest(AutoReleaseBase):
     """Mixed estimate -> accept -> stays approved -> mint one line -> still
     approved -> decline the last -> in_progress."""
@@ -289,18 +359,36 @@ class MarkWorkStartedUnchangedTest(AutoReleaseBase):
 
 
 class ManualReleaseBlockedTest(AutoReleaseBase):
-    """Task 6: the manual release-to-floor gesture is retired — a direct
-    PATCH-style `approved -> in_progress` write (system_transition=False,
-    the default) must be refused. System-side callers
-    (system_transition=True, e.g. maybe_auto_release) are unaffected — the
-    rest of this module already proves that half."""
+    """Task 6, narrowed by the final-review fix (finding 2): the manual
+    release-to-floor gesture is retired ONLY for a job with an ACCEPTED
+    estimate — a direct PATCH-style `approved -> in_progress` write
+    (system_transition=False, the default) is refused there. A job with NO
+    accepted estimate has no checklist to auto-release it, so the manual
+    write stays legal. System-side callers (system_transition=True, e.g.
+    maybe_auto_release) are unaffected either way — the rest of this module
+    already proves that half."""
 
-    def test_manual_approved_to_in_progress_is_refused(self):
+    def test_manual_approved_to_in_progress_is_refused_with_accepted_estimate(self):
         job = self._job('MANUAL', status=Job.STATUS_APPROVED)
+        estimate = self._estimate(job, 'MANUAL')
+        Estimate.objects.filter(pk=estimate.pk).update(status=Estimate.STATUS_ACCEPTED)
         with self.assertRaises(ValidationError):
             JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
         job.refresh_from_db()
         self.assertEqual(job.status, Job.STATUS_APPROVED)
+
+    def test_manual_approved_to_in_progress_allowed_with_no_estimate(self):
+        job = self._job('MANUALNOEST', status=Job.STATUS_APPROVED)
+        updated = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
+        self.assertEqual(updated.status, Job.STATUS_IN_PROGRESS)
+
+    def test_manual_approved_to_in_progress_allowed_with_only_a_draft_estimate(self):
+        # A draft (never-accepted) estimate on an otherwise estimate-less
+        # approval path still has no checklist governing it.
+        job = self._job('MANUALDRAFT', status=Job.STATUS_APPROVED)
+        self._estimate(job, 'MANUALDRAFT')  # stays STATUS_DRAFT
+        updated = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
+        self.assertEqual(updated.status, Job.STATUS_IN_PROGRESS)
 
     def test_system_transition_approved_to_in_progress_still_works(self):
         job = self._job('SYS', status=Job.STATUS_APPROVED)

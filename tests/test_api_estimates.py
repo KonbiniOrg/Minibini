@@ -636,6 +636,122 @@ class EstimateLineBackingAPITest(BaseTestCase):
         self.assertEqual(Decimal(row['backing_total']), Decimal('10.00'))
 
 
+class EstimateLineNeedsWorkDecisionAPITest(BaseTestCase):
+    """needs_work_decision on GET /api/estimates/{id}/line-items/
+    (EstimateLineItemSerializer) — the server-computed single source of
+    truth for the checklist's mint/decline affordances (final-review fix,
+    finding 1: kills the client-side predicate duplication that used to
+    live in EstimateEditView.svelte's needsWorkDecision(li))."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory
+        from apps.contacts.models import Contact
+        from apps.jobs.models import RateScheme
+
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-NWD', name='Labor-NeedsWorkDecision', taxable=False,
+        )
+        self.deposit_cat = AccountingCategory.objects.create(
+            code='DEP-NWD', name='Deposit-NeedsWorkDecision', taxable=False,
+            is_deposit=True,
+        )
+        self.contact = Contact.objects.create(
+            first_name='Nwd', last_name='Test',
+            email='nwd@test.com', mobile_number='555-0401',
+        )
+        self.job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_APPROVED,
+            job_number='JOB-NWD-0001',
+        )
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-NWD', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-NWD-1', version=1,
+            status=Estimate.STATUS_ACCEPTED,
+        )
+
+    def _row(self, line_item):
+        resp = self.client.get(f'/api/estimates/{self.estimate.pk}/line-items/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        data = resp.data
+        items = data.get('results', data) if isinstance(data, dict) else data
+        return next(r for r in items if r['line_item_id'] == line_item.pk)
+
+    def test_plain_unanswered_hand_line_needs_a_decision(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Plain hand line',
+            qty=Decimal('1'), price=Decimal('50.00'), accounting_category=self.cat,
+        )
+        self.assertTrue(self._row(li)['needs_work_decision'])
+
+    def test_sourced_line_does_not_need_a_decision(self):
+        from apps.jobs.models import Task
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Sourced line',
+            qty=Decimal('2'), price=Decimal('200.00'), accounting_category=self.cat,
+        )
+        task = Task(job=self.job, name='Build-NWD', est_qty=Decimal('2'))
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        from apps.estimates.models import EstimateLineItemSource
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li, source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+        self.assertFalse(self._row(li)['needs_work_decision'])
+
+    def test_declined_line_does_not_need_a_decision(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Declined line',
+            qty=Decimal('1'), price=Decimal('50.00'), accounting_category=self.cat,
+            work_declined=True,
+        )
+        self.assertFalse(self._row(li)['needs_work_decision'])
+
+    def test_deposit_line_does_not_need_a_decision(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Deposit',
+            qty=Decimal('1'), price=Decimal('500.00'), accounting_category=self.deposit_cat,
+        )
+        self.assertFalse(self._row(li)['needs_work_decision'])
+
+    def test_adjustment_line_does_not_need_a_decision(self):
+        from apps.jobs.models import RateScheme
+        adj_scheme = RateScheme.objects.create(
+            name='Rush-NWD', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10'), unit_label='%', accounting_category=self.cat,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Rush surcharge',
+            qty=Decimal('1'), price=Decimal('50.00'),
+            adjustment_service=adj_scheme, adjustment_percent=adj_scheme.rate,
+        )
+        self.assertFalse(self._row(li)['needs_work_decision'])
+
+    def test_catalog_identity_line_does_not_need_a_decision(self):
+        """Defensive belt: a bare-sourced catalog-identity line (shouldn't
+        normally happen post-accept — crystallization always leaves a
+        source — but the serializer must not depend on that)."""
+        from apps.estimates.models import ServiceItem
+        service_item = ServiceItem.objects.create(
+            template_name='NWD service', rate_scheme=self.scheme,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='NWD service',
+            qty=Decimal('1'), price=Decimal('100.00'), accounting_category=self.cat,
+            service_item=service_item,
+        )
+        self.assertFalse(self._row(li)['needs_work_decision'])
+
+
 class EstimateUnexpireAPITest(BaseTestCase):
     """POST /api/estimates/{id}/unexpire/ — in-place reactivation, gated on
     can_manage_jobs OR can_manage_financials (not the usual CanManageJobOrPM

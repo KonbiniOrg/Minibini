@@ -29,6 +29,7 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     materials = serializers.SerializerMethodField()
     latest_change_request = serializers.SerializerMethodField()
     has_estimates = serializers.SerializerMethodField()
+    has_accepted_estimate = serializers.SerializerMethodField()
     estimated_amount = serializers.SerializerMethodField()
     spent_amount = serializers.SerializerMethodField()
     invoiced_amount = serializers.SerializerMethodField()
@@ -44,7 +45,7 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'customer_po_number', 'description',
             'created_date', 'start_date', 'due_date', 'completed_date',
             'tasks', 'materials', 'latest_change_request',
-            'has_estimates',
+            'has_estimates', 'has_accepted_estimate',
             'estimated_amount', 'spent_amount', 'invoiced_amount', 'profit_amount',
         ]
         # on_hold/hold_reason are read-only — writes go through the hold/
@@ -65,6 +66,23 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         if view is not None and getattr(view, 'action', None) == 'list':
             return None
         return obj.estimate_set.exists()
+
+    def get_has_accepted_estimate(self, obj):
+        """Whether the job has an ACCEPTED estimate — distinct from
+        ``has_estimates`` (any estimate, any status). Drives the header
+        pill's approved -> in_progress option (`JobHeader.svelte`): the
+        backend only refuses a manual release when an accepted estimate
+        exists (JobService.update_job) — a job that never went through
+        acceptance (hand-approved directly, or carrying only a draft/dead
+        estimate) has no checklist to auto-release it, so manual release
+        stays legal and the pill must offer it. Detail-only, same
+        list-context skip as ``has_estimates`` (per-row exists() would be
+        an N+1)."""
+        view = self.context.get('view')
+        if view is not None and getattr(view, 'action', None) == 'list':
+            return None
+        from apps.estimates.models import Estimate
+        return obj.estimate_set.filter(status=Estimate.STATUS_ACCEPTED).exists()
 
     def _financials(self, obj):
         """Detail-only job financial rollups, computed once and memoized.

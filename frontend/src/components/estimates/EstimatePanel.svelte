@@ -440,6 +440,7 @@
       onDeliverablesChanged={onJobChange}
       {canMint}
       onWorkDecisionChanged={onJobChange}
+      jobStatus={job?.status}
     />
   {:else if mode === 'customer'}
     <DocCustomerView

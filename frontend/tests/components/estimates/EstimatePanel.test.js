@@ -662,6 +662,8 @@ describe('EstimatePanel canMint (Task 7)', () => {
     price: '5', accounting_category: 3, is_material: false, inventory_item: null,
     service_item: null, adjustment_service: null, sources: [], work_declined: false,
     backing: 'hand', backing_total: null,
+    // Server-computed (EstimateLineItemSerializer.needs_work_decision).
+    needs_work_decision: true,
   };
 
   it('offers "Generate work…" / "No work needed" on an accepted estimate for a can_manage_jobs holder', async () => {

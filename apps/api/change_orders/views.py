@@ -160,34 +160,6 @@ class ChangeOrderViewSet(
 
     @action(
         detail=True, methods=['post'],
-        url_path=r'line-items/(?P<line_item_pk>[^/.]+)/add-atoms',
-    )
-    def add_atoms(self, request, pk=None, line_item_pk=None):
-        """Append atoms to an existing add line item."""
-        co = self.get_object()
-        try:
-            line_item = ChangeOrderLineItem.objects.get(pk=line_item_pk, change_order=co)
-        except ChangeOrderLineItem.DoesNotExist:
-            return Response({'detail': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        atoms = request.data.get('atoms', [])
-        try:
-            ChangeOrderWizardService.add_atoms_to_line_item(line_item, atoms)
-        except ChangeOrderClaimConflict as e:
-            return Response(
-                {'detail': 'Some of these atoms are already claimed by another '
-                           'estimate or change order.',
-                 'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
-                status=status.HTTP_409_CONFLICT,
-            )
-        ChangeOrderService.recompute_adjustment_replaces(co)
-
-        line_item.refresh_from_db()
-        serializer = ChangeOrderLineItemSerializer(line_item)
-        return Response(serializer.data)
-
-    @action(
-        detail=True, methods=['post'],
         url_path=r'line-items/(?P<line_item_pk>[^/.]+)/remove-atoms',
     )
     def remove_atoms(self, request, pk=None, line_item_pk=None):

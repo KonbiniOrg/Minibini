@@ -567,14 +567,20 @@ class JobService:
                 'the job status directly.'
             )
 
-        # Manual release-to-floor is retired: approved -> in_progress now
-        # happens only via auto-release (every checklist line answered) or
-        # another system-driven walk (timeslip-start, work-complete's
-        # intermediate hop, invoice-completion cascade) — never a direct
-        # status edit. Mirrors the direct-approval gate above.
+        # Manual release-to-floor is retired FOR A JOB WITH AN ACCEPTED
+        # ESTIMATE: approved -> in_progress happens only via auto-release
+        # (every checklist line answered) or another system-driven walk
+        # (timeslip-start, work-complete's intermediate hop, invoice-
+        # completion cascade) — never a direct status edit, mirroring the
+        # direct-approval gate above. A job with NO accepted estimate has
+        # no checklist to auto-release it (it reached `approved` via the
+        # direct-approval path just above, or an estimate was drafted
+        # afterward but never accepted) — a manual release is the only way
+        # such a job ever moves, so it stays allowed.
         if (status_changed and old_status == Job.STATUS_APPROVED
                 and job.status == Job.STATUS_IN_PROGRESS
-                and not system_transition):
+                and not system_transition
+                and job.estimate_set.filter(status=Estimate.STATUS_ACCEPTED).exists()):
             raise ValidationError(
                 'Release to the floor happens automatically once the '
                 'estimate\'s checklist is fully answered — it cannot be '

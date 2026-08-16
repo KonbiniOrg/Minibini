@@ -29,16 +29,19 @@
   // not statuses (values prefixed __): "Hold…" opens the reason modal and
   // "Release hold" posts the release — on_hold stays a flag, never a status.
   //
-  // approved→in_progress ("release to floor") is deliberately absent: the
-  // manual gesture is retired (docs/plans/2026-08-15-estimating-structure.md
-  // "Auto-release replaces release to floor") — the job advances on its own
-  // once the estimate's checklist is fully answered. The model edge itself
-  // stays (JobService.update_job still refuses a manual PATCH, but system
-  // transitions — auto-release, timeslip-start — use it).
+  // approved→in_progress ("release to floor") is mostly absent: once a job
+  // has an ACCEPTED estimate, the manual gesture is retired
+  // (docs/plans/2026-08-15-estimating-structure.md "Auto-release replaces
+  // release to floor") — the job advances on its own once the estimate's
+  // checklist is fully answered (JobService.update_job refuses the manual
+  // PATCH; system transitions — auto-release, timeslip-start — use it). A
+  // job with NO accepted estimate has no checklist to auto-release it
+  // (final-review fix, 2026-08-16), so it keeps the manual option — see the
+  // has_accepted_estimate filter in validNextStatuses below.
   const VALID_TRANSITIONS = {
     draft: ['submitted', 'rejected'],
     submitted: ['approved', 'rejected'],
-    approved: ['cancelled'],
+    approved: ['in_progress', 'cancelled'],
     in_progress: ['work_complete', 'cancelled'],
     work_complete: ['in_progress'],
     rejected: [],
@@ -63,8 +66,9 @@
 
   // Trigger labels: the pill names the *act*, not the resulting status, for
   // triggers where the act is the clearer read. (approved→in_progress used
-  // to be one of these — "Release to floor" — but that manual gesture is
-  // retired; see VALID_TRANSITIONS above.)
+  // to be one of these — "Release to floor" — back when the manual gesture
+  // was unconditionally retired; see VALID_TRANSITIONS above for the
+  // estimate-less exception that brought it back.)
   function transitionLabel(next) {
     return statusLabel(next);
   }
@@ -72,12 +76,24 @@
   // While held the backend parks the status (cancel excepted).
   // Approved is offered only on estimate-less jobs: once a job has any
   // estimate, approval flows from accepting the estimate (the backend
-  // rejects a direct edit — see JobService.update_job).
+  // rejects a direct edit — see JobService.update_job). in_progress is
+  // offered from approved only when there's no ACCEPTED estimate — once one
+  // exists, release is auto-only (the checklist decides); a job that never
+  // went through acceptance has no checklist, so manual release stays legal
+  // (final-review fix, 2026-08-16 — mirrors JobService.update_job's guard).
+  // The other approved(work_complete)/cancelled→in_progress edges are
+  // unrelated reactivations, not this gesture, so the filter only fires
+  // while job.status is actually 'approved'.
   let validNextStatuses = $derived(
     job.on_hold
       ? ['cancelled']
-      : (VALID_TRANSITIONS[job.status] || []).filter(
-          (s) => s !== 'approved' || !job.has_estimates)
+      : (VALID_TRANSITIONS[job.status] || []).filter((s) => {
+          if (s === 'approved') return !job.has_estimates;
+          if (job.status === 'approved' && s === 'in_progress') {
+            return !job.has_accepted_estimate;
+          }
+          return true;
+        })
   );
 
   // A hold can be placed from approved or in_progress only.

@@ -118,6 +118,18 @@ get modals; neither generates in place.
   lines happens only in the bundle modal; growing an existing projected
   line's atom set, if kept at all, is a bundle-modal re-open, not an
   in-table attach.
+  - **API-level removal (2026-08-16, final review):** the frontend gesture
+    had already died with zero remaining callers, but the HTTP surface
+    itself was left standing — `POST /api/estimates/{id}/line-items/{lid}/
+    add-atoms/` and `POST /api/change-orders/{id}/line-items/{lid}/
+    add-atoms/` (`EstimateViewSet.add_atoms` / `ChangeOrderViewSet.
+    add_atoms`) are now deleted along with their pinning tests
+    (`test_add_atoms_to_existing_line_item`, `test_add_atoms_endpoint`,
+    `test_add_atoms_endpoint_onto_replace_line_returns_400`). The shared
+    `add_atoms_to_line_item` service method is untouched — the invoice
+    side still calls it through its own `add-atoms` endpoint, and the CO
+    wizard's add-lines-only override is still pinned directly at the
+    service layer (`AddAtomsToLineItemCOTest`).
 - **Remove-last-atom deletes the line** (`apps/core/wizard.py`
   `remove_atoms_from_line_item`) — replaced by whatever the bundle modal
   decides; never silent line deletion.
@@ -169,13 +181,14 @@ Save-&-add-another once that ships); no multi-attach ever returns.
   that a never-worked job's completion walk stays coherent.
 - **Decline representation**: a stored per-line mark (name TBD; visible
   to invoicing later as "no work behind this line, on purpose").
-- **Bad mint recovery** (RM 2026-08-15): the expected fix is simply
-  editing the minted task — task editing stays allowed, so a wrong
-  scheme/qty/name is a normal edit, not an undo problem. Verify during
-  build that no path actually needs un-minting: specifically, what a
-  CANCELLED minted task means for the line's checklist state (answered
-  because a claim exists, or reopened?). RM doesn't expect this to be
-  an issue; the note exists to catch it if he's missing something.
+- **Bad mint recovery — VERIFIED (2026-08-16, final review)**: the
+  expected fix is simply editing the minted task — task editing stays
+  allowed, so a wrong scheme/qty/name is a normal edit, not an undo
+  problem. Confirmed: a minted task that is later CANCELLED leaves its
+  line answered (the claim row persists — cancelling a task never touches
+  its `EstimateLineItemSource`), so the job stays released/answered; the
+  fix-by-editing path is sufficient and no un-mint/reopen path is needed.
+  Pinned: `tests.test_auto_release.CancelledMintedTaskStillAnsweredTest`.
 - RM: "It's still possible this will have some blocking problem I can't
   see until I try it." Build lean, browser-test early, expect a seventh
   pass on the interior of the mint modal.

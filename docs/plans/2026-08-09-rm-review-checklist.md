@@ -268,14 +268,25 @@ One new migration (`estimates/0048_estimatelineitem_work_declined`) —
         stays parked. Releasing the hold afterward does not itself
         re-check the checklist (it resumes whatever status it's really
         at).
-  - [ ] **The status pill no longer offers "Release to floor" at all** —
-        `approved → in_progress` is off the dropdown entirely now;
-        confirm it's really gone, not just relabeled.
+  - [ ] **The status pill no longer offers "Release to floor" on a job
+        with an accepted estimate** — `approved → in_progress` is off the
+        dropdown for those jobs; confirm it's really gone, not just
+        relabeled. (Final review, 2026-08-16: a job with NO accepted
+        estimate — e.g. one hand-approved directly, never through
+        acceptance — gets the option back, since there's no checklist to
+        auto-release it. Rare in practice; confirm this narrow case reads
+        right rather than as a regression of "it's really gone.")
 - [ ] **No undo on a bad mint.** Mint a task with the wrong name/qty/rate
       on purpose, then look for an "undo" or "un-mint" — there isn't
       one by design. The fix is editing the minted task directly (same
       as fixing any other task); confirm that reads as sufficient in
       practice, not as a missing safety net.
+- [ ] **Cancel a minted task** (final review, 2026-08-16): mint a task off
+      a checklist line, then cancel it. The line stays answered (its claim
+      row survives cancellation) — the job does NOT reopen or re-block
+      auto-release. Recovery, same as a bad mint, is editing/re-minting by
+      hand, not an un-mint. Confirm this reads as sufficient, not as a
+      silently-orphaned line.
 - [ ] **Converter regeneration.** After reseeding from the converter
       (`nealsdata`), spot-check an `approved`+ converted job's estimate:
       it should show **zero** unanswered checklist lines even though the

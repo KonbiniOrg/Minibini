@@ -59,6 +59,12 @@
     // panel's onJobChange chain (already wired for status-pill / deliverable
     // refreshes) picks up the job's possibly-changed status live.
     onWorkDecisionChanged = () => {},
+    // The job's status (EstimatePanel passes job?.status) — drives the
+    // checklist banner's copy only: once the job is already in_progress
+    // (e.g. timeslip-start released it out from under an unfinished
+    // checklist), the banner must not promise a release that already
+    // happened.
+    jobStatus = null,
   } = $props();
 
   const apiBase = $derived(`/api/estimates/${estimate.estimate_id}`);
@@ -132,7 +138,10 @@
     return drifted ? d : null;
   }
 
-  // ── Uncovered work pool → selection → add-atoms / line-items-from-atoms ──
+  // ── Uncovered work pool → selection → line-items-from-atoms (bundle
+  // modal) ── "Add selected here" (attach onto an existing line) is
+  // retired: composing selected atoms only ever creates a NEW line via the
+  // bundle modal below, never an in-table attach onto an existing one.
   let selected = $state([]); // array of "type:id" row ids
 
   function atomRowId(atom) {
@@ -267,37 +276,26 @@
 
   // ── Mint / decline / checklist (claims-by-construction, estimating-
   // structure Task 7) ───────────────────────────────────────────────────
-  // Mirrors EstimateService.unanswered_lines' server-side predicate
-  // (apps/estimates/services.py) as closely as the fields the line-item
-  // serializer actually exposes allow: no sources, not declined, not an
-  // adjustment, not a deposit line, and (defensive — the server's own
-  // predicate doesn't need this check because a catalog-identity line
-  // always carries a source by the time it's accepted) no catalog
-  // identity either.
-  function isDeposit(li) {
-    if (li.accounting_category == null) return false;
-    const cat = categories.find((c) => String(c.id) === String(li.accounting_category));
-    return !!cat?.is_deposit;
-  }
-
-  function hasCatalogIdentity(li) {
-    return li.service_item != null || li.inventory_item != null || !!li.is_material;
-  }
-
-  function needsWorkDecision(li) {
-    return (li.sources || []).length === 0
-      && !li.work_declined
-      && li.adjustment_service == null
-      && !isDeposit(li)
-      && !hasCatalogIdentity(li);
-  }
-
-  let unansweredLines = $derived(lineItems.filter(needsWorkDecision));
+  // needs_work_decision is server-computed (EstimateLineItemSerializer,
+  // mirroring EstimateService.unanswered_lines' chain-aware predicate) —
+  // consumed directly, never re-derived here. Re-deriving it client-side
+  // previously diverged from the backend after an accepted CO moved a
+  // line's claims onto a replace line (final-review fix, docs/plans/
+  // 2026-08-15-estimating-structure.md).
+  let unansweredLines = $derived(lineItems.filter((li) => li.needs_work_decision));
   // Independent of canMint (a permission gate on the ACTION buttons) — the
   // banner is informational for anyone looking at an accepted estimate,
   // same as "needs category" is visible without regard to who can fix it.
   let showChecklistBanner = $derived(
     estimate?.status === 'accepted' && unansweredLines.length > 0
+  );
+  // Auto-release only fires while the job is still approved — once it's
+  // already in_progress (e.g. timeslip-start released it out from under an
+  // unfinished checklist), promising an automatic release is simply wrong.
+  let checklistBannerText = $derived(
+    jobStatus === 'in_progress'
+      ? `${unansweredLines.length} line(s) still need a work decision.`
+      : `${unansweredLines.length} line(s) need a work decision — the job starts automatically when all are answered.`
   );
 
   let mintModalOpen = $state(false);
@@ -352,7 +350,7 @@
 
 {#if showChecklistBanner}
   <div class="doc-warning">
-    {unansweredLines.length} line(s) need a work decision — the job starts automatically when all are answered.
+    {checklistBannerText}
   </div>
 {/if}
 
@@ -400,13 +398,15 @@
             {#if onMakeDeliverable && (li.linked_deliverables || []).length === 0}
               <button type="button" onclick={() => onMakeDeliverable(li)}>Make Deliverable</button>
             {/if}
-            {#if canMint && needsWorkDecision(li)}
+            {#if canMint && li.needs_work_decision}
               <button type="button" onclick={() => openMintModal(li)}>Generate work…</button>
               <button type="button" onclick={() => declineLine(li)}>No work needed</button>
             {/if}
-            {#if canMint && li.work_declined}
+            {#if li.work_declined}
               <br><small>no work needed</small>
-              <button type="button" onclick={() => undeclineLine(li)}>Undo</button>
+              {#if canMint}
+                <button type="button" onclick={() => undeclineLine(li)}>Undo</button>
+              {/if}
             {/if}
           </td>
         {/if}

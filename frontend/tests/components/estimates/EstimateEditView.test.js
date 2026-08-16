@@ -35,6 +35,10 @@ function backedLine(overrides = {}) {
       { source_id: 55, source_type: 'task', source_pk: 9, description: 'Cutting task',
         computed_amount: '50.00', qty: '2', units: 'hour', rate: '25.00' },
     ],
+    // Server-computed (EstimateLineItemSerializer.needs_work_decision) —
+    // a sourced line is always answered.
+    needs_work_decision: false,
+    work_declined: false,
     ...overrides,
   };
 }
@@ -59,6 +63,12 @@ function handLine(overrides = {}) {
     backing_total: null,
     sources: [],
     work_declined: false,
+    // Server-computed (EstimateLineItemSerializer.needs_work_decision) —
+    // a bare, unanswered, undeclined plain hand line needs a decision by
+    // default; individual tests override this to mock other server-side
+    // exclusions (deposit/adjustment/catalog/declined) instead of
+    // re-deriving them client-side.
+    needs_work_decision: true,
     ...overrides,
   };
 }
@@ -476,13 +486,14 @@ describe('EstimateEditView mint / decline / checklist (Task 7)', () => {
     expect(queryByRole('button', { name: 'Generate work…' })).toBeNull();
   });
 
-  it('hides mint buttons on an adjustment line even when canMint', async () => {
+  it('hides mint buttons on an adjustment line even when canMint (server says needs_work_decision: false)', async () => {
     const { findByText, queryByRole } = render(EstimateEditView, {
       props: baseProps({
         estimate: ACCEPTED, canMint: true, canEdit: false,
         lineItems: [handLine({
           adjustment_service: 1,
           adjustment_service_detail: { name: 'Rush', rate: '15', algorithm: 'percentage' },
+          needs_work_decision: false,
         })],
       }),
     });
@@ -490,51 +501,80 @@ describe('EstimateEditView mint / decline / checklist (Task 7)', () => {
     expect(queryByRole('button', { name: 'Generate work…' })).toBeNull();
   });
 
-  it('hides mint buttons on a deposit line even when canMint', async () => {
+  it('hides mint buttons on a deposit line even when canMint (server says needs_work_decision: false)', async () => {
     const { findByText, queryByRole } = render(EstimateEditView, {
       props: baseProps({
         estimate: ACCEPTED, canMint: true, canEdit: false,
         categories: [DEPOSIT_CATEGORY],
-        lineItems: [handLine({ accounting_category: 5 })],
+        lineItems: [handLine({ accounting_category: 5, needs_work_decision: false })],
       }),
     });
     await findByText('Hand entry');
     expect(queryByRole('button', { name: 'Generate work…' })).toBeNull();
   });
 
-  it('hides mint buttons on a catalog-identity line (service_item set) even when canMint', async () => {
+  it('hides mint buttons on a catalog-identity line (service_item set) even when canMint (server says needs_work_decision: false)', async () => {
     const { findByText, queryByRole } = render(EstimateEditView, {
       props: baseProps({
         estimate: ACCEPTED, canMint: true, canEdit: false,
-        lineItems: [handLine({ service_item: 9, sources: [] })],
+        lineItems: [handLine({ service_item: 9, sources: [], needs_work_decision: false })],
       }),
     });
     await findByText('Hand entry');
     expect(queryByRole('button', { name: 'Generate work…' })).toBeNull();
   });
 
-  it('hides mint buttons on a catalog-identity line (is_material) even when canMint', async () => {
+  it('hides mint buttons on a catalog-identity line (is_material) even when canMint (server says needs_work_decision: false)', async () => {
     const { findByText, queryByRole } = render(EstimateEditView, {
       props: baseProps({
         estimate: ACCEPTED, canMint: true, canEdit: false,
-        lineItems: [handLine({ is_material: true, sources: [] })],
+        lineItems: [handLine({ is_material: true, sources: [], needs_work_decision: false })],
       }),
     });
     await findByText('Hand entry');
     expect(queryByRole('button', { name: 'Generate work…' })).toBeNull();
+  });
+
+  it('trusts li.needs_work_decision even when it disagrees with the line\'s other fields — no client-side re-derivation', async () => {
+    // A line shaped like a catalog line (service_item set) but the server
+    // says it still needs a decision: the button must show. The predicate
+    // lives server-side now (EstimateLineItemSerializer); the component
+    // must not re-derive "catalog identity -> hide" itself.
+    const { findByRole } = render(EstimateEditView, {
+      props: baseProps({
+        estimate: ACCEPTED, canMint: true, canEdit: false,
+        lineItems: [handLine({ service_item: 9, sources: [], needs_work_decision: true })],
+      }),
+    });
+    expect(await findByRole('button', { name: 'Generate work…' })).toBeInTheDocument();
   });
 
   it('declined lines show the "no work needed" caption and an Undo button instead of mint buttons', async () => {
     const { findByText, queryByRole, findByRole } = render(EstimateEditView, {
       props: baseProps({
         estimate: ACCEPTED, canMint: true, canEdit: false,
-        lineItems: [handLine({ work_declined: true })],
+        lineItems: [handLine({ work_declined: true, needs_work_decision: false })],
       }),
     });
     expect(await findByText('no work needed')).toBeInTheDocument();
     expect(await findByRole('button', { name: 'Undo' })).toBeInTheDocument();
     expect(queryByRole('button', { name: 'Generate work…' })).toBeNull();
     expect(queryByRole('button', { name: 'No work needed' })).toBeNull();
+  });
+
+  it('declined-line caption shows to ALL viewers, not just canMint — Undo stays manage-gated', async () => {
+    // canEdit true (so the Actions column renders at all) but canMint
+    // false (the checklist-management gate): the caption is informational
+    // for anyone who can see the row, same as "needs category"; only the
+    // reversing action (Undo) requires canMint.
+    const { findByText, queryByRole } = render(EstimateEditView, {
+      props: baseProps({
+        estimate: ACCEPTED, canMint: false, canEdit: true,
+        lineItems: [handLine({ work_declined: true, needs_work_decision: false })],
+      }),
+    });
+    expect(await findByText('no work needed')).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Undo' })).toBeNull();
   });
 
   it('a draft estimate never shows mint affordances or the banner, even if canMint were mistakenly true', async () => {
@@ -644,7 +684,7 @@ describe('EstimateEditView mint / decline / checklist (Task 7)', () => {
     const { findByRole } = render(EstimateEditView, {
       props: baseProps({
         estimate: ACCEPTED, canMint: true, canEdit: false, onChanged, onWorkDecisionChanged,
-        lineItems: [handLine({ line_item_id: 21, work_declined: true })],
+        lineItems: [handLine({ line_item_id: 21, work_declined: true, needs_work_decision: false })],
       }),
     });
     await fireEvent.click(await findByRole('button', { name: 'Undo' }));
@@ -669,11 +709,38 @@ describe('EstimateEditView mint / decline / checklist (Task 7)', () => {
     const { findByText, queryByText } = render(EstimateEditView, {
       props: baseProps({
         estimate: ACCEPTED, canMint: true, canEdit: false,
-        lineItems: [backedLine(), handLine({ work_declined: true })],
+        lineItems: [backedLine(), handLine({ work_declined: true, needs_work_decision: false })],
       }),
     });
     await findByText('Cut parts');
     expect(queryByText(/need a work decision/)).toBeNull();
+  });
+
+  it('banner text promises auto-release only while the job is still approved — not once it\'s already in_progress', async () => {
+    // Finding 5a (final review): timeslip-start (or any other trigger) can
+    // release the job to in_progress out from under an unfinished
+    // checklist — the banner must not keep promising an automatic release
+    // that already happened.
+    const { findByText, queryByText } = render(EstimateEditView, {
+      props: baseProps({
+        estimate: ACCEPTED, canMint: true, canEdit: false, jobStatus: 'in_progress',
+        lineItems: [handLine({ line_item_id: 21 })],
+      }),
+    });
+    expect(await findByText('1 line(s) still need a work decision.')).toBeInTheDocument();
+    expect(queryByText(/starts automatically/)).toBeNull();
+  });
+
+  it('banner keeps the auto-release promise while the job is still approved', async () => {
+    const { findByText } = render(EstimateEditView, {
+      props: baseProps({
+        estimate: ACCEPTED, canMint: true, canEdit: false, jobStatus: 'approved',
+        lineItems: [handLine({ line_item_id: 21 })],
+      }),
+    });
+    expect(await findByText(
+      '1 line(s) need a work decision — the job starts automatically when all are answered.'
+    )).toBeInTheDocument();
   });
 
   it('Actions column (th + td) renders when canMint is true even though canEdit and onMakeDeliverable are both false', async () => {

@@ -593,6 +593,149 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)
 
 
+class ChecklistAnsweredByAcceptedCOTests(ChangeOrderAcceptanceBase):
+    """Finding 1 (final review, CRITICAL — chain-aware answeredness):
+    EstimateService.unanswered_lines / EstimateLineItemSerializer.
+    needs_work_decision must count a line answered once an accepted CO's
+    replace or remove line targets it — even though `_move_claims_to`
+    moves (replace) or never creates (remove) an EstimateLineItemSource row
+    on the original estimate line itself. Before this fix: a replaced hand
+    line showed phantom mint/decline affordances and could double-mint; a
+    replaced catalog line silently blocked auto-release forever (no UI
+    path to answer it, since it carries no plain-hand-line escape hatch)."""
+
+    def _replace_line(self, co, target, **fields):
+        defaults = dict(
+            action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=target.pk,
+        )
+        defaults.update(fields)
+        return ChangeOrderService.add_line_item(co.pk, **defaults)
+
+    def test_replace_accepted_plain_hand_line_no_longer_unanswered(self):
+        from apps.api.estimates.serializers import EstimateLineItemSerializer
+        from apps.estimates.services import EstimateService
+
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Rush handling',
+            qty=Decimal('1'), price=Decimal('75.00'), accounting_category=self.cat,
+        )
+        co = self._make_co()
+        self._replace_line(
+            co, line, description='Rush handling (expanded)', qty=Decimal('2'),
+            price=Decimal('90.00'), accounting_category=self.cat.pk,
+        )
+        self._accept(co)
+
+        self.assertNotIn(line, list(EstimateService.unanswered_lines(self.estimate)))
+        self.assertFalse(EstimateLineItemSerializer(line).data['needs_work_decision'])
+
+    def test_replace_accepted_catalog_line_doesnt_block_auto_release(self):
+        """A catalog (service_item-backed) line, sourced exactly as estimate
+        acceptance leaves it, replaced by an accepted CO — its OWN source
+        row moves off (backing inheritance), which used to be its only
+        answered signal. A second, still-unanswered plain hand line proves
+        the job releases once THAT line is answered — the replaced catalog
+        line was never really blocking it."""
+        from apps.estimates.services import EstimateService
+
+        task = Task(job=self.job, name='CNC cutting', est_qty=Decimal('4'))
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        catalog_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='CNC cutting',
+            qty=Decimal('4'), price=Decimal('400.00'), units='hour',
+            accounting_category=self.cat, service_item=self.service_item,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=catalog_line,
+            source_type=EstimateLineItemSource.SOURCE_TASK, source_pk=task.pk,
+        )
+        other_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=2, description='Plain hand line',
+            qty=Decimal('1'), price=Decimal('50.00'), accounting_category=self.cat,
+        )
+
+        co = self._make_co()
+        self._replace_line(
+            co, catalog_line, description='CNC cutting (more)', qty=Decimal('6'),
+            price=Decimal('600.00'), units='hour', accounting_category=self.cat.pk,
+        )
+        self._accept(co)
+
+        # The catalog line lost its own source row (moved to the CO line)…
+        self.assertFalse(catalog_line.sources.exists())
+        # …but must NOT reappear as unanswered.
+        unanswered = list(EstimateService.unanswered_lines(self.estimate))
+        self.assertNotIn(catalog_line, unanswered)
+        self.assertIn(other_line, unanswered)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_APPROVED)  # other_line still unanswered
+
+        # Answer the OTHER line — the job releases; the replaced catalog
+        # line was never the thing blocking it.
+        EstimateService.update_line_item(other_line.pk, work_declined=True)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_decline_last_then_replace_ordering(self):
+        """Answering order must not matter: decline the last unanswered
+        line FIRST (before any CO exists) — the job releases. THEN author
+        + accept a replace CO against the already-answered (source-backed)
+        line: the checklist must stay satisfied and the job must not
+        un-release."""
+        from apps.estimates.services import EstimateService
+
+        task = Task(job=self.job, name='CNC cutting', est_qty=Decimal('4'))
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        catalog_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='CNC cutting',
+            qty=Decimal('4'), price=Decimal('400.00'), units='hour',
+            accounting_category=self.cat, service_item=self.service_item,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=catalog_line,
+            source_type=EstimateLineItemSource.SOURCE_TASK, source_pk=task.pk,
+        )
+        other_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=2, description='Plain hand line',
+            qty=Decimal('1'), price=Decimal('50.00'), accounting_category=self.cat,
+        )
+
+        EstimateService.update_line_item(other_line.pk, work_declined=True)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+
+        co = self._make_co()
+        self._replace_line(
+            co, catalog_line, description='CNC cutting (more)', qty=Decimal('6'),
+            price=Decimal('600.00'), units='hour', accounting_category=self.cat.pk,
+        )
+        self._accept(co)
+
+        self.assertFalse(EstimateService.unanswered_lines(self.estimate).exists())
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_remove_targeted_plain_line_is_answered(self):
+        from apps.api.estimates.serializers import EstimateLineItemSerializer
+        from apps.estimates.services import EstimateService
+
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Skip this',
+            qty=Decimal('1'), price=Decimal('40.00'), accounting_category=self.cat,
+        )
+        co = self._make_co()
+        ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REMOVE, target_line_item=line.pk,
+        )
+        self._accept(co)
+
+        self.assertNotIn(line, list(EstimateService.unanswered_lines(self.estimate)))
+        self.assertFalse(EstimateLineItemSerializer(line).data['needs_work_decision'])
+
+
 class COAuthoringParityTests(ChangeOrderAcceptanceBase):
     """Part A: CO line authoring mirrors the estimate's service pick and
     is_material marker rules."""

@@ -1245,9 +1245,13 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
   `ChangeOrderWizardService` (`apps/estimates/services.py`, subclasses
   `EstimateWizardService`) lets a **draft** CO's own `add` lines claim job
   atoms directly — `POST .../source-pool/`, `line-items-from-atoms/`,
-  `line-items/{lid}/add-atoms/`, `line-items/{lid}/remove-atoms/` — the same
-  shape as the estimate wizard. `add_atoms_to_line_item` refuses a
-  non-`add` CO line. The pool is **cross-lens**: an atom already claimed by
+  `line-items/{lid}/remove-atoms/` — the same shape as the estimate
+  wizard. (`line-items/{lid}/add-atoms/` — attaching claims onto an
+  already-existing line — is retired API-level, 2026-08-16 final-review
+  fix, on both the estimate and CO viewsets; the underlying
+  `add_atoms_to_line_item` service method is unchanged and stays reachable
+  through the invoice side's own endpoint.) `add_atoms_to_line_item`
+  refuses a non-`add` CO line. The pool is **cross-lens**: an atom already claimed by
   an estimate line, or by another CO's add line, shows `claimed_by_other`;
   see the cross-lens-race note in `LATER.md` (no DB-level guard spans both
   claim tables, pool-display-only defense). A CO `add` line with sources is

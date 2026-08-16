@@ -575,10 +575,35 @@ class EstimateService:
         """Lines still owing a work decision on an ACCEPTED estimate:
         non-adjustment, non-deposit lines with no sources and
         work_declined=False. (Catalog-identity lines crystallize at accept
-        and therefore carry sources by the time this is consulted.)"""
+        and therefore carry sources by the time this is consulted.)
+
+        Chain-aware (final-review fix, docs/plans/2026-08-15-estimating-
+        structure.md): a line's OWN EstimateLineItemSource rows aren't the
+        only way it can be answered. `ChangeOrderAcceptanceService.
+        _move_claims_to` DELETES a replace-target's source rows and
+        recreates them on the accepted CO's replace line (backing
+        inheritance) — so a replaced hand line loses the row that used to
+        make it "answered", and a replaced catalog line (service_item /
+        inventory_item, no separate declined/adjustment/deposit escape
+        hatch) loses the row that was its ONLY answered signal, silently
+        reappearing here as unanswered forever. A remove similarly retires
+        (or, for a document-only target, simply descopes) the line's work
+        without ever leaving a source row behind. In both cases the CO
+        decided the line's fate, so it counts answered regardless of
+        whether any claim rows actually moved. Unlike `_current_atoms`'s
+        replace-chain walk (which needs the *latest* accepted replace to
+        resolve today's atoms), this only needs to know an accepted
+        replace/remove ever targeted the line — existence, not recency."""
+        from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
+
         answered_ids = EstimateLineItemSource.objects.filter(
             estimate_line_item__estimate=estimate,
         ).values('estimate_line_item_id')
+        chain_answered_ids = ChangeOrderLineItem.objects.filter(
+            target_line_item__estimate=estimate,
+            action__in=(ChangeOrderLineItem.ACTION_REPLACE, ChangeOrderLineItem.ACTION_REMOVE),
+            change_order__status=ChangeOrder.STATUS_ACCEPTED,
+        ).values('target_line_item_id')
         return estimate.estimatelineitem_set.filter(
             adjustment_service__isnull=True,
             work_declined=False,
@@ -586,6 +611,8 @@ class EstimateService:
             accounting_category__is_deposit=True,
         ).exclude(
             pk__in=answered_ids,
+        ).exclude(
+            pk__in=chain_answered_ids,
         )
 
     @staticmethod

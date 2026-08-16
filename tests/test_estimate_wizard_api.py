@@ -100,17 +100,6 @@ class EstimateWizardAPITest(TestCase):
         self.assertIn('detail', resp.json())
         self.assertEqual(EstimateLineItem.objects.filter(estimate=self.estimate).count(), 0)
 
-    def test_add_atoms_to_existing_line_item(self):
-        li = EstimateWizardService.add_atoms_to_new_line_item(
-            self.estimate, [{'type': 'task', 'id': self.pt.pk}],
-        )
-        url = f'/api/estimates/{self.estimate.pk}/line-items/{li.pk}/add-atoms/'
-        payload = {'atoms': [{'type': 'material', 'id': self.pm.pk}]}
-        resp = self.client.post(url, payload, format='json')
-        self.assertEqual(resp.status_code, 200)
-        li.refresh_from_db()
-        self.assertEqual(li.sources.count(), 2)
-
     def test_remove_atoms_endpoint(self):
         li = EstimateWizardService.add_atoms_to_new_line_item(
             self.estimate,

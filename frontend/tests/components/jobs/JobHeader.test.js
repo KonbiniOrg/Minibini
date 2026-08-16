@@ -61,15 +61,33 @@ describe('JobHeader status pill', () => {
     expect(select.value).toBe('in_progress');
   });
 
-  it('does not offer the retired manual release-to-floor option on an approved job', () => {
-    // Task 6: approved→in_progress is auto-release-only now — the pill no
-    // longer offers a manual "release to floor" gesture.
-    const approvedJob = { ...job, status: 'approved' };
+  it('does not offer manual release-to-floor on an approved job with an accepted estimate', () => {
+    // Task 6: approved→in_progress is auto-release-only once an estimate
+    // has been accepted — the pill doesn't offer a manual "release to
+    // floor" gesture there.
+    const approvedJob = { ...job, status: 'approved', has_accepted_estimate: true };
     const { getByRole } = render(JobHeader, { props: { job: approvedJob } });
     const select = getByRole('combobox');
     expect(optionValues(select)).not.toContain('in_progress');
-    expect(optionLabels(select)).not.toContain('Release to floor');
     expect(optionValues(select)).toContain('cancelled');
+  });
+
+  it('offers manual release-to-floor on an approved job with NO accepted estimate', () => {
+    // Final-review fix (2026-08-16): a job that never went through
+    // acceptance (hand-approved directly, or carrying only a draft/dead
+    // estimate) has no checklist to auto-release it — the manual gesture
+    // stays available, mirroring JobService.update_job's guard.
+    const approvedJob = { ...job, status: 'approved', has_accepted_estimate: false };
+    const { getByRole } = render(JobHeader, { props: { job: approvedJob } });
+    const select = getByRole('combobox');
+    expect(optionValues(select)).toContain('in_progress');
+  });
+
+  it('patches approved -> in_progress when picked on an estimate-less approved job', async () => {
+    const approvedJob = { ...job, status: 'approved', has_accepted_estimate: false };
+    const { getByRole } = render(JobHeader, { props: { job: approvedJob } });
+    await fireEvent.change(getByRole('combobox'), { target: { value: 'in_progress' } });
+    expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { status: 'in_progress' });
   });
 
   it('does not offer Hold for pre-approval jobs', () => {

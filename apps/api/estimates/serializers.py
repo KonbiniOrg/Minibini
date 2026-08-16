@@ -172,6 +172,7 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
     backing = serializers.SerializerMethodField()
     backing_total = serializers.SerializerMethodField()
     linked_deliverables = serializers.SerializerMethodField()
+    needs_work_decision = serializers.SerializerMethodField()
 
     class Meta:
         model = EstimateLineItem
@@ -182,7 +183,7 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail', 'service_item_detail',
             'sources', 'backing', 'backing_total', 'linked_deliverables',
-            'work_declined',
+            'work_declined', 'needs_work_decision',
         ]
         # is_material is server-derived from the accounting category
         # (EstimateService._derive_is_material, RM 2026-08-11) — never
@@ -202,6 +203,50 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             }
             for d in obj.deliverables.all()
         ]
+
+    def get_needs_work_decision(self, obj):
+        """Single server-side source of truth for the checklist's mint/
+        decline affordances (kills the client-side predicate duplication —
+        docs/plans/2026-08-15-estimating-structure.md final-review fix):
+        True exactly when `EstimateService.unanswered_lines(obj.estimate)`
+        would include this line AND it carries no catalog identity — the
+        same defensive belt the old client-side predicate had (a
+        catalog-identity line always crystallizes its own source at
+        accept, so in practice it can never reach here with sources still
+        empty, but nothing enforces that at the type level).
+
+        Memoized per estimate (self._chain_answered_cache, keyed by
+        estimate_id) so a list of N lines on one estimate costs one extra
+        query for the CO-chain check, not N — same style as
+        JobSerializer._financials_cache."""
+        if (
+            obj.adjustment_service_id is not None
+            or (obj.accounting_category_id and obj.accounting_category.is_deposit)
+            or obj.service_item_id is not None
+            or obj.inventory_item_id is not None
+            or obj.is_material
+            or obj.work_declined
+        ):
+            return False
+        if obj.sources.exists():
+            return False
+        return obj.pk not in self._chain_answered_line_pks(obj.estimate_id)
+
+    def _chain_answered_line_pks(self, estimate_id):
+        cache = getattr(self, '_chain_answered_cache', None)
+        if cache is None:
+            cache = {}
+            self._chain_answered_cache = cache
+        if estimate_id not in cache:
+            from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
+            cache[estimate_id] = set(
+                ChangeOrderLineItem.objects.filter(
+                    target_line_item__estimate_id=estimate_id,
+                    action__in=(ChangeOrderLineItem.ACTION_REPLACE, ChangeOrderLineItem.ACTION_REMOVE),
+                    change_order__status=ChangeOrder.STATUS_ACCEPTED,
+                ).values_list('target_line_item_id', flat=True)
+            )
+        return cache[estimate_id]
 
     def get_backing(self, obj):
         return derive_estimate_backing(obj)

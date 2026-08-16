@@ -158,7 +158,10 @@
     }
   }
 
-  // ── Uncovered work pool → selection → add-atoms / line-items-from-atoms ──
+  // ── Uncovered work pool → selection → line-items-from-atoms (bundle
+  // modal) ── "Add selected here" (attach onto an existing line) is
+  // retired: composing selected atoms only ever creates a NEW line via the
+  // bundle modal below, never an in-table attach onto an existing one.
   let selected = $state([]); // array of "type:id" row ids
 
   function atomRowId(atom) {

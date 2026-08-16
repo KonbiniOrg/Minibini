@@ -18,10 +18,13 @@ Covers (brief Step 1 a-h):
   (h) accepting a CO with an authored-claimed add line crystallizes nothing
       for it (sources already exist) and the claims survive
 
-Plus: the API endpoints (source-pool, line-items-from-atoms, add-atoms,
-remove-atoms) mirroring the estimate viewset's, and the
-recompute_adjustment_replaces call every atom-mutation endpoint must make
-(Task 6 interface).
+Plus: the API endpoints (source-pool, line-items-from-atoms, remove-atoms)
+mirroring the estimate viewset's, and the recompute_adjustment_replaces
+call every atom-mutation endpoint must make (Task 6 interface). The
+add-atoms HTTP action itself is retired API-level (final-review fix,
+docs/plans/2026-08-15-estimating-structure.md "Removals") — (c) below
+still pins the underlying ChangeOrderWizardService.add_atoms_to_line_item
+service method directly (add lines only; a replace line refuses it).
 """
 from decimal import Decimal
 
@@ -427,35 +430,6 @@ class ChangeOrderWizardAPITest(COWizardServiceBase):
         )
         self.assertEqual(resp.status_code, 400)
         self.assertIn('detail', resp.json())
-
-    def test_add_atoms_endpoint(self):
-        self.client.force_authenticate(user=self.manager)
-        li = ChangeOrderWizardService.add_atoms_to_new_line_item(
-            self.co, [{'type': 'task', 'id': self.task.pk}])
-        resp = self.client.post(
-            f'/api/change-orders/{self.co.pk}/line-items/{li.pk}/add-atoms/',
-            {'atoms': [{'type': 'material', 'id': self.material.pk}]}, format='json',
-        )
-        self.assertEqual(resp.status_code, 200, resp.data)
-        li.refresh_from_db()
-        self.assertEqual(li.sources.count(), 2)
-
-    def test_add_atoms_endpoint_onto_replace_line_returns_400(self):
-        self.client.force_authenticate(user=self.manager)
-        target_line = EstimateLineItem.objects.create(
-            estimate=self.estimate, line_number=50, description='Old',
-            qty=Decimal('1'), price=Decimal('10.00'), accounting_category=self.cat,
-        )
-        replace_li = ChangeOrderLineItem.objects.create(
-            change_order=self.co, action=ChangeOrderLineItem.ACTION_REPLACE,
-            target_line_item=target_line, description='New', qty=Decimal('1'),
-            price=Decimal('20.00'), accounting_category=self.cat,
-        )
-        resp = self.client.post(
-            f'/api/change-orders/{self.co.pk}/line-items/{replace_li.pk}/add-atoms/',
-            {'atoms': [{'type': 'task', 'id': self.task.pk}]}, format='json',
-        )
-        self.assertEqual(resp.status_code, 400, resp.data)
 
     def test_remove_atoms_endpoint(self):
         self.client.force_authenticate(user=self.manager)
