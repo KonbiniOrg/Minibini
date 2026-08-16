@@ -809,6 +809,15 @@ The serializer exposes a read-only `adjustment_service_detail` dict
 is set. It also exposes `service_item` (writable FK PK, nullable) and a
 read-only `service_item_detail` dict `{template_id, name}` (or `null`).
 
+- `is_comment` (inherited from `BaseLineItem`) — a purely informational
+  row: no charge (`qty`/`price` forced to zero), exempt from the
+  hand-line accounting-category-required rule, and skipped entirely by
+  `on_accept` (§9.1) — it never crystallizes into a Task/Material/Fee.
+  `compose_agreement` (§14.6) excludes it from the billing agreement, so
+  it never flows onto an invoice via "copy from estimate." `ChangeOrderLineItem`
+  carries the same field and the same acceptance carve-out (§14.11's
+  `on_accept`). Full cross-entity writeup: architecture-and-conventions.md §4.
+
 Line item deletion goes through
 `LineItemService.delete_line_item_with_renumber` per the rule in
 CLAUDE.md.

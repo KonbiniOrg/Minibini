@@ -34,6 +34,18 @@ describe('InvoiceAddLineForm', () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 
+  it('comment choice posts is_comment without requiring an accounting category', async () => {
+    const choice = { type: 'freeform', typed: 'See attached warranty terms', isComment: true };
+    const { getByRole, queryByLabelText } = render(InvoiceAddLineForm, {
+      props: { open: true, choice, invoiceId: 42, categories: cats, onSaved: vi.fn() } });
+    expect(queryByLabelText(/accounting category/i)).toBeNull();
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/invoices/42/line-items/', {
+      description: 'See attached warranty terms', is_comment: true,
+      qty: '0', units: 'none', price: '0', accounting_category: null,
+    });
+  });
+
   it('inventory choice posts inventory_item + qty', async () => {
     const choice = { type: 'inventory',
                      inventoryItem: { inventory_item_id: 9 } };

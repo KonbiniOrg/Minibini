@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -5,7 +6,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.contacts.models import Contact
-from apps.core.models import AccountingCategory, JobHistory
+from apps.core.models import AccountingCategory, Configuration, JobHistory
 from apps.deliverables.models import Deliverable
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import EstimateService
@@ -72,6 +73,19 @@ class UnexpireEstimateTest(TestCase):
         result = EstimateService.unexpire(self.est.pk)
         self.assertGreater(result.expiration_date, timezone.now())
         self.assertGreater(result.expiration_date, old_expiration)
+
+    def test_unexpire_uses_configured_est_expire_days(self):
+        """Regression guard: the fresh window must come from the Setup
+        tab's est_expire_days Configuration value, not a hardcoded 30 --
+        pin a non-default value and check the new expiration_date against
+        it precisely."""
+        Configuration.objects.update_or_create(
+            key='est_expire_days', defaults={'value': '45'},
+        )
+        result = EstimateService.unexpire(self.est.pk)
+        expected_expiration = timezone.now() + timedelta(days=45)
+        time_diff = abs((result.expiration_date - expected_expiration).total_seconds())
+        self.assertLess(time_diff, 10)
 
     def test_unexpire_clears_closed_date_and_completed_date(self):
         result = EstimateService.unexpire(self.est.pk)

@@ -312,6 +312,10 @@ class QBOInvoiceSyncService:
         TaxCodeRef is the line's category `taxable` flag. The job reference
         rides in CustomerMemo; online-payment flags are enabled so the
         hosted invoice carries the Pay button when QBO Payments is active.
+
+        Comment lines (is_comment=True) are informational-only and never
+        pushed — they have no accounting category to derive a TaxCodeRef
+        from and no business appearing on the customer-facing QBO document.
         """
         from quickbooks.objects.invoice import Invoice as QBOInvoice
         from quickbooks.objects.detailline import SalesItemLine, SalesItemLineDetail
@@ -338,6 +342,8 @@ class QBOInvoiceSyncService:
                       .select_related('accounting_category', 'inventory_item')
                       .order_by('line_number'))
         for li in line_items:
+            if li.is_comment:  # informational-only — never leaves konbini
+                continue
             line = SalesItemLine()
             line.Amount = float(li.total_amount)
             line.Description = li.description

@@ -74,7 +74,7 @@ describe('PriceListPicker (onChoose emitter)', () => {
     const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Rush charge' } });
     await fireEvent.click(await findByRole('button', { name: /add line/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Rush charge', isMaterial: false });
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Rush charge', isMaterial: false, isComment: false });
   });
 
   it('freeform commit with the material checkbox set emits isMaterial true', async () => {
@@ -83,10 +83,34 @@ describe('PriceListPicker (onChoose emitter)', () => {
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: '3/4 plywood' } });
     await fireEvent.click(await findByRole('checkbox', { name: /material/i }));
     await fireEvent.click(await findByRole('button', { name: /add line/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood', isMaterial: true });
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood', isMaterial: true, isComment: false });
   });
 
-  it('clears typed text and the material toggle when reopened', async () => {
+  it('freeform commit with the comment checkbox set emits isComment true', async () => {
+    const props = baseProps();
+    const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'See attached spec' } });
+    await fireEvent.click(await findByRole('checkbox', { name: /comment/i }));
+    await fireEvent.click(await findByRole('button', { name: /add line/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'See attached spec', isMaterial: false, isComment: true });
+  });
+
+  it('material and comment checkboxes are mutually exclusive', async () => {
+    const props = baseProps();
+    const { findByRole } = render(PriceListPicker, { props });
+    const materialBox = await findByRole('checkbox', { name: /material/i });
+    const commentBox = await findByRole('checkbox', { name: /comment/i });
+    await fireEvent.click(materialBox);
+    expect(materialBox).toBeChecked();
+    await fireEvent.click(commentBox);
+    expect(commentBox).toBeChecked();
+    expect(materialBox).not.toBeChecked();
+    await fireEvent.click(materialBox);
+    expect(materialBox).toBeChecked();
+    expect(commentBox).not.toBeChecked();
+  });
+
+  it('clears typed text and the material/comment toggles when reopened', async () => {
     const props = baseProps();
     const { getByPlaceholderText, getByRole, rerender } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'partial typing' } });
@@ -97,6 +121,7 @@ describe('PriceListPicker (onChoose emitter)', () => {
     await rerender({ ...props, open: true });
     expect(getByPlaceholderText(/search/i)).toHaveValue('');
     expect(getByRole('checkbox', { name: /material/i })).not.toBeChecked();
+    expect(getByRole('checkbox', { name: /comment/i })).not.toBeChecked();
   });
 
   it('does not offer Add Task by default (estimate surface)', () => {
@@ -127,6 +152,6 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(addBtn).toBeInTheDocument();
     // Clicking with nothing typed still emits a freeform commit (empty typed).
     await fireEvent.click(addBtn);
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '', isMaterial: false });
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '', isMaterial: false, isComment: false });
   });
 });

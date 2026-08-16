@@ -88,6 +88,19 @@ describe('COAddLineForm', () => {
     expect(await findByText(/accounting category is required/i)).toBeInTheDocument();
   });
 
+  it('comment choice posts action add + is_comment without requiring an accounting category', async () => {
+    const choice = { type: 'freeform', typed: 'FYI only', isComment: true };
+    const { getByRole, queryByLabelText } = render(COAddLineForm, {
+      props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    expect(queryByLabelText(/accounting category/i)).toBeNull();
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items/', {
+      action: 'add', description: 'FYI only', is_comment: true,
+      qty: '0', units: 'none', price: '0', accounting_category: null,
+    });
+  });
+
   it('shows the base unit next to quantity for a service pick', () => {
     const choice = { type: 'service', serviceItem: {
       template_id: 11, template_name: 'CNC Routing', rate_scheme_detail: { unit_label: 'hr' } } };

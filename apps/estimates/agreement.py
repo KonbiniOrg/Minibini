@@ -96,6 +96,7 @@ def compose_agreement(job):
     # Values are mutable line dicts (or None when removed).
     est_line_items = list(
         estimate.estimatelineitem_set
+        .exclude(is_comment=True)  # informational-only, not a billing line
         .select_related('adjustment_service')
         .prefetch_related('adjustment_target_categories')
         .order_by('line_number'))
@@ -152,10 +153,18 @@ def compose_agreement(job):
             elif action == ChangeOrderLineItem.ACTION_REPLACE:
                 target_pk = coli.target_line_item_id
                 if target_pk in keyed_lines and keyed_lines[target_pk] is not None:
-                    keyed_lines[target_pk] = _line_dict_from_co_item(
-                        coli, source_fee_id=co_fee_source_map.get(coli.pk))
+                    if coli.is_comment:
+                        # Mirrors co_acceptance.py: a comment-marked replace
+                        # retires the old atom without crystallizing a new
+                        # one, so the line simply drops out of the agreement.
+                        keyed_lines[target_pk] = None
+                    else:
+                        keyed_lines[target_pk] = _line_dict_from_co_item(
+                            coli, source_fee_id=co_fee_source_map.get(coli.pk))
 
             elif action == ChangeOrderLineItem.ACTION_ADD:
+                if coli.is_comment:  # informational-only, not a billing line
+                    continue
                 added_lines.append(_line_dict_from_co_item(
                     coli, source_fee_id=co_fee_source_map.get(coli.pk)))
 

@@ -61,7 +61,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
         model = InvoiceLineItem
         fields = [
             'line_item_id', 'line_number', 'inventory_item',
-            'qty', 'units', 'description', 'price',
+            'qty', 'units', 'description', 'price', 'is_comment',
             'accounting_category', 'accounting_category_name',
                         'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail',

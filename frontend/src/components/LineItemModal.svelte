@@ -29,6 +29,7 @@
   let price = $state('');
   let accountingCategory = $state('');
   let isMaterial = $state(false);
+  let isComment = $state(false);
   let busy = $state(false);
   let formError = $state('');
   let fieldErrs = $state({});
@@ -44,6 +45,7 @@
         price = item.price ?? '';
         accountingCategory = item.accounting_category ?? '';
         isMaterial = item.is_material ?? false;
+        isComment = item.is_comment ?? false;
       } else {
         description = '';
         qty = '';
@@ -51,6 +53,7 @@
         price = '';
         accountingCategory = '';
         isMaterial = false;
+        isComment = false;
       }
       formError = '';
       fieldErrs = {};
@@ -93,21 +96,23 @@
         });
       } else {
         const isMaterialLine = showMaterialMarker && isMaterial;
-        // Accounting category is required for fees; materials default server-side.
-        if (!accountingCategory && !isMaterialLine) {
+        // Accounting category is required for fees; materials default server-side;
+        // comment lines never touch the accounting side at all.
+        if (!accountingCategory && !isMaterialLine && !isComment) {
           fieldErrs = { accounting_category: ['Accounting Category is required.'] };
           busy = false;
           return;
         }
         const payload = {
           description,
-          qty: qty || '0',
-          units,
-          price: price || '0',
-          accounting_category: accountingCategory ? Number(accountingCategory) : null,
+          is_comment: isComment,
+          qty: isComment ? '0' : (qty || '0'),
+          units: isComment ? 'none' : units,
+          price: isComment ? '0' : (price || '0'),
+          accounting_category: isComment ? null : (accountingCategory ? Number(accountingCategory) : null),
         };
         if (showMaterialMarker) {
-          payload.is_material = isMaterial;
+          payload.is_material = isComment ? false : isMaterial;
         }
         if (mode === 'edit' && item) {
           await api.patch(`${apiBase}/line-items/${item.line_item_id}/`, payload);
@@ -166,42 +171,50 @@
           <FieldError errors={fieldErrs} field="description" />
         </p>
         <p>
-          <label><strong>Quantity</strong><br>
-            <input type="number" step="0.01" bind:value={qty}>
+          <label>
+            <input type="checkbox" bind:checked={isComment}>
+            Comment line (informational only — no charge)
           </label>
-          <FieldError errors={fieldErrs} field="qty" />
         </p>
-        <p>
-          <label><strong>Units</strong><br>
-            <UnitsSelect bind:value={units} />
-          </label>
-          <FieldError errors={fieldErrs} field="units" />
-        </p>
-        <p>
-          <label><strong>Price</strong><br>
-            <input type="number" step="0.01" bind:value={price}>
-          </label>
-          <FieldError errors={fieldErrs} field="price" />
-        </p>
-        <p>
-          <label><strong>Accounting Category *</strong><br>
-            <select bind:value={accountingCategory}>
-              <option value="">-- Select --</option>
-              {#each categories as cat}
-                <option value={cat.id}>{cat.code} - {cat.name}</option>
-              {/each}
-            </select>
-          </label>
-          <FieldError errors={fieldErrs} field="accounting_category" />
-        </p>
-        {#if showMaterialMarker}
+        {#if !isComment}
           <p>
-            <label>
-              <input type="checkbox" bind:checked={isMaterial} onchange={onMaterialToggle}>
-              Is this a material?
+            <label><strong>Quantity</strong><br>
+              <input type="number" step="0.01" bind:value={qty}>
             </label>
-            <FieldError errors={fieldErrs} field="is_material" />
+            <FieldError errors={fieldErrs} field="qty" />
           </p>
+          <p>
+            <label><strong>Units</strong><br>
+              <UnitsSelect bind:value={units} />
+            </label>
+            <FieldError errors={fieldErrs} field="units" />
+          </p>
+          <p>
+            <label><strong>Price</strong><br>
+              <input type="number" step="0.01" bind:value={price}>
+            </label>
+            <FieldError errors={fieldErrs} field="price" />
+          </p>
+          <p>
+            <label><strong>Accounting Category *</strong><br>
+              <select bind:value={accountingCategory}>
+                <option value="">-- Select --</option>
+                {#each categories as cat}
+                  <option value={cat.id}>{cat.code} - {cat.name}</option>
+                {/each}
+              </select>
+            </label>
+            <FieldError errors={fieldErrs} field="accounting_category" />
+          </p>
+          {#if showMaterialMarker}
+            <p>
+              <label>
+                <input type="checkbox" bind:checked={isMaterial} onchange={onMaterialToggle}>
+                Is this a material?
+              </label>
+              <FieldError errors={fieldErrs} field="is_material" />
+            </p>
+          {/if}
         {/if}
       {/if}
 

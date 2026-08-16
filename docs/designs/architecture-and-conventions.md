@@ -560,6 +560,39 @@ Always go through `LineItemService.delete_line_item_with_renumber()`
 because plain delete leaves gaps in `line_number`. See CLAUDE.md
 "Code Conventions" for the rule.
 
+**Comment lines (`is_comment`).** `BaseLineItem.is_comment` (boolean,
+default `False`) marks a row as purely informational — no charge, no
+task/atom linkage, available on every subclass (Estimate/ChangeOrder/
+Invoice/PurchaseOrder line items; `BillLineItem` inherits the column as
+retired schema, same as everything else there). `BaseLineItem.clean()`
+enforces the invariant: `qty` and `price` must be zero, and
+`inventory_item`/`task` (base fields) plus `adjustment_service`/
+`is_material`/`service_item` (subclass fields, probed via `getattr` since
+not every subclass has them) must be unset — a comment line carries no
+other line-item semantics. Estimate/ChangeOrder hand-line services
+(`EstimateService.add_line_item`/`update_line_item`,
+`ChangeOrderService.add_line_item`/`update_line_item`) exempt
+`is_comment` lines from the accounting-category-required rule, same as
+adjustment lines. `EstimateAcceptanceService.on_accept` and
+`ChangeOrderAcceptanceService.on_accept` skip comment lines entirely —
+they never crystallize into a Task/Material/Fee (a comment-marked CO
+*replace* still retires the old atom, it just crystallizes nothing new).
+`compose_agreement` (estimates-and-prices.md §5) excludes comment lines
+from the billing agreement outright, so they never flow onto an invoice
+via "copy from estimate" — estimate and invoice comment lines are
+independent by design. `InvoiceEmailService._assert_all_lines_categorized`
+exempts them from the pre-send categorization gate, and
+`QBOInvoiceSyncService._build_qbo_invoice` skips them in the push loop —
+a comment line never reaches QBO. Frontend: the comment checkbox lives in
+`LineItemModal.svelte` (edit), `PriceListPicker.svelte` (the shared "Add
+line" footer — mutually exclusive with the material checkbox),
+`{Estimate,Invoice,CO}AddLineForm.svelte` and `COLineItemModal.svelte`
+(the freeform-add/edit forms), and `purchaseorders/LineItemForm.svelte`;
+checking it hides qty/units/price/accounting-category and zeroes them in
+the payload. `LineItemTable.svelte` renders a comment row with a "Comment"
+badge and em-dashes across the numeric columns instead of the
+"needs category" warning.
+
 **Line item create/update: route through `LineItemService.save_line_item()`.**
 Mirroring the delete rule, every line-item create and update — in the entity
 services *and* in the wizard (`BaseWizardService`) — saves via
