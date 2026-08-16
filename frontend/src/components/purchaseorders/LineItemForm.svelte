@@ -27,6 +27,7 @@
     price: '',
     accounting_category: '',
   });
+  let isComment = $state(false);
 
   // Generic prefill when opened via an "order" flow:
   //   { inventory_item?, qty?, description?, price?, accounting_category? }
@@ -72,6 +73,12 @@
     if (mode === 'pli' && selectedPLI) {
       data.inventory_item = selectedPLI.inventory_item_id;
       data.qty = Number(form.qty);
+    } else if (isComment) {
+      data.description = form.description;
+      data.is_comment = true;
+      data.qty = 0;
+      data.units = 'none';
+      data.price = 0;
     } else {
       data.description = form.description;
       data.qty = Number(form.qty);
@@ -126,26 +133,34 @@
         <input type="text" id="description" bind:value={form.description} required>
       </p>
       <p>
-        <label for="qty"><strong>Qty *</strong></label><br>
-        <input type="number" id="qty" bind:value={form.qty} step="any" min="0" required>
+        <label>
+          <input type="checkbox" bind:checked={isComment}>
+          Comment line (informational only — no charge)
+        </label>
       </p>
-      <p>
-        <label for="units"><strong>Units</strong></label><br>
-        <UnitsSelect bind:value={form.units} />
-      </p>
-      <p>
-        <label for="price"><strong>Price *</strong></label><br>
-        <input type="number" id="price" bind:value={form.price} step="0.01" min="0" required>
-      </p>
-      <p>
-        <label for="accounting_category"><strong>Category</strong></label><br>
-        <select id="accounting_category" bind:value={form.accounting_category}>
-          <option value="">-- None --</option>
-          {#each categories as cat}
-            <option value={cat.id}>{cat.name}</option>
-          {/each}
-        </select>
-      </p>
+      {#if !isComment}
+        <p>
+          <label for="qty"><strong>Qty *</strong></label><br>
+          <input type="number" id="qty" bind:value={form.qty} step="any" min="0" required>
+        </p>
+        <p>
+          <label for="units"><strong>Units</strong></label><br>
+          <UnitsSelect bind:value={form.units} />
+        </p>
+        <p>
+          <label for="price"><strong>Price *</strong></label><br>
+          <input type="number" id="price" bind:value={form.price} step="0.01" min="0" required>
+        </p>
+        <p>
+          <label for="accounting_category"><strong>Category</strong></label><br>
+          <select id="accounting_category" bind:value={form.accounting_category}>
+            <option value="">-- None --</option>
+            {#each categories as cat}
+              <option value={cat.id}>{cat.name}</option>
+            {/each}
+          </select>
+        </p>
+      {/if}
     {/if}
 
     <p>

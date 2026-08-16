@@ -22,7 +22,7 @@ class POLineItemSerializer(serializers.ModelSerializer):
         model = PurchaseOrderLineItem
         fields = [
             'line_item_id', 'line_number', 'task', 'inventory_item',
-            'qty', 'units', 'description', 'price',
+            'qty', 'units', 'description', 'price', 'is_comment',
             'effective_job_id', 'effective_job_number', 'material',
             'accounting_category',
             'qty_received', 'received_by', 'received_by_name',

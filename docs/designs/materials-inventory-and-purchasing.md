@@ -848,6 +848,16 @@ Material.objects.filter(po_line_item=self).first()
 
 A line's job attribution is `line.linked_material.job` (or none).
 
+**Comment lines** — `is_comment` (inherited from `BaseLineItem`): a
+purely informational row, no charge, no `job`/`material_id` resolution
+(`PurchaseOrderService._resolve_material_for_line` is a no-op without
+those). `receive_all`/`receive_items` naturally treat it as trivially
+fully received (`qty` is zero, so `remaining` is always zero) — no
+special-casing needed there. There is no PO categorization-before-send
+gate and no QBO push for POs, so unlike estimates/invoices a comment
+line needs no exemption on either front. Full cross-entity writeup:
+architecture-and-conventions.md §4.
+
 ### PO status auto-derivation
 
 `PurchaseOrderReceivingService._update_po_status(po)`:

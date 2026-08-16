@@ -40,6 +40,8 @@
     ''
   );
 
+  const isComment = $derived(isFreeform && !!choice?.isComment);
+
   $effect(() => {
     if (!open || !choice) return;
     qty = '1'; units = 'none'; price = ''; error = '';
@@ -59,6 +61,11 @@
       payload = { service_item: choice.serviceItem.template_id, qty };
     } else if (choice.type === 'inventory') {
       payload = { action: 'add', inventory_item: choice.inventoryItem.inventory_item_id, qty };
+    } else if (choice.isComment) {
+      payload = {
+        action: 'add', description, is_comment: true,
+        qty: '0', units: 'none', price: '0', accounting_category: null,
+      };
     } else {
       // Fees require an AC; materials default it server-side.
       if (!accountingCategory && !choice.isMaterial) { error = 'Accounting Category is required.'; return; }
@@ -84,12 +91,14 @@
 
 <Modal open={open && choice} onCancel={onClose}>
 <form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
-      <h3>{title}</h3>
+      <h3>{isComment ? 'Add Comment' : title}</h3>
       {#if isFreeform}
         <p><label>Description<br><input type="text" bind:value={description} style="width:100%;box-sizing:border-box;"></label></p>
       {/if}
-      <p><label>Quantity<br><input type="number" step="0.01" min="0" value={qty} oninput={(e) => qty = e.target.value}>{#if !isFreeform && baseUnits}<span class="qty-units">{baseUnits}</span>{/if}</label></p>
-      {#if isFreeform}
+      {#if !isComment}
+        <p><label>Quantity<br><input type="number" step="0.01" min="0" value={qty} oninput={(e) => qty = e.target.value}>{#if !isFreeform && baseUnits}<span class="qty-units">{baseUnits}</span>{/if}</label></p>
+      {/if}
+      {#if isFreeform && !isComment}
         <p><label>Units<br><UnitsSelect bind:value={units} /></label></p>
         <p><label>Price<br><input type="number" step="0.01" value={price} oninput={(e) => price = e.target.value}></label></p>
         <p><label>Accounting Category

@@ -317,3 +317,53 @@ class ComposeAgreementMultipleCOTests(FixtureTestCase):
         descriptions = [l['description'] for l in result['lines']]
         self.assertNotIn('Widget B', descriptions)
         self.assertEqual(len(result['lines']), 2)
+
+
+class ComposeAgreementCommentLineTests(FixtureTestCase):
+    """Comment lines (is_comment=True) are informational-only, never billing
+    lines — compose_agreement must exclude them everywhere, since this is
+    exactly what feeds copy_from_estimate onto an invoice."""
+
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        self.est = _make_accepted_estimate(self.job)
+        self.li1 = _make_est_line(self.est, 1, 'Widget A', '2', '100.00')
+        self.comment_line = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=2, description='See attached spec sheet',
+            is_comment=True, qty=Decimal('0'), price=Decimal('0'),
+        )
+
+    def test_estimate_comment_line_excluded_from_agreement(self):
+        from apps.estimates.agreement import compose_agreement
+        result = compose_agreement(self.job)
+        descriptions = [l['description'] for l in result['lines']]
+        self.assertNotIn('See attached spec sheet', descriptions)
+        self.assertEqual(len(result['lines']), 1)
+
+    def test_co_comment_add_excluded_from_agreement(self):
+        from apps.estimates.agreement import compose_agreement
+        co = _make_accepted_co(self.job, self.est)
+        ChangeOrderLineItem.objects.create(
+            change_order=co, line_number=1, action=ChangeOrderLineItem.ACTION_ADD,
+            description='FYI only', is_comment=True, qty=Decimal('0'), price=Decimal('0'),
+        )
+        result = compose_agreement(self.job)
+        descriptions = [l['description'] for l in result['lines']]
+        self.assertNotIn('FYI only', descriptions)
+        self.assertEqual(len(result['lines']), 1)
+
+    def test_co_comment_replace_drops_target_line_entirely(self):
+        from apps.estimates.agreement import compose_agreement
+        co = _make_accepted_co(self.job, self.est)
+        ChangeOrderLineItem.objects.create(
+            change_order=co, line_number=1, action=ChangeOrderLineItem.ACTION_REPLACE,
+            description='Cancelled — see note', is_comment=True,
+            qty=Decimal('0'), price=Decimal('0'), target_line_item=self.li1,
+        )
+        result = compose_agreement(self.job)
+        descriptions = [l['description'] for l in result['lines']]
+        self.assertNotIn('Widget A', descriptions)
+        self.assertNotIn('Cancelled — see note', descriptions)
+        self.assertEqual(result['lines'], [])

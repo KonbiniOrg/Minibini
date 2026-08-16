@@ -37,6 +37,7 @@
   let units = $state('none');
   let price = $state('');
   let accountingCategory = $state('');
+  let isComment = $state(false);
   let busy = $state(false);
   let formError = $state('');
   let fieldErrs = $state({});
@@ -44,8 +45,9 @@
   // Whether description/qty/units/price fields are needed (not for plain 'remove')
   let needsLineFields = $derived(action !== 'remove');
   // A bare add line crystallizes into a Fee at acceptance, so it needs an AC
-  // before send; replace lines inherit from the atom they replace.
-  let needsAccountingCategory = $derived(action === 'add');
+  // before send; replace lines inherit from the atom they replace. A comment
+  // line never crystallizes, so it never needs one either.
+  let needsAccountingCategory = $derived(action === 'add' && !isComment);
 
   $effect(() => {
     if (open) {
@@ -58,6 +60,7 @@
         price = item.price ?? '';
         // Raw number so Svelte 5's strict-=== select matching finds the option.
         accountingCategory = item.accounting_category ?? '';
+        isComment = item.is_comment ?? false;
       } else {
         // Apply initial props if provided, otherwise use defaults
         action = initialAction ?? 'add';
@@ -67,6 +70,7 @@
         units = initialUnits ?? 'none';
         price = initialPrice ?? '';
         accountingCategory = '';
+        isComment = false;
       }
       formError = '';
       fieldErrs = {};
@@ -85,9 +89,10 @@
     };
     if (needsLineFields) {
       payload.description = description;
-      payload.qty = qty || '0';
-      payload.units = units;
-      payload.price = price || '0';
+      payload.is_comment = isComment;
+      payload.qty = isComment ? '0' : (qty || '0');
+      payload.units = isComment ? 'none' : units;
+      payload.price = isComment ? '0' : (price || '0');
     }
     if (needsAccountingCategory) {
       // Bare add lines need an AC to send (they crystallize into Fees);
@@ -98,6 +103,8 @@
         return;
       }
       payload.accounting_category = accountingCategory ? Number(accountingCategory) : null;
+    } else if (isComment && needsLineFields) {
+      payload.accounting_category = null;
     }
     try {
       if (mode === 'edit' && item) {
@@ -160,38 +167,47 @@
         </p>
 
         <p>
-          <label><strong>Quantity</strong><br>
-            <input type="number" step="0.01" bind:value={qty}>
+          <label>
+            <input type="checkbox" bind:checked={isComment}>
+            Comment line (informational only — no charge)
           </label>
-          <FieldError errors={fieldErrs} field="qty" />
         </p>
 
-        <p>
-          <label><strong>Units</strong><br>
-            <UnitsSelect bind:value={units} />
-          </label>
-          <FieldError errors={fieldErrs} field="units" />
-        </p>
-
-        <p>
-          <label><strong>Price</strong><br>
-            <input type="number" step="0.01" bind:value={price}>
-          </label>
-          <FieldError errors={fieldErrs} field="price" />
-        </p>
-
-        {#if needsAccountingCategory}
+        {#if !isComment}
           <p>
-            <label><strong>Accounting Category{item?.is_material ? '' : ' *'}</strong><br>
-              <select bind:value={accountingCategory}>
-                <option value="">-- Select --</option>
-                {#each categories as cat}
-                  <option value={cat.id}>{cat.code} - {cat.name}</option>
-                {/each}
-              </select>
+            <label><strong>Quantity</strong><br>
+              <input type="number" step="0.01" bind:value={qty}>
             </label>
-            <FieldError errors={fieldErrs} field="accounting_category" />
+            <FieldError errors={fieldErrs} field="qty" />
           </p>
+
+          <p>
+            <label><strong>Units</strong><br>
+              <UnitsSelect bind:value={units} />
+            </label>
+            <FieldError errors={fieldErrs} field="units" />
+          </p>
+
+          <p>
+            <label><strong>Price</strong><br>
+              <input type="number" step="0.01" bind:value={price}>
+            </label>
+            <FieldError errors={fieldErrs} field="price" />
+          </p>
+
+          {#if needsAccountingCategory}
+            <p>
+              <label><strong>Accounting Category{item?.is_material ? '' : ' *'}</strong><br>
+                <select bind:value={accountingCategory}>
+                  <option value="">-- Select --</option>
+                  {#each categories as cat}
+                    <option value={cat.id}>{cat.code} - {cat.name}</option>
+                  {/each}
+                </select>
+              </label>
+              <FieldError errors={fieldErrs} field="accounting_category" />
+            </p>
+          {/if}
         {/if}
       {/if}
 

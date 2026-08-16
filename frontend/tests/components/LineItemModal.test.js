@@ -40,7 +40,7 @@ describe('LineItemModal', () => {
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.post).toHaveBeenCalledWith('/api/estimates/7/line-items/', {
-      description: 'Widget', qty: 5, units: 'none', price: 10, accounting_category: 42,
+      description: 'Widget', is_comment: false, qty: 5, units: 'none', price: 10, accounting_category: 42,
     });
     expect(onSaved).toHaveBeenCalled();
   });
@@ -61,7 +61,7 @@ describe('LineItemModal', () => {
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.patch).toHaveBeenCalledWith('/api/estimates/7/line-items/3/', {
-      description: 'New', qty: 2, units: 'none', price: 4, accounting_category: 42,
+      description: 'New', is_comment: false, qty: 2, units: 'none', price: 4, accounting_category: 42,
     });
     expect(onSaved).toHaveBeenCalled();
   });
@@ -153,6 +153,28 @@ describe('LineItemModal', () => {
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(await findByRole('alert')).toHaveTextContent('Estimate is not editable.');
+  });
+
+  it('creates a comment line without requiring an accounting category', async () => {
+    const onSaved = vi.fn();
+    const { getByLabelText, getByRole, queryByLabelText } = render(LineItemModal, {
+      props: {
+        open: true, mode: 'create', apiBase: '/api/estimates/7',
+        onSaved, categories: SAMPLE_CATEGORIES,
+      },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'See attached spec sheet' } });
+    await fireEvent.click(getByLabelText(/Comment line/));
+    // Priced fields disappear once marked as a comment.
+    expect(queryByLabelText(/Accounting Category/)).not.toBeInTheDocument();
+    expect(queryByLabelText('Price')).not.toBeInTheDocument();
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(api.post).toHaveBeenCalledWith('/api/estimates/7/line-items/', {
+      description: 'See attached spec sheet', is_comment: true,
+      qty: '0', units: 'none', price: '0', accounting_category: null,
+    });
+    expect(onSaved).toHaveBeenCalled();
   });
 
   it('closes via onClose', async () => {
