@@ -153,6 +153,13 @@ Save-&-add-another once that ships); no multi-attach ever returns.
   that a never-worked job's completion walk stays coherent.
 - **Decline representation**: a stored per-line mark (name TBD; visible
   to invoicing later as "no work behind this line, on purpose").
+- **Bad mint recovery** (RM 2026-08-15): the expected fix is simply
+  editing the minted task — task editing stays allowed, so a wrong
+  scheme/qty/name is a normal edit, not an undo problem. Verify during
+  build that no path actually needs un-minting: specifically, what a
+  CANCELLED minted task means for the line's checklist state (answered
+  because a claim exists, or reopened?). RM doesn't expect this to be
+  an issue; the note exists to catch it if he's missing something.
 - RM: "It's still possible this will have some blocking problem I can't
   see until I try it." Build lean, browser-test early, expect a seventh
   pass on the interior of the mint modal.
