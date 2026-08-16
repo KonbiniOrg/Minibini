@@ -91,6 +91,42 @@ describe('WorkItemForm', () => {
     expect(await findByLabelText(/Name/)).toHaveValue('Special weld');
   });
 
+  it('pre-fills Estimated qty from presetQty on a manual (custom-task) create', async () => {
+    const { findByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, presetQty: '3' },
+    });
+    // FLAT_FEE_SCHEME (id 2) is unit_label 'none' — a non-hour-unit scheme
+    // shows the separate "Estimated qty" input (hour-unit schemes collapse
+    // to "Estimated hours" instead).
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '2' } });
+    expect(await findByLabelText(/Estimated qty/)).toHaveValue(3);
+  });
+
+  it('mints with claim_estimate_line in the POST body when set (manual create)', async () => {
+    const onSaved = vi.fn();
+    const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, claimEstimateLine: 42, onSaved },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '2' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Cut parts' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
+      claim_estimate_line: 42,
+    }));
+  });
+
+  it('omits claim_estimate_line entirely when not set (ordinary manual create)', async () => {
+    const onSaved = vi.fn();
+    const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, onSaved },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '2' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Cut parts' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const call = api.post.mock.calls.find((c) => c[0] === '/api/jobs/5/tasks/');
+    expect(call[1]).not.toHaveProperty('claim_estimate_line');
+  });
+
   it('requires a name', async () => {
     const { findByRole, getByText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5 },

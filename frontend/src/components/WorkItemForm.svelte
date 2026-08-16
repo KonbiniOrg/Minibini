@@ -25,6 +25,17 @@
                               // in another window) — the pick carries the object so this
                               // form never re-resolves it from a stale list
     presetName = '', // optional pre-fill for the name (manual / custom-task create only)
+    presetQty = null, // optional pre-fill for the est-qty field (manual create only,
+                       // mirrors presetName's flow exactly)
+    // Planning surface (Task 7, estimating-structure): when set, the
+    // manual-create and template-create POST bodies carry a
+    // claim_estimate_line key binding the new task to this already-live
+    // estimate line (MintService, accepted-only). The backend gates on the
+    // key's mere PRESENCE (apps/api/mixins.py, apps/api/jobs/views.py), so
+    // it must be included ONLY when a claim is actually intended — never
+    // null/empty — and NEVER on the edit/PATCH path (a claim is a
+    // create-time mint, not an edit).
+    claimEstimateLine = null,
     // Money-field write gate (task-owned-money Phase 1). Manual mode: gates
     // rate/unit_label/accounting_category/active_modifiers per MONEY_FIELDS
     // on TaskSerializer. Template mode: add-from-template is
@@ -163,7 +174,7 @@
       activeModifiers = [];
       editRate = ''; editUnitLabel = ''; editAccountingCategory = '';
       editSourceSchemeId = ''; lastRestampedSchemeId = '';
-      estQty = ''; estWorkerTime = '';
+      estQty = (mode === 'manual' ? (presetQty ?? '') : ''); estWorkerTime = '';
       // Keep numeric so it matches the numeric <option value={tmpl.template_id}>
       // (Svelte 5 selects match option values with strict ===; String() here left
       // the preset unselected in the pulldown).
@@ -450,6 +461,9 @@
         if (effectiveCanWriteMoney) {
           payload.active_modifiers = activeModifiers;
         }
+        if (claimEstimateLine != null) {
+          payload.claim_estimate_line = claimEstimateLine;
+        }
         await api.post(url, payload);
       } else {
         // Manual create: rate_scheme (the preset id) is open to everyone —
@@ -469,6 +483,9 @@
         };
         if (effectiveCanWriteMoney) {
           payload.active_modifiers = activeModifiers;
+        }
+        if (claimEstimateLine != null) {
+          payload.claim_estimate_line = claimEstimateLine;
         }
         const url = `/api/jobs/${contextId}/tasks/`;
         // taskCreated guards a double create if the optional catalog save fails + retry.

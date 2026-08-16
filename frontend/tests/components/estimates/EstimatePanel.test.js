@@ -644,6 +644,61 @@ describe('EstimatePanel create-line-from-selected integration (silent refresh)',
   });
 });
 
+describe('EstimatePanel canMint (Task 7)', () => {
+  const UNANSWERED_LINE = {
+    line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
+    price: '5', accounting_category: 3, is_material: false, inventory_item: null,
+    service_item: null, adjustment_service: null, sources: [], work_declined: false,
+    backing: 'hand', backing_total: null,
+  };
+
+  it('offers "Generate work…" / "No work needed" on an accepted estimate for a can_manage_jobs holder', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'accepted', line_items: [UNANSWERED_LINE] }));
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    expect(await findByRole('button', { name: 'Generate work…' })).toBeInTheDocument();
+    expect(await findByRole('button', { name: 'No work needed' })).toBeInTheDocument();
+  });
+
+  it('hides mint affordances on a draft estimate even for a can_manage_jobs holder', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [UNANSWERED_LINE] }));
+    const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Cut');
+    expect(queryByRole('button', { name: 'Generate work…' })).toBeNull();
+  });
+
+  it('hides mint affordances on an accepted estimate without can_manage_jobs (not this job\'s PM)', async () => {
+    user.set({ permissions: [] });
+    mockApi(makeEstimate({ can_manage: false, status: 'accepted', line_items: [UNANSWERED_LINE] }));
+    const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Cut');
+    expect(queryByRole('button', { name: 'Generate work…' })).toBeNull();
+  });
+
+  it('shows the checklist banner on an accepted estimate with an unanswered line', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'accepted', line_items: [UNANSWERED_LINE] }));
+    const { findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    expect(await findByText(
+      '1 line(s) need a work decision — the job starts automatically when all are answered.'
+    )).toBeInTheDocument();
+  });
+
+  it('"No work needed" PATCHes work_declined and pings onJobChange (auto-release may have fired)', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'accepted', line_items: [UNANSWERED_LINE] }));
+    api.patch.mockResolvedValue({});
+    const onJobChange = vi.fn();
+    const { findByRole } = render(EstimatePanel, {
+      props: { job: JOB, estimateId: 7, onJobChange },
+    });
+    await fireEvent.click(await findByRole('button', { name: 'No work needed' }));
+    expect(api.patch).toHaveBeenCalledWith('/api/estimates/7/line-items/1/', { work_declined: true });
+    await waitFor(() => expect(onJobChange).toHaveBeenCalled());
+  });
+});
+
 describe('EstimatePanel Make Deliverable refresh chain', () => {
   it('POSTs make-deliverable and fires onJobChange so the deliverables band reloads', async () => {
     const estimate = makeEstimate({

@@ -13,6 +13,7 @@
   import Modal from '../Modal.svelte';
   import LineItemModal from '../LineItemModal.svelte';
   import PriceListPicker from '../PriceListPicker.svelte';
+  import WorkItemForm from '../WorkItemForm.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
   import EstimateAddLineForm from './EstimateAddLineForm.svelte';
   import BackingChip from '../docsurface/BackingChip.svelte';
@@ -44,6 +45,19 @@
     // dialog's "remove both") — the panel chains it to onJobChange so the
     // context band's Deliverables panel refreshes.
     onDeliverablesChanged = () => {},
+    // claims-by-construction (estimating-structure Task 7): whether THIS
+    // caller may mint work off an unanswered line or mark it "no work
+    // needed" — EstimatePanel computes this the same way it computes
+    // canEdit (canManageJobs && a status check), trusted here exactly like
+    // canEdit is (no redundant estimate.status re-check for the buttons
+    // themselves).
+    canMint = false,
+    // Mint/decline can be the LAST unanswered line, which auto-releases the
+    // job (approved -> in_progress) server-side. onChanged only refreshes
+    // this doc + the source pool (silent) — this fires in addition so the
+    // panel's onJobChange chain (already wired for status-pill / deliverable
+    // refreshes) picks up the job's possibly-changed status live.
+    onWorkDecisionChanged = () => {},
   } = $props();
 
   const apiBase = $derived(`/api/estimates/${estimate.estimate_id}`);
@@ -237,6 +251,81 @@
     if (li.service_item_detail) return `Catalog: ${li.service_item_detail.name}`;
     return '';
   }
+
+  // ── Mint / decline / checklist (claims-by-construction, estimating-
+  // structure Task 7) ───────────────────────────────────────────────────
+  // Mirrors EstimateService.unanswered_lines' server-side predicate
+  // (apps/estimates/services.py) as closely as the fields the line-item
+  // serializer actually exposes allow: no sources, not declined, not an
+  // adjustment, not a deposit line, and (defensive — the server's own
+  // predicate doesn't need this check because a catalog-identity line
+  // always carries a source by the time it's accepted) no catalog
+  // identity either.
+  function isDeposit(li) {
+    if (li.accounting_category == null) return false;
+    const cat = categories.find((c) => String(c.id) === String(li.accounting_category));
+    return !!cat?.is_deposit;
+  }
+
+  function hasCatalogIdentity(li) {
+    return li.service_item != null || li.inventory_item != null || !!li.is_material;
+  }
+
+  function needsWorkDecision(li) {
+    return (li.sources || []).length === 0
+      && !li.work_declined
+      && li.adjustment_service == null
+      && !isDeposit(li)
+      && !hasCatalogIdentity(li);
+  }
+
+  let unansweredLines = $derived(lineItems.filter(needsWorkDecision));
+  // Independent of canMint (a permission gate on the ACTION buttons) — the
+  // banner is informational for anyone looking at an accepted estimate,
+  // same as "needs category" is visible without regard to who can fix it.
+  let showChecklistBanner = $derived(
+    estimate?.status === 'accepted' && unansweredLines.length > 0
+  );
+
+  let mintModalOpen = $state(false);
+  let mintModalLine = $state(null);
+
+  function openMintModal(li) {
+    mintModalLine = li;
+    mintModalOpen = true;
+  }
+  function closeMintModal() {
+    mintModalOpen = false;
+    mintModalLine = null;
+  }
+  function handleMintSaved() {
+    closeMintModal();
+    onChanged();
+    onWorkDecisionChanged();
+  }
+
+  // No confirm() on either direction — both are reversible (Undo flips it
+  // right back), matching the UI convention that only irreversible actions
+  // get a confirmation prompt.
+  async function declineLine(li) {
+    try {
+      await api.patch(`${apiBase}/line-items/${li.line_item_id}/`, { work_declined: true });
+      onChanged();
+      onWorkDecisionChanged();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not mark this line as no work needed.'));
+    }
+  }
+
+  async function undeclineLine(li) {
+    try {
+      await api.patch(`${apiBase}/line-items/${li.line_item_id}/`, { work_declined: false });
+      onChanged();
+      onWorkDecisionChanged();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not undo that.'));
+    }
+  }
 </script>
 
 <h3>Line Items</h3>
@@ -248,6 +337,12 @@
   </p>
 {/if}
 
+{#if showChecklistBanner}
+  <div class="doc-warning">
+    {unansweredLines.length} line(s) need a work decision — the job starts automatically when all are answered.
+  </div>
+{/if}
+
 <table class="data-table doc-edit-table line-items-table">
   <thead>
     <tr>
@@ -257,7 +352,7 @@
       <th class="text-right">Price</th>
       <th class="text-right">Amount</th>
       <th>Based on</th>
-      {#if canEdit || onMakeDeliverable}<th>Actions</th>{/if}
+      {#if canEdit || onMakeDeliverable || canMint}<th>Actions</th>{/if}
     </tr>
   </thead>
   <tbody>
@@ -283,7 +378,7 @@
             <br><small>work totals {fmtMoney(li.backing_total)}</small>
           {/if}
         </td>
-        {#if canEdit || onMakeDeliverable}
+        {#if canEdit || onMakeDeliverable || canMint}
           <td>
             {#if canEdit}
               <button type="button" onclick={() => openEditItem(li)}>Edit</button>
@@ -292,13 +387,21 @@
             {#if onMakeDeliverable && (li.linked_deliverables || []).length === 0}
               <button type="button" onclick={() => onMakeDeliverable(li)}>Make Deliverable</button>
             {/if}
+            {#if canMint && needsWorkDecision(li)}
+              <button type="button" onclick={() => openMintModal(li)}>Generate work…</button>
+              <button type="button" onclick={() => declineLine(li)}>No work needed</button>
+            {/if}
+            {#if canMint && li.work_declined}
+              <br><small>no work needed</small>
+              <button type="button" onclick={() => undeclineLine(li)}>Undo</button>
+            {/if}
           </td>
         {/if}
       </tr>
       <AtomCaptionRow
         sources={li.sources || []}
         colspanBefore={1}
-        colspan={5 + ((canEdit || onMakeDeliverable) ? 1 : 0)}
+        colspan={5 + ((canEdit || onMakeDeliverable || canMint) ? 1 : 0)}
       />
       {#each li.sources || [] as source (source.source_id)}
         <AtomChildRow
@@ -365,6 +468,22 @@
   onClose={() => { adjustmentModalOpen = false; }}
 />
 
+<!-- "Generate work…" (Task 7): mirror-seeded manual task create, bound to
+     the estimate line via claimEstimateLine so the mint (MintService,
+     accepted-only) claims it atomically with task creation. -->
+<WorkItemForm
+  open={mintModalOpen}
+  mode="manual"
+  context="job"
+  contextId={estimate.job}
+  presetName={mintModalLine?.description || ''}
+  presetQty={mintModalLine?.qty ?? null}
+  claimEstimateLine={mintModalLine?.line_item_id ?? null}
+  {categories}
+  onSaved={handleMintSaved}
+  onClose={closeMintModal}
+/>
+
 <Modal open={removeDialogLine != null} onCancel={() => { removeDialogLine = null; }} label="Remove line">
   {#if removeDialogLine}
     <h3>Remove line</h3>
@@ -395,4 +514,10 @@
   /* Passive qty/units drift note between a line and its linked deliverable. */
   .deliv-mismatch { color: #b45309; }
   .remove-dialog-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  /* Muted amber notice banner — informational, not the red error overlay.
+     Matches InvoiceEditView's .doc-warning (same family, same styling). */
+  .doc-warning {
+    border: 1px solid #f0c36d; background: #fff8e1; color: #92620a;
+    border-radius: 6px; padding: 8px 12px; margin: 10px 0; font-size: 13px;
+  }
 </style>

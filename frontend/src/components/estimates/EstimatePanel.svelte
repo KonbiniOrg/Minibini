@@ -123,6 +123,11 @@
   let isSuperseded = $derived(estimate?.status === 'superseded');
   let isDraft = $derived(estimate?.status === 'draft');
   let canEdit = $derived(canManageJobs && isDraft);
+  // claims-by-construction (estimating-structure Task 7): mint-off-a-line /
+  // decline gestures are only offered once the estimate is accepted (the
+  // checklist that gates the job's auto-release to in_progress) — same
+  // canManageJobs gate as canEdit, different status.
+  let canMint = $derived(canManageJobs && estimate?.status === 'accepted');
 
   // Doc-shaped rows for the read-only Customer/Reorder kit views — ALL lines
   // including adjustments, numbered as stored. `line_id` (not just
@@ -433,6 +438,8 @@
       {categories}
       onMakeDeliverable={canEdit ? handleMakeDeliverable : null}
       onDeliverablesChanged={onJobChange}
+      {canMint}
+      onWorkDecisionChanged={onJobChange}
     />
   {:else if mode === 'customer'}
     <DocCustomerView
