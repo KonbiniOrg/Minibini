@@ -1,4 +1,5 @@
 from decimal import Decimal, InvalidOperation
+from django.db import transaction
 from apps.core.history import record_history
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -11,12 +12,58 @@ from apps.jobs.models import Job, Task, SchemeInactiveError
 from apps.inventory.models import Material, Earmark
 from apps.jobs.services import JobService, TaskService
 from apps.core.services import NotFoundError, ServiceError
-from apps.estimates.models import WorkTemplate, Estimate, ServiceItem
+from apps.estimates.models import WorkTemplate, Estimate, ServiceItem, EstimateLineItem, EstimateLineItemSource
+from apps.estimates.mint import MintService
 from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin, JobScopedPermissionMixin
 from apps.api.permissions import CanManageJobs, CanManageJobOrPM
 from apps.api.history.serializers import HistoryEntrySerializer
 from apps.api.tasks.serializers import TaskSerializer
 from .serializers import JobSerializer
+
+
+def _resolve_claim_line(request, job):
+    """Presence-gate + resolve the optional `claim_estimate_line` param used
+    by the mint-by-modal gesture (estimating-structure spec §2/§4). Used by
+    JobViewSet.add_from_template — the same param on JobTaskMixin.tasks
+    (apps/api/mixins.py) stays an inline copy there (mixins.py importing
+    from jobs.views is not clean); keep the two in sync by hand if the
+    recipe changes.
+
+    Gate is semantically CanManageJobOrPM().has_object_permission(request,
+    view, job) reproduced without a view instance — for JobViewSet
+    (job_object_path='self') has_object_permission reduces to exactly this
+    check.
+
+    Returns:
+      - None when the param is absent (no claim requested).
+      - the resolved EstimateLineItem when present and valid.
+      - an error Response (403 permission / 400 not found or non-numeric,
+        {'detail': ...} shape — claim_estimate_line is a programmatic
+        param with no form field to key errors under, never a user input)
+        otherwise — callers must return it immediately.
+    """
+    if 'claim_estimate_line' not in request.data:
+        return None
+    if not (request.user.has_perm('core.can_manage_jobs')
+            or JobService.user_can_manage(request.user, job)):
+        return Response(
+            {'detail': 'You do not have permission to plan work '
+                       'against an estimate line.'},
+            status=status.HTTP_403_FORBIDDEN)
+    raw = request.data.get('claim_estimate_line')
+    try:
+        line_pk = int(raw)
+    except (TypeError, ValueError):
+        # Non-numeric input would otherwise 500 on the pk lookup below.
+        return Response(
+            {'detail': 'claim_estimate_line must be a numeric id.'},
+            status=status.HTTP_400_BAD_REQUEST)
+    line = EstimateLineItem.objects.filter(pk=line_pk, estimate__job=job).first()
+    if line is None:
+        return Response(
+            {'detail': 'Estimate line not found on this job.'},
+            status=status.HTTP_400_BAD_REQUEST)
+    return line
 
 
 class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
@@ -363,6 +410,12 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
     @action(detail=True, methods=['post'], url_path='add-from-template')
     def add_from_template(self, request, pk=None):
         job = self.get_object()
+
+        claim_result = _resolve_claim_line(request, job)
+        if isinstance(claim_result, Response):
+            return claim_result
+        claim_line = claim_result
+
         service_item_id = request.data.get('service_item_id')
         est_qty_raw = request.data.get('est_qty')
         name = request.data.get('name') or None
@@ -407,13 +460,17 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            task = template.generate_task(
-                job, est_qty,
-                name=name,
-                description=description,
-                active_modifiers=active_modifiers,
-                est_worker_time=est_worker_time,
-            )
+            with transaction.atomic():
+                task = template.generate_task(
+                    job, est_qty,
+                    name=name,
+                    description=description,
+                    active_modifiers=active_modifiers,
+                    est_worker_time=est_worker_time,
+                )
+                if claim_line is not None:
+                    MintService.claim_atom_for_line(
+                        claim_line, EstimateLineItemSource.SOURCE_TASK, task.pk)
         except SchemeInactiveError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         except ServiceError as e:

@@ -360,6 +360,48 @@ class JobTaskMixin:
 
         from apps.jobs.services import TaskService
         from apps.jobs.models import RateScheme, SchemeInactiveError
+
+        # Mint-by-modal gesture (estimating-structure spec §2/§4): an
+        # optional claim_estimate_line param binds the just-created task to
+        # an existing estimate line as its source atom. Presence of the key
+        # gates on CanManageJobOrPM regardless of who may create the task
+        # itself — reuse its has_object_permission (same check the
+        # standard update/destroy path uses) so the two gates can't drift.
+        # This copy stays inline (mixins.py importing from jobs.views would
+        # be a layering violation); the same recipe is factored into
+        # apps.api.jobs.views._resolve_claim_line for add_from_template —
+        # keep the two in sync by hand if it changes.
+        #
+        # Runs BEFORE serializer validation (fail-closed, gate-first): a
+        # non-manager attaching claim_estimate_line to a request that's
+        # otherwise invalid (missing/bad fields) still gets 403, not 400 —
+        # uniform across both plan-work-gesture endpoints, including
+        # apps.api.jobs.views.add_from_template, whose _resolve_claim_line
+        # helper runs first for the same reason.
+        claim_line = None
+        if 'claim_estimate_line' in request.data:
+            from apps.api.permissions import CanManageJobOrPM
+            if not CanManageJobOrPM().has_object_permission(request, self, job):
+                return Response(
+                    {'detail': 'You do not have permission to plan work '
+                               'against an estimate line.'},
+                    status=status.HTTP_403_FORBIDDEN)
+            from apps.estimates.models import EstimateLineItem
+            try:
+                claim_line_pk = int(request.data.get('claim_estimate_line'))
+            except (TypeError, ValueError):
+                # Non-numeric input would otherwise 500 on the pk lookup
+                # below — same guard as apps.api.jobs.views._resolve_claim_line.
+                return Response(
+                    {'detail': 'claim_estimate_line must be a numeric id.'},
+                    status=status.HTTP_400_BAD_REQUEST)
+            claim_line = EstimateLineItem.objects.filter(
+                pk=claim_line_pk, estimate__job=job).first()
+            if claim_line is None:
+                return Response(
+                    {'detail': 'Estimate line not found on this job.'},
+                    status=status.HTTP_400_BAD_REQUEST)
+
         # Gate money-field writes on what the client actually sent (Phase 3:
         # accounting_category is optional on the serializer now, so a
         # stamp-only POST naming only `rate_scheme` needs no pre-fill to
@@ -374,18 +416,26 @@ class JobTaskMixin:
         validated = serializer.validated_data
         scheme = validated.get('rate_scheme')
         assignee = validated.get('assignee')
+
+        from django.db import transaction
+        from apps.estimates.models import EstimateLineItemSource
+        from apps.estimates.mint import MintService
         try:
-            task = TaskService.create_direct(
-                job,
-                name=validated.get('name', ''),
-                rate_scheme_id=scheme.pk if scheme else None,
-                active_modifiers=validated.get('active_modifiers') or [],
-                est_qty=validated.get('est_qty'),
-                est_worker_time=validated.get('est_worker_time'),
-                actual_qty=validated.get('actual_qty'),
-                description=validated.get('description', ''),
-                assignee_id=assignee.pk if assignee else None,
-            )
+            with transaction.atomic():
+                task = TaskService.create_direct(
+                    job,
+                    name=validated.get('name', ''),
+                    rate_scheme_id=scheme.pk if scheme else None,
+                    active_modifiers=validated.get('active_modifiers') or [],
+                    est_qty=validated.get('est_qty'),
+                    est_worker_time=validated.get('est_worker_time'),
+                    actual_qty=validated.get('actual_qty'),
+                    description=validated.get('description', ''),
+                    assignee_id=assignee.pk if assignee else None,
+                )
+                if claim_line is not None:
+                    MintService.claim_atom_for_line(
+                        claim_line, EstimateLineItemSource.SOURCE_TASK, task.pk)
         except RateScheme.DoesNotExist:
             return Response(
                 {'rate_scheme': ['RateScheme not found.']},
