@@ -35,6 +35,9 @@ class EstimateAcceptanceService:
         Discriminator order: service_item → Task, inventory_item → Material,
         is_material (bare) → established Material (reverse-markup), else → skip
         (plain lines stay document-only; no atom, no source row).
+        Finishes by calling JobService.maybe_auto_release — an all-catalog
+        estimate crystallizes every line here, so the checklist can already
+        be fully answered by the time this returns.
         Returns: {'materials_created': int, 'tasks_created': int}
         """
         from apps.inventory.services import InventoryService, MaterialService
@@ -119,4 +122,10 @@ class EstimateAcceptanceService:
             # material): stays a document-only line. No atom, no source row.
 
         InventoryService.create_earmarks_for_job(job)
+
+        # An all-catalog estimate crystallizes every line above, leaving
+        # nothing unanswered — the job releases to the floor right here.
+        from apps.jobs.services import JobService
+        JobService.maybe_auto_release(job)
+
         return {'materials_created': materials_created, 'tasks_created': tasks_created}

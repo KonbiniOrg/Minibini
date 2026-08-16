@@ -887,6 +887,37 @@ class JobService:
             JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
 
     @staticmethod
+    def maybe_auto_release(job):
+        """approved → in_progress (system transition) when the job's
+        accepted estimate exists and unanswered_lines() is empty. Fires
+        after acceptance, after each mint claim on an accepted estimate,
+        and after each work_declined flip. Idempotent; does nothing for
+        any other job status (on_hold, already in_progress, ...).
+
+        on_hold is checked explicitly (not merely relying on update_job's
+        while-held status guard): a held job keeps its true status
+        underneath (e.g. still 'approved'), so without this check a
+        checklist completing while held would attempt the status write and
+        hit update_job's "release it before changing its status"
+        ValidationError instead of silently no-opping. Auto-release is not
+        one of the on_hold escape hatches — hold wins; only the explicit
+        hold-release path (JobService.release_job) lifts the flag, and it
+        does not itself re-check the checklist."""
+        job.refresh_from_db()
+        if job.status != Job.STATUS_APPROVED or job.on_hold:
+            return
+        accepted_estimates = Estimate.objects.filter(
+            job=job, status=Estimate.STATUS_ACCEPTED)
+        if not accepted_estimates.exists():
+            return
+        from apps.estimates.services import EstimateService
+        for estimate in accepted_estimates:
+            if EstimateService.unanswered_lines(estimate).exists():
+                return
+        JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS,
+                                 system_transition=True)
+
+    @staticmethod
     def mark_work_reopened(job):
         """Pull a WORK_COMPLETE Job back to IN_PROGRESS when a new incomplete
         Task lands on it — work_complete means every task is terminal, and a

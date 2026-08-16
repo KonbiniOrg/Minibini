@@ -10,7 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from apps.estimates.models import (
-    Estimate, EstimateLineItem,
+    Estimate, EstimateLineItem, EstimateLineItemSource,
     WorkTemplate, ServiceItem, TemplateTaskAssociation,
     ChangeOrder,
 )
@@ -533,6 +533,7 @@ class EstimateService:
         return li
 
     @staticmethod
+    @transaction.atomic
     def _set_work_declined(li, value):
         """The acceptance-checklist "no work needed" mark (design doc
         2026-08-15 "estimating structure"): reversible, set-able ONLY while
@@ -564,7 +565,28 @@ class EstimateService:
         li.work_declined = value
         li.full_clean()
         LineItemService.save_line_item(li)
+
+        from apps.jobs.services import JobService
+        JobService.maybe_auto_release(li.estimate.job)
         return li
+
+    @staticmethod
+    def unanswered_lines(estimate):
+        """Lines still owing a work decision on an ACCEPTED estimate:
+        non-adjustment, non-deposit lines with no sources and
+        work_declined=False. (Catalog-identity lines crystallize at accept
+        and therefore carry sources by the time this is consulted.)"""
+        answered_ids = EstimateLineItemSource.objects.filter(
+            estimate_line_item__estimate=estimate,
+        ).values('estimate_line_item_id')
+        return estimate.estimatelineitem_set.filter(
+            adjustment_service__isnull=True,
+            work_declined=False,
+        ).exclude(
+            accounting_category__is_deposit=True,
+        ).exclude(
+            pk__in=answered_ids,
+        )
 
     @staticmethod
     def reorder_line_items(estimate_pk, item_ids):

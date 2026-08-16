@@ -16,6 +16,7 @@ be claimable through this gesture. Lines already marked work_declined have
 answered "no work needed" and must be un-marked before they can be minted.
 """
 from django.core.exceptions import ValidationError
+from django.db import transaction
 
 # apps.estimates.models has no dependency back on this module (or on
 # anything that transitively imports it), so a top-level import here
@@ -30,6 +31,7 @@ MINT_STATUSES = (Estimate.STATUS_ACCEPTED,)
 class MintService:
 
     @staticmethod
+    @transaction.atomic
     def claim_atom_for_line(line_item, source_type, source_pk):
         """Mint the claim binding atom (source_type, source_pk) to
         line_item. Returns the EstimateLineItemSource. Raises
@@ -43,7 +45,10 @@ class MintService:
         `claims.py`'s atom_is_claimed — because a claim can equally live on
         an accepted CO's own line-item sources. The three endpoints that
         call this service only ever claim just-created atoms, so that
-        second table is never in play here."""
+        second table is never in play here.
+
+        After a successful claim, calls JobService.maybe_auto_release —
+        this claim may have been the job's last unanswered checklist line."""
         from apps.estimates.models import EstimateLineItemSource
         from apps.inventory.models import Material
         from apps.jobs.models import Task
@@ -73,8 +78,15 @@ class MintService:
                 source_type=source_type, source_pk=source_pk).exists():
             raise ValidationError('This atom is already claimed.')
 
-        return EstimateLineItemSource.objects.create(
+        source = EstimateLineItemSource.objects.create(
             estimate_line_item=line_item,
             source_type=source_type,
             source_pk=source_pk,
         )
+
+        # Answering a checklist line can be the last unanswered one — the
+        # estimate is always ACCEPTED here (the gate above admits nothing
+        # else), so this is unconditional, not a re-check of estimate.status.
+        from apps.jobs.services import JobService
+        JobService.maybe_auto_release(estimate.job)
+        return source
