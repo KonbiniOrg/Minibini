@@ -583,6 +583,21 @@ Valid transitions:
 *reactivation* transitions (undo a premature completion / accidental
 cancel), gated by `can_manage_jobs` at the API layer.
 
+`approved → in_progress` ("release to the floor") is **system-transition
+only** (estimating-structure spec, 2026-08-15): `JobService.update_job`
+rejects a direct edit into this transition unless the caller passes
+`system_transition=True`. The sole system trigger is
+`JobService.maybe_auto_release` — fires once every line on the job's
+accepted Estimate that owes a work decision (`EstimateService.
+unanswered_lines`) has been answered (claimed via mint, or explicitly
+declined via `work_declined`), or immediately at acceptance if every
+line crystallized to an atom (all-catalog estimate — no plain hand
+lines to answer). `on_hold` wins over auto-release unconditionally: a
+held job's checklist completing while held does not release it — it
+stays parked at its true underlying status until explicitly released.
+The manual release-to-floor pill action is retired — see
+`jobs-and-tasks.md` §3.3.
+
 `STATUS_IN_PROGRESS` sits between `approved` and `work_complete` (added when
 WorkOrder was removed). `work_complete` = every task terminal AND no
 pending material (task-attached or loose) with quantity still committed —
@@ -647,6 +662,34 @@ Non-CO holds resume manually.
 - At most one Estimate for the Job in `draft` or `open` status at a time;
   others must be `rejected` or `superseded` (validator-enforced).
 - Job `approved` → exactly one Estimate must be `accepted`.
+- **Answeredness invariant is event-driven, not continuously enforced**:
+  `JobService.maybe_auto_release` runs from exactly three call sites —
+  estimate acceptance, a mint claim (`MintService.claim_atom_for_line`),
+  and a `work_declined` flip (`EstimateService._set_work_declined`) —
+  never as a background sweep. So a Job sitting at `approved` (not
+  `on_hold`) with an accepted Estimate has no unanswered checklist line
+  (`EstimateService.unanswered_lines(estimate)` empty) **only as of the
+  last time one of those three events fired on it**; nothing re-checks
+  it merely by the clock or on read. A Job whose checklist was already
+  complete the moment any of the three last fired stays consistent with
+  the invariant indefinitely (nothing new can make an already-answered
+  line unanswered again except un-declining it, which itself fires the
+  same recheck). An `in_progress` job may still carry an estimate with
+  unanswered lines if a Blep/task-complete separately advanced it via
+  `mark_work_started` before the checklist was ever touched — work-start
+  and auto-release are independent triggers on the same `approved →
+  in_progress` edge. **Pre-feature (`< 2026-08-15`) data**: existing
+  `approved`/`in_progress`+ jobs were never migrated or backfilled
+  (`work_declined` migration `0048` is a bare `AddField`, default
+  `False`) — their old sourceless hand lines simply sit un-evaluated
+  until some later mint/decline event touches that same estimate, at
+  which point `unanswered_lines` inspects the estimate's lines
+  wholesale and would surface those old lines too, not just the one
+  just touched. The nealsdata converter's `build_checklist_declines`
+  pass (regenerated fixtures only, not a production migration) marks
+  every `approved`-or-beyond converted job's sourceless hand lines
+  `work_declined=True` up front specifically so this gap never surfaces
+  in seeded/dev data.
 - Job `completed`/`cancelled` → no unresolved Estimates (none in `draft` or
   `open`).
 - Job `work_complete` (or later) → all Tasks on the Job terminal.
@@ -1027,6 +1070,23 @@ Enforced in `Estimate.clean()`.
   `validate_data.check_estimate_line_categories` cross-checks the
   hand-line rule at rest (Phase 3 Task 8); the CO parallel is
   `check_change_order_line_categories` (§1.13a below).
+- **work_declined** (bool, default False, migration `0048`): the
+  acceptance-checklist "no work needed" answer (estimating-structure
+  spec). **Set-able only while the parent estimate is `accepted`**
+  (`EstimateService._set_work_declined` — draft and open both refuse;
+  every other line field stays draft-only, the opposite gate). Refused
+  on a line that already has an `EstimateLineItemSource` (has claimed
+  work), is an adjustment line, carries a deposit-flagged
+  `accounting_category`, or has catalog identity (`service_item`,
+  `inventory_item`, or `is_material`) — those crystallize/mint instead
+  of being declined. Reversible (`False` = unanswered again). **Rejected
+  outright at line creation** (`add_line_item`) regardless of estimate
+  status — the field answers a checklist question that doesn't exist
+  yet for a line that hasn't been created. A PATCH body setting
+  `work_declined` must set *only* that field; combining it with any
+  other field key is rejected on any estimate status (the two update
+  paths — draft-only field edits, accepted-only decline toggle — never
+  blur together).
 
 #### EstimateLineItemSource
 

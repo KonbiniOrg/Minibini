@@ -217,3 +217,70 @@ double-claim under race), PDF/portal still baseline on the flat estimate
       teal.
 - [ ] Task page: materials tables ride the amber band; the in-table
       "Materials (no task)" divider is the lighter 60% tier (deliberate).
+
+## Estimating structure — claims by construction (feature/estimating, added 2026-08-15)
+
+One new migration (`estimates/0048_estimatelineitem_work_declined`) —
+`python manage.py migrate` on dev.
+
+- [ ] **Draft bundling.** On a draft estimate (or CO), tick 2+ atoms in
+      the Uncovered-work pool → "Bundle into line…" opens `BundleModal`,
+      not a direct create. Try a uniform task bundle (same units/rate) —
+      qty/price seed sensibly (summed hours, shared rate). Try a mixed
+      selection — falls back to a lump sum (qty 1, the summed total).
+      "keep total $X" is checked by default: change qty, price
+      re-derives; edit price directly instead, and the checkbox unchecks
+      itself (one-way). Selecting exactly one atom still opens the
+      modal, seeded from that atom's own values (not a one-click
+      shortcut — deliberate, same gesture either way).
+- [ ] **"Add selected here" is gone** on the estimate and CO edit views —
+      there is no way to attach a pool selection onto an *already
+      existing* line any more, only to compose a new one via Bundle.
+      (Invoice keeps its old one-click "Create line" behavior,
+      unchanged.)
+- [ ] **Open is inert.** Send a draft estimate to `open` — no mint/decline
+      affordances appear anywhere, even on a plain hand line. Work
+      decisions wait for acceptance.
+- [ ] **The acceptance checklist.** Accept an estimate that has at least
+      one plain hand line (no service/inventory pick, not marked
+      material): a banner reads "N line(s) need a work decision — the
+      job starts automatically when all are answered." Per unanswered
+      line: **"Generate work…"** opens a task-create modal pre-filled
+      from the line (name, qty) — Save creates the task AND claims it to
+      the line in one step, no separate "attach" step. **"No work
+      needed"** marks it declined (a muted "no work needed" caption +
+      **Undo** appear); neither button confirms — both are freely
+      reversible.
+- [ ] **Auto-release.** Once every line on the checklist is answered
+      (minted or declined), the job jumps `approved → in_progress` on
+      its own — no button, no confirmation, it just happens the moment
+      the last line is answered.
+  - [ ] **All-catalog case**: accept an estimate whose every line is a
+        service/inventory pick (no plain hand lines at all) — the job
+        should land `in_progress` immediately on accept, nothing to
+        answer.
+  - [ ] **All-declined case**: decline every hand line on a hand-only
+        estimate — the job releases to `in_progress` with **zero
+        tasks**. This is intended (taskless hand-billed jobs), not a
+        bug — confirm you're OK seeing it in the wild.
+  - [ ] **Hold wins.** Put the job on hold before finishing the
+        checklist, then answer the last line — it does NOT release; it
+        stays parked. Releasing the hold afterward does not itself
+        re-check the checklist (it resumes whatever status it's really
+        at).
+  - [ ] **The status pill no longer offers "Release to floor" at all** —
+        `approved → in_progress` is off the dropdown entirely now;
+        confirm it's really gone, not just relabeled.
+- [ ] **No undo on a bad mint.** Mint a task with the wrong name/qty/rate
+      on purpose, then look for an "undo" or "un-mint" — there isn't
+      one by design. The fix is editing the minted task directly (same
+      as fixing any other task); confirm that reads as sufficient in
+      practice, not as a missing safety net.
+- [ ] **Converter regeneration.** After reseeding from the converter
+      (`nealsdata`), spot-check an `approved`+ converted job's estimate:
+      it should show **zero** unanswered checklist lines even though the
+      converter never ran a real mint/decline gesture — the converter's
+      compat pass marks old sourceless hand lines declined so regenerated
+      data doesn't surface phantom checklist debt. (`nealsmall.json` /
+      nealseed are RM-managed — this only applies if you regenerate
+      `converted.json`.)

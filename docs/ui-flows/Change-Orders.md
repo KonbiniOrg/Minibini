@@ -118,8 +118,11 @@ buttons instead of a diff. Four row kinds:
   (deletes the CO line, reverting to an untouched agreement row).
 - [ ] **Added rows** (tinted, tagged **CO N**) show their own claimed-atom
   child rows (each independently detachable) and a Backing chip — actions
-  **Edit** / **Remove**, plus **Add selected here** whenever an
-  uncovered-work atom below is ticked.
+  **Edit** / **Remove**. (**"Add selected here"** — attaching a ticked
+  uncovered-work atom onto an existing added row — is retired,
+  estimating-structure spec 2026-08-15; composing atoms into a CO line
+  happens only via the Bundle gesture below, never by attaching to a row
+  that already exists.)
 - [ ] **Replace on an adjustment-backed row** opens a different modal
   variant — description + **percent only**, no qty/price fields. Saving
   POSTs the percent; the server recomputes the dollar amount against the
@@ -133,10 +136,10 @@ buttons instead of a diff. Four row kinds:
   row.
 - [ ] **Uncovered work** (below the table): the CO's own atom pool — Tasks
   and Materials on the job not yet covered by the agreement or this CO.
-  Ticking one or more rows reveals **Add selected here** on every existing
-  **added** row and a **"New line from selected"** footer prompt (creates
-  a fresh added row from the ticked atoms, then opens it for editing). An
-  atom already claimed by the estimate or another CO shows as
+  Ticking one or more rows reveals a dashed **"Bundle into line…"**
+  footer prompt (`BundleModal` — keep-the-total qty↔price coupling,
+  always-explicit overrides; same authoring modal as the estimate edit
+  view). An atom already claimed by the estimate or another CO shows as
   unselectable with a "Claimed by estimate {number}" / "Claimed by change
   order {number}" note.
 - [ ] **Undo/Remove are local and free.** No confirmation prompt anywhere
@@ -286,9 +289,9 @@ Entry: open CO → **Record Accepted** (or the customer's portal Accept).
 |---|---|
 | Entry | pause (hold reason required) · open-blep block · Create Change Order gating (on_hold + accepted estimate + no COs yet; hidden and API-refused un-held) · exit guard |
 | Deliverables diff | change (amber + struck) · remove (+Undo) · add · shipped frozen |
-| Amended agreement (Edit mode) | agreement row (Remove via CO/Replace…, billed-on disables both) · replaced row (tinted, struck original, inherited claims, Edit/Undo) · removed row (struck, Undo) · added row (tinted, own claims, Edit/Remove/Add selected here) · adjustment Replace… (percent-only, server-computed readback) · stale-adjustment caption · footer totals |
+| Amended agreement (Edit mode) | agreement row (Remove via CO/Replace…, billed-on disables both) · replaced row (tinted, struck original, inherited claims, Edit/Undo) · removed row (struck, Undo) · added row (tinted, own claims, Edit/Remove) · adjustment Replace… (percent-only, server-computed readback) · stale-adjustment caption · footer totals |
 | Views modes | Edit (table above) · Customer (changed-lines-only delta rows + Change total/Revised total) · Reorder (CO's own add/replace rows only) |
-| Uncovered work / claiming | tick atoms → Add selected here / New line from selected · claimed-elsewhere note (estimate or another CO) · authored-claim add line skips crystallization on accept |
+| Uncovered work / claiming | tick atoms → Bundle into line… (`BundleModal`, keep-total) · claimed-elsewhere note (estimate or another CO) · authored-claim add line skips crystallization on accept |
 | Add-line source | service (deferred, no Task yet) · inventory · freeform material (AC default) · plain hand-line (AC required, exempt if claiming atoms) |
 | Send | send page + PDF + portal link · resend · AC send guard (pre-email) · empty-CO guard (deliverables-only IS sendable) |
 | Acceptance crystallization/move/retire | add → Task / Material+earmark / provisional Material / plain hand-line crystallizes nothing / skipped if already claimed · remove → task cancelled (bleps kept) + descoped_by stamp / material released (qty 0, earmark gone) + descoped_by stamp / plain hand-line just drops · complete task + consumed material stamped but otherwise left alone · replace → claim MOVED onto the CO line, same atom untouched, never stamped · adjustment replace → percent/price only, crystallizes nothing |

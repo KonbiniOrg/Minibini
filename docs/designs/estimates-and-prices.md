@@ -993,6 +993,13 @@ taxability reads `accounting_category.taxable` directly). Declared in
   `related_name='+'`). Deferred service descriptor: the line carries the
   `ServiceItem`'s snapshotted price at authoring time, and the FK is the
   crystallization target that `on_accept` resolves to a `Task` (§9.1).
+- `work_declined` — BooleanField, default `False`, migration `0048`
+  (estimating-structure spec, 2026-08-15). The acceptance-checklist "no
+  work needed" answer: a plain hand line (no sources, not an adjustment,
+  not a deposit line, no catalog identity) is marked declined instead of
+  minted. **Set-able only while the estimate is `accepted`** — the one
+  field on this model writable outside the normal draft-only window; see
+  §9a for the full mint/decline/checklist model.
 
 The serializer exposes a read-only `adjustment_service_detail` dict
 `{name, rate, algorithm}` for display purposes when `adjustment_service`
@@ -1304,7 +1311,7 @@ conventions.
 | Component | Path | Role |
 |---|---|---|
 | `EstimateEditView.svelte` | `frontend/src/components/estimates/` | The estimate's **Edit** mode — one merged surface: the line-items table (each row's atom claims nested via `AtomChildRow`) plus an `UncoveredWorkSection` pool below it. Presentation + gestures only; `EstimatePanel` owns data loading. See §12. |
-| `docsurface/*` kit | `frontend/src/components/docsurface/` | Nine shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `BundleModal`, `QtyUnits`, `DocCustomerView`, `DocReorderView`) consumed by the estimate, invoice, **and CO** (§14.9a) edit surfaces. Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched. `QtyUnits` (2026-08-11) renders a line's qty + units in every doc line table — inline, wrapping when squeezed; units `'none'` omitted. `BundleModal` (Task 8, 2026-08-15) is the estimate/CO "bundle into line" authoring modal — see §12.1a. `NewLineFromSelectedRow` takes an optional `buttonLabel` prop (default `"Create line"`) so the estimate/CO surfaces can read "Bundle into line…" while the invoice surface (unchanged one-click flow) keeps the default. |
+| `docsurface/*` kit | `frontend/src/components/docsurface/` | Ten shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `AtomCaptionRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `BundleModal`, `QtyUnits`, `DocCustomerView`, `DocReorderView`) consumed by the estimate, invoice, **and CO** (§14.9a) edit surfaces. Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched. `QtyUnits` (2026-08-11) renders a line's qty + units in every doc line table — inline, wrapping when squeezed; units `'none'` omitted. `BundleModal` (Task 8, 2026-08-15) is the estimate/CO "bundle into line" authoring modal — see §12.1a. `NewLineFromSelectedRow` takes an optional `buttonLabel` prop (default `"Create line"`) so the estimate/CO surfaces can read "Bundle into line…" while the invoice surface (unchanged one-click flow) keeps the default. |
 | `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines via **Add line** + per-line **Edit**. |
 
 The invoice side is structurally parallel — same source pool, add-atoms,
@@ -1434,6 +1441,153 @@ never-sent draft dying does not reject the Job (out of scope). Only the
 
 Pointer: `docs/designs/jobs-and-tasks.md` §13 for the full
 receiver-by-receiver behavior.
+
+### 9a. The acceptance checklist — mint, decline, and auto-release
+
+**(estimating-structure spec, 2026-08-15 — "claims by construction".
+Supersedes any earlier reading of this document that implied a line's
+claims could be attached after the fact; see
+`docs/plans/2026-08-15-estimating-structure.md` for the design
+narrative and the failed-experiment post-mortem it opens with.)**
+
+A line's claims exist for exactly one of two reasons, never both, and
+never by later attachment:
+
+- **Projected** — built from plan atoms via the bundle gesture (§12.1a).
+  Its claims exist because the atoms *made* the line, at draft time.
+- **Generative** — hand-written or catalog-picked. §9's four-way
+  discriminator resolves `service_item`/`inventory_item`/`is_material`
+  lines automatically at acceptance; a **plain** hand line instead
+  *mints* its work later (or is explicitly declined) — the mint creates
+  a new atom claimed at birth. Its claims exist because the line made
+  the atom.
+
+There is no gesture anywhere that links a **pre-existing** atom to a
+**pre-existing** line — that was the prior design's failure mode
+(overlapping/faithless claims, silent crystallization conflicts, a
+remove-last-atom-deletes-the-line trap). Mint and decline exist **only
+on `accepted` estimates** — a line is frozen (`open`) before its work
+decision is even askable, and a document that's still `draft` is still
+being composed, not yet a commitment to answer for. **Estimate-only, not
+Change Orders**: `MintService.claim_atom_for_line` gates on
+`Estimate.status`, not `ChangeOrder.status`, and `ChangeOrderService`
+rejects `work_declined` outright as "not a valid field for change order
+line items." A CO's own bare hand (`add`) line has no mint/decline path
+at all in this pass — it crystallizes nothing at CO acceptance (the
+same four-way discriminator as §9, minus a checklist) and stays
+document-only permanently, same as it did before this spec. Confirmed
+in scope at design time (leanest first pass); a CO-side checklist is not
+built.
+
+**The acceptance checklist.** After §9's crystallization pass, every
+plain hand line without a source row and without a decline mark still
+owes a work decision. `EstimateService.unanswered_lines(estimate)`
+computes exactly that set: non-adjustment, non-deposit lines with no
+`EstimateLineItemSource` and `work_declined=False`. (Catalog-identity
+lines never appear here — §9's discriminator already gave them a
+source row by the time acceptance returns.) The estimate surface
+(§12.1) shows this as a checklist banner and per-line "Generate work…"
+/ "No work needed" buttons; the job automatically starts once every
+line is answered — see "Auto-release" below.
+
+**Mint — `MintService.claim_atom_for_line`** (`apps/estimates/mint.py`).
+Binds a just-created atom (a Task or Material) to a line as its source,
+the same claim shape §6.2 describes for the wizard's atom-to-line-item
+sourcing — but constructed the opposite direction: the line already
+exists and the atom is minted *for* it, one-shot, rather than the atom
+pre-existing and the line built from a selection of atoms.
+
+```python
+MINT_STATUSES = (Estimate.STATUS_ACCEPTED,)
+```
+
+`claim_atom_for_line(line_item, source_type, source_pk)` raises a plain-
+sentence `ValidationError` (never a field-keyed one — this is a
+programmatic binding call, not a form) when:
+
+- the estimate's status isn't in `MINT_STATUSES` (draft, open, and every
+  dead status all refuse — "Cannot plan work on an estimate in status
+  \"{status}\".");
+- the line is an adjustment line;
+- the line carries catalog identity (`service_item`, `inventory_item`,
+  or `is_material`) — those crystallize their own atom at acceptance and
+  must never also be claimable through this gesture;
+- the line is already marked `work_declined` — un-mark it first (mint
+  and decline are mutually exclusive answers to the same question);
+- the atom is missing, belongs to a different job, or is already
+  claimed by another line (mirrors §6.2's whole-atom-claim invariant).
+
+On success it creates the `EstimateLineItemSource` row and calls
+`JobService.maybe_auto_release(estimate.job)` unconditionally — the
+estimate is always `accepted` here (the gate above admits nothing
+else), so this claim may be the checklist's last unanswered line.
+
+**The `claim_estimate_line` gesture** is how a mint actually gets its
+atom: an optional body key on `POST /api/jobs/{id}/tasks/` and
+`POST /api/jobs/{id}/add-from-template/` (the two task-creation
+endpoints) that binds the just-created Task to an existing estimate
+line as its mint claim, atomically with creation — there is no
+separate "create then claim" round trip, and no path claims a
+**material** atom this way (materials crystallize at accept via §9's
+discriminator only; deferred to a later pass — see the plan doc's
+"Deliberately absent" note). Presence-gated on `CanManageJobOrPM`,
+checked *before* serializer validation so a non-manager attaching the
+key to an otherwise-invalid body still 403s rather than 400s; a
+non-numeric or off-job line id 400s. Full gate mechanics:
+`users-and-permissions.md`; endpoint table: `jobs-and-tasks.md` §3.4.
+
+**On the estimate surface** (§12.1), "Generate work…" opens
+`WorkItemForm` mirror-seeded from the line — `presetName` from the
+line's description, `presetQty` from its qty, `claimEstimateLine` set
+to the line's id — so the ~common case (a 1:1 hand or service-pick line
+minting one task) is effectively one click: the seed is already right,
+Save closes the modal, and the claim lands atomically with the Task.
+The mint modal's interior is deliberately minimal in this first pass
+(RM, 2026-08-15): Save-&-close plus decline only — no "Save & add
+another" for a multi-task mint yet; see the plan doc's "Open questions"
+for what's deferred.
+
+**Decline — `EstimateService._set_work_declined`** (invoked only
+through `update_line_item`'s single-field carve-out — see §6.1 and
+`architecture-and-conventions.md` §4). The "no work needed" answer:
+reversible (`False` unmarks it), refused on the same shapes mint
+refuses (atom-backed, adjustment, deposit, catalog-identity), and calls
+`JobService.maybe_auto_release` on every flip in either direction (an
+undecline can reopen a checklist that had just closed). On the estimate
+surface, "No work needed" and its "Undo" carry **no confirmation
+dialog** — both directions are freely reversible, per the UI
+convention that confirmation is reserved for the irreversible.
+
+**Auto-release** replaces the old manual "release to floor" pill
+action; the full trigger/on_hold-interaction mechanics live in
+`jobs-and-tasks.md` §3.3 (owner: Job status), and the invariant this
+section's checklist maintains is recorded in `data-constraints.md` §1.8
+"Answeredness invariant". In short: `JobService.maybe_auto_release`
+walks an `approved`, non-`on_hold` job to `in_progress` the moment its
+accepted estimate has no unanswered lines — fired right after
+acceptance (so an **all-catalog estimate releases to the floor
+automatically at acceptance**, nothing left to answer), after every
+mint claim, and after every decline flip. A job whose every hand line
+was declined releases with **no tasks at all** — a supported, deliberate
+flow, not a guard to add.
+
+**Bad-mint recovery has no dedicated undo.** The expected fix for a
+wrong mint (bad scheme, wrong qty, mistyped name) is simply **editing
+the minted Task** — task editing already permits this, so the claim
+itself never needs unwinding. There is no "un-mint" gesture and none is
+planned; a claim is released only through the general atom-**deletion**
+path (§6.2's `purge_source_rows_for_atom`), which would reopen the line
+on the checklist as unanswered again — that is not a recovery flow,
+it's what deleting any claimed atom already does everywhere in the
+system. **Cancelling** the minted Task (as opposed to deleting it) does
+**not** purge the claim — `purge_source_rows_for_atom` fires only from
+`Task.delete()` — so a cancelled-but-not-deleted mint leaves the line
+"answered" via its still-live source row even though the work behind it
+is dead. Whether that's the right read for a cancelled mint was an open
+question at design time (RM, 2026-08-15: "verify during build that no
+path actually needs un-minting... what a CANCELLED minted task means
+for the line's checklist state") that this pass did not settle further
+— flagged here rather than asserted as resolved.
 
 ---
 
@@ -1706,9 +1860,12 @@ such as an open edit modal or the current pool selection; see
   with a linked deliverable, which opens a three-way dialog: "Remove
   line and deliverable" (`?delete_deliverables=true`), "Remove line,
   keep deliverable" (the SET_NULL FK just unlinks), or Cancel — deleting
-  a persisted deliverable is the irreversible half, RM 2026-08-12), and
-  — only while the ticked-selection is non-empty — **"Add selected
-  here"** (`POST .../line-items/{id}/add-atoms/`). **The word "delete"
+  a persisted deliverable is the irreversible half, RM 2026-08-12).
+  **"Add selected here"** (attaching a ticked pool selection onto an
+  *existing* line) is **removed** (estimating-structure spec,
+  2026-08-15) — composing atoms into a line happens only through the
+  bundle gesture below, never by attachment to a line that already
+  exists. **The word "delete"
   does not appear anywhere on this surface** — Remove releases the
   line's backing work untouched, it does not destroy the atoms.
 - **"Make Deliverable"** (built 2026-08-12 — spec §6; label per RM,
@@ -1742,6 +1899,24 @@ such as an open edit modal or the current pool selection; see
   effect keys on the job object identity — so the job-context band's
   Deliverables panel above refreshes in place (the standard
   props-down/callback-up partial-refresh chain).
+- **Checklist banner + mint/decline (Task 7, estimating-structure
+  spec, 2026-08-15 — see §9a for the model).** While the estimate is
+  `accepted` and any line still owes a work decision, a banner above the
+  table reads "N line(s) need a work decision — the job starts
+  automatically when all are answered." — visible to **any** viewer of
+  an accepted estimate (informational, like the "needs category"
+  marker), independent of `canMint`, which gates only the action
+  buttons. `needsWorkDecision(li)` mirrors `EstimateService.
+  unanswered_lines`'s predicate client-side (no sources, not declined,
+  not an adjustment, not a deposit, no catalog identity). Per line
+  (while `canMint = canManageJobs && estimate.status === 'accepted'`):
+  an unanswered line gets **"Generate work…"** (opens `WorkItemForm`
+  mirror-seeded from the line — name/qty preset, `claimEstimateLine`
+  bound to the line's id, §9a) and **"No work needed"**
+  (`PATCH .../line-items/{id}/ {work_declined: true}`); a declined line
+  instead shows a muted "no work needed" caption and **Undo**
+  (`{work_declined: false}`). Neither direction confirms — both are
+  freely reversible.
 - **Uncovered-work pool** (`UncoveredWorkSection`, title "Uncovered
   work") — fed from `GET .../source-pool/`, filtered to atoms this
   estimate hasn't already claimed (`claimed_by_current` excluded — those
@@ -1788,12 +1963,26 @@ untouched — see above). It is self-contained like `AdjustmentModal`/
   amount (reusing the `atomKindTag`/`fmtMoney`/`formatQtyUnits`
   idioms), plus the summed total.
 - **Authoring fields:** description, qty, units, price — seeded from
-  the single atom's own values when exactly one is selected; for 2+
-  atoms, seeded as a plain lump sum (`qty=1`, `units='none'`,
-  `price=`the summed total) rather than trying to mirror the backend's
-  uniform-bundle detection (§8.1) — keep-total's qty→price
-  re-derivation is the tool for reshaping that lump sum, so there's no
-  need to guess a "smarter" starting split client-side.
+  the single atom's own values when exactly one is selected. For 2+
+  atoms, `deriveMultiAtomSeed` (Task 8 follow-up fix) mirrors the
+  backend's uniform-bundle detection (§8.1's `_uniform_money_bundle`)
+  client-side: when every selected atom is a Task, shares the same
+  units, and shares the same effective rate, it seeds `qty` = the
+  summed qty (rounded to cents — plain float addition of two-decimal
+  quantities like three `1.10`s otherwise produces binary-float garbage
+  a `DecimalField(decimal_places=2)` rejects on submit), `units`/`price`
+  from the shared values, `description=''`. Anything else (mixed atom
+  types, differing units/rate) falls back to a plain lump sum (`qty=1`,
+  `units='none'`, `price=`the summed total) — keep-total's qty→price
+  re-derivation is the tool for reshaping that lump sum. This is an
+  **approximation of the backend's own rule**, not a duplicate of it:
+  the source-pool atom shape only exposes each task's effective rate +
+  unit label, not the raw stamped `rate`/`active_modifiers` the backend
+  actually compares — harmless, because the modal always sends
+  description/qty/units/price as explicit overrides (WYSIWYG), so a
+  seed that doesn't exactly match the backend's own (unused once
+  overrides are present) derivation can never make the created line
+  differ from what's displayed.
 - **Keep-the-total gesture, ON by default:** while the "keep total $X"
   checkbox is checked, editing qty re-derives `price = total ÷ qty`
   (rounded to cents). Editing price directly is a **one-way** exit —

@@ -1805,14 +1805,15 @@ def build_checklist_declines(c):
     checklist-consistent without a data-repair pass. (No converter-emitted
     EstimateLineItem ever carries a catalog identity — service_item/
     inventory_item/is_material are only set at accept-time crystallization
-    in the running app — but the check mirrors EstimateService.decline_line_item's
-    exclusions for safety.)
+    in the running app — but the check mirrors EstimateService._set_work_declined's
+    (invoked via update_line_item's work_declined carve-out) exclusions for
+    safety.)
 
     Runs after build_synthetic_estimate_sources (sourcing must be final)
     and therefore after reconcile too (job/estimate statuses final).
     """
     # Statuses reachable only via/after the approved gate — see Job's
-    # ALLOWED_TRANSITIONS (jobs/models.py): draft/submitted/rejected can
+    # VALID_TRANSITIONS (jobs/models.py): draft/submitted/rejected can
     # never hold an accepted estimate that has passed this gate. (Pure-JSON
     # pass — no Django import here, so status values are string literals
     # mirroring Job's constants, same convention as build_invoice_agreement_refs.)

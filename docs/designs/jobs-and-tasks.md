@@ -290,11 +290,40 @@ tasks.
 
 ### 3.3 Auto-advance on work activity
 
-**To `in_progress`:** when work starts on an `approved` Job — a Blep is
-opened (`start_work` or `create_historical`) or a Task is completed —
-`JobService.mark_work_started(job)` advances it `approved → in_progress`.
-It is a no-op for any other status (pre-`approved` jobs are left alone;
-the state machine forbids a direct DRAFT/SUBMITTED jump).
+**To `in_progress`:** two independent triggers share this edge, and
+either alone is sufficient:
+
+- **Work starting** — when work starts on an `approved` Job (a Blep is
+  opened via `start_work`/`create_historical`, or a Task completes),
+  `JobService.mark_work_started(job)` advances it `approved →
+  in_progress`. No-op for any other status (pre-`approved` jobs are left
+  alone; the state machine forbids a direct DRAFT/SUBMITTED jump).
+- **Auto-release (replaces the old manual "release to floor" pill,
+  estimating-structure spec, 2026-08-15)** — `JobService.
+  maybe_auto_release(job)` advances an `approved`, non-`on_hold` Job the
+  same way once every hand line on its accepted Estimate that owes a
+  work decision has one: `EstimateService.unanswered_lines(estimate)`
+  empty (every line either mint-claimed, declined via `work_declined`,
+  or crystallized to a catalog atom already). Fires from three points —
+  right after acceptance crystallization (`EstimateAcceptanceService.
+  on_accept`, so an **all-catalog estimate releases to the floor
+  automatically at acceptance** — nothing left to answer), after a mint
+  claim (`MintService.claim_atom_for_line`), and after a `work_declined`
+  flip (`EstimateService._set_work_declined`) — never as a background
+  sweep, so nothing re-checks a job's checklist state on its own; see
+  `data-constraints.md` §1.8 "Answeredness invariant". `on_hold` wins
+  unconditionally: a held job's checklist completing does not release
+  it — it stays parked at its true status until explicitly released
+  (`JobService.release_job`), which does not itself re-check the
+  checklist. A job whose every hand line was declined releases with
+  **no tasks at all** — taskless hand-billed jobs are a deliberately
+  supported flow, not an edge case to guard against.
+  `PATCH /api/jobs/{id}/` can no longer drive `approved → in_progress`
+  directly — `JobService.update_job` raises unless the caller passes
+  `system_transition=True` (the same guard shape as the direct-approval
+  gate above); the status pill (§9.1) no longer offers the transition.
+  See `estimates-and-prices.md` §9a and `users-and-permissions.md`
+  "Manual `approved → in_progress` is retired".
 
 **To `work_complete`:** when a Task transitions to `complete` or
 `cancelled`, `TaskLifecycleService._check_job_work_complete`
@@ -363,8 +392,8 @@ status (including `draft`). Ways to populate it:
 | Path | Trigger | Service | Notes |
 |---|---|---|---|
 | From WorkTemplate | `POST /api/jobs/{id}/populate-from-template` | `JobService.populate_from_template` | Generates Tasks + Materials from a `WorkTemplate`; creates earmarks |
-| Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `ServiceItem.generate_task` | One Task from a `ServiceItem`; endpoint is `IsAuthenticated`-only (workers can self-serve) — but a request that includes the `active_modifiers` key (even `[]`, overriding the template's own defaults) requires `CanManageJobOrPM` or `can_manage_financials`, same money-field gate as direct create (users-and-permissions.md) |
-| Direct task creation | `POST /api/jobs/{id}/tasks/` | `TaskService.create_direct` | One Task at a time; freeform (requires `rate_scheme_id`, the stamping trigger); money fields (`rate`/`unit_label`/`qty_source`/`accounting_category`/`active_modifiers`) require the same gate |
+| Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `ServiceItem.generate_task` | One Task from a `ServiceItem`; endpoint is `IsAuthenticated`-only (workers can self-serve) — but a request that includes the `active_modifiers` key (even `[]`, overriding the template's own defaults) requires `CanManageJobOrPM` or `can_manage_financials`, same money-field gate as direct create (users-and-permissions.md). Also accepts an optional `claim_estimate_line` key (mint-by-modal, estimating-structure spec) binding the new Task to an accepted estimate's line at creation — presence-gated on `CanManageJobOrPM`, checked before serializer validation; see `estimates-and-prices.md` §9a and `users-and-permissions.md`. |
+| Direct task creation | `POST /api/jobs/{id}/tasks/` | `TaskService.create_direct` | One Task at a time; freeform (requires `rate_scheme_id`, the stamping trigger); money fields (`rate`/`unit_label`/`qty_source`/`accounting_category`/`active_modifiers`) require the same gate. Also accepts the same optional `claim_estimate_line` key, identically gated. |
 | Direct material creation | `POST /api/jobs/{id}/materials/` | `MaterialService.create_on_job` | One Material; inventory-backed or freeform |
 
 The `populate_from_template` path does not store a back-reference to the
@@ -1239,14 +1268,18 @@ Top-down, via `JobShell`:
    and the **status pill**, an interactive `<select>` for users whose
    `can_manage` flag is set. The pill is a **trigger pill**: besides
    real transitions it carries non-status trigger options (values
-   prefixed `__`) — "Release to floor" is the label on the
-   approved→in_progress transition, "Hold…" opens the hold-reason
-   modal (a `Modal.svelte` dialog; picking the option changes nothing
-   by itself and the pill snaps back until the modal confirms), and on
-   a held job "Release hold" posts the release. **A held job's pill
-   shows only `HOLD`** (striped amber; the true status is deliberately
-   hidden) with the hold reason inline beside it, truncated with the
-   full text on hover.
+   prefixed `__`) — "Hold…" opens the hold-reason modal (a
+   `Modal.svelte` dialog; picking the option changes nothing by itself
+   and the pill snaps back until the modal confirms), and on a held job
+   "Release hold" posts the release. **A held job's pill shows only
+   `HOLD`** (striped amber; the true status is deliberately hidden)
+   with the hold reason inline beside it, truncated with the full text
+   on hover. The pill no longer offers `approved → in_progress` at all
+   (retired "Release to floor" trigger, estimating-structure spec,
+   2026-08-15 — `VALID_TRANSITIONS['approved']` in `JobHeader.svelte`
+   dropped the `in_progress` entry): release now happens only via
+   auto-release (§3.3) once the accepted estimate's checklist is fully
+   answered.
 2. **`JobContextBand`** (§9.6) — the same collapsible description /
    deliverables / email strip every job page gets, defaulting expanded.
    The overview does **not** get a bespoke midband; this is its only

@@ -598,6 +598,23 @@ Each service class must provide: `add_line_item`, `add_line_item_from_pli`,
 enforces its own status guard (typically draft only); the mixin doesn't
 know what statuses are editable.
 
+**One field can break the "draft only" rule — by design, not by
+accident.** `EstimateLineItem.work_declined` (the acceptance-checklist
+"no work needed" mark, estimating-structure spec) is the one line field
+set-able on a **non-draft** (`accepted`) estimate; every other field on
+every line-item type stays draft-only. `EstimateService.update_line_item`
+carves this out at the top: a PATCH body whose only key is
+`work_declined` routes to `EstimateService._set_work_declined` (accepted
+estimates only; refuses on atom-backed/adjustment/deposit/catalog-identity
+lines) before the normal draft-status check ever runs; a body mixing
+`work_declined` with any other key is rejected outright on any status, so
+the two update paths can't blur into one PATCH. See
+`estimates-and-prices.md` §6.1/§9a and `data-constraints.md` §1.13. This
+is the pattern to follow for any future line field that legitimately
+needs to be writable outside the normal editable-status window: gate on
+the raw key set at the top of the service method, before the status
+guard, not by widening the guard itself.
+
 `BaseLineItem.save()` has a `_populate_from_pli` safety net that fills
 in description/units/price/category from a linked `InventoryItem` if
 they're missing — the model's last line of defence in case some new
@@ -850,7 +867,7 @@ page-specific names or references:
 
 ### 5.5b The `docsurface` kit — shared document-editing surface (2026-08)
 
-`frontend/src/components/docsurface/` holds an eight-component kit
+`frontend/src/components/docsurface/` holds a ten-component kit
 shared by the estimate, invoice, **and change-order** editing surfaces
 (the CO panel grew the same mode bar 2026-08-09 — see
 `docs/plans/2026-08-06-better-fees.md` §9.3). It replaced the old
@@ -870,7 +887,7 @@ delta-document sibling to `DocCustomerView` rather than a direct
 consumer of it), the invoice side in `invoicing-and-expenses.md`
 (Agreement-line references and seeding, Backing model).
 
-**The nine components:**
+**The ten components:**
 
 | Component | Role |
 |---|---|
@@ -879,7 +896,8 @@ consumer of it), the invoice side in `invoicing-and-expenses.md`
 | `AtomChildRow.svelte` | One indented `<tr class="doc-atom-row">` nested under a line for each of its claimed source atoms; `{ atom, colspanBefore, colspanAfter, onRemove, note }`. |
 | `AtomCaptionRow.svelte` | The caption row above a line's atom child rows — "based on 2 tasks:" — tying the "Based on" chip and the grey rows together as one fact; `{ sources, colspanBefore, colspan }`. Renders nothing for a sourceless line. Added 2026-08-14 (vocab pass). |
 | `UncoveredWorkSection.svelte` | The checkbox-selectable pool of not-yet-billed job atoms below the line-items table; `{ title, subtitle, rows, selected (bindable), directLabel, onDirect, emptyText }`. Titled **"Unquoted work"** on estimates/COs and **"Unbilled work"** on invoices (2026-08-14 vocab pass — "uncovered" read as *revealed*, not *not-yet-covered*; the component keeps its internal name). Each row optionally carries a `chip` (`{label, cls}`) for provenance markers (invoiced-elsewhere, cancelled, struck-from-agreement — invoice side; see `invoicing-and-expenses.md`). |
-| `NewLineFromSelectedRow.svelte` | The dashed placeholder `<tr class="doc-newline">` footer row offering "＋ New line from selected"; `{ visible, nextNumber, onCreate }`. |
+| `NewLineFromSelectedRow.svelte` | The dashed placeholder `<tr class="doc-newline">` footer row offering "＋ New line from selected"; `{ visible, nextNumber, onCreate }`. Optional `buttonLabel` prop (default `"Create line"`) lets a consumer relabel the button — the estimate/CO surfaces pass `"Bundle into line…"` since their `onCreate` opens `BundleModal` rather than posting directly (see below). |
+| `BundleModal.svelte` | The estimate/CO **draft-time bundle-into-line authoring modal** (Task 8, 2026-08-15) — what "＋ New line from selected"/"Bundle into line…" opens on those two surfaces instead of posting straight through. Self-contained like `AdjustmentModal`/`LineItemModal`: owns its own `POST .../line-items-from-atoms/` with `{atoms, overrides}`, not a callback the parent runs; hands a 409 claim conflict back via `onConflict`. Carries the **keep-the-total** gesture (qty↔price coupling, ON by default) and always sends all four override fields (WYSIWYG — the modal's displayed values are the authored truth, never the backend's own derivation). The invoice surface does not use it — `NewLineFromSelectedRow` keeps its default label and one-click `onCreate` → direct POST → `LineItemModal` edit landing there, unchanged. See `estimates-and-prices.md` §12.1a. |
 | `QtyUnits.svelte` | Qty-cell content for document line items: qty and units inline, wrapping naturally when the column is squeezed (RM 2026-08-11 — never a forced second line); units `'none'`/empty omitted, missing qty renders `-`. Used by every doc line table (edit + customer, all three doc types); the single seam for styling qty cells later. `lib/format.js formatQtyUnits` remains the plain-string variant for the atom child/pool rows. |
 | `DocCustomerView.svelte` | The collapsed, read-only Customer-mode projection — `#`/description/qty/price/amount + a grand-total row, zero interactive elements; `{ title, lines, grandTotal }` (lines carry `qty`/`units`, rendered via `QtyUnits`). |
 | `DocReorderView.svelte` | Composes `DocCustomerView` with an added arrows column (`{ onReorder(lineId, 'up'|'down') }`) — **identical rows to Customer mode plus arrows**, so reordering never carries sub-line ambiguity. |
@@ -926,12 +944,21 @@ renders when editable rather than being conditionally hidden by state:
 an action's availability is a prop, not a runtime guess.
 
 **Object-first selection.** Checkboxes live on the uncovered-work pool
-rows, not on line items. While any row is ticked, every existing line
-gains an "Add selected here" action and the table's dashed
-`NewLineFromSelectedRow` footer appears; creating the line derives its
-starting values from the selection and opens its Edit modal
-immediately. An unticked row keeps its own direct "bill this alone"
-action instead.
+rows, not on line items. While any row is ticked, the table's dashed
+`NewLineFromSelectedRow` footer appears. What happens next is
+surface-specific: on the **invoice** edit view (unchanged since the kit
+shipped) creating the line is a direct one-click POST that derives
+starting values from the selection and opens the new line's `LineItemModal`
+edit landing immediately. On the **estimate and CO** edit views (Task 8,
+2026-08-15) the same footer instead opens `BundleModal` — a bounded
+authoring step (keep-the-total qty↔price coupling, always-explicit
+overrides) rather than a create-then-edit two-step; see
+`estimates-and-prices.md` §12.1a. Neither surface offers "Add selected
+here" (attaching a pool selection onto an *existing* line) any more — it
+was removed from the estimate and CO edit views (estimating-structure
+spec, 2026-08-15): composing atoms into a line happens only through the
+new-line gesture above. An unticked row keeps its own direct "bill this
+alone"/"Add as its own line" action instead, on every surface.
 
 **Two idioms every kit consumer follows** (see `EstimateEditView.svelte`
 / `InvoiceEditView.svelte` for the reference implementation; documented

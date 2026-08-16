@@ -155,23 +155,42 @@ Status coupling, transitions, and what a job may do at each stage.
   _Done when:_ single-atom line creation is one click, no modal.
 
 - **Lost gesture: re-express a line's qty/units while retaining its total
-  (the old wizard could).** — _added 2026-08-12 (RM)_
+  (the old wizard could) — DELIVERED at bundle-time; edit-time still
+  open.** — _added 2026-08-12 (RM), narrowed 2026-08-15_
   The retired two-column reconcile wizard let you rejigger a line's
   quantity/price and keep the amount — e.g. a line merged from several
   hour-based tasks (total $1,800 over 12 hours) re-expressed as "3 ea @
-  $600". Today's `LineItemModal` field-edit treats qty and price as
-  independent inputs, so changing qty changes the amount and the
-  estimator divides by hand; the backing chip flips to `edited` either
-  way. RM feels the lack exactly on multi-task hour bundles being turned
-  into a different quantity of "ea". Shape TBD — candidates: a
-  "keep total" toggle in the edit modal (editing qty re-derives price =
-  amount ÷ qty, and vice versa); prefilling price from `backing_total ÷
-  qty` as you type; or a dedicated "re-express as…" helper on backed
-  lines. Applies to the estimate edit modal first; the invoice/CO
-  modals share the component, so whatever ships should land for all
-  three.
-  _Done when:_ RM picks a shape and a backed line can be re-expressed in
-  new qty/units with its total preserved, without hand arithmetic.
+  $600". The shape RM picked — a "keep total" toggle (editing qty
+  re-derives price = total ÷ qty, one-way) — shipped in `BundleModal`
+  (Task 8, estimating-structure spec): draft-time composition of a new
+  line from selected pool atoms now carries keep-total, ON by default.
+  **What's still missing**: `LineItemModal`'s field-edit on an
+  *already-created* line still treats qty and price as independent
+  inputs — re-expressing an existing backed line's qty/units without
+  losing its total still means hand arithmetic. Whether that gap gets
+  the same toggle (and whether it lands on the estimate/CO/invoice
+  modals alike, since they share the component) is undecided.
+  _Done when:_ an existing backed line can be re-expressed in new
+  qty/units with its total preserved via `LineItemModal`, without hand
+  arithmetic — or RM decides bundle-time coverage is sufficient and this
+  entry is dropped instead.
+
+- **Taskless job may never auto-complete once fully invoiced/shipped.** —
+  _added 2026-08-15 (found while documenting auto-release)_
+  `JobService.maybe_complete_if_resolved` requires `Task.objects.filter(job=job).exists()`
+  before it will walk an `approved`/`in_progress` job to `completed`, even
+  once every invoice is paid/cancelled and every deliverable shipped — a
+  job with zero tasks always no-ops there. The estimating-structure spec
+  deliberately makes taskless jobs common (every hand line declined
+  releases the job with no tasks at all), so this pre-existing edge (a
+  taskless job could already reach `approved` before this spec, just
+  rarely) is now a designed, everyday flow. Not investigated further in
+  ES Task 11 (docs-only pass; no code changes taken). RM's design doc
+  flagged the same worry under "`maybe_complete_if_resolved` cascade."
+  _Done when:_ someone verifies (test or browser) whether a taskless,
+  fully-resolved job actually needs to reach `completed`, and either
+  drops the `tasks.exists()` requirement for that case or documents why
+  it's fine for such a job to sit at `in_progress`/`approved` forever.
 
 ## Change orders
 

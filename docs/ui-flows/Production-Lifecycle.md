@@ -234,11 +234,16 @@ index. Direct approval is gated on estimate-lessness.
   estimate (the backend rejects a direct PATCH to `approved` too).
 - [ ] **Submitted job with NO estimate (dead ones count): Approved is
   offered** and selecting it lands the job `approved`.
-- [ ] **Release to floor.** On an `approved` job the pill names the act
-  ("Release to floor"), not the status; choosing it advances the job to
-  `in_progress` and the pill then DISPLAYS "In Progress" — regression:
-  an uncontrolled select kept the clicked index and showed "Work
-  Complete".
+- [ ] **No manual release to floor.** The pill's option list on an
+  `approved` job never offers `in_progress` (retired
+  estimating-structure spec, 2026-08-15 — was labeled "Release to
+  floor"; a direct PATCH to `in_progress` from `approved` is rejected
+  too). `approved → in_progress` happens only via auto-release (every
+  line on the accepted estimate's checklist answered — see
+  `e2e/specs/estimating-structure/mint-and-release.spec.js` and
+  `docs/designs/jobs-and-tasks.md` §3.3) or work starting
+  (`mark_work_started`); either way the pill then DISPLAYS "In
+  Progress" without a page reload.
 - [ ] **In-flight guard:** while the transition PATCH is running the
   pill is disabled — a double-click can't chain two transitions.
   *(Millisecond window; primarily a unit-test check —
@@ -261,4 +266,4 @@ index. Direct approval is gated on estimate-lessness.
 | Sessions | open/close · join vs takeover · on-behalf-of (time manager) · sub-minimum undo |
 | Personas | worker (start/stop/complete only) · jobs manager / PM (pill, hold, cancel, mark-complete) · time manager (others' sessions) |
 | Guards | held job (timeslips + mutations + status) · terminal task · pre-approval consume w/o earmark · open-timeslip conflicts · invalid transitions |
-| Status pill | value-controlled truthful display · act labels (Release to floor) · direct-Approved gating on has_estimates · in-flight disable · in-place header refresh on estimate accept (§11) |
+| Status pill | value-controlled truthful display · no manual release to floor (auto-release only) · direct-Approved gating on has_estimates · in-flight disable · in-place header refresh on estimate accept (§11) |
