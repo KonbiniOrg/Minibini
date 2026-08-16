@@ -54,20 +54,24 @@ two-representations problem reborn (RM considered and rejected a
 draft-mint + auto-modify option for this reason). Draft-time is
 plan-first time; the task page and bundling are fully available.
 
-**Send (`open`)** — lines freeze. Minting becomes available on hand
-lines: each non-adjustment, non-deposit hand line can be **minted**
-(work generated from it) or **declined** ("no work needed", a stored mark
-on the line). Frozen source ⇒ the mint is a one-shot copy; all later
-drift is task-side and legitimately means "the plan evolved"
-(chip-flagged, never synced). Covers pre-approval work: send early,
-mint, start.
+**Send (`open`)** — lines freeze. Nothing else happens at send (RM
+2026-08-15, leanest-first-pass trim: minting was originally to open
+here, and early catalog crystallization for pre-approval earmarking was
+considered — both cut; mint waits for acceptance). Pre-approval work
+remains fully possible via the plan-first path: tasks on the task page,
+bundled at draft.
 
 **Accept** — catalog-backed lines (service_item / inventory_item /
 bare-material) auto-crystallize exactly as today; **no change to that
-code path**. Hand lines that are still unanswered enter the **acceptance
-checklist**: an explicit small-t task on the accepted job — every hand
-line must be minted or declined. The checklist is the visible to-do that
-replaces the failed design's silent defaults.
+code path**. Every remaining plain hand line enters the **acceptance
+checklist**: an explicit small-t task on the accepted job — each must be
+**minted** (work generated from it, one-shot copy of the frozen line;
+all later drift is task-side and legitimately means "the plan evolved",
+chip-flagged, never synced) or **declined** ("no work needed", a stored,
+reversible mark). Mint and decline exist ONLY on accepted estimates —
+the checklist is the single home of work decisions, and the system
+description fits in one sentence: accept the estimate, answer each hand
+line, the job starts.
 
 **Auto-release (replaces "release to floor")** — when every line is
 answered (claims exist, or declined, or crystallized), the job advances
@@ -94,7 +98,7 @@ get modals; neither generates in place.
    Un-bundling and the empty-line question (the remove-last-atom bug RM
    hit) get resolved *inside this modal's design*: atom removal never
    silently deletes an authored line.
-2. **Mint modal** (open/accepted; the generation gesture): opens
+2. **Mint modal** (accepted only; the generation gesture): opens
    mirror-seeded — name/qty/units from the line, scheme from the line's
    catalog recipe when it has one, else the mid-work default (placeholder
    valuation, corrected where it matters). "Save & close" is the
@@ -128,8 +132,9 @@ mint Save-&-close; catalog recipe upgrades the scheme when present.
 Presets (engraving, cutting): service pick; the pick's recipe IS the
 mint — the modifiers-visibility asymmetry dies structurally. Materials
 (resale; material halves of parts/jigs/tools): inventory pick →
-today's crystallization, or minted earlier (post-send) when earmarking/
-ordering must precede approval. Compound (parts-from-material, jigs,
+today's crystallization at accept (early post-send crystallization for
+pre-approval earmarking was considered and CUT — leanest pass;
+plan-first covers the genuinely-early cases). Compound (parts-from-material, jigs,
 tools): two simple lines, or plan-first bundle. Outsourced: mint a
 placeholder task; PO reconciliation (Phase 5) carries the actuals.
 Never-mint (consumables, credits): explicit decline (deposits excluded

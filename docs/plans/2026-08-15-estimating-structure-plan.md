@@ -22,11 +22,14 @@ transitions. The bundle modal wraps the existing
 **Tech Stack:** Django 5.2 + DRF, Svelte 5 + Vitest, Playwright.
 **Branch:** `feature/estimating` (RM-created; commit everything here).
 
-**Scoping decision surfaced for RM veto at plan review:** "Add selected
-here" is removed from the ESTIMATE and CO surfaces (agreement claims —
-the faithless-attachment vector). The INVOICE keeps its version: invoice
-claims mean "billed on this line," not "the work behind this line," and
-composing actuals into invoice lines is that surface's purpose.
+**Scoping decisions CONFIRMED by RM at plan review (2026-08-15):**
+(1) "Add selected here" is removed from the ESTIMATE and CO surfaces
+only; the INVOICE keeps its version (invoice claims mean "billed on this
+line," not "the work behind this line") — invoice-side rework comes
+after estimating settles. (2) Leanest first pass: **mint and decline are
+available ONLY on ACCEPTED estimates** — open estimates are frozen and
+inert; early catalog crystallization (old Task 4) is CUT. The checklist
+is the single home of work decisions.
 
 ## Global Constraints
 
@@ -39,8 +42,10 @@ composing actuals into invoice lines is that surface's purpose.
   DB).** Targeted modules during tasks.
 - Vitest: `npm run test:run` from `frontend/` (never watch). TDD
   everywhere; RED/GREEN evidence in reports.
-- Mint gate (exact): `MINT_STATUSES = (Estimate.STATUS_OPEN,
-  Estimate.STATUS_ACCEPTED)` — draft NEVER mints (frozen-source rule).
+- Mint gate (exact): `MINT_STATUSES = (Estimate.STATUS_ACCEPTED,)` —
+  a one-element tuple; draft AND open are refused (frozen-source rule
+  plus RM's leanest-pass trim: work decisions live on the acceptance
+  checklist only).
 - Claims arise ONLY by construction: no endpoint or gesture may attach a
   pre-existing atom to a pre-existing line. (`add-atoms` on estimates/COs
   is removed from the UI; the draft-only wizard endpoints stay for the
@@ -70,18 +75,20 @@ composing actuals into invoice lines is that surface's purpose.
 **Interfaces (produces):** `EstimateLineItem.work_declined:
 BooleanField(default=False)`; PATCH `{'work_declined': true|false}` on
 `/api/estimates/{id}/line-items/{item_id}/` allowed — uniquely among
-line fields — while the estimate is `open`/`accepted` (all other field
-edits stay draft-only), gated `CanManageJobOrPM`, refused with
+line fields — while the estimate is `accepted` (all other field
+edits stay draft-only; draft AND open refuse the flag), gated
+`CanManageJobOrPM`, refused with
 `{'detail': ...}` when: the line has sources, is an adjustment, is a
 deposit line, or carries a catalog identity (`service_item_id` /
 `inventory_item_id` / `is_material` — those crystallize; decline is for
 plain hand lines only). Reversible (false → back to unanswered).
 
 - [ ] **Step 1: failing tests** — field default False; PATCH true on an
-  open estimate's plain hand line → 200 + persisted; PATCH on draft →
-  refused (draft lines are still editable/removable — decline is
-  meaningless there); PATCH on a line with sources / adjustment /
-  catalog identity → 400 detail; un-decline works; non-manager → 403.
+  ACCEPTED estimate's plain hand line → 200 + persisted; PATCH on draft
+  AND on open → refused (draft lines are still editable/removable;
+  open is inert — decisions wait for the checklist); PATCH on a line
+  with sources / adjustment / catalog identity → 400 detail; un-decline
+  works; non-manager → 403.
   Build the object graph the way `tests/test_hand_line_ac_validation.py`
   does. Run `tests.test_work_declined` — expect field/PATCH failures.
 - [ ] **Step 2: implement** — model field + migration; serializer
@@ -106,9 +113,9 @@ plain hand lines only). Reversible (false → back to unanswered).
 
 **Deltas from the salvage source (apply exactly):**
 1. Rename module/class: `MintService.claim_atom_for_line`, constant
-   `MINT_STATUSES = (Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED)` —
-   **draft is refused** (the salvage allowed it; the frozen-source rule
-   forbids it).
+   `MINT_STATUSES = (Estimate.STATUS_ACCEPTED,)` — **draft AND open are
+   refused** (the salvage allowed both; the frozen-source rule forbids
+   draft, and RM's leanest-pass trim keeps open inert).
 2. New guard: refuse lines with catalog identity (`service_item_id` /
    `inventory_item_id` / `is_material`) — mint-by-modal is for plain
    hand lines; catalog lines crystallize (Task 4/acceptance). Refuse
@@ -117,9 +124,10 @@ plain hand lines only). Reversible (false → back to unanswered).
 3. Keep the salvage's FINAL error shapes (plain-sentence/detail — the
    c231c8de head, not earlier field-keyed versions) and the CO-lens
    docstring caveat.
-4. Tests: statuses-pin test asserts the new tuple `('open','accepted')`;
-   add draft-refused, declined-refused, catalog-identity-refused cases;
-   keep dead-status/adjustment/cross-job/already-claimed/missing cases.
+4. Tests: statuses-pin test asserts the new tuple `('accepted',)`;
+   add draft-refused, OPEN-refused, declined-refused,
+   catalog-identity-refused cases; keep dead-status/adjustment/
+   cross-job/already-claimed/missing cases.
 - [ ] TDD (RED on missing module → GREEN); run
   `tests.test_mint_service`; commit.
 
@@ -139,38 +147,19 @@ plain hand lines only). Reversible (false → back to unanswered).
 param** (v1 mints tasks only — drop the create_material hunk and its
 tests); the salvage's gate-first ordering, atomicity, int-guard, and
 detail-shape errors carry over verbatim; status expectations in tests
-flip (draft → refused, open/accepted → succeed). Presence-gate stays
+flip (draft AND open → refused, accepted → succeed). Presence-gate stays
 `CanManageJobOrPM`.
 - [ ] TDD; run `tests.test_mint_api` + the job-task regression modules
   (`tests.test_api_tasks`, `tests.test_job_direct_tasks`); commit.
 
-### Task 4 (CUTTABLE if RM trims scope): per-line crystallization + early catalog mint
+### Task 4: CUT (RM 2026-08-15 — leanest first pass)
 
-**Files:**
-- Modify: `apps/estimates/acceptance.py` — extract the per-line recipe:
-
-```python
-@staticmethod
-def crystallize_line(li):
-    """One line's crystallization recipe (service_item → Task,
-    inventory_item → Material, bare is_material → established Material,
-    else nothing). Returns 'task' | 'material' | None. Extracted from
-    on_accept so a catalog-backed line can crystallize EARLY (post-send,
-    pre-accept — e.g. earmark/order before approval); on_accept loops
-    this unchanged."""
-```
-  `on_accept` becomes a loop over `crystallize_line` with the existing
-  `sources.exists()` / adjustment skips and counters — behavior
-  identical (the existing acceptance tests must pass untouched).
-- Modify: `apps/api/estimates/views.py` — new action
-  `POST /api/estimates/{pk}/line-items/{line_item_pk}/crystallize/`:
-  `CanManageJobOrPM`; estimate in `MINT_STATUSES`; line must have
-  catalog identity, no sources, not declined; calls `crystallize_line`;
-  returns the refreshed line. Uncaught ValidationError → central
-  handler.
-- Test: `tests/test_early_crystallize.py` + confirm the acceptance
-  suite is untouched-green.
-- [ ] TDD; run new module + the acceptance modules; commit.
+Early catalog crystallization (per-line `crystallize_line` extraction +
+post-send crystallize endpoint) was cut at plan review: catalog lines
+crystallize only at acceptance, exactly as today. Nothing to implement;
+this stub keeps task numbering stable for briefs/ledger. If pre-approval
+earmarking pressure returns, the cut design is recorded in this plan's
+git history.
 
 ### Task 5: answeredness + auto-release (replaces release-to-floor)
 
@@ -212,8 +201,7 @@ Tests (drive REAL transitions, then assert `job.status`):
 all-catalog estimate → accept → job lands `in_progress` directly;
 mixed estimate → accept → stays `approved` → mint one line → still
 `approved` → decline the last → `in_progress`; all-declined (taskless)
-→ releases; mint on an OPEN estimate does not release (job not yet
-approved); on_hold job: checklist completion does NOT release (hold
+→ releases; on_hold job: checklist completion does NOT release (hold
 wins; release happens via the existing hold-release path — read
 `hold_job`/`release_job` and assert the interaction you find, don't
 assume). Also pin: `mark_work_started` unchanged.
@@ -255,7 +243,7 @@ assume). Also pin: `mark_work_started` unchanged.
   MaterialModal ones).
 - Modify: `frontend/src/components/estimates/EstimateEditView.svelte` +
   `EstimatePanel.svelte`:
-  - `canMint = $derived(canManageJobs && ['open','accepted'].includes(estimate?.status))`.
+  - `canMint = $derived(canManageJobs && estimate?.status === 'accepted')`.
   - On each UNANSWERED plain hand line (no sources, not declined, not
     adjustment/deposit/catalog-identity) when `canMint`:
     **"Generate work…"** (WorkItemForm, mode="manual", mirror-seeded:
@@ -335,10 +323,12 @@ build own job via API, personas, test.step, scoped selectors).
 One journey: draft with a catalog service line + two hand lines + a
 bundled projected line (BundleModal path: select pool atoms → Bundle
 into line… → keep-total edit → create); assert "Add selected here"
-absent; send (open) → "Generate work…" on hand line A (mirror-seeded
-modal → save → based-on caption); accept via API → checklist banner
-counts hand line B; "No work needed" on B → banner clears AND the job
-reads `in_progress` (auto-release; assert via API + the header pill);
+absent; send (open) → assert the surface is inert (no Generate work /
+No work needed anywhere); accept via API → checklist banner counts the
+two hand lines; "Generate work…" on hand line A (mirror-seeded modal →
+save → based-on caption, banner counts down); "No work needed" on B →
+banner clears AND the job reads `in_progress` (auto-release; assert via
+API + the header pill);
 also assert the status pill no longer offers a manual approved →
 in_progress option on a second approved job. Second short spec or step:
 all-catalog estimate accepts straight to `in_progress`.
@@ -376,8 +366,9 @@ edit-time re-expression still open).
 
 ## Self-review notes (applied)
 
-- Spec coverage: model→Tasks 2/3/7; timeline draft→8, open→2/3/7,
-  accept→4/5, auto-release→5/6; modals→7/8; removals→6; converter→9;
+- Spec coverage: model→Tasks 2/3/7; timeline draft→8, open→inert (2's
+  refusal tests), accept→5 + the checklist surface in 7 (Task 4 cut);
+  auto-release→5/6; modals→7/8; removals→6; converter→9;
   fifteen-shapes: 1:1 mint (7), presets/materials (4 + acceptance),
   never-mint (decline, 1/7), deep (bundle, 8); compat→9 + Task 5's
   event-driven evaluation (pre-ship approved jobs simply never
