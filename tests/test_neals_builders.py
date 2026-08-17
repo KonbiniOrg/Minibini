@@ -97,6 +97,26 @@ class BaseBuildersTest(unittest.TestCase):
                  'm', 'lb', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft']
         self.assertEqual(value, canon)
 
+    def test_schemes_come_from_the_internal_table_not_nealseed(self):
+        """RM 2026-08-16 (flat-fee Task 4): the converter sources its
+        RateSchemes from build.CONVERTER_SCHEMES — nealseed's ratescheme
+        records are ignored, so a new algorithm never requires touching the
+        RM-managed seed files. The 8 legacy schemes keep their pks/fields;
+        one flat_fee scheme is added."""
+        build.build_seed(self.c)
+        emitted = {f['pk']: f['fields'] for f in self._models('jobs.ratescheme')}
+        table = {pk: dict(fields) for pk, fields in build.CONVERTER_SCHEMES}
+        self.assertEqual(emitted, table)
+        # The internal table includes exactly one flat_fee scheme.
+        flat = [f for f in emitted.values() if f['algorithm'] == 'flat_fee']
+        self.assertEqual(len(flat), 1)
+        self.assertEqual(flat[0]['rate'], '0.00')
+        self.assertEqual(flat[0]['modifiers'], [])
+        # Legacy names survive with their original pks (downstream builders
+        # key on scheme_by_name / scheme_fields_by_pk).
+        self.assertEqual(self.c.scheme_by_name.get('Shop labor'), 7)
+        self.assertEqual(self.c.scheme_by_name.get('CNC routing'), 1)
+
     def test_ratescheme_unit_labels_within_canon(self):
         # Every emitted RateScheme.unit_label must be a value in the
         # converter's units_list. DEFAULT_UNITS uses singular 'hour', and the
@@ -507,19 +527,20 @@ class AtomDerivationTest(unittest.TestCase):
             self.assertNotIn('flat_fee_price', mods if isinstance(mods, dict) else {},
                              f"task {t['pk']} active_modifiers must not contain flat_fee_price")
 
-    def test_flat_fee_tasks_use_per_price_rate_scheme(self):
-        # After Phase 1 reframe: flat-fee tasks point to a per-price RateScheme
-        # (rate = the fee amount) and carry an empty list active_modifiers.
-        # No shared zero-rate 'Flat Fee' scheme should be emitted.
+    def test_flat_fee_tasks_carry_their_own_rate(self):
+        # REWRITTEN 2026-08-16 (flat-fee redesign): the old "Phase 1 reframe"
+        # contract (per-price flat_fee schemes, no shared catch-all) is
+        # superseded — the new design is ONE shared zero-rate flat_fee scheme
+        # whose ServiceItems carry item-side amounts, resolved into Task.rate
+        # at stamp time. The converter emits exactly that shared scheme; any
+        # flat-fee TASK still carries its own nonzero rate (money on the
+        # task, never on the scheme) and empty list active_modifiers.
         build.derive_atoms(self.c)
         ff_schemes = [f for f in self._models('jobs.ratescheme')
                       if f['fields'].get('algorithm') == 'flat_fee']
-        # No zero-rate shared catch-all scheme.
-        for f in ff_schemes:
-            self.assertNotEqual(
-                f['fields']['rate'], '0.00',
-                f"flat_fee RateScheme pk={f['pk']} has rate=0.00 (shared catch-all should not be emitted)")
-        # Every flat-fee task: rate on RateScheme, empty list modifiers.
+        self.assertEqual(len(ff_schemes), 1)
+        self.assertEqual(ff_schemes[0]['fields']['rate'], '0.00')
+        self.assertEqual(ff_schemes[0]['fields']['modifiers'], [])
         ff_pks = {f['pk'] for f in ff_schemes}
         for t in self._models('jobs.task'):
             sp = t['fields']['source_scheme']
@@ -527,10 +548,11 @@ class AtomDerivationTest(unittest.TestCase):
             self.assertIsInstance(mods, list,
                                   f"task {t['pk']} active_modifiers should be list")
             if sp in ff_pks:
-                # The price must be on the RateScheme.rate, not in modifiers.
-                rate_str = next(f['fields']['rate'] for f in ff_schemes if f['pk'] == sp)
-                self.assertNotEqual(rate_str, '0.00',
-                                    f"task {t['pk']} points to a flat_fee scheme with zero rate")
+                self.assertNotEqual(
+                    t['fields']['rate'], '0.00',
+                    f"task {t['pk']} stamped from the flat_fee scheme must "
+                    f"carry its own nonzero rate (item-side amount)")
+                self.assertEqual(mods, [])
 
     def test_fixed_charge_lines_stay_plain_no_atom_no_source(self):
         # better-fees spec §4 (Fee model deleted): a task-classified line with

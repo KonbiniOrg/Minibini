@@ -93,27 +93,50 @@ def _canon_unit_label(label):
     return label
 
 
-def build_seed(c):
-    """Emit core.user, core.accountingcategory and jobs.ratescheme records
-    verbatim from the nealseed fixture.
+# The converter's own RateScheme table (RM 2026-08-16, flat-fee Task 4):
+# schemes are SOURCED HERE, not copied from nealseed — the RM-managed seed
+# files never need touching to add or change a scheme/algorithm. The 8
+# legacy entries reproduce nealseed's records verbatim (pks and fields —
+# downstream builders key on scheme_by_name / scheme_fields_by_pk and task
+# money-blocks stamp from these); pk 10 adds the flat_fee scheme
+# (rate locked 0.00 — each ServiceItem carries its own amount).
+CONVERTER_SCHEMES = [
+    (1, {"name": "CNC routing", "description": "Charges for KOMO or MotionMaster cuts", "algorithm": "entered_qty", "rate": "22.00", "unit_label": "min", "modifiers": [{"key": "hats", "label": "tabs", "percent": 10}, {"key": "shirts", "label": "doublestick tape", "percent": 12}, {"key": "heavy_awkward_material", "label": "heavy awkward material", "percent": 10}, {"key": "requires_ppe", "label": "requires PPE", "percent": 15}, {"key": "deburring", "label": "deburring", "percent": 8}], "accounting_category": 3, "is_active": True}),
+    (2, {"name": "CAD", "description": "Charges for CAD drawing, 2d or 3d", "algorithm": "elapsed_time", "rate": "110.00", "unit_label": "hour", "modifiers": [], "accounting_category": 1, "is_active": True}),
+    (3, {"name": "Laser", "description": "charges for cutting on the Golden laser", "algorithm": "entered_qty", "rate": "10.00", "unit_label": "min", "modifiers": [{"key": "tinies_that_take_ages_to_clear", "label": "tinies that take ages to clear", "percent": 15}, {"key": "too_smelly_to_cut_during_regular_hours", "label": "too smelly to cut during regular hours", "percent": 19.6}], "accounting_category": 3, "is_active": True}),
+    (4, {"name": "Shop labor (v1)", "description": "Assembly, glueups, laminating, palletizing, hand cutting, trimming, applying finishes, etc", "algorithm": "elapsed_time", "rate": "75.00", "unit_label": "hour", "modifiers": [], "accounting_category": 3, "is_active": False}),
+    (5, {"name": "Design/Consultation", "description": "Rachel or Gerard putting their full brain on a customer's specific problem", "algorithm": "elapsed_time", "rate": "200.00", "unit_label": "hour", "modifiers": [], "accounting_category": 1, "is_active": True}),
+    (7, {"name": "Shop labor", "description": "Assembly, glueups, laminating, palletizing, hand cutting, trimming, applying finishes, etc", "algorithm": "elapsed_time", "rate": "85.00", "unit_label": "hour", "modifiers": [], "accounting_category": 3, "is_active": True}),
+    (8, {"name": "SUB", "description": "Subcontractor work, charged at however the sub charges plus an upcharge for us", "algorithm": "entered_qty", "rate": "0.00", "unit_label": "none", "modifiers": [{"key": "sourcing_fee", "label": "sourcing fee", "percent": 20}, {"key": "", "label": "", "percent": 0}], "accounting_category": 2, "is_active": True}),
+    (9, {"name": "knife cutting", "description": "", "algorithm": "elapsed_time", "rate": "16.00", "unit_label": "min", "modifiers": [{"key": "45_deg_cuts_that_run_2x", "label": "45 deg cuts that run 2x", "percent": 100}], "accounting_category": 3, "is_active": True}),
+    (10, {"name": "Flat fee", "algorithm": "flat_fee", "rate": "0.00", "unit_label": "ea", "modifiers": [], "accounting_category": 1, "is_active": True}),
+]
 
-    The records are appended to c.fixture_data exactly as they appear in
-    nealseed (user records there are written without explicit pks; Django
-    assigns them on load). Indexes the seed data for downstream builders:
+
+def build_seed(c):
+    """Emit core.user and core.accountingcategory records verbatim from the
+    nealseed fixture, and jobs.ratescheme records from the converter's OWN
+    `CONVERTER_SCHEMES` table (RM 2026-08-16 — nealseed's ratescheme records,
+    if any remain there, are ignored: the RM-managed seed files are never the
+    scheme source, so new schemes/algorithms never require touching them).
+
+    Indexes the data for downstream builders:
       - c.ac_by_code / c.ac_svc_pk / c.ac_mat_pk
       - c.scheme_by_name
       - c.scheme_fields_by_pk (full RateScheme fields, for task money-block
         stamping — see _stamp_money_block)
-    Also advances the jobs.ratescheme pk counter past the seeded schemes so
+    Also advances the jobs.ratescheme pk counter past the emitted schemes so
     any derived (cloned) scheme gets a fresh pk.
     """
     from nealsdata.converter.loaders import load_seed_records
 
     records = load_seed_records(c.seed_path)
-    max_rs_pk = 0
     for rec in records:
         model = rec['model']
         fields = rec['fields']
+        if model == 'jobs.ratescheme':
+            # Ignored: schemes come from CONVERTER_SCHEMES below.
+            continue
         if model == 'core.user':
             # Seed users are written pk-less; assign explicit pks so Bleps/Shifts
             # (the first user FKs) and minted users reference them deterministically.
@@ -130,12 +153,17 @@ def build_seed(c):
         c.fixture_data.append(rec)
         if model == 'core.accountingcategory':
             c.ac_by_code[fields['code']] = rec.get('pk')
-        elif model == 'jobs.ratescheme':
-            fields['unit_label'] = _canon_unit_label(fields.get('unit_label'))
-            c.scheme_by_name[fields['name']] = rec.get('pk')
-            c.scheme_fields_by_pk[rec.get('pk')] = fields
-            if isinstance(rec.get('pk'), int):
-                max_rs_pk = max(max_rs_pk, rec['pk'])
+
+    max_rs_pk = 0
+    for pk, table_fields in CONVERTER_SCHEMES:
+        fields = dict(table_fields)
+        fields['unit_label'] = _canon_unit_label(fields.get('unit_label'))
+        c.fixture_data.append(
+            {'model': 'jobs.ratescheme', 'pk': pk, 'fields': fields})
+        c.scheme_by_name[fields['name']] = pk
+        c.scheme_fields_by_pk[pk] = fields
+        if isinstance(pk, int):
+            max_rs_pk = max(max_rs_pk, pk)
 
     c.ac_svc_pk = c.ac_by_code.get('SVC')
     c.ac_mat_pk = c.ac_by_code.get('MTL')
