@@ -30,7 +30,9 @@
     const invRows = inv.results || inv;
     const rows = [
       ...svcRows.map((s) => ({ kind: 'service', id: s.template_id, label: s.template_name,
-        sub: s.description || '', price: s.rate_scheme_detail?.rate, unit: s.rate_scheme_detail?.unit_label, item: s })),
+        // display_rate resolves the item's real price (e.g. a flat-fee
+        // item's own amount) — the raw scheme rate is the fallback only.
+        sub: s.description || '', price: s.display_rate ?? s.rate_scheme_detail?.rate, unit: s.rate_scheme_detail?.unit_label, item: s })),
       ...invRows.map((m) => ({ kind: 'inventory', id: m.inventory_item_id, label: m.code,
         sub: m.description || '', price: m.selling_price, unit: m.units, item: m })),
     ];

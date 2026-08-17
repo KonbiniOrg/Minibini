@@ -424,3 +424,39 @@ describe('RateSchemeManager', () => {
     expect(queryByText('default')).not.toBeInTheDocument();
   });
 });
+
+describe('RateSchemeManager flat-fee mode (2026-08-16)', () => {
+  async function openFormAsFlatFee(utils) {
+    await fireEvent.click(await utils.findByRole('button', { name: 'Add Rate Scheme' }));
+    await fireEvent.change(utils.getByLabelText(/Algorithm/), { target: { value: 'flat_fee' } });
+  }
+
+  it('offers "Flat fee" in the algorithm select', async () => {
+    const utils = render(RateSchemeManager);
+    await fireEvent.click(await utils.findByRole('button', { name: 'Add Rate Scheme' }));
+    const opts = [...document.body.querySelectorAll('option')].map((o) => o.textContent);
+    expect(opts).toContain('Flat fee');
+  });
+
+  it('flat fee hides the rate input and modifiers editor, shows the explanation', async () => {
+    const utils = render(RateSchemeManager);
+    await openFormAsFlatFee(utils);
+    const dialog = within(utils.getByRole('dialog'));
+    expect(dialog.queryByText('Rate *')).toBeNull();
+    expect(dialog.queryByText('Modifiers')).toBeNull();
+    expect(dialog.getByText(/amount lives on each Service Item/)).toBeTruthy();
+  });
+
+  it('flat fee save payload carries rate 0.00 and empty modifiers', async () => {
+    const utils = render(RateSchemeManager);
+    await openFormAsFlatFee(utils);
+    const nameInput = document.body.querySelector('input[type="text"]');
+    await fireEvent.input(nameInput, { target: { value: 'Flat fee' } });
+    await fireEvent.change(utils.getByLabelText(/Accounting Category/), { target: { value: '1' } });
+    await fireEvent.click(utils.getByRole('button', { name: 'Save' }));
+    const body = api.post.mock.calls.find((c) => c[0] === '/api/rate-schemes/')[1];
+    expect(body.algorithm).toBe('flat_fee');
+    expect(body.rate).toBe('0.00');
+    expect(body.modifiers).toEqual([]);
+  });
+});

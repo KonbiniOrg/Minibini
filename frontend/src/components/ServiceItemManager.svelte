@@ -53,6 +53,12 @@
   const selectedScheme = $derived(
     schemes.find(s => s.rate_scheme_id === Number(form.rate_scheme)) || null
   );
+  // flat_fee schemes: the item's config is one {amount} entry, not a list of
+  // pre-checked modifier keys — the scheme owns that interpretation
+  // (RateScheme.validate_item_config). The UI shows a single Amount field
+  // and the word "modifier" never renders on this path (RM 2026-08-16).
+  const isFlatFeeScheme = $derived(selectedScheme?.algorithm === 'flat_fee');
+  let flatFeeAmount = $state('');
 
   function schemeFor(id) {
     return allSchemes.find(s => s.rate_scheme_id === id);
@@ -91,19 +97,27 @@
 
   function startCreate() {
     form = emptyForm();
+    flatFeeAmount = '';
     editingId = 'new';
     clearFormMessages();
     refreshSchemes();
   }
 
   function startEdit(tmpl) {
-    // active_modifiers is always a list of modifier keys.
+    // Config shape is scheme-owned: a list of modifier KEYS for percent-style
+    // schemes, one {amount} entry for flat_fee ones. Prefill both local
+    // shapes; save() emits whichever the picked scheme calls for.
     const dm = tmpl.default_active_modifiers;
+    const amountEntry = Array.isArray(dm)
+      ? dm.find((m) => m && typeof m === 'object' && 'amount' in m)
+      : null;
+    flatFeeAmount = amountEntry ? String(amountEntry.amount) : '';
     form = {
       template_name: tmpl.template_name,
       description: tmpl.description || '',
       rate_scheme: tmpl.rate_scheme || '',
-      default_active_modifiers: Array.isArray(dm) ? [...dm] : [],
+      default_active_modifiers:
+        Array.isArray(dm) && !amountEntry ? [...dm] : [],
       is_active: tmpl.is_active,
     };
     editingId = tmpl.template_id;
@@ -129,7 +143,12 @@
         template_name: form.template_name,
         description: form.description,
         rate_scheme: form.rate_scheme || null,
-        default_active_modifiers: form.default_active_modifiers,
+        default_active_modifiers: isFlatFeeScheme
+          // Number-input binding yields a number; emit the backend's string
+          // convention at 2 decimals (matches Decimal(str(amount)) parsing).
+          ? (flatFeeAmount !== '' && flatFeeAmount != null
+              ? [{ amount: Number(flatFeeAmount).toFixed(2) }] : [])
+          : form.default_active_modifiers,
         is_active: form.is_active,
       };
       if (editingId === 'new') {
@@ -228,20 +247,28 @@
     <FieldError errors={fieldErrs} field="rate_scheme" /></p>
 
     {#if selectedScheme}
-      <p><strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label} <small>(from rate scheme)</small></p>
-      {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
-        <fieldset>
-          <legend><strong>Default Modifiers</strong></legend>
-          {#each selectedScheme.modifiers as mod}
-            <label>
-              <input type="checkbox"
-                checked={form.default_active_modifiers.includes(mod.key)}
-                onchange={() => toggleModifier(mod.key)}>
-              {mod.label} (+{mod.percent}%)
-            </label><br>
-          {/each}
-        </fieldset>
-        <FieldError errors={fieldErrs} field="default_active_modifiers" />
+      {#if isFlatFeeScheme}
+        <p><label><strong>Amount *</strong><br>
+          <input type="number" step="0.01" min="0.01" bind:value={flatFeeAmount}>
+        </label>
+        <small>per {selectedScheme.unit_label}</small>
+        <FieldError errors={fieldErrs} field="default_active_modifiers" /></p>
+      {:else}
+        <p><strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label} <small>(from rate scheme)</small></p>
+        {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
+          <fieldset>
+            <legend><strong>Default Modifiers</strong></legend>
+            {#each selectedScheme.modifiers as mod}
+              <label>
+                <input type="checkbox"
+                  checked={form.default_active_modifiers.includes(mod.key)}
+                  onchange={() => toggleModifier(mod.key)}>
+                {mod.label} (+{mod.percent}%)
+              </label><br>
+            {/each}
+          </fieldset>
+          <FieldError errors={fieldErrs} field="default_active_modifiers" />
+        {/if}
       {/if}
     {/if}
 

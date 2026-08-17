@@ -118,3 +118,19 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '' });
   });
 });
+
+describe('PriceListPicker display_rate (flat-fee, 2026-08-16)', () => {
+  it('shows display_rate when present, over rate_scheme_detail.rate', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/api/service-items/')) return Promise.resolve({ results: [{
+        template_id: 12, template_name: 'Delivery', description: '',
+        rate_scheme: 9, display_rate: '50.00',
+        rate_scheme_detail: { rate_scheme_id: 9, name: 'Flat fee', rate: '0.00', unit_label: 'fee' },
+      }], count: 1 });
+      return Promise.resolve({ results: [], count: 0 });
+    });
+    const { getByPlaceholderText, findByText } = render(PriceListPicker, { props: { open: true, onChoose: vi.fn(), onclose: vi.fn() } });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'del' } });
+    expect(await findByText(/50\.00/)).toBeTruthy();
+  });
+});

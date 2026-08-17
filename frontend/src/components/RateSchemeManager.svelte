@@ -34,6 +34,7 @@
     elapsed_time: 'Based on time worked',
     entered_qty: 'Worker enters quantity',
     percentage: 'Percentage of other lines',
+    flat_fee: 'Flat fee',
   };
 
   function emptyForm() {
@@ -122,6 +123,9 @@
       // guarantees the payload matches what actually gets persisted, even
       // though the control is locked and never lets the user set it wrong.
       if (form.algorithm === 'elapsed_time') form.unit_label = 'hour';
+      // flat_fee: the scheme's own money is locked (rate 0, no modifiers) —
+      // mirror the backend's clean() rule in the payload.
+      if (form.algorithm === 'flat_fee') { form.rate = '0.00'; form.modifiers = []; }
       const payload = {
         name: form.name,
         algorithm: form.algorithm,
@@ -216,6 +220,9 @@
 
   // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
   const isPercentage = $derived(form.algorithm === 'percentage');
+  // flat_fee: the scheme carries NO money of its own (rate locked to 0, no
+  // modifiers) — each Service Item referencing it holds its own amount.
+  const isFlatFee = $derived(form.algorithm === 'flat_fee');
 
   // Display-only stand-in for the locked unit — NEVER write this back into
   // form.unit_label from a reactive effect: doing so previously clobbered a
@@ -333,11 +340,25 @@
         <option value="elapsed_time">Based on time worked</option>
         <option value="entered_qty">Worker enters quantity</option>
         <option value="percentage">Percentage of other lines</option>
+        <option value="flat_fee">Flat fee</option>
       </select>
     </label>
     <FieldError errors={fieldErrs} field="algorithm" /></p>
     <p>
-    {#if isPercentage}
+    {#if isFlatFee}
+      <small>Flat fee schemes carry no rate of their own — the amount lives
+      on each Service Item.</small>
+      <span class="rate-row">
+        <select bind:value={form.unit_label} required aria-label="Unit">
+          <option value="">-- select unit --</option>
+          {#each unitsList as u}
+            <option value={u}>{u}</option>
+          {/each}
+        </select>
+      </span>
+      <FieldError errors={fieldErrs} field="rate" />
+      <FieldError errors={fieldErrs} field="unit_label" />
+    {:else if isPercentage}
       <label><strong>Rate (%) *</strong><br>
         <input type="number" step="0.01" bind:value={form.rate}>
       </label>
@@ -376,7 +397,7 @@
     </label>
     <FieldError errors={fieldErrs} field="accounting_category" /></p>
 
-    {#if !isPercentage}
+    {#if !isPercentage && !isFlatFee}
       <fieldset>
         <legend><strong>Modifiers</strong></legend>
         {#each form.modifiers as mod, i}
@@ -391,7 +412,7 @@
       </fieldset>
     {/if}
 
-    {#if previewTotal && !isPercentage}
+    {#if previewTotal && !isPercentage && !isFlatFee}
       <p><strong>Preview:</strong>
         {previewTotal.qty} {displayUnitLabel} @ ${previewTotal.effRate}/{displayUnitLabel} = ${previewTotal.total}
       </p>
