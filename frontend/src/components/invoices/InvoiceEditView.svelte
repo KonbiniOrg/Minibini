@@ -524,7 +524,7 @@
             amount: source.computed_amount,
           }}
           colspanBefore={1}
-          colspanAfter={ATOM_ROW_COLSPAN_AFTER}
+          colspanAfter={ATOM_ROW_COLSPAN_AFTER + (canEdit ? 1 : 0)}
           onRemove={canEdit ? () => removeAtomFromLine(li, source) : null}
         />
       {/each}

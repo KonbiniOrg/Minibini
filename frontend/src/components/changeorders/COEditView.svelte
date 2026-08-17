@@ -341,7 +341,7 @@
           <AtomChildRow
             atom={atomFromSource(source)}
             colspanBefore={0}
-            colspanAfter={ATOM_ROW_COLSPAN_AFTER}
+            colspanAfter={ATOM_ROW_COLSPAN_AFTER + (canEdit ? 1 : 0)}
             onRemove={null}
           />
         {/each}
@@ -394,7 +394,7 @@
           <AtomChildRow
             atom={atomFromSource(source)}
             colspanBefore={0}
-            colspanAfter={ATOM_ROW_COLSPAN_AFTER}
+            colspanAfter={ATOM_ROW_COLSPAN_AFTER + (canEdit ? 1 : 0)}
             note={`inherited from line ${source.inherited_from_line}`}
             onRemove={null}
           />
@@ -430,7 +430,7 @@
           <AtomChildRow
             atom={atomFromSource(source)}
             colspanBefore={0}
-            colspanAfter={ATOM_ROW_COLSPAN_AFTER}
+            colspanAfter={ATOM_ROW_COLSPAN_AFTER + (canEdit ? 1 : 0)}
             onRemove={canEdit ? () => removeAtomFromLine(row.co_line_id, source) : null}
           />
         {/each}

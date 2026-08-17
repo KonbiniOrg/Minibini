@@ -60,21 +60,27 @@ describe('AtomChildRow', () => {
     expect(container.querySelector('button')).toBeNull();
   });
 
-  it('renders a Remove button that calls onRemove when wired', async () => {
+  it('renders a leading X (Remove from this line) that calls onRemove when wired', async () => {
     const onRemove = vi.fn();
-    const { getByText } = renderRow({ onRemove });
-    await fireEvent.click(getByText('Remove'));
+    const { getByRole, container } = renderRow({ onRemove });
+    const x = getByRole('button', { name: 'Remove from this line' });
+    // The X sits in the DESCRIPTION cell, before the kind tag/text — the
+    // atom-removal gesture must read differently from a line's worded
+    // "Remove" button (RM 2026-08-17).
+    const descCell = container.querySelectorAll('tr.doc-atom-row td')[0];
+    expect(descCell.contains(x)).toBe(true);
+    await fireEvent.click(x);
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
-  it('renders colspanAfter empty cells between the content cells and onRemove', () => {
+  it('renders colspanAfter empty cells after the content — never a trailing remove cell', () => {
     const onRemove = vi.fn();
     const { container } = renderRow({ colspanAfter: 1, onRemove });
     const tds = container.querySelectorAll('tr.doc-atom-row td');
-    // description, qty, rate, amount, +1 padding, +1 remove cell = 6
-    expect(tds).toHaveLength(6);
+    // description (holds the X), qty, rate, amount, +1 padding = 5
+    expect(tds).toHaveLength(5);
     expect(tds[4].textContent.trim()).toBe('');
-    expect(tds[5].querySelector('button')).not.toBeNull();
+    expect(tds[4].querySelector('button')).toBeNull();
   });
 
   it('renders no extra cells when colspanAfter is 0 (default)', () => {

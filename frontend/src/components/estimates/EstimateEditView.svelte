@@ -381,7 +381,14 @@
           {/if}
         </td>
         {#if canEdit || onMakeDeliverable || canMint}
-          <td>
+          <!-- Spans the line's whole group (line + caption + atom rows) so
+               the Actions column reads as one cell per LINE (RM 2026-08-17);
+               atom rows carry no Actions cell of their own — their ✕ lives
+               left of the description. -->
+          <td
+            class="actions-span"
+            rowspan={1 + ((li.sources || []).length ? (li.sources || []).length + 1 : 0)}
+          >
             {#if canEdit}
               <button type="button" onclick={() => openEditItem(li)}>Edit</button>
               <button type="button" onclick={() => handleRemoveItem(li)}>Remove</button>
@@ -402,10 +409,12 @@
           </td>
         {/if}
       </tr>
+      <!-- colspan stops at Based-on: the Actions column is occupied by the
+           line row's rowspanned cell. -->
       <AtomCaptionRow
         sources={li.sources || []}
         colspanBefore={1}
-        colspan={5 + ((canEdit || onMakeDeliverable || canMint) ? 1 : 0)}
+        colspan={5}
       />
       {#each li.sources || [] as source (source.source_id)}
         <AtomChildRow
@@ -433,24 +442,29 @@
 </table>
 
 {#if canEdit}
-  {#if uncoveredRows.length === 0}
-    <!-- Empty pool: the whole section gives way to a plan-first pointer
-         (RM 2026-08-16) — a heading over an empty table taught nothing. -->
-    <p class="pool-empty-hint">
-      To build an estimate based on tasks and materials, add them in the
-      Tasks pane and they'll be listed below for line item reference.
-    </p>
-  {:else}
-    <UncoveredWorkSection
-      title="Unquoted work"
-      subtitle="Tasks and materials from this job not yet on this estimate."
-      rows={uncoveredRows}
-      bind:selected
-      directLabel="Add as its own line"
-      onDirect={billDirect}
-      emptyText="No unquoted tasks or materials."
-    />
-  {/if}
+  <!-- The pool is task-domain material inside the estimate page — it wears
+       the tasks area's amber colorway (cw-tasks tokens) so "which bits are
+       what" reads at a glance (RM 2026-08-17). -->
+  <div class="cw-tasks">
+    {#if uncoveredRows.length === 0}
+      <!-- Empty pool: the whole section gives way to a plan-first pointer
+           (RM 2026-08-16) — a heading over an empty table taught nothing. -->
+      <p class="pool-empty-hint">
+        To build an estimate based on tasks and materials, add them in the
+        Tasks pane and they'll be listed below for line item reference.
+      </p>
+    {:else}
+      <UncoveredWorkSection
+        title="Unquoted work"
+        subtitle="Tasks and materials from this job not yet on this estimate."
+        rows={uncoveredRows}
+        bind:selected
+        directLabel="Add as its own line"
+        onDirect={billDirect}
+        emptyText="No unquoted tasks or materials."
+      />
+    {/if}
+  </div>
 {/if}
 
 <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />
@@ -531,6 +545,9 @@
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
   .pool-empty-hint { margin-top: 16px; color: #6b7280; font-size: 14px; }
+  /* The rowspanned Actions cell: pin its buttons to the top so they sit
+     beside the line row, not floating mid-group. */
+  .actions-span { vertical-align: top; }
   /* Matches the old LineItemTable's needs-category marker (send is blocked
      without an accounting_category — the estimator must see this before the
      send-time error). */

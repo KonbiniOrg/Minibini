@@ -751,16 +751,33 @@ describe('EstimateEditView mint / decline / checklist (Task 7)', () => {
     expect(within(table).getByText('Actions')).toBeInTheDocument();
   });
 
-  it('AtomCaptionRow colspan integrity: grows by 1 when canMint is true, even with canEdit/onMakeDeliverable both false', async () => {
+  it('the pool wears the tasks-area colorway (cw-tasks wrapper)', async () => {
+    const { container, findByText } = render(EstimateEditView, {
+      props: baseProps({ canEdit: true, sourcePool: poolWith([AVAILABLE_ATOM]) }),
+    });
+    await findByText('Unquoted work');
+    const pool = container.querySelector('.uncovered-work-section');
+    expect(pool.closest('.cw-tasks')).not.toBeNull();
+  });
+
+  it('Actions cell rowspans the line group; caption colspan stops at Based-on', async () => {
+    // RM 2026-08-17: the Actions column is ONE cell per line, spanning the
+    // line row + caption + atom rows; sub-rows carry no Actions cell (their
+    // X lives left of the description), so the caption spans exactly the
+    // five columns up to Based-on.
     const { container, findByText } = render(EstimateEditView, {
       props: baseProps({
         estimate: ACCEPTED, canMint: true, canEdit: false,
-        lineItems: [backedLine()], // has sources -> AtomCaptionRow renders
+        lineItems: [backedLine()], // 1 source -> caption + 1 atom row
       }),
     });
     await findByText('Cut parts');
     const captionCell = container.querySelector('tr.doc-atom-caption td[colspan]');
     expect(captionCell).not.toBeNull();
-    expect(captionCell.getAttribute('colspan')).toBe('6');
+    expect(captionCell.getAttribute('colspan')).toBe('5');
+    const actionsCell = container.querySelector('td.actions-span');
+    expect(actionsCell).not.toBeNull();
+    // line row + caption row + 1 atom row = rowspan 3
+    expect(actionsCell.getAttribute('rowspan')).toBe('3');
   });
 });
