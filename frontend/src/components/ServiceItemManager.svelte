@@ -74,6 +74,25 @@
       .join(', ');
   }
 
+  // Full price note for the list (RM 2026-08-17): every row shows what the
+  // item actually costs. Percent-style with modifiers reads
+  // "at $25.00, Rush (+50%) — $37.50/hour"; without modifiers just
+  // "$25.00/hour"; flat-fee shows its amount "$50.00/ea". The effective
+  // figure is the server's display_rate (scheme-owned math — never
+  // re-derived here); percentage schemes get no money note (their rate is
+  // a percent, not a price).
+  function priceNote(template, scheme) {
+    if (!scheme || scheme.algorithm === 'percentage') return '';
+    const eff = template.display_rate ?? scheme.rate;
+    if (eff == null) return '';
+    const unit = scheme.unit_label && scheme.unit_label !== 'none'
+      ? `/${scheme.unit_label}` : '';
+    if (scheme.algorithm === 'flat_fee') return `$${eff}${unit}`;
+    const mods = activeModifierNote(template, scheme);
+    if (mods) return `at $${scheme.rate}, ${mods} — $${eff}${unit}`;
+    return `$${eff}${unit}`;
+  }
+
   function isInactiveScheme(template) {
     const s = schemeFor(template.rate_scheme);
     return !!(s && !s.is_active);
@@ -202,8 +221,8 @@
           <td>{t.template_name}</td>
           <td>
             {scheme ? scheme.name : '—'}
-            {#if activeModifierNote(t, scheme)}
-              <br><small>{activeModifierNote(t, scheme)}</small>
+            {#if priceNote(t, scheme)}
+              <br><small>{priceNote(t, scheme)}</small>
             {/if}
             {#if isInactiveScheme(t)}
               <br><strong style="color:#a8071a">WARNING: Rate Scheme is inactive — update before next use</strong>
