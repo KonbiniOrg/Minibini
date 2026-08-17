@@ -37,8 +37,15 @@ proper issue.
   Item for this scheme" affordance (or prompt) at scheme creation; copy
   on the scheme manager explaining the split; a flat-fee example in the
   estimating docs/UI.
-  _Done when:_ RM picks a direction and a new user can enter both flat-fee
-  shapes without this explanation._
+  _Design settled 2026-08-16:_ the repeatable-fee half graduates to
+  `docs/plans/2026-08-16-flat-fee-schemes.md` (a `flat_fee` algorithm;
+  item-side amounts resolved into Task.rate at stamp time; RateScheme
+  the sole interpreter of the config JSON; converter to source its
+  schemes internally as a companion task) — deferred until after the
+  estimating-structure review. The scheme-surface discoverability half
+  stays open here.
+  _Done when:_ the flat-fee spec ships and the scheme-creation surface
+  no longer walks a new user into the dead end._
 
 Status coupling, transitions, and what a job may do at each stage.
 
@@ -700,6 +707,10 @@ Billing mechanics and money-record lifecycle.
   are frozen.
 
 ## Platform & conventions
+
+- **Modals' first field should have focus** - _added 2026_08_16_
+  It's an extra click to select the field you want to type in when a modal pops
+  up, and it's nearly always obvious which field needs entry.
 
 - **Settings category pickers truncate at 25 (StandardPagination default).** — _added 2026-08-12_
   `DefaultMaterialCategorySetting`, `DefaultDepositCategorySetting`, and
