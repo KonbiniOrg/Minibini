@@ -55,6 +55,23 @@ class GetSourcePoolTest(TestCase):
             status=Estimate.STATUS_DRAFT,
         )
 
+    def test_pool_tasks_follow_sort_order_not_pk(self):
+        # RM 2026-08-17: the estimate surface's pool must list tasks in the
+        # task area's order (sort_order), not creation/PK order. Create two
+        # more tasks, then invert their sort_order relative to creation.
+        t2 = Task(job=self.job, name='Zeta', est_qty=Decimal('1'))
+        t2.stamp_from_scheme(self.scheme)
+        t2.save()
+        t3 = Task(job=self.job, name='Alpha', est_qty=Decimal('1'))
+        t3.stamp_from_scheme(self.scheme)
+        t3.save()
+        for task, order in ((self.pt, 2), (t2, 3), (t3, 1)):
+            task.sort_order = order
+            task.save()
+        pool = EstimateWizardService.get_source_pool(self.estimate)
+        task_ids = [a['id'] for a in pool['atoms'] if a['type'] == 'task']
+        self.assertEqual(task_ids, [t3.pk, self.pt.pk, t2.pk])
+
     def test_pool_has_task_and_material_atoms(self):
         pool = EstimateWizardService.get_source_pool(self.estimate)
         atom_ids = [(a['type'], a['id']) for a in pool['atoms']]

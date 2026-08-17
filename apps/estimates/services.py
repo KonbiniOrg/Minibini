@@ -1271,11 +1271,14 @@ class EstimateWizardService(BaseWizardService):
         # PLANNED work (est_qty), and a cancelled task is not planned work.
         # (The invoice pool is the opposite — recorded actuals on a
         # cancelled task remain billable. Plan C3.)
+        # Ordered as the task area shows them (sort_order, pk-stable) — the
+        # pool must mirror the task list's order, not creation order (RM
+        # 2026-08-17; the invoice pool already does this).
         for task in Task.objects.filter(job=job).exclude(
             status=Task.STATUS_CANCELLED,
         ).select_related(
             'accounting_category',
-        ):
+        ).order_by('sort_order', 'pk'):
             key = (EstimateLineItemSource.SOURCE_TASK, task.pk)
             state_info = claims.get(key, default_state)
             eff_cat = task.effective_accounting_category
@@ -1298,7 +1301,7 @@ class EstimateWizardService(BaseWizardService):
             consumption_state=Material.CONSUMPTION_STATE_RELEASED,
         ).select_related(
             'accounting_category', 'inventory_item',
-        ):
+        ).order_by('pk'):
             key = (EstimateLineItemSource.SOURCE_MATERIAL, mat.pk)
             state_info = claims.get(key, default_state)
             detail = cls._atom_detail(mat)
