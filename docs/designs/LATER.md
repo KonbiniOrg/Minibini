@@ -698,6 +698,17 @@ Billing mechanics and money-record lifecycle.
 
 ## Platform & conventions
 
+- **Rename the "Tasks" header to "Work".** — _added 2026-08-17 (RM)_
+  The job nav rail's section label (`JobNavRail.svelte` line ~15,
+  `label: 'Tasks'`) should read **Work** — matching the area's own
+  button vocabulary ("Add Work", "Mark Work Complete") and the fact the
+  surface holds tasks AND materials AND expenses. When picked up, sweep
+  the same rename question across sibling surfaces that say "Tasks" as a
+  heading (e2e selectors and docs/ui-flows references included); "task"
+  as the object name in row-level copy stays.
+  _Done when:_ the rail (and agreed siblings) say Work and nothing user-
+  facing contradicts it.
+
 - **Move "Add Expense" off the task-planning button row.** — _added
   2026-08-17 (RM)_
   On the job task list, "Add Expense" sits directly beside "Add Work" in
