@@ -446,17 +446,18 @@ class EstimateBuilderTest(unittest.TestCase):
         self.assertEqual(len(tokens), len(set(tokens)),
                          'public_token must be unique across estimates')
 
-    def test_estimate_number_derives_from_job_number_and_version(self):
-        # The canonical form is "{job_number}-{version}". Job number ==
-        # FreeAgent base ref, version is the per-chain index.
+    def test_estimate_number_is_the_bare_job_number(self):
+        # App convention (RM 2026-08-17): estimate_number == job_number with
+        # NO version suffix — `version` is its own field and the SPA renders
+        # "{estimate_number}-{version}". (The old "{base}-{version}" emission
+        # double-suffixed converted estimates in the UI: "07998-1-1".)
         build.build_estimates(self.c)
         for base_ref, est_list in self.c.estimates.items():
             for entry in est_list:
                 est = next(f for f in self._models('estimates.estimate')
                            if f['pk'] == entry['est_pk'])
-                self.assertEqual(
-                    est['fields']['estimate_number'],
-                    f'{base_ref}-{entry["version"]}')
+                self.assertEqual(est['fields']['estimate_number'], base_ref)
+                self.assertEqual(est['fields']['version'], entry['version'])
 
     def test_comment_lines_excluded_and_estimates_link_to_jobs(self):
         build.build_estimates(self.c)

@@ -983,7 +983,13 @@ def build_estimates(c):
             est_pk = c.next_pk('estimates.estimate')
             c.add_fixture('estimates.estimate', est_pk, {
                 'job':             job_pk,
-                'estimate_number': f'{base}-{version}',
+                # Bare job number — NO version suffix (RM 2026-08-17): the
+                # app convention is estimate_number == job.job_number with
+                # `version` a separate field, and the SPA renders
+                # "{estimate_number}-{version}". The old f'{base}-{version}'
+                # emission double-suffixed every converted estimate
+                # ("07998-1-1") in the UI.
+                'estimate_number': base,
                 'version':         version,
                 'parent':          None,
                 'status':          est_status,
