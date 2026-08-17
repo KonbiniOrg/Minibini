@@ -37,15 +37,15 @@ proper issue.
   Item for this scheme" affordance (or prompt) at scheme creation; copy
   on the scheme manager explaining the split; a flat-fee example in the
   estimating docs/UI.
-  _Design settled 2026-08-16:_ the repeatable-fee half graduates to
-  `docs/plans/2026-08-16-flat-fee-schemes.md` (a `flat_fee` algorithm;
-  item-side amounts resolved into Task.rate at stamp time; RateScheme
-  the sole interpreter of the config JSON; converter to source its
-  schemes internally as a companion task) — deferred until after the
-  estimating-structure review. The scheme-surface discoverability half
-  stays open here.
-  _Done when:_ the flat-fee spec ships and the scheme-creation surface
-  no longer walks a new user into the dead end._
+  _Repeatable-fee half SHIPPED 2026-08-16_ (`flat_fee` algorithm,
+  item-side amounts, scheme-encapsulated interpretation, converter
+  internal scheme sourcing — spec `docs/plans/2026-08-16-flat-fee-schemes.md`,
+  implemented same day). Remaining: the scheme-surface discoverability
+  half — the scheme manager still gives no hint that a Service Item must
+  wrap a scheme to make it pickable (an "also create a Service Item?"
+  affordance or explanatory copy).
+  _Done when:_ the scheme-creation surface no longer walks a new user
+  into the pickability dead end._
 
 Status coupling, transitions, and what a job may do at each stage.
 

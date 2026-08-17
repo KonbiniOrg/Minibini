@@ -295,3 +295,29 @@ One new migration (`estimates/0048_estimatelineitem_work_declined`) —
       data doesn't surface phantom checklist debt. (`nealsmall.json` /
       nealseed are RM-managed — this only applies if you regenerate
       `converted.json`.)
+
+## Flat-fee schemes (2026-08-16)
+
+- [ ] Settings → Pricing: the algorithm dropdown offers **Flat fee**.
+      Choosing it hides the rate input and modifiers editor and shows the
+      "amount lives on each Service Item" explanation; the saved scheme
+      lists at rate 0.00.
+- [ ] Catalog → Service Items: picking the flat-fee scheme swaps the
+      modifier pre-check region for a single **Amount** field ("per
+      <unit>"); the word "modifier" appears nowhere on this path. Create
+      "Delivery" $50, "Setup — mill" $110, etc. — all on the ONE shared
+      scheme.
+- [ ] Add line on a draft estimate: the picker shows each item's own
+      amount (display_rate); picking prices the line at the amount.
+- [ ] Accept: the flat-fee catalog line crystallizes a task whose RATE is
+      the item's amount (qty entered-style, no modifiers); no checklist
+      question is asked for it.
+- [ ] Documented edge: a manual task created directly from the flat-fee
+      scheme (no catalog pick) stamps at $0 — expected, the money lives
+      on the line.
+- [ ] Editing a Service Item's amount later never reprices existing lines
+      or stamped tasks (snapshots).
+- [ ] Converter: regenerated data carries the shared "Flat fee" scheme
+      (pk 10) from the converter's internal table — nealseed's scheme
+      records are ignored now; scheme changes never touch RM-managed
+      seed files.

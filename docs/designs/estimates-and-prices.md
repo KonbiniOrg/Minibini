@@ -87,10 +87,10 @@ job atom backing it and stays a document line forever.)
 | `rate_scheme_id` | AutoField PK | |
 | `name` | CharField(100), unique | display name; e.g. "CNC Router", "Hourly Labor", "Tap a hole" |
 | `description` | TextField, blank | longer admin explanation |
-| `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `percentage` |
-| `rate` | Decimal(10,2) | the per-unit price for `elapsed_time`/`entered_qty`; holds the percent value for `percentage` (negative = discount) |
+| `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `percentage`, `flat_fee` |
+| `rate` | Decimal(10,2) | the per-unit price for `elapsed_time`/`entered_qty`; holds the percent value for `percentage` (negative = discount); **locked to `0` for `flat_fee`** (`clean()` enforces — the money lives on each Service Item) |
 | `unit_label` | CharField(50) | the customer-facing unit; validated against the configured units list (`apps/core/units.py`). `elapsed_time` schemes are pinned to `'hour'` — `RateScheme.clean()` raises a `unit_label` `ValidationError` for any other value, and the rate-scheme serializer force-sets `unit_label='hour'` for `elapsed_time` (so the field is redundant, not user-chosen, once that algorithm is picked). `percentage` still defaults `unit_label='none'`. |
-| `modifiers` | JSONField | list of `{key, label, percent}` dicts |
+| `modifiers` | JSONField | list of `{key, label, percent}` dicts; **must be `[]` for `flat_fee`** (no mixing — see §2.2a) |
 | `accounting_category` | FK → `AccountingCategory` (PROTECT) | required, NOT NULL |
 | `is_active` | BooleanField, default `True` | retirement flag — hides the preset from *new* task stampings only (§3.1); does not affect tasks already stamped from it |
 
@@ -104,14 +104,62 @@ job atom backing it and stays a document line forever.)
 | `elapsed_time` | `RateScheme.ELAPSED_TIME` | sum of `Blep` durations on the task in hours | hourly labor (assembly, bench work); unit is always `'hour'` (pinned — see §2.1) |
 | `entered_qty` | `RateScheme.ENTERED_QTY` | `Task.actual_qty` | machine-minutes, piece work; worker enters the count |
 | `percentage` | `RateScheme.PERCENTAGE` | n/a — document-layer computation only | surcharges and discounts (rush fee, volume discount) |
+| `flat_fee` | `RateScheme.FLAT_FEE` | `Task.actual_qty` (stamps `qty_source=ENTERED_QTY` — no new task branch) | fixed charges at many prices: delivery, per-machine setup, rush minimums (§2.2a) |
 
-> **`flat_fee` removed.** RateScheme no longer has a `flat_fee` algorithm.
-> A fixed one-off or per-unit charge (tap a hole, plywood coating, setup
-> fee) is authored as a **plain hand-line** on the Estimate/CO — it has
-> no job atom backing it and stays a document line forever (see §4.5;
-> the `jobs.Fee` atom that briefly replaced this algorithm was itself
-> retired 2026-08-09). `copy_active_modifiers()` collapses any legacy
-> `{'flat_fee_price': …}` dict to `[]`.
+#### 2.2a The `flat_fee` algorithm (reintroduced 2026-08-16)
+
+> History: an earlier `flat_fee` algorithm was removed with the `jobs.Fee`
+> retirement (2026-08-09); one-off fixed charges were then plain
+> hand-lines only. RM reintroduced the algorithm 2026-08-16 in a new
+> shape (`docs/plans/2026-08-16-flat-fee-schemes.md`) because repeatable
+> flat charges — delivery, per-machine setup fees, rush minimums — are
+> ONE billing behavior at MANY prices, and welding price to the scheme
+> forced a scheme-per-price duplication. One-off flat charges remain
+> plain hand-lines (§4.5); `copy_active_modifiers()` still collapses the
+> legacy `{'flat_fee_price': …}` dict shape to `[]`.
+
+A `flat_fee` scheme is **pure behavior**: `rate` locked to `0`, own
+`modifiers` locked to `[]` (both enforced by `clean()`), never edited
+after creation — so scheme supersession churn can never apply to fee
+price changes. Each **ServiceItem** referencing it carries its own
+amount in `default_active_modifiers` as exactly one
+`{amount: > 0, label?}` entry (no `percent` key — **no mixing**: fee
+amounts and percent modifiers never compose).
+
+**Encapsulation (the load-bearing rule):** the config JSON's dual shape
+(percent-style key list vs. flat-fee amount entry) is interpreted ONLY
+by `RateScheme`. Three algorithm-owned methods:
+
+- `resolve_stamp(item_config)` → the dict `Task.stamp_from_scheme`
+  assigns (`qty_source`, `rate`, `unit_label`, `accounting_category`,
+  `active_modifiers`). For `flat_fee` it returns
+  `qty_source=ENTERED_QTY`, **`rate` = the item's amount**, and
+  `active_modifiers=[]` — the amount resolves INTO `Task.rate` at stamp
+  time, so every downstream consumer (task money math, snapshots,
+  serializer validation, bundle math, invoicing) is untouched and
+  scheme-ignorant.
+- `validate_item_config(entries)` → algorithm-owned config validation,
+  called from `ServiceItem.clean()` and the ServiceItem serializer
+  (clean 400s on API writes). Percent algorithms: entries must be key
+  strings present in the scheme's own `modifiers`. `flat_fee`: exactly
+  one amount entry.
+- `effective_rate(...)` → branches for `flat_fee` (returns the config's
+  amount); feeds line pricing (`add_line_item_from_service`) and the
+  serializer's read-only `display_rate`, which the Add-line picker
+  shows.
+
+**Documented edge:** a manual task stamped from a `flat_fee` scheme with
+no ServiceItem (no amount source) stamps `rate = 0.00` — acceptable
+because the fee's money lives on the estimate line; the task is
+valuation only.
+
+**UI:** the scheme manager's "Flat fee" mode hides the rate input and
+modifiers editor (shows the amount-lives-on-items explanation); the
+ServiceItem editor swaps the modifier pre-check region for a single
+**Amount** field — the word "modifier" never renders on the flat-fee
+path. The converter emits the shared flat-fee scheme from its internal
+`CONVERTER_SCHEMES` table (schemes are converter-sourced, never read
+from the RM-managed seed files — `nealsdata/converter/build.py`).
 
 #### The `percentage` algorithm
 

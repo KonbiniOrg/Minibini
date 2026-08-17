@@ -1,8 +1,8 @@
 # Flat-fee rate schemes — design (deferred)
 
-**Status:** design noted 2026-08-16 (RM + design session during the
-estimating-structure review); **deliberately deferred** — handled after
-the current `feature/estimating` review cycle. Disposable plan doc.
+**Status: IMPLEMENTED 2026-08-16** (same day — RM pulled it forward
+mid-review). Durable record: `docs/designs/estimates-and-prices.md`
+§2.2a + `data-constraints.md` §1.7. Disposable plan doc.
 
 ## Problem (RM)
 

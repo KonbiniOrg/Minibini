@@ -499,10 +499,12 @@ generates a Task. See `docs/designs/estimates-and-prices.md` §2–§3 for
 algorithm/modifier semantics and the stamping/retirement mechanics.
 
 - **name**: required, unique, max 100 chars.
-- **algorithm**: one of `elapsed_time`, `entered_qty`, `percentage`
-  (the former `flat_fee` algorithm was **removed**; there is no fixed-charge
-  algorithm or atom — a plain hand-line stays a document-only line, see the
-  "Fee retired" note after §1.8).
+- **algorithm**: one of `elapsed_time`, `entered_qty`, `percentage`,
+  `flat_fee`. (History: the ORIGINAL `flat_fee` algorithm was removed
+  with the Fee retirement; RM reintroduced a NEW-shape `flat_fee`
+  2026-08-16 — see `estimates-and-prices.md` §2.2a. There is still no
+  fixed-charge *atom*; one-off charges stay plain hand-lines, see the
+  "Fee retired" note after §1.8.)
 - **rate**: decimal(10,2). Semantics depend on `algorithm`:
   - `elapsed_time` / `entered_qty`: per-unit price; **must be ≥ 0**
     (`RateScheme.clean()` raises `ValidationError` for negative values
@@ -512,6 +514,15 @@ algorithm/modifier semantics and the stamping/retirement mechanics.
     is the sole exception to the non-negative rate invariant.
     `validate_data.py` raises an error if a non-`percentage`
     service has a negative rate.
+  - `flat_fee`: **locked to `0`** (`RateScheme.clean()`); the scheme's own
+    `modifiers` must be `[]`. The money lives on each referencing
+    `ServiceItem` as exactly one `{amount > 0, label?}` entry in
+    `default_active_modifiers` (validated by
+    `RateScheme.validate_item_config`, called from `ServiceItem.clean()`
+    and the ServiceItem serializer). The amount resolves into `Task.rate`
+    at stamp time via `RateScheme.resolve_stamp` (`qty_source` stamps as
+    `entered_qty`); a stamp with no item config yields `rate = 0.00`
+    (documented edge — the fee's money lives on the estimate line).
 - **unit_label**: max 50 chars, drawn from `Configuration['units_list']`
   (§1.1). `elapsed_time` schemes are **pinned to `'hour'`** —
   `RateScheme.clean()` raises a `unit_label` `ValidationError` for any
