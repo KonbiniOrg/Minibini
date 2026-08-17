@@ -5,6 +5,10 @@
     estimate: 'estimate',
     actuals: 'actuals',
     edited: 'edited',
+    // Estimate/CO surfaces (RM 2026-08-17): keep the underlying structure
+    // visible; the tweak is a qualifier, not the identity.
+    edited_work: 'planned work · edited',
+    edited_materials: 'planned materials · edited',
     deposit: 'deposit',
     deposit_credit: 'deposit credit',
     planned_work: 'planned work',
@@ -24,6 +28,10 @@
     from_catalog: 'catalog',
     deposit: 'deposit',
     edited: 'edited',
+    // Estimate/CO surfaces (RM 2026-08-17): keep the underlying structure
+    // visible; the tweak is a qualifier, not the identity.
+    edited_work: 'planned work · edited',
+    edited_materials: 'planned materials · edited',
   };
 
   let label = $derived.by(() => {

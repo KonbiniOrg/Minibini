@@ -267,7 +267,7 @@ describe('EstimateEditView', () => {
 
   it('shows the "work totals $X" reference on an edited line', async () => {
     const { findByText } = render(EstimateEditView, {
-      props: baseProps({ lineItems: [backedLine({ backing: 'edited', backing_total: '50.00' })] }),
+      props: baseProps({ lineItems: [backedLine({ backing: 'edited_work', backing_total: '50.00' })] }),
     });
     expect(await findByText(/work totals \$50\.00/)).toBeInTheDocument();
   });

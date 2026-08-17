@@ -367,8 +367,8 @@ class AmendedAgreementEndpointTests(FixtureTestCase):
         self.assertEqual(replaced_row['co_line_id'], self.replace_line.pk)
 
         # backing: price 250 vs. the target's resolvable source total (200) ->
-        # out of sync -> 'edited'.
-        self.assertEqual(replaced_row['backing'], 'edited')
+        # out of sync -> 'edited_work' (kind-preserving; the source is a task).
+        self.assertEqual(replaced_row['backing'], 'edited_work')
         self.assertEqual(replaced_row['backing_total'], '200.00')
 
         sources = replaced_row['sources']

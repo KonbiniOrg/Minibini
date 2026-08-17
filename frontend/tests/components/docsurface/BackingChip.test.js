@@ -158,3 +158,17 @@ describe('BackingChip', () => {
     });
   });
 });
+
+describe('kind-preserving edited (estimate/CO, RM 2026-08-17)', () => {
+  it('edited_work reads "planned work · edited" with the edited tint', () => {
+    const { getByText } = render(BackingChip, { props: { backing: 'edited_work' } });
+    const chip = getByText('planned work · edited');
+    expect(chip.classList.contains('edited')).toBe(true);
+  });
+
+  it('edited_materials reads "planned materials · edited" with the edited tint', () => {
+    const { getByText } = render(BackingChip, { props: { backing: 'edited_materials' } });
+    const chip = getByText('planned materials · edited');
+    expect(chip.classList.contains('edited')).toBe(true);
+  });
+});

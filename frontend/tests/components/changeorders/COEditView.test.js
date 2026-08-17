@@ -71,7 +71,7 @@ const REPLACED_ROW = {
   },
   co_line_id: 12,
   co_index: 1,
-  backing: 'edited',
+  backing: 'edited_work',
   backing_total: '75.00',
   sources: [
     {

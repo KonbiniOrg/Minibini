@@ -376,7 +376,7 @@
         <td class="text-right">{fmtMoney(lineAmount(li))}</td>
         <td>
           <BackingChip backing={li.backing} />
-          {#if li.backing === 'edited' && li.backing_total != null}
+          {#if li.backing?.startsWith('edited') && li.backing_total != null}
             <br><small>work totals {fmtMoney(li.backing_total)}</small>
           {/if}
         </td>

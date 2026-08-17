@@ -106,7 +106,7 @@ def derive_co_line_backing(co_line, resolved_sources=None):
     (claims moved off the target at acceptance) else the TARGET's sources
     (draft/open CO, not yet moved) — see `_sources_for_replace` — against
     the CO line's own qty/price (in-sync -> planned_work / planned_materials;
-    out-of-sync -> 'edited'). A replace line can never carry a catalog
+    out-of-sync -> 'edited_work' / 'edited_materials', kind-preserving). A replace line can never carry a catalog
     descriptor (model-enforced), so the classification reduces to
     adjustment / sourced / hand.
 
@@ -123,10 +123,11 @@ def derive_co_line_backing(co_line, resolved_sources=None):
 
     if resolved_sources:
         sum_value = _sum_amounts(resolved_sources)
-        if not EstimateWizardService._is_in_sync(co_line, sum_value):
-            return 'edited'
         from apps.jobs.models import Task
-        if any(isinstance(i, Task) for i in resolved_sources):
+        has_task = any(isinstance(i, Task) for i in resolved_sources)
+        if not EstimateWizardService._is_in_sync(co_line, sum_value):
+            return 'edited_work' if has_task else 'edited_materials'
+        if has_task:
             return 'planned_work'
         return 'planned_materials'
 

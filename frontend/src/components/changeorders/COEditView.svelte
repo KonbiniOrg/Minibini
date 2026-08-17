@@ -312,7 +312,7 @@
           <td class="text-right">{fmtMoney(row.line.amount)}</td>
           <td>
             <BackingChip backing={row.backing} />
-            {#if row.backing === 'edited' && row.backing_total != null}
+            {#if row.backing?.startsWith('edited') && row.backing_total != null}
               <br><small>work totals {fmtMoney(row.backing_total)}</small>
             {/if}
           </td>
@@ -367,7 +367,7 @@
           <td class="text-right">{fmtMoney(row.line.amount)}</td>
           <td>
             <BackingChip backing={row.backing} />
-            {#if row.backing === 'edited' && row.backing_total != null}
+            {#if row.backing?.startsWith('edited') && row.backing_total != null}
               <br><small>work totals {fmtMoney(row.backing_total)}</small>
             {/if}
           </td>
@@ -411,7 +411,7 @@
           <td class="text-right">{fmtMoney(row.line.amount)}</td>
           <td>
             <BackingChip backing={row.backing} />
-            {#if row.backing === 'edited' && row.backing_total != null}
+            {#if row.backing?.startsWith('edited') && row.backing_total != null}
               <br><small>work totals {fmtMoney(row.backing_total)}</small>
             {/if}
           </td>

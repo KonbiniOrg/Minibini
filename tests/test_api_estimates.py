@@ -469,7 +469,8 @@ class EstimateLineBackingAPITest(BaseTestCase):
 
     def test_backing_edited_when_sourced_line_out_of_sync(self):
         """A sourced line whose stored price no longer matches the source
-        sum -> 'edited', regardless of source kind (materials-only here)."""
+        sum -> 'edited_materials' (kind-preserving, RM 2026-08-17;
+        materials-only here)."""
         from apps.estimates.services import EstimateWizardService
 
         m1 = self._material('Edited-Steel', '2', '5.00')
@@ -479,7 +480,7 @@ class EstimateLineBackingAPITest(BaseTestCase):
         li.save()
 
         row = self._row(li)
-        self.assertEqual(row['backing'], 'edited')
+        self.assertEqual(row['backing'], 'edited_materials')
 
     def test_backing_from_catalog_on_service_item_line(self):
         """A line pointing at a ServiceItem (deferred service descriptor) ->
@@ -618,7 +619,7 @@ class EstimateLineBackingAPITest(BaseTestCase):
         """A partially-dangling line sums/classifies only what still
         resolves: with one of two material sources deleted, backing_total
         reflects only the survivor and the now-stale stored price reads
-        as 'edited' rather than crashing."""
+        as 'edited_materials' rather than crashing."""
         from apps.estimates.services import EstimateWizardService
         from apps.inventory.models import Material
 
@@ -632,7 +633,7 @@ class EstimateLineBackingAPITest(BaseTestCase):
         Material.objects.filter(pk=m2.pk).delete()
 
         row = self._row(li)
-        self.assertEqual(row['backing'], 'edited')
+        self.assertEqual(row['backing'], 'edited_materials')
         self.assertEqual(Decimal(row['backing_total']), Decimal('10.00'))
 
 

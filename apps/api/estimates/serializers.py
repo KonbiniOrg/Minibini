@@ -44,7 +44,10 @@ def derive_estimate_backing(line):
        a partially-dangling line sums/classifies only what still
        resolves):
        - not in sync with the source sum (price != round(sum/qty, 2)) ->
-         'edited', regardless of source kind.
+         'edited_work' (any task among the sources) or 'edited_materials'
+         (materials only) — the chip keeps the underlying structure and
+         adds the tweak as a qualifier (RM 2026-08-17: the supporting
+         structure is more useful than whether it's been tweaked).
        - in sync, any task among the sources -> 'planned_work'.
        - in sync, materials only -> 'planned_materials'.
     4. Otherwise (no adjustment, no catalog ref, no resolvable sources) ->
@@ -75,12 +78,11 @@ def derive_estimate_backing(line):
             (EstimateWizardService._atom_computed_amount(i) for i in resolved),
             Decimal('0.00'),
         )
-        if not EstimateWizardService._is_in_sync(line, sum_value):
-            return 'edited'
         from apps.jobs.models import Task
-        if any(isinstance(i, Task) for i in resolved):
-            return 'planned_work'
-        return 'planned_materials'
+        has_task = any(isinstance(i, Task) for i in resolved)
+        if not EstimateWizardService._is_in_sync(line, sum_value):
+            return 'edited_work' if has_task else 'edited_materials'
+        return 'planned_work' if has_task else 'planned_materials'
 
     return 'hand'
 
