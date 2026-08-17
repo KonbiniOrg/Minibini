@@ -708,6 +708,17 @@ Billing mechanics and money-record lifecycle.
 
 ## Platform & conventions
 
+- **Move "Add Expense" off the task-planning button row.** — _added
+  2026-08-17 (RM)_
+  On the job task list, "Add Expense" sits directly beside "Add Work" in
+  the toolbar (`TasksPanel.svelte` ~line 361) and reads like another
+  planning gesture — but an expense is a money actual, not planned work.
+  Relocate it so the toolbar reads as planning-only (candidates: near
+  the Expenses section of the task tree where loose expenses render, or
+  a visually-distinct secondary placement).
+  _Done when:_ RM picks a placement and adding an expense no longer
+  reads as a sibling of Add Work.
+
 - **Service Item edit should be a modal.** — _added 2026-08-17 (RM)_
   `ServiceItemManager.svelte` still uses the old top-of-page inline
   `<fieldset>` form (the `{#if editingId !== null}` block replaces the
