@@ -1,5 +1,5 @@
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
@@ -453,21 +453,20 @@ class Task(TaskBase):
 
         Raises ``ValueError`` for percentage schemes: those are document-level
         adjustments (rush/discount lines), not task-billing presets.
+
+        Pure delegation to ``RateScheme.resolve_stamp`` — the scheme owns
+        all interpretation of ``modifier_keys`` (a plain key-string list for
+        percent-style algorithms; an algorithm-owned config shape for others,
+        e.g. flat_fee's single ``{amount, label?}`` entry). This method just
+        assigns the resolved fields plus provenance.
         """
-        if scheme.algorithm == RateScheme.PERCENTAGE:
-            raise ValueError(
-                'Percentage services are document adjustments and cannot '
-                'stamp a task.'
-            )
-        keys = modifier_keys or []
-        self.qty_source = scheme.algorithm
-        self.rate = scheme.rate
-        self.unit_label = scheme.unit_label
-        self.accounting_category = scheme.accounting_category
+        resolved = scheme.resolve_stamp(modifier_keys)
+        self.qty_source = resolved['qty_source']
+        self.rate = resolved['rate']
+        self.unit_label = resolved['unit_label']
+        self.accounting_category = resolved['accounting_category']
+        self.active_modifiers = resolved['active_modifiers']
         self.source_scheme = scheme
-        self.active_modifiers = [
-            dict(m) for m in scheme.modifiers if m.get('key') in keys
-        ]
 
     def effective_rate(self):
         """Per-unit rate: own ``rate`` plus own ``active_modifiers``
@@ -563,11 +562,13 @@ class RateScheme(models.Model):
     ELAPSED_TIME = 'elapsed_time'
     ENTERED_QTY = 'entered_qty'
     PERCENTAGE = 'percentage'
+    FLAT_FEE = 'flat_fee'
 
     ALGORITHM_CHOICES = [
         (ELAPSED_TIME, 'Based on time worked'),
         (ENTERED_QTY, 'Worker enters quantity'),
         (PERCENTAGE, 'Percentage of other lines'),
+        (FLAT_FEE, 'Flat fee'),
     ]
 
     rate_scheme_id = models.AutoField(primary_key=True)
@@ -621,6 +622,17 @@ class RateScheme(models.Model):
                 'unit_label': 'Time-based schemes are billed in hours; '
                               f'unit must be "{HOUR_UNIT}".',
             })
+        if self.algorithm == self.FLAT_FEE:
+            if self.rate != 0:
+                raise ValidationError({
+                    'rate': 'Flat fee schemes carry no rate of their own — '
+                            'the amount lives on each Service Item.',
+                })
+            if self.modifiers:
+                raise ValidationError({
+                    'modifiers': 'Flat fee schemes carry no modifiers of their '
+                                 'own — the amount lives on each Service Item.',
+                })
 
     def save(self, *args, **kwargs):
         # Normalize on create too — full_clean below covers both create and update.
@@ -642,6 +654,14 @@ class RateScheme(models.Model):
         """
         if self.algorithm == self.PERCENTAGE:
             raise ValueError('percentage services compute at the document layer, not per-unit')
+        if self.algorithm == self.FLAT_FEE:
+            # Reinterpretation rule: for flat_fee, `active_modifiers` is not
+            # a list of surcharge keys — it's the item's config entries (see
+            # resolve_stamp/validate_item_config). The single entry's amount
+            # IS the rate; nothing composes with it.
+            entries = active_modifiers or []
+            amount = entries[0].get('amount', 0) if entries else 0
+            return Decimal(str(amount)).quantize(Decimal('0.01'))
         modifier_percent = sum(
             m['percent'] for m in self.modifiers if m['key'] in (active_modifiers or [])
         )
@@ -686,6 +706,104 @@ class RateScheme(models.Model):
             return task.actual_qty or Decimal('0')
         else:
             raise ValueError(f'unknown algorithm: {self.algorithm}')
+
+    def resolve_stamp(self, item_config=None):
+        """Resolve this scheme plus an item-level config into the money
+        fields a Task should stamp (task-owned-money interpretation layer).
+
+        ``item_config`` is the caller's ``modifier_keys`` argument to
+        ``Task.stamp_from_scheme`` — its shape is algorithm-owned:
+
+        - Percent-style algorithms (``elapsed_time``, ``entered_qty``): a
+          list of ``self.modifiers`` ``key`` strings to activate. Returns
+          today's values verbatim: ``qty_source`` = ``self.algorithm``,
+          ``rate`` = ``self.rate``, ``unit_label``/``accounting_category``
+          snapshotted from the scheme, ``active_modifiers`` resolved to
+          full ``{key, label, percent}`` dicts for the matched keys.
+        - ``flat_fee``: a list holding exactly one ``{amount, label?}``
+          dict (see ``validate_item_config``) — the fee amount lives on
+          the item (ServiceItem), not the scheme. Returns
+          ``qty_source`` = ``ENTERED_QTY`` (worker-entered-quantity
+          billing, so ``Task.get_actual_qty`` needs no new branch),
+          ``rate`` = the config's amount (quantized to cents),
+          ``active_modifiers`` = ``[]`` (nothing composes with a flat
+          fee). Missing/empty config pins ``rate`` at 0.00 — the
+          documented edge for a manual task stamped with no ServiceItem
+          amount source.
+
+        Raises ``ValueError`` for ``percentage`` schemes: those are
+        document-level adjustments, not task-billing presets.
+        """
+        if self.algorithm == self.PERCENTAGE:
+            raise ValueError(
+                'Percentage services are document adjustments and cannot '
+                'stamp a task.'
+            )
+        entries = item_config or []
+        if self.algorithm == self.FLAT_FEE:
+            amount = entries[0].get('amount', 0) if entries else 0
+            return {
+                'qty_source': self.ENTERED_QTY,
+                'rate': Decimal(str(amount)).quantize(Decimal('0.01')),
+                'unit_label': self.unit_label,
+                'accounting_category': self.accounting_category,
+                'active_modifiers': [],
+            }
+        return {
+            'qty_source': self.algorithm,
+            'rate': self.rate,
+            'unit_label': self.unit_label,
+            'accounting_category': self.accounting_category,
+            'active_modifiers': [
+                dict(m) for m in self.modifiers if m.get('key') in entries
+            ],
+        }
+
+    def validate_item_config(self, entries):
+        """Validate an item's config entries (e.g. ServiceItem's
+        ``default_active_modifiers``) against this scheme's algorithm-owned
+        contract. Raises ``ValidationError`` (dict-shape); returns ``None``
+        on success.
+
+        - Percent-style algorithms (including ``percentage``): entries must
+          be key-strings present in ``self.modifiers`` — today's implicit
+          contract (unknown keys were silently dropped by ``resolve_stamp``),
+          now explicit and enforced here.
+        - ``flat_fee``: entries must be exactly one dict
+          ``{amount: <positive>, label?: str}`` with no ``percent`` key —
+          no mixing a flat fee with a percentage modifier.
+        """
+        entries = entries or []
+        if self.algorithm == self.FLAT_FEE:
+            if len(entries) != 1 or not isinstance(entries[0], dict):
+                raise ValidationError({
+                    'default_active_modifiers':
+                        'Flat fee items need exactly one amount entry.',
+                })
+            entry = entries[0]
+            if 'percent' in entry:
+                raise ValidationError({
+                    'default_active_modifiers':
+                        'Flat fee items cannot mix in a percent modifier.',
+                })
+            amount = entry.get('amount')
+            try:
+                amount_dec = Decimal(str(amount)) if amount is not None else None
+            except InvalidOperation:
+                amount_dec = None
+            if amount_dec is None or amount_dec <= 0:
+                raise ValidationError({
+                    'default_active_modifiers':
+                        'Flat fee items need a positive amount.',
+                })
+            return
+        valid_keys = {m.get('key') for m in self.modifiers}
+        for key in entries:
+            if not isinstance(key, str) or key not in valid_keys:
+                raise ValidationError({
+                    'default_active_modifiers':
+                        f'"{key}" is not a modifier on this rate scheme.',
+                })
 
     def get_modifier_inputs(self):
         """Return modifiers list for UI rendering."""
