@@ -161,16 +161,6 @@ Status coupling, transitions, and what a job may do at each stage.
   that split for now, so don't change it piecemeal.
   _Done when:_ the full/lite pass picks real backgrounds and the yellow is gone.
 
-- **Estimate edit view ignores task reordering.** — _added 2026-08-14 (RM)_
-  The uncovered-work pool lists tasks in PK order: `_pool_atoms`
-  (`apps/estimates/services.py` ~L1168) queries `Task.objects.filter(job=job)`
-  with no `order_by`, and `Task.Meta` has no default ordering — so the
-  board's `sort_order` reordering never reaches the estimate edit view (or
-  the CO pool, which shares the walk; check the invoice pool's walk for the
-  same gap). Fix shape: `.order_by('sort_order', 'pk')` in the shared walk(s).
-  _Done when:_ the estimate/CO (and invoice, if affected) pools list tasks
-  in the same order as the task list.
-
 - **Single-atom "New line from selected" shouldn't need the modal.** —
   _added 2026-08-14 (RM, estimate-confusion walkthrough)_
   When one task/material is selected and made into a line, all the line's
