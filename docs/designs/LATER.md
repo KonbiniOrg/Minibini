@@ -708,6 +708,16 @@ Billing mechanics and money-record lifecycle.
 
 ## Platform & conventions
 
+- **Service Item edit should be a modal.** — _added 2026-08-17 (RM)_
+  `ServiceItemManager.svelte` still uses the old top-of-page inline
+  `<fieldset>` form (the `{#if editingId !== null}` block replaces the
+  list) — the same pattern the inventory merge entry flags. Sibling
+  managers already moved on: `RateSchemeManager` puts its form in the
+  `Modal` shell. Convert the create/edit form to a `Modal` like its
+  sibling.
+  _Done when:_ adding/editing a Service Item happens in a modal over the
+  list, matching RateSchemeManager.
+
 - **Modals' first field should have focus** - _added 2026_08_16_
   It's an extra click to select the field you want to type in when a modal pops
   up, and it's nearly always obvious which field needs entry.
