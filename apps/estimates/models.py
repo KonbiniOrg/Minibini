@@ -487,6 +487,13 @@ class ServiceItem(models.Model):
 
     def clean(self):
         super().clean()
+        # Delegate config validation to the scheme — it owns the
+        # algorithm-specific shape of default_active_modifiers (percent-style
+        # key list vs. flat_fee's single amount entry). Guard the FK: an
+        # unsaved/incomplete instance (rate_scheme not yet set) must fail via
+        # the ordinary required-field error, not an AttributeError here.
+        if self.rate_scheme_id is not None:
+            self.rate_scheme.validate_item_config(self.default_active_modifiers)
 
     @property
     def effective_accounting_category(self):

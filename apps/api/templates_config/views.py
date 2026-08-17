@@ -120,9 +120,15 @@ class ServiceItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         serializer.instance = template
 
     def perform_update(self, serializer):
-        WorkTemplateService.update_service_item(
+        # Mirror perform_create: point the serializer at the object the
+        # service actually saved, not the pre-update instance DRF fetched
+        # before validation — otherwise the PATCH/PUT response renders
+        # stale field values (surfaced by display_rate, a derived field
+        # that must reflect the just-saved default_active_modifiers).
+        updated = WorkTemplateService.update_service_item(
             self.get_object().pk, **serializer.validated_data
         )
+        serializer.instance = updated
 
     def perform_destroy(self, instance):
         WorkTemplateService.delete_service_item(instance.pk)

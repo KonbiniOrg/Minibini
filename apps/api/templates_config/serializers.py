@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from apps.estimates.models import (
     WorkTemplate, ServiceItem, TemplateTaskAssociation,
@@ -10,13 +11,17 @@ class ServiceItemSerializer(serializers.ModelSerializer):
     # Read-only rate snapshot so the Add Line picker can show price/unit per row
     # without a second fetch (the saved-work item prices via its RateScheme).
     rate_scheme_detail = serializers.SerializerMethodField()
+    # Read-only resolved price (scheme.effective_rate over this item's config)
+    # so pickers can show the real per-unit/flat price without re-deriving the
+    # scheme's algorithm-specific interpretation of default_active_modifiers.
+    display_rate = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceItem
         fields = [
             'template_id', 'template_name', 'description', 'is_active',
             'rate_scheme', 'rate_scheme_detail',
-            'default_active_modifiers',
+            'default_active_modifiers', 'display_rate',
         ]
         read_only_fields = ['template_id']
 
@@ -30,6 +35,12 @@ class ServiceItemSerializer(serializers.ModelSerializer):
             'algorithm': rs.algorithm,
         }
 
+    def get_display_rate(self, obj):
+        rs = getattr(obj, 'rate_scheme', None)
+        if not rs:
+            return None
+        return str(rs.effective_rate(obj.default_active_modifiers))
+
     def validate_rate_scheme(self, value):
         from apps.jobs.models import RateScheme
         if value and value.algorithm == RateScheme.PERCENTAGE:
@@ -37,6 +48,28 @@ class ServiceItemSerializer(serializers.ModelSerializer):
                 'Percentage services are document adjustments and cannot bill a task.'
             )
         return value
+
+    def validate(self, data):
+        # Cross-field: the config's shape is scheme-owned (percent-style key
+        # list vs. flat_fee's single amount entry) — delegate to
+        # RateScheme.validate_item_config rather than re-deriving the shape
+        # here. Partial updates (PATCH) may omit either field, so fall back
+        # to the existing instance's current value for whichever is absent.
+        rate_scheme = data.get('rate_scheme')
+        if rate_scheme is None and self.instance is not None:
+            rate_scheme = self.instance.rate_scheme
+        if 'default_active_modifiers' in data:
+            config = data['default_active_modifiers']
+        elif self.instance is not None:
+            config = self.instance.default_active_modifiers
+        else:
+            config = []
+        if rate_scheme is not None:
+            try:
+                rate_scheme.validate_item_config(config)
+            except DjangoValidationError as e:
+                raise serializers.ValidationError(e.message_dict)
+        return data
 
 
 class TemplateAssociationSerializer(serializers.ModelSerializer):

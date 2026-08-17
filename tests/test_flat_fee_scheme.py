@@ -17,6 +17,7 @@ from django.test import TestCase
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
+from apps.estimates.models import Estimate, EstimateLineItem, ServiceItem
 from apps.jobs.models import Job, RateScheme, Task
 
 
@@ -284,3 +285,153 @@ class TaskStampFromSchemeFlatFeeTest(FlatFeeSchemeTestBase):
         task = Task(job=self.job, name='X')
         with self.assertRaises(ValueError):
             task.stamp_from_scheme(self.pct)
+
+
+class ServiceItemCleanFlatFeeTest(FlatFeeSchemeTestBase):
+    """Task 2: ServiceItem.clean() delegates config validation to
+    RateScheme.validate_item_config — both algorithm families."""
+
+    def test_flat_fee_item_with_valid_amount_is_valid(self):
+        item = ServiceItem(
+            template_name='Setup Fee', rate_scheme=self.flat,
+            default_active_modifiers=[{'amount': '150.00', 'label': 'Setup'}],
+        )
+        item.full_clean()  # must not raise
+
+    def test_flat_fee_item_without_amount_rejected(self):
+        item = ServiceItem(
+            template_name='Setup Fee', rate_scheme=self.flat,
+            default_active_modifiers=[],
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            item.full_clean()
+        self.assertIn('default_active_modifiers', ctx.exception.message_dict)
+
+    def test_flat_fee_item_negative_amount_rejected(self):
+        item = ServiceItem(
+            template_name='Setup Fee', rate_scheme=self.flat,
+            default_active_modifiers=[{'amount': '-5.00'}],
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            item.full_clean()
+        self.assertIn('default_active_modifiers', ctx.exception.message_dict)
+
+    def test_percent_style_item_unknown_key_rejected(self):
+        item = ServiceItem(
+            template_name='Assembly', rate_scheme=self.hourly,
+            default_active_modifiers=['not-a-real-key'],
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            item.full_clean()
+        self.assertIn('default_active_modifiers', ctx.exception.message_dict)
+
+    def test_percent_style_item_known_key_is_valid(self):
+        item = ServiceItem(
+            template_name='Assembly', rate_scheme=self.hourly,
+            default_active_modifiers=['rush'],
+        )
+        item.full_clean()  # must not raise
+
+    def test_percent_style_item_empty_config_is_valid(self):
+        item = ServiceItem(
+            template_name='Assembly', rate_scheme=self.elapsed,
+            default_active_modifiers=[],
+        )
+        item.full_clean()  # must not raise
+
+    def test_unsaved_none_rate_scheme_does_not_crash_clean(self):
+        # rate_scheme is NOT NULL, so this still fails full_clean overall —
+        # but it must fail via the ordinary required-field error, not an
+        # AttributeError/RelatedObjectDoesNotExist from clean() dereferencing
+        # a missing FK.
+        item = ServiceItem(
+            template_name='No Scheme', default_active_modifiers=[],
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            item.full_clean()
+        self.assertIn('rate_scheme', ctx.exception.message_dict)
+
+
+class GenerateTaskFlatFeeTest(FlatFeeSchemeTestBase):
+    """generate_task's resolved_modifier_keys path forwards straight to
+    stamp_from_scheme with no flat_fee branch of its own (encapsulation
+    constraint) — this exercises the full ServiceItem -> Task path."""
+
+    def test_generate_task_stamps_flat_fee_amount_from_default_config(self):
+        item = ServiceItem.objects.create(
+            template_name='Setup Fee Item', rate_scheme=self.flat,
+            default_active_modifiers=[{'amount': '150.00', 'label': 'Setup'}],
+        )
+        task = item.generate_task(self.job, est_qty=Decimal('1'))
+        self.assertEqual(task.rate, Decimal('150.00'))
+        self.assertEqual(task.qty_source, RateScheme.ENTERED_QTY)
+        self.assertEqual(task.active_modifiers, [])
+        self.assertEqual(task.unit_label, 'fee')
+        self.assertEqual(task.accounting_category, self.ac)
+        self.assertEqual(task.service_item, item)
+
+    def test_generate_task_explicit_active_modifiers_override_default(self):
+        item = ServiceItem.objects.create(
+            template_name='Setup Fee Item Override', rate_scheme=self.flat,
+            default_active_modifiers=[{'amount': '150.00'}],
+        )
+        task = item.generate_task(
+            self.job, est_qty=Decimal('1'),
+            active_modifiers=[{'amount': '200.00', 'label': 'Override'}],
+        )
+        self.assertEqual(task.rate, Decimal('200.00'))
+
+
+class AddLineItemFromServiceFlatFeeTest(FlatFeeSchemeTestBase):
+    """add_line_item_from_service already calls
+    scheme.effective_rate(service_item.default_active_modifiers) — Task 1
+    made effective_rate flat_fee-aware. This verifies the wiring, it does
+    not change the service."""
+
+    def setUp(self):
+        super().setUp()
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-ff-addline', status=Estimate.STATUS_DRAFT,
+        )
+        self.item = ServiceItem.objects.create(
+            template_name='Setup Fee', rate_scheme=self.flat,
+            default_active_modifiers=[{'amount': '150.00', 'label': 'Setup'}],
+        )
+
+    def test_add_line_item_from_service_prices_at_flat_fee_amount(self):
+        from apps.estimates.services import EstimateService
+        li = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.item.pk, qty=1,
+        )
+        self.assertEqual(li.price, Decimal('150.00'))
+        self.assertEqual(li.units, 'fee')
+        self.assertEqual(li.accounting_category, self.ac)
+
+
+class AcceptanceFlatFeeCrystallizationTest(FlatFeeSchemeTestBase):
+    """End-to-end: acceptance of an estimate with a flat-fee service line
+    crystallizes it into a Task whose rate is the item's configured amount."""
+
+    def setUp(self):
+        super().setUp()
+        self.item = ServiceItem.objects.create(
+            template_name='Setup Fee', rate_scheme=self.flat,
+            default_active_modifiers=[{'amount': '150.00', 'label': 'Setup'}],
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-ff-accept', status=Estimate.STATUS_OPEN,
+        )
+        self.line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Setup Fee',
+            qty=Decimal('1'), price=Decimal('150.00'),
+            accounting_category=self.ac, service_item=self.item,
+        )
+
+    def test_accept_crystallizes_flat_fee_task_with_stamped_amount(self):
+        from apps.estimates.acceptance import EstimateAcceptanceService
+        result = EstimateAcceptanceService.on_accept(self.estimate)
+        self.assertEqual(result['tasks_created'], 1)
+        task = Task.objects.get(job=self.job, service_item=self.item)
+        self.assertEqual(task.rate, Decimal('150.00'))
+        self.assertEqual(task.qty_source, RateScheme.ENTERED_QTY)
+        self.assertEqual(task.active_modifiers, [])
