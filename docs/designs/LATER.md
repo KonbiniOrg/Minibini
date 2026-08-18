@@ -698,6 +698,21 @@ Billing mechanics and money-record lifecycle.
 
 ## Platform & conventions
 
+- **Converter should emit ServiceItems (RM keeps losing hand-made ones
+  on regen).** — _added 2026-08-17 (RM)_
+  The converter emits RateSchemes from its internal `CONVERTER_SCHEMES`
+  table (`nealsdata/converter/build.py`, 2026-08-16) but no ServiceItems
+  — so every catalog item RM builds in dev (Delivery, setup fees, the
+  cutting/engraving presets…) vanishes at each regen and has to be
+  re-typed. Add a sibling internal table (e.g. `CONVERTER_SERVICE_ITEMS`
+  — name + rate_scheme pk + `default_active_modifiers` config incl.
+  flat-fee amounts) emitted alongside the schemes in `build_seed`.
+  Populate it from what RM currently has in dev (`service_items` table —
+  read-only dump before building). Same converter rules: builders suite
+  mandatory; nealseed/nealsmall untouched; converted.json regenerable.
+  _Done when:_ a regen'd dev DB comes up with RM's catalog items already
+  present, and adding one to the table is a one-line converter edit.
+
 - **Rename the "Tasks" header to "Work".** — _added 2026-08-17 (RM)_
   The job nav rail's section label (`JobNavRail.svelte` line ~15,
   `label: 'Tasks'`) should read **Work** — matching the area's own
