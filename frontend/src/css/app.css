@@ -127,11 +127,14 @@ dd {
  * Page frame primitive. Opt in with class="page-body" on the element that
  * holds a page's main content. Fluid width, 10px breathing room on the sides
  * so content clears the left edge (and the slide-in sidebar) instead of
- * squishing to x=0. Full-bleed headers (e.g. .job-header, .customer-financials)
- * stay OUTSIDE this wrapper so they can still run edge-to-edge.
- * Zero-specificity friendly: it's just padding, so scoped component styles win.
+ * squishing to x=0, plus bottom breathing room so the last content never
+ * sits flush at the viewport edge (RM 2026-08-17: reads as "more below,
+ * keep scrolling" when there isn't). Full-bleed headers (e.g. .job-header,
+ * .customer-financials) stay OUTSIDE this wrapper so they can still run
+ * edge-to-edge. Zero-specificity friendly: it's just padding, so scoped
+ * component styles win.
  */
-.page-body { padding: 0 10px; }
+.page-body { padding: 0 10px 16px; }
 
 /* ========================================================== 2. SHARED == */
 
