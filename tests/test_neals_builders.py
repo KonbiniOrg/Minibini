@@ -97,6 +97,51 @@ class BaseBuildersTest(unittest.TestCase):
                  'm', 'lb', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft']
         self.assertEqual(value, canon)
 
+    def test_service_items_and_extra_categories_come_from_internal_tables(self):
+        """RM 2026-08-18: the converter preserves RM's dev-authored catalog —
+        ServiceItems and the extra (DEP/UNC) AccountingCategories are emitted
+        from converter-internal tables so a regen never wipes them."""
+        build.build_seed(self.c)
+        items = {f['pk']: f['fields'] for f in self._models('estimates.serviceitem')}
+        table = {pk: fields for pk, fields in build.CONVERTER_SERVICE_ITEMS}
+        self.assertEqual(set(items), set(table))
+        for pk, fields in table.items():
+            for k, v in fields.items():
+                self.assertEqual(items[pk][k], v, f'serviceitem {pk} field {k}')
+            self.assertIn('created_date', items[pk])
+            # Every item's scheme FK resolves to an emitted scheme.
+            self.assertIn(fields['rate_scheme'], self.c.scheme_fields_by_pk)
+        # Flat-fee items carry a one-entry amount config (the scheme owns the
+        # interpretation; this pins the emitted shape).
+        flat_pks = {pk for pk, f in build.CONVERTER_SCHEMES
+                    if f['algorithm'] == 'flat_fee'}
+        for pk, fields in table.items():
+            if fields['rate_scheme'] in flat_pks:
+                cfg = fields['default_active_modifiers']
+                self.assertEqual(len(cfg), 1)
+                self.assertIn('amount', cfg[0])
+        # Extra categories emitted with their codes indexed.
+        acs = {f['pk']: f['fields'] for f in self._models('core.accountingcategory')}
+        for pk, fields in build.CONVERTER_EXTRA_CATEGORIES:
+            self.assertEqual(acs[pk]['code'], fields['code'])
+            self.assertEqual(self.c.ac_by_code[fields['code']], pk)
+        self.assertTrue(acs[5]['is_deposit'])
+
+    def test_configuration_carries_rm_settings(self):
+        """The defaults/email/Business-tab keys RM tunes in dev are emitted so
+        a regen'd DB comes up configured (RM 2026-08-18)."""
+        build.build_seed(self.c)
+        build.build_configuration(self.c)
+        config = {f['pk']: f['fields']['value']
+                  for f in self._models('core.configuration')}
+        self.assertEqual(config['default_rate_scheme'], '7')
+        self.assertEqual(config['default_deposit_accounting_category'], '5')
+        self.assertEqual(config['fallback_accounting_category'], '6')
+        for key in ('email_address', 'email_imap_server', 'email_password',
+                    'email_smtp_host', 'email_smtp_port',
+                    'business_email', 'our_public_url', 'our_domain'):
+            self.assertTrue(config.get(key), f'missing config key {key}')
+
     def test_schemes_come_from_the_internal_table_not_nealseed(self):
         """RM 2026-08-16 (flat-fee Task 4): the converter sources its
         RateSchemes from build.CONVERTER_SCHEMES — nealseed's ratescheme

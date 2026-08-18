@@ -113,6 +113,41 @@ CONVERTER_SCHEMES = [
 ]
 
 
+
+# Extra AccountingCategories beyond nealseed's four (RM's dev-authored
+# catalog, captured 2026-08-18 — the converter emits these so a regen
+# never wipes them; nealseed itself stays untouched).
+CONVERTER_EXTRA_CATEGORIES = [
+    (5, {"code": "DEP", "name": "Deposit payments", "taxable": False, "default_description": "", "is_active": True, "is_deposit": True, "qbo_item_id": "2", "qbo_expense_account_id": "31"}),
+    (6, {"code": "UNC", "name": "Uncategorized Income", "taxable": True, "default_description": "", "is_active": True, "is_deposit": False, "qbo_item_id": "", "qbo_expense_account_id": "31"}),
+]
+
+# RM's ServiceItem catalog (captured from dev 2026-08-18): names +
+# scheme FKs + per-item config (modifier keys, or the flat-fee amount
+# entry). Emitted by build_seed after the schemes; preserving a new
+# item is a one-line addition here.
+CONVERTER_SERVICE_ITEMS = [
+    (1, {"template_name": "Detail construction for 2d or 3d models", "description": "Design how to construct an item given a 2d or 3d model - in the exhibit industry, \"detailing\"", "qbo_id": "4", "rate_scheme": 5, "default_active_modifiers": [], "is_active": True}),
+    (2, {"template_name": "Assemble using glue and staples", "description": "", "qbo_id": "2", "rate_scheme": 7, "default_active_modifiers": [], "is_active": True}),
+    (3, {"template_name": "Install counter, table, bench, chair, etc that are not attached to a wall", "description": "Installation of non-structural items, not hanging on a wall or otherwise attached to a building", "qbo_id": "7", "rate_scheme": 7, "default_active_modifiers": [], "is_active": True}),
+    (4, {"template_name": "Add LED lighting to sign", "description": "", "qbo_id": "8", "rate_scheme": 7, "default_active_modifiers": [], "is_active": True}),
+    (5, {"template_name": "CAD drawing", "description": "", "qbo_id": "1", "rate_scheme": 2, "default_active_modifiers": [], "is_active": True}),
+    (6, {"template_name": "Sanding and finishing", "description": "", "qbo_id": "", "rate_scheme": 7, "default_active_modifiers": [], "is_active": True}),
+    (7, {"template_name": "Site visit", "description": "", "qbo_id": "", "rate_scheme": 10, "default_active_modifiers": [{"amount": "200.00"}], "is_active": True}),
+    (8, {"template_name": "Delivery local", "description": "Within East Bay, Fremont to Berkeley (including Alameda)", "qbo_id": "", "rate_scheme": 10, "default_active_modifiers": [{"amount": "150.00"}], "is_active": True}),
+    (9, {"template_name": "Delivery medium", "description": "Delivery to SF & Peninsula, San Jose, Richmond, Marin County", "qbo_id": "", "rate_scheme": 10, "default_active_modifiers": [{"amount": "200.00"}], "is_active": True}),
+    (10, {"template_name": "Delivery extended", "description": "Delivery to Santa Rosa, Sacramento, Stockton, Monterey", "qbo_id": "", "rate_scheme": 10, "default_active_modifiers": [{"amount": "300.00"}], "is_active": True}),
+    (11, {"template_name": "CAM complex cuts", "description": "Where the CAM is more complicated than can be covered by the standard setup fee", "qbo_id": "", "rate_scheme": 5, "default_active_modifiers": [], "is_active": True}),
+    (12, {"template_name": "CNC cut simple parts", "description": "(add part numbers)", "qbo_id": "", "rate_scheme": 1, "default_active_modifiers": [], "is_active": True}),
+    (13, {"template_name": "CNC cut small or intricate parts", "description": "", "qbo_id": "", "rate_scheme": 1, "default_active_modifiers": ["hats", "shirts"], "is_active": True}),
+    (14, {"template_name": "CNC cut parts from aluminum, brass, bronze, silver or gold, or aluminum composites", "description": "", "qbo_id": "", "rate_scheme": 1, "default_active_modifiers": ["deburring"], "is_active": True}),
+    (15, {"template_name": "CNC cut parts from large or irreplaceable material such as solid wood slabs, large countertops, 1/2\" or thicker metal, existing tabletops, etc", "description": "", "qbo_id": "", "rate_scheme": 1, "default_active_modifiers": ["heavy_awkward_material"], "is_active": True}),
+    (16, {"template_name": "Laser cutting common materials such as plywood, acrylic, cardboard, heavy paper", "description": "", "qbo_id": "", "rate_scheme": 3, "default_active_modifiers": [], "is_active": True}),
+    (17, {"template_name": "Laser engraving on acrylic or rubber", "description": "", "qbo_id": "", "rate_scheme": 3, "default_active_modifiers": ["too_smelly_to_cut_during_regular_hours"], "is_active": True}),
+    (18, {"template_name": "knife cutting industrial felt with angled pattern cuts", "description": "", "qbo_id": "", "rate_scheme": 9, "default_active_modifiers": ["45_deg_cuts_that_run_2x"], "is_active": True}),
+    (19, {"template_name": "knife cutting felt, rubber, cardboard, leather, etc", "description": "", "qbo_id": "", "rate_scheme": 9, "default_active_modifiers": [], "is_active": True}),
+]
+
 def build_seed(c):
     """Emit core.user and core.accountingcategory records verbatim from the
     nealseed fixture, and jobs.ratescheme records from the converter's OWN
@@ -154,6 +189,14 @@ def build_seed(c):
         if model == 'core.accountingcategory':
             c.ac_by_code[fields['code']] = rec.get('pk')
 
+    # RM's extra categories (DEP/UNC — deposit + fallback homes), emitted
+    # converter-side so a regen never wipes them.
+    for pk, table_fields in CONVERTER_EXTRA_CATEGORIES:
+        fields = dict(table_fields)
+        c.fixture_data.append(
+            {'model': 'core.accountingcategory', 'pk': pk, 'fields': fields})
+        c.ac_by_code[fields['code']] = pk
+
     max_rs_pk = 0
     for pk, table_fields in CONVERTER_SCHEMES:
         fields = dict(table_fields)
@@ -170,6 +213,21 @@ def build_seed(c):
     if max_rs_pk:
         c._pk_counters['jobs.ratescheme'] = max(
             c._pk_counters['jobs.ratescheme'], max_rs_pk)
+
+    # RM's ServiceItem catalog (CONVERTER_SERVICE_ITEMS): FKs point at the
+    # schemes emitted just above. created_date is auto_now_add on the model,
+    # which loaddata bypasses — a fixed date keeps output deterministic.
+    max_si_pk = 0
+    for pk, table_fields in CONVERTER_SERVICE_ITEMS:
+        fields = dict(table_fields)
+        fields.setdefault('created_date', '2026-01-01T00:00:00+00:00')
+        c.fixture_data.append(
+            {'model': 'estimates.serviceitem', 'pk': pk, 'fields': fields})
+        if isinstance(pk, int):
+            max_si_pk = max(max_si_pk, pk)
+    if max_si_pk:
+        c._pk_counters['estimates.serviceitem'] = max(
+            c._pk_counters.get('estimates.serviceitem', 0), max_si_pk)
 
 
 def build_configuration(c):
@@ -198,6 +256,20 @@ def build_configuration(c):
         # absent) and the SPA material forms. Points at MTL (the materials AC);
         # build_seed runs before this, so c.ac_mat_pk is set.
         ('default_material_accounting_category', str(c.ac_mat_pk)),
+        # RM's dev-authored settings (captured 2026-08-18) — the defaults,
+        # email account, and Business-tab keys the Settings page manages;
+        # emitted so a regen'd DB comes up configured, not blank.
+        ('default_rate_scheme',                  '7'),   # Shop labor
+        ('default_deposit_accounting_category',  str(c.ac_by_code.get('DEP'))),
+        ('fallback_accounting_category',         str(c.ac_by_code.get('UNC'))),
+        ('email_address',      'minibini.test@gmail.com'),
+        ('email_imap_server',  'imap.gmail.com'),
+        ('email_password',     'ttsg buza hxik ibit'),
+        ('email_smtp_host',    'smtp.gmail.com'),
+        ('email_smtp_port',    '587'),
+        ('business_email',     'minibini.test@gmail.com'),
+        ('our_public_url',     'minbini.me'),
+        ('our_domain',         'robot-six.com'),
         # Mirror apps.core.units.DEFAULT_UNITS so every emitted line-item /
         # material / deliverable row validates against the running app's
         # canonical list. ('Days' inputs convert to 'hour' × 8 at emit time;
