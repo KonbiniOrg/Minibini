@@ -698,20 +698,28 @@ Billing mechanics and money-record lifecycle.
 
 ## Platform & conventions
 
-- **Converter should emit ServiceItems (RM keeps losing hand-made ones
-  on regen).** — _added 2026-08-17 (RM)_
+- **Converter should emit RM's dev-authored catalog + config state
+  (ServiceItems, extra AccountingCategories, Configuration tweaks) —
+  regen keeps eating them.** — _added 2026-08-17 (RM); widened same day_
   The converter emits RateSchemes from its internal `CONVERTER_SCHEMES`
-  table (`nealsdata/converter/build.py`, 2026-08-16) but no ServiceItems
-  — so every catalog item RM builds in dev (Delivery, setup fees, the
-  cutting/engraving presets…) vanishes at each regen and has to be
-  re-typed. Add a sibling internal table (e.g. `CONVERTER_SERVICE_ITEMS`
-  — name + rate_scheme pk + `default_active_modifiers` config incl.
-  flat-fee amounts) emitted alongside the schemes in `build_seed`.
-  Populate it from what RM currently has in dev (`service_items` table —
-  read-only dump before building). Same converter rules: builders suite
-  mandatory; nealseed/nealsmall untouched; converted.json regenerable.
-  _Done when:_ a regen'd dev DB comes up with RM's catalog items already
-  present, and adding one to the table is a one-line converter edit.
+  table (`nealsdata/converter/build.py`, 2026-08-16), the four seed
+  AccountingCategories from nealseed, and a fixed Configuration set from
+  `build_configuration` — but NOT: ServiceItems (none at all),
+  accounting categories RM added beyond the seed four, or config values
+  RM tuned in dev (`default_rate_scheme`,
+  `default_material_accounting_category`, `fallback_accounting_category`,
+  units_list additions, QBO payment accounts, email templates…). Every
+  regen wipes them and RM re-types them ("I keep forgetting to save
+  those and then I lose them all"). Fix shape: sibling internal tables
+  (e.g. `CONVERTER_SERVICE_ITEMS`, `CONVERTER_EXTRA_CATEGORIES`) plus a
+  converter-side override list for the RM-tuned config keys — each
+  seeded initially from a read-only dump of dev once RM finishes
+  recreating (a reminder is scheduled for that snapshot). Same converter
+  rules: builders suite mandatory; nealseed/nealsmall untouched;
+  converted.json regenerable.
+  _Done when:_ a regen'd dev DB comes up with RM's catalog items, extra
+  categories, and config tweaks already present, and adding any of them
+  is a one-line converter edit.
 
 - **Rename the "Tasks" header to "Work".** — _added 2026-08-17 (RM)_
   The job nav rail's section label (`JobNavRail.svelte` line ~15,
