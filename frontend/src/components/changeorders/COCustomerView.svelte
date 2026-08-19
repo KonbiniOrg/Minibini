@@ -81,7 +81,7 @@
     <tbody>
       {#each displayRows as row (row.key)}
         <tr class={row.cls}>
-          <td>{#if row.added}<span class="tag-add">+</span>{/if}{row.line.description}</td>
+          <td class="preserve-breaks">{#if row.added}<span class="tag-add">+</span>{/if}{row.line.description}</td>
           <td class="text-right"><QtyUnits qty={row.line.qty} units={row.line.units} /></td>
           <td class="text-right">{fmtMoney(row.line.price)}</td>
           <td class="text-right">{fmtMoney(row.line.amount)}</td>

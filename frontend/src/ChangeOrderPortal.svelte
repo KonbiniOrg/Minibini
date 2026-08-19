@@ -55,7 +55,7 @@
       {#each data.line_rows as r}
         <tr class={`row-${r.kind}`}>
           <td>{r.line_number ?? ''}</td>
-          <td>{#if r.kind === 'added'}<span class="tag-add">+</span>{/if}{r.description}</td>
+          <td class="preserve-breaks">{#if r.kind === 'added'}<span class="tag-add">+</span>{/if}{r.description}</td>
           <td>{r.qty ?? ''}</td><td>{r.units}</td>
           <td>${r.price}</td><td>${r.amount}</td>
         </tr>

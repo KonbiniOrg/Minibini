@@ -29,7 +29,7 @@
       {#each lines as line, i (line.line_id ?? line.line_number)}
         <tr>
           <td>{line.line_number}</td>
-          <td>{line.description}</td>
+          <td class="preserve-breaks">{line.description}</td>
           <td class="text-right"><QtyUnits qty={line.qty} units={line.units} /></td>
           <td class="text-right">{fmtMoney(line.price)}</td>
           <td class="text-right">{fmtMoney(line.amount)}</td>

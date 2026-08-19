@@ -104,3 +104,16 @@ describe('DocReorderView', () => {
     });
   });
 });
+
+describe('customer-view descriptions preserve returns (RM 2026-08-18)', () => {
+  it('renders the description cell with .preserve-breaks', () => {
+    const { container } = render(DocCustomerView, {
+      props: {
+        lines: [{ line_id: 1, line_number: 1, description: 'Line one\nLine two', qty: '1', units: 'ea', price: '10.00', amount: 10 }],
+      },
+    });
+    const cell = container.querySelector('td.preserve-breaks');
+    expect(cell).not.toBeNull();
+    expect(cell.textContent).toContain('Line one');
+  });
+});
