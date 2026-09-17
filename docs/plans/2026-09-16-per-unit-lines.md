@@ -125,9 +125,13 @@ Bundle modal additions:
      time estimate composition mutates atoms; it is deliberate, announced by
      the preview table, and happens exactly once at the moment the
      multiplier becomes known.
-   - For non-hour tasks with no `est_worker_time`, the modal offers a
+   - `est_worker_time` multiplies whenever the task HAS one, regardless of
+     unit denomination (RM 2026-09-16) — a non-hour task can carry an
+     est_worker_time (entered by hand or at generation), and under the
+     one-unit interpretation that duration is per-unit like everything
+     else. Only for tasks with NO `est_worker_time` does the modal offer a
      per-unit schedule-time input (optional — the assignment gate remains
-     the net; see §8).
+     the net; see §7/§8).
 3. **"Split materials onto their own line" checkbox** (only meaningful with
    ≥1 task and ≥1 material selected): emits TWO sibling per-unit lines from
    one gesture — a labor line claiming the task atoms and a materials line
