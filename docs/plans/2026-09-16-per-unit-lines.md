@@ -106,8 +106,10 @@ checkboxes.
 
 Bundle modal additions:
 
-1. **The interpretation choice** (whole-line vs one-unit, above; defaults to
-   whole-line, today's behavior). When "one unit" is chosen:
+1. **The interpretation choice** (whole-line vs one-unit, above; defaults
+   to **one-unit** — RM predicts per-unit will be by far the more common
+   use. Note this changes the modal's out-of-box behavior from today's
+   keep-total-ON default). When "one unit" is chosen:
    - The modal shows a per-atom preview table: each atom's current value is
      treated as per-unit, with a before → after column
      ("cut parts: 45 min → 7 h 30 m total"; "oak: 4 BF → 40 BF total").
@@ -229,7 +231,12 @@ RM senses a UI problem not yet pinned down. Candidates found while writing:
    actually planned totals and checks the box anyway — or plans per-unit and
    forgets the box — every stamp is wrong by ×qty. The preview table (§5) is
    the mitigation; is it enough? There is no way for the Tasks pane to know,
-   at planning time, that "per-unit-ness" is coming.
+   at planning time, that "per-unit-ness" is coming. With one-unit as the
+   DEFAULT (RM 2026-09-16), the failure mode inverts: a user who planned
+   whole-job totals and clicks through gets everything wrongly multiplied
+   by qty — the preview table has to carry that case too. (Mitigating:
+   qty=1 lines multiply by 1, so the default is harmless exactly when
+   per-unit-ness doesn't matter.)
 2. **Bundle modal load.** The interpretation choice, split-materials, a
    per-atom preview/edit table, and an optional schedule-time input is a
    lot of modal. The whole-line/one-unit reframing (one choice, not stacked
