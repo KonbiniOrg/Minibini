@@ -418,6 +418,21 @@ The CO surface and its estimate-parallel code.
   in O(1) queries instead of one per row (or the cost is judged not worth
   batching at current scale).
 
+- **Split-pair per-unit siblings have no lifecycle link.** — _added
+  2026-09-17 (per-unit-lines Task 9)_
+  A split-materials bundle mints two `per_unit` sibling lines (a labor
+  line and a materials line, §12.1a-iii) with no structural link stored
+  between them — deliberately, per spec §5.3. But that also means
+  un-answering one sibling on the *original* estimate (declining it, or
+  deleting its claimed atom) orphans its stamped atom and strands the
+  other sibling with no signal at all: the only nudge that exists today
+  is the CO-replace sibling reminder (§14.9, Task 8), which fires
+  exclusively when a change order replaces a `per_unit` line — nothing
+  watches the original estimate's own decline/delete paths.
+  _Done when:_ revisited alongside the per-unit modal restructure phase
+  (spec §10, RM-gated) — either a lifecycle link is added or the gap is
+  explicitly re-ruled acceptable.
+
 
 ## Invoicing, expenses & payments
 

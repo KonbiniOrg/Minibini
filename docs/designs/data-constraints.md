@@ -1098,6 +1098,23 @@ Enforced in `Estimate.clean()`.
   other field key is rejected on any estimate status (the two update
   paths — draft-only field edits, accepted-only decline toggle — never
   blur together).
+- **per_unit** (bool, default False, migration `0049`): the
+  per-unit-lines answer to "do this line's claimed atoms describe one
+  unit of qty, or the whole job?" (`False` = whole job, today's original
+  reading). **Never client-settable directly** — it is only ever set as
+  a side effect of `add_atoms_to_new_line_item(..., per_unit=True)`
+  (bundling pool atoms into a brand-new line) or the first
+  `claim_atom_for_line(..., set_line_per_unit=...)` against a
+  sourceless line (the mint checklist's "Generate work…"). **Ask-once**:
+  once a line has any `EstimateLineItemSource`, `claim_atom_for_line`
+  refuses a later call that tries to flip `per_unit` to a different
+  value ("This line's one-unit-or-whole-line choice is already set.").
+  **Scope**: only ever set on a line with **no catalog identity**
+  (`service_item`/`inventory_item` both null) **and no adjustment**
+  (`adjustment_service` null) — enforced structurally (neither
+  authoring path above ever runs against a catalog or adjustment line),
+  not by a model-level `clean()` guard. See
+  `estimates-and-prices.md` §9b for the full per-unit reference.
 
 #### EstimateLineItemSource
 
@@ -1106,6 +1123,23 @@ Polymorphic row joining a line item to a Job atom (Task or Material).
 - **estimate_line_item** (required FK → EstimateLineItem, CASCADE)
 - **source_type**: `task` or `material`
 - **source_pk**: integer pointing at the atom
+- **per_unit_qty** (nullable Decimal(10,2), migration `0049`): populated
+  only when the owning line is `per_unit` — the raw per-unit value
+  entered at claim time, snapshotted before the atom was stamped to
+  `per_unit_qty × line.qty`. `None` on every claim whose line is not
+  `per_unit`; never populated any other way.
+- **per_unit_worker_time** (nullable Duration, migration `0049`): the
+  per-unit schedule-time snapshot, task claims only, populated only when
+  the biller entered one at claim time (a task that already carried
+  `est_worker_time` before the claim is multiplied automatically
+  instead and gets no snapshot here). Always `None` for a material
+  claim and for any claim on a non-`per_unit` line.
+- Atoms themselves (`Task.est_qty`/`est_worker_time`,
+  `Material.quantity`) **always store the whole-job total** — a
+  per-unit reading is a claim-row-only interpretation; nothing on the
+  atom itself ever holds a per-unit number. See `estimates-and-prices.md`
+  §9b for the full derivation rule, the drift check
+  (`BaseWizardService._per_unit_drift_info`), and the Revert endpoint.
 - `unique_together = [('source_type', 'source_pk')]` — an atom can be
   referenced by at most one estimate line item at a time. On revision,
   `revise_estimate` **moves** the source rows to the new revision (rather
@@ -1232,6 +1266,10 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - `clean()` also rejects `service_item` / `is_material` on `remove` lines (display-only; never crystallize)
 - A `replace` line authored without an `accounting_category` inherits its target's at add time (2026-08-12 — an AC-less replacement would become a null-AC agreement line at acceptance and demand the fallback on every later invoice seed); an explicit AC wins
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
+- **per_unit** (bool, default False, migration `0049`): mirrors
+  `EstimateLineItem.per_unit` field-for-field (same ask-once rule, same
+  no-catalog/no-adjustment scope) — see §1.13 above and
+  `estimates-and-prices.md` §9b.
 
 #### ChangeOrderLineItemSource
 
@@ -1239,6 +1277,12 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 
 - **change_order_line_item** (required FK → ChangeOrderLineItem, CASCADE, `related_name='sources'`)
 - **source_type**: `task` | `material`; **source_pk**: positive int
+- **per_unit_qty** / **per_unit_worker_time** (migration `0049`): mirror
+  `EstimateLineItemSource`'s own fields field-for-field — see §1.13
+  above. A replace line's claims **carry their snapshot with them**:
+  `_move_claims_to` (the acceptance-time move from the target
+  `EstimateLineItem` onto the CO's own line) moves the whole row,
+  `per_unit_qty`/`per_unit_worker_time` included, not just the FK.
 - `unique_together (source_type, source_pk)` — an atom is claimed by at most one CO line
 - Rows exist only for accepted COs' `add`/`replace` lines, **plus** any CO
   line an authoring user directly claimed atoms onto through the CO wizard

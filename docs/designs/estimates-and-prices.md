@@ -1655,6 +1655,11 @@ for the line's checklist state") that this pass did not settle further
 
 ### 9a.1 Per-unit mint (per-unit-lines spec §5/§6, Task 5)
 
+See §9b for the consolidated per-unit reference (fields, the
+snapshot-then-stamp rule, drift/Revert, split-materials, the CO sibling
+reminder) — this subsection is the mint-flow implementation detail it
+points back to.
+
 A plain accepted hand line's atoms can be born describing **one unit**
 of the line's qty instead of the whole-job total — the same
 one-unit-or-whole-line choice the bundle modal offers (§12.1a-i), now
@@ -1716,6 +1721,167 @@ snapshots `quantity`; `create_material` did not accept
 `claim_estimate_line` before Task 5 (see the note above) — it does now,
 though no UI surface currently drives a material mint (the checklist's
 "Generate work…" button only opens the task-creation form).
+
+### 9b. Per-unit lines — consolidated reference (per-unit-lines spec, Tasks 1-8)
+
+A single-page-summary of the whole feature; the sections it points at
+(§12.1a-i/ii/iii, §9a.1, §14.9) carry the implementation detail — this
+section exists so a reader doesn't have to assemble the picture from
+five scattered places.
+
+**The idea.** A line's claimed atoms (Tasks/Materials) can describe
+either the **whole job** (today's original reading) or **one unit** of
+the line's own `qty` — e.g. "these values are per chair; this line bills
+10 chairs." Atoms themselves **always** store the whole-job total
+(`Task.est_qty`/`est_worker_time`, `Material.quantity` never hold a
+per-unit number) — the per-unit reading is a **claim-time
+interpretation**, snapshotted once on the claim row and multiplied
+through immediately. There is no persistent "per-unit atom"; the choice
+lives entirely on the line and its claims.
+
+**Fields:**
+
+| Field | Model | Meaning |
+|---|---|---|
+| `per_unit` (bool, default False) | `EstimateLineItem`, `ChangeOrderLineItem` | This line's claimed atoms are read as one-unit. Set once, server-derived from the authoring gesture — never a bare client toggle after the fact (see "ask-once", below). |
+| `per_unit_qty` (nullable Decimal(10,2)) | `EstimateLineItemSource`, `ChangeOrderLineItemSource` | The per-unit value snapshotted onto this claim at the moment it was stamped — `None` on every claim belonging to a non-`per_unit` line. |
+| `per_unit_worker_time` (nullable Duration) | same two source tables | The per-unit schedule-time snapshot, task claims only, only when the biller actually entered one (a task that already carried `est_worker_time` before the claim is multiplied automatically instead — see "the two stamping moments" below). |
+
+**Where `per_unit` may be set.** Only by the two authoring gestures below,
+both of which build a line with **no catalog identity** (no
+`service_item`, no `inventory_item`) **and no adjustment**
+(`adjustment_service` unset) — a catalog/service line crystallizes its
+own atom at acceptance and an adjustment line has none at all, so
+neither has a meaningful "per unit of what." This isn't a model-level
+`clean()` constraint; it's the natural consequence of `per_unit` only
+being a parameter on `add_atoms_to_new_line_item` (bundle) and
+`claim_atom_for_line` (mint), neither of which ever runs against a
+catalog/adjustment line. See `data-constraints.md` §1.13/§1.13a for the
+field-by-field, constraint-reference version.
+
+**The derivation rule — "snapshot then stamp to total," never
+restamped.** Whichever gesture stamps a claim (`_stamp_atom_per_unit` in
+`apps/core/wizard.py`, or the mint view's inline multiply): the raw,
+un-multiplied value the biller entered is written to
+`per_unit_qty`/`per_unit_worker_time` on the claim row, and the atom
+itself is set to `raw × line.qty` (qty products quantized to `'0.01'`; a
+duration multiplies as `timedelta * float(qty)`, never against a
+`Decimal`) — a one-time write via `.save()`, not a live formula. Nothing
+recomputes the atom automatically afterward; if the atom or the line's
+qty later changes, the two simply diverge (see "Drift", below).
+
+**The two stamping moments** (same rule, two different call sites,
+never both on the same claim):
+
+- **Bundle time** (§12.1a-i, Tasks 3-4): `BundleModal`'s "one unit —
+  multiply by quantity" choice, over **already-existing** pool atoms
+  selected for a **new** line. Stamping happens the instant the line is
+  created (`add_atoms_to_new_line_item(..., per_unit=True)`) — draft
+  time, well before acceptance, and the stamped totals are visible on
+  the task/material immediately.
+- **Mint time** (§9a.1, Task 5): `WorkItemForm`'s identical choice, over
+  a **brand-new** atom being created *for* an already-`accepted` line via
+  the acceptance checklist's "Generate work…" gesture
+  (`MintService.claim_atom_for_line`). The multiply happens at the API
+  view boundary before the Task/Material row is even inserted — there is
+  no separate "create, then stamp" step here, unlike the bundle path
+  (which stamps a pre-existing atom in place).
+- **Ask-once, per line, regardless of which moment set it first**: once
+  a line has any claimed source, its `per_unit` value is fixed —
+  `claim_atom_for_line` refuses a later mint that tries to flip it
+  ("This line's one-unit-or-whole-line choice is already set."), and the
+  append-to-existing-line bundle path refuses to touch a `per_unit` line
+  at all (§12.1a-ii). A later mint against an already-`per_unit` line
+  simply inherits the standing answer and multiplies without asking again.
+
+**Split materials onto their own line** (§12.1a-iii, Task 8): a
+one-unit-mode-only bundle variant that mints TWO sibling `per_unit`
+lines from one gesture (a labor line claiming only the selected task
+atoms, a materials line claiming only the selected material atoms) so a
+per-chair labor rate and a per-chair materials cost can each drift and
+invoice independently. No structural link is stored between the two
+lines — see "Split-pair lifecycle gap" below.
+
+**Drift and Revert** (Task 6-7): because a per-unit atom's total is
+written once and never recomputed, it can go stale two ways — a direct
+hand-edit of the atom (someone retypes a task's `est_qty`), or the
+*line's* qty changing later (a CO re-quantifies the line the claim
+belongs to, so `per_unit_qty × new qty` no longer matches what's stamped
+on the atom). `BaseWizardService._per_unit_drift_info(source_row,
+line_qty)` (`apps/core/wizard.py`) computes, for one claim row against
+whichever line currently backs it:
+
+- `None` when the claim isn't a per-unit claim (`per_unit_qty` unset) —
+  callers must omit every drift key entirely in that case, never emit
+  `False`/`null` (the serializer contract below).
+- Otherwise `{'per_unit_qty', 'expected_total', 'drift': bool}`, plus
+  `'expected_worker_time'` when the claim snapshotted one.
+  `expected_total = (per_unit_qty × line_qty)` quantized to cents before
+  comparison (so Decimal noise never produces phantom drift);
+  `expected_worker_time = per_unit_worker_time × float(line_qty)`.
+  `drift` is True if the resolved atom's live `est_qty`/`quantity` (or,
+  for a task with a snapshotted schedule, its live `est_worker_time`)
+  doesn't match. A dangling atom (deleted out from under the claim)
+  reports `drift: False` rather than raising — the same
+  dangling-tolerant convention as `_resolve_sources`.
+
+  **Serializer contract**: `EstimateLineItemSerializer` /
+  `ChangeOrderLineItemSerializer`'s per-source payload adds
+  `per_unit_qty`, `expected_total`, `drift`, and (task claims with a
+  snapshotted duration) `expected_worker_time` **plus** `worker_time`
+  (the atom's *current* live `est_worker_time`, added as a Task 7 fix so
+  the frontend can tell a schedule-only drift — qty in sync, only the
+  scheduled time diverged — apart from a qty drift) — all of these keys
+  are **absent entirely** on a non-per-unit claim, never `null`/`false`.
+
+- **`POST /api/estimates/{id}/restamp-atom/`** /
+  **`POST /api/change-orders/{id}/restamp-atom/`** (body `{'source_id':
+  N}`, `EstimateWizardService.restamp_atom` /
+  `ChangeOrderWizardService.restamp_atom`, both thin wrappers over the
+  shared `BaseWizardService.restamp_atom`): the **Revert** gesture behind
+  a drift badge. Sets the atom's `est_qty`
+  (+ `est_worker_time` when a duration was snapshotted) or `quantity` to
+  `per_unit_qty (× per_unit_worker_time) × the backing line's CURRENT
+  qty`, via a direct field-set + `.save()` (never `QuerySet.update()`).
+  Guards (plain-sentence `ValidationError`, matching this module's
+  mint-adjacent style): the claim must belong to *this* container's own
+  document, must actually be a per-unit claim, and the claimed atom must
+  still resolve. There is no bulk/all-drifted-lines revert — one claim
+  at a time, matching the badge-per-claim UI below.
+- **Frontend**: `AtomChildRow` renders a `"≠ agreement"` badge only when
+  the source's `drift` key is `true`, opening `DriftModal`
+  (`frontend/src/components/docsurface/DriftModal.svelte`) — **never a
+  one-click revert** (RM 2026-09-16: drift is an unfamiliar concept and a
+  restamp overwrites the atom's live value, so the modal always spells
+  out the agreement expectation with its actual numbers, the atom's
+  current value, and a one-line explanation of where each number comes
+  from, before offering **Revert to agreement**). No nested `confirm()`
+  on top — the modal itself is the deliberate step, per the UI
+  convention that confirmation is reserved for the irreversible. The
+  modal posts to `${apiBase}/restamp-atom/` itself (self-contained, like
+  `BundleModal`/`AdjustmentModal`) and calls `onReverted()` on success,
+  which the caller uses to refresh and close.
+
+**CO sibling reminder** (§14.9, Task 8): when a change order replaces a
+`per_unit` line, `COEditView` renders one info line per **other**
+`per_unit` line on the same estimate that shared the target's pre-CO
+qty (`apps.api.change_orders.serializers._sibling_per_unit_lines`):
+`"Also qty {qty}: {description} — update it too?"`. This is a **nudge
+only** — nothing is clickable, there is no structural link recorded
+between sibling lines (deliberately: that's parent-task-style
+complexity sneaking back into the document, spec §5.3/§9), and nothing
+stops the customer from accepting a CO that replaces one sibling and
+leaves the other's now-stale per-unit agreement untouched.
+
+**Split-pair lifecycle gap (known, deferred).** A split-materials pair
+(and, more generally, any two `per_unit` lines a biller privately treats
+as siblings) has **no enforced lifecycle link** outside that CO-replace
+reminder: un-answering one sibling on the *original* estimate (declining
+it, or deleting its claimed atom) orphans its stamped atom and strands
+the other sibling with no signal at all — the reminder only fires on a
+CO replace row. See `docs/designs/LATER.md` for the tracked entry;
+revisiting this is explicitly bundled with the modal-restructure phase
+(spec §10, RM-gated, not scheduled).
 
 ---
 
@@ -2135,6 +2301,11 @@ untouched — see above). It is self-contained like `AdjustmentModal`/
   modal *is* the authoring step).
 
 #### 12.1a-i The interpretation choice (per-unit-lines spec §5, Task 4: minimal additions)
+
+See §9b for the consolidated per-unit reference (fields, the
+snapshot-then-stamp rule, drift/Revert, split-materials, the CO sibling
+reminder) — this subsection is the bundle-modal implementation detail it
+points back to.
 
 Above qty, a two-option choice reads "The values on these tasks and
 materials are for: (•) one unit — multiply by quantity ( ) the whole
