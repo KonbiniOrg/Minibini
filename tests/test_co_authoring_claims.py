@@ -431,6 +431,44 @@ class ChangeOrderWizardAPITest(COWizardServiceBase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn('detail', resp.json())
 
+    def test_line_items_from_atoms_per_unit_endpoint(self):
+        """Task 4: the CO endpoint gets the same per_unit passthrough as the
+        estimate endpoint — the created line serializes per_unit:true and
+        the atom is stamped to the whole-job total."""
+        self.client.force_authenticate(user=self.manager)
+        resp = self.client.post(
+            f'/api/change-orders/{self.co.pk}/line-items-from-atoms/',
+            {
+                'atoms': [{'type': 'task', 'id': self.task.pk}],
+                'overrides': {
+                    'description': 'Per-unit cutting', 'qty': '10',
+                    'units': 'each', 'price': '200.00',
+                },
+                'per_unit': True,
+            }, format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertTrue(resp.data['per_unit'])
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.est_qty, Decimal('20.00'))  # 2 * 10
+
+    def test_line_items_from_atoms_non_numeric_qty_returns_400(self):
+        """View-boundary coercion guard applies on the CO endpoint too."""
+        self.client.force_authenticate(user=self.manager)
+        resp = self.client.post(
+            f'/api/change-orders/{self.co.pk}/line-items-from-atoms/',
+            {
+                'atoms': [{'type': 'task', 'id': self.task.pk}],
+                'overrides': {
+                    'description': 'Bad qty', 'qty': 'not-a-number',
+                    'units': 'each', 'price': '10.00',
+                },
+                'per_unit': True,
+            }, format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('qty', resp.json())
+
     def test_remove_atoms_endpoint(self):
         self.client.force_authenticate(user=self.manager)
         li = ChangeOrderWizardService.add_atoms_to_new_line_item(

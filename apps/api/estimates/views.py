@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers as drf_serializers, status, viewsets
@@ -21,6 +21,23 @@ from apps.estimates.services import (
 )
 
 from .serializers import EstimateLineItemSerializer, EstimateSerializer
+
+
+def _coerce_qty_override(overrides):
+    """Coerce a bundle-modal `overrides['qty']` to Decimal before it reaches
+    the wizard service. `add_atoms_to_new_line_item`'s per-unit path
+    compares `qty_override <= 0` assuming a numeric type — a string/garbage
+    qty there would raise an uncaught TypeError (500) instead of a clean
+    400. Returns `(overrides, error_response)`; `error_response` is None on
+    success. Mirrors apps.api.change_orders.views._coerce_qty_override."""
+    if not overrides or 'qty' not in overrides or overrides['qty'] in (None, ''):
+        return overrides, None
+    try:
+        coerced = Decimal(str(overrides['qty']))
+    except (InvalidOperation, TypeError, ValueError):
+        return overrides, Response(
+            {'qty': ['Enter a valid number.']}, status=status.HTTP_400_BAD_REQUEST)
+    return {**overrides, 'qty': coerced}, None
 
 
 class EstimateViewSet(
@@ -198,9 +215,13 @@ class EstimateViewSet(
         estimate = self.get_object()
         atoms = request.data.get('atoms', [])
         overrides = request.data.get('overrides')
+        overrides, error = _coerce_qty_override(overrides)
+        if error is not None:
+            return error
         try:
             line_item = EstimateWizardService.add_atoms_to_new_line_item(
-                estimate, atoms, overrides=overrides)
+                estimate, atoms, overrides=overrides,
+                per_unit=bool(request.data.get('per_unit')))
         except EstimateClaimConflict as e:
             return Response(
                 {'detail': 'Some of these atoms are already claimed by another estimate.',
@@ -303,10 +324,18 @@ class EstimateViewSet(
 
 
 def _serialize_pool(pool):
-    """Convert Decimals in the pool to strings for JSON serialization."""
+    """Convert Decimals/timedeltas in the pool to strings for JSON
+    serialization. A task atom's `worker_time` (a timedelta or None)
+    renders in the same "H:MM:SS" shape DRF's own DurationField uses
+    elsewhere, so the frontend's existing duration parsers apply unchanged."""
+    from datetime import timedelta
+    from django.utils.duration import duration_string
+
     def _s(value):
         if isinstance(value, Decimal):
             return str(value)
+        if isinstance(value, timedelta):
+            return duration_string(value)
         return value
 
     return {

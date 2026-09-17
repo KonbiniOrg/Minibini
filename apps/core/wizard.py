@@ -146,17 +146,25 @@ class BaseWizardService:
 
         The non-task branch is written for Material; sell_price is read
         defensively — callers rendering a doc surface must show null
-        rather than 500."""
+        rather than 500.
+
+        `worker_time` (a task's current `est_worker_time`, always None for
+        a material) rides along so the bundle modal's one-unit preview
+        (per-unit-lines spec §5.2) can tell a task that already carries a
+        schedule commitment from one that doesn't, without a second
+        lookup."""
         amount = cls._atom_computed_amount(atom_instance)
         units = cls._atom_units(atom_instance)
         if isinstance(atom_instance, cls._task_model()):
             qty = cls._task_actual_qty(atom_instance)
             rate = atom_instance.effective_rate()  # already quantized to cents
+            worker_time = atom_instance.est_worker_time
         else:
             qty = atom_instance.quantity
             sell_price = getattr(atom_instance, 'sell_price', None)
             rate = None if sell_price is None else sell_price.quantize(Decimal('0.01'))
-        return {'qty': qty, 'rate': rate, 'units': units, 'amount': amount}
+            worker_time = None
+        return {'qty': qty, 'rate': rate, 'units': units, 'amount': amount, 'worker_time': worker_time}
 
     # ── line-item sync helpers ─────────────────────────────────────────
     @classmethod
@@ -425,10 +433,21 @@ class BaseWizardService:
                 )
 
         if per_unit:
+            # The modal always sends all four fields WYSIWYG (per_unit or
+            # not) — enforce that server-side too, field-shaped, rather
+            # than deriving a partial per-unit line from defaults.
+            missing = {}
+            if not overrides or overrides.get('description') in (None, ''):
+                missing['description'] = ['A description is required for per-unit lines.']
+            if not overrides or overrides.get('units') in (None, ''):
+                missing['units'] = ['Units are required for per-unit lines.']
+            if not overrides or overrides.get('price') in (None, ''):
+                missing['price'] = ['A price is required for per-unit lines.']
             qty_override = overrides.get('qty') if overrides else None
             if not qty_override or qty_override <= 0:
-                raise ValidationError(
-                    {'qty': ['A quantity is required for per-unit lines.']})
+                missing['qty'] = ['A quantity is required for per-unit lines.']
+            if missing:
+                raise ValidationError(missing)
 
         instances = [cls._resolve_atom(a) for a in atoms]
         for inst in instances:
@@ -500,8 +519,21 @@ class BaseWizardService:
     @classmethod
     def add_atoms_to_line_item(cls, line_item, atoms):
         """Append N atoms as sources to an existing line item. Re-derives an
-        in-sync line item; preserves an overridden price."""
+        in-sync line item; preserves an overridden price.
+
+        Rejects appending to a `per_unit` line (task 3/4 plan-gap ruling):
+        an appended claim gets no `per_unit_qty` snapshot (only
+        `add_atoms_to_new_line_item`'s per_unit path stamps one), so it
+        would silently contribute $0 to `_sum_per_unit_sources`. Append
+        semantics for a per-unit line are deferred to the modal-restructure
+        phase (spec §10)."""
         cls._validate_draft(getattr(line_item, cls.container_attr))
+
+        if getattr(line_item, 'per_unit', False):
+            raise ValidationError(
+                'Tasks and materials cannot be added to a per-unit line yet. '
+                'Remove the line and bundle again.'
+            )
 
         old_sum = cls._line_sum(line_item)
         was_in_sync = cls._is_in_sync(line_item, old_sum)

@@ -209,6 +209,9 @@ describe('EstimateEditView', () => {
     await fireEvent.click(bundleBtn);
 
     const dialog = await findByRole('dialog');
+    // Bundle modal's default is the one-unit interpretation (spec §5) —
+    // switch to whole-line to exercise today's copy-from-atom seed.
+    await fireEvent.click(within(dialog).getByLabelText(/the whole line/i));
     // Seeded from the single selected atom (AVAILABLE_ATOM: qty=1, rate=$30, hour).
     expect(within(dialog).getByLabelText(/Quantity/)).toHaveValue(1);
     expect(within(dialog).getByLabelText(/Price/)).toHaveValue(30);
@@ -220,6 +223,7 @@ describe('EstimateEditView', () => {
       {
         atoms: [{ type: 'task', id: 41 }],
         overrides: { description: 'Sand edges', qty: '1', units: 'hour', price: '30.00' },
+        per_unit: false,
       },
     );
     await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
@@ -338,6 +342,8 @@ describe('EstimateEditView', () => {
     await fireEvent.click(checkbox);
     await fireEvent.click(await findByRole('button', { name: /bundle into line/i }));
     const dialog = await findByRole('dialog');
+    // Default one-unit mode seeds qty empty — fill it in so Create is enabled.
+    await fireEvent.input(within(dialog).getByLabelText(/Quantity/), { target: { value: '5' } });
     await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
 
     await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());

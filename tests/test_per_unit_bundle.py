@@ -155,6 +155,58 @@ class PerUnitBundleTest(TestCase):
         self.assertIn(
             'This document does not support per-unit lines.', str(ctx.exception))
 
+    def test_per_unit_bundle_requires_description(self):
+        task = self._task(est_qty=Decimal('1'), est_worker_time=None)
+        atoms = [{'type': 'task', 'id': task.pk}]
+
+        with self.assertRaises(Exception) as ctx:
+            EstimateWizardService.add_atoms_to_new_line_item(
+                self.estimate, atoms,
+                overrides={'qty': Decimal('5'), 'units': 'each', 'price': Decimal('10.00')},
+                per_unit=True)
+        message_dict = ctx.exception.message_dict
+        self.assertIn('description', message_dict)
+
+    def test_per_unit_bundle_requires_units_and_price(self):
+        # The modal always sends all four fields (WYSIWYG) — description/qty
+        # present, units/price missing must both surface, field-shaped.
+        task = self._task(est_qty=Decimal('1'), est_worker_time=None)
+        atoms = [{'type': 'task', 'id': task.pk}]
+
+        with self.assertRaises(Exception) as ctx:
+            EstimateWizardService.add_atoms_to_new_line_item(
+                self.estimate, atoms,
+                overrides={'description': 'Setup x10', 'qty': Decimal('5')},
+                per_unit=True)
+        message_dict = ctx.exception.message_dict
+        self.assertIn('units', message_dict)
+        self.assertIn('price', message_dict)
+
+    def test_append_to_per_unit_line_rejected(self):
+        # Task 3/4 plan-gap ruling: an appended claim gets no per_unit_qty
+        # snapshot (only the per_unit path of add_atoms_to_new_line_item
+        # stamps one), so it would silently contribute $0 to the line's
+        # per-unit sum. Appending must be rejected outright until the
+        # modal-restructure phase adds real append semantics (spec §10).
+        task = self._task(est_qty=Decimal('0.75'), est_worker_time=timedelta(minutes=45))
+        task2 = self._task(est_qty=Decimal('1'), est_worker_time=None)
+        overrides = {
+            'description': 'Per unit bundle', 'qty': Decimal('10'),
+            'units': 'each', 'price': Decimal('55.00'),
+        }
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'task', 'id': task.pk}],
+            overrides=overrides, per_unit=True)
+
+        with self.assertRaises(Exception) as ctx:
+            EstimateWizardService.add_atoms_to_line_item(
+                li, [{'type': 'task', 'id': task2.pk}])
+        self.assertIn(
+            'Tasks and materials cannot be added to a per-unit line yet.',
+            str(ctx.exception),
+        )
+        self.assertEqual(li.sources.count(), 1)
+
     def test_whole_line_bundle_unchanged(self):
         # Regression: a non-per-unit bundle call stamps nothing on the atoms
         # and leaves the claim rows' per_unit_qty/per_unit_worker_time null.

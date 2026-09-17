@@ -1295,6 +1295,7 @@ class EstimateWizardService(BaseWizardService):
                 'rate': detail['rate'],
                 'amount': detail['amount'],
                 'units': detail['units'],
+                'worker_time': detail['worker_time'],
                 'category_id': eff_cat.pk if eff_cat else None,
                 **state_info,
             })
@@ -1317,6 +1318,7 @@ class EstimateWizardService(BaseWizardService):
                 'rate': detail['rate'],
                 'amount': detail['amount'],
                 'units': detail['units'],
+                'worker_time': detail['worker_time'],
                 'category_id': mat.accounting_category_id,
                 **state_info,
             })

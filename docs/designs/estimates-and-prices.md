@@ -2010,12 +2010,15 @@ untouched — see above). It is self-contained like `AdjustmentModal`/
 `${apiBase}/line-items-from-atoms/`, not a callback the parent runs.
 
 - **Props:** `open`, `atoms` (the selected atoms in raw source-pool
-  shape — `{type, id, description, qty, units, rate, amount}`, read
-  straight off `sourcePool.atoms` filtered by the ticked ids; the
-  picklist's own `uncoveredRows` only carries a formatted
-  `qty_display`, not the raw fields the modal needs), `apiBase`,
-  `onCreated(newLine)`, `onConflict(err)` (409 only — see above),
-  `onClose`.
+  shape — `{type, id, description, qty, units, rate, amount,
+  worker_time?}`, read straight off `sourcePool.atoms` filtered by the
+  ticked ids; the picklist's own `uncoveredRows` only carries a
+  formatted `qty_display`, not the raw fields the modal needs).
+  `worker_time` (a task atom's current `est_worker_time`, DRF
+  `"H:MM:SS"` duration-string shape, always absent for a material) is
+  added by `BaseWizardService._atom_detail`/`_pool_atoms` for the
+  one-unit preview below. `apiBase`, `onCreated(newLine)`,
+  `onConflict(err)` (409 only — see above), `onClose`.
 - **Display:** each selected atom's kind tag / description / qty /
   amount (reusing the `atomKindTag`/`fmtMoney`/`formatQtyUnits`
   idioms), plus the summed total.
@@ -2050,15 +2053,81 @@ untouched — see above). It is self-contained like `AdjustmentModal`/
   moment it's checked. Qty of `0`/empty never divides by zero (the
   re-derivation is skipped) and disables the Create button.
 - **Submit:** `POST line-items-from-atoms` with
-  `{atoms: [{type, id}, ...], overrides: {description, qty, units,
-  price}}` — i.e. it **always** sends all four fields as overrides
-  (not just the ones the user touched), since the modal's displayed
-  values are the authored truth regardless of how closely they mirror
-  the backend's own (unused, once overrides are present) derivation.
-  On success, calls `onCreated(newLine)`; the parent view closes the
-  modal, clears `selected`, and calls `onChanged()` — no follow-up
-  `LineItemModal` edit landing (the bundle modal *is* the authoring
-  step).
+  `{atoms: [{type, id, per_unit_worker_time?}, ...], overrides:
+  {description, qty, units, price}, per_unit}` — i.e. it **always**
+  sends all four override fields (not just the ones the user touched),
+  since the modal's displayed values are the authored truth regardless
+  of how closely they mirror the backend's own (unused, once overrides
+  are present) derivation. On success, calls `onCreated(newLine)`; the
+  parent view closes the modal, clears `selected`, and calls
+  `onChanged()` — no follow-up `LineItemModal` edit landing (the bundle
+  modal *is* the authoring step).
+
+#### 12.1a-i The interpretation choice (per-unit-lines spec §5, Task 4: minimal additions)
+
+Above qty, a two-option choice reads "The values on these tasks and
+materials are for: (•) one unit — multiply by quantity ( ) the whole
+line" — the per-unit-lines spec's single binary choice (never stacked
+toggles), backed by `perUnit = $state(true)`: **one-unit is the modal's
+default** (RM predicts it's the common case). This is a **minimal
+addition** to the existing modal — the full restructure (field order,
+load, materials-split) is a later, RM-gated phase (spec §12 phasing);
+this phase only adds the choice, the preview table, and the payload
+wiring below.
+
+- **One-unit mode (default):** the keep-total checkbox is hidden
+  (irrelevant — there's no total to keep, the total is derived).
+  Price seeds to `total.toFixed(2)` (the summed *current* atom amounts,
+  now read as a per-unit price); qty seeds **empty** — a real
+  multiplier has to be typed, never assumed. A live "Line total: qty ×
+  price" readout updates as either field changes. Once qty is valid, a
+  preview table lists one row per atom: its current qty scaled by qty
+  (`"0.75 hour → 7.50 hour"`, `"4 BF → 40 BF"`) — the reinterpretation
+  and the coming atom stamps must be unmissable before Create (spec
+  §12 Q1). A task atom that already carries `worker_time` also shows
+  its schedule commitment scaled the same way; a task with **no**
+  `worker_time` instead offers an optional per-unit duration input
+  (`"e.g. 0:45 or 0.75"`, parsed via `lib/format.js`'s
+  `parseDurationToISO`) — a filled value rides along as that atom's
+  `per_unit_worker_time` in the POST body (task-atom entries only;
+  never sent for materials or for a task that already has a schedule
+  time, since the backend multiplies that one automatically regardless
+  of unit denomination — spec §5.2).
+- **Whole-line mode:** exactly today's UI (§12.1a above) — keep-total
+  ON by default, editing qty re-derives price. Switching interpretation
+  mid-session re-seeds qty/price via the same seed functions the modal
+  uses on open (`seedPerUnit`/`seedWholeLine`) — description/units are
+  seeded once, from the atom(s), regardless of which interpretation is
+  chosen.
+- **Submit:** always sends `per_unit: true|false`; `per_unit: false`
+  posts exactly today's shape (no `per_unit_worker_time` keys).
+
+#### 12.1a-ii Server-side per-unit guards (Task 4 controller-added scope)
+
+- `add_atoms_to_new_line_item(..., per_unit=True)` requires **all
+  four** overrides (description, qty, units, price) present — a
+  field-shaped `ValidationError` (one entry per missing field, `qty`'s
+  own message preserved verbatim for backward compatibility with the
+  earlier qty-only check) rather than deriving a partial per-unit line
+  from defaults. The modal always sends all four, so this only fires
+  on a malformed direct API call.
+- **View-boundary qty coercion:** `apps.api.estimates.views.
+  _coerce_qty_override` / `apps.api.change_orders.views.
+  _coerce_qty_override` convert `overrides['qty']` to `Decimal` before
+  the service ever sees it, returning a clean `{'qty': [...]}` 400
+  instead of letting a string/garbage qty hit the per-unit path's
+  `qty_override <= 0` comparison and raise an uncaught `TypeError`.
+  Applied on both the estimate and CO `line-items-from-atoms` actions,
+  regardless of `per_unit`.
+- **Append guard:** `add_atoms_to_line_item` (append atoms to an
+  *existing* line — the retired-at-API-level path still used by tests
+  and the invoice wizard) now rejects a `per_unit` line outright:
+  `ValidationError('Tasks and materials cannot be added to a per-unit
+  line yet. Remove the line and bundle again.')`. An appended claim
+  gets no `per_unit_qty` snapshot (only the new-line per-unit path
+  stamps one), so without this guard it would silently contribute $0
+  to `_sum_per_unit_sources`. Real append semantics for a per-unit line
+  are deferred to the modal-restructure phase (spec §10).
 
 ### 12.2 Backing chips (design doc §9.2 vocabulary)
 

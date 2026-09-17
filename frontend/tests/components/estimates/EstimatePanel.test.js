@@ -636,6 +636,8 @@ describe('EstimatePanel create-line-from-selected integration (silent refresh)',
 
     const dialog = await findByRole('dialog');
     expect(dialog).toBeInTheDocument();
+    // Default one-unit mode seeds qty empty — fill it in so Create is enabled.
+    await fireEvent.input(within(dialog).getByLabelText(/Quantity/), { target: { value: '1' } });
     await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
 
     // The bundle modal closes once the create succeeds and the refreshed

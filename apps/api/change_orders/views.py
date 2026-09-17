@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import status, viewsets
@@ -18,6 +18,20 @@ from apps.estimates.services import ChangeOrderClaimConflict, ChangeOrderWizardS
 from .serializers import (
     ChangeOrderLineItemSerializer, ChangeOrderSerializer, serialize_amended_agreement,
 )
+
+
+def _coerce_qty_override(overrides):
+    """Coerce a bundle-modal `overrides['qty']` to Decimal before it reaches
+    the wizard service. Mirrors apps.api.estimates.views._coerce_qty_override
+    — see there for why this is needed."""
+    if not overrides or 'qty' not in overrides or overrides['qty'] in (None, ''):
+        return overrides, None
+    try:
+        coerced = Decimal(str(overrides['qty']))
+    except (InvalidOperation, TypeError, ValueError):
+        return overrides, Response(
+            {'qty': ['Enter a valid number.']}, status=status.HTTP_400_BAD_REQUEST)
+    return {**overrides, 'qty': coerced}, None
 
 
 class ChangeOrderViewSet(
@@ -144,9 +158,13 @@ class ChangeOrderViewSet(
         co = self.get_object()
         atoms = request.data.get('atoms', [])
         overrides = request.data.get('overrides')
+        overrides, error = _coerce_qty_override(overrides)
+        if error is not None:
+            return error
         try:
             line_item = ChangeOrderWizardService.add_atoms_to_new_line_item(
-                co, atoms, overrides=overrides)
+                co, atoms, overrides=overrides,
+                per_unit=bool(request.data.get('per_unit')))
         except ChangeOrderClaimConflict as e:
             return Response(
                 {'detail': 'Some of these atoms are already claimed by another '
@@ -308,11 +326,16 @@ class ChangeOrderViewSet(
 
 
 def _serialize_pool(pool):
-    """Convert Decimals in the pool to strings for JSON serialization.
-    Mirrors apps.api.estimates.views._serialize_pool."""
+    """Convert Decimals/timedeltas in the pool to strings for JSON
+    serialization. Mirrors apps.api.estimates.views._serialize_pool."""
+    from datetime import timedelta
+    from django.utils.duration import duration_string
+
     def _s(value):
         if isinstance(value, Decimal):
             return str(value)
+        if isinstance(value, timedelta):
+            return duration_string(value)
         return value
 
     return {
