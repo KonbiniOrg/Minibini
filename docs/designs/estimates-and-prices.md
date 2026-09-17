@@ -1558,7 +1558,8 @@ pre-existing and the line built from a selection of atoms.
 MINT_STATUSES = (Estimate.STATUS_ACCEPTED,)
 ```
 
-`claim_atom_for_line(line_item, source_type, source_pk)` raises a plain-
+`claim_atom_for_line(line_item, source_type, source_pk, per_unit_qty=None,
+per_unit_worker_time=None, set_line_per_unit=None)` raises a plain-
 sentence `ValidationError` (never a field-keyed one — this is a
 programmatic binding call, not a form) when:
 
@@ -1571,27 +1572,33 @@ programmatic binding call, not a form) when:
   must never also be claimable through this gesture;
 - the line is already marked `work_declined` — un-mark it first (mint
   and decline are mutually exclusive answers to the same question);
+- `set_line_per_unit` is non-`None`, the line already has sources, and
+  the value differs from the line's current `per_unit` — "This line's
+  one-unit-or-whole-line choice is already set." (the ask-once rule,
+  §9a.1 below);
+- the line ends up `per_unit` and `per_unit_qty` is `None` — "A
+  per-unit quantity is required for this line.";
 - the atom is missing, belongs to a different job, or is already
   claimed by another line (mirrors §6.2's whole-atom-claim invariant).
 
-On success it creates the `EstimateLineItemSource` row and calls
-`JobService.maybe_auto_release(estimate.job)` unconditionally — the
-estimate is always `accepted` here (the gate above admits nothing
-else), so this claim may be the checklist's last unanswered line.
+On success it creates the `EstimateLineItemSource` row (storing
+`per_unit_qty`/`per_unit_worker_time` on it only when the line is
+`per_unit`) and calls `JobService.maybe_auto_release(estimate.job)`
+unconditionally — the estimate is always `accepted` here (the gate
+above admits nothing else), so this claim may be the checklist's last
+unanswered line.
 
 **The `claim_estimate_line` gesture** is how a mint actually gets its
-atom: an optional body key on `POST /api/jobs/{id}/tasks/` and
-`POST /api/jobs/{id}/add-from-template/` (the two task-creation
-endpoints) that binds the just-created Task to an existing estimate
-line as its mint claim, atomically with creation — there is no
-separate "create then claim" round trip, and no path claims a
-**material** atom this way (materials crystallize at accept via §9's
-discriminator only; deferred to a later pass — see the plan doc's
-"Deliberately absent" note). Presence-gated on `CanManageJobOrPM`,
-checked *before* serializer validation so a non-manager attaching the
-key to an otherwise-invalid body still 403s rather than 400s; a
-non-numeric or off-job line id 400s. Full gate mechanics:
-`users-and-permissions.md`; endpoint table: `jobs-and-tasks.md` §3.4.
+atom: an optional body key on `POST /api/jobs/{id}/tasks/`,
+`POST /api/jobs/{id}/add-from-template/`, and (as of Task 5)
+`POST /api/jobs/{id}/materials/` that binds the just-created atom to an
+existing estimate line as its mint claim, atomically with creation —
+there is no separate "create then claim" round trip. Presence-gated on
+`CanManageJobOrPM`, checked *before* serializer validation so a
+non-manager attaching the key to an otherwise-invalid body still 403s
+rather than 400s; a non-numeric or off-job line id 400s. Full gate
+mechanics: `users-and-permissions.md`; endpoint table:
+`jobs-and-tasks.md` §3.4.
 
 **On the estimate surface** (§12.1), "Generate work…" opens
 `WorkItemForm` mirror-seeded from the line — `presetName` from the
@@ -1645,6 +1652,70 @@ question at design time (RM, 2026-08-15: "verify during build that no
 path actually needs un-minting... what a CANCELLED minted task means
 for the line's checklist state") that this pass did not settle further
 — flagged here rather than asserted as resolved.
+
+### 9a.1 Per-unit mint (per-unit-lines spec §5/§6, Task 5)
+
+A plain accepted hand line's atoms can be born describing **one unit**
+of the line's qty instead of the whole-job total — the same
+one-unit-or-whole-line choice the bundle modal offers (§12.1a-i), now
+also available on the mint-first flow (a task/material created
+*through the checklist*, then bound to the line, rather than bundled
+from already-existing atoms). Unlike the bundle modal, the mint flow's
+question is asked **exactly once per line**: the first mint against a
+line with no existing sources may set `EstimateLineItem.per_unit`; every
+later mint against that same line inherits the answer and the question
+never reappears (`set_line_per_unit`'s ask-once gate on
+`claim_atom_for_line`, described above).
+
+**Atoms are born with totals, never restamped.** The API view — not the
+service — does the multiplication: when the target line is (or is being
+set) `per_unit`, the submitted `est_qty` / `quantity` / `est_worker_time`
+are treated as PER-UNIT values, multiplied by `claim_line.qty` *before*
+the Task/Material is created (`Decimal` qty products quantized to
+`'0.01'`; a duration multiplies as `timedelta * float(qty)`, never
+`timedelta * Decimal` — `Decimal.__mul__` doesn't accept a `timedelta`
+operand). The **raw**, un-multiplied per-unit values are passed to
+`claim_atom_for_line` as `per_unit_qty`/`per_unit_worker_time` for the
+claim-row snapshot. There is no post-create restamp step — this mirrors
+`_stamp_atom_per_unit`'s "snapshot then stamp to total" shape (§12.1a-ii)
+but the multiply happens once, at the view boundary, instead of via a
+separate stamp call, since the mint flow creates the atom fresh rather
+than mutating a pre-existing one.
+
+**The `claim_line_per_unit` param** (bool, optional) is the mint-flow
+sibling of the bundle modal's `perUnit` choice: sent on
+`POST /api/jobs/{id}/tasks/`, `.../add-from-template/`, and
+`.../materials/` alongside `claim_estimate_line`. Read as tri-state
+(`True` / `False` / absent-means-`None`) by both endpoints' view code
+(`apps.api.jobs.views._resolve_claim_line_per_unit`, inline-mirrored in
+`apps.api.mixins.JobTaskMixin.tasks` for the same layering reason
+`_resolve_claim_line` itself documents) and forwarded to
+`claim_atom_for_line` as `set_line_per_unit`. The value actually used to
+decide whether to multiply (`effective_per_unit`) falls back to the
+line's own current `per_unit` when the param is omitted — so a later
+mint that sends nothing still multiplies correctly, inheriting the first
+mint's answer, and only a genuine first-mint request needs to say
+anything at all.
+
+**Mint modal (`WorkItemForm`).** `EstimateEditView` passes three new
+props alongside `claimEstimateLine`: `claimLineHasSources` (does the
+target line already have a claimed source?), `claimLinePerUnit` (the
+line's current `per_unit`), and `claimLineQty` (for the caption text).
+When `claimLineHasSources` is false (first mint), the form shows the
+same two-option radio choice as the bundle modal ("one unit — multiply
+by quantity" / "the whole line", one-unit default,
+`mintPerUnit = $state(true)`) and sends `claim_line_per_unit` with
+whichever the user picked. When `claimLineHasSources` is true (a later
+mint), the choice is gone — replaced by a static caption ("Values here
+are per unit — quantities multiply by {qty}.") when `claimLinePerUnit`
+is true, or nothing at all for a whole-line line — and
+`claim_line_per_unit` is omitted from the payload entirely, letting the
+service infer from the line's already-set value. Materials have no
+worker-time field, so the material-create path only ever multiplies/
+snapshots `quantity`; `create_material` did not accept
+`claim_estimate_line` before Task 5 (see the note above) — it does now,
+though no UI surface currently drives a material mint (the checklist's
+"Generate work…" button only opens the task-creation form).
 
 ---
 

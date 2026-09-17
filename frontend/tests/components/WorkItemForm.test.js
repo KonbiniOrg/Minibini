@@ -127,6 +127,101 @@ describe('WorkItemForm', () => {
     expect(call[1]).not.toHaveProperty('claim_estimate_line');
   });
 
+  // Per-unit-lines spec §5/§6 (Task 5): the mint flow's one-unit-or-whole-
+  // line question is asked ONCE per line — shown only on a first mint (the
+  // target line has no sources yet); a later mint against the same line
+  // inherits the earlier answer and shows a static caption instead.
+  describe('mint flow per-unit interpretation', () => {
+    it('shows the one-unit/whole-line choice (defaulting to one-unit) when the claimed line has no sources yet', async () => {
+      const { findByLabelText } = render(WorkItemForm, {
+        props: {
+          open: true, mode: 'manual', context: 'job', contextId: 5,
+          claimEstimateLine: 42, claimLineHasSources: false,
+        },
+      });
+      expect(await findByLabelText(/one unit/i)).toBeChecked();
+      expect(await findByLabelText(/the whole line/i)).not.toBeChecked();
+    });
+
+    it('does not show the choice (or any caption) for an ordinary create with no claim', async () => {
+      const { queryByLabelText, queryByText } = render(WorkItemForm, {
+        props: { open: true, mode: 'manual', context: 'job', contextId: 5 },
+      });
+      expect(queryByLabelText(/one unit/i)).not.toBeInTheDocument();
+      expect(queryByText(/multiply by/i)).not.toBeInTheDocument();
+    });
+
+    it('shows a static "multiply by" caption (no choice) when the claimed line already has sources and is per-unit', async () => {
+      const { queryByLabelText, findByText } = render(WorkItemForm, {
+        props: {
+          open: true, mode: 'manual', context: 'job', contextId: 5,
+          claimEstimateLine: 42, claimLineHasSources: true,
+          claimLinePerUnit: true, claimLineQty: '10',
+        },
+      });
+      expect(await findByText(/multiply by 10/i)).toBeInTheDocument();
+      expect(queryByLabelText(/one unit/i)).not.toBeInTheDocument();
+    });
+
+    it('shows nothing extra when the claimed line already has sources and is whole-line', async () => {
+      const { queryByLabelText, queryByText } = render(WorkItemForm, {
+        props: {
+          open: true, mode: 'manual', context: 'job', contextId: 5,
+          claimEstimateLine: 42, claimLineHasSources: true,
+          claimLinePerUnit: false, claimLineQty: '10',
+        },
+      });
+      expect(queryByLabelText(/one unit/i)).not.toBeInTheDocument();
+      expect(queryByText(/multiply by/i)).not.toBeInTheDocument();
+    });
+
+    it('sends claim_line_per_unit: true by default on a first mint', async () => {
+      const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+        props: {
+          open: true, mode: 'manual', context: 'job', contextId: 5,
+          claimEstimateLine: 42, claimLineHasSources: false,
+        },
+      });
+      await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '2' } });
+      await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Assemble' } });
+      await fireEvent.click(getByRole('button', { name: 'Save' }));
+      expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
+        claim_estimate_line: 42, claim_line_per_unit: true,
+      }));
+    });
+
+    it('sends claim_line_per_unit: false when the whole-line option is picked on a first mint', async () => {
+      const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+        props: {
+          open: true, mode: 'manual', context: 'job', contextId: 5,
+          claimEstimateLine: 42, claimLineHasSources: false,
+        },
+      });
+      await fireEvent.click(await findByLabelText(/the whole line/i));
+      await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '2' } });
+      await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Assemble' } });
+      await fireEvent.click(getByRole('button', { name: 'Save' }));
+      expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
+        claim_line_per_unit: false,
+      }));
+    });
+
+    it('omits claim_line_per_unit on a later mint against a line that already has sources', async () => {
+      const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+        props: {
+          open: true, mode: 'manual', context: 'job', contextId: 5,
+          claimEstimateLine: 42, claimLineHasSources: true, claimLinePerUnit: true, claimLineQty: '10',
+        },
+      });
+      await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '2' } });
+      await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Assemble' } });
+      await fireEvent.click(getByRole('button', { name: 'Save' }));
+      const call = api.post.mock.calls.find((c) => c[0] === '/api/jobs/5/tasks/');
+      expect(call[1]).not.toHaveProperty('claim_line_per_unit');
+      expect(call[1].claim_estimate_line).toBe(42);
+    });
+  });
+
   it('requires a name', async () => {
     const { findByRole, getByText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5 },

@@ -66,6 +66,30 @@ def _resolve_claim_line(request, job):
     return line
 
 
+def _resolve_claim_line_per_unit(request):
+    """Tri-state (True/False/None) read of the optional `claim_line_per_unit`
+    param — the mint flow's first-mint one-unit-or-whole-line question
+    (per-unit-lines spec §5/§6). `None` means "not sent": the caller falls
+    back to the target line's already-established `per_unit` value (a
+    later mint simply omits the param, inheriting the first mint's
+    answer). True/False is honored by `MintService.claim_atom_for_line`
+    only when the line has no existing sources yet — a differing value on
+    a line that already has sources raises there (the ask-once rule).
+
+    Mirrored inline in `apps.api.mixins.JobTaskMixin.tasks` for the same
+    layering reason as `_resolve_claim_line`'s own docstring (mixins.py
+    importing from jobs.views would be a layering violation) — keep the
+    two copies in sync by hand if this recipe changes."""
+    if 'claim_line_per_unit' not in request.data:
+        return None
+    raw = request.data.get('claim_line_per_unit')
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        return raw.lower() in ('true', '1', 'yes')
+    return bool(raw)
+
+
 class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
     job_object_path = 'self'
     queryset = Job.objects.select_related('contact') \
@@ -349,6 +373,17 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         from apps.core.models import AccountingCategory
         from apps.api.inventory.serializers import MaterialSerializer
         job = self.get_object()
+
+        # Mint flow (per-unit-lines spec §5/§6): an optional
+        # claim_estimate_line binds the just-created material to an
+        # existing estimate line as its source atom, same recipe as
+        # add_from_template's claim (materials didn't support this claim
+        # param before Task 5).
+        claim_result = _resolve_claim_line(request, job)
+        if isinstance(claim_result, Response):
+            return claim_result
+        claim_line = claim_result
+
         data = request.data
         pli = None
         if data.get('inventory_item'):
@@ -359,17 +394,42 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         customer_supplied = data.get('customer_supplied')
         if isinstance(customer_supplied, str):
             customer_supplied = customer_supplied.lower() in ('true', '1', 'yes')
-        m = MaterialService.create_on_job(
-            job=job, task=None,
-            description=data.get('description', ''),
-            quantity=_Decimal(str(data.get('quantity', 0))),
-            units=data.get('units', 'none'),
-            unit_cost=_Decimal(str(data.get('unit_cost', 0))),
-            sell_price=_Decimal(str(data.get('sell_price', 0))),
-            inventory_item=pli,
-            accounting_category=ac,
-            customer_supplied=bool(customer_supplied),
-        )
+
+        # On a per-unit claim line, the submitted quantity is a PER-UNIT
+        # value — multiply by the claim line's qty before the atom is
+        # created (atoms are born with totals, never restamped after).
+        quantity = _Decimal(str(data.get('quantity', 0)))
+        per_unit_qty_for_claim = None
+        set_line_per_unit = None
+        if claim_line is not None:
+            claim_line_per_unit = _resolve_claim_line_per_unit(request)
+            set_line_per_unit = claim_line_per_unit
+            effective_per_unit = (
+                claim_line_per_unit if claim_line_per_unit is not None
+                else bool(claim_line.per_unit)
+            )
+            if effective_per_unit:
+                per_unit_qty_for_claim = quantity
+                quantity = (quantity * claim_line.qty).quantize(_Decimal('0.01'))
+
+        with transaction.atomic():
+            m = MaterialService.create_on_job(
+                job=job, task=None,
+                description=data.get('description', ''),
+                quantity=quantity,
+                units=data.get('units', 'none'),
+                unit_cost=_Decimal(str(data.get('unit_cost', 0))),
+                sell_price=_Decimal(str(data.get('sell_price', 0))),
+                inventory_item=pli,
+                accounting_category=ac,
+                customer_supplied=bool(customer_supplied),
+            )
+            if claim_line is not None:
+                MintService.claim_atom_for_line(
+                    claim_line, EstimateLineItemSource.SOURCE_MATERIAL, m.pk,
+                    per_unit_qty=per_unit_qty_for_claim,
+                    set_line_per_unit=set_line_per_unit,
+                )
         return Response(MaterialSerializer(m).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'], url_path='agreement', url_name='agreement')
@@ -463,6 +523,37 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 {'est_qty': ['Invalid decimal value.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # Mint flow per-unit interpretation (per-unit-lines spec §5/§6): on
+        # a per-unit claim line, the submitted est_qty/est_worker_time are
+        # PER-UNIT values — multiply by the claim line's qty before the
+        # atom is created (atoms are born with totals, never restamped
+        # after). The raw per-unit values go to MintService.claim_atom_
+        # for_line for the claim-row snapshot.
+        per_unit_qty_for_claim = None
+        per_unit_worker_time_for_claim = None
+        set_line_per_unit = None
+        if claim_line is not None:
+            claim_line_per_unit = _resolve_claim_line_per_unit(request)
+            set_line_per_unit = claim_line_per_unit
+            effective_per_unit = (
+                claim_line_per_unit if claim_line_per_unit is not None
+                else bool(claim_line.per_unit)
+            )
+            if effective_per_unit:
+                per_unit_qty_for_claim = est_qty
+                est_qty = (est_qty * claim_line.qty).quantize(Decimal('0.01'))
+                if est_worker_time is not None:
+                    from django.utils.dateparse import parse_duration
+                    parsed = parse_duration(est_worker_time)
+                    if parsed is None:
+                        return Response(
+                            {'est_worker_time': ['Enter a valid duration.']},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    per_unit_worker_time_for_claim = parsed
+                    est_worker_time = parsed * float(claim_line.qty)
+
         try:
             with transaction.atomic():
                 task = template.generate_task(
@@ -474,7 +565,11 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 )
                 if claim_line is not None:
                     MintService.claim_atom_for_line(
-                        claim_line, EstimateLineItemSource.SOURCE_TASK, task.pk)
+                        claim_line, EstimateLineItemSource.SOURCE_TASK, task.pk,
+                        per_unit_qty=per_unit_qty_for_claim,
+                        per_unit_worker_time=per_unit_worker_time_for_claim,
+                        set_line_per_unit=set_line_per_unit,
+                    )
         except SchemeInactiveError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         except ServiceError as e:

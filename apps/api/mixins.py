@@ -1,3 +1,4 @@
+from decimal import Decimal
 from apps.core.history import record_history
 from rest_framework import serializers, status
 from rest_framework.decorators import action
@@ -417,6 +418,42 @@ class JobTaskMixin:
         scheme = validated.get('rate_scheme')
         assignee = validated.get('assignee')
 
+        # Mint flow per-unit interpretation (per-unit-lines spec §5/§6): on
+        # a per-unit claim line, the submitted est_qty/est_worker_time are
+        # PER-UNIT values — multiply by the claim line's qty before the
+        # atom is created (atoms are born with totals, never restamped
+        # after). `claim_line_per_unit` (True/False, first mint only) is
+        # this gesture's copy of apps.api.jobs.views._resolve_claim_line_
+        # per_unit — same layering reason as the claim_estimate_line inline
+        # copy above; keep the two recipes in sync by hand.
+        est_qty = validated.get('est_qty')
+        est_worker_time = validated.get('est_worker_time')
+        per_unit_qty_for_claim = None
+        per_unit_worker_time_for_claim = None
+        set_line_per_unit = None
+        if claim_line is not None:
+            raw = request.data.get('claim_line_per_unit')
+            if 'claim_line_per_unit' not in request.data:
+                claim_line_per_unit = None
+            elif isinstance(raw, bool):
+                claim_line_per_unit = raw
+            elif isinstance(raw, str):
+                claim_line_per_unit = raw.lower() in ('true', '1', 'yes')
+            else:
+                claim_line_per_unit = bool(raw)
+            set_line_per_unit = claim_line_per_unit
+            effective_per_unit = (
+                claim_line_per_unit if claim_line_per_unit is not None
+                else bool(claim_line.per_unit)
+            )
+            if effective_per_unit:
+                per_unit_qty_for_claim = est_qty
+                per_unit_worker_time_for_claim = est_worker_time
+                if est_qty is not None:
+                    est_qty = (est_qty * claim_line.qty).quantize(Decimal('0.01'))
+                if est_worker_time is not None:
+                    est_worker_time = est_worker_time * float(claim_line.qty)
+
         from django.db import transaction
         from apps.estimates.models import EstimateLineItemSource
         from apps.estimates.mint import MintService
@@ -427,15 +464,19 @@ class JobTaskMixin:
                     name=validated.get('name', ''),
                     rate_scheme_id=scheme.pk if scheme else None,
                     active_modifiers=validated.get('active_modifiers') or [],
-                    est_qty=validated.get('est_qty'),
-                    est_worker_time=validated.get('est_worker_time'),
+                    est_qty=est_qty,
+                    est_worker_time=est_worker_time,
                     actual_qty=validated.get('actual_qty'),
                     description=validated.get('description', ''),
                     assignee_id=assignee.pk if assignee else None,
                 )
                 if claim_line is not None:
                     MintService.claim_atom_for_line(
-                        claim_line, EstimateLineItemSource.SOURCE_TASK, task.pk)
+                        claim_line, EstimateLineItemSource.SOURCE_TASK, task.pk,
+                        per_unit_qty=per_unit_qty_for_claim,
+                        per_unit_worker_time=per_unit_worker_time_for_claim,
+                        set_line_per_unit=set_line_per_unit,
+                    )
         except RateScheme.DoesNotExist:
             return Response(
                 {'rate_scheme': ['RateScheme not found.']},

@@ -507,6 +507,9 @@
   presetName={mintModalLine?.description || ''}
   presetQty={mintModalLine?.qty ?? null}
   claimEstimateLine={mintModalLine?.line_item_id ?? null}
+  claimLineHasSources={(mintModalLine?.sources || []).length > 0}
+  claimLinePerUnit={mintModalLine?.per_unit ?? false}
+  claimLineQty={mintModalLine?.qty ?? null}
   {categories}
   onSaved={handleMintSaved}
   onClose={closeMintModal}

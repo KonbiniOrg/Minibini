@@ -36,6 +36,17 @@
     // null/empty — and NEVER on the edit/PATCH path (a claim is a
     // create-time mint, not an edit).
     claimEstimateLine = null,
+    // Per-unit-lines spec §5/§6 (Task 5): the mint flow's one-unit-or-
+    // whole-line question is asked ONCE per claimed line. `claimLineHasSources`
+    // (does the target line already have at least one claimed source?) gates
+    // whether this form shows the interactive choice (no sources yet — the
+    // first mint) or a static caption (sources already exist — the question
+    // was already answered, by `claimLinePerUnit`, the line's own current
+    // value). `claimLineQty` feeds the caption's "multiply by N" text. All
+    // three are meaningless (and ignored) when claimEstimateLine is null.
+    claimLineHasSources = false,
+    claimLinePerUnit = false,
+    claimLineQty = null,
     // Money-field write gate (task-owned-money Phase 1). Manual mode: gates
     // rate/unit_label/accounting_category/active_modifiers per MONEY_FIELDS
     // on TaskSerializer. Template mode: add-from-template is
@@ -68,6 +79,10 @@
   let fieldErrs = $state({});
   let saveToCatalog = $state(false); // custom-task create only: also save as a ServiceItem
   let taskCreated = $state(false);   // guards double task-create if catalog save fails + retry
+  // Mint flow's one-unit-or-whole-line pick (per-unit-lines spec §5/§6) —
+  // only meaningful on a first mint (claimEstimateLine set, claimLineHasSources
+  // false). One-unit is the default, mirroring BundleModal's own default.
+  let mintPerUnit = $state(true);
 
   // Edit-mode money fields: the task's OWN stamped values (task-owned money
   // Phase 1 — rate_scheme is a create-only trigger, never re-forwarded on
@@ -204,6 +219,7 @@
     }
     saveToCatalog = false;
     taskCreated = false;
+    mintPerUnit = true;
     formError = '';
     fieldErrs = {};
   });
@@ -357,6 +373,20 @@
     return '';
   }
 
+  // Adds claim_estimate_line (and, on a first mint only, claim_line_per_unit)
+  // to a create payload — shared by both the template and manual create
+  // branches of save() below. Per-unit-lines spec §5/§6: the interpretation
+  // question is asked ONCE per line, so claim_line_per_unit is sent only
+  // when the target line has no sources yet; a later mint against the same
+  // line omits it entirely and inherits the line's already-set answer.
+  function addClaimParams(payload) {
+    if (claimEstimateLine == null) return;
+    payload.claim_estimate_line = claimEstimateLine;
+    if (!claimLineHasSources) {
+      payload.claim_line_per_unit = mintPerUnit;
+    }
+  }
+
   function toggleModifier(key, checked) {
     if (checked) {
       if (!activeModifiers.includes(key)) {
@@ -461,9 +491,7 @@
         if (effectiveCanWriteMoney) {
           payload.active_modifiers = activeModifiers;
         }
-        if (claimEstimateLine != null) {
-          payload.claim_estimate_line = claimEstimateLine;
-        }
+        addClaimParams(payload);
         await api.post(url, payload);
       } else {
         // Manual create: rate_scheme (the preset id) is open to everyone —
@@ -484,9 +512,7 @@
         if (effectiveCanWriteMoney) {
           payload.active_modifiers = activeModifiers;
         }
-        if (claimEstimateLine != null) {
-          payload.claim_estimate_line = claimEstimateLine;
-        }
+        addClaimParams(payload);
         const url = `/api/jobs/${contextId}/tasks/`;
         // taskCreated guards a double create if the optional catalog save fails + retry.
         if (!taskCreated) {
@@ -706,6 +732,38 @@
           {/if}
         {/if}
 
+        {#if claimEstimateLine != null}
+          {#if !claimLineHasSources}
+            <!-- First mint against this line: the one-unit-or-whole-line
+                 question (per-unit-lines spec §5/§6), asked ONCE. Mirrors
+                 BundleModal's own interpretation fieldset. -->
+            <fieldset class="interpretation">
+              <legend>The values below are for:</legend>
+              <label>
+                <input
+                  type="radio" name="mint-interpretation"
+                  checked={mintPerUnit}
+                  onchange={() => { mintPerUnit = true; }}
+                >
+                one unit — multiply by quantity
+              </label>
+              <label>
+                <input
+                  type="radio" name="mint-interpretation"
+                  checked={!mintPerUnit}
+                  onchange={() => { mintPerUnit = false; }}
+                >
+                the whole line
+              </label>
+            </fieldset>
+          {:else if claimLinePerUnit}
+            <!-- A later mint against an already-per-unit line: the question
+                 was already answered on the first mint — no choice, just a
+                 reminder of the standing interpretation. -->
+            <p><small>Values here are per unit — quantities multiply by {Number(claimLineQty)}.</small></p>
+          {/if}
+        {/if}
+
         {#if showMoneyFields && !isHourUnit}
           <p>
             <label><strong>Estimated qty</strong><br>
@@ -753,4 +811,6 @@
      the modal instead of line-wrapping between "Rate" and "per". */
   .rate-unit-row { display: inline-flex; align-items: flex-end; gap: 8px; flex-wrap: nowrap; }
   .rate-unit-row .rate-per { padding-bottom: 3px; }
+  .interpretation { margin-bottom: 12px; }
+  .interpretation label { margin-right: 16px; }
 </style>
