@@ -177,15 +177,20 @@ class BaseWizardService:
 
     @classmethod
     def _sum_per_unit_sources(cls, line_item, sources=None):
-        """Σ over resolvable source rows of `per_unit_qty × atom-rate` — the
-        per-unit-lines spec §2/§3 reading: NO division by qty (a per_unit
-        line's claimed atoms already describe ONE unit, not the whole-job
-        total). atom-rate is `task.effective_rate()` for a task claim,
-        `sell_price` (quantized to cents) for a material claim. A row is
-        skipped when its own `per_unit_qty` is unset (not yet snapshotted)
-        or its atom is dangling (already deleted out from under the claim —
-        mirrors `_resolve_sources`' dangling tolerance) rather than either
-        raising or contributing a bogus amount.
+        """Σ over resolvable source rows of `per_unit_qty × atom-rate`,
+        EACH ROW quantized to the cent before summing — the per-unit-lines
+        spec §2/§3 reading: NO division by qty (a per_unit line's claimed
+        atoms already describe ONE unit, not the whole-job total). atom-rate
+        is `task.effective_rate()` for a task claim, `sell_price` (quantized
+        to cents) for a material claim. Per-row quantization (not
+        quantize-the-final-total) matches the BundleModal's price-seed math
+        and `_sum_sources` (which sums already-per-atom-quantized amounts) —
+        multiple rows landing on a half-cent would otherwise round
+        differently the two ways and birth a line one cent 'out of sync'. A
+        row is skipped when its own `per_unit_qty` is unset (not yet
+        snapshotted) or its atom is dangling (already deleted out from under
+        the claim — mirrors `_resolve_sources`' dangling tolerance) rather
+        than either raising or contributing a bogus amount.
 
         `sources`: optional explicit iterable of raw source rows, for a
         caller whose per-unit claims don't live on `line_item.sources`
@@ -212,7 +217,13 @@ class BaseWizardService:
                 if sell_price is None:
                     continue
                 rate = sell_price.quantize(Decimal('0.01'))
-            total += src.per_unit_qty * rate
+            # Quantize EACH row to the cent before summing — matching
+            # BundleModal's price-seed math and _sum_sources (which sums
+            # already-per-atom-quantized amounts) — never sum raw products
+            # and quantize only the total. Multiple rows landing on a
+            # half-cent otherwise round differently the two ways and can
+            # birth a line one cent 'out of sync'.
+            total += (src.per_unit_qty * rate).quantize(Decimal('0.01'))
         return total
 
     @classmethod
@@ -380,6 +391,18 @@ class BaseWizardService:
                         {'per_unit_worker_time': ['Enter a valid duration.']})
                 instance.est_worker_time = parsed
             per_unit_qty = instance.est_qty
+            if per_unit_qty is None:
+                # A task's est_qty is legally None (unquantified) — silently
+                # stamping that through would snapshot per_unit_qty=NULL on
+                # the claim row, permanently invisible to
+                # _sum_per_unit_sources/drift/Revert (the mint path already
+                # refuses this same shape via claim_atom_for_line's "A
+                # per-unit quantity is required for this line."). Plain-
+                # sentence, user-facing text — never say "atom".
+                raise ValidationError(
+                    f'"{instance.name}" has no estimated quantity — enter '
+                    'one before bundling it per-unit.'
+                )
             per_unit_worker_time = instance.est_worker_time
             instance.est_qty = (
                 (per_unit_qty * qty).quantize(Decimal('0.01'))

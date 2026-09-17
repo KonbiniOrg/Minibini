@@ -616,6 +616,17 @@ class ChangeOrderService:
                 and li.accounting_category_id is None
                 and li.target_line_item_id is not None):
             li.accounting_category_id = li.target_line_item.accounting_category_id
+        # A replace line's per_unit reading always mirrors its target's
+        # (never client-settable — see the serializer's read_only_fields):
+        # a replacement targeting a per_unit line IS itself per_unit
+        # (derive_co_line_backing's per-unit branch depends on this). Scoped
+        # to action="replace" only — an add/remove line's per_unit is set
+        # (or left False) by its own creation path (e.g. the bundle wizard's
+        # add_atoms_to_new_line_item), never derived from a target here.
+        if li.action == ChangeOrderLineItem.ACTION_REPLACE:
+            li.per_unit = bool(
+                li.target_line_item_id is not None and li.target_line_item.per_unit
+            )
         target_categories = ChangeOrderService._apply_adjustment_replace_shape(li)
         ChangeOrderService._derive_is_material(li)
         li.full_clean()
@@ -728,6 +739,17 @@ class ChangeOrderService:
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
         for field, value in kwargs.items():
             setattr(li, field, value)
+        # Re-derive per_unit off the (possibly just-changed) target — see
+        # add_line_item's identical rule, same action="replace" scoping (an
+        # add/remove line's per_unit is never touched here, so a bundled
+        # per-unit add line surviving a later manual PATCH keeps its flag).
+        # Runs on every replace-line update (not just a target_line_item
+        # change) so it's a no-op when nothing relevant moved, and
+        # self-heals if it ever drifted.
+        if li.action == ChangeOrderLineItem.ACTION_REPLACE:
+            li.per_unit = bool(
+                li.target_line_item_id is not None and li.target_line_item.per_unit
+            )
         target_categories = ChangeOrderService._apply_adjustment_replace_shape(li)
         ChangeOrderService._derive_is_material(li, has_sources=li.sources.exists())
         li.full_clean()

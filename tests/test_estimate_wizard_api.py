@@ -139,6 +139,35 @@ class EstimateWizardAPITest(TestCase):
         src = EstimateLineItemSource.objects.get(estimate_line_item_id=resp.data['line_item_id'])
         self.assertEqual(src.per_unit_qty, Decimal('2.00'))
 
+    def test_line_items_from_atoms_per_unit_est_qty_none_task_returns_400(self):
+        """Final-review Finding 2: a per-unit bundle over a task with
+        est_qty=None (legal on the model) must 400 with a plain, user-
+        facing sentence — not mint a claim whose per_unit_qty snapshots
+        NULL (invisible to the per-unit sum/drift/Revert forever) — and
+        must create nothing."""
+        unquantified = Task(job=self.job, name='Unquantified')
+        unquantified.stamp_from_scheme(self.scheme)
+        unquantified.save()
+        self.assertIsNone(unquantified.est_qty)
+
+        url = f'/api/estimates/{self.estimate.pk}/line-items-from-atoms/'
+        payload = {
+            'atoms': [{'type': 'task', 'id': unquantified.pk}],
+            'overrides': {
+                'description': 'No qty yet', 'qty': '5',
+                'units': 'each', 'price': '10.00',
+            },
+            'per_unit': True,
+        }
+        resp = self.client.post(url, payload, format='json')
+        self.assertEqual(resp.status_code, 400, resp.data)
+        detail = resp.json().get('detail', '')
+        self.assertIn('has no estimated quantity', detail)
+        self.assertNotIn('atom', detail.lower())
+        self.assertEqual(EstimateLineItem.objects.filter(estimate=self.estimate).count(), 0)
+        unquantified.refresh_from_db()
+        self.assertIsNone(unquantified.est_qty)
+
     def test_line_items_from_atoms_per_unit_missing_overrides_returns_400(self):
         """The modal always sends all four overrides for a per-unit bundle;
         a partial body (qty only) must fail field-shaped, not silently mint

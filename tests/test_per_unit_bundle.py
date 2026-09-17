@@ -230,3 +230,39 @@ class PerUnitBundleTest(TestCase):
         self.assertIsNone(task_src.per_unit_qty)
         self.assertIsNone(task_src.per_unit_worker_time)
         self.assertIsNone(material_src.per_unit_qty)
+
+    # Final-review Finding 2: a task with est_qty=None (legal — e.g. a
+    # checklist-plan task that hasn't been quantified yet) must never reach
+    # `_stamp_atom_per_unit`'s per_unit_qty = instance.est_qty line and mint
+    # a NULL-snapshot claim — that claim would be permanently invisible to
+    # `_sum_per_unit_sources`, drift, and Revert. Mint already rejects this
+    # ('A per-unit quantity is required for this line.'); the bundle path
+    # must reject it too, before anything is created.
+
+    def test_per_unit_bundle_est_qty_none_task_rejected(self):
+        task = self._task(est_qty=None, est_worker_time=None)
+        atoms = [{'type': 'task', 'id': task.pk}]
+        overrides = {
+            'description': 'Unquantified', 'qty': Decimal('5'),
+            'units': 'each', 'price': Decimal('10.00'),
+        }
+        with self.assertRaises(Exception) as ctx:
+            EstimateWizardService.add_atoms_to_new_line_item(
+                self.estimate, atoms, overrides=overrides, per_unit=True)
+        self.assertIn(
+            '"Setup" has no estimated quantity', str(ctx.exception))
+
+        # Atomicity: nothing was created — no line item, no stamp on the
+        # task, no claim row.
+        self.assertEqual(EstimateLineItem.objects.filter(estimate=self.estimate).count(), 0)
+        task.refresh_from_db()
+        self.assertIsNone(task.est_qty)
+
+    def test_per_unit_bundle_est_qty_none_task_rejected_direct_service_call(self):
+        """Direct service-level pin on _stamp_atom_per_unit itself, not just
+        the add_atoms_to_new_line_item wrapper."""
+        task = self._task(est_qty=None, est_worker_time=None)
+        with self.assertRaises(Exception) as ctx:
+            EstimateWizardService._stamp_atom_per_unit(task, {}, Decimal('5'))
+        self.assertIn(
+            '"Setup" has no estimated quantity', str(ctx.exception))

@@ -835,6 +835,83 @@ class ReplaceInheritsTargetAcTest(ChangeOrderAcceptanceBase):
         self.assertEqual(li.accounting_category_id, self.mat_cat.pk)
 
 
+class ReplaceInheritsTargetPerUnitTest(ChangeOrderAcceptanceBase):
+    """Final-review Finding 1: a REPLACE line targeting a per_unit estimate
+    line must itself be per_unit=True — otherwise derive_co_line_backing's
+    per-unit branch is unreachable for replace lines (the line gets judged
+    against the whole-job atom total instead of the per-unit Σ, and shows
+    'edited work' for an untouched per-unit agreement). Mirrors the AC-
+    inherit pattern immediately above."""
+
+    def _per_unit_task_backed_line(self, line_number=1, qty=Decimal('10'),
+                                    per_unit_qty=Decimal('0.75')):
+        task = Task(
+            job=self.job, name='Cutting',
+            est_qty=(per_unit_qty * qty).quantize(Decimal('0.01')),
+        )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        price = (per_unit_qty * task.effective_rate()).quantize(Decimal('0.01'))
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=line_number,
+            description='Cutting labor', qty=qty, price=price,
+            units='hour', accounting_category=self.cat, per_unit=True,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=line,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+            per_unit_qty=per_unit_qty,
+        )
+        return line, task
+
+    def test_replace_line_targeting_per_unit_line_inherits_flag(self):
+        line, _task = self._per_unit_task_backed_line()
+        co = self._make_co()
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=line.pk, description='Revised',
+            qty=line.qty, units='hour', price=line.price,
+        )
+        self.assertTrue(li.per_unit)
+
+        # Exercises derive_co_line_backing's per-unit branch — dead code
+        # before this fix, since a replace line was always per_unit=False.
+        from apps.api.change_orders.serializers import derive_co_line_backing
+        self.assertEqual(derive_co_line_backing(li), 'planned_work')
+
+    def test_replace_line_retargeted_to_non_per_unit_line_resets_flag(self):
+        pu_line, _pu_task = self._per_unit_task_backed_line()
+        other_line, _other_task = self._task_backed_line(line_number=2)
+        co = self._make_co()
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=pu_line.pk, description='Revised',
+            qty=pu_line.qty, units='hour', price=pu_line.price,
+        )
+        self.assertTrue(li.per_unit)
+
+        li = ChangeOrderService.update_line_item(
+            li.pk, target_line_item=other_line.pk, price=Decimal('999.00'))
+        self.assertFalse(li.per_unit)
+
+    def test_replace_line_on_per_unit_target_accepts_end_to_end(self):
+        line, task = self._per_unit_task_backed_line()
+        co = self._make_co()
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=line.pk, description='Revised',
+            qty=line.qty, units='hour', price=line.price,
+        )
+        co = self._accept(co)
+        self.assertEqual(co.status, ChangeOrder.STATUS_ACCEPTED)
+
+        li.refresh_from_db()
+        self.assertTrue(li.per_unit)
+        moved = li.sources.get(source_type='task', source_pk=task.pk)
+        self.assertEqual(moved.per_unit_qty, Decimal('0.75'))
+
+
 class SeedNewEmptyTest(ChangeOrderAcceptanceBase):
     """RM 2026-08-12: 'Start new change order' offers a choice — seed from
     the prior CO's lines, or start empty. seed_new(empty=True) is the

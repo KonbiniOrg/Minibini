@@ -145,3 +145,159 @@ class PerUnitDerivationTest(TestCase):
         li.refresh_from_db()
         self.assertEqual(li.price, Decimal('60.00'))
         self.assertEqual(li.qty, Decimal('10'))
+
+
+class PerUnitSourceSumQuantizationTest(TestCase):
+    """Final-review Finding 4: `_sum_per_unit_sources` must quantize each
+    row's `per_unit_qty × rate` to the cent BEFORE summing — matching the
+    BundleModal's price-seed math and `_sum_sources` (which sums already-
+    per-atom-quantized amounts) — rather than quantizing only the final
+    total. Multiple rows landing on a half-cent can otherwise disagree by a
+    cent between the two readings and birth a line one cent 'out of sync'.
+    """
+
+    def setUp(self):
+        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
+        Configuration.objects.create(key='estimate_counter', value='0')
+        Configuration.objects.update_or_create(
+            key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
+        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='j2@example.com', mobile_number='555-0002',
+        )
+        self.job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0002')
+        self.estimate = Estimate.objects.create(
+            job=self.job, status=Estimate.STATUS_DRAFT, estimate_number='EST-2026-0002')
+        # A deliberately cheap rate so 0.5 x $0.05 = $0.025 lands exactly on
+        # a half-cent — the case where per-row and final-total quantization
+        # genuinely diverge (not a rounding coincidence). ELAPSED_TIME
+        # schemes are billed in hours (model-enforced unit_label='hour');
+        # the per-unit_qty (0.5) stands in for "half an hour" here, it need
+        # not correspond to the line's own 'each' units.
+        self.cheap_scheme = RateScheme.objects.create(
+            name='Cheap', algorithm=RateScheme.ELAPSED_TIME, rate=Decimal('0.05'),
+            unit_label='hour', accounting_category=self.cat,
+        )
+
+    def _cheap_task(self):
+        t = Task(job=self.job, name='Cheap unit')
+        t.stamp_from_scheme(self.cheap_scheme)
+        t.save()
+        return t
+
+    def test_per_row_quantization_matches_modal_seed_math(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, qty=Decimal('10'), units='each',
+            price=Decimal('0.06'), description='', accounting_category=self.cat,
+            per_unit=True,
+        )
+        for _ in range(3):
+            task = self._cheap_task()
+            EstimateLineItemSource.objects.create(
+                estimate_line_item=li,
+                source_type=EstimateLineItemSource.SOURCE_TASK,
+                source_pk=task.pk,
+                per_unit_qty=Decimal('0.5'),
+            )
+        # Each row: 0.5 x $0.05/each = $0.025 -> quantized per row to $0.02
+        # (bankers' rounding: 0.025 ties to the nearest EVEN cent, 2) ->
+        # Sigma over 3 rows = $0.06. Quantizing only the FINAL total instead
+        # gives 0.075 -> $0.08 (7 is odd, rounds up to the even 8) — a real
+        # one-cent disagreement, not luck.
+        self.assertEqual(
+            EstimateWizardService._sum_per_unit_sources(li), Decimal('0.06'))
+        # Regression pin on the bug: summing raw (unquantized) products and
+        # quantizing only the total would have produced $0.08.
+        self.assertNotEqual(
+            EstimateWizardService._sum_per_unit_sources(li), Decimal('0.08'))
+
+
+class PerUnitSourceSumSkipContractTest(TestCase):
+    """Final-review Finding 4 (ledger item, task-2-report.md: 'no direct
+    test for _sum_per_unit_sources skip-on-None/dangling contract'): a row
+    whose `per_unit_qty` is unset, or whose atom has been deleted out from
+    under the claim, is silently skipped rather than raising or
+    contributing a bogus amount."""
+
+    def setUp(self):
+        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
+        Configuration.objects.create(key='estimate_counter', value='0')
+        Configuration.objects.update_or_create(
+            key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
+        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='j3@example.com', mobile_number='555-0003',
+        )
+        self.job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0003')
+        self.estimate = Estimate.objects.create(
+            job=self.job, status=Estimate.STATUS_DRAFT, estimate_number='EST-2026-0003')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME, rate=Decimal('60'),
+            unit_label='hour', accounting_category=self.cat,
+        )
+        self.li = EstimateLineItem.objects.create(
+            estimate=self.estimate, qty=Decimal('10'), units='each',
+            price=Decimal('45.00'), description='', accounting_category=self.cat,
+            per_unit=True,
+        )
+
+    def _task(self):
+        t = Task(job=self.job, name='Setup')
+        t.stamp_from_scheme(self.scheme)
+        t.save()
+        return t
+
+    def test_row_with_unset_per_unit_qty_is_skipped(self):
+        counted_task = self._task()
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=self.li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=counted_task.pk,
+            per_unit_qty=Decimal('0.75'),
+        )
+        uncounted_task = self._task()
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=self.li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=uncounted_task.pk,
+            per_unit_qty=None,
+        )
+        # Only the counted row contributes: 0.75 * $60 = $45.00. If the
+        # unset row weren't skipped it would raise (None * rate) instead.
+        self.assertEqual(
+            EstimateWizardService._sum_per_unit_sources(self.li), Decimal('45.00'))
+
+    def test_row_with_dangling_atom_is_skipped(self):
+        counted_task = self._task()
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=self.li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=counted_task.pk,
+            per_unit_qty=Decimal('0.75'),
+        )
+        dangling_task = self._task()
+        dangling_src = EstimateLineItemSource.objects.create(
+            estimate_line_item=self.li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=dangling_task.pk,
+            per_unit_qty=Decimal('1.00'),
+        )
+        # Bulk-delete bypasses Task.delete()'s own source-row purge
+        # (CLAUDE.md's own warning against QuerySet.delete() bypassing a
+        # custom delete() — used here deliberately, same pattern as
+        # test_api_estimates.py's dangling-source tests, to reproduce a
+        # pre-purge dangling claim).
+        Task.objects.filter(pk=dangling_task.pk).delete()
+
+        self.assertEqual(
+            EstimateWizardService._sum_per_unit_sources(self.li), Decimal('45.00'))
+        # The dangling row itself is untouched by the sum (dangling-tolerant,
+        # not dangling-deleting) — still there, still per_unit_qty=1.00.
+        dangling_src.refresh_from_db()
+        self.assertEqual(dangling_src.per_unit_qty, Decimal('1.00'))
