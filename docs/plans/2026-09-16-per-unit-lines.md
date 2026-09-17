@@ -178,10 +178,17 @@ per-unit line:
   `est_worker_time` vs its stamped expectation, where one was stamped)
 - material: badge when `quantity ≠ per_unit_qty × line.qty`
 
-Badges OFFER a one-click restamp; they never auto-apply. For labor the offer
-is safe to accept (projections, no physical reality); for materials it is a
-human decision (stock may be cut, ordered, earmarked, returnable). Same
-interaction shape as the existing deliverable qty mismatch badge.
+Badges are NOT one-click (RM 2026-09-16): drift detection is an unfamiliar
+concept, and a restamp overwrites the atom's current value — hard to get
+back if clicked in error. Clicking a badge opens an **explanatory modal**
+that spells out the drift in full — the agreement expectation
+(`per_unit_qty × line.qty`, with the numbers), the atom's current value,
+and where each came from — with an explicit **Revert** action (restamp the
+atom to the agreement expectation) and a plain close/cancel. The badge
+itself never mutates anything. Restamps never auto-apply. For labor the
+Revert is safe to accept (projections, no physical reality); for materials
+it is a human decision (stock may be cut, ordered, earmarked, returnable) —
+the modal's explanation should say so for material atoms.
 
 ## 9. Change orders
 
