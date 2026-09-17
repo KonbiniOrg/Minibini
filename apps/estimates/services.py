@@ -1354,15 +1354,20 @@ class EstimateWizardService(BaseWizardService):
             li = src.estimate_line_item
             est = li.estimate
             key = (src.source_type, src.source_pk)
+            # per-unit drift (Task 6): absent entirely on a non-per-unit
+            # claim row (_per_unit_drift_info returns None there).
+            per_unit_info = cls._per_unit_drift_info(src, li.qty) or {}
             if est.pk == current_estimate_pk:
                 claims[key] = cls._claim_state(
                     'claimed_by_current',
                     claiming_line_item_id=li.pk, claiming_line_number=li.line_number,
+                    **per_unit_info,
                 )
             else:
                 claims[key] = cls._claim_state(
                     'claimed_by_other',
                     claiming_estimate_id=est.pk, claiming_estimate_number=est.estimate_number,
+                    **per_unit_info,
                 )
 
         # Cross-lens (Task 7): any atom claimed by one of the job's CO lines
@@ -1379,10 +1384,13 @@ class EstimateWizardService(BaseWizardService):
             key = (src.source_type, src.source_pk)
             if claims.get(key, {}).get('state') == 'claimed_by_current':
                 continue
-            co = src.change_order_line_item.change_order
+            co_li = src.change_order_line_item
+            co = co_li.change_order
+            per_unit_info = cls._per_unit_drift_info(src, co_li.qty) or {}
             claims[key] = cls._claim_state(
                 'claimed_by_other',
                 claiming_change_order_id=co.pk, claiming_change_order_number=co.change_order_number,
+                **per_unit_info,
             )
 
         default_state = cls._claim_state('available')
@@ -1558,13 +1566,15 @@ class ChangeOrderWizardService(EstimateWizardService):
             .select_related('estimate_line_item', 'estimate_line_item__estimate')
         )
         for src in est_sources:
-            est = src.estimate_line_item.estimate
+            li = src.estimate_line_item
+            est = li.estimate
             key = (src.source_type, src.source_pk)
             if key in freed:
                 continue
             claims[key] = cls._claim_state(
                 'claimed_by_other',
                 claiming_estimate_id=est.pk, claiming_estimate_number=est.estimate_number,
+                **(cls._per_unit_drift_info(src, li.qty) or {}),
             )
 
         co_sources = (
@@ -1576,10 +1586,12 @@ class ChangeOrderWizardService(EstimateWizardService):
             li = src.change_order_line_item
             other_co = li.change_order
             key = (src.source_type, src.source_pk)
+            per_unit_info = cls._per_unit_drift_info(src, li.qty) or {}
             if other_co.pk == current_co_pk:
                 claims[key] = cls._claim_state(
                     'claimed_by_current',
                     claiming_line_item_id=li.pk, claiming_line_number=li.line_number,
+                    **per_unit_info,
                 )
             else:
                 if key in freed and other_co.status == ChangeOrder.STATUS_ACCEPTED:
@@ -1590,6 +1602,7 @@ class ChangeOrderWizardService(EstimateWizardService):
                     'claimed_by_other',
                     claiming_change_order_id=other_co.pk,
                     claiming_change_order_number=other_co.change_order_number,
+                    **per_unit_info,
                 )
 
         default_state = cls._claim_state('available')

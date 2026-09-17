@@ -272,6 +272,19 @@ class EstimateViewSet(
         )
         return Response(EstimateLineItemSerializer(line).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['post'], url_path='restamp-atom')
+    def restamp_atom(self, request, pk=None):
+        """Revert (restamp) one per-unit claim's atom back to the
+        agreement's expectation (per-unit-lines spec Task 6 — the Revert
+        affordance behind a drift badge). Body: {'source_id': N}. No
+        special-cased permission wiring needed — this action isn't in
+        get_permissions' read/mixed lists, so it already falls through to
+        the default `[IsAuthenticated(), CanManageJobOrPM()]`, same gate
+        every other per-unit authoring endpoint on this viewset uses."""
+        estimate = self.get_object()
+        EstimateWizardService.restamp_atom(estimate, request.data.get('source_id'))
+        return Response({'message': 'Atom restamped to the per-unit agreement.'})
+
     @action(detail=True, methods=['get'], url_path='send-defaults')
     def send_defaults(self, request, pk=None):
         """Pre-populated values for the Send Email page."""

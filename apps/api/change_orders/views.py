@@ -214,6 +214,17 @@ class ChangeOrderViewSet(
         serializer = self.get_serializer(new_co)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['post'], url_path='restamp-atom')
+    def restamp_atom(self, request, pk=None):
+        """Revert (restamp) one per-unit claim's atom back to the
+        agreement's expectation (per-unit-lines spec Task 6). Mirrors
+        apps.api.estimates.views.EstimateViewSet.restamp_atom — same
+        default-permission reasoning applies (falls through to
+        `[IsAuthenticated(), CanManageJobOrPM()]`)."""
+        co = self.get_object()
+        ChangeOrderWizardService.restamp_atom(co, request.data.get('source_id'))
+        return Response({'message': 'Atom restamped to the per-unit agreement.'})
+
     @action(detail=True, methods=['get'], url_path='send-defaults')
     def send_defaults(self, request, pk=None):
         """Pre-populated values for the Send-to-customer form (link, no PDF)."""

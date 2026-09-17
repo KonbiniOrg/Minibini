@@ -175,6 +175,39 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         sell_price = getattr(instance, 'sell_price', None)
         return None if sell_price is None else str(sell_price)
 
+    def to_representation(self, instance):
+        """Per-unit drift keys (per-unit-lines spec Task 6): 'per_unit_qty',
+        'expected_total', 'drift', and (task claims that snapshotted one)
+        'expected_worker_time' — added ONLY for a claim row whose
+        `per_unit_qty` is set (`EstimateWizardService._per_unit_drift_info`
+        returns None otherwise). Deliberately NOT SerializerMethodFields:
+        the spec requires these keys to be ABSENT (not False/null) on a
+        non-per-unit claim, which a method field can't express (it always
+        emits its key).
+
+        The backing line is read off whichever FK this row actually
+        carries — `estimate_line_item` for an EstimateLineItemSource,
+        `change_order_line_item` for a ChangeOrderLineItemSource (this
+        serializer is shared by both, e.g. via
+        apps.api.change_orders.serializers._serialize_sources) — so a
+        claim moved onto an accepted CO replace line is judged against
+        THAT line's current qty, not the original target's."""
+        from django.utils.duration import duration_string
+        from apps.estimates.services import EstimateWizardService
+
+        data = super().to_representation(instance)
+        line = (getattr(instance, 'estimate_line_item', None)
+                or getattr(instance, 'change_order_line_item', None))
+        info = (EstimateWizardService._per_unit_drift_info(instance, line.qty)
+                if line is not None else None)
+        if info is not None:
+            data['per_unit_qty'] = str(info['per_unit_qty'])
+            data['expected_total'] = str(info['expected_total'])
+            if 'expected_worker_time' in info:
+                data['expected_worker_time'] = duration_string(info['expected_worker_time'])
+            data['drift'] = info['drift']
+        return data
+
 
 class EstimateLineItemSerializer(serializers.ModelSerializer):
     units = UnitsField()

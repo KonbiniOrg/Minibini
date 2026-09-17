@@ -262,11 +262,20 @@ class ChangeOrderAcceptanceService:
             # case `row` IS a ChangeOrderLineItemSource (a prior replace's
             # source) — creating first would collide with itself still
             # being live.
+            #
+            # per_unit_qty/per_unit_worker_time carry forward too (per-unit-
+            # lines spec Task 6): the row's own per-unit snapshot describes
+            # the atom's agreed one-unit values regardless of which line
+            # currently backs it — dropping them here would silently erase
+            # a per-unit claim's snapshot the moment its line is replaced,
+            # and with it the qty-change drift Task 6's Revert flow detects.
             source_type, source_pk = row.source_type, row.source_pk
+            per_unit_qty, per_unit_worker_time = row.per_unit_qty, row.per_unit_worker_time
             row.delete()
             ChangeOrderLineItemSource.objects.create(
                 change_order_line_item=replace_li,
-                source_type=source_type, source_pk=source_pk)
+                source_type=source_type, source_pk=source_pk,
+                per_unit_qty=per_unit_qty, per_unit_worker_time=per_unit_worker_time)
 
     # ------------------------------------------------------------------
     # Retirement (removes only — replace no longer retires)

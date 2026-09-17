@@ -398,6 +398,111 @@ class BaseWizardService:
             return per_unit_qty, None
         raise ValidationError('Per-unit lines only support task and material atoms.')
 
+    # ── per-unit drift + restamp (per-unit-lines spec Task 6) ──────────
+    @classmethod
+    def _per_unit_drift_info(cls, source_row, line_qty):
+        """Drift/expected info for one claim row, given the qty of whichever
+        line CURRENTLY backs it (the CO's own qty once a replace line is
+        accepted and the claim moves onto it — see
+        apps.estimates.co_acceptance.ChangeOrderAcceptanceService._move_claims_to).
+
+        Returns `None` when the row isn't a per-unit claim
+        (`per_unit_qty` unset) — callers must then omit every drift key
+        entirely, never set them False/None (spec: "absent, not False, on
+        non-per-unit claims").
+
+        Otherwise returns `{'per_unit_qty', 'expected_total', 'drift': bool}`,
+        plus `'expected_worker_time'` for a task row whose
+        `per_unit_worker_time` is set. `expected_total` is quantized to
+        cents before comparison so Decimal representation noise never
+        produces phantom drift; `expected_worker_time` uses the same
+        `per_unit_worker_time * float(line_qty)` formula `_stamp_atom_per_unit`
+        stamped with originally, so a never-touched claim always compares
+        equal.
+
+        A dangling atom (deleted out from under the claim) can't be
+        compared — drift reports False rather than raising, the same
+        dangling-tolerant convention as `_resolve_sources`/
+        `_sum_per_unit_sources`."""
+        if source_row.per_unit_qty is None:
+            return None
+        from django.core.exceptions import ObjectDoesNotExist
+
+        per_unit_qty = source_row.per_unit_qty
+        expected_total = (per_unit_qty * line_qty).quantize(Decimal('0.01'))
+        info = {'per_unit_qty': per_unit_qty, 'expected_total': expected_total}
+
+        try:
+            instance = source_row.resolve()
+        except ObjectDoesNotExist:
+            info['drift'] = False
+            return info
+
+        if isinstance(instance, cls._task_model()):
+            drift = instance.est_qty != expected_total
+            if source_row.per_unit_worker_time is not None:
+                expected_worker_time = source_row.per_unit_worker_time * float(line_qty)
+                info['expected_worker_time'] = expected_worker_time
+                if instance.est_worker_time != expected_worker_time:
+                    drift = True
+            info['drift'] = drift
+        else:
+            info['drift'] = instance.quantity != expected_total
+        return info
+
+    @classmethod
+    def restamp_atom(cls, container, source_id):
+        """Revert (restamp) one per-unit claim's atom back to the
+        agreement's expectation (per-unit-lines spec Task 6 — the Revert
+        affordance behind a drift badge): sets a task's `est_qty` (+
+        `est_worker_time` when `per_unit_worker_time` was snapshotted) or a
+        material's `quantity` to `per_unit_qty (× per_unit_worker_time) ×
+        the backing line's CURRENT qty`, via direct field-set + `.save()`
+        per instance — never `QuerySet.update()`.
+
+        Guards (plain-sentence ValidationError, matching this module's
+        mint-adjacent style — apps/estimates/mint.py):
+        - `source_id` must resolve to a source row belonging to THIS
+          container's own document (estimate/CO) — never another job's.
+        - the row must actually be a per-unit claim (`per_unit_qty` set) —
+          restamping a whole-line claim is meaningless, it was never given
+          a per-unit snapshot to restamp to.
+        - the claimed atom must still resolve (not already deleted out
+          from under the claim).
+
+        Returns the restamped atom instance."""
+        from django.core.exceptions import ObjectDoesNotExist
+
+        source_model = cls._source_model()
+        try:
+            coerced_id = int(source_id)
+        except (TypeError, ValueError):
+            raise ValidationError('A valid claim id is required.')
+
+        lookup = {'source_id': coerced_id, f'{cls.source_fk}__{cls.container_attr}': container}
+        source_row = source_model.objects.filter(**lookup).first()
+        if source_row is None:
+            raise ValidationError('That claim was not found on this document.')
+        if source_row.per_unit_qty is None:
+            raise ValidationError('That claim is not a per-unit claim.')
+
+        line = getattr(source_row, cls.source_fk)
+        try:
+            instance = source_row.resolve()
+        except ObjectDoesNotExist:
+            raise ValidationError('The claimed atom no longer exists.')
+
+        expected_total = (source_row.per_unit_qty * line.qty).quantize(Decimal('0.01'))
+        if isinstance(instance, cls._task_model()):
+            instance.est_qty = expected_total
+            if source_row.per_unit_worker_time is not None:
+                instance.est_worker_time = source_row.per_unit_worker_time * float(line.qty)
+            instance.save()
+        else:
+            instance.quantity = expected_total
+            instance.save()
+        return instance
+
     # ── public: line items from atoms ──────────────────────────────────
     @classmethod
     def add_atoms_to_new_line_item(cls, container, atoms, *, overrides=None, per_unit=False):
