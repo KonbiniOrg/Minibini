@@ -22,7 +22,7 @@ from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, User
 from apps.estimates.mint import MintService
-from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource
+from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource, ServiceItem
 from apps.inventory.models import Material
 from apps.jobs.models import Job, RateScheme, Task
 
@@ -121,6 +121,13 @@ class MintAPIPerUnitTest(TestCase):
         Estimate.objects.filter(pk=self.estimate.pk).update(status=Estimate.STATUS_ACCEPTED)
         self.estimate.refresh_from_db()
 
+        self.template = ServiceItem.objects.create(
+            template_name='Assemble chair (template)',
+            description='Per-unit add-from-template coverage',
+            is_active=True,
+            rate_scheme=self.scheme,
+        )
+
         self.manager = User.objects.create_user(
             username='per_unit_mgr', password='testpass')
         self.manager.user_permissions.add(
@@ -132,6 +139,9 @@ class MintAPIPerUnitTest(TestCase):
 
     def _materials_url(self):
         return f'/api/jobs/{self.job.pk}/materials/'
+
+    def _add_from_template_url(self):
+        return f'/api/jobs/{self.job.pk}/add-from-template/'
 
     def test_per_unit_mint_task_born_with_totals(self):
         self.client.force_login(self.manager)
@@ -179,6 +189,52 @@ class MintAPIPerUnitTest(TestCase):
             source_type=EstimateLineItemSource.SOURCE_MATERIAL, source_pk=material.pk)
         self.assertEqual(source.per_unit_qty, Decimal('4.00'))
         self.assertIsNone(source.per_unit_worker_time)
+
+    def test_per_unit_mint_via_add_from_template(self):
+        """add-from-template's per-unit path is distinct from direct task
+        create: est_qty/est_worker_time arrive as raw request.data (not
+        pre-parsed by a DRF serializer), so est_worker_time is parsed by
+        hand via parse_duration before being multiplied."""
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._add_from_template_url(), {
+            'service_item_id': self.template.pk,
+            'est_qty': '0.75',
+            'est_worker_time': '00:45:00',
+            'claim_estimate_line': self.line.pk,
+            'claim_line_per_unit': True,
+        }, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        task = Task.objects.get(pk=resp.data['task_id'])
+        self.assertEqual(task.est_qty, Decimal('7.50'))
+        self.assertEqual(task.est_worker_time, timedelta(hours=7, minutes=30))
+
+        self.line.refresh_from_db()
+        self.assertTrue(self.line.per_unit)
+        source = EstimateLineItemSource.objects.get(
+            estimate_line_item=self.line,
+            source_type=EstimateLineItemSource.SOURCE_TASK, source_pk=task.pk)
+        self.assertEqual(source.per_unit_qty, Decimal('0.75'))
+        self.assertEqual(source.per_unit_worker_time, timedelta(minutes=45))
+
+    def test_add_from_template_per_unit_invalid_duration_is_400(self):
+        """The bespoke parse_duration branch (views.py) 400s on unparseable
+        input rather than letting a None slip through to the multiply."""
+        self.client.force_login(self.manager)
+        task_count_before = Task.objects.filter(job=self.job).count()
+        resp = self.client.post(self._add_from_template_url(), {
+            'service_item_id': self.template.pk,
+            'est_qty': '0.75',
+            'est_worker_time': 'not-a-duration',
+            'claim_estimate_line': self.line.pk,
+            'claim_line_per_unit': True,
+        }, format='json')
+        self.assertEqual(resp.status_code, 400, resp.data)
+        self.assertIn('est_worker_time', resp.data)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), task_count_before)
+        self.line.refresh_from_db()
+        self.assertFalse(self.line.per_unit)
+        self.assertFalse(EstimateLineItemSource.objects.filter(
+            estimate_line_item=self.line).exists())
 
     def test_whole_line_mint_unchanged(self):
         """Regression: a mint with no claim_line_per_unit on a line that
