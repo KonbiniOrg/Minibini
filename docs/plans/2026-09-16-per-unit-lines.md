@@ -95,19 +95,26 @@ per-unit sum.
 User plans one chair's tasks/materials in the Tasks pane with per-unit
 values, then bundles them into a line.
 
+Reframing (RM 2026-09-16): keep-total and per-unit are not a toggle plus a
+feature — they are the TWO interpretations of how atom values relate to the
+line's qty, one binary choice: **"the atom values you selected describe
+___"** — *the whole line* (keep-total: total = Σ atoms; per-unit price
+derived as Σ ÷ qty — today's behavior) or *one unit* (per-unit: price =
+Σ atoms; total derived as qty × Σ). Same inputs, opposite derivation
+direction, never both. The modal models this as one choice, not stacked
+checkboxes.
+
 Bundle modal additions:
 
-1. **"These tasks and materials describe ONE unit" checkbox.** When checked:
+1. **The interpretation choice** (whole-line vs one-unit, above; defaults to
+   whole-line, today's behavior). When "one unit" is chosen:
    - The modal shows a per-atom preview table: each atom's current value is
      treated as per-unit, with a before → after column
      ("cut parts: 45 min → 7 h 30 m total"; "oak: 4 BF → 40 BF total").
      The reinterpretation must be visible, never implicit — the checkbox is
      re-reading numbers the user entered earlier in another surface (§12 Q1).
-   - qty must be entered before/with the checkbox (the multiplication needs
+   - qty must be entered before/with the choice (the multiplication needs
      it); price derives as the per-unit sum and the total updates live.
-   - Keep-total is hidden/disabled in per-unit mode — its qty→price coupling
-     (price = total ÷ qty) contradicts per-unit derivation (price = Σ
-     per-unit). The two modes are mutually exclusive by construction.
 2. **On confirm**, atomically:
    - create the line (`per_unit=True`) and claims, each claim stamped with
      `per_unit_qty` = the atom's pre-multiplication value;
@@ -205,7 +212,14 @@ removing a claim still deletes the line.
   board, the claim already knows — a group label from the claiming line is
   cosmetics, not schema.
 
-## 12. Open questions / suspected UI problems
+## 12. Phasing and open questions
+
+**Phasing (RM 2026-09-16): modal UI refinement is the LAST phase.** Build
+the functionality first — fields, derivation, stamping, mint flow, drift
+badges — against the existing modal with minimal additions, then refine the
+bundle modal's structure as a dedicated final phase once the behavior is
+real and testable. (The keep-total confusion is independently LATER-logged;
+that rework lands in this final phase.)
 
 RM senses a UI problem not yet pinned down. Candidates found while writing:
 
@@ -216,14 +230,14 @@ RM senses a UI problem not yet pinned down. Candidates found while writing:
    forgets the box — every stamp is wrong by ×qty. The preview table (§5) is
    the mitigation; is it enough? There is no way for the Tasks pane to know,
    at planning time, that "per-unit-ness" is coming.
-2. **Bundle modal load.** Keep-total, per-unit, split-materials, a per-atom
-   preview/edit table, and an optional schedule-time input is a lot of modal.
-   Mutual exclusion (keep-total vs per-unit) helps; may still need a
-   restructure (e.g. per-unit as a second step/screen rather than a
-   checkbox).
-3. **Order of entry.** Per-unit derivation needs qty before it can preview
-   anything; today's modal derives price first and lets qty float (keep-total
-   coupling). The two flows want opposite field orders.
+2. **Bundle modal load.** The interpretation choice, split-materials, a
+   per-atom preview/edit table, and an optional schedule-time input is a
+   lot of modal. The whole-line/one-unit reframing (one choice, not stacked
+   toggles) helps; the full restructure is the dedicated final phase above.
+3. **Order of entry.** Both interpretations need qty, but derive in
+   opposite directions (whole-line: price ← Σ ÷ qty; one-unit: total ←
+   qty × Σ). The modal's field order/live-updates must read clearly in
+   both. Final-phase concern.
 4. **Materials-split sibling qty.** Two lines carrying "10" with no
    structural link — is the CO reminder (§9) discoverable enough, or does
    this want a stronger cue at edit time?
