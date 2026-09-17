@@ -89,4 +89,33 @@ describe('AtomChildRow', () => {
     // description, qty, rate, amount = 4, no onRemove cell
     expect(tds).toHaveLength(4);
   });
+
+  describe('drift badge (per-unit-lines spec §8)', () => {
+    it('never renders when atom.drift is absent (non-per-unit claim)', () => {
+      const { container } = renderRow();
+      expect(container.querySelector('.drift-badge')).toBeNull();
+    });
+
+    it('never renders when atom.drift is explicitly false', () => {
+      const { container } = renderRow({ atom: { ...baseAtom, drift: false }, onDrift: vi.fn() });
+      expect(container.querySelector('.drift-badge')).toBeNull();
+    });
+
+    it('never renders when drift is true but onDrift is not wired', () => {
+      const { container } = renderRow({ atom: { ...baseAtom, drift: true } });
+      expect(container.querySelector('.drift-badge')).toBeNull();
+    });
+
+    it('renders a "≠ agreement" badge when atom.drift is true and onDrift is wired', () => {
+      const { getByText } = renderRow({ atom: { ...baseAtom, drift: true }, onDrift: vi.fn() });
+      getByText('≠ agreement');
+    });
+
+    it('calls onDrift (not a mutation) when the badge is clicked', async () => {
+      const onDrift = vi.fn();
+      const { getByText } = renderRow({ atom: { ...baseAtom, drift: true }, onDrift });
+      await fireEvent.click(getByText('≠ agreement'));
+      expect(onDrift).toHaveBeenCalledTimes(1);
+    });
+  });
 });

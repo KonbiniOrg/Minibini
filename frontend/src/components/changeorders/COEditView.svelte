@@ -20,6 +20,7 @@
   import UncoveredWorkSection from '../docsurface/UncoveredWorkSection.svelte';
   import NewLineFromSelectedRow from '../docsurface/NewLineFromSelectedRow.svelte';
   import BundleModal from '../docsurface/BundleModal.svelte';
+  import DriftModal from '../docsurface/DriftModal.svelte';
   import QtyUnits from '../docsurface/QtyUnits.svelte';
 
   // Atom rows carry description/qty/price/amount (4, no leading # column in
@@ -271,12 +272,32 @@
 
   function atomFromSource(source) {
     return {
+      ...source,
       kind: source.source_type,
       description: source.description ?? '(removed)',
       qty_display: formatQtyUnits(source.qty, source.units),
       rate: source.rate,
       amount: source.computed_amount,
     };
+  }
+
+  // Drift badge / Revert (per-unit-lines spec §8): one shared DriftModal
+  // instance for the whole table (mirrors the single shared BundleModal
+  // below) — opened with the clicked atom + its backing line's current qty
+  // (the per-unit multiplier), never a mutation from the badge itself.
+  let driftModalOpen = $state(false);
+  let driftAtom = $state(null);
+  let driftLineQty = $state(null);
+
+  function openDriftModal(atom, lineQty) {
+    driftAtom = atom;
+    driftLineQty = lineQty;
+    driftModalOpen = true;
+  }
+  function handleDriftReverted() {
+    driftModalOpen = false;
+    driftAtom = null;
+    onChanged();
   }
 
 </script>
@@ -343,6 +364,7 @@
             colspanBefore={0}
             colspanAfter={ATOM_ROW_COLSPAN_AFTER + (canEdit ? 1 : 0)}
             onRemove={null}
+            onDrift={() => openDriftModal(atomFromSource(source), row.line.qty)}
           />
         {/each}
       {:else if row.kind === 'removed'}
@@ -397,6 +419,7 @@
             colspanAfter={ATOM_ROW_COLSPAN_AFTER + (canEdit ? 1 : 0)}
             note={`inherited from line ${source.inherited_from_line}`}
             onRemove={null}
+            onDrift={() => openDriftModal(atomFromSource(source), row.line.qty)}
           />
         {/each}
       {:else}
@@ -432,6 +455,7 @@
             colspanBefore={0}
             colspanAfter={ATOM_ROW_COLSPAN_AFTER + (canEdit ? 1 : 0)}
             onRemove={canEdit ? () => removeAtomFromLine(row.co_line_id, source) : null}
+            onDrift={() => openDriftModal(atomFromSource(source), row.line.qty)}
           />
         {/each}
       {/if}
@@ -511,6 +535,15 @@
   onCreated={handleBundleCreated}
   onConflict={handleBundleConflict}
   onClose={() => { bundleModalOpen = false; }}
+/>
+
+<DriftModal
+  open={driftModalOpen}
+  atom={driftAtom}
+  lineQty={driftLineQty}
+  {apiBase}
+  onReverted={handleDriftReverted}
+  onClose={() => { driftModalOpen = false; }}
 />
 
 <style>

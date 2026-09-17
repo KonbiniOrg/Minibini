@@ -22,6 +22,7 @@
   import UncoveredWorkSection from '../docsurface/UncoveredWorkSection.svelte';
   import NewLineFromSelectedRow from '../docsurface/NewLineFromSelectedRow.svelte';
   import BundleModal from '../docsurface/BundleModal.svelte';
+  import DriftModal from '../docsurface/DriftModal.svelte';
   import QtyUnits from '../docsurface/QtyUnits.svelte';
 
   // Atom rows carry # (colspanBefore=1) + description/qty/rate/amount (4) +
@@ -243,8 +244,42 @@
     }
   }
 
+  // Drift badge / Revert (per-unit-lines spec §8): one shared DriftModal
+  // instance for the whole table (mirrors the single shared BundleModal
+  // below) — opened with the clicked atom + its backing line's current qty
+  // (the per-unit multiplier), never a mutation from the badge itself.
+  let driftModalOpen = $state(false);
+  let driftAtom = $state(null);
+  let driftLineQty = $state(null);
+
+  function openDriftModal(atom, lineQty) {
+    driftAtom = atom;
+    driftLineQty = lineQty;
+    driftModalOpen = true;
+  }
+  function handleDriftReverted() {
+    driftModalOpen = false;
+    driftAtom = null;
+    onChanged();
+  }
+
   function lineAmount(li) {
     return Number(li.qty || 0) * Number(li.price || 0);
+  }
+
+  // Shared shape for AtomChildRow's `atom` prop AND the DriftModal's `atom`
+  // prop, so a badge's click always hands the modal exactly what the row
+  // itself just rendered (kind/description/qty_display/drift keys), never
+  // a differently-shaped raw source.
+  function atomFromSource(source) {
+    return {
+      ...source,
+      kind: source.source_type,
+      description: source.description ?? '(removed)',
+      qty_display: formatQtyUnits(source.qty, source.units),
+      rate: source.rate,
+      amount: source.computed_amount,
+    };
   }
 
   // Small provenance caption under the description — where a catalog or
@@ -418,16 +453,11 @@
       />
       {#each li.sources || [] as source (source.source_id)}
         <AtomChildRow
-          atom={{
-            kind: source.source_type,
-            description: source.description ?? '(removed)',
-            qty_display: formatQtyUnits(source.qty, source.units),
-            rate: source.rate,
-            amount: source.computed_amount,
-          }}
+          atom={atomFromSource(source)}
           colspanBefore={1}
           colspanAfter={ATOM_ROW_COLSPAN_AFTER}
           onRemove={canEdit ? () => removeAtomFromLine(li, source) : null}
+          onDrift={() => openDriftModal(atomFromSource(source), li.qty)}
         />
       {/each}
     {/each}
@@ -522,6 +552,15 @@
   onCreated={handleBundleCreated}
   onConflict={handleBundleConflict}
   onClose={() => { bundleModalOpen = false; }}
+/>
+
+<DriftModal
+  open={driftModalOpen}
+  atom={driftAtom}
+  lineQty={driftLineQty}
+  {apiBase}
+  onReverted={handleDriftReverted}
+  onClose={() => { driftModalOpen = false; }}
 />
 
 <Modal open={removeDialogLine != null} onCancel={() => { removeDialogLine = null; }} label="Remove line">

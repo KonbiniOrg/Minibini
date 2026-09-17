@@ -15,7 +15,14 @@
   // columns (Based on, Actions) pad to taste; this row renders NO cell of
   // its own under Actions (the estimate surface rowspans the line's
   // Actions cell across its atom group instead).
-  let { atom, colspanBefore = 0, colspanAfter = 0, onRemove = null, note = '' } = $props();
+  //
+  // onDrift (per-unit-lines spec §8): a small "≠ agreement" badge, shown
+  // only when the atom carries `drift: true` (per-unit claims only — the
+  // key is ABSENT on a non-per-unit claim, never False) AND a caller has
+  // wired onDrift (same "wired = shown" convention as onRemove). The badge
+  // NEVER mutates anything itself — it only opens the caller's DriftModal;
+  // the Revert affordance lives entirely there.
+  let { atom, colspanBefore = 0, colspanAfter = 0, onRemove = null, note = '', onDrift = null } = $props();
 </script>
 
 <tr class="doc-atom-row">
@@ -34,6 +41,9 @@
     {/if}
     <small>[{atomKindTag(atom.kind)}]</small>
     {atom.description}
+    {#if atom.drift && onDrift}
+      <button type="button" class="drift-badge" onclick={onDrift}>≠ agreement</button>
+    {/if}
     {#if note}<small> &mdash; {note}</small>{/if}
   </td>
   <td class="text-right">{atom.qty_display}</td>
@@ -51,4 +61,10 @@
     padding: 0 4px 0 0; vertical-align: baseline;
   }
   .doc-atom-remove:hover { color: #7f1d1d; }
+  .drift-badge {
+    border: 1px solid #f0c36d; background: #fff8e1; color: #92620a;
+    border-radius: 3px; padding: 0 5px; margin-left: 6px;
+    font-size: 11px; font-weight: 600; line-height: 1.6; cursor: pointer;
+  }
+  .drift-badge:hover { background: #ffedbb; }
 </style>
