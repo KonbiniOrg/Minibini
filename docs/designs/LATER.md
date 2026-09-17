@@ -202,6 +202,24 @@ Status coupling, transitions, and what a job may do at each stage.
   arithmetic — or RM decides bundle-time coverage is sufficient and this
   entry is dropped instead.
 
+- **BundleModal "keep total $xx" is confusing; the modal probably needs a
+  rework.** — _added 2026-09-16 (RM, browser review)_
+  The keep-total toggle's label/behavior isn't landing — RM finds "keep
+  total $xx" confusing in use, and suspects the whole bundle modal needs
+  restructuring rather than label tweaks. Compounding pressure: the
+  per-unit-lines design (`docs/plans/2026-09-16-per-unit-lines.md` §12)
+  wants to add per-unit + split-materials + a before/after stamp preview
+  to the same modal, notes keep-total and per-unit are mutually
+  exclusive, and flags that the two modes want opposite field-entry
+  orders (keep-total derives price from qty; per-unit needs qty first).
+  Rework the modal's structure once, alongside (or ahead of) the
+  per-unit implementation, instead of bolting on controls. Related:
+  the single-atom-skips-the-modal entry above shrinks the modal's job
+  to genuine multi-atom composition.
+  _Done when:_ the bundle modal is restructured so its coupling
+  behavior is self-explanatory (RM no longer trips on it) and the
+  per-unit additions have a coherent home._
+
 - **Taskless job may never auto-complete once fully invoiced/shipped.** —
   _added 2026-08-15 (found while documenting auto-release)_
   `JobService.maybe_complete_if_resolved` requires `Task.objects.filter(job=job).exists()`
