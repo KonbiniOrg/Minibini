@@ -178,12 +178,13 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
     def to_representation(self, instance):
         """Per-unit drift keys (per-unit-lines spec Task 6): 'per_unit_qty',
         'expected_total', 'drift', and (task claims that snapshotted one)
-        'expected_worker_time' — added ONLY for a claim row whose
-        `per_unit_qty` is set (`EstimateWizardService._per_unit_drift_info`
-        returns None otherwise). Deliberately NOT SerializerMethodFields:
-        the spec requires these keys to be ABSENT (not False/null) on a
-        non-per-unit claim, which a method field can't express (it always
-        emits its key).
+        'expected_worker_time' plus its current-value counterpart
+        'worker_time' (Task 7 fix — see below) — added ONLY for a claim row
+        whose `per_unit_qty` is set (`EstimateWizardService.
+        _per_unit_drift_info` returns None otherwise). Deliberately NOT
+        SerializerMethodFields: the spec requires these keys to be ABSENT
+        (not False/null) on a non-per-unit claim, which a method field
+        can't express (it always emits its key).
 
         The backing line is read off whichever FK this row actually
         carries — `estimate_line_item` for an EstimateLineItemSource,
@@ -191,7 +192,19 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         serializer is shared by both, e.g. via
         apps.api.change_orders.serializers._serialize_sources) — so a
         claim moved onto an accepted CO replace line is judged against
-        THAT line's current qty, not the original target's."""
+        THAT line's current qty, not the original target's.
+
+        'worker_time' (per-unit-lines spec Task 7 fix, RM 2026-09-17): the
+        task's LIVE `est_worker_time`, sitting next to 'expected_worker_time'
+        so a schedule-only drift (qty in sync, only the scheduled time
+        diverged) can be told apart from a qty drift by the frontend
+        DriftModal — without it, the modal had no current-value
+        counterpart to compare 'expected_worker_time' against. Same
+        absent-not-null convention as the other drift keys: omitted
+        whenever there's no 'expected_worker_time' to pair with (including
+        material claims, which never get one), and also omitted (not null)
+        on the rare case the resolved task's own `est_worker_time` is
+        itself None."""
         from django.utils.duration import duration_string
         from apps.estimates.services import EstimateWizardService
 
@@ -205,6 +218,10 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
             data['expected_total'] = str(info['expected_total'])
             if 'expected_worker_time' in info:
                 data['expected_worker_time'] = duration_string(info['expected_worker_time'])
+                resolved = self._resolve_or_none(instance)
+                current_worker_time = getattr(resolved, 'est_worker_time', None) if resolved is not None else None
+                if current_worker_time is not None:
+                    data['worker_time'] = duration_string(current_worker_time)
             data['drift'] = info['drift']
         return data
 

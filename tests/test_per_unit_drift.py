@@ -108,12 +108,18 @@ class DriftFlagsAppearOnlyOnDivergenceTest(PerUnitDriftTestBase):
         self.assertEqual(task_src['per_unit_qty'], '0.75')
         self.assertEqual(task_src['expected_total'], '7.50')
         self.assertEqual(task_src['expected_worker_time'], '07:30:00')
+        # Task 7 fix: the current-value counterpart to expected_worker_time
+        # — right after stamping the two agree exactly.
+        self.assertEqual(task_src['worker_time'], '07:30:00')
         self.assertFalse(task_src['drift'])
 
         self.assertEqual(mat_src['per_unit_qty'], '4.00')
         self.assertEqual(mat_src['expected_total'], '40.00')
         self.assertFalse(mat_src['drift'])
         self.assertNotIn('expected_worker_time', mat_src)
+        # A material never gets a worker_time counterpart either — it has
+        # no expected_worker_time to pair with.
+        self.assertNotIn('worker_time', mat_src)
 
     def test_task_qty_drift_when_hand_edited(self):
         task = self._task(Decimal('0.75'), None)
@@ -138,6 +144,13 @@ class DriftFlagsAppearOnlyOnDivergenceTest(PerUnitDriftTestBase):
 
         task_src = self._sources_data(li)[0]
         self.assertTrue(task_src['drift'])
+        # Task 7 fix: schedule-only drift (qty in sync) must still be
+        # spellable — expected stays the stamped agreement, current reflects
+        # the hand edit, and they now visibly disagree.
+        self.assertEqual(task_src['expected_total'], '10.00')
+        self.assertEqual(task_src['qty'], '10.00')
+        self.assertEqual(task_src['expected_worker_time'], '05:00:00')
+        self.assertEqual(task_src['worker_time'], '06:00:00')
 
     def test_material_qty_drift_when_hand_edited(self):
         material = self._material(Decimal('4'))
@@ -155,7 +168,7 @@ class DriftFlagsAppearOnlyOnDivergenceTest(PerUnitDriftTestBase):
         li = EstimateWizardService.add_atoms_to_new_line_item(
             self.estimate, [{'type': 'task', 'id': task.pk}])
         task_src = self._sources_data(li)[0]
-        for key in ('per_unit_qty', 'expected_total', 'expected_worker_time', 'drift'):
+        for key in ('per_unit_qty', 'expected_total', 'expected_worker_time', 'worker_time', 'drift'):
             self.assertNotIn(key, task_src)
 
     def test_drift_keys_absent_on_available_pool_atom(self):

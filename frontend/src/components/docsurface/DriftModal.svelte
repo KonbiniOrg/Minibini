@@ -27,9 +27,14 @@
   let {
     open = false,
     // The drift-bearing atom: {kind, description, qty_display, source_id,
-    // per_unit_qty, expected_total, units, drift, expected_worker_time?}
-    // — the same shape AtomChildRow's `atom` prop carries, once a caller
-    // spreads a per-unit claim's serialized fields onto it.
+    // per_unit_qty, expected_total, units, drift, expected_worker_time?,
+    // worker_time?} — the same shape AtomChildRow's `atom` prop carries,
+    // once a caller spreads a per-unit claim's serialized fields onto it.
+    // `worker_time` (the task's LIVE est_worker_time) only ever appears
+    // alongside `expected_worker_time` — it's the current-value
+    // counterpart that lets a schedule-only drift (qty in sync, only the
+    // scheduled time diverged) be named explicitly instead of just
+    // showing two matching qty numbers under a "does not match" header.
     atom = null,
     lineQty = null,   // the backing line's current qty (the multiplier)
     apiBase = '',     // e.g. '/api/estimates/7' or '/api/change-orders/12'
@@ -84,9 +89,17 @@
     </p>
     {#if atom.expected_worker_time}
       <p>
-        The agreement also expects a scheduled time of
-        {formatDuration(atom.expected_worker_time)} for this quantity.
+        Agreement schedule time: {formatDuration(atom.expected_worker_time)} for this quantity.
       </p>
+      {#if atom.worker_time}
+        <p>
+          Currently scheduled: {formatDuration(atom.worker_time)}.
+          {#if atom.worker_time !== atom.expected_worker_time}
+            The scheduled time does not match the agreement, even where the
+            quantity does.
+          {/if}
+        </p>
+      {/if}
     {/if}
     {#if atom.kind === 'material'}
       <p>

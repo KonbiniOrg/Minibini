@@ -34,6 +34,28 @@ const TASK_ATOM_WITH_SCHEDULE = {
   expected_worker_time: '07:30:00',
 };
 
+// Schedule-only drift (per-unit-lines spec Task 7 fix): the qty dimension
+// is in sync (per_unit_qty=1 x lineQty=10 = expected_total=10.00, matching
+// the current qty_display/qty of "10 hour") but the scheduled time alone
+// has diverged — `worker_time` (current) disagrees with
+// `expected_worker_time` (agreement). Without a current-value counterpart
+// the modal would have nothing to contrast `expected_worker_time` against.
+const TASK_ATOM_SCHEDULE_ONLY_DRIFT = {
+  kind: 'task',
+  description: 'Assemble chair',
+  qty_display: '10 hour',
+  qty: '10',
+  units: 'hour',
+  rate: '20.00',
+  amount: '200.00',
+  source_id: 503,
+  per_unit_qty: '1',
+  expected_total: '10.00',
+  expected_worker_time: '05:00:00',
+  worker_time: '06:00:00',
+  drift: true,
+};
+
 const MATERIAL_ATOM = {
   kind: 'material',
   description: 'Oak seat blank',
@@ -104,6 +126,20 @@ describe('DriftModal', () => {
     const { findByRole } = render(DriftModal, { props: baseProps() });
     const dialog = await findByRole('dialog');
     expect(dialog.textContent).not.toContain('schedule');
+  });
+
+  it('names the schedule drift with both values when only the schedule time diverged (qty in sync)', async () => {
+    const { findByRole } = render(DriftModal, {
+      props: baseProps({ atom: TASK_ATOM_SCHEDULE_ONLY_DRIFT, lineQty: 10 }),
+    });
+    const dialog = await findByRole('dialog');
+    // The qty dimension matches exactly (10 hour agreement == 10 hour
+    // current) — the modal must still be able to point at the schedule
+    // as the thing that actually drifted, with both its numbers.
+    expect(dialog.textContent).toContain('10 hour');
+    expect(dialog.textContent).toContain('5h 0m');
+    expect(dialog.textContent).toContain('6h 0m');
+    expect(dialog.textContent.toLowerCase()).toContain('does not match the agreement');
   });
 
   it('adds the physical-material sentence for a material atom', async () => {
