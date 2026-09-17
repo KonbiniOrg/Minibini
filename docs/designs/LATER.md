@@ -21,6 +21,17 @@ proper issue.
 
 ## Job & estimate lifecycle (decisions)
 
+- **Warn when sending an estimate with no deliverables.** — _added
+  2026-09-16 (RM)_
+  If an estimate is about to be sent and the job has no Deliverables,
+  flag it for the user to fix before the send goes out (the customer-
+  facing document/portal shows the deliverables list, and sending
+  freezes a snapshot of it at supersession time — an empty list at send
+  is almost certainly an oversight). Likely home: the send flow on the
+  estimate page (`POST /api/estimates/{id}/send` confirm step).
+  _Done when:_ the send gesture surfaces a "no deliverables yet"
+  warning the user must acknowledge (not a hard block)._
+
 - **Entering a flat fee is not intuitive.** — _added 2026-08-16 (RM,
   estimating-structure review)_
   Two compounding gaps. (1) There is no "flat" RateScheme algorithm and
