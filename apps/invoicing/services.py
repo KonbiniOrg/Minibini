@@ -1342,9 +1342,10 @@ class InvoiceWizardService(BaseWizardService):
     # ── deposit atom rules (no bundling; same-job only; deduction lines
     #    take no further atoms) ─────────────────────────────────────────
     @classmethod
-    def add_atoms_to_new_line_item(cls, container, atoms):
+    def add_atoms_to_new_line_item(cls, container, atoms, *, overrides=None, per_unit=False):
         cls._assert_deposit_atom_rules(container, atoms)
-        return super().add_atoms_to_new_line_item(container, atoms)
+        return super().add_atoms_to_new_line_item(
+            container, atoms, overrides=overrides, per_unit=per_unit)
 
     @classmethod
     def add_atoms_to_line_item(cls, line_item, atoms):

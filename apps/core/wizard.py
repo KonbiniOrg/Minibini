@@ -23,6 +23,11 @@ class BaseWizardService:
     source_fk = None
     # The claim-conflict exception class the subclass raises.
     claim_conflict_exc = None
+    # Whether this document supports per-unit bundling (per-unit-lines
+    # spec §2). False on the base — the invoice wizard never opts in, so it
+    # inherits this unchanged. EstimateWizardService flips it True and
+    # ChangeOrderWizardService inherits that.
+    allows_per_unit = False
 
     # ── subclass hooks (must be implemented) ───────────────────────────
     @classmethod
@@ -325,24 +330,92 @@ class BaseWizardService:
         return cls.claim_conflict_exc(atom_ids=conflicts)
 
     @classmethod
-    def _create_source(cls, line_item, instance):
+    def _create_source(cls, line_item, instance, **extra):
         cls._source_model().objects.create(
             **{cls.source_fk: line_item},
             source_type=cls._atom_source_type(instance),
             source_pk=instance.pk,
+            **extra,
         )
+
+    # ── per-unit bundling (per-unit-lines spec §2) ─────────────────────
+    @classmethod
+    def _stamp_atom_per_unit(cls, instance, atom_ref, qty):
+        """Snapshot `instance`'s CURRENT per-unit values, then stamp the
+        atom itself to the whole-job total for `qty` units and `.save()`
+        it directly (never `QuerySet.update()`) — atoms always store
+        totals; only the claim row remembers the per-unit agreement
+        (spec §2).
+
+        For a task atom, an atom-supplied `'per_unit_worker_time'`
+        (ISO-8601 duration string — the modal's input for a task lacking
+        an `est_worker_time`) SETS the task's `est_worker_time` first, so
+        both the snapshot and the stamp see it.
+
+        Returns `(per_unit_qty, per_unit_worker_time)` for the caller to
+        snapshot onto the new source row (`per_unit_worker_time` is
+        always None for a material atom).
+
+        Deliberately bypasses `hours_pair_fill` — that helper only runs
+        in TaskService/api paths; both task fields are set explicitly
+        here so no pair-fill is wanted.
+        """
+        task_model = cls._task_model()
+        material_model = cls._material_model()
+        if isinstance(instance, task_model):
+            worker_time_input = atom_ref.get('per_unit_worker_time')
+            if worker_time_input is not None:
+                from django.utils.dateparse import parse_duration
+                parsed = parse_duration(worker_time_input)
+                if parsed is None:
+                    raise ValidationError(
+                        {'per_unit_worker_time': ['Enter a valid duration.']})
+                instance.est_worker_time = parsed
+            per_unit_qty = instance.est_qty
+            per_unit_worker_time = instance.est_worker_time
+            instance.est_qty = (
+                (per_unit_qty * qty).quantize(Decimal('0.01'))
+                if per_unit_qty is not None else None
+            )
+            instance.est_worker_time = (
+                per_unit_worker_time * float(qty)
+                if per_unit_worker_time is not None else None
+            )
+            instance.save()
+            return per_unit_qty, per_unit_worker_time
+        if isinstance(instance, material_model):
+            per_unit_qty = instance.quantity
+            instance.quantity = (per_unit_qty * qty).quantize(Decimal('0.01'))
+            instance.save()
+            return per_unit_qty, None
+        raise ValidationError('Per-unit lines only support task and material atoms.')
 
     # ── public: line items from atoms ──────────────────────────────────
     @classmethod
-    def add_atoms_to_new_line_item(cls, container, atoms, *, overrides=None):
+    def add_atoms_to_new_line_item(cls, container, atoms, *, overrides=None, per_unit=False):
         """Create a new line item on `container` with the given atoms as
-        sources. `atoms` is a list of {'type': str, 'id': N} dicts.
+        sources. `atoms` is a list of {'type': str, 'id': N} dicts; a task
+        atom may also carry `'per_unit_worker_time'` (ISO-8601 duration
+        string, per-unit calls only — the modal's input for a task lacking
+        an `est_worker_time`).
 
         overrides: optional {'description','qty','units','price'} applied
         over the derived defaults before save (bundle-modal authoring). A
         provided qty/price pair wins; partial overrides merge onto the
-        derivation. Claims/atomicity unchanged."""
+        derivation. Claims/atomicity unchanged.
+
+        per_unit: when True, requires `overrides['qty']` > 0 (that qty is
+        the per-unit multiplier) and requires `cls.allows_per_unit`
+        (estimate/CO wizards only — the invoice wizard never opts in).
+        Each atom is snapshotted to its claim row and stamped to the
+        whole-job total for that qty (see `_stamp_atom_per_unit`); the new
+        line is saved with `per_unit=True`. Price/qty/units/description
+        still come from `overrides` (WYSIWYG — the modal always sends all
+        four) regardless of per_unit."""
         cls._validate_draft(container)
+
+        if per_unit and not cls.allows_per_unit:
+            raise ValidationError('This document does not support per-unit lines.')
 
         if overrides:
             unknown = set(overrides) - {'description', 'qty', 'units', 'price'}
@@ -350,6 +423,12 @@ class BaseWizardService:
                 raise ValidationError(
                     f"Unknown override field(s): {', '.join(sorted(unknown))}."
                 )
+
+        if per_unit:
+            qty_override = overrides.get('qty') if overrides else None
+            if not qty_override or qty_override <= 0:
+                raise ValidationError(
+                    {'qty': ['A quantity is required for per-unit lines.']})
 
         instances = [cls._resolve_atom(a) for a in atoms]
         for inst in instances:
@@ -399,10 +478,20 @@ class BaseWizardService:
                     price=price,
                     accounting_category=cls._resolve_line_category(category),
                     **cls._extra_line_kwargs(),
+                    **({'per_unit': True} if per_unit else {}),
                 )
                 LineItemService.save_line_item(line_item)
-                for instance in instances:
-                    cls._create_source(line_item, instance)
+                for instance, atom_ref in zip(instances, atoms):
+                    if per_unit:
+                        pu_qty, pu_worker_time = cls._stamp_atom_per_unit(
+                            instance, atom_ref, qty)
+                        cls._create_source(
+                            line_item, instance,
+                            per_unit_qty=pu_qty,
+                            per_unit_worker_time=pu_worker_time,
+                        )
+                    else:
+                        cls._create_source(line_item, instance)
         except IntegrityError:
             raise cls._claim_conflict(atoms)
 

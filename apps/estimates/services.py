@@ -1165,6 +1165,9 @@ class EstimateWizardService(BaseWizardService):
     container_attr = 'estimate'
     source_fk = 'estimate_line_item'
     claim_conflict_exc = EstimateClaimConflict
+    # Per-unit-lines spec §2: estimate (and CO, which subclasses this
+    # service) supports per-unit bundling; the invoice wizard does not.
+    allows_per_unit = True
 
     @staticmethod
     def _resolve_atom(atom_ref):
