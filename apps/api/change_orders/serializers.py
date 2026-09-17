@@ -25,6 +25,7 @@ class ChangeOrderLineItemSerializer(serializers.ModelSerializer):
             'accounting_category',
             'inventory_item', 'service_item', 'service_item_detail', 'is_material',
             'adjustment_service', 'adjustment_percent', 'adjustment_target_categories',
+            'per_unit',
         ]
         read_only_fields = [
             'line_item_id', 'service_item_detail',
@@ -33,6 +34,9 @@ class ChangeOrderLineItemSerializer(serializers.ModelSerializer):
             # Writes go through the service (Task 6) — this serializer only
             # ever displays the CO line's adjustment triple.
             'adjustment_service', 'adjustment_percent', 'adjustment_target_categories',
+            # Read-only for now (per-unit-lines spec Task 2) — setting it is
+            # a Task 3+ (bundle-modal) concern.
+            'per_unit',
         ]
 
     def get_service_item_detail(self, obj):
@@ -122,7 +126,21 @@ def derive_co_line_backing(co_line, resolved_sources=None):
         resolved_sources = _resolve_rows(_sources_for_replace(co_line))
 
     if resolved_sources:
-        sum_value = _sum_amounts(resolved_sources)
+        # per_unit lines are judged against the per-unit Σ (no division by
+        # qty; dangling-tolerant on its own) — computed off the SAME raw
+        # rows `_sources_for_replace` resolved from (the target's rows
+        # pre-acceptance, the CO line's own rows once accepted), never
+        # `co_line.sources.all()` directly, since a per_unit claim's
+        # per_unit_qty lives on whichever row currently backs the line.
+        # Whole-line lines keep the already-resolved, dangling-tolerant
+        # sum rather than re-querying via `_sum_sources` (not
+        # dangling-tolerant).
+        if co_line.per_unit:
+            sum_value = EstimateWizardService._sum_per_unit_sources(
+                co_line, sources=_sources_for_replace(co_line)
+            )
+        else:
+            sum_value = _sum_amounts(resolved_sources)
         from apps.jobs.models import Task
         has_task = any(isinstance(i, Task) for i in resolved_sources)
         if not EstimateWizardService._is_in_sync(co_line, sum_value):

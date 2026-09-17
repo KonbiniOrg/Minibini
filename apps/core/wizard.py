@@ -163,6 +163,57 @@ class BaseWizardService:
         return total
 
     @classmethod
+    def _sum_per_unit_sources(cls, line_item, sources=None):
+        """Σ over resolvable source rows of `per_unit_qty × atom-rate` — the
+        per-unit-lines spec §2/§3 reading: NO division by qty (a per_unit
+        line's claimed atoms already describe ONE unit, not the whole-job
+        total). atom-rate is `task.effective_rate()` for a task claim,
+        `sell_price` (quantized to cents) for a material claim. A row is
+        skipped when its own `per_unit_qty` is unset (not yet snapshotted)
+        or its atom is dangling (already deleted out from under the claim —
+        mirrors `_resolve_sources`' dangling tolerance) rather than either
+        raising or contributing a bogus amount.
+
+        `sources`: optional explicit iterable of raw source rows, for a
+        caller whose per-unit claims don't live on `line_item.sources`
+        itself — e.g. a draft/open replace ChangeOrderLineItem, whose
+        claims still sit on the target EstimateLineItem pre-acceptance
+        (see `_sources_for_replace` in apps/api/change_orders/serializers.py).
+        Defaults to `line_item.sources.all()`."""
+        from django.core.exceptions import ObjectDoesNotExist
+        total = Decimal('0.00')
+        task_model = cls._task_model()
+        if sources is None:
+            sources = line_item.sources.all()
+        for src in sources:
+            if src.per_unit_qty is None:
+                continue
+            try:
+                instance = src.resolve()
+            except ObjectDoesNotExist:
+                continue
+            if isinstance(instance, task_model):
+                rate = instance.effective_rate()
+            else:
+                sell_price = getattr(instance, 'sell_price', None)
+                if sell_price is None:
+                    continue
+                rate = sell_price.quantize(Decimal('0.01'))
+            total += src.per_unit_qty * rate
+        return total
+
+    @classmethod
+    def _line_sum(cls, line_item):
+        """Dispatcher for the sum fed into `_is_in_sync`: the per-unit sum
+        when the line is `per_unit`, else the whole-line source sum
+        (today's rule, unchanged). `getattr` (not a direct attribute read)
+        keeps InvoiceLineItem — which carries no `per_unit` field — safely
+        on the base `_sum_sources` path."""
+        if getattr(line_item, 'per_unit', False):
+            return cls._sum_per_unit_sources(line_item)
+        return cls._sum_sources(line_item)
+
+    @classmethod
     def _expected_per_unit(cls, sum_value, qty):
         """The per-unit price the wizard would compute: round(sum/qty, 2)."""
         if not qty:
@@ -171,7 +222,15 @@ class BaseWizardService:
 
     @classmethod
     def _is_in_sync(cls, line_item, sum_value):
-        """In sync iff price == round(sum / qty, 2). Rounding-safe."""
+        """In sync iff price matches `sum_value`.
+
+        A `per_unit` line's claimed atoms already describe ONE unit of
+        qty (per-unit-lines spec §2), so its price is compared directly
+        against the (quantized) sum — NO division by qty. A whole-line
+        (per_unit=False) line keeps today's rule unchanged:
+        price == round(sum / qty, 2), rounding-safe, false for qty=0."""
+        if getattr(line_item, 'per_unit', False):
+            return line_item.price == sum_value.quantize(Decimal('0.01'))
         if not line_item.qty:
             return False
         return line_item.price == cls._expected_per_unit(sum_value, line_item.qty)
@@ -226,17 +285,30 @@ class BaseWizardService:
     @classmethod
     def _resync_in_sync_line_item(cls, line_item):
         """After a source-set change on an in-sync line item, re-derive its
-        units/qty/price. If the sources form a uniform-money task bundle,
-        summarize; otherwise keep qty and recompute the per-unit price.
-        Saves the line item via LineItemService.save_line_item."""
+        price (whole-line: units/qty/price). Saves via
+        LineItemService.save_line_item.
+
+        A `per_unit` line's price is recomputed straight from `_line_sum`
+        (the per-unit Σ, no division) with qty/units left untouched — a
+        per-unit line's price doesn't depend on qty, so the whole-line
+        uniform-money-bundle resummarization (which folds multiple same-
+        scheme tasks' actual quantities into qty) doesn't apply.
+
+        A whole-line (per_unit=False) line keeps today's rule unchanged:
+        if the sources form a uniform-money task bundle, summarize
+        (units/qty/price); otherwise keep qty and recompute price =
+        round(sum/qty, 2)."""
         from apps.core.services import LineItemService
-        instances = [src.resolve() for src in line_item.sources.all()]
-        summary = cls._uniform_money_bundle(instances)
-        if summary is not None:
-            line_item.units, line_item.qty, line_item.price = summary
+        if getattr(line_item, 'per_unit', False):
+            line_item.price = cls._line_sum(line_item).quantize(Decimal('0.01'))
         else:
-            new_sum = cls._sum_sources(line_item)
-            line_item.price = cls._expected_per_unit(new_sum, line_item.qty)
+            instances = [src.resolve() for src in line_item.sources.all()]
+            summary = cls._uniform_money_bundle(instances)
+            if summary is not None:
+                line_item.units, line_item.qty, line_item.price = summary
+            else:
+                new_sum = cls._line_sum(line_item)
+                line_item.price = cls._expected_per_unit(new_sum, line_item.qty)
         LineItemService.save_line_item(line_item)
 
     # ── claim-conflict helper ──────────────────────────────────────────
@@ -342,7 +414,7 @@ class BaseWizardService:
         in-sync line item; preserves an overridden price."""
         cls._validate_draft(getattr(line_item, cls.container_attr))
 
-        old_sum = cls._sum_sources(line_item)
+        old_sum = cls._line_sum(line_item)
         was_in_sync = cls._is_in_sync(line_item, old_sum)
         instances = [cls._resolve_atom(a) for a in atoms]
         for inst in instances:
@@ -380,7 +452,7 @@ class BaseWizardService:
         container = getattr(line_item, cls.container_attr)
         cls._validate_draft(container)
 
-        old_sum = cls._sum_sources(line_item)
+        old_sum = cls._line_sum(line_item)
         was_in_sync = cls._is_in_sync(line_item, old_sum)
 
         with transaction.atomic():

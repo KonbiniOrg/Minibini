@@ -29,9 +29,11 @@ def derive_estimate_backing(line):
     """Classify how an estimate line's price is currently backed. Same
     "derive on every read, never store" style as InvoiceLineItemSerializer's
     module-level `derive_backing` (Task 5), reusing the wizard's own
-    in-sync rule (`BaseWizardService._sum_sources`/`_is_in_sync`) — but the
-    estimate enum is domain-specific: no deposit/agreement concepts, and it
-    splits catalog vs hand-authored vs sourced lines instead.
+    in-sync rule (`BaseWizardService._is_in_sync`, fed the per_unit-aware
+    sum — `EstimateWizardService._line_sum`/`_sum_per_unit_sources` for a
+    per_unit line, else the same whole-line sum as `_sum_sources`) — but
+    the estimate enum is domain-specific: no deposit/agreement concepts,
+    and it splits catalog vs hand-authored vs sourced lines instead.
 
     1. `adjustment_service_id` set -> 'adjustment'.
     2. `service_item_id` or `inventory_item_id` set -> 'from_catalog'. A
@@ -74,10 +76,18 @@ def derive_estimate_backing(line):
 
     resolved = _resolve_sources(line)
     if resolved:
-        sum_value = sum(
-            (EstimateWizardService._atom_computed_amount(i) for i in resolved),
-            Decimal('0.00'),
-        )
+        # per_unit lines are judged against the per-unit Σ (no division by
+        # qty — `_line_sum` dispatches to `_sum_per_unit_sources`, itself
+        # dangling-tolerant). Whole-line lines keep the pre-resolved,
+        # dangling-tolerant sum computed above rather than re-querying via
+        # `_sum_sources` (which does not tolerate a dangling source row).
+        if line.per_unit:
+            sum_value = EstimateWizardService._line_sum(line)
+        else:
+            sum_value = sum(
+                (EstimateWizardService._atom_computed_amount(i) for i in resolved),
+                Decimal('0.00'),
+            )
         from apps.jobs.models import Task
         has_task = any(isinstance(i, Task) for i in resolved)
         if not EstimateWizardService._is_in_sync(line, sum_value):
@@ -185,12 +195,13 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail', 'service_item_detail',
             'sources', 'backing', 'backing_total', 'linked_deliverables',
-            'work_declined', 'needs_work_decision',
+            'work_declined', 'needs_work_decision', 'per_unit',
         ]
         # is_material is server-derived from the accounting category
         # (EstimateService._derive_is_material, RM 2026-08-11) — never
-        # client-writable.
-        read_only_fields = ['line_item_id', 'is_material']
+        # client-writable. per_unit is read-only for now (per-unit-lines
+        # spec Task 2) — setting it is a Task 3+ (bundle-modal) concern.
+        read_only_fields = ['line_item_id', 'is_material', 'per_unit']
 
     def get_linked_deliverables(self, obj):
         # Deliverables minted from this line via Make Deliverable (the
