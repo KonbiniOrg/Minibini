@@ -300,6 +300,7 @@ class EstimateService:
                 adjustment_percent=li.adjustment_percent,
                 service_item=li.service_item,
                 is_material=li.is_material,
+                per_unit=li.per_unit,
             )
             # Copy M2M adjustment target categories (empty set is fine — means "all lines")
             cats = li.adjustment_target_categories.all()

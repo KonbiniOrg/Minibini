@@ -612,6 +612,14 @@ class EstimateLineItem(BaseLineItem):
             'accepted; reversible (false = unanswered again).'
         ),
     )
+    per_unit = models.BooleanField(
+        default=False,
+        help_text=(
+            'This line\'s claimed atoms describe ONE unit of qty (per-unit-lines '
+            'spec §2), not the whole-job total. Atoms themselves always store '
+            'whole-job totals; the per-unit snapshot lives on claim source rows.'
+        ),
+    )
 
     class Meta:
         db_table = 'est_li'
@@ -647,6 +655,14 @@ class EstimateLineItemSource(models.Model):
     )
     source_type = models.CharField(max_length=20, choices=SOURCE_TYPE_CHOICES)
     source_pk = models.PositiveIntegerField()
+    # Per-unit agreement snapshot (per-unit-lines spec §2/§3): populated only
+    # for claims on per_unit lines; atoms themselves always store totals.
+    per_unit_qty = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+    )
+    # Per-unit agreement snapshot (per-unit-lines spec §2/§3): populated only
+    # for claims on per_unit lines; atoms themselves always store totals.
+    per_unit_worker_time = models.DurationField(null=True, blank=True)
 
     class Meta:
         db_table = 'estimate_line_item_sources'
@@ -728,6 +744,13 @@ class ChangeOrderLineItem(BaseLineItem):
     adjustment_target_categories = models.ManyToManyField(
         'core.AccountingCategory', blank=True, related_name='+',
         help_text='Categories the adjustment applies to; empty = all non-adjustment lines.',
+    )
+    per_unit = models.BooleanField(
+        default=False,
+        help_text=(
+            'This line\'s claimed atoms describe ONE unit of qty (per-unit-lines '
+            'spec §2), not the whole-job total. Mirrors EstimateLineItem.per_unit.'
+        ),
     )
 
     class Meta:
@@ -819,6 +842,14 @@ class ChangeOrderLineItemSource(models.Model):
     )
     source_type = models.CharField(max_length=20, choices=SOURCE_TYPE_CHOICES)
     source_pk = models.PositiveIntegerField()
+    # Per-unit agreement snapshot (per-unit-lines spec §2/§3): populated only
+    # for claims on per_unit lines; atoms themselves always store totals.
+    per_unit_qty = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+    )
+    # Per-unit agreement snapshot (per-unit-lines spec §2/§3): populated only
+    # for claims on per_unit lines; atoms themselves always store totals.
+    per_unit_worker_time = models.DurationField(null=True, blank=True)
 
     class Meta:
         db_table = 'co_li_sources'
