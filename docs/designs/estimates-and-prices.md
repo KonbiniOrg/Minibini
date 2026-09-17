@@ -1745,7 +1745,7 @@ lives entirely on the line and its claims.
 |---|---|---|
 | `per_unit` (bool, default False) | `EstimateLineItem`, `ChangeOrderLineItem` | This line's claimed atoms are read as one-unit. Set once, server-derived from the authoring gesture — never a bare client toggle after the fact (see "ask-once", below). |
 | `per_unit_qty` (nullable Decimal(10,2)) | `EstimateLineItemSource`, `ChangeOrderLineItemSource` | The per-unit value snapshotted onto this claim at the moment it was stamped — `None` on every claim belonging to a non-`per_unit` line. |
-| `per_unit_worker_time` (nullable Duration) | same two source tables | The per-unit schedule-time snapshot, task claims only, only when the biller actually entered one (a task that already carried `est_worker_time` before the claim is multiplied automatically instead — see "the two stamping moments" below). |
+| `per_unit_worker_time` (nullable Duration) | same two source tables | The per-unit schedule-time snapshot, task claims only. Bundle time: unconditional — always the task's pre-stamp `est_worker_time`, whether pre-existing or just entered via the modal. Mint time: whatever per-unit duration the biller submitted, absent if none — see "the two stamping moments" below. |
 
 **Where `per_unit` may be set.** Only by the two authoring gestures below,
 both of which build a line with **no catalog identity** (no

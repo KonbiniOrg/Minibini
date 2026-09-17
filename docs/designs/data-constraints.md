@@ -1129,11 +1129,17 @@ Polymorphic row joining a line item to a Job atom (Task or Material).
   `per_unit_qty × line.qty`. `None` on every claim whose line is not
   `per_unit`; never populated any other way.
 - **per_unit_worker_time** (nullable Duration, migration `0049`): the
-  per-unit schedule-time snapshot, task claims only, populated only when
-  the biller entered one at claim time (a task that already carried
-  `est_worker_time` before the claim is multiplied automatically
-  instead and gets no snapshot here). Always `None` for a material
-  claim and for any claim on a non-`per_unit` line.
+  per-unit schedule-time snapshot, task claims only. On the **bundle**
+  path (`_stamp_atom_per_unit`), the snapshot is **unconditional**: it's
+  always the task's pre-stamp `est_worker_time` — whether that value was
+  already sitting on the task or was just supplied via the modal's
+  `per_unit_worker_time` input — never "no snapshot" (pinned by
+  `test_per_unit_bundle_stamps_task_and_material`); it's `None` only when
+  the task genuinely had no `est_worker_time` at bundle time. On the
+  **mint** path (`MintService.claim_atom_for_line`), the snapshot is
+  whatever per-unit duration the caller submitted — absent (`None`) if
+  none was submitted. Always `None` for a material claim and for any
+  claim on a non-`per_unit` line.
 - Atoms themselves (`Task.est_qty`/`est_worker_time`,
   `Material.quantity`) **always store the whole-job total** — a
   per-unit reading is a claim-row-only interpretation; nothing on the
