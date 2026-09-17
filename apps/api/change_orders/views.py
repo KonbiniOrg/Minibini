@@ -164,7 +164,8 @@ class ChangeOrderViewSet(
         try:
             line_item = ChangeOrderWizardService.add_atoms_to_new_line_item(
                 co, atoms, overrides=overrides,
-                per_unit=bool(request.data.get('per_unit')))
+                per_unit=bool(request.data.get('per_unit')),
+                split_materials=bool(request.data.get('split_materials')))
         except ChangeOrderClaimConflict as e:
             return Response(
                 {'detail': 'Some of these atoms are already claimed by another '
@@ -173,6 +174,15 @@ class ChangeOrderViewSet(
                 status=status.HTTP_409_CONFLICT,
             )
         ChangeOrderService.recompute_adjustment_replaces(co)
+        materials_line_item = getattr(line_item, 'materials_line_item', None)
+        if materials_line_item is not None:
+            return Response(
+                {
+                    'line_item': ChangeOrderLineItemSerializer(line_item).data,
+                    'materials_line_item': ChangeOrderLineItemSerializer(materials_line_item).data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
         serializer = ChangeOrderLineItemSerializer(line_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 

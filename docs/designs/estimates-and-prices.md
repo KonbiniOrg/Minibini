@@ -2200,6 +2200,60 @@ wiring below.
   to `_sum_per_unit_sources`. Real append semantics for a per-unit line
   are deferred to the modal-restructure phase (spec §10).
 
+#### 12.1a-iii Split materials onto their own line (per-unit-lines spec §5.3, Task 8)
+
+A **"Split materials onto their own line"** checkbox appears only in
+one-unit mode, and only when the selection has **both** ≥1 task and ≥1
+material (`hasTaskAndMaterial` — hidden the instant either kind is
+absent, or interpretation flips to whole-line). Checking it re-seeds
+`price` down to the **task-only** per-unit sum (not the full selection's
+total) — the controller ruling for Task 8: both lines this checkbox will
+spawn must be born in sync, and the labor line's price has to be the
+task claims' own sum for that to hold. Unchecking restores the ordinary
+one-unit seed (full total). Once checked and qty is valid, the modal
+also shows the (non-editable) materials line's derived price and a
+combined-total readout so the user sees the whole picture before
+confirming.
+
+**Submit:** adds `split_materials: true` to the POST body (omitted
+entirely when unchecked — same "don't send what wasn't touched" style as
+`per_unit_worker_time`).
+
+**Server (`add_atoms_to_new_line_item(..., split_materials=True)`,
+`apps/core/wizard.py`):** valid only with `per_unit=True` (plain-sentence
+`ValidationError` otherwise) and only when the atom selection contains
+at least one task AND one material (same otherwise). On success,
+atomically mints **two** per-unit lines instead of one, via a shared
+`_build_per_unit_line` helper (stamp-and-snapshot factored out of the
+single-line path so it can run twice):
+
+- **Labor line** — claims only the task atoms; description/qty/units/
+  price come straight from `overrides`, exactly like the single-line
+  per_unit path (WYSIWYG — the server does not recompute or validate the
+  submitted price against the task claims; a mismatch is a legitimate
+  "edited" split, same kind-preserving drift as any other per-unit line).
+- **Materials line** — claims only the material atoms; description is
+  `overrides['description'] + ' — materials'`, same qty/units as the
+  labor line, price = Σ the material atoms' *current* (pre-stamp,
+  per-unit) computed amounts — read before either line's atoms are
+  stamped to whole-job totals.
+
+Both lines save through the normal `line_number` sequencing (labor
+first, so it gets the lower number) and each atom is stamped/snapshotted
+exactly once (`_stamp_atom_per_unit` + a claim row, task atoms only on
+the labor line, material atoms only on the materials line — the two
+sets partition the selection, never overlap). **No structural link is
+stored between the two lines** — no line-group object, deliberately
+(spec §5.3: that's parent-task complexity sneaking back in via the
+document). The service returns the labor line with the materials line
+riding along as a transient `.materials_line_item` attribute (not a
+model field); the API layer
+(`apps/api/estimates/views.py`/`apps/api/change_orders/views.py`
+`line_items_from_atoms`) checks for that attribute and, only when
+present, wraps the response as `{'line_item': ..., 'materials_line_item':
+...}` instead of the ordinary flat serializer payload — an ordinary
+(non-split) call's response shape is unchanged.
+
 ### 12.2 Backing chips (design doc §9.2 vocabulary)
 
 The estimate has no actuals yet, so its `backing` enum and chip labels
@@ -2811,7 +2865,17 @@ Row kinds, per `compose_amended_agreement`'s row `kind`:
   and the inherited-preview `AtomChildRow`s (each labelled "inherited
   from line {n}" — the claims that backed the original line, per
   `derive_co_line_backing`); actions **Edit** / **Undo** (DELETE the CO
-  line, reverting to the `agreement` row).
+  line, reverting to the `agreement` row). When the target line is
+  `per_unit`, the row also carries a **sibling reminder** (per-unit-lines
+  spec §9, Task 8 — reminder only, no enforcement, no structural link):
+  the serializer's `sibling_per_unit_lines` lists the target's own
+  estimate's OTHER `per_unit` lines sharing the target's (pre-CO) qty
+  (`apps.api.change_orders.serializers._sibling_per_unit_lines` — `[]`
+  when the target isn't per_unit or has no matching siblings), and
+  `COEditView` renders one info line per sibling beneath the atom rows:
+  `"Also qty {qty}: {description} — update it too?"`. Nothing is
+  clickable; it's purely a nudge to also replace the sibling line if the
+  qty change should apply there too.
 - `removed` — the struck original alone (no nested atoms — its freed
   claims reappear in the Uncovered-work pool, see below); action
   **Undo**.

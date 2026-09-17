@@ -25,6 +25,17 @@
   // - whole-line (perUnit=false): exactly today's UI — keep-total ON by
   //   default, editing qty re-derives price = total / qty.
   //
+  // "Split materials onto their own line" (per-unit-lines spec §5.3, one-
+  // unit mode only, ≥1 task AND ≥1 material required): emits TWO sibling
+  // per-unit lines from one gesture instead of one bundled line — a labor
+  // line claiming the task atoms and a materials line claiming the
+  // material atoms, both the same qty. The controller ruling (Task 8) is
+  // that the labor line's price must be the TASK-ONLY per-unit sum (so
+  // both lines are born in sync) — checking the box re-seeds price down
+  // to that sum; unchecking it re-seeds back to the full per-unit total.
+  // The materials line's own (derived, non-editable here) price and the
+  // combined total display alongside so the user sees the whole picture.
+  //
   // Keep-the-total gesture (whole-line mode only, ON by default): while
   // `keepTotal` is checked, editing qty re-derives price = total ÷ qty
   // (rounded to cents, same as fmtMoney's display precision) so the line's
@@ -67,6 +78,7 @@
   let price = $state('');
   let keepTotal = $state(true);
   let perUnit = $state(true); // one-unit is the modal default (spec §5)
+  let splitMaterials = $state(false); // per-unit-lines spec §5.3 (Task 8)
   let perUnitWorkerTimes = $state({}); // atomKey -> raw user input string
   let busy = $state(false);
   let formError = $state('');
@@ -78,6 +90,15 @@
 
   let total = $derived(
     atoms.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+  );
+  let taskTotal = $derived(
+    atoms.filter((a) => a.type === 'task').reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+  );
+  let materialTotal = $derived(
+    atoms.filter((a) => a.type === 'material').reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+  );
+  let hasTaskAndMaterial = $derived(
+    atoms.some((a) => a.type === 'task') && atoms.some((a) => a.type === 'material')
   );
   let qtyNum = $derived(Number(qty) || 0);
   let qtyValid = $derived(qty !== '' && Number.isFinite(Number(qty)) && Number(qty) > 0);
@@ -161,11 +182,21 @@
   function setInterpretation(newPerUnit) {
     if (newPerUnit === perUnit) return;
     perUnit = newPerUnit;
+    splitMaterials = false; // only meaningful in one-unit mode
     if (perUnit) {
       seedPerUnit();
     } else {
       seedWholeLine();
     }
+  }
+
+  // Checking the box re-seeds price down to the TASK-ONLY per-unit sum
+  // (controller ruling, Task 8) — so the labor line and the materials
+  // line it will spawn are born in sync. Unchecking restores the
+  // ordinary one-unit seed (the full selection's summed amount).
+  function onSplitMaterialsChange(checked) {
+    splitMaterials = checked;
+    price = (checked ? taskTotal : total).toFixed(2);
   }
 
   $effect(() => {
@@ -174,6 +205,7 @@
       fieldErrs = {};
       perUnitWorkerTimes = {};
       perUnit = true;
+      splitMaterials = false;
       seedDescriptionAndUnits();
       seedPerUnit();
     }
@@ -271,11 +303,15 @@
         }
         return entry;
       });
-      const newLine = await api.post(`${apiBase}/line-items-from-atoms/`, {
+      const body = {
         atoms: atomsPayload,
         overrides: { description, qty, units, price },
         per_unit: perUnit,
-      });
+      };
+      if (perUnit && splitMaterials) {
+        body.split_materials = true;
+      }
+      const newLine = await api.post(`${apiBase}/line-items-from-atoms/`, body);
       onCreated(newLine);
     } catch (e) {
       if (e?.status === 409) {
@@ -346,6 +382,19 @@
         </label>
       </fieldset>
 
+      {#if perUnit && hasTaskAndMaterial}
+        <p>
+          <label>
+            <input
+              type="checkbox"
+              checked={splitMaterials}
+              onchange={(e) => onSplitMaterialsChange(e.target.checked)}
+            >
+            Split materials onto their own line
+          </label>
+        </p>
+      {/if}
+
       <p>
         <label><strong>Description</strong><br>
           <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
@@ -382,6 +431,17 @@
       {#if perUnit}
         {#if lineTotal !== null}
           <p data-testid="bundle-line-total">Line total: {fmtMoney(lineTotal)}</p>
+        {/if}
+        {#if splitMaterials}
+          <p data-testid="bundle-split-materials-price">
+            Materials line price: {fmtMoney(materialTotal)}
+            {#if qtyValid}<br><small>materials line total: {fmtMoney(qtyNum * materialTotal)}</small>{/if}
+          </p>
+          {#if qtyValid}
+            <p data-testid="bundle-split-combined-total">
+              Combined total (both lines): {fmtMoney(qtyNum * (priceNum + materialTotal))}
+            </p>
+          {/if}
         {/if}
         {#if qtyValid}
           <table class="data-table bundle-preview" data-testid="bundle-preview">

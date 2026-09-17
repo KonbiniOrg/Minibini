@@ -422,6 +422,13 @@
             onDrift={() => openDriftModal(atomFromSource(source), row.line.qty)}
           />
         {/each}
+        {#each row.sibling_per_unit_lines || [] as sibling (sibling.estimate_line_id)}
+          <tr class="co-sibling-reminder">
+            <td colspan={5 + (canEdit ? 1 : 0)}>
+              <small>Also qty {sibling.qty}: {sibling.description} — update it too?</small>
+            </td>
+          </tr>
+        {/each}
       {:else}
         <!-- 'added' -->
         <tr class="co-authored">

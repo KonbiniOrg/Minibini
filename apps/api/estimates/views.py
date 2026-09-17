@@ -221,12 +221,22 @@ class EstimateViewSet(
         try:
             line_item = EstimateWizardService.add_atoms_to_new_line_item(
                 estimate, atoms, overrides=overrides,
-                per_unit=bool(request.data.get('per_unit')))
+                per_unit=bool(request.data.get('per_unit')),
+                split_materials=bool(request.data.get('split_materials')))
         except EstimateClaimConflict as e:
             return Response(
                 {'detail': 'Some of these atoms are already claimed by another estimate.',
                  'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
                 status=status.HTTP_409_CONFLICT,
+            )
+        materials_line_item = getattr(line_item, 'materials_line_item', None)
+        if materials_line_item is not None:
+            return Response(
+                {
+                    'line_item': EstimateLineItemSerializer(line_item).data,
+                    'materials_line_item': EstimateLineItemSerializer(materials_line_item).data,
+                },
+                status=status.HTTP_201_CREATED,
             )
         serializer = EstimateLineItemSerializer(line_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)

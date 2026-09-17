@@ -157,6 +157,42 @@ describe('COEditView row kinds', () => {
   });
 });
 
+describe('COEditView per-unit sibling reminder (per-unit-lines spec §9)', () => {
+  it('renders one info line per sibling on a replaced row', async () => {
+    const { findByText } = render(COEditView, {
+      props: baseProps({
+        amended: amendedPayload([{
+          ...REPLACED_ROW,
+          sibling_per_unit_lines: [
+            { estimate_line_id: 8, description: 'Materials for dining chairs', qty: '10.00' },
+          ],
+        }]),
+      }),
+    });
+    expect(await findByText(
+      /Also qty 10\.00: Materials for dining chairs — update it too\?/
+    )).toBeInTheDocument();
+  });
+
+  it('renders nothing extra when there are no siblings', async () => {
+    const { findByText, queryByText } = render(COEditView, {
+      props: baseProps({
+        amended: amendedPayload([{ ...REPLACED_ROW, sibling_per_unit_lines: [] }]),
+      }),
+    });
+    await findByText('Widget C v2');
+    expect(queryByText(/update it too/)).not.toBeInTheDocument();
+  });
+
+  it('tolerates the key being absent (non-per-unit target)', async () => {
+    const { findByText, queryByText } = render(COEditView, {
+      props: baseProps({ amended: amendedPayload([REPLACED_ROW]) }), // no sibling_per_unit_lines key
+    });
+    await findByText('Widget C v2');
+    expect(queryByText(/update it too/)).not.toBeInTheDocument();
+  });
+});
+
 describe('COEditView billed_on gating', () => {
   it('disables both gesture buttons with a "billed on" title and caption when billed_on is set', async () => {
     const { findByText, getByRole } = render(COEditView, {

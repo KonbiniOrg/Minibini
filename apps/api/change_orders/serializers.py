@@ -152,6 +152,35 @@ def derive_co_line_backing(co_line, resolved_sources=None):
     return 'hand'
 
 
+def _sibling_per_unit_lines(target):
+    """Per-unit-lines spec §9 (reminder only, no enforcement): the OTHER
+    per-unit lines on `target`'s own estimate — the source document a
+    replace CO line amends — sharing `target`'s (pre-CO) qty. `target` is
+    the EstimateLineItem a replace CO line targets; returns `[]` when
+    `target` isn't itself per_unit (a non-per-unit replace has no per-unit
+    agreement to remind about) or has no matching siblings.
+
+    No structural link is stored between siblings — this is a live query,
+    recomputed on every read, exactly the loose reminder the spec calls
+    for (§9/§12 Q4)."""
+    if not target.per_unit:
+        return []
+    siblings = (
+        EstimateLineItem.objects
+        .filter(estimate_id=target.estimate_id, per_unit=True, qty=target.qty)
+        .exclude(pk=target.pk)
+        .order_by('line_number')
+    )
+    return [
+        {
+            'estimate_line_id': s.pk,
+            'description': s.description,
+            'qty': str(s.qty),
+        }
+        for s in siblings
+    ]
+
+
 def _replace_backing_total(resolved_sources):
     """backing_total for a replace row from an already-resolved source list
     (see derive_co_line_backing's resolved_sources param) — never re-queries."""
@@ -239,6 +268,9 @@ def _serialize_amended_row(row, co_lines_by_id, estimate_lines_by_id):
             'sources': _serialize_sources(
                 raw_sources,
                 inherited_from_line=(target.line_number if target else None),
+            ),
+            'sibling_per_unit_lines': (
+                _sibling_per_unit_lines(target) if target is not None else []
             ),
         }
 

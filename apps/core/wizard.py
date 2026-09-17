@@ -503,9 +503,43 @@ class BaseWizardService:
             instance.save()
         return instance
 
+    # ── per-unit split-materials (per-unit-lines spec §5.3 / Task 8) ────
+    @classmethod
+    def _build_per_unit_line(cls, container, pairs, *, description, qty, units, price):
+        """Create ONE `per_unit=True` line item on `container` from `pairs`
+        (a list of already-resolved `(atom_instance, atom_ref)` tuples),
+        stamping each atom to the whole-job total for `qty` and snapshotting
+        its claim row (`_stamp_atom_per_unit` + `_create_source`) — the same
+        per-atom work `add_atoms_to_new_line_item`'s single-line per_unit
+        path does, factored out so the split-materials path can run it
+        twice (labor line, materials line) inside one `transaction.atomic()`.
+        The accounting category is derived from `pairs`' own atoms only
+        (never the full mixed selection), matching a normal single-kind
+        bundle. Caller wraps in `transaction.atomic()`/catches
+        `IntegrityError` — this raises neither itself."""
+        from apps.core.services import LineItemService
+        categories = {cls._atom_category(inst) for inst, _ in pairs}
+        category = categories.pop() if len(categories) == 1 else None
+        line = cls._line_item_model()(
+            **{cls.container_attr: container},
+            description=description, qty=qty, units=units, price=price,
+            accounting_category=cls._resolve_line_category(category),
+            **cls._extra_line_kwargs(),
+            per_unit=True,
+        )
+        LineItemService.save_line_item(line)
+        for instance, atom_ref in pairs:
+            pu_qty, pu_worker_time = cls._stamp_atom_per_unit(instance, atom_ref, qty)
+            cls._create_source(
+                line, instance,
+                per_unit_qty=pu_qty, per_unit_worker_time=pu_worker_time,
+            )
+        return line
+
     # ── public: line items from atoms ──────────────────────────────────
     @classmethod
-    def add_atoms_to_new_line_item(cls, container, atoms, *, overrides=None, per_unit=False):
+    def add_atoms_to_new_line_item(cls, container, atoms, *, overrides=None,
+                                    per_unit=False, split_materials=False):
         """Create a new line item on `container` with the given atoms as
         sources. `atoms` is a list of {'type': str, 'id': N} dicts; a task
         atom may also carry `'per_unit_worker_time'` (ISO-8601 duration
@@ -524,11 +558,31 @@ class BaseWizardService:
         whole-job total for that qty (see `_stamp_atom_per_unit`); the new
         line is saved with `per_unit=True`. Price/qty/units/description
         still come from `overrides` (WYSIWYG — the modal always sends all
-        four) regardless of per_unit."""
+        four) regardless of per_unit.
+
+        split_materials: only valid with `per_unit=True` (plain-sentence
+        ValidationError otherwise); requires the selection to contain at
+        least one task AND at least one material (same otherwise). When
+        True, atomically mints TWO per-unit lines instead of one — a labor
+        line claiming only the task atoms (overrides' description/qty/
+        units/price apply to it exactly as the single-line per_unit path)
+        and a materials line claiming only the material atoms
+        (description = overrides['description'] + ' — materials', same
+        qty/units as the labor line, price = Σ the material atoms' CURRENT
+        — i.e. pre-stamp, per-unit — computed amounts). Returns the labor
+        line, with the materials line attached as `.materials_line_item`
+        (a transient attribute, not a model field) for the caller to
+        surface. No structural link is stored between the two lines (spec
+        §5.3/§9 — the CO sibling reminder is the net)."""
         cls._validate_draft(container)
 
         if per_unit and not cls.allows_per_unit:
             raise ValidationError('This document does not support per-unit lines.')
+
+        if split_materials and not per_unit:
+            raise ValidationError(
+                'Splitting materials onto their own line requires per-unit lines.'
+            )
 
         if overrides:
             unknown = set(overrides) - {'description', 'qty', 'units', 'price'}
@@ -557,6 +611,52 @@ class BaseWizardService:
         instances = [cls._resolve_atom(a) for a in atoms]
         for inst in instances:
             cls._assert_atom_billable(inst)
+
+        if split_materials:
+            task_model = cls._task_model()
+            material_model = cls._material_model()
+            task_pairs = [
+                (inst, ref) for inst, ref in zip(instances, atoms)
+                if isinstance(inst, task_model)
+            ]
+            material_pairs = [
+                (inst, ref) for inst, ref in zip(instances, atoms)
+                if isinstance(inst, material_model)
+            ]
+            if not task_pairs or not material_pairs:
+                raise ValidationError(
+                    'Splitting materials onto their own line requires at '
+                    'least one task and one material.'
+                )
+            # The materials line's price is the Σ of the material atoms'
+            # CURRENT computed amounts — read BEFORE _build_per_unit_line
+            # stamps them to whole-job totals, so this sum is exactly the
+            # per-unit reading (spec §4's per-unit-amount formula, quantity
+            # not yet multiplied by qty).
+            materials_price = sum(
+                (cls._atom_computed_amount(inst) for inst, _ in material_pairs),
+                Decimal('0.00'),
+            ).quantize(Decimal('0.01'))
+
+            try:
+                with transaction.atomic():
+                    labor_line = cls._build_per_unit_line(
+                        container, task_pairs,
+                        description=overrides['description'], qty=overrides['qty'],
+                        units=overrides['units'], price=overrides['price'],
+                    )
+                    materials_line = cls._build_per_unit_line(
+                        container, material_pairs,
+                        description=f"{overrides['description']} — materials",
+                        qty=overrides['qty'], units=overrides['units'],
+                        price=materials_price,
+                    )
+            except IntegrityError:
+                raise cls._claim_conflict(atoms)
+
+            labor_line.materials_line_item = materials_line
+            return labor_line
+
         total_price = sum(
             (cls._atom_computed_amount(i) for i in instances),
             Decimal('0.00'),

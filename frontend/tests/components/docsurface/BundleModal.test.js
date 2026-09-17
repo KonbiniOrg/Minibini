@@ -487,6 +487,115 @@ describe('BundleModal', () => {
     expect(createBtn).toBeDisabled();
   });
 
+  describe('split materials onto their own line (per-unit-lines spec §5.3)', () => {
+    it('is visible in one-unit mode when the selection has ≥1 task and ≥1 material', async () => {
+      const { findByRole, findByLabelText } = render(BundleModal, {
+        props: baseProps({ atoms: MULTI_ATOMS }),
+      });
+      await findByRole('dialog');
+      expect(await findByLabelText(/split materials onto their own line/i)).toBeInTheDocument();
+    });
+
+    it('is hidden when the selection has no material', async () => {
+      const { findByRole, queryByLabelText } = render(BundleModal, {
+        props: baseProps({ atoms: SINGLE_ATOM }), // task only
+      });
+      await findByRole('dialog');
+      expect(queryByLabelText(/split materials onto their own line/i)).not.toBeInTheDocument();
+    });
+
+    it('is hidden when the selection has no task', async () => {
+      const { findByRole, queryByLabelText } = render(BundleModal, {
+        props: baseProps({ atoms: [MATERIAL_ATOM] }),
+      });
+      await findByRole('dialog');
+      expect(queryByLabelText(/split materials onto their own line/i)).not.toBeInTheDocument();
+    });
+
+    it('is hidden in whole-line mode, even with a mixed task+material selection', async () => {
+      const { findByRole, queryByLabelText } = render(BundleModal, {
+        props: baseProps({ atoms: MULTI_ATOMS }),
+      });
+      const dialog = await findByRole('dialog');
+      await selectWholeLine(dialog);
+      expect(queryByLabelText(/split materials onto their own line/i)).not.toBeInTheDocument();
+    });
+
+    it('checking it re-seeds price to the TASK-ONLY per-unit sum, not the full total', async () => {
+      const { findByRole, findByLabelText } = render(BundleModal, {
+        props: baseProps({ atoms: MULTI_ATOMS }), // task 60 + material 15 = 75 total
+      });
+      const dialog = await findByRole('dialog');
+      // Default one-unit seed: price = full total (75.00).
+      expect(await findByLabelText(/Price/)).toHaveValue(75);
+      await fireEvent.click(within(dialog).getByLabelText(/split materials onto their own line/i));
+      expect(await findByLabelText(/Price/)).toHaveValue(60); // task-only sum
+    });
+
+    it('unchecking it restores price to the full per-unit total', async () => {
+      const { findByRole, findByLabelText } = render(BundleModal, {
+        props: baseProps({ atoms: MULTI_ATOMS }),
+      });
+      const dialog = await findByRole('dialog');
+      const checkbox = within(dialog).getByLabelText(/split materials onto their own line/i);
+      await fireEvent.click(checkbox);
+      expect(await findByLabelText(/Price/)).toHaveValue(60);
+      await fireEvent.click(checkbox);
+      expect(await findByLabelText(/Price/)).toHaveValue(75);
+    });
+
+    it('unchecked is reset back to false whenever the modal is reopened', async () => {
+      const { findByRole, findByLabelText, rerender } = render(BundleModal, {
+        props: baseProps({ atoms: MULTI_ATOMS, open: false }),
+      });
+      rerender(baseProps({ atoms: MULTI_ATOMS, open: true }));
+      const dialog = await findByRole('dialog');
+      const checkbox = await findByLabelText(/split materials onto their own line/i);
+      expect(checkbox).not.toBeChecked();
+    });
+
+    it('shows the materials line derived price and a combined total once qty is valid', async () => {
+      const { findByRole, findByLabelText, findByTestId } = render(BundleModal, {
+        props: baseProps({ atoms: MULTI_ATOMS }),
+      });
+      const dialog = await findByRole('dialog');
+      await fireEvent.click(within(dialog).getByLabelText(/split materials onto their own line/i));
+      await fireEvent.input(await findByLabelText(/Quantity/), { target: { value: '10' } });
+      expect((await findByTestId('bundle-split-materials-price')).textContent).toContain('15.00');
+      // combined: qty 10 * (labor 60 + materials 15) = 750.00
+      expect((await findByTestId('bundle-split-combined-total')).textContent).toContain('750.00');
+    });
+
+    it('POSTs split_materials:true alongside per_unit:true when checked', async () => {
+      const { findByRole, findByLabelText } = render(BundleModal, {
+        props: baseProps({ atoms: MULTI_ATOMS }),
+      });
+      const dialog = await findByRole('dialog');
+      await fireEvent.click(within(dialog).getByLabelText(/split materials onto their own line/i));
+      await fireEvent.input(await findByLabelText(/Quantity/), { target: { value: '10' } });
+      await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
+
+      expect(api.post).toHaveBeenCalledWith('/api/estimates/7/line-items-from-atoms/', {
+        atoms: [{ type: 'task', id: 41 }, { type: 'material', id: 9 }],
+        overrides: { description: '', qty: '10', units: 'none', price: '60.00' },
+        per_unit: true,
+        split_materials: true,
+      });
+    });
+
+    it('does not send split_materials when unchecked', async () => {
+      const { findByRole, findByLabelText } = render(BundleModal, {
+        props: baseProps({ atoms: MULTI_ATOMS }),
+      });
+      const dialog = await findByRole('dialog');
+      await fireEvent.input(await findByLabelText(/Quantity/), { target: { value: '10' } });
+      await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
+
+      const [, body] = api.post.mock.calls[0];
+      expect(body.split_materials).toBeUndefined();
+    });
+  });
+
   it('calls onClose when Cancel is clicked', async () => {
     const onClose = vi.fn();
     const { findByRole, getByRole } = render(BundleModal, { props: baseProps({ onClose }) });
