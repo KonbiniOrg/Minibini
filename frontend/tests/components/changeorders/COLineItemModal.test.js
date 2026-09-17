@@ -33,8 +33,24 @@ describe('COLineItemModal', () => {
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.post).toHaveBeenCalledWith('/api/change-orders/3/line-items/', {
-      action: 'add', target_line_item: null, description: 'New line', qty: 2, units: 'none', price: 50,
-      accounting_category: 7,
+      action: 'add', target_line_item: null, description: 'New line', is_comment: false,
+      qty: 2, units: 'none', price: 50, accounting_category: 7,
+    });
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('creates a comment "add" line without requiring an accounting category', async () => {
+    const onSaved = vi.fn();
+    const { getByLabelText, getByRole } = render(COLineItemModal, {
+      props: { open: true, mode: 'create', coId: 3, categories: cats, onSaved },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'FYI: customer note' } });
+    await fireEvent.click(getByLabelText(/Comment line/));
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(api.post).toHaveBeenCalledWith('/api/change-orders/3/line-items/', {
+      action: 'add', target_line_item: null, description: 'FYI: customer note', is_comment: true,
+      qty: '0', units: 'none', price: '0', accounting_category: null,
     });
     expect(onSaved).toHaveBeenCalled();
   });

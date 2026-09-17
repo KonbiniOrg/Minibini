@@ -418,7 +418,7 @@ class InvoiceEmailService:
         """
         missing = list(
             invoice.invoicelineitem_set
-            .filter(accounting_category_id__isnull=True)
+            .filter(accounting_category_id__isnull=True, is_comment=False)
             .values_list('line_number', flat=True)
             .order_by('line_number')
         )

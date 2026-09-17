@@ -76,6 +76,19 @@ describe('EstimateAddLineForm', () => {
       expect.objectContaining({ is_material: true }));
   });
 
+  it('comment choice posts is_comment without requiring an accounting category', async () => {
+    const choice = { type: 'freeform', typed: 'See attached spec sheet', isComment: true };
+    const { getByRole, queryByLabelText } = render(EstimateAddLineForm, {
+      props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    expect(queryByLabelText(/accounting category/i)).toBeNull();
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/estimates/42/line-items/', {
+      description: 'See attached spec sheet', is_comment: true,
+      qty: '0', units: 'none', price: '0', accounting_category: null,
+    });
+  });
+
   it('shows the base unit next to quantity for a service pick', () => {
     const choice = { type: 'service', serviceItem: {
       template_id: 11, template_name: 'CNC Routing', rate_scheme_detail: { unit_label: 'hr' } } };

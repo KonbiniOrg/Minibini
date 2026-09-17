@@ -16,8 +16,9 @@ directly), so there is nothing to copy from a worksheet. Instead, acceptance:
   2. Earmarks the job's inventoried materials.
 
 Atom-backed lines (those with an EstimateLineItemSource) already have their
-Tasks/Materials on the job — nothing to convert. Adjustment lines stay
-document-only (they recompute against the live lines and never become Fees).
+Tasks/Materials on the job — nothing to convert. Adjustment lines and comment
+lines (is_comment=True — informational, no charge) stay document-only; neither
+ever becomes a Fee.
 """
 from decimal import Decimal
 from django.core.exceptions import ValidationError
@@ -53,6 +54,8 @@ class EstimateAcceptanceService:
             if li.sources.exists():              # atom-backed → already on the job
                 continue
             if li.adjustment_service_id is not None:  # percentage adjustments stay document-only
+                continue
+            if li.is_comment:  # informational rows stay document-only
                 continue
 
             if li.service_item_id is not None:

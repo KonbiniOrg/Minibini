@@ -14,12 +14,20 @@
   let { open = false, onChoose = null, onclose = null, taskSurface = false } = $props();
   let pickerQuery = $state('');
   let isMaterial = $state(false); // freeform: unchecked → Fee, checked → Material
+  let isComment = $state(false); // freeform: informational-only, no charge — exclusive with isMaterial
 
   // Start fresh on every open: a cancelled add (or any other close) must not
-  // leave stale typing or a stale material toggle behind when reopened.
+  // leave stale typing or a stale material/comment toggle behind when reopened.
   $effect(() => {
-    if (open) { pickerQuery = ''; isMaterial = false; }
+    if (open) { pickerQuery = ''; isMaterial = false; isComment = false; }
   });
+
+  function onMaterialCheck(e) {
+    if (e.target.checked) isComment = false;
+  }
+  function onCommentCheck(e) {
+    if (e.target.checked) isMaterial = false;
+  }
 
   const search = async (q) => {
     const enc = encodeURIComponent(q);
@@ -46,8 +54,8 @@
     else onChoose?.({ type: 'inventory', inventoryItem: r.item });
   }
   function emitFreeform() {
-    // Estimate footer: the "is material?" checkbox decides material vs fee.
-    onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial });
+    // Estimate footer: the "is material?"/"comment" checkboxes decide the kind.
+    onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial, isComment });
   }
   // Task-list footer: explicit per-atom emits.
   function emitFreeformMaterial() {
@@ -93,7 +101,8 @@
       <button type="button" onclick={emitFreeformMaterial}>Add Material</button>
       <button type="button" onclick={emitFreeformFee}>Add Fee</button>
     {:else}
-      <label><input type="checkbox" bind:checked={isMaterial}> Is this a material?</label>
+      <label><input type="checkbox" bind:checked={isMaterial} onchange={onMaterialCheck}> Is this a material?</label>
+      <label><input type="checkbox" bind:checked={isComment} onchange={onCommentCheck}> Comment (no charge)</label>
       <button type="button" onclick={emitFreeform}>Add Line</button>
     {/if}
   </div>

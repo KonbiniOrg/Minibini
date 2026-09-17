@@ -75,6 +75,8 @@ class ChangeOrderAcceptanceService:
         for li in adds:
             if li.sources.exists():          # already crystallized (re-run)
                 continue
+            if li.is_comment:                # informational — stays document-only
+                continue
             ChangeOrderAcceptanceService._crystallize(job, li, mirror=None, counts=counts)
 
         for li in replaces:
@@ -83,11 +85,13 @@ class ChangeOrderAcceptanceService:
             atoms = ChangeOrderAcceptanceService._current_atoms(li.target_line_item)
             mirror = ChangeOrderAcceptanceService._mirror_of(atoms)
             # Document-only target (adjustment line / already-retired atom) and
-            # no descriptor on the CO line: the delta stays document-only.
+            # no descriptor on the CO line: the delta stays document-only. A
+            # comment line never crystallizes, even against a real target —
+            # it still retires the old atom below (the replacement IS the note).
             has_descriptor = (li.service_item_id is not None
                               or li.inventory_item_id is not None
                               or li.is_material)
-            if mirror is not None or has_descriptor:
+            if not li.is_comment and (mirror is not None or has_descriptor):
                 ChangeOrderAcceptanceService._crystallize(job, li, mirror=mirror, counts=counts)
             for source_type, atom in atoms:
                 ChangeOrderAcceptanceService._retire(job, source_type, atom, counts)

@@ -63,18 +63,23 @@
     </thead>
     <tbody>
       {#each lineItems as li, i}
-        <tr class:adjustment-row={!!li.adjustment_service}>
+        <tr class:adjustment-row={!!li.adjustment_service} class:comment-row={li.is_comment}>
           <td>{li.line_number}</td>
-          <td class:needs-category={canEdit && li.accounting_category == null}>
-            {#if canEdit && li.accounting_category == null}
+          <td class:needs-category={canEdit && !li.is_comment && li.accounting_category == null}>
+            {#if li.is_comment}
+              —
+            {:else if canEdit && li.accounting_category == null}
               needs category
             {:else}
               {categoryName(li.accounting_category)}
             {/if}
           </td>
-          <td>{categoryTaxable(li.accounting_category)}</td>
+          <td>{li.is_comment ? '—' : categoryTaxable(li.accounting_category)}</td>
           <td class="preserve-breaks">
-            {#if li.adjustment_service}
+            {#if li.is_comment}
+              <span class="comment-badge">Comment</span>
+              <LinkifiedText text={li.description || 'No description'} />
+            {:else if li.adjustment_service}
               <span class="adj-badge">{adjustmentBadge(li)}</span>
             {:else}
               <LinkifiedText text={li.description || 'No description'} />
@@ -82,7 +87,9 @@
           </td>
           {#if showSource}
             <td>
-              {#if li.sources?.length}
+              {#if li.is_comment}
+                —
+              {:else if li.sources?.length}
                 <ul class="source-list">
                   {#each li.sources as s (s.source_type + ':' + s.source_pk)}
                     <li>{s.description} <span class="src-amt">{fmtMoney(s.computed_amount)}</span></li>
@@ -97,10 +104,17 @@
               {/if}
             </td>
           {/if}
-          <td>{li.qty}</td>
-          <td>{li.units || '—'}</td>
-          <td>{fmtMoney(li.price)}</td>
-          <td>{fmtMoney(lineTotal(li))}</td>
+          {#if li.is_comment}
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+          {:else}
+            <td>{li.qty}</td>
+            <td>{li.units || '—'}</td>
+            <td>{fmtMoney(li.price)}</td>
+            <td>{fmtMoney(lineTotal(li))}</td>
+          {/if}
           {#if actions}
             <td>
               {@render actions(li, i)}
@@ -136,6 +150,19 @@
   .source-list li { font-size: 0.9em; }
   .src-amt { color: #555; }
   .adjustment-row { background-color: #f0f7ff; }
+  .comment-row { background-color: #fafafa; font-style: italic; color: #555; }
+  .comment-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #e5e5e5;
+    color: #444;
+    font-size: 12px;
+    font-weight: 600;
+    font-style: normal;
+    white-space: nowrap;
+    margin-right: 6px;
+  }
   .needs-category {
     background-color: #fff8e1;
     color: #b45309;

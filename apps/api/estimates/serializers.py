@@ -53,7 +53,7 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
         model = EstimateLineItem
         fields = [
             'line_item_id', 'line_number', 'inventory_item', 'service_item', 'is_material',
-            'qty', 'units', 'description', 'price',
+            'qty', 'units', 'description', 'price', 'is_comment',
             'accounting_category',
             'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail', 'service_item_detail',

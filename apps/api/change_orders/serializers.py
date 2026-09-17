@@ -14,7 +14,7 @@ class ChangeOrderLineItemSerializer(serializers.ModelSerializer):
         fields = [
             'line_item_id', 'line_number',
             'action', 'target_line_item',
-            'description', 'qty', 'units', 'price',
+            'description', 'qty', 'units', 'price', 'is_comment',
             'accounting_category',
             'inventory_item', 'service_item', 'service_item_detail', 'is_material',
         ]

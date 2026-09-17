@@ -27,6 +27,22 @@ describe('LineItemForm', () => {
     });
   });
 
+  it('submits a comment line with qty/price zeroed and no category field shown', async () => {
+    const onSubmit = vi.fn();
+    const { getByLabelText, getByRole, queryByLabelText } = render(LineItemForm, {
+      props: { onSubmit, onCancel: vi.fn() },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Vendor lead time is 6 weeks' } });
+    await fireEvent.click(getByLabelText(/Comment line/));
+    expect(queryByLabelText(/Qty/)).toBeNull();
+    expect(queryByLabelText(/^Price/)).toBeNull();
+    expect(queryByLabelText(/Category/)).toBeNull();
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    expect(onSubmit).toHaveBeenCalledWith({
+      description: 'Vendor lead time is 6 weeks', is_comment: true, qty: 0, units: 'none', price: 0,
+    });
+  });
+
   it('switches to From Inventory mode', async () => {
     const { getByLabelText, queryByLabelText } = render(LineItemForm, { props: { onSubmit: vi.fn(), onCancel: vi.fn() } });
     // manual mode shows a Description field...
