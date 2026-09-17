@@ -117,29 +117,12 @@
     return { description: '', qty: '1', units: 'none', price: summedTotal.toFixed(2) };
   }
 
-  // Today's whole-line seed: description/qty/units/price all copy from (or
-  // summarize) the atoms' own current values.
-  function seedWholeLine() {
-    keepTotal = true;
-    if (atoms.length === 1) {
-      const a = atoms[0];
-      description = a.description || '';
-      qty = a.qty ?? '';
-      units = a.units || 'none';
-      price = a.rate ?? '';
-    } else {
-      const seed = deriveMultiAtomSeed(atoms, total);
-      description = seed.description;
-      qty = seed.qty;
-      units = seed.units;
-      price = seed.price;
-    }
-  }
-
-  // One-unit seed: description/units still come from the atom(s) (unchanged
-  // from whole-line) — only qty (empty, must be typed) and price (the
-  // summed CURRENT atom amounts, now read as a per-unit price) differ.
-  function seedPerUnit() {
+  // description/units seed ONCE, on open, from the atom(s) — they are not
+  // part of the interpretation semantics (unlike qty/price, which flip
+  // derivation direction between the two readings). Reused by both
+  // seedWholeLine/seedPerUnit below so a fresh open and a first render
+  // agree.
+  function seedDescriptionAndUnits() {
     if (atoms.length === 1) {
       description = atoms[0].description || '';
       units = atoms[0].units || 'none';
@@ -148,6 +131,29 @@
       description = seed.description;
       units = seed.units;
     }
+  }
+
+  // Today's whole-line seed: qty/price copy from (or summarize) the atoms'
+  // own current values. Does NOT touch description/units — those are
+  // seeded once, on open, and stay as authored across an interpretation
+  // switch.
+  function seedWholeLine() {
+    keepTotal = true;
+    if (atoms.length === 1) {
+      const a = atoms[0];
+      qty = a.qty ?? '';
+      price = a.rate ?? '';
+    } else {
+      const seed = deriveMultiAtomSeed(atoms, total);
+      qty = seed.qty;
+      price = seed.price;
+    }
+  }
+
+  // One-unit seed: qty empties (must be typed) and price becomes the
+  // summed CURRENT atom amounts (now read as a per-unit price). Same
+  // description/units carve-out as seedWholeLine.
+  function seedPerUnit() {
     qty = '';
     price = total.toFixed(2);
   }
@@ -168,6 +174,7 @@
       fieldErrs = {};
       perUnitWorkerTimes = {};
       perUnit = true;
+      seedDescriptionAndUnits();
       seedPerUnit();
     }
   });

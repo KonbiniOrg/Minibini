@@ -246,6 +246,29 @@ describe('BundleModal', () => {
       expect(await findByLabelText(/Price/)).toHaveValue(60);
       expect(queryByLabelText(/keep total/i)).not.toBeInTheDocument();
     });
+
+    it('preserves a user-edited description/units across one-unit -> whole-line', async () => {
+      const { findByRole, findByLabelText } = render(BundleModal, { props: baseProps({ atoms: SINGLE_ATOM }) });
+      const dialog = await findByRole('dialog');
+      await fireEvent.input(await findByLabelText(/Description/), { target: { value: 'My custom text' } });
+      const unitsSelect = await findByLabelText(/Units/);
+      await fireEvent.change(unitsSelect, { target: { value: 'ea' } });
+      await selectWholeLine(dialog);
+      expect(await findByLabelText(/Description/)).toHaveValue('My custom text');
+      expect(await findByLabelText(/Units/)).toHaveValue('ea');
+    });
+
+    it('preserves a user-edited description/units across whole-line -> one-unit', async () => {
+      const { findByRole, findByLabelText } = render(BundleModal, { props: baseProps({ atoms: SINGLE_ATOM }) });
+      const dialog = await findByRole('dialog');
+      await selectWholeLine(dialog);
+      await fireEvent.input(await findByLabelText(/Description/), { target: { value: 'Another custom text' } });
+      const unitsSelect = await findByLabelText(/Units/);
+      await fireEvent.change(unitsSelect, { target: { value: 'ea' } });
+      await fireEvent.click(within(dialog).getByLabelText(/one unit/i));
+      expect(await findByLabelText(/Description/)).toHaveValue('Another custom text');
+      expect(await findByLabelText(/Units/)).toHaveValue('ea');
+    });
   });
 
   describe('whole-line mode (today\'s UI, unchanged)', () => {
