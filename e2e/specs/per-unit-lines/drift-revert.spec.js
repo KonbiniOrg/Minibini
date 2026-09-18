@@ -79,6 +79,7 @@ test('drift-revert: a hand edit drifts the stamped atom from its agreement; the 
   await test.step('Freshly stamped: neither atom row shows a drift badge', async () => {
     await expect(atomRow(task.name)).toBeVisible();
     await expect(badge(task.name)).toHaveCount(0);
+    await expect(atomRow(material.description)).toBeVisible();
     await expect(badge(material.description)).toHaveCount(0);
   });
 
@@ -99,6 +100,7 @@ test('drift-revert: a hand edit drifts the stamped atom from its agreement; the 
     await page.reload();
     await expect(badge(task.name)).toBeVisible();
     // The non-drifted material row shows no badge at all.
+    await expect(atomRow(material.description)).toBeVisible();
     await expect(badge(material.description)).toHaveCount(0);
   });
 
