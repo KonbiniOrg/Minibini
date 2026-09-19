@@ -119,6 +119,22 @@
     estimateContextLoaded && !liveEstimate && !!job?.can_manage && !jobLocked
     && ['draft', 'submitted'].includes(job?.status));
 
+  // Bundle-selection state (Task 3): which pool atoms the user has checked
+  // to fold into the draft estimate. Keyed the same way as
+  // EstimateEditView's `selected` ("type:id" strings) so Task 4's bundle
+  // modal can hand the array straight to the same atom-parsing helpers.
+  let selected = $state([]);
+  const poolByKey = $derived.by(() => {
+    const map = new Map();
+    for (const a of (sourcePool?.atoms || [])) map.set(`${a.type}:${a.id}`, a);
+    return map;
+  });
+  function toggleBundleSelect(key) {
+    selected = selected.includes(key)
+      ? selected.filter((k) => k !== key)
+      : [...selected, key];
+  }
+
   // The job has at most one non-superseded estimate (enforced in
   // Estimate.clean() + create_for_job) — .find() is exact, not heuristic.
   async function loadEstimateContext() {
@@ -135,6 +151,9 @@
     } finally {
       estimateContextLoaded = true;
     }
+    // Drop any selection whose pool atom is gone or no longer available —
+    // a reload (mutation, or another window claiming it) invalidates it.
+    selected = selected.filter((k) => poolByKey.get(k)?.state === 'available');
   }
 
   async function handleStartEstimate() {
@@ -450,6 +469,10 @@
     onDeleteExpense={handleDeleteExpense}
     onRejectExpense={handleRejectExpense}
     bind:selectedTaskId
+    bundleMode={canBundle}
+    {poolByKey}
+    bundleSelected={selected}
+    onToggleBundle={toggleBundleSelect}
   />
 
   <!-- Modals -->

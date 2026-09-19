@@ -26,6 +26,12 @@
     onCancelTask = null,
     onAddMaterial = null,
     onReorder = null,
+    // Bundle-selection checkbox (Task 3) — off by default so every other
+    // consumer of this shared row renders unchanged.
+    bundleMode = false,
+    bundleAtom = null,
+    bundleChecked = false,
+    onToggleBundle = null,
   } = $props();
 
   const TERMINAL = ['complete', 'cancelled'];
@@ -65,9 +71,32 @@
     if (val == null) return '-';
     return task.unit_label ? `${val} ${task.unit_label}` : `${val}`;
   }
+
+  // A claimed_by_other atom is claimed on one of two lenses: a change-order
+  // add line or another estimate — never both. CO wins the branch since
+  // it's the more specific claim (mirrors EstimateEditView's unselectableNote).
+  function bundleClaimNote(atom) {
+    if (atom.claiming_change_order_number) {
+      return `Claimed by change order ${atom.claiming_change_order_number}`;
+    }
+    return `Claimed by estimate ${atom.claiming_estimate_number || ''}`.trim();
+  }
 </script>
 
 <tr class="task-row">
+  {#if bundleMode}
+    <td class="bundle-cell">
+      {#if bundleAtom?.state === 'available'}
+        <input type="checkbox" checked={bundleChecked}
+               onchange={onToggleBundle}
+               aria-label={`Select ${task.name} for bundling`}>
+      {:else if bundleAtom?.state === 'claimed_by_current'}
+        <span class="bundle-claimed" title="Already on the draft estimate">estimated</span>
+      {:else if bundleAtom?.state === 'claimed_by_other'}
+        <input type="checkbox" disabled title={bundleClaimNote(bundleAtom)}>
+      {/if}
+    </td>
+  {/if}
   {#if !readonly && !jobLocked}
     <td class="move-cell">{#if !isTerminal}<input type="radio" name="move-target" value={task.task_id} bind:group={selectedTaskId}>{/if}</td>
   {/if}
@@ -106,6 +135,9 @@
   /* Rows ride the shared .data-table zebra stripe. */
   /* Headerless radio column — just wide enough for the radio button. */
   .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
+  /* Bundle-selection checkbox column (Task 3) — same footprint as move-cell. */
+  .bundle-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
+  .bundle-claimed { font-size: 11px; color: #888; font-style: italic; }
   .text-right { text-align: right; }
   td { padding: 6px 10px; vertical-align: top; }
   .est-total { color: #888; }

@@ -439,4 +439,76 @@ describe('TasksPanel — estimate context (Task 2)', () => {
     await findByRole('button', { name: /add work/i });
     expect(queryByRole('button', { name: /start estimate/i })).toBeNull();
   });
+
+  // ── Task 3: bundle-selection checkboxes on task/material rows ──
+  describe('bundle selection checkboxes', () => {
+    function poolJob(overrides = {}) {
+      return makeJob({
+        can_manage: true,
+        status: 'in_progress',
+        tasks: [
+          { task_id: 1, name: 'Available Task', status: 'pending', parent_task: null },
+          { task_id: 2, name: 'Claimed Task', status: 'pending', parent_task: null },
+          { task_id: 3, name: 'Absent Task', status: 'pending', parent_task: null },
+        ],
+        materials: [
+          { material_id: 5, description: 'Steel', quantity: '2', sell_price: '5',
+            consumption_state: 'pending', task: null },
+        ],
+        ...overrides,
+      });
+    }
+
+    const poolAtoms = [
+      { type: 'task', id: 1, state: 'available' },
+      { type: 'task', id: 2, state: 'claimed_by_current' },
+      { type: 'material', id: 5, state: 'claimed_by_other', claiming_change_order_number: 7 },
+      // task_id 3 is deliberately absent from the pool.
+    ];
+
+    it('State A: enabled checkbox only for the available atom, "estimated" chip for ' +
+       'claimed_by_current, disabled+titled checkbox for claimed_by_other, nothing for ' +
+       'the row absent from the pool', async () => {
+      mockApiWithEstimates(
+        [{ estimate_id: 42, estimate_number: 'EST-2026-0042', status: 'draft' }],
+        { poolAtoms },
+      );
+      const { findByText, getByText, container } = render(TasksPanel, {
+        props: { job: poolJob() },
+      });
+      await findByText(/Bundling into estimate EST-2026-0042/i);
+
+      // Exactly one enabled checkbox on the whole page.
+      const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]'));
+      const enabled = checkboxes.filter((cb) => !cb.disabled);
+      expect(enabled).toHaveLength(1);
+
+      // claimed_by_current: "estimated" chip, no checkbox in its row.
+      const claimedRow = getByText('Claimed Task').closest('tr');
+      expect(within(claimedRow).getByText('estimated')).toBeInTheDocument();
+      expect(within(claimedRow).queryByRole('checkbox')).toBeNull();
+
+      // claimed_by_other (the loose material): disabled checkbox with the CO note.
+      const materialRow = getByText('Steel').closest('tr');
+      const disabledCheckbox = within(materialRow).getByRole('checkbox');
+      expect(disabledCheckbox).toBeDisabled();
+      expect(disabledCheckbox).toHaveAttribute('title', 'Claimed by change order 7');
+
+      // Absent from the pool: no checkbox at all.
+      const absentRow = getByText('Absent Task').closest('tr');
+      expect(within(absentRow).queryByRole('checkbox')).toBeNull();
+    });
+
+    it('State C: canBundle false renders no checkboxes anywhere', async () => {
+      mockApiWithEstimates(
+        [{ estimate_id: 10, estimate_number: 'EST-2026-0010', status: 'accepted' }],
+        { poolAtoms },
+      );
+      const { findByRole, container } = render(TasksPanel, {
+        props: { job: poolJob() },
+      });
+      await findByRole('button', { name: /add work/i });
+      expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+    });
+  });
 });

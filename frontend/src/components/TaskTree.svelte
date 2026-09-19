@@ -42,6 +42,12 @@
     onDeleteExpense = null,
     onRejectExpense = null,
     selectedTaskId = $bindable(null),
+    // Bundle-selection checkboxes (Task 3) — off by default so every
+    // existing consumer of this shared tree renders unchanged.
+    bundleMode = false,
+    poolByKey = null,
+    bundleSelected = [],
+    onToggleBundle = () => {},
   } = $props();
 
   // Expenses that created a material show nested under it; material-less
@@ -81,7 +87,7 @@
     return total;
   });
 
-  const colCount = $derived(6 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1) + (readonly || jobLocked ? 0 : 1));
+  const colCount = $derived(6 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1) + (readonly || jobLocked ? 0 : 1) + (bundleMode ? 1 : 0));
 
   // Row rendering lives in the shared TaskRow / MaterialRow fragments —
   // the same components every surface uses.
@@ -97,6 +103,7 @@
 
 {#snippet expenseRow(exp, deep)}
   <tr class="expense-row">
+    {#if bundleMode}<td class="bundle-cell"></td>{/if}
     {#if !readonly && !jobLocked}<td class="move-cell"></td>{/if}
     <td class={deep ? 'indent-2' : 'indent'}>
       <span class="expense-marker">$</span> {exp.description || '(expense)'}
@@ -136,6 +143,7 @@
 <table class="data-table task-tree-table">
   <thead>
     <tr>
+      {#if bundleMode}<th class="bundle-cell" aria-label="Select for bundling"></th>{/if}
       {#if !readonly && !jobLocked}<th class="move-cell" aria-label="Move target"></th>{/if}
       <th>Name</th>
       {#if showAssignee}<th>Assignee</th>{/if}
@@ -157,6 +165,10 @@
         {showAssignee} {showStatus}
         bind:selectedTaskId {onReorder}
         {...taskCallbacks}
+        {bundleMode}
+        bundleAtom={poolByKey?.get(`task:${task.task_id}`) ?? null}
+        bundleChecked={bundleSelected.includes(`task:${task.task_id}`)}
+        onToggleBundle={() => onToggleBundle(`task:${task.task_id}`)}
       />
 
       <!-- Materials for this task -->
@@ -166,6 +178,10 @@
           indentClass="indent" {showAssignee} {showStatus}
           {readonly} {jobLocked} {jobOnHold} {selectedTaskId}
           {...materialCallbacks}
+          {bundleMode}
+          bundleAtom={poolByKey?.get(`material:${mat.material_id}`) ?? null}
+          bundleChecked={bundleSelected.includes(`material:${mat.material_id}`)}
+          onToggleBundle={() => onToggleBundle(`material:${mat.material_id}`)}
         />
       {/each}
 
@@ -180,6 +196,10 @@
           indentClass="indent" {showAssignee} {showStatus}
           {readonly} {jobLocked} {jobOnHold} {selectedTaskId}
           {...materialCallbacks}
+          {bundleMode}
+          bundleAtom={poolByKey?.get(`material:${mat.material_id}`) ?? null}
+          bundleChecked={bundleSelected.includes(`material:${mat.material_id}`)}
+          onToggleBundle={() => onToggleBundle(`material:${mat.material_id}`)}
         />
         {#if expenseByMaterial[mat.material_id]}
           {@render expenseRow(expenseByMaterial[mat.material_id], true)}
@@ -215,6 +235,8 @@
   .indent-2 { padding-left: 48px; }
   /* Headerless radio column — just wide enough for the radio button. */
   .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
+  /* Bundle-selection checkbox column (Task 3) — same footprint as move-cell. */
+  .bundle-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
   /* .badge-invoiced comes from app.css. */
 
   /* Task and material rows style themselves in the shared TaskRow /
