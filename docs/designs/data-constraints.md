@@ -1001,6 +1001,14 @@ Valid transitions:
 - **parent** (optional FK → self, SET_NULL): for version chains
 - **Only one accepted estimate per job**: if status is `accepted`, no other
   Estimate for the same Job can be `accepted`. Enforced in `clean()`.
+- **Only one draft estimate per job**: if status is `draft`, no other
+  Estimate for the same Job can be `draft`. Enforced in `clean()` (clean-level
+  like its accepted sibling — MySQL cannot express conditional unique
+  constraints). Draft-vs-draft only: an open/accepted parent legally coexists
+  with its new draft child during `revise_estimate`, until the parent is
+  superseded moments later. Covers every creation path (`create_direct`,
+  `create_for_job`, and any future caller) because `Estimate.save()` calls
+  `full_clean()`.
 - **public_token** (`CharField(max_length=64, null=True, blank=True,
   unique=True)`): opaque token minted at creation (`secrets.token_urlsafe(32)`,
   ~43 chars) in `Estimate.save()` when `not self.pk and not self.public_token`.

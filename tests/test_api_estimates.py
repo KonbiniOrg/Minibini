@@ -130,7 +130,11 @@ class EstimateAPITest(BaseTestCase):
             self.assertEqual(response.status_code, 200)
 
     def test_discard_draft_returns_200_with_message(self):
-        job = Job.objects.first()
+        # Own job (not Job.objects.first()) — the fixture job already carries
+        # a draft estimate, and a job may only have one (Estimate.clean()).
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='D', last_name='One', email='discard1@test.com')
+        job = Job.objects.create(contact=contact, job_number='JOB-DISCARD-1')
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-DISCARD-001',
@@ -143,7 +147,10 @@ class EstimateAPITest(BaseTestCase):
         self.assertFalse(Estimate.objects.filter(pk=pk).exists())
 
     def test_discard_non_draft_returns_400(self):
-        job = Job.objects.first()
+        # Own job — see test_discard_draft_returns_200_with_message.
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='D', last_name='Two', email='discard2@test.com')
+        job = Job.objects.create(contact=contact, job_number='JOB-DISCARD-2')
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-DISCARD-002',
@@ -163,7 +170,11 @@ class EstimateSendTest(BaseTestCase):
         self.client = APIClient()
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
-        self.job = Job.objects.first()
+        # Own job (not Job.objects.first()) — the fixture job already carries
+        # a draft estimate, and a job may only have one (Estimate.clean()).
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='S', last_name='End', email='send@test.com')
+        self.job = Job.objects.create(contact=contact, job_number='JOB-SEND-1')
         self.estimate = Estimate.objects.create(
             job=self.job,
             estimate_number='EST-SEND-001',
@@ -309,7 +320,11 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
         self.labor = AccountingCategory.objects.get(pk=901)
-        self.job = Job.objects.first()
+        # Own job (not Job.objects.first()) — the fixture job already carries
+        # a draft estimate, and a job may only have one (Estimate.clean()).
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='A', last_name='Dj', email='adj@test.com')
+        self.job = Job.objects.create(contact=contact, job_number='JOB-ADJ-1')
         self.est = Estimate.objects.create(
             job=self.job,
             estimate_number='EST-ADJ-001',

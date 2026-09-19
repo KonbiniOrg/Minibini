@@ -117,6 +117,20 @@ class Estimate(models.Model):
             if existing_accepted.exists():
                 raise ValidationError(f'Job {self.job.job_number} already has an accepted estimate')
 
+        # Only one draft estimate per job (RM 2026-09-19): the draft is the
+        # only composable document, and the Tasks-page bundling flow resolves
+        # "the job's draft" as a singleton. Draft-vs-draft only — during
+        # revise_estimate a non-draft parent legally coexists with the new
+        # draft child until the parent is superseded moments later.
+        if self.status == Estimate.STATUS_DRAFT:
+            existing_draft = Estimate.objects.filter(
+                job=self.job,
+                status=Estimate.STATUS_DRAFT
+            ).exclude(pk=self.pk if self.pk else None)
+
+            if existing_draft.exists():
+                raise ValidationError(f'Job {self.job.job_number} already has a draft estimate')
+
     def save(self, *args, **kwargs):
         """Override save to detect status changes, set dates, and send signals if needed."""
         from apps.core.models import Configuration
