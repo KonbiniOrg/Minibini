@@ -756,6 +756,31 @@ Billing mechanics and money-record lifecycle.
 
 ## Platform & conventions
 
+- **"Atom" leaks into user-visible error copy in EstimateEditView.** — _added
+  2026-09-19 (bundling-in-task-view final review)_
+  `handleMutationError`/`removeAtomFromLine` in
+  `frontend/src/components/estimates/EstimateEditView.svelte` fall back to
+  strings like "Some of those atoms were claimed elsewhere…" and "Could not
+  remove this atom from the line." — "atom" is our internal modeling term
+  (billable atoms), not something a user should see. Predates the
+  bundling-in-task-view feature; not touched by it. User-visible copy should
+  say "tasks and materials" or "work" instead.
+  _Done when:_ the strings are reworded (trivial, next time the file is
+  touched).
+
+- **Global success overlay never auto-dismisses and blocks clicks underneath
+  it.** — _added 2026-09-19 (bundling-in-task-view final review)_
+  `stores/messages.js`'s `showSuccess` plus its overlay component stays up
+  until the user explicitly clicks "Dismiss message," and while up it
+  intercepts clicks on the page behind it. Every e2e spec that acts
+  immediately after a success-producing action has to click "Dismiss
+  message" first before it can proceed (first workaround:
+  `e2e/specs/task-view-bundling/start-estimate-offer.spec.js`), and real
+  users hit the same modal friction after routine successful actions. RM to
+  decide auto-dismiss timing vs. keeping the current sticky behavior.
+  _Done when:_ RM rules and the overlay either auto-dismisses or the
+  decision to keep it sticky is recorded.
+
 - **Rename the "Tasks" header to "Work".** — _added 2026-08-17 (RM)_
   The job nav rail's section label (`JobNavRail.svelte` line ~15,
   `label: 'Tasks'`) should read **Work** — matching the area's own

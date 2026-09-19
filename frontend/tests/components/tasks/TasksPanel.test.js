@@ -440,6 +440,18 @@ describe('TasksPanel — estimate context (Task 2)', () => {
     expect(queryByRole('button', { name: /start estimate/i })).toBeNull();
   });
 
+  it('Permission: a live draft estimate exists but can_manage is false — no context line ' +
+     '(no bundling affordance for a user who cannot bundle)', async () => {
+    mockApiWithEstimates([
+      { estimate_id: 42, estimate_number: 'EST-2026-0042', status: 'draft' },
+    ]);
+    const { queryByText, findByRole } = render(TasksPanel, {
+      props: { job: makeJob({ can_manage: false, status: 'in_progress' }) },
+    });
+    await findByRole('button', { name: /add work/i });
+    expect(queryByText(/Bundling into estimate/i)).toBeNull();
+  });
+
   // ── Task 3: bundle-selection checkboxes on task/material rows ──
   describe('bundle selection checkboxes', () => {
     function poolJob(overrides = {}) {
@@ -497,6 +509,35 @@ describe('TasksPanel — estimate context (Task 2)', () => {
       // Absent from the pool: no checkbox at all.
       const absentRow = getByText('Absent Task').closest('tr');
       expect(within(absentRow).queryByRole('checkbox')).toBeNull();
+    });
+
+    it('claimed_by_other with an estimate (not change-order) claim shows the estimate ' +
+       'fallback note on the disabled checkbox', async () => {
+      const job = poolJob({
+        materials: [
+          { material_id: 5, description: 'Steel', quantity: '2', sell_price: '5',
+            consumption_state: 'pending', task: null },
+          { material_id: 6, description: 'Copper', quantity: '1', sell_price: '3',
+            consumption_state: 'pending', task: null },
+        ],
+      });
+      const atomsWithEstimateClaim = [
+        ...poolAtoms,
+        { type: 'material', id: 6, state: 'claimed_by_other', claiming_estimate_number: 'EST-2026-0010' },
+      ];
+      mockApiWithEstimates(
+        [{ estimate_id: 42, estimate_number: 'EST-2026-0042', status: 'draft' }],
+        { poolAtoms: atomsWithEstimateClaim },
+      );
+      const { findByText, getByText } = render(TasksPanel, {
+        props: { job },
+      });
+      await findByText(/Bundling into estimate EST-2026-0042/i);
+
+      const materialRow = getByText('Copper').closest('tr');
+      const disabledCheckbox = within(materialRow).getByRole('checkbox');
+      expect(disabledCheckbox).toBeDisabled();
+      expect(disabledCheckbox).toHaveAttribute('title', 'Claimed by estimate EST-2026-0010');
     });
 
     it('State C: canBundle false renders no checkboxes anywhere', async () => {

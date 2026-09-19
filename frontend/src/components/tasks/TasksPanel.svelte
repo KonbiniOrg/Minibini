@@ -469,7 +469,7 @@
       </button>
     {/if}
   </div>
-  {#if draftEstimate}
+  {#if canBundle}
     <p class="estimate-context">
       Bundling into estimate {draftEstimate.estimate_number} (draft) —
       <a href={`#/jobs/${job.job_id}/estimate`}>view</a>
