@@ -70,6 +70,9 @@ e2e/
 ├── fixtures/
 │   ├── personas.js         # persona → storageState path + user facts
 │   └── api.js              # persona-authenticated APIRequestContexts (CSRF wired)
+├── lib/                    # shared spec helpers, one file per gesture
+│   └── bundling.js         # first occupant (2026-09-19) — drive the Tasks-page
+│                            # "select atoms, open BundleModal" gesture; see below
 ├── specs/
 │   ├── smoke.spec.js       # platform smoke test
 │   └── <flow-doc>/…        # a directory per docs/ui-flows/ doc (see below)
@@ -144,6 +147,17 @@ first full flow spec should follow `docs/ui-flows/Expenses.md`):
   semantic HTML the SPA already uses — no test-id attributes unless a
   surface is genuinely unaddressable (adding test-ids touches app code →
   flag it first).
+- **Shared *behavioral* helpers** (driving a multi-step UI gesture that
+  several specs across different flow-doc directories all perform) live
+  in `e2e/lib/`, one file per gesture — distinct from `fixtures/`, which
+  holds *data/identity* helpers (personas, API auth contexts). First
+  occupant: `lib/bundling.js` (bundling-in-task-view, 2026-09-19) — the
+  Tasks page's "select atoms, open `BundleModal`" gesture, shared across
+  specs in the `per-unit-lines/`, `invoice-skeleton/`,
+  `estimating-structure/`, and `task-view-bundling/` directories — each
+  drives the modal's own fields differently afterward, but navigation +
+  selection + opening the modal is identical. A helper that's only ever
+  useful to one flow doc's specs stays local to that directory instead.
 - `workers: 1` — the DB is shared, so specs run serially for now.
 
 ## 3. Seed data pipeline

@@ -1301,7 +1301,7 @@ the document, §6.4/§11.3.)
 |---|---|
 | `get_source_pool(estimate)` | Walks the estimate's **Job's** Tasks and Materials, returns a flat pool of atoms. Each atom carries `type` (`'task'`/`'material'`), `id`, `description`, the `qty`/`rate`/`units`/`amount` breakdown, `category_id`, and claim state: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). Task amounts use `compute_estimate_amount` (`est_qty`). **Cancelled tasks are excluded** — estimates project planned work, and a cancelled task is not planned work (the *invoice* pool is the opposite: recorded actuals on a cancelled task stay billable — see `invoicing-and-expenses.md`). |
 | `add_atoms_to_new_line_item(estimate, atoms, *, overrides=None)` | Creates a new `EstimateLineItem` with a source row per atom. Single-atom case copies atom's description/units/qty/price; multi-atom case summarizes a uniform same-scheme task bundle, else falls back to blanks (see §6.3). `overrides` (Task 8, bundle modal): optional `{'description','qty','units','price'}` applied over the derived defaults before save — a partial dict merges onto the derivation field-by-field; an unknown key raises a plain `ValidationError` (→ `{'detail': ...}` 400). Draft-gating and claim/atomicity behavior are unchanged by overrides. |
-| `send_all_atoms(estimate)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines. `POST /api/estimates/{id}/send-all-atoms/` → `{'created': N}`; the wizard's "Send all to Estimate" button. |
+| `send_all_atoms(estimate)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines. `POST /api/estimates/{id}/send-all-atoms/` → `{'created': N}`. **UI-orphaned** since the bundling-in-task-view migration (Task 5, 2026-09-19): the old wizard button that called this was already gone (§8.4's 2026-08 skeleton retirement), and the Tasks-page bundling surface that replaced manual composition (§12.1, `jobs-and-tasks.md`) doesn't call it either. The endpoint and service method are retained; `docs/designs/LATER.md` tracks whether RM wires it into the new surface or deletes it. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), it is re-derived: a uniform same-scheme task bundle is re-summarized (units/qty/price), otherwise qty is kept and the per-unit price recomputed. An overridden line item is left untouched. |
 | `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Same re-derive-if-in-sync rule as `add_atoms_to_line_item`. Deletes the line item if no sources remain. |
 
@@ -1367,8 +1367,8 @@ conventions.
 
 | Component | Path | Role |
 |---|---|---|
-| `EstimateEditView.svelte` | `frontend/src/components/estimates/` | The estimate's **Edit** mode — one merged surface: the line-items table (each row's atom claims nested via `AtomChildRow`) plus an `UncoveredWorkSection` pool below it. Presentation + gestures only; `EstimatePanel` owns data loading. See §12. |
-| `docsurface/*` kit | `frontend/src/components/docsurface/` | Ten shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `AtomCaptionRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `BundleModal`, `QtyUnits`, `DocCustomerView`, `DocReorderView`) consumed by the estimate, invoice, **and CO** (§14.9a) edit surfaces. Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched. `QtyUnits` (2026-08-11) renders a line's qty + units in every doc line table — inline, wrapping when squeezed; units `'none'` omitted. `BundleModal` (Task 8, 2026-08-15) is the estimate/CO "bundle into line" authoring modal — see §12.1a. `NewLineFromSelectedRow` takes an optional `buttonLabel` prop (default `"Create line"`) so the estimate/CO surfaces can read "Bundle into line…" while the invoice surface (unchanged one-click flow) keeps the default. |
+| `EstimateEditView.svelte` | `frontend/src/components/estimates/` | The estimate's **Edit** mode — **document-only** since the bundling-in-task-view migration (Task 5, 2026-09-19): the line-items table (each row's atom claims nested via `AtomChildRow`), Add line/Add Adjustment, per-line Edit/Remove/Make Deliverable, and the mint/decline checklist. No pool and no `BundleModal` here any more — composing new lines from job atoms happens on the job's Tasks page (`TasksPanel.svelte`, `jobs-and-tasks.md`), which targets this job's single draft estimate directly. Presentation + gestures only; `EstimatePanel` owns data loading. See §12.1. |
+| `docsurface/*` kit | `frontend/src/components/docsurface/` | Ten shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `AtomCaptionRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `BundleModal`, `QtyUnits`, `DocCustomerView`, `DocReorderView`). Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched, but not every component is consumed by every surface: `DocModeBar`/`QtyUnits`/`DocCustomerView`/`DocReorderView` are common to all three (estimate, invoice, CO); `BackingChip`/`AtomChildRow`/`AtomCaptionRow` render existing atom claims wherever a line has any (estimate, invoice, CO alike); `UncoveredWorkSection`/`NewLineFromSelectedRow` are the pool-picker pairing, consumed by the **invoice** edit view and the **CO** edit view (§14.9a) only — as of Task 5 (bundling-in-task-view, 2026-09-19) the estimate edit view no longer imports either. `BundleModal` is opened by the **CO** edit view (via its `NewLineFromSelectedRow`, unchanged) and, as of Task 5, by the job's **Tasks page** (`TasksPanel.svelte`, driving it directly from row checkboxes + a toolbar CTA, with no `UncoveredWorkSection`/`NewLineFromSelectedRow` of its own — see `jobs-and-tasks.md`); the **invoice** side is not a `BundleModal` host — its `NewLineFromSelectedRow` keeps its original one-click POST-directly behavior. `QtyUnits` (2026-08-11) renders a line's qty + units in every doc line table — inline, wrapping when squeezed; units `'none'` omitted. `BundleModal` (Task 8, 2026-08-15) is the "bundle into line" authoring modal — see §12.1a. `NewLineFromSelectedRow` takes an optional `buttonLabel` prop (default `"Create line"`) so the CO surface can read "Bundle into line…" while the invoice surface (unchanged one-click flow) keeps the default. |
 | `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines via **Add line** + per-line **Edit**. |
 
 The invoice side is structurally parallel — same source pool, add-atoms,
@@ -2005,9 +2005,9 @@ linked there):
    **Edit** / **Customer** / **Reorder**, `aria-pressed` on the active
    one. Flips the panel's local `mode` in place at the same URL — never
    a navigation, never a modal (§12).
-6. **Mode content** — `EstimateEditView` in Edit mode (line items +
-   uncovered-work pool, §12.1); `DocCustomerView`/`DocReorderView` in
-   Customer/Reorder mode (§12.3).
+6. **Mode content** — `EstimateEditView` in Edit mode (line items only —
+   document-only, no pool/bundle UI, §12.1); `DocCustomerView`/
+   `DocReorderView` in Customer/Reorder mode (§12.3).
 
 ### 11.2 Action buttons
 
@@ -2112,16 +2112,31 @@ written, **unmigrated** — normalization happens at the read site
 if the document is no longer editable (`canEdit` false — e.g. the
 estimate was sent/accepted since the mode was last remembered).
 
-### 12.1 Edit mode — `EstimateEditView`
+### 12.1 Edit mode — `EstimateEditView` — document-only
 
-One `.data-table` of the estimate's line items, an uncovered-work pool
-below it. `EstimatePanel` owns data loading (estimate, source pool,
-categories) and passes it down; `EstimateEditView` is presentation +
-gestures only, calling back (`onChanged`) after every mutation so the
-panel can refresh both silently (`loadEstimate({silent: true})` — a
-non-silent refresh would blank the surface and lose in-flight state
-such as an open edit modal or the current pool selection; see
+**Composing new lines from job atoms happens on the job's Tasks page,
+not here** (bundling-in-task-view migration, Task 5, 2026-09-19 —
+`jobs-and-tasks.md`'s Tasks-page section). `EstimateEditView` is
+**document-only**: one `.data-table` of the estimate's line items, field
+editing, remove, adjustments, and the accept-time mint/decline
+checklist — no pool, no bundle gesture, no "Add as its own line" direct
+bill. `EstimatePanel` owns data loading (estimate, categories — no
+source pool any more) and passes it down; `EstimateEditView` is
+presentation + gestures only, calling back (`onChanged`) after every
+mutation so the panel can refresh both silently
+(`loadEstimate({silent: true})` — a non-silent refresh would blank the
+surface and lose in-flight state such as an open edit modal; see
 `architecture-and-conventions.md` §5.5b for this idiom generalized).
+
+An empty draft (no line items yet, `canEdit`) shows a hint instead of a
+dead table: "No line items yet — compose lines from the Tasks page by
+selecting work and bundling it," linking to `#/jobs/{job}/tasks`.
+
+The job can have at most one draft `Estimate` at a time
+(`Estimate.clean()`, `docs/designs/data-constraints.md` — "Only one
+draft estimate per job") — the Tasks page resolves that single draft
+as its bundling target, so there is never an ambiguity about which
+estimate a bundled line lands on.
 
 - **Authoring buttons** above the table: **"Add line"** (opens
   `PriceListPicker` → `EstimateAddLineForm`, §6.4/§11.3) and **"Add
@@ -2149,19 +2164,20 @@ such as an open edit modal or the current pool selection; see
 - **Per-line actions (while `canEdit`):** **Edit** (opens
   `LineItemModal` in field-edit mode — editing price flips `backing` to
   `'edited'`), **Remove** (`DELETE .../line-items/{id}/`, single-phase —
-  the estimate has no two-phase confirm gate here since a removed line
-  is freely re-addable via the uncovered-work pool below — EXCEPT a line
-  with a linked deliverable, which opens a three-way dialog: "Remove
-  line and deliverable" (`?delete_deliverables=true`), "Remove line,
-  keep deliverable" (the SET_NULL FK just unlinks), or Cancel — deleting
-  a persisted deliverable is the irreversible half, RM 2026-08-12).
-  **"Add selected here"** (attaching a ticked pool selection onto an
-  *existing* line) is **removed** (estimating-structure spec,
-  2026-08-15) — composing atoms into a line happens only through the
-  bundle gesture below, never by attachment to a line that already
-  exists. **The word "delete"
-  does not appear anywhere on this surface** — Remove releases the
-  line's backing work untouched, it does not destroy the atoms.
+  the estimate has no two-phase confirm gate here since a removed line's
+  atoms are freely re-claimable afterward, from the Tasks page's
+  bundling pool — EXCEPT a line with a linked deliverable, which opens a
+  three-way dialog: "Remove line and deliverable"
+  (`?delete_deliverables=true`), "Remove line, keep deliverable" (the
+  SET_NULL FK just unlinks), or Cancel — deleting a persisted deliverable
+  is the irreversible half, RM 2026-08-12). Attaching a ticked selection
+  onto an *existing* line ("Add selected here") was already removed
+  before this page went document-only (estimating-structure spec,
+  2026-08-15) — composing atoms into a line only ever happens as a NEW
+  line, and as of Task 5 that gesture lives entirely on the Tasks page
+  (below). **The word "delete" does not appear anywhere on this
+  surface** — Remove releases the line's backing work untouched, it does
+  not destroy the atoms.
 - **"Make Deliverable"** (built 2026-08-12 — spec §6; label per RM,
   placeholder until a better one lands). Per-line button, wired by
   `EstimatePanel` while `canEdit`, POSTing
@@ -2211,46 +2227,48 @@ such as an open edit modal or the current pool selection; see
   instead shows a muted "no work needed" caption and **Undo**
   (`{work_declined: false}`). Neither direction confirms — both are
   freely reversible.
-- **Uncovered-work pool** (`UncoveredWorkSection`, title "Uncovered
-  work") — fed from `GET .../source-pool/`, filtered to atoms this
-  estimate hasn't already claimed (`claimed_by_current` excluded — those
-  already show as `AtomChildRow`s above). A row is selectable when
-  `available`; a `claimed_by_other` row is dimmed with a "Claimed by
-  estimate …" note instead of a checkbox. `directLabel="Add as its own
-  line"` bills one atom directly (`onDirect` → `billDirect`, one POST to
-  `line-items-from-atoms`, then opens the new line's Edit modal).
-- **Object-first composition.** Ticking any pool row reveals the
-  table's dashed footer placeholder, `NewLineFromSelectedRow` ("＋ New
-  line from selected"). Its button — labeled **"Bundle into line…"**
-  here (the invoice edit view keeps the default "Create line" label
-  and its original one-click behavior, unchanged by Task 8) — opens
-  `BundleModal` (§12.1a) rather than POSTing directly. The single-atom
-  case opens the modal too (same gesture either way; the modal is just
-  seeded from that one atom's values), unlike the still-unchanged
-  single-atom "Add as its own line" pool-row action (`billDirect`),
-  which stays a direct POST + `LineItemModal` edit landing.
-- **409 handling.** A claim conflict (another session claimed an atom
-  between pool load and POST) is surfaced by `BundleModal` via its
-  `onConflict` callback — the modal itself has no pool/selection state
-  to reconcile, so it hands the error back to `EstimateEditView`, which
-  closes the modal, clears the selection, awaits a refresh, and shows a
-  specific "…refreshed" message via the global overlay rather than the
-  generic error text (`handleMutationError`,
-  `architecture-and-conventions.md` §5.5b's 409-refresh idiom).
+- **No pool, no bundle gesture, on this page.** `EstimateEditView`
+  carries none of the "Uncovered work" / "Object-first composition" /
+  "Add as its own line" (direct bill) machinery any more — all of that
+  moved off the estimate document entirely (bundling-in-task-view Task
+  5, 2026-09-19). Composing a new line from job atoms is now done from
+  the job's **Tasks page** (`jobs-and-tasks.md`), which resolves this
+  job's single draft estimate as the bundling target, offers
+  bundle-selection checkboxes directly on task/material rows, and opens
+  the same `BundleModal` (§12.1a) from its own toolbar CTA. `remove-atoms`
+  (removing one atom from an existing line, above) is the only
+  atom-claim mutation left on this page; its own 409 handling
+  (`handleMutationError`) still lives here — a claim conflict refreshes
+  the doc and shows a "…refreshed" message via the global overlay rather
+  than the generic error text (`architecture-and-conventions.md` §5.5b's
+  409-refresh idiom). The bundle-conflict refresh that used to live here
+  (clearing a pool selection on a 409) moved to `TasksPanel.svelte`
+  alongside the rest of the pool state.
 
 ### 12.1a BundleModal (Task 8: draft-time composition + keep-the-total)
 
-`BundleModal.svelte` (`docsurface/`) is the authoring step "New line
-from selected" opens on the estimate and CO edit surfaces (invoice
-untouched — see above). It is self-contained like `AdjustmentModal`/
-`LineItemModal`: it owns its own POST to
+`BundleModal.svelte` (`docsurface/`) is the shared "bundle into line"
+authoring modal, unchanged in itself by this migration — only *which
+surface opens it* moved on the estimate side. Two hosts open it: the
+job's **Tasks page** (`TasksPanel.svelte`, `jobs-and-tasks.md`), which as
+of Task 5 is the *only* way to bundle job atoms into an estimate line
+(the estimate's own edit surface no longer hosts it — §12.1 above), and
+the **CO edit surface** (`COEditView.svelte`, §14.9a, via its own
+`UncoveredWorkSection` + `NewLineFromSelectedRow` pool, entirely
+unchanged by this migration). The **invoice** side is not a `BundleModal`
+host at all — its `NewLineFromSelectedRow` keeps its original one-click
+POST-directly behavior, no modal, untouched. It is self-contained like
+`AdjustmentModal`/`LineItemModal`: it owns its own POST to
 `${apiBase}/line-items-from-atoms/`, not a callback the parent runs.
 
 - **Props:** `open`, `atoms` (the selected atoms in raw source-pool
   shape — `{type, id, description, qty, units, rate, amount,
   worker_time?}`, read straight off `sourcePool.atoms` filtered by the
-  ticked ids; the picklist's own `uncoveredRows` only carries a
-  formatted `qty_display`, not the raw fields the modal needs).
+  ticked ids on either host, whether the selection UI is the CO's
+  `UncoveredWorkSection` picklist — whose own `uncoveredRows` only
+  carries a formatted `qty_display`, not the raw fields the modal
+  needs — or the Tasks page's row checkboxes, which key the same map
+  (`poolByKey`) directly off `sourcePool.atoms`).
   `worker_time` (a task atom's current `est_worker_time`, DRF
   `"H:MM:SS"` duration-string shape, always absent for a material) is
   added by `BaseWizardService._atom_detail`/`_pool_atoms` for the

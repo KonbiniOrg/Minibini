@@ -1594,11 +1594,115 @@ Coverage stat only (§9.1a). Full vocabulary, action table, and the shared
 fragment/flow components: `materials-inventory-and-purchasing.md` §16.
 
 **Start Estimate** (creates a draft estimate directly — `POST /api/estimates/`
-with `{job}`) and, while the job is held (`on_hold` flag), **Create Change
-Order** live on `EstimatePanel.svelte` (the Estimates section page,
-`#/jobs/:jobId/estimate` — §9.6, `estimates-and-prices.md` §11.4), not on
-the overview. (These replaced the deleted Worksheet detail page; the old
-Plan/Client-View toggle is gone.)
+with `{job}`) is offered in **two** places since the bundling-in-task-view
+migration (Task 5, 2026-09-19): `EstimatePanel.svelte` (the Estimates
+section page, `#/jobs/:jobId/estimate` — §9.6, `estimates-and-prices.md`
+§11.4) still shows its own "no estimate yet" offer, and this Tasks page
+now offers the same action from its own toolbar when there's work to
+bundle but nowhere to bundle it yet — see §9.5a below. **Create Change
+Order**, while the job is held (`on_hold` flag), remains on
+`EstimatePanel.svelte` only — untouched by this migration. (These
+replaced the deleted Worksheet detail page; the old Plan/Client-View
+toggle is gone.)
+
+### 9.5a Bundling surface (bundling-in-task-view, 2026-09-19)
+
+**Composing estimate line items from job atoms happens on this page, not
+the estimate document** (`TasksPanel.svelte`,
+`frontend/src/components/tasks/`; the estimate page is document-only —
+`estimates-and-prices.md` §12.1). On mount (and after every reload)
+`TasksPanel` resolves the job's estimate context in one pass
+(`loadEstimateContext`, `TasksPanel.svelte:168-185`): it fetches
+`GET /api/estimates/?job={id}` and picks the single non-superseded row
+(the job can have at most one — `Estimate.clean()`,
+`data-constraints.md` — "Only one draft estimate per job"; `.find()` is
+exact, not heuristic), then, only when that estimate is a `draft`, fetches
+its `GET /api/estimates/{id}/source-pool/`. That resolution drives three
+mutually exclusive states:
+
+1. **A draft estimate exists (`canBundle`)** — bundling affordances render:
+   row checkboxes on every task/material row, a toolbar CTA, and a context
+   line pointing at the draft. `canBundle` additionally requires
+   `job.can_manage`, the job not locked (`completed`/`cancelled`/`rejected`),
+   and the job not `on_hold`.
+2. **No live estimate yet, and the job is still pre-estimate
+   (`canOfferEstimate`)** — the toolbar instead shows a plain **"Start
+   Estimate"** button (`handleStartEstimate` → `POST /api/estimates/
+   {job}`, then re-resolves context in place — no navigation). Gated on
+   `job.can_manage`, job not locked, and `job.status` in
+   `['draft', 'submitted']` (mirrors `EstimatePanel`'s own gate,
+   `estimates-and-prices.md` §11.4).
+3. **Otherwise (a live but non-draft estimate — `open`/`accepted`/etc. —
+   or no manage permission, or the job is locked/held/past both gates)**
+   — no bundling affordance and no Start Estimate offer; the page is
+   read/act-on-tasks only, exactly as before this migration.
+
+**Row checkboxes and indicators (`TaskRow.svelte`, `MaterialRow.svelte`,
+threaded through `TaskTree.svelte`'s `bundleMode`/`poolByKey`/
+`bundleSelected`/`onToggleBundle` props).** While `canBundle`, `TaskTree`
+renders a leading, headerless checkbox column (`.bundle-cell`, same
+footprint as the move-radio column) driven by each atom's source-pool
+claim state, keyed `"task:{id}"` / `"material:{id}"` against
+`poolByKey`:
+
+   - **`available`** — a live checkbox (`bundleChecked` bound to the
+     panel's `selected` array; `onToggleBundle` flips membership).
+   - **`claimed_by_current`** — already on the draft: a muted **"estimated"**
+     chip, no checkbox (nothing to select — it is already a source on a
+     line of this estimate).
+   - **`claimed_by_other`** — claimed by a different estimate or by a
+     change order on this job: a **disabled** checkbox with a `title`
+     tooltip naming the claimant — "Claimed by change order {number}" or
+     "Claimed by estimate {number}" (`bundleClaimNote`, CO branch checked
+     first since it's the more specific claim — mirrors
+     `EstimateEditView`'s own unselectable-pool-row note,
+     `estimates-and-prices.md` §12.1).
+   - An atom absent from the pool (e.g. a cancelled task — the estimate
+     pool excludes those, `estimates-and-prices.md` §8.1) renders no
+     checkbox and no chip: `bundleAtom` is `null` and none of the three
+     branches match.
+
+A task/material row not covered by any of the three top-level states
+(no `canBundle`) renders the same as always — `bundleMode` defaults to
+`false` for every other consumer of `TaskTree`, so this is additive.
+
+**Toolbar CTA.** While `canBundle`, the toolbar shows **"Bundle N
+selected into a line…"**, disabled while `selected` is empty, opening the
+shared `BundleModal` (`docsurface/BundleModal.svelte`,
+`estimates-and-prices.md` §12.1a) seeded with the ticked atoms
+(`bundleAtoms`, filtered straight off `sourcePool.atoms` — the same shape
+every `BundleModal` host uses) and `apiBase` pointed at the draft
+estimate. `BundleModal` owns its own POST to
+`.../line-items-from-atoms/`; `TasksPanel` only reacts to its two
+callbacks.
+
+**Context line.** While a draft estimate exists, a line beneath the
+toolbar reads "Bundling into estimate {number} (draft) —
+[view](#/jobs/{id}/estimate)" — a plain navigation link into the
+document-only estimate page, for reviewing what has already been
+bundled.
+
+**Post-bundle refresh (`handleBundleCreated` / `refreshAfterBundle`,
+`TasksPanel.svelte:146-157`).** On a successful bundle: the checkbox
+selection clears, then the job (`onJobChange` → the parent refetches and
+hands back a new `job` prop, which this panel's tasks/materials are
+derived from) and the estimate context (pool) both refetch in parallel,
+and a success overlay reads "Line added to estimate {number} (draft)."
+The job refetch matters even though the atoms already existed: a
+**per-unit** bundle (`estimates-and-prices.md` §9b) stamps a
+`per_unit_qty`/`per_unit_worker_time` snapshot onto each claimed task at
+bundle time, which changes that task row's displayed total and (if a
+duration was entered) its schedule commitment — the refetch is what
+makes those restamped values show up on this page without a manual
+reload. A **409 claim conflict** (another window claimed one of the
+selected atoms between pool load and submit) instead closes the modal,
+clears the selection, refetches the same way, and shows "Some of the
+selected work was claimed elsewhere in the meantime — refreshed."
+(`handleBundleConflict`) — the same refresh-and-say-so idiom documented
+generally in `architecture-and-conventions.md` §5.5b, and used
+concretely by the estimate page's own remaining atom-claim mutation
+(`estimates-and-prices.md` §12.1's `remove-atoms` 409 handling) and by
+the CO page's unchanged bundle-conflict flow (§14.4b).
 
 ### 9.6 The job workspace shell (section pages)
 
