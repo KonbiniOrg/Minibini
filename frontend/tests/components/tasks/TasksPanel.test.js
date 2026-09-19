@@ -511,4 +511,160 @@ describe('TasksPanel — estimate context (Task 2)', () => {
       expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
     });
   });
+
+  // ── Task 4: bundle CTA + BundleModal ──
+  describe('bundle CTA + BundleModal', () => {
+    function poolJob(overrides = {}) {
+      return makeJob({
+        can_manage: true,
+        status: 'in_progress',
+        tasks: [
+          { task_id: 1, name: 'Available Task', status: 'pending', parent_task: null },
+        ],
+        materials: [
+          { material_id: 5, description: 'Steel', quantity: '2', sell_price: '5',
+            units: 'kg', consumption_state: 'pending', task: null },
+        ],
+        ...overrides,
+      });
+    }
+
+    // Both atoms available so a test can select 2 and exercise the "N
+    // selected" count.
+    const twoAvailableAtoms = [
+      { type: 'task', id: 1, state: 'available', description: 'Available Task',
+        qty: '1', units: 'hour', rate: '30.00', amount: '30.00' },
+      { type: 'material', id: 5, state: 'available', description: 'Steel',
+        qty: '2', units: 'kg', rate: '5.00', amount: '10.00' },
+    ];
+
+    function renderWithDraftPool(poolAtoms = twoAvailableAtoms, job = poolJob()) {
+      mockApiWithEstimates(
+        [{ estimate_id: 42, estimate_number: 'EST-2026-0042', status: 'draft' }],
+        { poolAtoms },
+      );
+      return render(TasksPanel, { props: { job } });
+    }
+
+    async function selectNAtoms(container, n) {
+      const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]'))
+        .filter((cb) => !cb.disabled);
+      for (let i = 0; i < n; i++) {
+        await fireEvent.click(checkboxes[i]);
+      }
+    }
+
+    it('shows a disabled "Bundle 0 selected into a line…" button when nothing is selected', async () => {
+      const { findByRole } = renderWithDraftPool();
+      const btn = await findByRole('button', { name: /bundle 0 selected into a line/i });
+      expect(btn).toBeDisabled();
+    });
+
+    it('enables the button with the live count once atoms are selected', async () => {
+      const { findByRole, container } = renderWithDraftPool();
+      await findByRole('button', { name: /bundle 0 selected into a line/i });
+      await selectNAtoms(container, 2);
+      const btn = await findByRole('button', { name: /bundle 2 selected into a line/i });
+      expect(btn).not.toBeDisabled();
+    });
+
+    it('clicking the CTA opens BundleModal with the selected atoms', async () => {
+      const { findByRole, container } = renderWithDraftPool();
+      await findByRole('button', { name: /bundle 0 selected into a line/i });
+      await selectNAtoms(container, 1);
+      await fireEvent.click(await findByRole('button', { name: /bundle 1 selected into a line/i }));
+      expect(await findByRole('heading', { name: /bundle into line/i })).toBeInTheDocument();
+    });
+
+    it('onCreated: closes the modal, clears selection, refetches job + pool, and shows success', async () => {
+      const onJobChange = vi.fn().mockResolvedValue();
+      mockApiWithEstimates(
+        [{ estimate_id: 42, estimate_number: 'EST-2026-0042', status: 'draft' }],
+        { poolAtoms: twoAvailableAtoms },
+      );
+      api.post.mockResolvedValueOnce({
+        line_item_id: 1, line_number: 1, description: 'Available Task', qty: '1',
+        units: 'hour', price: '30.00', sources: [],
+      });
+      const { findByRole, getByRole, container, queryByRole } = render(TasksPanel, {
+        props: { job: poolJob(), onJobChange },
+      });
+      await findByRole('button', { name: /bundle 0 selected into a line/i });
+      await selectNAtoms(container, 1);
+      await fireEvent.click(await findByRole('button', { name: /bundle 1 selected into a line/i }));
+      const dialog = await findByRole('dialog');
+
+      const getCallsBefore = api.get.mock.calls.length;
+      await fireEvent.input(within(dialog).getByLabelText(/Quantity/), { target: { value: '3' } });
+      await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
+
+      await waitFor(() => expect(get(overlayMessage)).toEqual({
+        kind: 'success', text: 'Line added to estimate EST-2026-0042 (draft).',
+      }));
+      expect(onJobChange).toHaveBeenCalled();
+      // loadEstimateContext() re-ran (more api.get calls than right before Create).
+      expect(api.get.mock.calls.length).toBeGreaterThan(getCallsBefore);
+      expect(queryByRole('dialog')).toBeNull();
+      await waitFor(() => expect(getByRole('button', { name: /bundle 0 selected into a line/i })).toBeDisabled());
+    });
+
+    it('onConflict (409): closes the modal, clears selection, refetches, and shows the exact conflict message', async () => {
+      const onJobChange = vi.fn().mockResolvedValue();
+      mockApiWithEstimates(
+        [{ estimate_id: 42, estimate_number: 'EST-2026-0042', status: 'draft' }],
+        { poolAtoms: twoAvailableAtoms },
+      );
+      api.post.mockRejectedValueOnce({ status: 409, data: {} });
+      const { findByRole, getByRole, container, queryByRole } = render(TasksPanel, {
+        props: { job: poolJob(), onJobChange },
+      });
+      await findByRole('button', { name: /bundle 0 selected into a line/i });
+      await selectNAtoms(container, 1);
+      await fireEvent.click(await findByRole('button', { name: /bundle 1 selected into a line/i }));
+      const dialog = await findByRole('dialog');
+
+      const getCallsBefore = api.get.mock.calls.length;
+      await fireEvent.input(within(dialog).getByLabelText(/Quantity/), { target: { value: '3' } });
+      await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
+
+      await waitFor(() => expect(get(overlayMessage)).toEqual({
+        kind: 'error',
+        text: 'Some of the selected work was claimed elsewhere in the meantime — refreshed.',
+      }));
+      expect(onJobChange).toHaveBeenCalled();
+      expect(api.get.mock.calls.length).toBeGreaterThan(getCallsBefore);
+      expect(queryByRole('dialog')).toBeNull();
+      await waitFor(() => expect(getByRole('button', { name: /bundle 0 selected into a line/i })).toBeDisabled());
+    });
+
+    it('prunes a selected atom that is no longer available after a pool refetch (Task 3 review followup)', async () => {
+      const job = poolJob();
+      mockApiWithEstimates(
+        [{ estimate_id: 42, estimate_number: 'EST-2026-0042', status: 'draft' }],
+        { poolAtoms: twoAvailableAtoms },
+      );
+      const { findByRole, getByRole, container, rerender } = render(TasksPanel, {
+        props: { job },
+      });
+      await findByRole('button', { name: /bundle 0 selected into a line/i });
+      await selectNAtoms(container, 1);
+      await findByRole('button', { name: /bundle 1 selected into a line/i });
+
+      // Simulate the atom getting claimed elsewhere between selection and the
+      // next refresh — same estimate, but the source-pool now reports the
+      // first atom (task:1) as claimed by another window.
+      mockApiWithEstimates(
+        [{ estimate_id: 42, estimate_number: 'EST-2026-0042', status: 'draft' }],
+        { poolAtoms: [
+          { ...twoAvailableAtoms[0], state: 'claimed_by_other', claiming_change_order_number: 9 },
+          twoAvailableAtoms[1],
+        ] },
+      );
+      // A new job reference triggers the panel's job-identity effect, which
+      // reloads panel data including loadEstimateContext() (the pool refetch).
+      await rerender({ job: { ...job } });
+
+      await waitFor(() => expect(getByRole('button', { name: /bundle 0 selected into a line/i })).toBeDisabled());
+    });
+  });
 });

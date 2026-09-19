@@ -12,6 +12,7 @@
   import AssignModal from '../AssignModal.svelte';
   import PriceListPicker from '../PriceListPicker.svelte';
   import Modal from '../Modal.svelte';
+  import BundleModal from '../docsurface/BundleModal.svelte';
 
   let { job, onJobChange = () => {} } = $props();
 
@@ -133,6 +134,33 @@
     selected = selected.includes(key)
       ? selected.filter((k) => k !== key)
       : [...selected, key];
+  }
+
+  // Bundle CTA + modal (Task 4): the checked pool atoms fold into one draft
+  // estimate line via the shared BundleModal (owns its own POST; this host
+  // owns the 409-conflict refresh, per BundleModal.svelte:49-52).
+  let bundleModalOpen = $state(false);
+  const bundleAtoms = $derived(
+    (sourcePool?.atoms || []).filter((a) => selected.includes(`${a.type}:${a.id}`)));
+
+  async function refreshAfterBundle() {
+    selected = [];
+    await Promise.all([reload(), loadEstimateContext()]);
+    // reload() refetches the job (a per-unit bundle stamps atom totals, so
+    // task rows change); loadEstimateContext() refetches the pool.
+  }
+  async function handleBundleCreated() {
+    bundleModalOpen = false;
+    const estNumber = draftEstimate?.estimate_number;
+    await refreshAfterBundle();
+    showSuccess(`Line added to estimate ${estNumber} (draft).`);
+  }
+  async function handleBundleConflict(e) {
+    bundleModalOpen = false;
+    selected = [];
+    await Promise.all([reload(), loadEstimateContext()]);
+    showError(errorMessage(e,
+      'Some of the selected work was claimed elsewhere in the meantime — refreshed.'));
   }
 
   // The job has at most one non-superseded estimate (enforced in
@@ -434,6 +462,12 @@
     {#if canOfferEstimate}
       <button type="button" onclick={handleStartEstimate}>Start Estimate</button>
     {/if}
+    {#if canBundle}
+      <button type="button" disabled={selected.length === 0}
+              onclick={() => { bundleModalOpen = true; }}>
+        Bundle {selected.length} selected into a line…
+      </button>
+    {/if}
   </div>
   {#if draftEstimate}
     <p class="estimate-context">
@@ -562,6 +596,15 @@
     initialMaterial={attachExpenseMaterial}
     onSaved={() => { attachExpenseMaterial = null; reload(); }}
     onClose={() => { attachExpenseMaterial = null; }}
+  />
+
+  <BundleModal
+    open={bundleModalOpen}
+    atoms={bundleAtoms}
+    apiBase={draftEstimate ? `/api/estimates/${draftEstimate.estimate_id}` : ''}
+    onCreated={handleBundleCreated}
+    onConflict={handleBundleConflict}
+    onClose={() => { bundleModalOpen = false; }}
   />
   </div>
 {/if}
