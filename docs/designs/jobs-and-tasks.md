@@ -1689,12 +1689,15 @@ hands back a new `job` prop, which this panel's tasks/materials are
 derived from) and the estimate context (pool) both refetch in parallel,
 and a success overlay reads "Line added to estimate {number} (draft)."
 The job refetch matters even though the atoms already existed: a
-**per-unit** bundle (`estimates-and-prices.md` §9b) stamps a
-`per_unit_qty`/`per_unit_worker_time` snapshot onto each claimed task at
-bundle time, which changes that task row's displayed total and (if a
-duration was entered) its schedule commitment — the refetch is what
-makes those restamped values show up on this page without a manual
-reload. A **409 claim conflict** (another window claimed one of the
+**per-unit** bundle (`estimates-and-prices.md` §9b) writes the raw,
+un-multiplied `per_unit_qty`/`per_unit_worker_time` snapshot onto the new
+**claim row** (`EstimateLineItemSource`), not the task, and separately
+sets the claimed **task's own** `est_qty`/`est_worker_time` to that raw
+value × the line's `qty` — the whole-job total (`_stamp_atom_per_unit`,
+`apps/core/wizard.py`). That total is what changes the task row's
+displayed total and (if a duration was entered) its schedule
+commitment — the refetch is what makes those restamped values show up on
+this page without a manual reload. A **409 claim conflict** (another window claimed one of the
 selected atoms between pool load and submit) instead closes the modal,
 clears the selection, refetches the same way, and shows "Some of the
 selected work was claimed elsewhere in the meantime — refreshed."
