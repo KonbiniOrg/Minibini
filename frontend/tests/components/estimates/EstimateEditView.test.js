@@ -6,9 +6,8 @@ vi.mock('@/lib/api.js', () => ({
   errorMessage: (e, fallback) => e?.data?.detail || e?.message || fallback || 'Something went wrong.',
 }));
 
-import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
-import { overlayMessage, clearMessage } from '@/stores/messages.js';
+import { clearMessage } from '@/stores/messages.js';
 import EstimateEditView from '@/components/estimates/EstimateEditView.svelte';
 
 const ESTIMATE = { estimate_id: 7, estimate_number: 'EST-7', version: 1, status: 'draft', job: 9 };
@@ -73,34 +72,15 @@ function handLine(overrides = {}) {
   };
 }
 
-function poolWith(atoms) {
-  return { atoms };
-}
-
-const AVAILABLE_ATOM = {
-  type: 'task', id: 41, description: 'Sand edges', qty: '1', rate: '30.00',
-  amount: '30.00', units: 'hour', category_id: null, state: 'available',
-  claiming_line_item_id: null, claiming_line_number: null,
-  claiming_estimate_id: null, claiming_estimate_number: null,
-};
-
 function baseProps(overrides = {}) {
   return {
     estimate: ESTIMATE,
     canEdit: true,
     onChanged: vi.fn(),
-    sourcePool: poolWith([]),
     lineItems: [backedLine()],
     categories: [{ id: 3, code: 'LAB', name: 'Labor' }],
     ...overrides,
   };
-}
-
-function conflictError() {
-  return Object.assign(new Error('Some atoms were claimed by another estimate.'), {
-    status: 409,
-    data: { detail: 'Some atoms were claimed by another estimate.', code: 'atoms_already_claimed', atom_ids: [41] },
-  });
 }
 
 beforeEach(() => {
@@ -130,108 +110,6 @@ describe('EstimateEditView', () => {
     expect(atomRow.textContent).toContain('$25.00');
   });
 
-  it('ticking a pool row shows the "New line from selected" placeholder row, never a per-line attach gesture', async () => {
-    // Task 6: "Add selected here" (attach pool atoms to an existing line) is
-    // retired — composing atoms into lines happens only via the bundle
-    // modal / "New line from selected", never an in-table attach.
-    const { findByText, container } = render(EstimateEditView, {
-      props: baseProps({
-        sourcePool: poolWith([AVAILABLE_ATOM]),
-        lineItems: [backedLine(), handLine()],
-      }),
-    });
-    await findByText('Sand edges');
-    expect(container.textContent).not.toContain('Add selected here');
-
-    const checkbox = container.querySelector('input[type="checkbox"]');
-    await fireEvent.click(checkbox);
-
-    expect(container.textContent).not.toContain('Add selected here');
-    expect(container.textContent).toContain('New line from selected');
-  });
-
-  it('shows "Claimed by estimate EST-N" for an atom claimed_by_other on another estimate', async () => {
-    const claimedByEstimate = {
-      ...AVAILABLE_ATOM, id: 42, description: 'Weld joints', state: 'claimed_by_other',
-      claiming_estimate_id: 8, claiming_estimate_number: 'EST-8',
-      claiming_change_order_id: null, claiming_change_order_number: null,
-    };
-    const { findByText, container } = render(EstimateEditView, {
-      props: baseProps({ sourcePool: poolWith([claimedByEstimate]) }),
-    });
-    await findByText('Weld joints');
-    expect(await findByText(/Claimed by estimate EST-8/)).toBeInTheDocument();
-    const row = container.querySelector('tr.doc-unselectable-row');
-    expect(row).not.toBeNull();
-    expect(row.querySelector('input[type="checkbox"]')).toBeDisabled();
-  });
-
-  it('shows "Claimed by change order CO-N" (not "Claimed by estimate") for an atom claimed by a CO add line', async () => {
-    // Task 7 cross-lens fix: a CO-claimed atom comes back claimed_by_other
-    // with claiming_estimate_number null and claiming_change_order_number
-    // set — the note must branch on that, not fall into the old
-    // "Claimed by estimate " (empty number) text.
-    const claimedByCO = {
-      ...AVAILABLE_ATOM, id: 43, description: 'Trim it out', state: 'claimed_by_other',
-      claiming_estimate_id: null, claiming_estimate_number: null,
-      claiming_change_order_id: 5, claiming_change_order_number: 'EST-1-CO2',
-    };
-    const { findByText, queryByText, container } = render(EstimateEditView, {
-      props: baseProps({ sourcePool: poolWith([claimedByCO]) }),
-    });
-    await findByText('Trim it out');
-    expect(await findByText(/Claimed by change order EST-1-CO2/)).toBeInTheDocument();
-    expect(queryByText(/Claimed by estimate\s*$/)).not.toBeInTheDocument();
-    const row = container.querySelector('tr.doc-unselectable-row');
-    expect(row).not.toBeNull();
-    expect(row.querySelector('input[type="checkbox"]')).toBeDisabled();
-  });
-
-  it('"Bundle into line…" opens BundleModal seeded from the atom, and Create POSTs overrides + refreshes', async () => {
-    api.get.mockImplementation((url) => {
-      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour', 'ea']);
-      return Promise.resolve({ results: [] });
-    });
-    api.post.mockResolvedValue({ line_item_id: 99, line_number: 2, description: 'Sand edges', qty: '1', units: 'hour', price: '30.00', sources: [] });
-    const onChanged = vi.fn();
-    const { findByRole, findByText, container } = render(EstimateEditView, {
-      props: baseProps({
-        sourcePool: poolWith([AVAILABLE_ATOM]),
-        lineItems: [backedLine()],
-        onChanged,
-      }),
-    });
-    await findByText('Sand edges');
-    const checkbox = container.querySelector('input[type="checkbox"]');
-    await fireEvent.click(checkbox);
-
-    const bundleBtn = await findByRole('button', { name: /bundle into line/i });
-    await fireEvent.click(bundleBtn);
-
-    const dialog = await findByRole('dialog');
-    // Bundle modal's default is the one-unit interpretation (spec §5) —
-    // switch to whole-line to exercise today's copy-from-atom seed.
-    await fireEvent.click(within(dialog).getByLabelText(/the whole line/i));
-    // Seeded from the single selected atom (AVAILABLE_ATOM: qty=1, rate=$30, hour).
-    expect(within(dialog).getByLabelText(/Quantity/)).toHaveValue(1);
-    expect(within(dialog).getByLabelText(/Price/)).toHaveValue(30);
-
-    await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
-
-    expect(api.post).toHaveBeenCalledWith(
-      '/api/estimates/7/line-items-from-atoms/',
-      {
-        atoms: [{ type: 'task', id: 41 }],
-        overrides: { description: 'Sand edges', qty: '1', units: 'hour', price: '30.00' },
-        per_unit: false,
-      },
-    );
-    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
-    // The bundle modal closes on success — no lingering dialog, no separate
-    // edit-modal follow-up (the bundle modal IS the authoring step).
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
-  });
-
   it('Remove calls the DELETE endpoint (single-phase, no confirm param)', async () => {
     api.delete.mockResolvedValue({ message: 'Line item deleted.' });
     const onChanged = vi.fn();
@@ -250,7 +128,6 @@ describe('EstimateEditView', () => {
   it('never renders the word "delete" anywhere', async () => {
     const { queryByText, findByText } = render(EstimateEditView, {
       props: baseProps({
-        sourcePool: poolWith([AVAILABLE_ATOM]),
         lineItems: [backedLine(), handLine()],
       }),
     });
@@ -258,14 +135,13 @@ describe('EstimateEditView', () => {
     expect(queryByText(/delete/i)).toBeNull();
   });
 
-  it('does not render Add line / Add Adjustment / uncovered work when canEdit is false', async () => {
+  it('does not render Add line / Add Adjustment when canEdit is false', async () => {
     const { findByText, queryByText } = render(EstimateEditView, {
-      props: baseProps({ canEdit: false, sourcePool: poolWith([AVAILABLE_ATOM]) }),
+      props: baseProps({ canEdit: false }),
     });
     await findByText('Cut parts');
     expect(queryByText('Add line')).toBeNull();
     expect(queryByText('Add Adjustment')).toBeNull();
-    expect(queryByText('Sand edges')).toBeNull();
     expect(queryByText('Remove')).toBeNull();
   });
 
@@ -315,41 +191,32 @@ describe('EstimateEditView', () => {
     expect(queryByText('needs category')).toBeNull();
   });
 
-  it('labels the direct-bill action with estimate vocabulary, not the invoice kit default', async () => {
-    const { findByText, queryByText } = render(EstimateEditView, {
-      props: baseProps({ sourcePool: poolWith([AVAILABLE_ATOM]) }),
+  it('a draft estimate with zero line items shows a hint linking to the Tasks page', async () => {
+    // Task 5: the pool/bundling surface left the estimate page entirely —
+    // composing lines now happens on the job's Tasks page. An empty draft
+    // points there instead of showing a dead table.
+    const { findByText } = render(EstimateEditView, {
+      props: baseProps({ lineItems: [] }),
     });
-    expect(await findByText('Add as its own line')).toBeInTheDocument();
-    expect(queryByText('Bill as its own line')).toBeNull();
+    const link = await findByText(/compose lines from the Tasks page/i);
+    expect(link.tagName).toBe('A');
+    expect(link).toHaveAttribute('href', '#/jobs/9/tasks');
   });
 
-  it('a 409 on the bundle modal\'s Create refreshes via onChanged and shows a clear conflict message', async () => {
-    api.get.mockImplementation((url) => {
-      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour', 'ea']);
-      return Promise.resolve({ results: [] });
+  it('does not show the empty-state hint when canEdit is false, even with zero line items', async () => {
+    const { queryByText, findByText } = render(EstimateEditView, {
+      props: baseProps({ canEdit: false, lineItems: [] }),
     });
-    api.post.mockRejectedValueOnce(conflictError());
-    const onChanged = vi.fn();
-    const { findByRole, findByText, container } = render(EstimateEditView, {
-      props: baseProps({
-        sourcePool: poolWith([AVAILABLE_ATOM]),
-        lineItems: [backedLine()],
-        onChanged,
-      }),
-    });
-    await findByText('Sand edges');
-    const checkbox = container.querySelector('input[type="checkbox"]');
-    await fireEvent.click(checkbox);
-    await fireEvent.click(await findByRole('button', { name: /bundle into line/i }));
-    const dialog = await findByRole('dialog');
-    // Default one-unit mode seeds qty empty — fill it in so Create is enabled.
-    await fireEvent.input(within(dialog).getByLabelText(/Quantity/), { target: { value: '5' } });
-    await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
+    await findByText('Line Items');
+    expect(queryByText(/compose lines from the Tasks page/i)).toBeNull();
+  });
 
-    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
-    expect(get(overlayMessage)?.text).toMatch(/claimed/i);
-    // The conflict path closes the bundle modal (there is no new line).
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  it('does not show the empty-state hint once the estimate has line items', async () => {
+    const { queryByText, findByText } = render(EstimateEditView, {
+      props: baseProps({ lineItems: [backedLine()] }),
+    });
+    await findByText('Cut parts');
+    expect(queryByText(/compose lines from the Tasks page/i)).toBeNull();
   });
 });
 
@@ -755,15 +622,6 @@ describe('EstimateEditView mint / decline / checklist (Task 7)', () => {
     });
     const table = await findByRole('table');
     expect(within(table).getByText('Actions')).toBeInTheDocument();
-  });
-
-  it('the pool wears the tasks-area colorway (cw-tasks wrapper)', async () => {
-    const { container, findByText } = render(EstimateEditView, {
-      props: baseProps({ canEdit: true, sourcePool: poolWith([AVAILABLE_ATOM]) }),
-    });
-    await findByText('Unquoted work');
-    const pool = container.querySelector('.uncovered-work-section');
-    expect(pool.closest('.cw-tasks')).not.toBeNull();
   });
 
   it('Actions cell rowspans the line group; caption colspan stops at Based-on', async () => {

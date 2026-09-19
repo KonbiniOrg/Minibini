@@ -18,7 +18,6 @@
   let changeOrders = $state([]);
   let listLoaded = $state(false);
   let categories = $state([]);
-  let sourcePool = $state(null);
   let docLoading = $state(true);
   let error = $state('');
 
@@ -200,22 +199,13 @@
     }
   }
 
-  async function loadSourcePool() {
-    try {
-      sourcePool = await api.get(`/api/estimates/${estimateId}/source-pool/`);
-    } catch (_) {
-      sourcePool = { atoms: [] };
-    }
-  }
-
   // EstimateEditView is presentation + gestures only — every mutation it
-  // makes (add/remove atoms, add/edit/remove a line, adjustments) calls back
-  // here so the doc and the uncovered-work pool stay in sync. Silent: see
-  // loadEstimate's comment above — EstimateEditView awaits this to look up
-  // the fresh copy of a just-created line, so it must resolve without ever
-  // tearing the view down mid-gesture.
+  // makes (edit/remove a line, adjustments) calls back here so the doc stays
+  // in sync. Silent: see loadEstimate's comment above — EstimateEditView
+  // awaits this to look up the fresh copy of a just-created line, so it must
+  // resolve without ever tearing the view down mid-gesture.
   async function handleEditChanged() {
-    await Promise.all([loadEstimate({ silent: true }), loadSourcePool()]);
+    await loadEstimate({ silent: true });
   }
 
   // Make Deliverable (better-fees §6): mint a Deliverable from the line and
@@ -273,7 +263,6 @@
   $effect(() => {
     if (estimateId) {
       loadEstimate();
-      loadSourcePool();
       loadCategories();
     }
   });
@@ -433,7 +422,6 @@
       {estimate}
       {canEdit}
       onChanged={handleEditChanged}
-      {sourcePool}
       {lineItems}
       {categories}
       onMakeDeliverable={canEdit ? handleMakeDeliverable : null}

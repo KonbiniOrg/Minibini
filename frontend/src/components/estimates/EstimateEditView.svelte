@@ -1,10 +1,11 @@
 <script>
-  // The estimate document's "Edit" mode — merges the old lines table and the
-  // reconcile wizard into one surface: a `.data-table` of the estimate's
-  // line items (each with its atom nest and BackingChip) alongside an
-  // "uncovered work" pool of not-yet-billed job atoms. Presentation +
-  // gestures only — EstimatePanel owns data loading (estimate, sourcePool)
-  // and refreshes both after `onChanged()`.
+  // The estimate document's "Edit" mode — a `.data-table` of the estimate's
+  // line items (each with its atom nest and BackingChip). Composing new
+  // lines from job atoms happens on the Tasks page now (bundling-in-task-
+  // view, Task 5) — this view is document-only: field-edit, remove,
+  // adjustments, and the accept-time mint/decline checklist. Presentation +
+  // gestures only — EstimatePanel owns data loading (estimate) and
+  // refreshes it after `onChanged()`.
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
   import { formatQtyUnits } from '../../lib/format.js';
@@ -19,9 +20,6 @@
   import BackingChip from '../docsurface/BackingChip.svelte';
   import AtomChildRow from '../docsurface/AtomChildRow.svelte';
   import AtomCaptionRow from '../docsurface/AtomCaptionRow.svelte';
-  import UncoveredWorkSection from '../docsurface/UncoveredWorkSection.svelte';
-  import NewLineFromSelectedRow from '../docsurface/NewLineFromSelectedRow.svelte';
-  import BundleModal from '../docsurface/BundleModal.svelte';
   import DriftModal from '../docsurface/DriftModal.svelte';
   import QtyUnits from '../docsurface/QtyUnits.svelte';
 
@@ -35,7 +33,6 @@
     estimate,
     canEdit,
     onChanged = () => {},
-    sourcePool = null,
     lineItems = [],
     categories = [],
     // The Make Deliverable button (better-fees §6): EstimatePanel wires
@@ -56,9 +53,9 @@
     canMint = false,
     // Mint/decline can be the LAST unanswered line, which auto-releases the
     // job (approved -> in_progress) server-side. onChanged only refreshes
-    // this doc + the source pool (silent) — this fires in addition so the
-    // panel's onJobChange chain (already wired for status-pill / deliverable
-    // refreshes) picks up the job's possibly-changed status live.
+    // this doc (silent) — this fires in addition so the panel's onJobChange
+    // chain (already wired for status-pill / deliverable refreshes) picks
+    // up the job's possibly-changed status live.
     onWorkDecisionChanged = () => {},
     // The job's status (EstimatePanel passes job?.status) — drives the
     // checklist banner's copy only: once the job is already in_progress
@@ -84,8 +81,7 @@
     onChanged();
   }
 
-  // ── Edit modal (field-edit mode), reused for both "Edit" and the
-  // post-create landing after a new line is built from selected atoms. ────
+  // ── Edit modal (field-edit mode) ──────────────────────────────────────
   let modalOpen = $state(false);
   let modalItem = $state(null);
 
@@ -139,97 +135,17 @@
     return drifted ? d : null;
   }
 
-  // ── Uncovered work pool → selection → line-items-from-atoms (bundle
-  // modal) ── "Add selected here" (attach onto an existing line) is
-  // retired: composing selected atoms only ever creates a NEW line via the
-  // bundle modal below, never an in-table attach onto an existing one.
-  let selected = $state([]); // array of "type:id" row ids
-
-  function atomRowId(atom) {
-    return `${atom.type}:${atom.id}`;
-  }
-  function parseSelected(ids) {
-    return ids.map((id) => {
-      const sep = id.indexOf(':');
-      return { type: id.slice(0, sep), id: Number(id.slice(sep + 1)) };
-    });
-  }
-
-  // A claimed_by_other atom is claimed on one of two lenses (Task 7): a CO
-  // add line (claiming_change_order_number set) or another estimate
-  // (claiming_estimate_number set) — never both. CO wins the branch since
-  // it's the more specific claim; falls back to the estimate note.
-  function unselectableNote(atom) {
-    if (atom.state !== 'claimed_by_other') return undefined;
-    if (atom.claiming_change_order_number) {
-      return `Claimed by change order ${atom.claiming_change_order_number}`;
-    }
-    return `Claimed by estimate ${atom.claiming_estimate_number || ''}`.trim();
-  }
-
-  let uncoveredRows = $derived(
-    (sourcePool?.atoms || [])
-      .filter((a) => a.state !== 'claimed_by_current')
-      .map((a) => ({
-        id: atomRowId(a),
-        kind: a.type,
-        description: a.description,
-        qty_display: formatQtyUnits(a.qty, a.units),
-        rate: a.rate,
-        amount: a.amount,
-        selectable: a.state === 'available',
-        unselectableNote: unselectableNote(a),
-      }))
-  );
-
-  // A claim conflict (another line/estimate grabbed an atom between the pool
-  // load and this POST) can't be resolved by retrying blind — refresh so the
-  // pool/lines reflect reality, and say so, instead of the generic overlay.
+  // A claim conflict (another line/estimate grabbed an atom between the load
+  // and this POST) can't be resolved by retrying blind — refresh so the
+  // lines reflect reality, and say so, instead of the generic overlay. Still
+  // used by removeAtomFromLine below; the pool/bundle callers that used to
+  // clear `selected` here moved to the Tasks page (Task 5).
   async function handleMutationError(e, fallback) {
     if (e?.status === 409) {
-      selected = [];
       await onChanged();
       showError(errorMessage(e, 'Some of those atoms were claimed elsewhere in the meantime — refreshed.'));
     } else {
       showError(errorMessage(e, fallback));
-    }
-  }
-
-  // Bundle modal (Task 8): the dashed row's action opens BundleModal seeded
-  // with the selected atoms' raw pool data (sourcePool.atoms carries the
-  // qty/units/rate/amount BundleModal needs — uncoveredRows only has the
-  // formatted qty_display used for the picklist). The single-atom case
-  // still opens the modal (consistent gesture; the seed is just that
-  // atom's values) rather than the old direct-POST-then-edit-modal flow.
-  let bundleModalOpen = $state(false);
-  let bundleAtoms = $derived(
-    (sourcePool?.atoms || []).filter((a) => selected.includes(atomRowId(a)))
-  );
-
-  function openBundleModal() {
-    bundleModalOpen = true;
-  }
-  function handleBundleCreated() {
-    bundleModalOpen = false;
-    selected = [];
-    onChanged();
-  }
-  async function handleBundleConflict(e) {
-    bundleModalOpen = false;
-    await handleMutationError(e, 'Could not create a line from the selected atoms.');
-  }
-
-  async function billDirect(rowId) {
-    try {
-      // Create the line and stop — no post-create edit modal (RM
-      // 2026-08-16): the line is complete as projected; editing is the
-      // user's decision via the row's own Edit button.
-      await api.post(`${apiBase}/line-items-from-atoms/`, {
-        atoms: parseSelected([rowId]),
-      });
-      await onChanged();
-    } catch (e) {
-      await handleMutationError(e, 'Could not create a line from this atom.');
     }
   }
 
@@ -245,9 +161,9 @@
   }
 
   // Drift badge / Revert (per-unit-lines spec §8): one shared DriftModal
-  // instance for the whole table (mirrors the single shared BundleModal
-  // below) — opened with the clicked atom + its backing line's current qty
-  // (the per-unit multiplier), never a mutation from the badge itself.
+  // instance for the whole table — opened with the clicked atom + its
+  // backing line's current qty (the per-unit multiplier), never a mutation
+  // from the badge itself.
   let driftModalOpen = $state(false);
   let driftAtom = $state(null);
   let driftLineQty = $state(null);
@@ -461,40 +377,17 @@
         />
       {/each}
     {/each}
-    {#if canEdit}
-      <NewLineFromSelectedRow
-        visible={selected.length > 0}
-        onCreate={openBundleModal}
-        buttonLabel="Bundle into line…"
-      />
-    {/if}
   </tbody>
 </table>
 
-{#if canEdit}
-  <!-- The pool is task-domain material inside the estimate page — it wears
-       the tasks area's amber colorway (cw-tasks tokens) so "which bits are
-       what" reads at a glance (RM 2026-08-17). -->
-  <div class="cw-tasks">
-    {#if uncoveredRows.length === 0}
-      <!-- Empty pool: the whole section gives way to a plan-first pointer
-           (RM 2026-08-16) — a heading over an empty table taught nothing. -->
-      <p class="pool-empty-hint">
-        To build an estimate based on tasks and materials, add them in the
-        Tasks pane and they'll be listed below for line item reference.
-      </p>
-    {:else}
-      <UncoveredWorkSection
-        title="Unquoted work"
-        subtitle="Tasks and materials from this job not yet on this estimate."
-        rows={uncoveredRows}
-        bind:selected
-        directLabel="Add as its own line"
-        onDirect={billDirect}
-        emptyText="No unquoted tasks or materials."
-      />
-    {/if}
-  </div>
+{#if canEdit && lineItems.length === 0}
+  <!-- Composing lines from job atoms happens on the Tasks page now
+       (bundling-in-task-view Task 5) — an empty draft points there instead
+       of showing a dead table. -->
+  <p class="empty-hint">
+    No line items yet — <a href={`#/jobs/${estimate.job}/tasks`}>compose lines
+    from the Tasks page</a> by selecting work and bundling it.
+  </p>
 {/if}
 
 <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />
@@ -545,15 +438,6 @@
   onClose={closeMintModal}
 />
 
-<BundleModal
-  open={bundleModalOpen}
-  atoms={bundleAtoms}
-  {apiBase}
-  onCreated={handleBundleCreated}
-  onConflict={handleBundleConflict}
-  onClose={() => { bundleModalOpen = false; }}
-/>
-
 <DriftModal
   open={driftModalOpen}
   atom={driftAtom}
@@ -586,7 +470,7 @@
 <style>
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
-  .pool-empty-hint { margin-top: 16px; color: #6b7280; font-size: 14px; }
+  .empty-hint { margin-top: 16px; color: #6b7280; font-size: 14px; }
   /* The rowspanned Actions cell: pin its buttons to the top so they sit
      beside the line row, not floating mid-group. */
   .actions-span { vertical-align: top; }

@@ -46,9 +46,6 @@ function mockApi(estimate, { versions = null, changeOrders = [] } = {}) {
     if (estimate && url === `/api/estimates/${estimate.estimate_id}/`) {
       return Promise.resolve({ ...estimate });
     }
-    if (estimate && url === `/api/estimates/${estimate.estimate_id}/source-pool/`) {
-      return Promise.resolve({ atoms: [] });
-    }
     if (url.startsWith('/api/estimates/?job=')) {
       return Promise.resolve({ results: versionList });
     }
@@ -58,7 +55,6 @@ function mockApi(estimate, { versions = null, changeOrders = [] } = {}) {
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
     if (url.startsWith('/api/settings/')) return Promise.resolve({});
     if (url.includes('rate-schemes')) return Promise.resolve({ results: [ADJ_SERVICE] });
-    if (url.includes('source-pool')) return Promise.resolve({ atoms: [] });
     return Promise.resolve({});
   });
 }
@@ -573,82 +569,50 @@ describe('EstimatePanel adjustment affordances', () => {
   });
 });
 
-describe('EstimatePanel create-line-from-selected integration (silent refresh)', () => {
-  // Regression coverage for the bug a code review caught: EstimateEditView's
-  // create-line -> edit-modal handoff only "worked" in EstimateEditView's own
-  // unit test because that test's onChanged mock does nothing. Wired through
-  // the real EstimatePanel, the old (non-silent) refresh flipped docLoading
-  // synchronously, which tore down and remounted EstimateEditView. This test
-  // exercises the full tick -> Bundle into line… -> Create line path against
-  // the real panel (Task 8: the gesture now routes through BundleModal
-  // rather than straight to the edit modal).
-  it('tick a pool atom, bundle it into a line, and the refresh survives without a full-panel reload', async () => {
+describe('EstimatePanel silent refresh (no full-panel reload mid-gesture)', () => {
+  // Regression coverage for the bug a code review caught: a gesture inside
+  // EstimateEditView calling the OLD (non-silent) refresh flipped docLoading
+  // synchronously, which tore down and remounted EstimateEditView. The
+  // create-line-from-selected-atoms flow that originally exercised this
+  // moved to the Tasks page (Task 5: see TasksPanel.test.js's "onCreated"
+  // coverage) — this test re-grounds the same invariant on a gesture that
+  // still lives here: editing a line's field values through the real panel.
+  it('editing a line via the modal refreshes silently — no "Loading…" flash, view stays mounted', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
 
     const LINE = {
       line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
       price: '5', accounting_category: 3, sources: [], backing: 'hand', backing_total: null,
     };
-    const POOL_ATOM = {
-      type: 'task', id: 41, description: 'Sand edges', qty: '1', rate: '30.00',
-      amount: '30.00', units: 'hour', category_id: null, state: 'available',
-      claiming_line_item_id: null, claiming_line_number: null,
-      claiming_estimate_id: null, claiming_estimate_number: null,
-    };
-    const NEW_LINE = {
-      line_item_id: 99, line_number: 2, description: 'Sand edges', qty: '1', units: 'hour',
-      price: '30.00', accounting_category: null, sources: [], backing: 'planned_work', backing_total: '30.00',
-    };
 
-    // Mutable so the mocked GET reflects the server-side effect of the POST
-    // below — this is what lets the test actually exercise "look the created
-    // line up in the refreshed lineItems", not just fall back to the raw
-    // POST response.
     let currentLineItems = [LINE];
     api.get.mockReset();
     api.get.mockImplementation((url) => {
       if (url === '/api/estimates/7/') {
         return Promise.resolve(makeEstimate({ can_manage: true, status: 'draft', line_items: currentLineItems }));
       }
-      if (url === '/api/estimates/7/source-pool/') return Promise.resolve({ atoms: [POOL_ATOM] });
       if (url.startsWith('/api/estimates/?job=')) return Promise.resolve({ results: [makeEstimate()] });
       if (url.startsWith('/api/change-orders/?job=')) return Promise.resolve({ results: [] });
       if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
-      if (url === '/api/settings/units/') return Promise.resolve(['none', 'hour', 'ea']);
       if (url.startsWith('/api/settings/')) return Promise.resolve({});
       return Promise.resolve({});
     });
-    api.post.mockImplementation((url) => {
-      if (url === '/api/estimates/7/line-items-from-atoms/') {
-        currentLineItems = [...currentLineItems, NEW_LINE];
-        return Promise.resolve({ ...NEW_LINE });
-      }
-      return Promise.resolve({});
+    api.patch.mockImplementation((url) => {
+      currentLineItems = [{ ...LINE, description: 'Cut (edited)' }];
+      return Promise.resolve({ ...LINE, description: 'Cut (edited)' });
     });
 
     const { findByText, findByRole, container } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     await findByText('Cut');
 
-    const checkbox = container.querySelector('input[type="checkbox"]');
-    await fireEvent.click(checkbox);
-    const bundleBtn = await findByText(/bundle into line/i);
-    await fireEvent.click(bundleBtn);
-
+    await fireEvent.click(await findByRole('button', { name: 'Edit' }));
     const dialog = await findByRole('dialog');
-    expect(dialog).toBeInTheDocument();
-    // Default one-unit mode seeds qty empty — fill it in so Create is enabled.
-    await fireEvent.input(within(dialog).getByLabelText(/Quantity/), { target: { value: '1' } });
-    await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
+    await fireEvent.input(within(dialog).getByLabelText(/Description/i), { target: { value: 'Cut (edited)' } });
+    await fireEvent.click(within(dialog).getByRole('button', { name: /save/i }));
 
-    // The bundle modal closes once the create succeeds and the refreshed
-    // line shows up — proof the panel's silent refresh didn't tear down
-    // EstimateEditView mid-gesture (same regression this test originally
-    // guarded, just through the new gesture). "Sand edges" also still
-    // appears in the (statically-mocked) pool below, so scope the check to
-    // the line-items table itself.
     await waitFor(() => expect(container.querySelector('[role="dialog"]')).toBeNull());
     const linesTable = container.querySelector('table.line-items-table');
-    expect(await within(linesTable).findByText('Sand edges')).toBeInTheDocument();
+    expect(await within(linesTable).findByText('Cut (edited)')).toBeInTheDocument();
 
     // The panel must never have blanked to the full "Loading…" state, and
     // the edit view (Add line, etc.) must still be there — proof

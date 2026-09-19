@@ -237,6 +237,20 @@ Status coupling, transitions, and what a job may do at each stage.
   drops the `tasks.exists()` requirement for that case or documents why
   it's fine for such a job to sit at `in_progress`/`approved` forever.
 
+- **`send-all-atoms` estimate endpoint has no UI link — keep or kill?** —
+  _added 2026-09-19 (bundling-in-task-view Task 5)_
+  `POST /api/estimates/{id}/send-all-atoms/` (`apps/api/estimates/views.py:186-193`)
+  projects every available atom onto the estimate as one line each — the
+  old wizard's one-click "send all". It already had zero frontend/e2e
+  references before this task's estimate-page reduction, and the
+  bundling surface that replaces manual composition (the Tasks page's
+  pool + BundleModal) doesn't call it either, so it's now fully
+  UI-orphaned on both sides.
+  _Done when:_ RM decides whether to wire it into the new Tasks-page
+  bundling flow (e.g. a "send all remaining" bulk action alongside the
+  per-selection Bundle CTA) or delete it with its
+  `EstimateWizardService.send_all_atoms` backing method.
+
 ## Change orders
 
 The CO surface and its estimate-parallel code.
