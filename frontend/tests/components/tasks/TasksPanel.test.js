@@ -356,3 +356,87 @@ describe('TasksPanel Check Complete (B4)', () => {
     confirmSpy.mockRestore();
   });
 });
+
+describe('TasksPanel — estimate context (Task 2)', () => {
+  // estimatesRows is passed by reference so a test can mutate it (e.g. after
+  // a POST creates a new draft) and have the next api.get pick up the change.
+  function mockApiWithEstimates(estimatesRows, { poolAtoms = [] } = {}) {
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/estimates/?job=')) {
+        return Promise.resolve({ results: estimatesRows });
+      }
+      if (/\/api\/estimates\/\d+\/source-pool\//.test(url)) {
+        return Promise.resolve({ atoms: poolAtoms });
+      }
+      if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+  }
+
+  it('State A: a live draft estimate shows the bundling context line, no Start Estimate button', async () => {
+    mockApiWithEstimates([
+      { estimate_id: 42, estimate_number: 'EST-2026-0042', status: 'draft' },
+    ]);
+    const { findByText, queryByRole } = render(TasksPanel, {
+      props: { job: makeJob({ can_manage: true, status: 'in_progress' }) },
+    });
+    const line = await findByText(/Bundling into estimate EST-2026-0042 \(draft\)/i);
+    const link = line.closest('p').querySelector('a');
+    expect(link).toHaveAttribute('href', '#/jobs/3/estimate');
+    expect(queryByRole('button', { name: /start estimate/i })).toBeNull();
+  });
+
+  it('State B: no estimates + draft job + can_manage offers Start Estimate; ' +
+     'clicking it POSTs and then shows the state-A context line', async () => {
+    const estimatesRows = [];
+    mockApiWithEstimates(estimatesRows);
+    api.post.mockReset();
+    api.post.mockImplementation(async (url, body) => {
+      if (url === '/api/estimates/') {
+        const est = { estimate_id: 42, estimate_number: 'EST-2026-0042', status: 'draft', job: body.job };
+        estimatesRows.push(est);
+        return est;
+      }
+      return {};
+    });
+    const { findByRole, findByText } = render(TasksPanel, {
+      props: { job: makeJob({ can_manage: true, status: 'draft' }) },
+    });
+    const startBtn = await findByRole('button', { name: /start estimate/i });
+    await fireEvent.click(startBtn);
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/estimates/', { job: 3 }));
+    await findByText(/Bundling into estimate EST-2026-0042 \(draft\)/i);
+  });
+
+  it('State C: an accepted estimate shows neither the context line nor Start Estimate', async () => {
+    mockApiWithEstimates([
+      { estimate_id: 10, estimate_number: 'EST-2026-0010', status: 'accepted' },
+    ]);
+    const { queryByRole, queryByText, findByRole } = render(TasksPanel, {
+      props: { job: makeJob({ can_manage: true, status: 'in_progress' }) },
+    });
+    await findByRole('button', { name: /add work/i });
+    expect(queryByText(/Bundling into estimate/i)).toBeNull();
+    expect(queryByRole('button', { name: /start estimate/i })).toBeNull();
+  });
+
+  it("State C': no estimates but job.status 'approved' offers nothing", async () => {
+    mockApiWithEstimates([]);
+    const { queryByRole, findByRole } = render(TasksPanel, {
+      props: { job: makeJob({ can_manage: true, status: 'approved' }) },
+    });
+    await findByRole('button', { name: /add work/i });
+    expect(queryByRole('button', { name: /start estimate/i })).toBeNull();
+  });
+
+  it('Permission: state-B conditions but can_manage false offers nothing', async () => {
+    mockApiWithEstimates([]);
+    const { queryByRole, findByRole } = render(TasksPanel, {
+      props: { job: makeJob({ can_manage: false, status: 'draft' }) },
+    });
+    await findByRole('button', { name: /add work/i });
+    expect(queryByRole('button', { name: /start estimate/i })).toBeNull();
+  });
+});

@@ -1,6 +1,6 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
-  import { showError } from '../../stores/messages.js';
+  import { showError, showSuccess } from '../../stores/messages.js';
   import { canMarkWorkComplete } from '../../lib/jobActions.js';
   import { consumeMaterial, restockMaterial, drawMoreMaterial, moveMaterial }
     from '../../lib/materialOps.js';
@@ -103,6 +103,50 @@
     job && ['completed', 'cancelled', 'rejected'].includes(job.status)
   );
 
+  // Estimate-context layer: the job's single non-superseded estimate (Task 1
+  // guarantees at most one), its source pool when it's a draft, and the
+  // "Start Estimate" offer when there's no live estimate yet. Tasks 3-4 build
+  // selection checkboxes and the bundle CTA on top of these exact names.
+  let liveEstimate = $state(null);
+  let sourcePool = $state(null);
+  let estimateContextLoaded = $state(false);
+
+  const draftEstimate = $derived(
+    liveEstimate?.status === 'draft' ? liveEstimate : null);
+  const canBundle = $derived(
+    !!draftEstimate && !!job?.can_manage && !jobLocked && !job?.on_hold);
+  const canOfferEstimate = $derived(
+    estimateContextLoaded && !liveEstimate && !!job?.can_manage && !jobLocked
+    && ['draft', 'submitted'].includes(job?.status));
+
+  // The job has at most one non-superseded estimate (enforced in
+  // Estimate.clean() + create_for_job) — .find() is exact, not heuristic.
+  async function loadEstimateContext() {
+    try {
+      const resp = await api.get(`/api/estimates/?job=${job.job_id}&page_size=100`);
+      const rows = resp.results ?? resp;
+      liveEstimate = rows.find((e) => e.status !== 'superseded') ?? null;
+      sourcePool = liveEstimate?.status === 'draft'
+        ? await api.get(`/api/estimates/${liveEstimate.estimate_id}/source-pool/`)
+        : null;
+    } catch (e) {
+      liveEstimate = null;
+      sourcePool = null;
+    } finally {
+      estimateContextLoaded = true;
+    }
+  }
+
+  async function handleStartEstimate() {
+    try {
+      const est = await api.post('/api/estimates/', { job: job.job_id });
+      showSuccess(`Estimate ${est.estimate_number} started.`);
+      await loadEstimateContext();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not start an estimate.'));
+    }
+  }
+
   // Job-derived data (materials/expenses/enriched task tree) is recomputed
   // whenever `job` changes identity — including after a parent-driven reload
   // triggered by onJobChange(), which is how a mutation's "refresh the job"
@@ -120,6 +164,7 @@
         jobExpenses = [];
       }
       await enrichTasks();
+      await loadEstimateContext();
     } finally {
       loading = false;
     }
@@ -367,7 +412,16 @@
         {hasWcBlockers ? 'Check Complete' : 'Mark Work Complete'}
       </button>
     {/if}
+    {#if canOfferEstimate}
+      <button type="button" onclick={handleStartEstimate}>Start Estimate</button>
+    {/if}
   </div>
+  {#if draftEstimate}
+    <p class="estimate-context">
+      Bundling into estimate {draftEstimate.estimate_number} (draft) —
+      <a href={`#/jobs/${job.job_id}/estimate`}>view</a>
+    </p>
+  {/if}
 
   <TaskTree
     tasks={enrichedTasks}
@@ -491,6 +545,8 @@
 
 <style>
   /* .toolbar (and its buttons) come from app.css. */
+
+  .estimate-context { color: #888; font-size: 13px; margin: 4px 0 12px; }
 
   .dialog-hint { color: #555; font-size: 13px; }
   .blocker-list { margin: 4px 0 12px; padding-left: 20px; }
