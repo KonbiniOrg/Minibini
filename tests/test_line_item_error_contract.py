@@ -62,8 +62,14 @@ class LineItemErrorContractTest(BaseTestCase):
         ValidationError({'accounting_category': [...]}) for a hand-line with
         no atom source and no AC — same contract requirement, a different
         service/dict-shaped error."""
+        # Own job (not self.job / fixture pk=1) — the fixture job already
+        # carries a draft estimate, and a job may only have one
+        # (Estimate.clean()).
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='H', last_name='And', email='hand@test.com')
+        job = Job.objects.create(contact=contact, job_number='JOB-HANDLINE-1')
         estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-2026-9001',
+            job=job, estimate_number='EST-2026-9001',
             status=Estimate.STATUS_DRAFT,
         )
 

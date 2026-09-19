@@ -152,6 +152,14 @@ class EstimateReleasesClaimsTest(DeadDocumentBase):
             job=self.job, estimate_number='EST-K', status=Estimate.STATUS_DRAFT)
         EstimateWizardService.add_atoms_to_new_line_item(
             keeper, [{'type': 'task', 'id': other_task.pk}])
+        # Move keeper out of draft before staging a second document on the
+        # same job — Estimate.clean() refuses two simultaneous drafts on one
+        # job (2026-09-19). Open holds claims exactly like draft (only
+        # rejected/expired release them), so this is a legal transition that
+        # doesn't affect what's under test: that rejecting `doomed` leaves
+        # `keeper`'s claim alone.
+        keeper.status = Estimate.STATUS_OPEN
+        keeper.save()
 
         doomed = self._estimate_claiming_task(number='EST-D')
         doomed.status = Estimate.STATUS_REJECTED

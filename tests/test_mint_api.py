@@ -45,6 +45,13 @@ class ClaimEstimateLineTaskCreateAPITest(TestCase):
             estimate=self.estimate, line_number=1, description='Hand line',
             qty=Decimal('1'), price=Decimal('0.00'), accounting_category=self.cat,
         )
+        # Stage this estimate out of draft — _line_at_status stages its own
+        # fresh drafts on the same job, and Estimate.clean() refuses two
+        # simultaneous drafts on one job (2026-09-19). No test here asserts
+        # self.estimate stays draft; only that self.line exists and its
+        # claim behavior is independent of this estimate's status.
+        self.estimate.status = Estimate.STATUS_OPEN
+        self.estimate.save()
 
         # can_manage_jobs atom holder.
         self.manager = User.objects.create_user(
@@ -67,14 +74,18 @@ class ClaimEstimateLineTaskCreateAPITest(TestCase):
 
     def _line_at_status(self, est_status, suffix):
         """A fresh estimate + hand line arranged directly at est_status.
-        Mirrors tests/test_mint_service.py's _accept/_open pattern: created
-        DRAFT, then QuerySet.update() bypasses save()'s transition guard to
-        land on an arbitrary status."""
+        Created directly at est_status (not staged through draft then
+        QuerySet.update()) — Estimate.clean()'s transition-validation block
+        only runs for existing rows (`if self.pk:`), so a brand-new instance
+        skips it regardless of status, and creating a second estimate at a
+        non-draft status can't collide with the one-draft-per-job invariant
+        (2026-09-19) the way staging it through draft first would when this
+        helper is called more than once against the same job (the
+        draft-and-open loop below)."""
         est = Estimate.objects.create(
             job=self.job, estimate_number=f'EST-PLANWORK-{suffix}',
-            status=Estimate.STATUS_DRAFT,
+            status=est_status,
         )
-        Estimate.objects.filter(pk=est.pk).update(status=est_status)
         return EstimateLineItem.objects.create(
             estimate=est, line_number=1, description=f'Line {suffix}',
             qty=Decimal('1'), price=Decimal('0.00'), accounting_category=self.cat,
@@ -204,6 +215,13 @@ class ClaimEstimateLineAddFromTemplateAPITest(TestCase):
             estimate=self.estimate, line_number=1, description='Hand line',
             qty=Decimal('1'), price=Decimal('0.00'), accounting_category=self.cat,
         )
+        # Stage this estimate out of draft — _line_at_status stages its own
+        # fresh drafts on the same job, and Estimate.clean() refuses two
+        # simultaneous drafts on one job (2026-09-19). No test here asserts
+        # self.estimate stays draft; only that self.line exists and its
+        # claim behavior is independent of this estimate's status.
+        self.estimate.status = Estimate.STATUS_OPEN
+        self.estimate.save()
 
         self.manager = User.objects.create_user(
             username='plan_tmpl_mgr', password='testpass')
@@ -223,11 +241,15 @@ class ClaimEstimateLineAddFromTemplateAPITest(TestCase):
         return self.client.post(self._url(), data, format='json')
 
     def _line_at_status(self, est_status, suffix):
+        """Created directly at est_status — see the twin helper in
+        ClaimEstimateLineTaskCreateAPITest for why (new instances skip
+        clean()'s transition-validation block regardless of status, and this
+        avoids colliding with the one-draft-per-job invariant when called
+        more than once against the same job)."""
         est = Estimate.objects.create(
             job=self.job, estimate_number=f'EST-PLANWORK-T-{suffix}',
-            status=Estimate.STATUS_DRAFT,
+            status=est_status,
         )
-        Estimate.objects.filter(pk=est.pk).update(status=est_status)
         return EstimateLineItem.objects.create(
             estimate=est, line_number=1, description=f'Line {suffix}',
             qty=Decimal('1'), price=Decimal('0.00'), accounting_category=self.cat,

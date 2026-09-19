@@ -372,6 +372,15 @@ class RestampAtomEstimateAPITest(PerUnitDriftTestBase):
         li = self._bundle([{'type': 'task', 'id': task.pk}], qty=Decimal('10'))
         src = li.sources.get()
 
+        # Stage self.estimate out of draft before creating a second draft on
+        # the same job — Estimate.clean() refuses two simultaneous drafts on
+        # one job (2026-09-19). restamp_atom checks the source belongs to
+        # THIS document (see EstimateWizardService.restamp_atom), not
+        # anything status-dependent, so this doesn't affect what's under
+        # test — a claim on a different document is still refused.
+        self.estimate.status = Estimate.STATUS_OPEN
+        self.estimate.save()
+
         other_estimate = Estimate.objects.create(
             job=self.job, status=Estimate.STATUS_DRAFT, estimate_number='EST-2026-9002',
         )
