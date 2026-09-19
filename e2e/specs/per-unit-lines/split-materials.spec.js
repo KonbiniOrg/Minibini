@@ -13,6 +13,7 @@
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
+import { gotoTasksPage, checkBundleRow, openBundleModal } from '../../lib/bundling.js';
 
 test.use({ storageState: personas.finjobs.storageState });
 
@@ -53,8 +54,6 @@ test('split-materials: checking the split box on a mixed one-unit bundle mints a
 
   const estimate = await api.post('/api/estimates/', { job: job.job_id });
 
-  await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
-  const pool = page.locator('.uncovered-work-section');
   const editTable = page.locator('table.line-items-table');
   // Exact text match (not the usual substring `hasText`): the materials
   // line's description is the labor line's description PLUS " — materials",
@@ -65,12 +64,10 @@ test('split-materials: checking the split box on a mixed one-unit bundle mints a
   const fmt = (n) => `$${Number(n).toFixed(2)}`;
   const splitCheckbox = () => page.getByRole('dialog').getByLabel('Split materials onto their own line');
 
-  await test.step('With only the task selected, the split checkbox is absent — it needs both a task and a material', async () => {
-    await pool.locator('tbody tr').filter({ hasText: task.name }).locator('input[type="checkbox"]').check();
-    const newlineRow = page.locator('tr.doc-newline');
-    await expect(newlineRow).toBeVisible();
-    await newlineRow.getByRole('button', { name: 'Bundle into line…' }).click();
-    await expect(page.getByRole('dialog')).toContainText('Bundle into line');
+  await test.step('With only the task selected on the Tasks page, the split checkbox is absent — it needs both a task and a material', async () => {
+    await gotoTasksPage(page, job.job_id);
+    await checkBundleRow(page, task.name);
+    await openBundleModal(page, 1);
 
     await expect(splitCheckbox()).toHaveCount(0);
     await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
@@ -81,11 +78,8 @@ test('split-materials: checking the split box on a mixed one-unit bundle mints a
   const materialsDescription = `${bundleDescription} — materials`;
 
   await test.step('Selecting the material too and reopening: the checkbox appears; checking it re-seeds price to the task-only sum', async () => {
-    await pool.locator('tbody tr').filter({ hasText: material.description }).locator('input[type="checkbox"]').check();
-    const newlineRow = page.locator('tr.doc-newline');
-    await newlineRow.getByRole('button', { name: 'Bundle into line…' }).click();
-    const modal = page.getByRole('dialog');
-    await expect(modal).toContainText('Bundle into line');
+    await checkBundleRow(page, material.description);
+    const modal = await openBundleModal(page, 2);
 
     const oneUnitRadio = modal.getByRole('radio', { name: /one unit — multiply by quantity/i });
     await expect(oneUnitRadio).toBeChecked();
@@ -116,6 +110,7 @@ test('split-materials: checking the split box on a mixed one-unit bundle mints a
   });
 
   await test.step('Two sibling lines land on the estimate: labor (task claim) and materials (material claim)', async () => {
+    await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
     const laborRow = lineRow(bundleDescription);
     await expect(laborRow).toBeVisible();
     const laborCells = laborRow.locator('td');

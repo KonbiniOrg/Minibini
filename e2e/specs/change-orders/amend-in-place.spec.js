@@ -204,6 +204,11 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText('Bundle into line');
+    // One-unit is the modal's default (per-unit-lines spec) and leaves Qty
+    // blank until a multiplier is typed; this CO test just wants the atom
+    // billed at its own value, so switch to "the whole line" (qty/price
+    // seed straight from the atom, same as pre-per-unit-lines behavior).
+    await dialog.getByRole('radio', { name: /the whole line/i }).check();
     await dialog.getByRole('button', { name: 'Create line' }).click();
     await expect(dialog).toBeHidden();
 

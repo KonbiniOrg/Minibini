@@ -14,6 +14,7 @@
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
+import { gotoTasksPage, taskTreeRow, checkBundleRow, openBundleModal } from '../../lib/bundling.js';
 
 test.use({ storageState: personas.finjobs.storageState });
 
@@ -63,7 +64,6 @@ test('plan-first: bundling pool atoms one-unit stamps their totals at bundle tim
 
   const bundleDescription = `${stamp} bundled per-unit line`;
 
-  await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
   const editTable = page.locator('table.line-items-table');
   // A line's OWN row, not a nested AtomChildRow/caption sibling (same
   // scoping caution as mint-and-release.spec.js).
@@ -72,16 +72,13 @@ test('plan-first: bundling pool atoms one-unit stamps their totals at bundle tim
   });
   const fmt = (n) => `$${Number(n).toFixed(2)}`;
 
-  await test.step('Select two tasks + a material from Unquoted work, open Bundle into line…', async () => {
-    const pool = page.locator('.uncovered-work-section');
-    await pool.locator('tbody tr').filter({ hasText: taskA.name }).locator('input[type="checkbox"]').check();
-    await pool.locator('tbody tr').filter({ hasText: taskB.name }).locator('input[type="checkbox"]').check();
-    await pool.locator('tbody tr').filter({ hasText: material.description }).locator('input[type="checkbox"]').check();
-
-    const newlineRow = page.locator('tr.doc-newline');
-    await expect(newlineRow).toBeVisible();
-    await newlineRow.getByRole('button', { name: 'Bundle into line…' }).click();
-    await expect(page.getByRole('dialog')).toContainText('Bundle into line');
+  await test.step('Select two tasks + a material on the Tasks page, open Bundle into line…', async () => {
+    await gotoTasksPage(page, job.job_id);
+    await expect(page.getByText(/Bundling into estimate/i)).toBeVisible();
+    await checkBundleRow(page, taskA.name);
+    await checkBundleRow(page, taskB.name);
+    await checkBundleRow(page, material.description);
+    await openBundleModal(page, 3);
   });
 
   let total;
@@ -112,7 +109,14 @@ test('plan-first: bundling pool atoms one-unit stamps their totals at bundle tim
     await expect(modal).toBeHidden();
   });
 
+  await test.step('Back on the Tasks page, the bundled rows show "estimated" (claimed) and a success overlay confirms the line', async () => {
+    await expect(page.getByText(`Line added to estimate ${estimate.estimate_number} (draft).`)).toBeVisible();
+    await expect(taskTreeRow(page, taskA.name).getByText('estimated')).toBeVisible();
+    await expect(taskTreeRow(page, taskB.name).getByText('estimated')).toBeVisible();
+  });
+
   await test.step('The line shows price = per-unit sum and amount = total x qty', async () => {
+    await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
     const row = lineRow(bundleDescription);
     await expect(row).toBeVisible();
     const cells = row.locator('td');

@@ -1,16 +1,19 @@
-// better-fees skeleton phase, Task 11/14 — the estimate document's merged
-// Edit view (line-items table + Uncovered work pool in one surface, no more
-// separate "reconcile wizard") and the three-mode bar (Edit / Customer /
-// Reorder) that replaced the old two-mode lines/wizard toggle.
+// better-fees skeleton phase, Task 11/14 — the estimate document's Edit view
+// and the three-mode bar (Edit / Customer / Reorder) that replaced the old
+// two-mode lines/wizard toggle. Composing new lines from job atoms moved to
+// the Tasks page (bundling-in-task-view, Task 5) — the estimate's own Edit
+// view is document-only now.
 //
-// This spec drives the estimator's core Edit-mode gesture end to end: tick
-// two uncovered work rows, "Bundle into line…" (NewLineFromSelectedRow's
-// placeholder-row button, Task 8) opens BundleModal; name the merged line
-// there and Create, and see it come back with a "planned work" BackingChip
-// (apps/api/estimates/serializers.py derive_estimate_backing rule 3 — an
-// in-sync task-sourced line). A second, single-atom line ("Add as its own
-// line") gives the doc two lines to exercise Reorder mode's up/down arrows
-// on. Customer mode is asserted read-only (no checkboxes, no buttons).
+// This spec drives the estimator's core bundling gesture end to end from the
+// Tasks page: tick two rows' bundle-selection checkboxes, "Bundle N selected
+// into a line…" (TasksPanel's toolbar CTA) opens the shared BundleModal; name
+// the merged line there and Create, and see it come back on the estimate
+// with a "planned work" BackingChip (apps/api/estimates/serializers.py
+// derive_estimate_backing rule 3 — an in-sync task-sourced line). A second,
+// single-atom line (select one row, bundle it under the whole-line
+// interpretation so it reproduces the old "Add as its own line" shape) gives
+// the doc two lines to exercise Reorder mode's up/down arrows on. Customer
+// mode is asserted read-only (no checkboxes, no buttons).
 //
 // Built fresh (job + tasks + draft estimate) rather than hunted from the
 // seed: the shape needs two job tasks with zero prior estimate claims on
@@ -20,6 +23,7 @@
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
+import { gotoTasksPage, checkBundleRow, openBundleModal } from '../../lib/bundling.js';
 
 test.use({ storageState: personas.finjobs.storageState });
 
@@ -55,22 +59,28 @@ test('three-mode estimate surface: merge into a new line, reorder it, customer v
   const mergedName = `${stamp} merged planned work`;
 
   await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
-  await expect(page.getByRole('heading', { name: 'Unquoted work' })).toBeVisible();
+  // getByText's RegExp form doesn't normalize the source's internal line
+  // break inside the link text — getByRole's accessible-name computation
+  // does, so use that instead.
+  await expect(page.getByRole('link', { name: /compose lines from the tasks page/i })).toBeVisible();
 
-  await test.step('Edit mode: tick two uncovered work rows and create a merged line', async () => {
-    const rowA = page.locator('tr').filter({ hasText: taskAName });
-    const rowB = page.locator('tr').filter({ hasText: taskBName });
-    await rowA.locator('input[type="checkbox"]').check();
-    await rowB.locator('input[type="checkbox"]').check();
-
-    await expect(page.getByText('＋ New line from selected')).toBeVisible();
-    await page.getByRole('button', { name: 'Bundle into line…' }).click();
-
-    const modal = page.getByRole('dialog');
-    await expect(modal).toContainText('Bundle into line');
+  await test.step('Tasks page: tick two rows and bundle them into a merged line', async () => {
+    await gotoTasksPage(page, job.job_id);
+    await checkBundleRow(page, taskAName);
+    await checkBundleRow(page, taskBName);
+    const modal = await openBundleModal(page, 2);
+    // One-unit is the modal's default (per-unit-lines spec) and leaves Qty
+    // blank until a multiplier is typed; this test only cares that a merged
+    // line lands, so "the whole line" seeds qty/price straight from the
+    // atoms with no extra typing.
+    await modal.getByRole('radio', { name: /the whole line/i }).check();
     await modal.getByLabel('Description').fill(mergedName);
     await modal.getByRole('button', { name: 'Create line' }).click();
     await expect(modal).toBeHidden();
+    // The success overlay is a global fixed-position element that outlives
+    // navigation — dismiss it now so it doesn't block the next step's click
+    // on this same Tasks page.
+    await page.getByRole('button', { name: 'Dismiss message' }).click();
   });
 
   // Scoped to rows carrying a BackingChip — the parent line row, never the
@@ -80,18 +90,25 @@ test('three-mode estimate surface: merge into a new line, reorder it, customer v
     .filter({ hasText: text }).filter({ has: page.locator('.backing-chip') });
 
   await test.step('The merged line shows the custom name and a "planned work" chip', async () => {
+    await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
     const row = lineRow(mergedName);
     await expect(row).toBeVisible();
     await expect(row.locator('.backing-chip')).toHaveText('planned work');
   });
 
-  await test.step('A single uncovered atom can be billed directly as its own line', async () => {
-    const rowC = page.locator('tr').filter({ hasText: taskCName });
-    await rowC.getByRole('button', { name: 'Add as its own line' }).click();
-    // No post-create edit modal (RM 2026-08-16): the line just appears;
-    // editing is the user's decision via the row's own Edit button.
-    await expect(page.getByRole('heading', { name: 'Edit Line Item' })).toHaveCount(0);
+  await test.step('A single uncovered atom can be bundled into its own line from the Tasks page', async () => {
+    await gotoTasksPage(page, job.job_id);
+    await checkBundleRow(page, taskCName);
+    const modal = await openBundleModal(page, 1);
+    // The whole-line interpretation reproduces the old direct "Add as its
+    // own line" shape: qty/price seed straight from the atom's own values,
+    // no per-unit multiplier to type.
+    await modal.getByRole('radio', { name: /the whole line/i }).check();
+    await modal.getByRole('button', { name: 'Create line' }).click();
+    await expect(modal).toBeHidden();
+    await page.getByRole('button', { name: 'Dismiss message' }).click();
 
+    await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
     const row = lineRow(taskCName);
     await expect(row).toBeVisible();
     await expect(row.locator('.backing-chip')).toHaveText('planned work');

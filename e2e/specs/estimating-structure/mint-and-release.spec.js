@@ -12,16 +12,18 @@
 // real default to preselect — the seed's own default_rate_scheme isn't
 // reliable, same caution as specs/settings/rate-scheme-presets.spec.js):
 // a draft estimate with a catalog service line, two plain hand lines, and a
-// bundled line built through the BundleModal gesture itself (select two pool
-// atoms -> "Bundle into line…" -> edit qty under keep-total -> Create) —
-// then send/accept/mint/decline walks the checklist to the job's
-// auto-release. A second test covers the two edge assertions that don't fit
+// bundled line built through the BundleModal gesture itself, driven from the
+// Tasks page (bundling-in-task-view, Task 5): select two pool atoms' bundle
+// checkboxes -> "Bundle N selected into a line…" -> edit qty under
+// keep-total -> Create — then send/accept/mint/decline walks the checklist
+// to the job's auto-release. A second test covers the two edge assertions that don't fit
 // that single walk: an approved-but-unanswered job's pill still offers no
 // manual in_progress option, and an all-catalog estimate skips the
 // "approved" rest stop entirely.
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
+import { gotoTasksPage, taskTreeRow, checkBundleRow, openBundleModal } from '../../lib/bundling.js';
 
 test.use({ storageState: personas.finjobs.storageState });
 
@@ -95,7 +97,6 @@ test('structure journey: bundle a line, send, accept, mint/decline the checklist
 
   const bundleDescription = `${stamp} bundled projected line`;
 
-  await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
   const editTable = page.locator('table.line-items-table');
   // A line's OWN row (not its nested AtomChildRow/caption siblings — those
   // can carry the same text: a mint-generated task's name mirrors the line
@@ -106,28 +107,25 @@ test('structure journey: bundle a line, send, accept, mint/decline the checklist
   });
 
   await test.step('Draft: the catalog + two hand lines are on the estimate; no "Add selected here" anywhere', async () => {
+    await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
     await expect(lineRow(serviceItem.template_name)).toBeVisible();
     await expect(lineRow(handLineA.description)).toBeVisible();
     await expect(lineRow(handLineB.description)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add selected here' })).toHaveCount(0);
   });
 
-  await test.step('Bundle into line…: select two pool atoms, edit qty under keep-total, Create', async () => {
-    const pool = page.locator('.uncovered-work-section');
-    await pool.locator('tbody tr').filter({ hasText: bundleTaskA.name })
-      .locator('input[type="checkbox"]').check();
-    await pool.locator('tbody tr').filter({ hasText: bundleTaskB.name })
-      .locator('input[type="checkbox"]').check();
-
-    const newlineRow = page.locator('tr.doc-newline');
-    await expect(newlineRow).toBeVisible();
-    await newlineRow.getByRole('button', { name: 'Bundle into line…' }).click();
-
-    const modal = page.getByRole('dialog');
-    await expect(modal).toContainText('Bundle into line');
+  await test.step('Bundle into line…: select two rows on the Tasks page, edit qty under keep-total, Create', async () => {
+    await gotoTasksPage(page, job.job_id);
+    await checkBundleRow(page, bundleTaskA.name);
+    await checkBundleRow(page, bundleTaskB.name);
+    const modal = await openBundleModal(page, 2);
     await expect(modal.locator('tbody tr').filter({ hasText: bundleTaskA.name })).toBeVisible();
     await expect(modal.locator('tbody tr').filter({ hasText: bundleTaskB.name })).toBeVisible();
 
+    // "The whole line" interpretation is what this journey exercises
+    // (keep-total qty<->price coupling) — one-unit is the modal's default
+    // (per-unit-lines spec), so switch explicitly.
+    await modal.getByRole('radio', { name: /the whole line/i }).check();
     const keepTotal = modal.getByRole('checkbox', { name: /keep total/i });
     await expect(keepTotal).toBeChecked();
 
@@ -152,13 +150,16 @@ test('structure journey: bundle a line, send, accept, mint/decline the checklist
     await modal.getByRole('button', { name: 'Create line' }).click();
     await expect(modal).toBeHidden();
 
+    // Claimed now — the Tasks page rows show "estimated" instead of a
+    // checkbox (Task 3/4's bundle-selection states).
+    await expect(taskTreeRow(page, bundleTaskA.name).getByText('estimated')).toBeVisible();
+    await expect(taskTreeRow(page, bundleTaskB.name).getByText('estimated')).toBeVisible();
+
+    await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
     await expect(lineRow(bundleDescription)).toBeVisible();
     await expect(page.locator('tr.doc-atom-caption').filter({ hasText: 'based on 2 tasks:' })).toBeVisible();
     await expect(editTable.getByText(bundleTaskA.name)).toBeVisible();
     await expect(editTable.getByText(bundleTaskB.name)).toBeVisible();
-    // Claimed now — gone from the still-uncovered pool.
-    await expect(pool.locator('tbody tr').filter({ hasText: bundleTaskA.name })).toHaveCount(0);
-    await expect(pool.locator('tbody tr').filter({ hasText: bundleTaskB.name })).toHaveCount(0);
   });
 
   await test.step('Send (open): the surface goes inert — no edit or mint affordances anywhere', async () => {
