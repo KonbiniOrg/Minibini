@@ -81,6 +81,19 @@ class InvoiceLineFromServiceTest(TestCase):
             {'service_item': 999999, 'qty': '1'}, format='json')
         self.assertEqual(resp.status_code, 404)
 
+    def test_description_override_is_honored(self):
+        # Invoice lens on the shared editable-description behavior
+        # (2026-09-20) — same contract as the estimate/CO twins: an
+        # explicit description wins, price/qty/AC are untouched.
+        resp = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items-from-service/',
+            {'service_item': self.svc.pk, 'qty': '3',
+             'description': 'Billed manually'}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertEqual(data['description'], 'Billed manually')
+        self.assertEqual(Decimal(data['price']), Decimal('90.00'))
+
     def test_non_draft_rejected(self):
         Invoice.objects.filter(pk=self.invoice.pk).update(
             status=Invoice.STATUS_OPEN)

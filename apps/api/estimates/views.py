@@ -203,6 +203,7 @@ class EstimateViewSet(
                 estimate.pk,
                 request.data.get('service_item'),
                 request.data.get('qty'),
+                description=request.data.get('description'),
             )
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)

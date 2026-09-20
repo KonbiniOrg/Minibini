@@ -132,6 +132,31 @@ class ChangeOrderAcceptanceBase(TestCase):
         return line, material
 
 
+class COLineDescriptionOverrideTests(ChangeOrderAcceptanceBase):
+    """CO lens on the shared editable-description behavior (2026-09-20) —
+    same contract as the estimate/invoice twins: an explicit description
+    wins over the catalog derivation on both catalog-pull paths; absent it
+    derives exactly as before. Not a full matrix re-run — that lives on
+    the estimate lens (tests/test_deferred_service_crystallization.py,
+    tests/test_catalog_line_item_adds.py); this just proves CO shares it."""
+
+    def test_description_override_honored_on_both_catalog_paths(self):
+        co = self._make_co()
+        service_line = ChangeOrderService.add_line_item_from_service(
+            co.pk, self.service_item.pk, Decimal('2'),
+            description='CO service override',
+        )
+        pli_line = ChangeOrderService.add_line_item_from_pli(
+            co.pk, self.pli.pk, Decimal('1'),
+            description='CO pli override',
+        )
+        self.assertEqual(service_line.description, 'CO service override')
+        self.assertEqual(pli_line.description, 'CO pli override')
+        # Price/qty untouched by the override.
+        self.assertEqual(service_line.price, Decimal('100.00'))
+        self.assertEqual(pli_line.price, Decimal('100.00'))
+
+
 class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
     """Accepted CO `add` lines crystallize atoms via the estimate discriminator."""
 

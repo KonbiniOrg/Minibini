@@ -223,12 +223,19 @@ class LineItemMixin:
         service = self.line_item_service_class
         data = request.data.copy()
         pli_id = data.get('inventory_item')
-        has_manual_fields = data.get('description') or data.get('price')
+        # `description` alone no longer forks a catalog pick onto the manual
+        # hand-line path (Add Line modal editable-description feature,
+        # 2026-09-20) — it's an optional override on the PLI path itself
+        # (see add_line_item_from_pli's `description` param). `price` still
+        # does: a caller supplying a price is authoring a hand line, not
+        # tweaking a catalog derivation.
+        has_manual_fields = data.get('price')
 
         try:
             if pli_id and not has_manual_fields:
                 qty = data.get('qty', 0)
-                item = service.add_line_item_from_pli(parent.pk, pli_id, qty)
+                item = service.add_line_item_from_pli(
+                    parent.pk, pli_id, qty, description=data.get('description'))
             else:
                 item = service.add_line_item(parent.pk, **data)
         except NotFoundError:

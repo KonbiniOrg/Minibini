@@ -144,8 +144,15 @@ class InvoiceService:
         return li
 
     @staticmethod
-    def add_line_item_from_pli(invoice_pk, pli_pk, qty):
-        """Add a line item from a InventoryItem to a draft invoice."""
+    def add_line_item_from_pli(invoice_pk, pli_pk, qty, description=None):
+        """Add a line item from a InventoryItem to a draft invoice.
+
+        `description`: optional caller override of the catalog-derived
+        description (Add Line modal editable-description feature,
+        2026-09-20 — mirrors the Task create-money-override pattern,
+        estimates-and-prices.md §3.6c, and EstimateService's twin).
+        Present and non-blank (after strip) wins; absent or
+        blank/whitespace falls back to `pli.description`, unchanged."""
         from apps.inventory.models import InventoryItem
         from apps.core.services import LineItemService
         try:
@@ -160,7 +167,7 @@ class InvoiceService:
         li = InvoiceLineItem(
             invoice=invoice,
             inventory_item=pli,
-            description=pli.description,
+            description=(description or '').strip() or pli.description,
             qty=qty,
             units=pli.units,
             price=pli.selling_price,
@@ -171,9 +178,14 @@ class InvoiceService:
         return li
 
     @staticmethod
-    def add_line_item_from_service(invoice_pk, service_item_pk, qty):
+    def add_line_item_from_service(invoice_pk, service_item_pk, qty, description=None):
         """Ad-hoc service billing: snapshot description/units/price/AC off
-        the ServiceItem's rate scheme. No Task, no source row — pure line."""
+        the ServiceItem's rate scheme. No Task, no source row — pure line.
+
+        `description`: optional caller override of the catalog-derived
+        description — see add_line_item_from_pli's docstring for the
+        contract (present+non-blank wins; else falls back to
+        `service_item.template_name`)."""
         from apps.estimates.models import ServiceItem
         from apps.estimates.services import _decimal_or_invalid
         try:
@@ -190,7 +202,7 @@ class InvoiceService:
         scheme = service_item.rate_scheme
         li = InvoiceLineItem(
             invoice=invoice,
-            description=service_item.template_name,
+            description=(description or '').strip() or service_item.template_name,
             # str() first: a raw JSON float would expand to its binary value
             # and trip the 2-decimal-places validator.
             qty=_decimal_or_invalid(qty, 'qty'),

@@ -215,6 +215,7 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
                 invoice.pk,
                 request.data.get('service_item'),
                 request.data.get('qty'),
+                description=request.data.get('description'),
             )
         except NotFoundError as e:
             return Response({'detail': str(e)},

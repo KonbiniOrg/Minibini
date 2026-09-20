@@ -1249,13 +1249,19 @@ falls back to blank description, `units = 'none'`, `qty = 1`,
 
 No `Task` is created at authoring time. The Task is created at acceptance by `on_accept` (§9.1, discriminator step 1), with `description=li.description` (the edited line description) and `allow_inactive_scheme=True` so a line whose scheme was retired after authoring can still crystallize.
 
+**Editable description at add time (2026-09-20).** Both catalog-pull creation paths — `add_line_item_from_service` above and `add_line_item_from_pli` (the `line-items/` POST's `inventory_item` branch, via `LineItemMixin.line_items`) — take an optional `description` kwarg/body key. Present and non-blank (after `.strip()`) it's used verbatim; absent, or blank/whitespace-only, falls back to the same derivation shown in the table above (`service_item.template_name` / `pli.description`), unchanged from before this feature. This is the same design shape as the Add-Task-time money overrides (§3.6c) — the server-side stamp/derivation stays the default, and a caller-supplied value at create time replaces just that one field. Nothing else about qty/price/units/AC changes.
+
+`LineItemMixin.line_items`'s dispatch (`apps/api/mixins.py`) previously forked to the manual hand-line path (`add_line_item`) whenever *any* `description` accompanied an `inventory_item` — that would have dropped the PLI linkage, its derived price/units/AC, and the hand-line AC requirement, on the very payload this feature sends. The dispatch now only forks on `price` (a real hand-line signal); `description` alone rides the PLI path as an override. Only the estimate/change-order/invoice viewsets go through this shared mixin action — `PurchaseOrderViewSet` overrides `line_items` with its own copy (`apps/api/purchasing/views.py`) and is unaffected.
+
+**Frontend** (`EstimateAddLineForm.svelte` and its CO/invoice siblings): a service or inventory pick now shows the same Description input the freeform branch always had, prefilled with exactly the string the server would derive (`serviceItem.template_name` / `inventoryItem.description` off the picker's own payload — byte-identical to the backend derivation, so an untouched field and an absent field produce the same line). The field is sent in the POST body only when it differs from that prefill; an untouched or re-blanked field sends nothing, keeping the server derivation authoritative. Re-picking (or reopening the modal) reseeds the field from the new choice via the existing reset `$effect`. The freeform branch is untouched — it already always sends `description`.
+
 **`_apply_material_ac_default`.** `is_material=True` bare lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. Plain (non-`is_material`) hand-lines still require an explicit AC. The key is editable via a "Default material category" picker (`DefaultMaterialCategorySetting.svelte`, extracted out of `AccountingCategories.svelte`), rendered in both Settings' Accounting and Pricing tabs; `PATCH /api/settings/` validates it as blank-or-active-category-id (`data-constraints.md` §1.1).
 
 **API endpoint:**
 
 | Verb + path | Behavior |
 |---|---|
-| `POST /api/estimates/{id}/line-items-from-service/` | Body: `{service_item: <PK>, qty: <N>}`. Returns 201 with the serialized line. Permission: `CanManageJobs`. |
+| `POST /api/estimates/{id}/line-items-from-service/` | Body: `{service_item: <PK>, qty: <N>, description?}`. `description` is optional (see above); non-blank wins, absent/blank derives as shown in the table above. Returns 201 with the serialized line. Permission: `CanManageJobs`. |
 
 **`PriceListPicker.svelte` — the unified picker.** Both the estimate detail page and the job task-list page use `PriceListPicker` as the single "Add line / Add Work" entry point. The component is a pure `onChoose` emitter — zero surface-specific logic. It searches service items and catalog inventory items in parallel via their respective `?search=` endpoints and emits one of:
 
@@ -3095,8 +3101,9 @@ are resolved).
 - `POST /api/change-orders/{id}/line-items/from-pli/` — add from
   InventoryItem
 - `POST /api/change-orders/{id}/line-items-from-service/` — add a
-  deferred service line (body `{service_item, qty}`; snapshots price,
-  mints no Task — mirrors the estimate action, §6.4)
+  deferred service line (body `{service_item, qty, description?}`;
+  snapshots price, mints no Task — mirrors the estimate action, §6.4,
+  including the optional-`description`-override contract)
 - `PATCH /api/change-orders/{id}/line-items/{liid}/` — update
 - `POST /api/change-orders/{id}/line-items/reorder/`
 - `DELETE /api/change-orders/{id}/line-items/{liid}/`
@@ -3204,9 +3211,11 @@ Below the table:
 **"Add line"** opens the unified `PriceListPicker` (§6.4) — the same
 service / inventory / freeform entry point as
 the estimate detail page — followed by `COAddLineForm.svelte`
-(`components/changeorders/`, unchanged), which posts a service pick to
+(`components/changeorders/`), which posts a service pick to
 `line-items-from-service/`, an inventory pick to `line-items/` (the
-from-pli path), and a freeform line manually with AC + `is_material`;
+from-pli path) — both with an editable, catalog-prefilled Description
+sent only when the user changed it (§6.4) — and a freeform line manually
+with AC + `is_material`;
 then `UncoveredWorkSection` (title "Unquoted work" since the 2026-08-14
 vocab pass; subtitle "…not in the current agreement") over the CO's
 `source-pool`. The view filters out pool atoms whose `claimed_by_other`

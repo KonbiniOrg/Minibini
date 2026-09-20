@@ -65,6 +65,50 @@ describe('COAddLineForm', () => {
     expect(await findByText(/accounting category is required/i)).toBeInTheDocument();
   });
 
+  it('service choice prefills description from template_name and omits it untouched', async () => {
+    const choice = { type: 'service', serviceItem: { template_id: 11, template_name: 'CNC Routing' } };
+    const { getByLabelText, getByRole } = render(COAddLineForm, {
+      props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('CNC Routing');
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    const [, payload] = api.post.mock.calls.at(-1);
+    expect('description' in payload).toBe(false);
+  });
+
+  it('service choice sends an edited description as an override', async () => {
+    const choice = { type: 'service', serviceItem: { template_id: 11, template_name: 'CNC Routing' } };
+    const { getByLabelText, getByRole } = render(COAddLineForm, {
+      props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    await fireEvent.input(getByLabelText(/description/i), { target: { value: 'CNC Routing (rush)' } });
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items-from-service/',
+      expect.objectContaining({ description: 'CNC Routing (rush)' }));
+  });
+
+  it('inventory choice prefills description from the PLI and omits it untouched', async () => {
+    const choice = { type: 'inventory', inventoryItem: { inventory_item_id: 22, code: 'BOLT-14', description: 'Steel bolt' } };
+    const { getByLabelText, getByRole } = render(COAddLineForm, {
+      props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('Steel bolt');
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    const [, payload] = api.post.mock.calls.at(-1);
+    expect('description' in payload).toBe(false);
+  });
+
+  it('inventory choice sends an edited description as an override', async () => {
+    const choice = { type: 'inventory', inventoryItem: { inventory_item_id: 22, code: 'BOLT-14', description: 'Steel bolt' } };
+    const { getByLabelText, getByRole } = render(COAddLineForm, {
+      props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    await fireEvent.input(getByLabelText(/description/i), { target: { value: 'Steel bolt, zinc-plated' } });
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items/',
+      expect.objectContaining({ action: 'add', description: 'Steel bolt, zinc-plated' }));
+  });
+
   it('shows the base unit next to quantity for a service pick', () => {
     const choice = { type: 'service', serviceItem: {
       template_id: 11, template_name: 'CNC Routing', rate_scheme_detail: { unit_label: 'hr' } } };

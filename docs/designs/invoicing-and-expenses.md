@@ -783,7 +783,14 @@ surfaces are unaffected) — deposits are no longer created through it (see
 below). The picked choice is handed to `InvoiceAddLineForm.svelte`, which
 POSTs the right shape per choice: `{inventory_item, qty}` (from-PLI, copies
 description/units/selling_price/accounting_category), or `{service_item,
-qty}` (from-service — see below). `LineItemModal.svelte` (the modal
+qty}` (from-service — see below). Both catalog picks now show the same
+editable Description input the manual entry always had, prefilled with
+the catalog-derived value (`inventoryItem.description` /
+`serviceItem.template_name`); an edited value rides along as `description`
+in the POST body, an untouched one sends nothing and the server's own
+derivation stands — same optional-override contract as the estimate/CO
+twins (`estimates-and-prices.md` §6.4, itself mirroring the Add-Task-time
+money overrides, §3.6c). `LineItemModal.svelte` (the modal
 shared with the estimate panel) is **edit-only** on invoices now —
 opening it always starts in `modalMode = 'edit'`; there is no longer a
 manual/from-inventory toggle inside it on the invoice surface. Editing an
@@ -792,7 +799,9 @@ existing line item edits its fields only.
 **Ad-hoc service billing** (`POST /api/invoices/{id}/line-items-from-service/`,
 `InvoiceService.add_line_item_from_service`) is the invoice-only "From
 Price List → service" pick: it snapshots `description` (the
-`ServiceItem.template_name`), `units`, `price`
+`ServiceItem.template_name`, or an optional caller-supplied non-blank
+`description` override — 2026-09-20, see `estimates-and-prices.md` §6.4),
+`units`, `price`
 (`RateScheme.effective_rate(service_item.default_active_modifiers)` —
 the *default*-modifier rate, not a live-editable modifier set), and
 `accounting_category` straight onto a plain `InvoiceLineItem` — no

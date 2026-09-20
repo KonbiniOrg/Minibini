@@ -56,3 +56,32 @@ class CatalogLineItemAddTest(TestCase):
         self.assertIn(resp.status_code, [200, 201])
         self.assertEqual(resp.data['inventory_item'], self.pli.pk)
         self.assertEqual(Decimal(resp.data['price']), Decimal('42.50'))
+
+    def test_estimate_catalog_add_with_description_override_is_honored(self):
+        # Add Line modal editable-description feature (2026-09-20): an
+        # explicit, non-blank description on the inventory-item line POST
+        # wins over the PLI-derived one; price/units/AC stay PLI-derived.
+        est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-2026-0002', status=Estimate.STATUS_DRAFT,
+        )
+        resp = self.client.post(
+            f'/api/estimates/{est.pk}/line-items/',
+            {'inventory_item': self.pli.pk, 'qty': '3',
+             'description': 'Widget, gift-wrapped'}, format='json',
+        )
+        self.assertIn(resp.status_code, [200, 201])
+        self.assertEqual(resp.data['description'], 'Widget, gift-wrapped')
+        self.assertEqual(resp.data['inventory_item'], self.pli.pk)
+        self.assertEqual(Decimal(resp.data['price']), Decimal('42.50'))
+
+    def test_estimate_catalog_add_without_description_derives_as_today(self):
+        # Regression pin, explicit per the brief's test list (item 5).
+        est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-2026-0003', status=Estimate.STATUS_DRAFT,
+        )
+        resp = self.client.post(
+            f'/api/estimates/{est.pk}/line-items/',
+            {'inventory_item': self.pli.pk, 'qty': '1'}, format='json',
+        )
+        self.assertIn(resp.status_code, [200, 201])
+        self.assertEqual(resp.data['description'], 'Standard widget')

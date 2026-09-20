@@ -100,6 +100,36 @@ class AddLineFromServiceTest(DeferredServiceBase):
                 self.estimate.pk, self.service_item.pk, 'lots',
             )
 
+    def test_description_override_is_used_verbatim(self):
+        # Add Line modal editable-description feature (2026-09-20): an
+        # explicit, non-blank description wins over the catalog derivation.
+        # Price/qty/AC are untouched by the override.
+        line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('2'),
+            description='Custom line text',
+        )
+        line.refresh_from_db()
+        self.assertEqual(line.description, 'Custom line text')
+        self.assertEqual(line.price, Decimal('40.00'))
+        self.assertEqual(line.qty, Decimal('2'))
+        self.assertEqual(line.accounting_category_id, self.cat.pk)
+
+    def test_no_description_derives_exactly_as_today(self):
+        # Regression pin: omitting description keeps today's derivation.
+        line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('1'),
+        )
+        line.refresh_from_db()
+        self.assertEqual(line.description, 'CAM coding')
+
+    def test_blank_whitespace_description_falls_back_to_derived(self):
+        line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('1'),
+            description='   ',
+        )
+        line.refresh_from_db()
+        self.assertEqual(line.description, 'CAM coding')
+
 
 class ServiceItemFieldTest(DeferredServiceBase):
     def test_line_can_carry_service_item_and_defaults_null(self):
@@ -187,6 +217,16 @@ class LineItemsFromServiceApiTest(DeferredServiceBase):
             {'service_item': 999999, 'qty': '1'}, format='json',
         )
         self.assertEqual(resp.status_code, 404)
+
+    def test_posts_with_description_override(self):
+        resp = self.client.post(
+            f'/api/estimates/{self.estimate.pk}/line-items-from-service/',
+            {'service_item': self.service_item.pk, 'qty': '3',
+             'description': 'Edited at add time'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data['description'], 'Edited at add time')
+        self.assertEqual(Decimal(resp.data['price']), Decimal('40.00'))
 
 
 from apps.api.estimates.serializers import EstimateLineItemSerializer

@@ -412,8 +412,15 @@ class EstimateService:
         return li
 
     @staticmethod
-    def add_line_item_from_pli(estimate_pk, pli_pk, qty):
-        """Add a line item from an InventoryItem to a draft estimate."""
+    def add_line_item_from_pli(estimate_pk, pli_pk, qty, description=None):
+        """Add a line item from an InventoryItem to a draft estimate.
+
+        `description`: optional caller override of the catalog-derived
+        description (Add Line modal editable-description feature,
+        2026-09-20 — mirrors the Task create-money-override pattern,
+        estimates-and-prices.md §3.6c). Present and non-blank (after
+        strip) wins; absent or blank/whitespace falls back to
+        `pli.description`, unchanged from today."""
         try:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
@@ -428,7 +435,7 @@ class EstimateService:
         li = EstimateLineItem(
             estimate=estimate,
             inventory_item=pli,
-            description=pli.description,
+            description=(description or '').strip() or pli.description,
             qty=qty,
             units=pli.units,
             price=pli.selling_price,
@@ -439,13 +446,18 @@ class EstimateService:
         return li
 
     @staticmethod
-    def add_line_item_from_service(estimate_pk, service_item_pk, qty):
+    def add_line_item_from_service(estimate_pk, service_item_pk, qty, description=None):
         """Add a deferred service line to a draft estimate.
 
         Mirrors add_line_item_from_pli: snapshots the priced values off the
         ServiceItem at instantiation (price/accounting_category/units/description)
         and keeps `service_item` on the line purely as the crystallization target.
-        Mints NO Task — the Task is created at acceptance (on_accept)."""
+        Mints NO Task — the Task is created at acceptance (on_accept).
+
+        `description`: optional caller override of the catalog-derived
+        description — see add_line_item_from_pli's docstring for the
+        contract (present+non-blank wins; else falls back to
+        `service_item.template_name`)."""
         try:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
@@ -461,7 +473,7 @@ class EstimateService:
         li = EstimateLineItem(
             estimate=estimate,
             service_item=service_item,
-            description=service_item.template_name,
+            description=(description or '').strip() or service_item.template_name,
             # str() first: a raw JSON float would expand to its binary value
             # and trip the 2-decimal-places validator.
             qty=_decimal_or_invalid(qty, 'qty'),
