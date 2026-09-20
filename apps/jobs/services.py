@@ -1113,6 +1113,18 @@ class TaskService:
         which must clone a worksheet faithfully even when its rate scheme has
         since been retired.
 
+        Add-Task-time money overrides (2026-09-19): ``rate``/``unit_label``/
+        ``accounting_category`` in ``task_fields`` are money OVERRIDES, not
+        plain construction kwargs — the stamp remains the default, and a
+        PRESENT override key replaces that one stamped field after
+        ``stamp_from_scheme`` runs (never before: stamp_from_scheme would
+        just clobber a pre-stamp assignment). Callers (``JobTaskMixin.tasks``)
+        are responsible for only forwarding a key here when it was actually
+        present in the request — permission gating (the ``MONEY_FIELDS``/
+        ``_can_write_money`` predicate) already happened at the serializer
+        layer, same test as the PATCH money-field gate; this method has no
+        gate of its own.
+
         This is the single creation gate for direct tasks — the on-hold,
         inactive-scheme, and assignee guards can't be skipped by picking a
         different endpoint. (Subtasks were removed 2026-08, better-fees
@@ -1120,6 +1132,11 @@ class TaskService:
         """
         from apps.jobs.models import SchemeInactiveError
 
+        money_overrides = {
+            key: task_fields.pop(key)
+            for key in ('rate', 'unit_label', 'accounting_category')
+            if key in task_fields
+        }
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not rate_scheme_id:
             raise ValidationError({'rate_scheme': 'Required.'})
@@ -1157,6 +1174,8 @@ class TaskService:
                 **task_fields,
             )
             task.stamp_from_scheme(scheme, modifier_keys=active_modifiers)
+            for field, value in money_overrides.items():
+                setattr(task, field, value)
             task.save()
             if task.status not in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
                 JobService.mark_work_reopened(job)

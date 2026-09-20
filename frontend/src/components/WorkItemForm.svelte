@@ -84,17 +84,24 @@
   // false). One-unit is the default, mirroring BundleModal's own default.
   let mintPerUnit = $state(true);
 
-  // Edit-mode money fields: the task's OWN stamped values (task-owned money
-  // Phase 1 — rate_scheme is a create-only trigger, never re-forwarded on
-  // PATCH). RM browser-testing note 5 added a SEPARATE re-pick mechanism,
-  // source_scheme, for edit mode only: picking a different scheme in the
-  // dropdown below client-side RESTAMPS these three fields (plus
-  // activeModifiers) from the new scheme's list data — see the restamp
-  // $effect below. Editing continues to work directly off these fields
-  // either way; the dropdown is just a fast way to reseed them.
-  let editRate = $state('');
-  let editUnitLabel = $state('');
-  let editAccountingCategory = $state('');
+  // The task's (or, as of the Add-Task-time money overrides feature,
+  // 2026-09-19, the create-mode picked scheme's) money block — rate/unit/
+  // accounting_category. Edit mode: the task's OWN stamped values
+  // (task-owned money Phase 1 — rate_scheme is a create-only trigger, never
+  // re-forwarded on PATCH). RM browser-testing note 5 added a SEPARATE
+  // re-pick mechanism, source_scheme, for edit mode only: picking a
+  // different scheme in the dropdown below client-side RESTAMPS these three
+  // fields (plus activeModifiers) from the new scheme's list data — see the
+  // restamp $effect below. Create mode (manual only — see the create-seed
+  // $effect further below): once a scheme is picked, these fields seed from
+  // ITS list data and stay editable/includable in the create POST for a
+  // money-capable caller — the same shape edit mode already used, just also
+  // available before the task exists. Editing continues to work directly
+  // off these fields either way; picking (or re-picking) a scheme is just a
+  // fast way to reseed them.
+  let moneyRate = $state('');
+  let moneyUnitLabel = $state('');
+  let moneyAccountingCategory = $state('');
   // Edit mode: the Rate Scheme dropdown's current selection — starts as the
   // task's original source_scheme (preselected, see the populate effect
   // below) and moves to whatever the user picks next.
@@ -105,6 +112,10 @@
   // that one-time default) fires again on every distinct value, since a
   // restamp is a deliberate re-pick each time, not a one-shot default.
   let lastRestampedSchemeId = $state('');
+  // Guards the create-mode money-field seed $effect further below — same
+  // fire-on-every-distinct-value shape as lastRestampedSchemeId, tracking
+  // rateSchemeId (the manual create dropdown) instead of editSourceSchemeId.
+  let lastSeededCreateSchemeId = $state('');
 
   let schemes = $state([]);
   let loading = $state(true);
@@ -152,9 +163,9 @@
       // are the price of record.
       rateSchemeId = '';
       loadModifiers(item.active_modifiers);
-      editRate = item.rate ?? '';
-      editUnitLabel = item.unit_label ?? '';
-      editAccountingCategory = item.accounting_category ?? '';
+      moneyRate = item.rate ?? '';
+      moneyUnitLabel = item.unit_label ?? '';
+      moneyAccountingCategory = item.accounting_category ?? '';
       // Preselect the Rate Scheme dropdown to the task's CURRENT provenance
       // (RM browser-testing note 5). lastRestampedSchemeId is synced to the
       // same value in this same synchronous block so the restamp $effect
@@ -173,10 +184,10 @@
       lastRestampedSchemeId = item.source_scheme ?? '';
       estQty = item.est_qty ?? '';
       // Seeded from the item snapshot's OWN unit_label, not the live
-      // `isHourUnit` derived — that derived reads editUnitLabel, which this
+      // `isHourUnit` derived — that derived reads moneyUnitLabel, which this
       // same effect writes two lines up. Reading it here would make the
       // effect depend on the field it just set, so editing the Unit
-      // dropdown (which changes editUnitLabel, which changes isHourUnit)
+      // dropdown (which changes moneyUnitLabel, which changes isHourUnit)
       // would re-trigger this whole populate block and stomp the user's
       // pick right back to item.unit_label — the Unit field would look
       // editable but silently snap back on every change.
@@ -187,8 +198,9 @@
     } else {
       name = (mode === 'manual' ? (presetName || '') : ''); description = '';
       activeModifiers = [];
-      editRate = ''; editUnitLabel = ''; editAccountingCategory = '';
+      moneyRate = ''; moneyUnitLabel = ''; moneyAccountingCategory = '';
       editSourceSchemeId = ''; lastRestampedSchemeId = '';
+      lastSeededCreateSchemeId = '';
       estQty = (mode === 'manual' ? (presetQty ?? '') : ''); estWorkerTime = '';
       // Keep numeric so it matches the numeric <option value={tmpl.template_id}>
       // (Svelte 5 selects match option values with strict ===; String() here left
@@ -299,10 +311,31 @@
     if (editSourceSchemeId === lastRestampedSchemeId) return;
     lastRestampedSchemeId = editSourceSchemeId;
     if (!editSelectedScheme) return; // disabled placeholder options can't actually be picked; defensive only
-    editRate = editSelectedScheme.rate;
-    editUnitLabel = editSelectedScheme.unit_label;
-    editAccountingCategory = editSelectedScheme.accounting_category ?? '';
+    moneyRate = editSelectedScheme.rate;
+    moneyUnitLabel = editSelectedScheme.unit_label;
+    moneyAccountingCategory = editSelectedScheme.accounting_category ?? '';
     activeModifiers = [];
+  });
+
+  // Add-Task-time money overrides (2026-09-19), manual create only: fires
+  // on a genuine CHANGE of the manual create Rate Scheme dropdown — same
+  // A -> B -> A reseed semantics as the edit-mode restamp effect above
+  // (each pick is a real value change, so landing back on a scheme reseeds
+  // from ITS own current list data, not a memory of an earlier pick).
+  // Template-mode create is deliberately excluded: it POSTs to
+  // /add-from-template/, a separate endpoint that doesn't read these
+  // override keys (out of scope for this feature — see WorkItemForm's
+  // save() and estimates-and-prices.md for the create-time-override
+  // paragraph), so seeding fields the submit path can't send would be
+  // misleading.
+  $effect(() => {
+    if (mode !== 'manual' || isEdit) return;
+    if (rateSchemeId === lastSeededCreateSchemeId) return;
+    lastSeededCreateSchemeId = rateSchemeId;
+    if (!selectedScheme) { moneyRate = ''; moneyUnitLabel = ''; moneyAccountingCategory = ''; return; }
+    moneyRate = selectedScheme.rate;
+    moneyUnitLabel = selectedScheme.unit_label;
+    moneyAccountingCategory = selectedScheme.accounting_category ?? '';
   });
 
   // Task-owned money (Phase 1): whether THIS user may write money fields
@@ -345,8 +378,14 @@
   // Keys on unit_label, not algorithm: hour-unit schemes (elapsed, and any
   // entered-qty scheme priced per hour) collapse to a single input whose
   // value drives both est_qty and est_worker_time.
+  // Manual mode (edit AND, as of the create-time override feature, create
+  // too) keys on moneyUnitLabel — the create-seed/restamp effects above
+  // keep it synced to the picked scheme's unit_label until a money-capable
+  // caller overrides it, so this responds correctly to that override.
+  // Template mode isn't seeded into moneyUnitLabel (out of scope — see the
+  // create-seed effect's guard), so it still reads selectedScheme directly.
   const isHourUnit = $derived(
-    (mode === 'manual' && isEdit) ? editUnitLabel === 'hour' : (selectedScheme?.unit_label === 'hour')
+    mode === 'manual' ? moneyUnitLabel === 'hour' : (selectedScheme?.unit_label === 'hour')
   );
 
   function categoryLabel(id) {
@@ -441,14 +480,14 @@
           est_worker_time: estWorkerTimeISO,
         };
         if (effectiveCanWriteMoney) {
-          editPayload.rate = editRate;
-          editPayload.unit_label = editUnitLabel;
+          editPayload.rate = moneyRate;
+          editPayload.unit_label = moneyUnitLabel;
           // '' is the select's explicit "none" option (Phase 3: a task's own
           // accounting_category is nullable, categorized later at
           // invoicing) — it must round-trip as JSON null, not the empty
           // string. A bare '' would fail PrimaryKeyRelatedField's pk lookup
           // server-side instead of clearing the field.
-          editPayload.accounting_category = editAccountingCategory === '' ? null : editAccountingCategory;
+          editPayload.accounting_category = moneyAccountingCategory === '' ? null : moneyAccountingCategory;
           // Only touch active_modifiers when we actually have the selected
           // preset's modifier definitions to resolve checked keys into
           // {key, label, percent} snapshots (the model field's real shape on
@@ -495,13 +534,16 @@
         await api.post(url, payload);
       } else {
         // Manual create: rate_scheme (the preset id) is open to everyone —
-        // it's how a worker's "stamp-only" creation happens. active_modifiers
-        // is a MONEY_FIELD (its key's mere presence gates on
-        // CanManageJobOrPM/financials), so a non-manager must omit the key
-        // entirely and ride the stamp (zero modifiers), never send `[]`.
-        // rate/unit_label/accounting_category are never sent here — the
-        // server always stamps those from the chosen preset regardless of
-        // what's submitted, so there's nothing to gain by including them.
+        // it's how a worker's "stamp-only" creation happens. active_modifiers/
+        // rate/unit_label/accounting_category are all MONEY_FIELDS (their
+        // keys' mere presence gates on CanManageJobOrPM/financials), so a
+        // non-manager must omit them entirely and ride the stamp, never send
+        // unchanged/blank values. Add-Task-time money overrides (2026-09-19):
+        // for a money-capable caller, rate/unit_label/accounting_category ARE
+        // sent — the server's stamp_from_scheme runs first as always, and any
+        // of these PRESENT keys then replaces that one stamped field
+        // (estimates-and-prices.md, create-time-override paragraph). Values
+        // are sent as they stand, same precedent as the edit-mode restamp.
         const payload = {
           name,
           description,
@@ -511,6 +553,12 @@
         };
         if (effectiveCanWriteMoney) {
           payload.active_modifiers = activeModifiers;
+          payload.rate = moneyRate;
+          payload.unit_label = moneyUnitLabel;
+          // '' is the select's explicit "none" option — must round-trip as
+          // JSON null (same convention as the edit-mode PATCH above), not
+          // the empty string a PrimaryKeyRelatedField pk lookup would reject.
+          payload.accounting_category = moneyAccountingCategory === '' ? null : moneyAccountingCategory;
         }
         addClaimParams(payload);
         const url = `/api/jobs/${contextId}/tasks/`;
@@ -634,46 +682,70 @@
           <FieldError errors={fieldErrs} field="description" />
         </p>
 
-        {#if mode === 'manual' && isEdit}
-          <!-- The task's own stamped money — editable only for a manager
-               (item.can_manage / CanManageJobOrPM / financials). Create-time
-               never gets this treatment: the server always stamps rate/unit/
-               category from the chosen preset regardless of what's
-               submitted, so there's nothing for an editable field to do
-               before the task exists. -->
-          {#if effectiveCanWriteMoney}
-            <p>
-              <span class="rate-unit-row">
-                <label><strong>Rate</strong><br>
-                  <input type="number" step="0.01" bind:value={editRate} style="width:80px;">
-                </label>
-                <span class="rate-per">per</span>
-                <label><strong>Unit</strong><br>
-                  <UnitsSelect bind:value={editUnitLabel} />
-                </label>
-              </span>
-              <FieldError errors={fieldErrs} field="rate" />
-              <FieldError errors={fieldErrs} field="unit_label" />
-            </p>
-            <p>
-              <label><strong>Accounting Category</strong><br>
-                <select bind:value={editAccountingCategory}>
-                  <!-- Phase 3: a task's own AC is nullable — this is a real,
-                       selectable "leave uncategorized" choice, not a
-                       disabled placeholder (the invoice-side fallback AC
-                       stamps a real category on at invoicing time). -->
-                  <option value="">— none (categorize at invoicing) —</option>
-                  {#each categories.filter((c) => !c.is_fallback) as cat (cat.id)}
-                    <option value={cat.id}>{cat.code} — {cat.name}</option>
-                  {/each}
-                </select>
+        {#if effectiveCanWriteMoney && (mode === 'manual' && (isEdit || selectedScheme))}
+          <!-- The stamped/to-be-stamped money — editable for a manager
+               (item.can_manage / CanManageJobOrPM / financials). Edit mode:
+               the task's OWN stamped values, restampable via the Rate
+               Scheme dropdown above (§3.6a). Add-Task-time money overrides
+               (2026-09-19), CREATE mode: identical shape, now available
+               BEFORE the task exists too — once a scheme is picked, these
+               fields seed from IT (the create-seed $effect above) and stay
+               editable; a money-capable caller's edits ride the create POST
+               as overrides on top of the server's stamp (estimates-and-
+               prices.md, the create-time-override paragraph). Manual mode
+               only — template-mode create posts to /add-from-template/,
+               which doesn't accept these overrides (out of scope for this
+               feature; template mode keeps its read-only preview below). -->
+          <p>
+            <span class="rate-unit-row">
+              <label><strong>Rate</strong><br>
+                <input type="number" step="0.01" bind:value={moneyRate} style="width:80px;">
               </label>
-              <FieldError errors={fieldErrs} field="accounting_category" />
-            </p>
-          {:else}
-            <p><strong>Rate:</strong> ${editRate || '0.00'}/{editUnitLabel || 'none'}</p>
-            <p><strong>Accounting Category:</strong> {categoryLabel(editAccountingCategory)}</p>
+              <span class="rate-per">per</span>
+              <label><strong>Unit</strong><br>
+                <UnitsSelect bind:value={moneyUnitLabel} />
+              </label>
+            </span>
+            <FieldError errors={fieldErrs} field="rate" />
+            <FieldError errors={fieldErrs} field="unit_label" />
+          </p>
+          <p>
+            <label><strong>Accounting Category</strong><br>
+              <select bind:value={moneyAccountingCategory}>
+                <!-- Phase 3: a task's own AC is nullable — this is a real,
+                     selectable "leave uncategorized" choice, not a
+                     disabled placeholder (the invoice-side fallback AC
+                     stamps a real category on at invoicing time). -->
+                <option value="">— none (categorize at invoicing) —</option>
+                {#each categories.filter((c) => !c.is_fallback) as cat (cat.id)}
+                  <option value={cat.id}>{cat.code} — {cat.name}</option>
+                {/each}
+              </select>
+            </label>
+            <FieldError errors={fieldErrs} field="accounting_category" />
+          </p>
+          {#if modifierScheme && modifierScheme.modifiers && modifierScheme.modifiers.length > 0}
+            <fieldset>
+              <legend><strong>Modifiers</strong></legend>
+              {#each modifierScheme.modifiers as m (m.key)}
+                <p>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={activeModifiers.includes(m.key)}
+                      disabled={!effectiveCanWriteMoney}
+                      onchange={(e) => toggleModifier(m.key, e.target.checked)}
+                    />
+                    {m.label} (+{m.percent}%)
+                  </label>
+                </p>
+              {/each}
+              <FieldError errors={fieldErrs} field="active_modifiers" />
+            </fieldset>
           {/if}
+        {:else if mode === 'manual' && isEdit}
+          <p><strong>Rate:</strong> ${moneyRate || '0.00'}/{moneyUnitLabel || 'none'}</p>
+          <p><strong>Accounting Category:</strong> {categoryLabel(moneyAccountingCategory)}</p>
           {#if modifierScheme && modifierScheme.modifiers && modifierScheme.modifiers.length > 0}
             <fieldset>
               <legend><strong>Modifiers</strong></legend>
@@ -768,7 +840,7 @@
           <p>
             <label><strong>Estimated qty</strong><br>
               <input type="number" step="0.01" bind:value={estQty}>
-              <small>{(mode === 'manual' && isEdit) ? editUnitLabel : selectedScheme?.unit_label}</small>
+              <small>{mode === 'manual' ? moneyUnitLabel : selectedScheme?.unit_label}</small>
             </label>
             <FieldError errors={fieldErrs} field="est_qty" />
           </p>

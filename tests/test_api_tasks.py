@@ -462,16 +462,18 @@ class TaskMoneyPermissionTest(TestCase):
         """Before Phase 3, accounting_category was required=True — an
         explicit null in the create payload would 400 ("may not be null").
         It's required=False/allow_null=True now: the explicit null is
-        accepted, and then overwritten by the stamp path regardless (same
-        as an omitted key — Task.stamp_from_scheme always runs after a
-        rate_scheme-driven create)."""
+        accepted. Add-Task-time money overrides (2026-09-19): a PRESENT
+        override key now replaces the stamped value rather than being
+        silently dropped, so an explicit null from a money-capable caller
+        clears the accounting_category instead of being overwritten by the
+        stamp."""
         self.client.force_login(self.manager)
         resp = self.client.post(self._tasks_url(), {
             'name': 'Explicit Null AC', 'rate_scheme': self.scheme.pk,
             'accounting_category': None,
         }, content_type='application/json')
         self.assertEqual(resp.status_code, 201, resp.content)
-        self.assertEqual(resp.json()['accounting_category'], self.ac.pk)
+        self.assertIsNone(resp.json()['accounting_category'])
 
     # --- Unauthenticated ---
     #
@@ -494,6 +496,135 @@ class TaskMoneyPermissionTest(TestCase):
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 403, resp.content)
+
+
+class TaskCreateMoneyOverrideTest(TestCase):
+    """Add-Task-time money overrides (2026-09-19): create still runs
+    `stamp_from_scheme` first (the stamp remains the default), but any of
+    `rate`/`unit_label`/`accounting_category` PRESENT in the create POST
+    now replaces that stamped field instead of being silently dropped.
+    Gated on the SAME `MONEY_FIELDS`/`_can_write_money` predicate the PATCH
+    path already uses — TaskSerializer.validate() doesn't distinguish
+    create from update, so this is wiring the override through to
+    TaskService.create_direct, not a new permission check."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+
+        self.ac = AccountingCategory.objects.create(code='CMNY1', name='CreateMoney1')
+        self.ac2 = AccountingCategory.objects.create(code='CMNY2', name='CreateMoney2')
+        self.scheme = RateScheme.objects.create(
+            name='Create Money Scheme',
+            algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('42.00'),
+            unit_label='piece',
+            accounting_category=self.ac,
+        )
+        self.flat_scheme = RateScheme.objects.create(
+            name='Create Flat Fee Scheme', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('0.00'), unit_label='fee',
+            modifiers=[], accounting_category=self.ac,
+        )
+        contact = Contact.objects.create(
+            first_name='CreateMoney', last_name='Job', email='create-money-job@test.example')
+        self.job = Job.objects.create(
+            name='Create Money Job', contact=contact, job_number='JOB-CMNY-001',
+        )
+        self.worker = User.objects.create_user(
+            username='cmny_worker', password='testpass')
+        self.manager = User.objects.create_user(
+            username='cmny_mgr', password='testpass')
+        self.manager.user_permissions.add(
+            Permission.objects.get(codename='can_manage_jobs'))
+        self.manager = User.objects.get(pk=self.manager.pk)
+
+    def _tasks_url(self):
+        return f'/api/jobs/{self.job.pk}/tasks/'
+
+    def test_create_with_rate_override_replaces_stamped_rate_only(self):
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Overridden Rate', 'rate_scheme': self.scheme.pk,
+            'rate': '99.00',
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(Decimal(body['rate']), Decimal('99.00'))
+        self.assertEqual(body['unit_label'], self.scheme.unit_label)
+        self.assertEqual(body['accounting_category'], self.ac.pk)
+        self.assertEqual(body['source_scheme'], self.scheme.pk)
+        task = Task.objects.get(pk=body['task_id'])
+        self.assertEqual(task.rate, Decimal('99.00'))
+        self.assertEqual(task.source_scheme_id, self.scheme.pk)
+
+    def test_create_with_no_overrides_is_pure_stamp(self):
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Pure Stamp', 'rate_scheme': self.scheme.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(Decimal(body['rate']), self.scheme.rate)
+        self.assertEqual(body['unit_label'], self.scheme.unit_label)
+        self.assertEqual(body['accounting_category'], self.ac.pk)
+
+    def test_create_with_override_by_non_money_user_returns_403(self):
+        self.client.force_login(self.worker)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Worker Override Attempt', 'rate_scheme': self.scheme.pk,
+            'rate': '1.00',
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 403, resp.content)
+        self.assertFalse(Task.objects.filter(name='Worker Override Attempt').exists())
+
+    def test_create_flat_fee_scheme_with_rate_override_replaces_zero_stamp(self):
+        """The RM scenario: a flat_fee scheme with no ServiceItem stamps
+        rate=0.00 by default (estimates-and-prices.md §2.2a) — an explicit
+        rate override at create time replaces that zero."""
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Flat Fee Override', 'rate_scheme': self.flat_scheme.pk,
+            'rate': '150.00',
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(Decimal(body['rate']), Decimal('150.00'))
+        task = Task.objects.get(pk=body['task_id'])
+        self.assertEqual(task.rate, Decimal('150.00'))
+
+    def test_create_with_partial_override_keeps_other_stamped_fields(self):
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Partial Override', 'rate_scheme': self.scheme.pk,
+            'rate': '55.00',
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(Decimal(body['rate']), Decimal('55.00'))
+        self.assertEqual(body['unit_label'], self.scheme.unit_label)
+        self.assertEqual(body['accounting_category'], self.ac.pk)
+
+    def test_create_with_accounting_category_override_replaces_stamp(self):
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'AC Override', 'rate_scheme': self.scheme.pk,
+            'accounting_category': self.ac2.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(body['accounting_category'], self.ac2.pk)
+        self.assertEqual(Decimal(body['rate']), self.scheme.rate)
+
+    def test_create_with_unit_label_override_replaces_stamp(self):
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._tasks_url(), {
+            'name': 'Unit Override', 'rate_scheme': self.scheme.pk,
+            'unit_label': 'hour',
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(body['unit_label'], 'hour')
+        self.assertEqual(Decimal(body['rate']), self.scheme.rate)
 
 
 class CanWriteMoneyFieldTest(TestCase):

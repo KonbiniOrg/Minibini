@@ -348,15 +348,16 @@ describe('WorkItemForm', () => {
   it('shows one Estimated hours input for an hour-unit scheme and submits both fields', async () => {
     mockGet({ schemes: [HOUR_UNIT_SCHEME] });
     const onSaved = vi.fn();
-    const { findByLabelText, getByLabelText, getByRole, queryByLabelText, queryByRole } = render(WorkItemForm, {
+    const { findByLabelText, getByLabelText, getByRole, queryByLabelText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5, onSaved },
     });
     await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '7' } });
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Route Panel' } });
     await fireEvent.input(await findByLabelText(/Estimated hours/), { target: { value: '1:30' } });
-    // No separate "Estimated qty" spinbutton for hour-unit schemes.
+    // No separate "Estimated qty" spinbutton for hour-unit schemes (the
+    // Rate money field is also a spinbutton as of the create-time money
+    // overrides feature, so this no longer asserts zero spinbuttons overall).
     expect(queryByLabelText(/Estimated qty/)).not.toBeInTheDocument();
-    expect(queryByRole('spinbutton')).not.toBeInTheDocument();
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
       est_qty: 1.5, est_worker_time: 'PT1H30M',
@@ -905,5 +906,116 @@ describe('WorkItemForm editing an existing task\'s money fields', () => {
     for (const f of ['rate', 'unit_label', 'accounting_category', 'active_modifiers']) {
       expect(f in call[1]).toBe(false);
     }
+  });
+});
+
+// Add-Task-time money overrides (2026-09-19): the create-mode Add Task
+// modal now shows the SAME editable Rate/Unit/Accounting Category block
+// edit mode does, once a scheme is picked — prefilled from the scheme's own
+// list data, gated on the same effectiveCanWriteMoney predicate, and
+// reseeded wholesale on a re-pick (mirrors §3.6a's edit-mode restamp).
+// Manual mode only — template-mode create posts to /add-from-template/,
+// which doesn't accept these overrides (see WorkItemForm's create-seed
+// effect and estimates-and-prices.md for why that's out of scope here).
+describe('WorkItemForm create-time money overrides (manual create)', () => {
+  const MOD_SCHEME = {
+    rate_scheme_id: 9, name: 'CNC Cutting', algorithm: 'entered_qty',
+    rate: '90.00', unit_label: 'ea', accounting_category: 3,
+    modifiers: [{ key: 'rush', label: 'Rush', percent: 15 }],
+  };
+  const OTHER_SCHEME = {
+    rate_scheme_id: 10, name: 'Laser Cutting', algorithm: 'entered_qty',
+    rate: '20.00', unit_label: 'hour', accounting_category: 4,
+    modifiers: [{ key: 'expedite', label: 'Expedite', percent: 8 }],
+  };
+  const FLAT_FEE_TASK_SCHEME = {
+    rate_scheme_id: 11, name: 'Setup Fee', algorithm: 'flat_fee',
+    rate: '0.00', unit_label: 'fee', modifiers: [],
+  };
+
+  it('shows a prefilled, editable Rate/Unit/Accounting Category block after picking a scheme (money-capable user)', async () => {
+    mockGet({ schemes: [MOD_SCHEME] });
+    const { findByLabelText, getByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, canManage: true, categories: CATEGORIES },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '9' } });
+    expect(await findByLabelText(/^Rate$/)).toHaveValue(90);
+    expect(getByLabelText(/^Unit/)).toHaveValue('ea');
+    expect(getByLabelText(/Accounting Category/)).toHaveValue('3');
+  });
+
+  it('reseeds the money fields wholesale on a re-pick, then again on a return pick (A -> B -> A)', async () => {
+    mockGet({ schemes: [MOD_SCHEME, OTHER_SCHEME] });
+    const { findByLabelText, getByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, canManage: true, categories: CATEGORIES },
+    });
+    const schemeSelect = await findByLabelText(/Rate Scheme/);
+    await fireEvent.change(schemeSelect, { target: { value: '9' } });
+    expect(await findByLabelText(/^Rate$/)).toHaveValue(90);
+    // User edits the prefilled rate before re-picking.
+    await fireEvent.input(getByLabelText(/^Rate$/), { target: { value: '123.45' } });
+    await fireEvent.change(schemeSelect, { target: { value: '10' } }); // A -> B
+    expect(getByLabelText(/^Rate$/)).toHaveValue(20);
+    expect(getByLabelText(/^Unit/)).toHaveValue('hour');
+    expect(getByLabelText(/Accounting Category/)).toHaveValue('4');
+    await fireEvent.change(schemeSelect, { target: { value: '9' } }); // B -> A
+    expect(getByLabelText(/^Rate$/)).toHaveValue(90);
+    expect(getByLabelText(/^Unit/)).toHaveValue('ea');
+    expect(getByLabelText(/Accounting Category/)).toHaveValue('3');
+  });
+
+  it('hides the editable money block for a non-money-capable user, showing the read-only preview instead', async () => {
+    mockGet({ schemes: [MOD_SCHEME] });
+    const { findByLabelText, queryByLabelText, findByText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, canManage: false, categories: CATEGORIES },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '9' } });
+    expect(queryByLabelText(/^Rate$/)).not.toBeInTheDocument();
+    expect(queryByLabelText(/^Unit/)).not.toBeInTheDocument();
+    expect(queryByLabelText(/Accounting Category/)).not.toBeInTheDocument();
+    expect(await findByText(/\$90.*\/ea/)).toBeInTheDocument();
+  });
+
+  it('POSTs rate/unit_label/accounting_category overrides only when the money block is shown', async () => {
+    mockGet({ schemes: [MOD_SCHEME] });
+    const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, canManage: true, categories: CATEGORIES },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '9' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Route it' } });
+    await fireEvent.input(await findByLabelText(/^Rate$/), { target: { value: '150.00' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
+      rate: 150, unit_label: 'ea', accounting_category: 3,
+    }));
+  });
+
+  it('omits rate/unit_label/accounting_category entirely from the POST for a non-money-capable user', async () => {
+    mockGet({ schemes: [MOD_SCHEME] });
+    const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, canManage: false, categories: CATEGORIES },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '9' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Route it' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const call = api.post.mock.calls.find((c) => c[0] === '/api/jobs/5/tasks/');
+    for (const f of ['rate', 'unit_label', 'accounting_category']) {
+      expect(f in call[1]).toBe(false);
+    }
+  });
+
+  it('the RM scenario: a flat_fee scheme prefills rate=0.00, overridable before Save', async () => {
+    mockGet({ schemes: [FLAT_FEE_TASK_SCHEME] });
+    const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, canManage: true, categories: CATEGORIES },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '11' } });
+    expect(await findByLabelText(/^Rate$/)).toHaveValue(0);
+    await fireEvent.input(getByLabelText(/^Rate$/), { target: { value: '150.00' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Setup' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
+      rate: 150,
+    }));
   });
 });

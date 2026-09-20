@@ -164,6 +164,51 @@ test.describe('PM edits the stamped rate', () => {
   });
 });
 
+// Add-Task-time money overrides (2026-09-19): "if it's editable [in the
+// edit-task modal], it should be changeable at add time as well." A
+// money-capable caller now sees the SAME editable Rate/Unit/Accounting
+// Category block on the CREATE form (once a scheme is picked), prefilled
+// from the scheme's own data — see estimates-and-prices.md §3.6c. This is
+// the one real-browser, real-API round trip; the fine-grained cases
+// (reseed on re-pick, hidden for a non-money user, payload shape) are
+// already exercised at the component level
+// (frontend/tests/components/WorkItemForm.test.js) against a mocked API.
+test.describe('PM overrides money fields at Add-Task-time (create-time overrides)', () => {
+  test.use({ storageState: personas.finjobs.storageState });
+
+  test('overriding Rate on the create form ships the overridden amount, not the stamp', async ({ page }) => {
+    const { job, scheme } = await makeJobAndScheme(`${stamp}-create-override`);
+    const taskName = `${stamp} create override task`;
+    const overriddenRate = (Number(scheme.rate) + 7).toFixed(2);
+
+    await page.goto(`/#/jobs/${job.job_id}/tasks`);
+    await page.getByRole('button', { name: 'Add Work' }).click();
+    await page.getByLabel('Add line').getByRole('button', { name: 'Add Task' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Rate Scheme *').selectOption({ label: scheme.name });
+    await dialog.getByLabel('Name *').fill(taskName);
+
+    // Editable, prefilled from the picked scheme — not the read-only
+    // preview a non-money caller would see.
+    const rateInput = dialog.getByLabel('Rate', { exact: true });
+    await expect(rateInput).toHaveValue(scheme.rate);
+    await expect(dialog.getByLabel(/Accounting Category/)).toBeVisible();
+
+    await rateInput.fill(overriddenRate);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    // The created task shows the OVERRIDDEN amount, and provenance still
+    // names the scheme it stamped from — an override never disturbs
+    // source_scheme (estimates-and-prices.md §3.6c).
+    await page.getByRole('button', { name: taskName }).click();
+    await expect(page.getByRole('heading', { name: taskName })).toBeVisible();
+    await expect(rateChipOf(page)).toContainText(`$${overriddenRate}/${scheme.unit_label}`);
+    await expect(schemeChipOf(page)).toContainText(scheme.name);
+  });
+});
+
 // RM browser-testing note 5: the edit-task modal's Rate Scheme becomes
 // changeable with a client-side restamp. This is the one real-browser,
 // real-API round trip for the new dropdown — the fine-grained cases

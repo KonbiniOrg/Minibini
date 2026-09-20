@@ -149,9 +149,12 @@ by `RateScheme`. Three algorithm-owned methods:
   shows.
 
 **Documented edge:** a manual task stamped from a `flat_fee` scheme with
-no ServiceItem (no amount source) stamps `rate = 0.00` — acceptable
-because the fee's money lives on the estimate line; the task is
-valuation only.
+no ServiceItem (no amount source) stamps `rate = 0.00` by default — the
+fee's money otherwise lives on the estimate line, so the task is
+valuation only. As of the Add-Task-time money overrides (§3.6c), a
+money-capable caller can replace that `0.00` with a real rate in the
+SAME create request instead of a follow-up PATCH — the RM scenario §3.6c
+was built for.
 
 **UI:** the scheme manager's "Flat fee" mode hides the rate input and
 modifiers editor (shows the amount-lives-on-items explanation); the
@@ -470,8 +473,12 @@ unchanged re-select never adds the key.
 
 **Backend:** `TaskSerializer.source_scheme` is writable on **UPDATE
 only** — create keeps its `rate_scheme` server-stamp contract untouched
-(`validate_source_scheme` rejects the field outright when there's no
-instance yet, i.e. on create). `source_scheme` joined `MONEY_FIELDS`
+for *provenance* (`validate_source_scheme` rejects the field outright
+when there's no instance yet, i.e. on create); `rate`/`unit_label`/
+`accounting_category` themselves are a different story on create — see
+§3.6c for the Add-Task-time override that lets a money-capable caller
+replace those three stamped fields in the SAME create request, without
+touching `source_scheme`. `source_scheme` joined `MONEY_FIELDS`
 (§10.1 in `jobs-and-tasks.md`), so the key's mere presence in a PATCH
 gates on `CanManageJobOrPM`/`can_manage_financials` like every other
 money field. Validation on write mirrors create's `rate_scheme` rules —
@@ -544,6 +551,68 @@ meaning unchanged (non-money task affordances, e.g. the manager-only
 actions in `users-and-permissions.md` §3) — this was purely a matter of
 routing the *money-field* gate to the field that actually matches the
 server's money-write test.
+
+### 3.6c Add-Task-time money overrides (2026-09-19)
+
+RM decision: "if it's editable [in the edit-task modal], it should be
+changeable at add time as well." `stamp_from_scheme` (§3.1) still runs
+first on every creation path and remains the DEFAULT — but on the
+ordinary job-nested create (`POST /api/jobs/{id}/tasks/`, the Add Task
+modal's manual-mode target; `apps.api.mixins.JobTaskMixin.tasks`), any of
+`rate`/`unit_label`/`accounting_category` PRESENT in the create request
+now replaces that one stamped field after the stamp runs. Absent keys
+keep the stamp exactly as before. `active_modifiers` keeps its existing
+create contract unchanged (a list of modifier key strings, resolved by
+the stamp — not touched by this feature). `source_scheme` stays
+create-rejected (§3.6a, `validate_source_scheme`) — an override never
+disturbs provenance, same as an ordinary field-level edit leaves
+`source_scheme` alone post-stamp (§3.6).
+
+Permission: identical to §3.6/§3.6a — `rate`/`unit_label`/
+`accounting_category` are already `MONEY_FIELDS` entries, so
+`TaskSerializer.validate()`'s raw-key-presence gate (`_can_write_money()`,
+`CanManageJobOrPM` or `can_manage_financials`) already covered a create
+POST carrying one of these keys; a non-money caller gets the exact same
+`PermissionDenied` shape create or update. What changed is plumbing, not
+gating: `TaskService.create_direct` now accepts these three keys as
+overrides (applied via `setattr` AFTER `stamp_from_scheme`, never before
+— stamping would just clobber a pre-stamp assignment) and
+`JobTaskMixin.tasks()` forwards a key only when it was actually present
+in the raw request body. Previously a money-capable caller's `rate`/
+`unit_label`/`accounting_category` in a create POST passed validation but
+was silently dropped before reaching `TaskService.create_direct` — this
+closes that gap rather than opening a new one.
+
+This is the flat_fee documented edge's escape hatch (§2.2a): a manual
+task stamped from a `flat_fee` scheme with no ServiceItem still stamps
+`rate = 0.00` by default, but a money-capable caller can now override
+`rate` in the SAME create request instead of a follow-up PATCH.
+
+**Frontend** (`WorkItemForm.svelte`, manual create mode only): once a
+scheme is picked, the same Rate/Unit/Accounting Category block edit mode
+shows appears, prefilled from the picked scheme's own list data (a
+create-mode mirror of `selectedScheme`/`editSelectedScheme`), gated on
+`effectiveCanWriteMoney` (the `canManage` prop, since create has no
+`item.can_write_money` to read yet — §3.6b). Re-picking a different
+scheme reseeds the fields wholesale from the new pick, same A→B→A
+semantics as §3.6a's edit-mode restamp; user edits after seeding stick
+until the next re-pick. The create POST includes `rate`/`unit_label`/
+`accounting_category` only when the block is shown (money-capable);
+otherwise the payload carries nothing extra and the server stamps exactly
+as before.
+
+**Template mode is explicitly out of scope for this feature.**
+Template-mode create posts to `POST /api/jobs/{id}/add-from-template/`
+(`apps.api.jobs.views.add_from_template`), which does not go through
+`TaskSerializer`/`TaskService.create_direct` at all — it reads a fixed
+set of keys off `request.data` directly and calls
+`ServiceItem.generate_task` (`TaskService.create_from_template`), neither
+of which accepts a money override today. `WorkItemForm`'s create-seed
+effect is guarded to manual mode only for this reason; template-mode
+create keeps its existing stamp-only behavior and read-only preview.
+Extending `add_from_template`'s contract to accept the same overrides is
+a real, separate design question (unaddressed here, same as the mint/
+claim creation endpoints, which also don't go through this path).
 
 ---
 

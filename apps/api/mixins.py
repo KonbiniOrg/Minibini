@@ -454,6 +454,20 @@ class JobTaskMixin:
                 if est_worker_time is not None:
                     est_worker_time = est_worker_time * float(claim_line.qty)
 
+        # Add-Task-time money overrides (2026-09-19): rate/unit_label/
+        # accounting_category are money-gated (TaskSerializer.MONEY_FIELDS)
+        # exactly like on PATCH — validate() above already rejected a
+        # non-money caller sending one of these. Forward a key ONLY when it
+        # was actually present in the raw request body (not merely in
+        # validated_data, which can carry a model-level default the client
+        # never sent) so create_direct's stamp-then-override ordering only
+        # overrides what the caller actually asked to override.
+        money_overrides = {
+            key: validated.get(key)
+            for key in ('rate', 'unit_label', 'accounting_category')
+            if key in raw_keys
+        }
+
         from django.db import transaction
         from apps.estimates.models import EstimateLineItemSource
         from apps.estimates.mint import MintService
@@ -469,6 +483,7 @@ class JobTaskMixin:
                     actual_qty=validated.get('actual_qty'),
                     description=validated.get('description', ''),
                     assignee_id=assignee.pk if assignee else None,
+                    **money_overrides,
                 )
                 if claim_line is not None:
                     MintService.claim_atom_for_line(
