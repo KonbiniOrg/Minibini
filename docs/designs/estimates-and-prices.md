@@ -1931,6 +1931,57 @@ whichever line currently backs it:
   `BundleModal`/`AdjustmentModal`) and calls `onReverted()` on success,
   which the caller uses to refresh and close.
 
+**Removal symmetry — "un-stamp on removal"** (RM decision 2026-09-19):
+stamping multiplies an atom up to the whole-job total; removing the claim
+that stamped it now does the symmetric inverse rather than silently
+abandoning the multiplied total. `apps/core/wizard.py`'s
+`restore_per_unit_claim(line, source_row)` / `restore_per_unit_claims(line)`
+restore a claim's atom toward its snapshot right before the claim row is
+deleted — per FIELD, and only when that field currently sits at EXACTLY the
+value `_stamp_atom_per_unit` would have produced for the line's current qty
+(same expected-value arithmetic `_per_unit_drift_info` uses — Decimal qty
+product quantized to cents, `per_unit_worker_time × float(qty)` for a
+duration). A drifted (hand-edited) field is left exactly as-is — restoring
+would clobber a deliberate edit — so a task whose `est_qty` drifted but
+whose `est_worker_time` didn't gets only the worker time restored. Applies
+in two places, both draft-only (no new gates added — the paths were already
+draft-gated):
+
+- **`BaseWizardService.remove_atoms_from_line_item`** (wizard.py:~815):
+  restores each claim in `source_ids` before `sources.filter(...).delete()`
+  runs, guarded by `getattr(line_item, 'per_unit', False)` (the same
+  dispatcher convention as `_line_sum`). Removing the last claim still
+  restores the atom before the line itself is deleted.
+- **Whole-line deletion** — `LineItemService.delete_line_item_with_renumber`
+  (`apps/core/services.py`): a `getattr(line_item, 'per_unit', False)`
+  pre-pass calls `restore_per_unit_claims(line_item)` over every source row
+  before `line_item.delete()` cascades them away. The `getattr` guard means
+  InvoiceLineItem/PurchaseOrderLineItem (no `per_unit` field at all) never
+  reach `.sources`/the restore helper — proven by a direct test, not just
+  inspection.
+
+The restore functions are module-level in `wizard.py` (not
+`BaseWizardService` classmethods): the atom models a per-unit claim can
+point at (Task/Material) don't vary by container, so the generic,
+container-agnostic `delete_line_item_with_renumber` can call
+`restore_per_unit_claims` without needing a wizard subclass's `cls`
+context.
+
+**Paths that deliberately do NOT restore:** `revise_estimate` (re-points
+source rows onto the new revision, never deletes them); CO replace-
+acceptance's `_move_claims_to` (`apps/estimates/co_acceptance.py` — moves a
+claim row onto the replace line, doesn't delete it); and discarding a draft
+estimate (`EstimateService.discard_draft` → `estimate.delete()` cascades via
+Django's bulk-delete, which skips per-instance `.delete()`/`.save()`
+entirely, so no code runs to catch the atom before the cascade — see
+`docs/designs/LATER.md`'s discard-draft entry).
+
+The append-guard message ("Tasks and materials cannot be added to a
+per-unit line yet. Remove the line and bundle again.", §12.1a-ii) is now
+literally true end-to-end: removing the line restores its claimed atoms to
+their one-unit values first, so bundling them again stamps from a clean
+one-unit baseline instead of multiplying an already-multiplied total.
+
 **CO sibling reminder** (§14.9, Task 8): when a change order replaces a
 `per_unit` line, `COEditView` renders one info line per **other**
 `per_unit` line on the same estimate that shared the target's pre-CO

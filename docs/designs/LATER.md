@@ -447,6 +447,23 @@ The CO surface and its estimate-parallel code.
   (spec §10, RM-gated) — either a lifecycle link is added or the gap is
   explicitly re-ruled acceptable.
 
+- **Discarding a draft estimate doesn't un-stamp its per-unit atoms.** —
+  _added 2026-09-20 (un-stamp-on-removal implementation)_
+  Claim removal (`remove_atoms_from_line_item`) and whole-line deletion
+  (`LineItemService.delete_line_item_with_renumber`) both now restore a
+  per-unit claim's atom to its one-unit snapshot before the claim row goes
+  away (see `estimates-and-prices.md` §9b, "Removal symmetry"). But
+  `EstimateService.discard_draft` deletes the whole `Estimate` in one shot
+  (`estimate.delete()`), which Django cascades via bulk-delete — bulk-delete
+  skips per-instance `.delete()`/`.save()` entirely, so no code runs to
+  restore any `per_unit` line's claimed atoms first. A draft estimate with
+  a bundled per-unit line, discarded rather than having its lines removed
+  one at a time, strands its atoms at the multiplied whole-job total with
+  no snapshot left to recover from (the claim rows are gone too).
+  _Done when:_ RM decides whether discard-draft should walk its per_unit
+  lines and restore their claims first (mirroring the two paths above), or
+  the gap is explicitly ruled acceptable (discard is rare enough, or a
+  draft's atoms are expected to get manually fixed).
 
 ## Invoicing, expenses & payments
 

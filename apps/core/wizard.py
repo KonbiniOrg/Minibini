@@ -805,6 +805,14 @@ class BaseWizardService:
         was_in_sync = cls._is_in_sync(line_item, old_sum)
 
         with transaction.atomic():
+            # Un-stamp on removal: restore each removed claim's atom to its
+            # per-unit snapshot BEFORE the claim rows are deleted — the
+            # symmetric inverse of _stamp_atom_per_unit. getattr dispatcher
+            # (same convention as `_line_sum`) keeps InvoiceLineItem — no
+            # `per_unit` attr — off this path entirely.
+            if getattr(line_item, 'per_unit', False):
+                for source_row in line_item.sources.filter(source_id__in=source_ids):
+                    restore_per_unit_claim(line_item, source_row)
             line_item.sources.filter(source_id__in=source_ids).delete()
             remaining = line_item.sources.count()
 
@@ -823,3 +831,71 @@ class BaseWizardService:
                 LineItemService.get_line_items_for_container(container, type(line_item))
             )
         return {'line_item_deleted': False}
+
+
+# ── un-stamp on removal (per-unit-lines: restore claim on delete) ────────
+#
+# Module-level (not `BaseWizardService` classmethods): the atom models a
+# per-unit claim can point at (Task/Material) don't vary by container, so
+# `LineItemService.delete_line_item_with_renumber` (apps/core/services.py —
+# generic across every container type: Estimate/ChangeOrder/Invoice/PO line
+# items) can call `restore_per_unit_claims` for its whole-line-delete
+# pre-pass without needing a wizard subclass's `cls` context. Both modules
+# live in apps.core, so importing this one from services.py (locally, at
+# call time) introduces no cycle.
+
+def restore_per_unit_claim(line, source_row):
+    """Restore one per-unit claim's atom toward its snapshot BEFORE the
+    claim row is deleted — the symmetric inverse of
+    `BaseWizardService._stamp_atom_per_unit`. Field-independent: a task's
+    `est_qty` and `est_worker_time` are each restored only when that field
+    currently sits at EXACTLY the value `_stamp_atom_per_unit` would have
+    stamped for `line`'s CURRENT qty (same expected-value arithmetic as
+    `_per_unit_drift_info` — Decimal qty product quantized to cents,
+    `per_unit_worker_time * float(qty)` for the duration, never a
+    Decimal-on-timedelta multiply). A drifted (hand-edited) field is left
+    exactly as-is — never clobbers a deliberate edit. No-op when the claim
+    isn't a per-unit claim (`per_unit_qty` unset) or its atom is already
+    gone (dangling — same tolerance as `_resolve_sources`/
+    `_per_unit_drift_info`). Saves via `.save()` per instance (never
+    `QuerySet.update()`), inside the caller's transaction."""
+    if source_row.per_unit_qty is None:
+        return
+    from django.core.exceptions import ObjectDoesNotExist
+    from apps.jobs.models import Task
+    try:
+        instance = source_row.resolve()
+    except ObjectDoesNotExist:
+        return
+
+    per_unit_qty = source_row.per_unit_qty
+    expected_total = (per_unit_qty * line.qty).quantize(Decimal('0.01'))
+
+    if isinstance(instance, Task):
+        changed = False
+        if instance.est_qty == expected_total:
+            instance.est_qty = per_unit_qty
+            changed = True
+        if source_row.per_unit_worker_time is not None:
+            expected_worker_time = source_row.per_unit_worker_time * float(line.qty)
+            if instance.est_worker_time == expected_worker_time:
+                instance.est_worker_time = source_row.per_unit_worker_time
+                changed = True
+        if changed:
+            instance.save()
+    else:
+        if instance.quantity == expected_total:
+            instance.quantity = per_unit_qty
+            instance.save()
+
+
+def restore_per_unit_claims(line):
+    """Restore every claimed atom on `line` toward its per-unit snapshot —
+    the whole-line-delete pre-pass
+    (`LineItemService.delete_line_item_with_renumber`). Caller is
+    responsible for the `getattr(line_item, 'per_unit', False)` guard
+    (InvoiceLineItem/PurchaseOrderLineItem carry no `per_unit` attr and
+    must never reach here) — this function itself just walks every source
+    row on `line`."""
+    for source_row in line.sources.all():
+        restore_per_unit_claim(line, source_row)

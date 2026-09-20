@@ -989,6 +989,19 @@ class LineItemService:
         deleted_line_number = line_item.line_number
         parent_field_name = line_item.get_parent_field_name()
 
+        # Un-stamp on removal (per-unit-lines spec): a per_unit line's
+        # claimed atoms were stamped up to whole-job totals with the raw
+        # one-unit values snapshotted on each claim row
+        # (BaseWizardService._stamp_atom_per_unit). Deleting the line
+        # cascades those claim rows away with no other chance to read the
+        # snapshot first, so restore each undrifted field before the
+        # cascade fires. `getattr` (not a direct attribute read) is the
+        # guard: InvoiceLineItem/PurchaseOrderLineItem carry no `per_unit`
+        # field at all and must never reach `.sources`/the restore helper.
+        if getattr(line_item, 'per_unit', False) and line_item.sources.exists():
+            from apps.core.wizard import restore_per_unit_claims
+            restore_per_unit_claims(line_item)
+
         # Delete the line item
         line_item.delete()
 
