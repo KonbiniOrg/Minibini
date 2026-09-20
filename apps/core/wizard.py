@@ -15,6 +15,28 @@ from django.core.exceptions import ValidationError
 from django.db import transaction, IntegrityError
 
 
+def expected_per_unit_values(per_unit_qty, per_unit_worker_time, qty):
+    """The whole-job totals `BaseWizardService._stamp_atom_per_unit` would
+    stamp for a claim's `per_unit_qty` (+ optional `per_unit_worker_time`)
+    at `qty` units: `(expected_total, expected_worker_time)`.
+
+    `expected_total = (per_unit_qty * qty).quantize('0.01')` — Decimal qty
+    product, quantized to cents so representation noise never produces a
+    phantom mismatch. `expected_worker_time = per_unit_worker_time *
+    float(qty)` when `per_unit_worker_time` is not None, else None — a
+    duration multiplies against a float, never a Decimal.
+
+    Single home for this arithmetic: `_per_unit_drift_info` (drift
+    comparison), `restamp_atom` (Revert), and `restore_per_unit_claim`
+    (un-stamp on removal) all call this rather than each re-deriving the
+    same two formulas — keeps a future formula change a one-site edit."""
+    expected_total = (per_unit_qty * qty).quantize(Decimal('0.01'))
+    expected_worker_time = (
+        per_unit_worker_time * float(qty) if per_unit_worker_time is not None else None
+    )
+    return expected_total, expected_worker_time
+
+
 class BaseWizardService:
     # ── subclass config ────────────────────────────────────────────────
     # The line item's parent-container FK name ('invoice' / 'estimate').
@@ -452,7 +474,8 @@ class BaseWizardService:
         from django.core.exceptions import ObjectDoesNotExist
 
         per_unit_qty = source_row.per_unit_qty
-        expected_total = (per_unit_qty * line_qty).quantize(Decimal('0.01'))
+        expected_total, expected_worker_time = expected_per_unit_values(
+            per_unit_qty, source_row.per_unit_worker_time, line_qty)
         info = {'per_unit_qty': per_unit_qty, 'expected_total': expected_total}
 
         try:
@@ -463,8 +486,7 @@ class BaseWizardService:
 
         if isinstance(instance, cls._task_model()):
             drift = instance.est_qty != expected_total
-            if source_row.per_unit_worker_time is not None:
-                expected_worker_time = source_row.per_unit_worker_time * float(line_qty)
+            if expected_worker_time is not None:
                 info['expected_worker_time'] = expected_worker_time
                 if instance.est_worker_time != expected_worker_time:
                     drift = True
@@ -515,11 +537,12 @@ class BaseWizardService:
         except ObjectDoesNotExist:
             raise ValidationError('The claimed atom no longer exists.')
 
-        expected_total = (source_row.per_unit_qty * line.qty).quantize(Decimal('0.01'))
+        expected_total, expected_worker_time = expected_per_unit_values(
+            source_row.per_unit_qty, source_row.per_unit_worker_time, line.qty)
         if isinstance(instance, cls._task_model()):
             instance.est_qty = expected_total
-            if source_row.per_unit_worker_time is not None:
-                instance.est_worker_time = source_row.per_unit_worker_time * float(line.qty)
+            if expected_worker_time is not None:
+                instance.est_worker_time = expected_worker_time
             instance.save()
         else:
             instance.quantity = expected_total
@@ -869,15 +892,15 @@ def restore_per_unit_claim(line, source_row):
         return
 
     per_unit_qty = source_row.per_unit_qty
-    expected_total = (per_unit_qty * line.qty).quantize(Decimal('0.01'))
+    expected_total, expected_worker_time = expected_per_unit_values(
+        per_unit_qty, source_row.per_unit_worker_time, line.qty)
 
     if isinstance(instance, Task):
         changed = False
         if instance.est_qty == expected_total:
             instance.est_qty = per_unit_qty
             changed = True
-        if source_row.per_unit_worker_time is not None:
-            expected_worker_time = source_row.per_unit_worker_time * float(line.qty)
+        if expected_worker_time is not None:
             if instance.est_worker_time == expected_worker_time:
                 instance.est_worker_time = source_row.per_unit_worker_time
                 changed = True
