@@ -251,6 +251,23 @@ Status coupling, transitions, and what a job may do at each stage.
   per-selection Bundle CTA) or delete it with its
   `EstimateWizardService.send_all_atoms` backing method.
 
+- **Tasks-page estimate context: silent pool-failure degrade + no
+  Start-Estimate busy guard.** — _added 2026-09-20 (start-and-bundle
+  review, both Low)_
+  (1) After the try/catch split in `TasksPanel.loadEstimateContext`, a
+  source-pool fetch failure reached via any reload path other than
+  `handleStartEstimate` (post-bundle refresh, generic mutation reload)
+  degrades honestly but silently: `canBundle` stays true with an empty
+  pool — no checkboxes, disabled "Bundle 0 selected…" CTA — and no error
+  toast; only the start-and-bundle flow surfaces the error. Add a toast
+  for parity. (2) Pre-existing: `handleStartEstimate` has no busy guard —
+  a double-click can double-POST `/api/estimates/` (the second is
+  refused by the one-live-estimate serializer guard, so it's a stray
+  error overlay, not data damage).
+  _Done when:_ pool-failure reloads surface the same error message the
+  start-and-bundle path shows, and the Start Estimate button disables
+  while its POST is in flight.
+
 ## Change orders
 
 The CO surface and its estimate-parallel code.
