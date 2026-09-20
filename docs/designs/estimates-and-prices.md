@@ -1973,8 +1973,11 @@ acceptance's `_move_claims_to` (`apps/estimates/co_acceptance.py` — moves a
 claim row onto the replace line, doesn't delete it); and discarding a draft
 estimate (`EstimateService.discard_draft` → `estimate.delete()` cascades via
 Django's bulk-delete, which skips per-instance `.delete()`/`.save()`
-entirely, so no code runs to catch the atom before the cascade — see
-`docs/designs/LATER.md`'s discard-draft entry).
+entirely, so no code runs to catch the atom before the cascade). The
+discard case is **ruled acceptable** (RM 2026-09-20): a user discarding a
+whole draft is nearly always scrapping everything and starting over, so
+the stranded multiplied totals don't need rescuing — not a gap, a
+decision.
 
 The append-guard message ("Tasks and materials cannot be added to a
 per-unit line yet. Remove the line and bundle again.", §12.1a-ii) is now
