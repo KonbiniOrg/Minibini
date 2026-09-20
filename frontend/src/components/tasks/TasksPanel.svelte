@@ -130,6 +130,44 @@
     for (const a of (sourcePool?.atoms || [])) map.set(`${a.type}:${a.id}`, a);
     return map;
   });
+
+  // State-B fallback: before any estimate exists there is no source-pool to
+  // fetch (the pool is estimate-scoped — `GET /api/estimates/{id}/source-pool/`
+  // needs a live estimate id). Selectability is derived client-side instead:
+  // a task is selectable unless cancelled, a material unless released.
+  // Nothing can be "claimed" here — a claim only exists once an estimate or
+  // change order has actually claimed the atom, and there is no estimate yet
+  // — so every eligible row synthesizes a plain {state:'available'} entry
+  // (the exact shape TaskRow/MaterialRow already render a real available
+  // pool atom as) and ineligible rows get no entry at all. That means
+  // TaskRow/MaterialRow need no changes for state B.
+  const fallbackPoolByKey = $derived.by(() => {
+    const map = new Map();
+    for (const t of enrichedTasks) {
+      if (t.status !== 'cancelled') {
+        map.set(`task:${t.task_id}`, { type: 'task', id: t.task_id, state: 'available' });
+      }
+    }
+    const allMaterials = [...jobMaterials];
+    for (const t of enrichedTasks) allMaterials.push(...(t.materials || []));
+    for (const m of allMaterials) {
+      if (m.consumption_state !== 'released') {
+        map.set(`material:${m.material_id}`, { type: 'material', id: m.material_id, state: 'available' });
+      }
+    }
+    return map;
+  });
+
+  // Selection is offered in state A (bundle into the existing draft) and
+  // state B (bundle into the draft the click itself will create) — never
+  // state C. The pool TaskTree renders against switches the instant a draft
+  // exists; loadEstimateContext()'s own selection-pruning step (below) must
+  // keep reading the REAL poolByKey, never this fallback, so a state-B
+  // selection gets validated against the freshly created draft's actual
+  // pool once one exists — not against stale client-side guesses.
+  const canSelectBundle = $derived(canBundle || canOfferEstimate);
+  const effectivePoolByKey = $derived(draftEstimate ? poolByKey : fallbackPoolByKey);
+
   function toggleBundleSelect(key) {
     selected = selected.includes(key)
       ? selected.filter((k) => k !== key)
@@ -170,25 +208,63 @@
       const resp = await api.get(`/api/estimates/?job=${job.job_id}&page_size=100`);
       const rows = resp.results ?? resp;
       liveEstimate = rows.find((e) => e.status !== 'superseded') ?? null;
-      sourcePool = liveEstimate?.status === 'draft'
-        ? await api.get(`/api/estimates/${liveEstimate.estimate_id}/source-pool/`)
-        : null;
     } catch (e) {
       liveEstimate = null;
       sourcePool = null;
-    } finally {
       estimateContextLoaded = true;
+      selected = selected.filter((k) => poolByKey.get(k)?.state === 'available');
+      return;
     }
+    if (liveEstimate?.status === 'draft') {
+      try {
+        sourcePool = await api.get(`/api/estimates/${liveEstimate.estimate_id}/source-pool/`);
+      } catch (e) {
+        // The draft itself is real (we already have its id from the list
+        // fetch above) even though its pool failed to load — do NOT null
+        // out liveEstimate here, or a start-and-bundle click that created
+        // the draft successfully would bounce back to the "Start Estimate"
+        // offer as if nothing happened. Land in state A with an empty pool
+        // instead (no atoms selectable until a reload succeeds).
+        sourcePool = null;
+      }
+    } else {
+      sourcePool = null;
+    }
+    estimateContextLoaded = true;
     // Drop any selection whose pool atom is gone or no longer available —
     // a reload (mutation, or another window claiming it) invalidates it.
+    // Ordering guard: this always reads the REAL poolByKey (built off
+    // sourcePool, just assigned above), never fallbackPoolByKey — by this
+    // point liveEstimate/sourcePool already reflect whatever just happened
+    // (including a state-B "start estimate" call that ran immediately
+    // before this), so a B->A transition prunes a carried-over selection
+    // against the new draft's actual pool, not against stale client-side
+    // guesses. In practice every eligible state-B selection survives, since
+    // a freshly created draft's pool has no claims yet.
     selected = selected.filter((k) => poolByKey.get(k)?.state === 'available');
   }
 
   async function handleStartEstimate() {
+    const wantsBundle = selected.length > 0;
     try {
       const est = await api.post('/api/estimates/', { job: job.job_id });
-      showSuccess(`Estimate ${est.estimate_number} started.`);
+      if (!wantsBundle) {
+        showSuccess(`Estimate ${est.estimate_number} started.`);
+        await loadEstimateContext();
+        return;
+      }
+      // One-click "start & bundle": create, then re-resolve context — that
+      // re-resolution (loadEstimateContext) is also what maps the carried
+      // selection onto the new draft's real pool atoms (its pruning step
+      // above). bundleAtoms (derived from sourcePool + selected, same as
+      // state A) then already reflects the survivors.
       await loadEstimateContext();
+      if (bundleAtoms.length > 0) {
+        bundleModalOpen = true;
+      } else {
+        showError('The estimate was started, but the selected work is no ' +
+          'longer available to bundle — pick again.');
+      }
     } catch (e) {
       showError(errorMessage(e, 'Could not start an estimate.'));
     }
@@ -460,7 +536,11 @@
       </button>
     {/if}
     {#if canOfferEstimate}
-      <button type="button" onclick={handleStartEstimate}>Start Estimate</button>
+      <button type="button" onclick={handleStartEstimate}>
+        {selected.length === 0
+          ? 'Start Estimate'
+          : `Start Estimate & Bundle ${selected.length} into a line…`}
+      </button>
     {/if}
     {#if canBundle}
       <button type="button" disabled={selected.length === 0}
@@ -503,8 +583,8 @@
     onDeleteExpense={handleDeleteExpense}
     onRejectExpense={handleRejectExpense}
     bind:selectedTaskId
-    bundleMode={canBundle}
-    {poolByKey}
+    bundleMode={canSelectBundle}
+    poolByKey={effectivePoolByKey}
     bundleSelected={selected}
     onToggleBundle={toggleBundleSelect}
   />

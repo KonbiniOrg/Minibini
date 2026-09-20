@@ -452,6 +452,166 @@ describe('TasksPanel — estimate context (Task 2)', () => {
     expect(queryByText(/Bundling into estimate/i)).toBeNull();
   });
 
+  // ── State B upgrade: selection allowed before an estimate exists, one
+  //    click both creates the draft and opens the bundle modal ──
+  describe('state B: selection + one-click start & bundle', () => {
+    function stateBJob(overrides = {}) {
+      return makeJob({
+        can_manage: true,
+        status: 'draft',
+        tasks: [
+          { task_id: 1, name: 'Task One', status: 'pending', parent_task: null },
+          { task_id: 2, name: 'Task Two', status: 'pending', parent_task: null },
+          { task_id: 9, name: 'Cancelled Task', status: 'cancelled', parent_task: null },
+        ],
+        materials: [
+          { material_id: 5, description: 'Steel', quantity: '2', sell_price: '5',
+            consumption_state: 'pending', task: null },
+          { material_id: 6, description: 'Scrap', quantity: '1', sell_price: '1',
+            consumption_state: 'released', task: null },
+        ],
+        ...overrides,
+      });
+    }
+
+    function mockApiForStateB(estimatesRows, { poolAtoms = [] } = {}) {
+      api.get.mockReset();
+      api.get.mockImplementation((url) => {
+        if (url.startsWith('/api/estimates/?job=')) {
+          return Promise.resolve({ results: estimatesRows });
+        }
+        if (/\/api\/estimates\/\d+\/source-pool\//.test(url)) {
+          return Promise.resolve({ atoms: poolAtoms });
+        }
+        if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
+        if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
+        return Promise.resolve([]);
+      });
+    }
+
+    // POSTs an estimate and pushes it into estimatesRows, mirroring the
+    // existing State B test's api.post mock (line ~396 above).
+    function mockCreateEstimate(estimatesRows, { estimateId = 77, estimateNumber = 'EST-2026-0077' } = {}) {
+      api.post.mockReset();
+      api.post.mockImplementation(async (url, body) => {
+        if (url === '/api/estimates/') {
+          const est = { estimate_id: estimateId, estimate_number: estimateNumber, status: 'draft', job: body.job };
+          estimatesRows.push(est);
+          return est;
+        }
+        return {};
+      });
+    }
+
+    it('renders checkboxes for eligible rows; the cancelled task and released material get none', async () => {
+      mockApiForStateB([]);
+      const { findByRole, getByText } = render(TasksPanel, { props: { job: stateBJob() } });
+      await findByRole('button', { name: /^start estimate$/i });
+
+      const taskOneCb = within(getByText('Task One').closest('tr')).getByRole('checkbox');
+      expect(taskOneCb).not.toBeDisabled();
+      const taskTwoCb = within(getByText('Task Two').closest('tr')).getByRole('checkbox');
+      expect(taskTwoCb).not.toBeDisabled();
+      expect(within(getByText('Cancelled Task').closest('tr')).queryByRole('checkbox')).toBeNull();
+
+      const steelCb = within(getByText('Steel').closest('tr')).getByRole('checkbox');
+      expect(steelCb).not.toBeDisabled();
+      expect(within(getByText('Scrap').closest('tr')).queryByRole('checkbox')).toBeNull();
+    });
+
+    it('0 selected: button reads plain "Start Estimate"', async () => {
+      mockApiForStateB([]);
+      const { findByRole } = render(TasksPanel, { props: { job: stateBJob() } });
+      expect(await findByRole('button', { name: /^start estimate$/i })).toBeInTheDocument();
+    });
+
+    it('2 selected: label reads "Start Estimate & Bundle 2 into a line…"; clicking creates the ' +
+       'estimate, fetches the pool, and opens BundleModal seeded with the two atoms — selection intact',
+      async () => {
+      const estimatesRows = [];
+      const poolAtomsAfterCreate = [
+        { type: 'task', id: 1, state: 'available', description: 'Task One',
+          qty: '1', units: 'hour', rate: '20.00', amount: '20.00' },
+        { type: 'material', id: 5, state: 'available', description: 'Steel',
+          qty: '2', units: 'kg', rate: '5.00', amount: '10.00' },
+      ];
+      mockApiForStateB(estimatesRows, { poolAtoms: poolAtomsAfterCreate });
+      mockCreateEstimate(estimatesRows);
+
+      const { findByRole, getByText } = render(TasksPanel, { props: { job: stateBJob() } });
+      await findByRole('button', { name: /^start estimate$/i });
+
+      await fireEvent.click(within(getByText('Task One').closest('tr')).getByRole('checkbox'));
+      await fireEvent.click(within(getByText('Steel').closest('tr')).getByRole('checkbox'));
+
+      const btn = await findByRole('button', { name: /Start Estimate & Bundle 2 into a line/i });
+      await fireEvent.click(btn);
+
+      await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/estimates/', { job: 3 }));
+      const dialog = await findByRole('dialog');
+      expect(within(dialog).getByRole('heading', { name: /bundle into line/i })).toBeInTheDocument();
+      expect(within(dialog).getByText('Task One')).toBeInTheDocument();
+      expect(within(dialog).getByText('Steel')).toBeInTheDocument();
+    });
+
+    it('modal cancel after the transition lands in state A with the selection intact', async () => {
+      const estimatesRows = [];
+      const poolAtomsAfterCreate = [
+        { type: 'task', id: 1, state: 'available', description: 'Task One',
+          qty: '1', units: 'hour', rate: '20.00', amount: '20.00' },
+        { type: 'material', id: 5, state: 'available', description: 'Steel',
+          qty: '2', units: 'kg', rate: '5.00', amount: '10.00' },
+      ];
+      mockApiForStateB(estimatesRows, { poolAtoms: poolAtomsAfterCreate });
+      mockCreateEstimate(estimatesRows);
+
+      const { findByRole, getByText, queryByRole } = render(TasksPanel, { props: { job: stateBJob() } });
+      await findByRole('button', { name: /^start estimate$/i });
+      await fireEvent.click(within(getByText('Task One').closest('tr')).getByRole('checkbox'));
+      await fireEvent.click(within(getByText('Steel').closest('tr')).getByRole('checkbox'));
+      await fireEvent.click(await findByRole('button', { name: /Start Estimate & Bundle 2 into a line/i }));
+
+      const dialog = await findByRole('dialog');
+      await fireEvent.click(within(dialog).getByRole('button', { name: /cancel/i }));
+
+      await waitFor(() => expect(queryByRole('dialog')).toBeNull());
+      expect(queryByRole('button', { name: /^start estimate$/i })).toBeNull(); // gone — state A now
+      const bundleBtn = await findByRole('button', { name: /bundle 2 selected into a line/i });
+      expect(bundleBtn).not.toBeDisabled();
+      await findByRole('link', { name: /view/i });
+    });
+
+    it('N > 0: a pool-fetch failure after the estimate is created shows the error and lands in ' +
+       'state A without a modal', async () => {
+      const estimatesRows = [];
+      api.get.mockReset();
+      api.get.mockImplementation((url) => {
+        if (url.startsWith('/api/estimates/?job=')) return Promise.resolve({ results: estimatesRows });
+        if (/\/api\/estimates\/\d+\/source-pool\//.test(url)) return Promise.reject(new Error('network down'));
+        if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
+        if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
+        return Promise.resolve([]);
+      });
+      mockCreateEstimate(estimatesRows, { estimateId: 88, estimateNumber: 'EST-2026-0088' });
+
+      const { findByRole, getByText, findByText, queryByRole } = render(TasksPanel, {
+        props: { job: stateBJob() },
+      });
+      await findByRole('button', { name: /^start estimate$/i });
+      await fireEvent.click(within(getByText('Task One').closest('tr')).getByRole('checkbox'));
+      await fireEvent.click(
+        await findByRole('button', { name: /Start Estimate & Bundle 1 into a line/i }));
+
+      await waitFor(() => expect(get(overlayMessage)).toEqual({
+        kind: 'error',
+        text: 'The estimate was started, but the selected work is no longer available to bundle — pick again.',
+      }));
+      expect(queryByRole('dialog')).toBeNull();
+      // Landed in state A: the draft is visible even though its pool failed.
+      await findByText(/Bundling into estimate EST-2026-0088 \(draft\)/i);
+    });
+  });
+
   // ── Task 3: bundle-selection checkboxes on task/material rows ──
   describe('bundle selection checkboxes', () => {
     function poolJob(overrides = {}) {

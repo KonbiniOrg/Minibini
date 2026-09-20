@@ -1,21 +1,26 @@
 // bundling-in-task-view (.superpowers/sdd/2026-09-19-bundling-in-task-view-plan)
-// — Task 7. TasksPanel (Task 2) resolves an estimate-context layer with
-// three states: no live estimate ("Start Estimate" offered, B), a live
-// DRAFT estimate (bundle checkboxes + CTA + context line, A), and anything
-// else — a non-draft live estimate, or a job past draft/submitted — where
-// none of that renders (C). Tasks 3-6 built the selection/bundle gesture
-// itself and are already covered by per-unit-lines/estimating-structure
-// specs; this file's job is the state-gating surface: the B->A transition
-// (ending in one real bundle, verified via an API read) and two distinct
-// ways to land in state C (a straight-to-accepted job, and a job stuck on
-// "approved" behind an unanswered work decision — job.status past
-// draft/submitted is what actually gates the offer, not the estimate's own
-// status, so both are worth covering separately per canOfferEstimate's
+// — Task 7, upgraded 2026-09-20 (RM: selection allowed before the estimate
+// exists). TasksPanel resolves an estimate-context layer with three states:
+// no live estimate (B — checkboxes already render off a client-derived
+// fallback, no pool exists yet to claim from; the toolbar button reads
+// "Start Estimate" at zero selection or "Start Estimate & Bundle N into a
+// line…" once something's checked — one click creates the draft AND opens
+// the bundle modal seeded with the survivors), a live DRAFT estimate (bundle
+// checkboxes + CTA + context line, A), and anything else — a non-draft live
+// estimate, or a job past draft/submitted — where none of that renders (C).
+// Tasks 3-6 built the underlying selection/bundle gesture and are already
+// covered by per-unit-lines/estimating-structure specs; this file's job is
+// the state-gating surface: the B->A transition (ending in one real bundle,
+// verified via an API read) and two distinct ways to land in state C (a
+// straight-to-accepted job, and a job stuck on "approved" behind an
+// unanswered work decision — job.status past draft/submitted is what
+// actually gates the offer, not the estimate's own status, so both are
+// worth covering separately per canOfferEstimate's
 // `['draft', 'submitted'].includes(job?.status)` clause).
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
-import { gotoTasksPage, taskTreeRow, checkBundleRow, openBundleModal } from '../../lib/bundling.js';
+import { gotoTasksPage, taskTreeRow, checkBundleRow } from '../../lib/bundling.js';
 
 test.use({ storageState: personas.finjobs.storageState });
 
@@ -37,7 +42,8 @@ test.beforeAll(async () => {
   await configApi.dispose();
 });
 
-test('State B -> A: no estimate offers "Start Estimate"; starting one unlocks bundling; one real bundle lands on the estimate', async ({ page }) => {
+test('State B -> A: selection is available before the estimate exists; one click starts it and ' +
+     'opens the bundle modal; the bundle lands on the estimate', async ({ page }) => {
   const api = await apiAs(personas.finjobs);
   const contact = (await api.get('/api/contacts/?page_size=1')).results[0];
 
@@ -53,42 +59,43 @@ test('State B -> A: no estimate offers "Start Estimate"; starting one unlocks bu
 
   const bundleDescription = `${stamp} bundled line`;
 
-  await test.step('No estimate yet: the tasks render, but no checkboxes/bundle CTA/context line — only "Start Estimate"', async () => {
+  await test.step('No estimate yet: checkboxes already render (there is nothing to claim yet, so ' +
+                   'every row is selectable) and the button reads plain "Start Estimate" at zero selection', async () => {
     await gotoTasksPage(page, job.job_id);
     // Positive anchor first — the page actually loaded the two seeded
-    // tasks, so the absence checks below aren't vacuous.
+    // tasks, so the checks below aren't vacuous.
     await expect(taskTreeRow(page, taskA.name)).toBeVisible();
     await expect(taskTreeRow(page, taskB.name)).toBeVisible();
 
-    await expect(page.locator('table.task-tree-table input[type="checkbox"]')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /Bundle \d+ selected into a line/ })).toHaveCount(0);
+    await expect(taskTreeRow(page, taskA.name).locator('input[type="checkbox"]')).toBeVisible();
+    await expect(taskTreeRow(page, taskB.name).locator('input[type="checkbox"]')).toBeVisible();
     await expect(page.getByText(/Bundling into estimate/i)).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Start Estimate' })).toBeVisible();
   });
 
   let draft;
-  await test.step('Clicking Start Estimate switches the panel to state A in place', async () => {
-    await page.getByRole('button', { name: 'Start Estimate' }).click();
+  await test.step('Selecting task A relabels the button; one click both starts the estimate and opens the bundle modal seeded with it', async () => {
+    await checkBundleRow(page, taskA.name);
+    const bundleBtn = page.getByRole('button', { name: 'Start Estimate & Bundle 1 into a line…' });
+    await expect(bundleBtn).toBeVisible();
+    await bundleBtn.click();
+
+    // The modal only opens once the create + context-reload round-trip has
+    // finished, so waiting for it first guarantees the draft already exists
+    // server-side by the time the API check below runs.
+    const modal = page.getByRole('dialog');
+    await expect(modal).toContainText('Bundle into line');
+    await expect(modal).toContainText(taskA.name);
 
     const check = await apiAs(personas.finjobs);
     const estimates = await check.get(`/api/estimates/?job=${job.job_id}&page_size=100`);
     await check.dispose();
     draft = (estimates.results || estimates).find((e) => e.status === 'draft');
     expect(draft).toBeTruthy();
-
-    await expect(page.getByText(`Bundling into estimate ${draft.estimate_number} (draft)`)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Start Estimate' })).toHaveCount(0);
-    // Both tasks are now selectable pool atoms.
-    await expect(taskTreeRow(page, taskA.name).locator('input[type="checkbox"]')).toBeVisible();
-    await expect(taskTreeRow(page, taskB.name).locator('input[type="checkbox"]')).toBeVisible();
-    // The "Estimate started" success overlay stays up until dismissed (no
-    // auto-timeout) and otherwise intercepts the next click.
-    await page.getByRole('button', { name: 'Dismiss message' }).click();
   });
 
-  await test.step('Bundle task A into a line via the modal', async () => {
-    await checkBundleRow(page, taskA.name);
-    const modal = await openBundleModal(page, 1);
+  await test.step('Complete the bundle in the modal', async () => {
+    const modal = page.getByRole('dialog');
     await modal.getByLabel('Description').fill(bundleDescription);
     // One-unit is the modal default; a single-atom bundle seeds price to
     // the atom's own amount (2 x $20 = $40) but leaves qty empty — fill it.
@@ -98,6 +105,9 @@ test('State B -> A: no estimate offers "Start Estimate"; starting one unlocks bu
 
     await expect(page.getByText(`Line added to estimate ${draft.estimate_number} (draft).`)).toBeVisible();
     await expect(taskTreeRow(page, taskA.name).getByText('estimated')).toBeVisible();
+    // Task B, never selected, is still a plain available pool atom in state A.
+    await expect(taskTreeRow(page, taskB.name).locator('input[type="checkbox"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start Estimate' })).toHaveCount(0);
   });
 
   await test.step('API read confirms the bundled line: description, per-unit sourcing, and the claimed task', async () => {

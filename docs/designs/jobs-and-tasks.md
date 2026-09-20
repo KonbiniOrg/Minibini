@@ -1605,20 +1605,23 @@ Order**, while the job is held (`on_hold` flag), remains on
 replaced the deleted Worksheet detail page; the old Plan/Client-View
 toggle is gone.)
 
-### 9.5a Bundling surface (bundling-in-task-view, 2026-09-19)
+### 9.5a Bundling surface (bundling-in-task-view, 2026-09-19; state-B
+selection upgrade, 2026-09-20)
 
 **Composing estimate line items from job atoms happens on this page, not
 the estimate document** (`TasksPanel.svelte`,
 `frontend/src/components/tasks/`; the estimate page is document-only —
 `estimates-and-prices.md` §12.1). On mount (and after every reload)
 `TasksPanel` resolves the job's estimate context in one pass
-(`loadEstimateContext`, `TasksPanel.svelte:168-185`): it fetches
-`GET /api/estimates/?job={id}` and picks the single non-superseded row
-(the job can have at most one — `Estimate.clean()`,
-`data-constraints.md` — "Only one draft estimate per job"; `.find()` is
-exact, not heuristic), then, only when that estimate is a `draft`, fetches
-its `GET /api/estimates/{id}/source-pool/`. That resolution drives three
-mutually exclusive states:
+(`loadEstimateContext`): it fetches `GET /api/estimates/?job={id}` and
+picks the single non-superseded row (the job can have at most one —
+`Estimate.clean()`, `data-constraints.md` — "Only one draft estimate per
+job"; `.find()` is exact, not heuristic), then, only when that estimate is
+a `draft`, fetches its `GET /api/estimates/{id}/source-pool/`. A pool-fetch
+failure does not null out an already-found `liveEstimate` — the draft is
+still real even if its pool didn't load — so this can't bounce a
+just-created draft back to the "no estimate" offer. That resolution drives
+three mutually exclusive states:
 
 1. **A draft estimate exists (`canBundle`)** — bundling affordances render:
    row checkboxes on every task/material row, a toolbar CTA, and a context
@@ -1626,10 +1629,24 @@ mutually exclusive states:
    `job.can_manage`, the job not locked (`completed`/`cancelled`/`rejected`),
    and the job not `on_hold`.
 2. **No live estimate yet, and the job is still pre-estimate
-   (`canOfferEstimate`)** — the toolbar instead shows a plain **"Start
-   Estimate"** button (`handleStartEstimate` → `POST /api/estimates/
-   {job}`, then re-resolves context in place — no navigation). Gated on
-   `job.can_manage`, job not locked, and `job.status` in
+   (`canOfferEstimate`)** — selection is already available (see the
+   fallback rule below) and the toolbar shows one dynamic button:
+   - **0 selected** — plain **"Start Estimate"**, never disabled. Click →
+     `handleStartEstimate` → `POST /api/estimates/{job}`, re-resolves
+     context in place (no navigation), success overlay.
+   - **N > 0 selected** — **"Start Estimate & Bundle N into a line…"**.
+     One click: create the draft, re-resolve context (which also prunes
+     the carried-over selection against the *real* pool that now exists —
+     see below), then open `BundleModal` seeded with whatever survived,
+     with no separate "estimate started" toast (the label already said a
+     draft would be created). Cancelling that modal leaves the draft in
+     place — the page is simply state A now, selection intact, so the
+     ordinary bundle CTA re-opens it. If the draft is created but its pool
+     fails to load (or nothing survives pruning), an error overlay says so
+     and the page still lands in state A with no modal — never a
+     spinner.
+
+   Gated on `job.can_manage`, job not locked, and `job.status` in
    `['draft', 'submitted']` (mirrors `EstimatePanel`'s own gate,
    `estimates-and-prices.md` §11.4).
 3. **Otherwise (a live but non-draft estimate — `open`/`accepted`/etc. —
@@ -1637,13 +1654,33 @@ mutually exclusive states:
    — no bundling affordance and no Start Estimate offer; the page is
    read/act-on-tasks only, exactly as before this migration.
 
+**State-B selectability has no pool to check against.** Before any
+estimate exists there is nothing to fetch `source-pool` from (it's
+estimate-scoped), so `TasksPanel` synthesizes a fallback map instead of
+`poolByKey`: a task is selectable unless `cancelled`, a material unless
+`released`, and every eligible row gets a plain `{state:'available'}`
+entry keyed the same `"task:{id}"`/`"material:{id}"` way — nothing is ever
+`claimed_by_current`/`claimed_by_other` in state B, since a claim can only
+exist once a live estimate or change order has actually claimed the atom,
+and there is none yet. `TaskRow`/`MaterialRow` need no changes: they
+already render a plain `available` atom as a live checkbox regardless of
+whether it came from a real pool or the fallback. The real pool takes over
+the instant a draft exists (`draftEstimate ? poolByKey : fallbackPoolByKey`),
+and `loadEstimateContext`'s own selection-pruning step always reads the
+real `poolByKey` — never the fallback — so a state-B selection carried
+into the one-click create-and-bundle flow above gets validated against the
+freshly created draft's actual pool, not against stale client-side
+guesses. In practice every eligible state-B selection survives, since a
+brand-new draft's pool has no claims on it yet.
+
 **Row checkboxes and indicators (`TaskRow.svelte`, `MaterialRow.svelte`,
 threaded through `TaskTree.svelte`'s `bundleMode`/`poolByKey`/
-`bundleSelected`/`onToggleBundle` props).** While `canBundle`, `TaskTree`
-renders a leading, headerless checkbox column (`.bundle-cell`, same
-footprint as the move-radio column) driven by each atom's source-pool
-claim state, keyed `"task:{id}"` / `"material:{id}"` against
-`poolByKey`:
+`bundleSelected`/`onToggleBundle` props).** While `canBundle` **or**
+`canOfferEstimate`, `TaskTree` renders a leading, headerless checkbox
+column (`.bundle-cell`, same footprint as the move-radio column) driven by
+each atom's claim state — the real source-pool's in state A, the
+client-derived fallback's in state B — keyed `"task:{id}"` /
+`"material:{id}"` against whichever `poolByKey` is in effect:
 
    - **`available`** — a live checkbox (`bundleChecked` bound to the
      panel's `selected` array; `onToggleBundle` flips membership).
@@ -1660,11 +1697,15 @@ claim state, keyed `"task:{id}"` / `"material:{id}"` against
    - An atom absent from the pool (e.g. a cancelled task — the estimate
      pool excludes those, `estimates-and-prices.md` §8.1) renders no
      checkbox and no chip: `bundleAtom` is `null` and none of the three
-     branches match.
+     branches match. In state B the fallback map plays the same role — a
+     cancelled task or released material simply gets no entry, so it also
+     renders no checkbox and no chip; `claimed_by_current`/
+     `claimed_by_other` never occur in state B (see above).
 
-A task/material row not covered by any of the three top-level states
-(no `canBundle`) renders the same as always — `bundleMode` defaults to
-`false` for every other consumer of `TaskTree`, so this is additive.
+A task/material row not covered by either selectable state (`canBundle`
+nor `canOfferEstimate`, i.e. state C) renders the same as always —
+`bundleMode` defaults to `false` for every other consumer of `TaskTree`,
+so this is additive.
 
 **Toolbar CTA.** While `canBundle`, the toolbar shows **"Bundle N
 selected into a line…"**, disabled while `selected` is empty, opening the
