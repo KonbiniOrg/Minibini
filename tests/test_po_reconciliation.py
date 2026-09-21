@@ -1066,3 +1066,125 @@ class AddLineItemInvoiceOnlyGuardTest(POReconciliationTestBase):
             price=Decimal('5.00'), accounting_category=self.cat.pk,
         )
         self.assertFalse(li.invoice_only)
+
+
+class RatePromptsTest(POReconciliationTestBase):
+    """PurchaseOrderService.compute_rate_prompts (spec §7 rule 4,
+    task-owned-money Phase 5 / outsourced-work port Task 3).
+
+    Re-shape (spec ruling 2, differs from fees): `current_rate` is
+    `task.effective_rate()` (modifiers-aware), not raw `task.rate`, and
+    each prompt carries a new `has_active_modifiers` key.
+    """
+
+    def _mark_invoiced(self, task):
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        inv = Invoice.objects.create(job=task.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceLineItem.objects.create(
+            invoice=inv, description='x', qty=Decimal('1'),
+            units='none', price=Decimal('5.00'),
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li, source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.task_a.rate = Decimal('100.00')
+        self.task_a.save()
+
+    def test_no_prompt_when_no_final_price(self):
+        po = self._make_issued_po(task=self.task_a)
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('20.00'))
+        prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertEqual(prompts, [])
+
+    def test_no_prompt_when_task_already_invoiced(self):
+        po = self._make_issued_po(task=self.task_a)
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po, task=self.task_a)
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('18.00')},
+        )
+        self._mark_invoiced(self.task_a)
+        prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertEqual(prompts, [])
+
+    def test_prompt_for_clean_final_on_uninvoiced_task(self):
+        po = self._make_issued_po(task=self.task_a)
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po, task=self.task_a)
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('18.00')},
+        )
+        prompts, markup_applied = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertEqual(len(prompts), 1)
+        prompt = prompts[0]
+        self.assertEqual(prompt['task_id'], self.task_a.pk)
+        self.assertEqual(prompt['task_name'], self.task_a.name)
+        # No `default_material_markup_percent` Configuration row in this
+        # (non-fixture) test — markup_applied is False and the suggestion
+        # is the bare final_price.
+        self.assertEqual(prompt['current_rate'], Decimal('100.00'))
+        self.assertFalse(markup_applied)
+        self.assertEqual(prompt['suggested_rate'], Decimal('18.00'))
+        self.assertFalse(prompt['has_active_modifiers'])
+
+    def test_markup_applied_flag_matches_configuration_presence(self):
+        from apps.core.models import Configuration
+        po = self._make_issued_po(task=self.task_a)
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po, task=self.task_a)
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('18.00')},
+        )
+        Configuration.objects.update_or_create(
+            key='default_material_markup_percent', defaults={'value': '50'},
+        )
+        prompts, markup_applied = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertTrue(markup_applied)
+        self.assertEqual(prompts[0]['suggested_rate'], Decimal('27.00'))
+
+        Configuration.objects.filter(key='default_material_markup_percent').delete()
+        prompts, markup_applied = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertFalse(markup_applied)
+        self.assertEqual(prompts[0]['suggested_rate'], Decimal('18.00'))
+
+    def test_no_prompt_without_task_link(self):
+        po = self._make_issued_po()  # no task
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('18.00')},
+        )
+        prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertEqual(prompts, [])
+
+    def test_current_rate_reflects_active_modifiers_not_raw_rate(self):
+        """The outsourced-work port re-shape: `current_rate` must be
+        `task.effective_rate()`, not `task.rate` — a task with an active
+        modifier shows the modifier-adjusted rate, and `has_active_modifiers`
+        is true."""
+        self.task_a.active_modifiers = [
+            {'key': 'rush', 'label': 'Rush', 'percent': 50},
+        ]
+        self.task_a.save()
+        po = self._make_issued_po(task=self.task_a)
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po, task=self.task_a)
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('18.00')},
+        )
+        prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertEqual(len(prompts), 1)
+        # effective_rate = 100.00 * 1.50 = 150.00, NOT the raw rate (100.00)
+        self.assertEqual(prompts[0]['current_rate'], Decimal('150.00'))
+        self.assertTrue(prompts[0]['has_active_modifiers'])
+
+    def test_modifier_less_task_matches_fees_behavior(self):
+        """No active_modifiers: effective_rate() equals the raw rate, so
+        this case is indistinguishable from fees' `task.rate` reading."""
+        po = self._make_issued_po(task=self.task_a)
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po, task=self.task_a)
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('18.00')},
+        )
+        prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertEqual(prompts[0]['current_rate'], self.task_a.rate)
+        self.assertFalse(prompts[0]['has_active_modifiers'])

@@ -286,6 +286,60 @@ class PurchaseOrderService:
             return None, False
 
     @staticmethod
+    def compute_rate_prompts(po):
+        """Task-rate prompt support (spec §7 rule 4, task-owned-money Phase
+        5 / outsourced-work port Task 3): for each PO line with a clean
+        (non-null) `final_price` whose linked task is not yet on a live
+        invoice, suggest updating that task's rate. NEVER mutates
+        anything — purely a read: the client offers the prompt and, on
+        accept, PATCHes the task itself through the existing money-gated
+        path (no endpoint here accepts the suggestion).
+
+        suggested_rate = final_price × (1 + markup/100) when
+        `default_material_markup_percent` exists (see
+        `_default_markup_percent`); otherwise suggested_rate = final_price
+        and the caller should surface `markup_applied=False`.
+
+        `current_rate` = `task.effective_rate()` (modifiers-aware —
+        outsourced-work port re-shape from fees' raw `task.rate`), plus
+        `has_active_modifiers` (bool) so the caller can note "modifiers
+        apply on top of this suggestion".
+
+        Returns (prompts: list[dict], markup_applied: bool). Each prompt:
+        {'task_id', 'task_name', 'current_rate', 'suggested_rate',
+        'has_active_modifiers'}.
+        """
+        from apps.invoicing.claims import InvoiceClaimService
+        from apps.invoicing.models import InvoiceLineItemSource
+
+        markup_percent, markup_applied = PurchaseOrderService._default_markup_percent()
+
+        prompts = []
+        lines = (
+            PurchaseOrderLineItem.objects
+            .filter(purchase_order=po, final_price__isnull=False, task__isnull=False)
+            .select_related('task')
+        )
+        for li in lines:
+            task = li.task
+            if InvoiceClaimService.is_invoiced(InvoiceLineItemSource.SOURCE_TASK, task.pk):
+                continue
+            if markup_applied:
+                suggested = (
+                    li.final_price * (Decimal('1') + markup_percent / Decimal('100'))
+                ).quantize(Decimal('0.01'))
+            else:
+                suggested = li.final_price
+            prompts.append({
+                'task_id': task.pk,
+                'task_name': task.name,
+                'current_rate': task.effective_rate(),
+                'suggested_rate': suggested,
+                'has_active_modifiers': bool(task.active_modifiers),
+            })
+        return prompts, markup_applied
+
+    @staticmethod
     def _sever_line_material(li, sever_decision):
         """If line has a pending linked Material, require decision and apply.
         No-op if no Material or Material is consumed."""
