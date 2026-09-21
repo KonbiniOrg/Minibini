@@ -1,22 +1,24 @@
-"""Model-level tests for PO reconciliation (task-owned-money Phase 5, Task 1
-port — schema + model layer only; PurchaseOrderService.reconcile() and the
-API surface are Tasks 2-3, ported separately).
+"""Tests for PO reconciliation (task-owned-money Phase 5, outsourced-work
+port).
 
-Covers:
-- PurchaseOrder reconciliation fields (bill_total, vendor_invoice_ref,
-  reconciled, reconciled_date) + PurchaseOrderLineItem fields (final_price,
-  invoice_only) exist with the right defaults.
-- PurchaseOrder.objects.awaiting_reconciliation() / is_awaiting_reconciliation
-  membership matrix across all 5 statuses x reconciled.
-- po_total (unchanged, all lines) / ordered_total (excludes invoice_only) /
-  variance (bill_total - ordered_total, None pre-bill) math.
-- PurchaseOrderLineItem.clean() task-link guard: job-bearing task accepted,
-  a task without a job rejected (field-shaped ValidationError on 'task'),
-  link stays optional, multiple lines on one PO may link tasks from
-  different jobs. NOTE: per the outsourced-work port ruling, Task.parent_task
-  is dormant on this branch (no code may read/write it) — the fees-era
-  top-level/subtask branch of this check is deliberately NOT ported, and
-  fees' subtask test cases are dropped accordingly.
+Task 1 (model layer, schema): fields, awaiting_reconciliation() membership
+matrix, po_total/ordered_total/variance math, PurchaseOrderLineItem.clean()
+task-link guard.
+
+Task 2 (this addition — service layer): `PurchaseOrderService.reconcile()`
+(happy path, re-reconcile overwrite/REPLACE semantics, pre-issue rejection,
+line_finals ownership validation, appended_lines append-only mirror +
+whitelist, malformed-input coercion), receiving-flow invoice_only exclusions
+(`_update_po_status`, `receive_all`, direct-receive rejection,
+`cancel_line_item` rejection), `PurchaseOrderService._default_markup_percent`,
+and the `add_line_item` invoice_only-smuggling guard (spec ruling 4).
+
+NOTE: per the outsourced-work port ruling, Task.parent_task is dormant on
+this branch (no code may read/write it) — the fees-era top-level/subtask
+branch of the task-link check, and all of fees' subtask test cases
+(including the appended-lines subtask-rejection case), are deliberately NOT
+ported. `PurchaseOrderService.compute_rate_prompts` and its tests are Task 3
+scope (API surface) and are not ported here.
 """
 from decimal import Decimal
 
@@ -24,9 +26,11 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from apps.contacts.models import Business, Contact
-from apps.core.models import AccountingCategory
+from apps.core.models import AccountingCategory, User
+from apps.core.services import NotFoundError
 from apps.jobs.models import Job, Task
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+from apps.purchasing.services import PurchaseOrderService, PurchaseOrderReceivingService
 
 
 class POReconciliationTestBase(TestCase):
@@ -60,6 +64,7 @@ class POReconciliationTestBase(TestCase):
         )
         self.task_a = Task.objects.create(job=self.job_a, name='Outsourced work')
         self.task_b = Task.objects.create(job=self.job_b, name='Other job work')
+        self.worker = User.objects.create(username='worker')
 
     def _make_line(self, po, **kwargs):
         defaults = dict(
@@ -69,6 +74,22 @@ class POReconciliationTestBase(TestCase):
         )
         defaults.update(kwargs)
         return PurchaseOrderLineItem.objects.create(**defaults)
+
+    def _make_issued_po(self, num_items=1, task=None):
+        """An ISSUED PO with `num_items` ordinary lines (task attributed to
+        the first line only, mirroring fees' helper). Created directly with
+        status=ISSUED (new instance — PurchaseOrder.clean()'s
+        line-item-count/transition checks only run on updates, not create,
+        so this is safe with zero lines at creation time)."""
+        po = PurchaseOrder.objects.create(
+            business=self.business, status=PurchaseOrder.STATUS_ISSUED,
+        )
+        for i in range(num_items):
+            self._make_line(
+                po, description=f'Item {i + 1}',
+                task=task if i == 0 else None,
+            )
+        return po
 
 
 class POReconciliationFieldsTest(POReconciliationTestBase):
@@ -289,3 +310,759 @@ class TaskLinkValidationTest(POReconciliationTestBase):
         )
         with self.assertRaises(ValidationError):
             li.full_clean()
+
+
+class ReconcileHappyPathTest(POReconciliationTestBase):
+
+    def test_reconcile_sets_totals_ref_state_and_date(self):
+        po = self._make_issued_po()
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+        result = PurchaseOrderService.reconcile(
+            po.pk,
+            bill_total=Decimal('25.00'),
+            vendor_invoice_ref='VEND-INV-1',
+            line_finals={li.pk: Decimal('12.00')},
+        )
+        self.assertEqual(result.bill_total, Decimal('25.00'))
+        self.assertEqual(result.vendor_invoice_ref, 'VEND-INV-1')
+        self.assertTrue(result.reconciled)
+        self.assertIsNotNone(result.reconciled_date)
+        li.refresh_from_db()
+        self.assertEqual(li.final_price, Decimal('12.00'))
+
+    def test_reconcile_does_not_change_po_status(self):
+        """Reconciliation is not part of the PO status lifecycle."""
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('20.00'))
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_ISSUED)
+
+    def test_reconcile_line_final_null_means_as_ordered(self):
+        """A line never mentioned in line_finals keeps final_price null."""
+        po = self._make_issued_po()
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('20.00'))
+        li.refresh_from_db()
+        self.assertIsNone(li.final_price)
+
+    def test_reconcile_not_found_raises(self):
+        with self.assertRaises(NotFoundError):
+            PurchaseOrderService.reconcile(999999, bill_total=Decimal('1.00'))
+
+
+class ReconcileReReconcileTest(POReconciliationTestBase):
+
+    def test_re_reconcile_overwrites_po_level_fields(self):
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), vendor_invoice_ref='FIRST',
+        )
+        first = PurchaseOrder.objects.get(pk=po.pk)
+        first_date = first.reconciled_date
+
+        result = PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'), vendor_invoice_ref='SECOND',
+        )
+        self.assertEqual(result.bill_total, Decimal('30.00'))
+        self.assertEqual(result.vendor_invoice_ref, 'SECOND')
+        self.assertTrue(result.reconciled)
+        self.assertGreaterEqual(result.reconciled_date, first_date)
+
+    def test_re_reconcile_overwrites_line_final_price(self):
+        po = self._make_issued_po()
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('11.00')},
+        )
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('22.00'), line_finals={li.pk: Decimal('13.00')},
+        )
+        li.refresh_from_db()
+        self.assertEqual(li.final_price, Decimal('13.00'))
+
+    def test_re_reconcile_with_smaller_line_finals_reverts_omitted_line(self):
+        """REPLACE semantics, not merge: a later reconcile call with a
+        smaller line_finals set is the new complete statement of which
+        lines carry a final price — an omitted line's final_price reverts
+        to None (as ordered), even though a previous call had set it."""
+        po = self._make_issued_po(num_items=2)
+        li_a, li_b = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('40.00'),
+            line_finals={li_a.pk: Decimal('11.00'), li_b.pk: Decimal('9.00')},
+        )
+        li_a.refresh_from_db()
+        li_b.refresh_from_db()
+        self.assertEqual(li_a.final_price, Decimal('11.00'))
+        self.assertEqual(li_b.final_price, Decimal('9.00'))
+
+        # Second call only mentions li_a — li_b must revert to None.
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('35.00'),
+            line_finals={li_a.pk: Decimal('12.00')},
+        )
+        li_a.refresh_from_db()
+        li_b.refresh_from_db()
+        self.assertEqual(li_a.final_price, Decimal('12.00'))
+        self.assertIsNone(li_b.final_price)
+
+    def test_re_reconcile_with_no_line_finals_clears_all_ordered_lines(self):
+        po = self._make_issued_po(num_items=2)
+        li_a, li_b = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('40.00'),
+            line_finals={li_a.pk: Decimal('11.00'), li_b.pk: Decimal('9.00')},
+        )
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('20.00'))
+        li_a.refresh_from_db()
+        li_b.refresh_from_db()
+        self.assertIsNone(li_a.final_price)
+        self.assertIsNone(li_b.final_price)
+
+    def test_re_reconcile_does_not_auto_clear_untargeted_invoice_only_line(self):
+        """invoice_only lines are excluded from the line_finals
+        REPLACE-clearing sweep — one keeps whatever final_price it has
+        unless a later call explicitly targets it in line_finals.
+
+        NOTE: a *separate* mechanism — the `appended_lines` append-only
+        mirror — deletes an invoice_only line outright if a later call
+        doesn't re-send its id in `appended_lines` at all (see
+        AppendedLinesCarryNoteTest). To isolate the line_finals-only
+        behavior this test is about, every call below re-sends the line via
+        `appended_lines` so it survives for reasons unrelated to
+        line_finals."""
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'),
+            appended_lines=[{
+                'description': 'Freight', 'qty': Decimal('1.00'),
+                'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+            }],
+        )
+        invoice_only_li = PurchaseOrderLineItem.objects.get(
+            purchase_order=po, invoice_only=True,
+        )
+        keep_alive = {
+            'line_item_id': invoice_only_li.pk, 'description': 'Freight',
+            'qty': Decimal('1.00'), 'price': Decimal('15.00'),
+            'accounting_category': self.cat.pk,
+        }
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'),
+            line_finals={invoice_only_li.pk: Decimal('18.00')},
+            appended_lines=[keep_alive],
+        )
+        invoice_only_li.refresh_from_db()
+        self.assertEqual(invoice_only_li.final_price, Decimal('18.00'))
+
+        # A later call that re-sends it (keeping it alive) but omits it
+        # from line_finals must NOT clear its final_price back to None.
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'), appended_lines=[keep_alive],
+        )
+        invoice_only_li.refresh_from_db()
+        self.assertEqual(invoice_only_li.final_price, Decimal('18.00'))
+
+
+class ReconcileBeforeIssueTest(POReconciliationTestBase):
+
+    def test_reconcile_before_issue_rejected(self):
+        po = PurchaseOrder.objects.create(business=self.business)  # draft
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=po, description='Item', qty=Decimal('1.00'),
+            price=Decimal('5.00'), accounting_category=self.cat,
+        )
+        self.assertEqual(po.status, PurchaseOrder.STATUS_DRAFT)
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('5.00'))
+
+    def test_reconcile_allowed_once_issued(self):
+        po = self._make_issued_po()
+        # Should not raise.
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('20.00'))
+        po.refresh_from_db()
+        self.assertTrue(po.reconciled)
+
+    def test_reconcile_allowed_on_cancelled_po(self):
+        """A vendor bill can still land for whatever actually shipped
+        before cancellation — reconcile is not gated on PO status beyond
+        excluding draft."""
+        po = self._make_issued_po()
+        PurchaseOrderService.cancel_po(po.pk)
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_CANCELLED)
+
+        result = PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('18.00'), vendor_invoice_ref='CANCELLED-PO-INV',
+        )
+        self.assertTrue(result.reconciled)
+        self.assertEqual(result.bill_total, Decimal('18.00'))
+        self.assertEqual(result.status, PurchaseOrder.STATUS_CANCELLED)
+
+
+class ReconcileLineFinalsValidationTest(POReconciliationTestBase):
+
+    def test_line_final_for_line_on_another_po_rejected(self):
+        po1 = self._make_issued_po()
+        po2 = self._make_issued_po()
+        other_li = PurchaseOrderLineItem.objects.get(purchase_order=po2)
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(
+                po1.pk, bill_total=Decimal('20.00'),
+                line_finals={other_li.pk: Decimal('9.00')},
+            )
+
+    def test_line_final_for_nonexistent_line_rejected(self):
+        po = self._make_issued_po()
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('20.00'),
+                line_finals={999999: Decimal('9.00')},
+            )
+
+    def test_rejected_line_final_does_not_partially_apply(self):
+        """A bad line_finals entry aborts the whole call — no partial writes."""
+        po = self._make_issued_po(num_items=2)
+        lines = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        good_li, bad_li_other_po = lines[0], PurchaseOrderLineItem.objects.get(
+            purchase_order=self._make_issued_po(),
+        )
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('20.00'),
+                line_finals={
+                    good_li.pk: Decimal('9.00'),
+                    bad_li_other_po.pk: Decimal('1.00'),
+                },
+            )
+        po.refresh_from_db()
+        good_li.refresh_from_db()
+        self.assertFalse(po.reconciled)
+        self.assertIsNone(good_li.final_price)
+
+
+class ReconcileInputCoercionTest(POReconciliationTestBase):
+    """Malformed vendor-bill input (non-numeric bill_total/line_finals
+    values, non-integer appended-line ids) is arbitrary caller input, not a
+    programming error — it must raise a field-shaped ValidationError, never
+    500 on a bare Decimal()/int() conversion. (Not present as a distinct
+    test class in fees' test_po_reconciliation.py — the coercion code is
+    ported from fees' services.py verbatim, but its own unit coverage there
+    lives only at the API layer, which is Task 3 scope. Added here so the
+    ported coercion branch has direct service-level coverage.)"""
+
+    def test_non_numeric_bill_total_rejected(self):
+        po = self._make_issued_po()
+        with self.assertRaises(ValidationError) as ctx:
+            PurchaseOrderService.reconcile(po.pk, bill_total='not-a-number')
+        self.assertIn('bill_total', ctx.exception.message_dict)
+
+    def test_non_numeric_line_final_value_rejected(self):
+        po = self._make_issued_po()
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+        with self.assertRaises(ValidationError) as ctx:
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('10.00'),
+                line_finals={li.pk: 'garbage'},
+            )
+        self.assertIn('line_finals', ctx.exception.message_dict)
+
+    def test_non_integer_appended_line_item_id_rejected(self):
+        po = self._make_issued_po()
+        with self.assertRaises(ValidationError) as ctx:
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('10.00'),
+                appended_lines=[{
+                    'line_item_id': 'garbage', 'description': 'Freight',
+                    'qty': Decimal('1.00'), 'price': Decimal('5.00'),
+                    'accounting_category': self.cat.pk,
+                }],
+            )
+        self.assertIn('appended_lines', ctx.exception.message_dict)
+
+
+class InvoiceOnlyReceivingCompletenessTest(POReconciliationTestBase):
+
+    def test_appended_invoice_only_line_excluded_from_receiving_completeness(self):
+        """An invoice_only line appended at reconcile time must never block
+        (or knock out of) received_in_full — it was never ordered/received."""
+        po = self._make_issued_po()
+        ordinary_li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('35.00'),
+            appended_lines=[{
+                'description': 'Freight', 'qty': Decimal('1.00'),
+                'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+            }],
+        )
+        invoice_only_li = PurchaseOrderLineItem.objects.get(
+            purchase_order=po, invoice_only=True,
+        )
+        self.assertEqual(invoice_only_li.qty_received, Decimal('0.00'))
+
+        PurchaseOrderReceivingService.receive_all(po, self.worker)
+
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_RECEIVED_IN_FULL)
+
+        ordinary_li.refresh_from_db()
+        self.assertEqual(ordinary_li.qty_received, ordinary_li.qty)
+
+        invoice_only_li.refresh_from_db()
+        self.assertEqual(invoice_only_li.qty_received, Decimal('0.00'))
+
+    def test_receiving_against_invoice_only_line_rejected(self):
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('15.00'),
+            appended_lines=[{
+                'description': 'Freight', 'qty': Decimal('1.00'),
+                'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+            }],
+        )
+        invoice_only_li = PurchaseOrderLineItem.objects.get(
+            purchase_order=po, invoice_only=True,
+        )
+        with self.assertRaises(ValidationError):
+            PurchaseOrderReceivingService.receive_items(
+                po, [{'line_item_id': invoice_only_li.pk, 'qty_received': 1}], self.worker,
+            )
+
+    def test_appended_invoice_only_line_does_not_revert_status_on_recompute(self):
+        """Direct exercise of the internal status recompute: an unreceived
+        invoice_only line must not pull a received_in_full PO back down."""
+        po = self._make_issued_po()
+        ordinary_li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+        PurchaseOrderReceivingService.receive_items(
+            po, [{'line_item_id': ordinary_li.pk, 'qty_received': 2}], self.worker,
+        )
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_RECEIVED_IN_FULL)
+
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=po, description='Freight', qty=Decimal('1.00'),
+            price=Decimal('15.00'), accounting_category=self.cat,
+            invoice_only=True,
+        )
+        PurchaseOrderReceivingService._update_po_status(po)
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_RECEIVED_IN_FULL)
+
+
+class AppendedLineTaskLinkValidationTest(POReconciliationTestBase):
+    """The appended-lines path routes every write through
+    PurchaseOrderLineItem.full_clean(), so the job-bearing task-link guard
+    (Task 1's clean()) applies to reconcile-appended lines too. Only the
+    positive case is exercised here — the negative case (a task without a
+    job) is already covered at the model level in
+    TaskLinkValidationTest.test_link_to_task_without_job_rejected; the
+    fees-era subtask-rejection twin of this test is dropped per the
+    excision rule."""
+
+    def test_appended_reconcile_line_job_bearing_task_ok(self):
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('10.00'),
+            appended_lines=[{
+                'description': 'Outsourced extra', 'qty': Decimal('1.00'),
+                'price': Decimal('5.00'), 'accounting_category': self.cat.pk,
+                'task': self.task_a.pk,
+            }],
+        )
+        li = PurchaseOrderLineItem.objects.get(
+            purchase_order=po, description='Outsourced extra',
+        )
+        self.assertTrue(li.invoice_only)
+        self.assertEqual(li.task_id, self.task_a.pk)
+
+
+class AwaitingReconciliationServiceFlowTest(POReconciliationTestBase):
+    """Same membership rule as the model-level
+    AwaitingReconciliationMembershipTest, but exercised end-to-end through
+    the actual receiving/reconcile services rather than by setting `status`
+    /`reconciled` directly — proves the wiring, not just the property."""
+
+    def test_draft_po_not_awaiting(self):
+        po = PurchaseOrder.objects.create(business=self.business)
+        self.assertFalse(po.is_awaiting_reconciliation)
+        self.assertNotIn(po, PurchaseOrder.objects.awaiting_reconciliation())
+
+    def test_issued_not_received_not_awaiting(self):
+        po = self._make_issued_po()
+        self.assertFalse(po.is_awaiting_reconciliation)
+        self.assertNotIn(po, PurchaseOrder.objects.awaiting_reconciliation())
+
+    def test_partly_received_not_awaiting(self):
+        po = self._make_issued_po()
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+        PurchaseOrderReceivingService.receive_items(
+            po, [{'line_item_id': li.pk, 'qty_received': 1}], self.worker,
+        )
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_PARTLY_RECEIVED)
+        self.assertFalse(po.is_awaiting_reconciliation)
+        self.assertNotIn(po, PurchaseOrder.objects.awaiting_reconciliation())
+
+    def test_received_in_full_unreconciled_is_awaiting(self):
+        po = self._make_issued_po()
+        PurchaseOrderReceivingService.receive_all(po, self.worker)
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_RECEIVED_IN_FULL)
+        self.assertTrue(po.is_awaiting_reconciliation)
+        self.assertIn(po, PurchaseOrder.objects.awaiting_reconciliation())
+
+    def test_received_in_full_reconciled_not_awaiting(self):
+        po = self._make_issued_po()
+        PurchaseOrderReceivingService.receive_all(po, self.worker)
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('20.00'))
+        po.refresh_from_db()
+        self.assertFalse(po.is_awaiting_reconciliation)
+        self.assertNotIn(po, PurchaseOrder.objects.awaiting_reconciliation())
+
+    def test_cancelled_not_awaiting(self):
+        po = self._make_issued_po()
+        PurchaseOrderService.cancel_po(po.pk)
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_CANCELLED)
+        self.assertFalse(po.is_awaiting_reconciliation)
+        self.assertNotIn(po, PurchaseOrder.objects.awaiting_reconciliation())
+
+    def test_reconcile_does_not_reactivate_awaiting_state(self):
+        """Re-reconcile is not an 'unreconcile' path — reconciled stays True
+        once set, so the PO does not return to awaiting_reconciliation on a
+        second reconcile call."""
+        po = self._make_issued_po()
+        PurchaseOrderReceivingService.receive_all(po, self.worker)
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('20.00'))
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('25.00'))
+        po.refresh_from_db()
+        self.assertTrue(po.reconciled)
+        self.assertFalse(po.is_awaiting_reconciliation)
+
+
+class AppendedLinesCarryNoteTest(POReconciliationTestBase):
+    """`appended_lines` is an append-only MIRROR of the bill's invoice_only
+    detail, not additive: a re-reconcile that drops a previously-appended
+    line deletes it; re-sending a line's id updates it in place; omitting an
+    id creates a new line. Covers drop/replace/keep."""
+
+    def test_omitted_appended_line_is_dropped(self):
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'),
+            appended_lines=[{
+                'description': 'Freight', 'qty': Decimal('1.00'),
+                'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+            }],
+        )
+        freight = PurchaseOrderLineItem.objects.get(purchase_order=po, invoice_only=True)
+
+        # Second reconcile omits it entirely.
+        PurchaseOrderService.reconcile(po.pk, bill_total=Decimal('20.00'))
+
+        self.assertFalse(
+            PurchaseOrderLineItem.objects.filter(pk=freight.pk).exists()
+        )
+        self.assertFalse(
+            PurchaseOrderLineItem.objects.filter(purchase_order=po, invoice_only=True).exists()
+        )
+
+    def test_omitted_appended_line_delete_renumbers_survivors(self):
+        """Dropped invoice_only lines go through LineItemService.delete_line_item_with_renumber
+        (repo law) — surviving lines' line_number stays contiguous."""
+        po = self._make_issued_po(num_items=1)
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('45.00'),
+            appended_lines=[
+                {'description': 'Freight', 'qty': Decimal('1.00'),
+                 'price': Decimal('15.00'), 'accounting_category': self.cat.pk},
+                {'description': 'Tax', 'qty': Decimal('1.00'),
+                 'price': Decimal('5.00'), 'accounting_category': self.cat.pk},
+            ],
+        )
+        freight = PurchaseOrderLineItem.objects.get(purchase_order=po, description='Freight')
+        tax = PurchaseOrderLineItem.objects.get(purchase_order=po, description='Tax')
+
+        # Drop Freight (first-appended), keep Tax.
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'),
+            appended_lines=[{'line_item_id': tax.pk, 'description': 'Tax',
+                              'qty': Decimal('1.00'), 'price': Decimal('5.00'),
+                              'accounting_category': self.cat.pk}],
+        )
+        self.assertFalse(PurchaseOrderLineItem.objects.filter(pk=freight.pk).exists())
+        remaining_numbers = sorted(
+            PurchaseOrderLineItem.objects.filter(purchase_order=po)
+            .values_list('line_number', flat=True)
+        )
+        self.assertEqual(remaining_numbers, list(range(1, len(remaining_numbers) + 1)))
+
+    def test_resent_appended_line_id_updates_in_place(self):
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'),
+            appended_lines=[{
+                'description': 'Freight', 'qty': Decimal('1.00'),
+                'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+            }],
+        )
+        freight = PurchaseOrderLineItem.objects.get(purchase_order=po, invoice_only=True)
+
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('40.00'),
+            appended_lines=[{
+                'line_item_id': freight.pk, 'description': 'Freight (corrected)',
+                'qty': Decimal('1.00'), 'price': Decimal('25.00'),
+                'accounting_category': self.cat.pk,
+            }],
+        )
+        freight.refresh_from_db()
+        self.assertEqual(freight.description, 'Freight (corrected)')
+        self.assertEqual(freight.price, Decimal('25.00'))
+        # Same row — not deleted and recreated.
+        self.assertEqual(
+            PurchaseOrderLineItem.objects.filter(purchase_order=po, invoice_only=True).count(),
+            1,
+        )
+
+    def test_kept_and_new_appended_lines_together(self):
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'),
+            appended_lines=[{
+                'description': 'Freight', 'qty': Decimal('1.00'),
+                'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+            }],
+        )
+        freight = PurchaseOrderLineItem.objects.get(purchase_order=po, invoice_only=True)
+
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('50.00'),
+            appended_lines=[
+                {'line_item_id': freight.pk, 'description': 'Freight',
+                 'qty': Decimal('1.00'), 'price': Decimal('15.00'),
+                 'accounting_category': self.cat.pk},
+                {'description': 'Handling', 'qty': Decimal('1.00'),
+                 'price': Decimal('5.00'), 'accounting_category': self.cat.pk},
+            ],
+        )
+        invoice_only_descriptions = set(
+            PurchaseOrderLineItem.objects.filter(purchase_order=po, invoice_only=True)
+            .values_list('description', flat=True)
+        )
+        self.assertEqual(invoice_only_descriptions, {'Freight', 'Handling'})
+
+    def test_appended_line_id_from_another_po_rejected(self):
+        po = self._make_issued_po()
+        other_po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            other_po.pk, bill_total=Decimal('10.00'),
+            appended_lines=[{
+                'description': 'Freight', 'qty': Decimal('1.00'),
+                'price': Decimal('5.00'), 'accounting_category': self.cat.pk,
+            }],
+        )
+        other_freight = PurchaseOrderLineItem.objects.get(
+            purchase_order=other_po, invoice_only=True,
+        )
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('20.00'),
+                appended_lines=[{
+                    'line_item_id': other_freight.pk, 'description': 'Freight',
+                    'qty': Decimal('1.00'), 'price': Decimal('5.00'),
+                    'accounting_category': self.cat.pk,
+                }],
+            )
+
+    def test_appended_line_id_referencing_ordinary_line_rejected(self):
+        """An id in appended_lines must reference an existing invoice_only
+        line — an ordinary (ordered) line's id is not a valid target."""
+        po = self._make_issued_po()
+        ordinary_li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('20.00'),
+                appended_lines=[{
+                    'line_item_id': ordinary_li.pk, 'description': 'Not invoice-only',
+                    'qty': Decimal('1.00'), 'price': Decimal('5.00'),
+                    'accounting_category': self.cat.pk,
+                }],
+            )
+
+
+class AppendedLinesWhitelistTest(POReconciliationTestBase):
+    """`appended_lines` entries are restricted to the fields
+    `add_line_item` itself accepts — a caller cannot smuggle
+    receiving-state fields (qty_received, line_number, received_by, ...) or
+    an explicit `invoice_only` through a reconcile call. `invoice_only` is
+    always set server-side."""
+
+    def test_smuggled_qty_received_rejected(self):
+        po = self._make_issued_po()
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('20.00'),
+                appended_lines=[{
+                    'description': 'Freight', 'qty': Decimal('1.00'),
+                    'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+                    'qty_received': Decimal('1.00'),
+                }],
+            )
+        self.assertFalse(
+            PurchaseOrderLineItem.objects.filter(
+                purchase_order=po, description='Freight',
+            ).exists()
+        )
+
+    def test_smuggled_line_number_rejected(self):
+        po = self._make_issued_po()
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('20.00'),
+                appended_lines=[{
+                    'description': 'Freight', 'qty': Decimal('1.00'),
+                    'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+                    'line_number': 99,
+                }],
+            )
+
+    def test_smuggled_invoice_only_false_rejected(self):
+        """invoice_only is always set server-side — an explicit value
+        (even a no-op True, or an attempted False) in the payload is
+        rejected like any other unknown field."""
+        po = self._make_issued_po()
+        with self.assertRaises(ValidationError):
+            PurchaseOrderService.reconcile(
+                po.pk, bill_total=Decimal('20.00'),
+                appended_lines=[{
+                    'description': 'Freight', 'qty': Decimal('1.00'),
+                    'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+                    'invoice_only': False,
+                }],
+            )
+
+    def test_allowed_fields_still_accepted(self):
+        """Whitelisted fields (including optional task link) still work."""
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'),
+            appended_lines=[{
+                'description': 'Outsourced extra', 'qty': Decimal('1.00'),
+                'units': 'ea', 'price': Decimal('15.00'),
+                'accounting_category': self.cat.pk, 'task': self.task_a.pk,
+            }],
+        )
+        li = PurchaseOrderLineItem.objects.get(
+            purchase_order=po, description='Outsourced extra',
+        )
+        self.assertTrue(li.invoice_only)
+        self.assertEqual(li.task_id, self.task_a.pk)
+
+
+class CancelLineItemInvoiceOnlyGuardTest(POReconciliationTestBase):
+    """PurchaseOrderReceivingService.cancel_line_item must reject an
+    invoice_only line — it was never ordered/received, so "cancel the
+    remaining quantity" is meaningless for it."""
+
+    def test_cancel_invoice_only_line_rejected(self):
+        po = self._make_issued_po()
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('30.00'),
+            appended_lines=[{
+                'description': 'Freight', 'qty': Decimal('1.00'),
+                'price': Decimal('15.00'), 'accounting_category': self.cat.pk,
+            }],
+        )
+        invoice_only_li = PurchaseOrderLineItem.objects.get(
+            purchase_order=po, invoice_only=True,
+        )
+        with self.assertRaises(ValidationError):
+            PurchaseOrderReceivingService.cancel_line_item(po, invoice_only_li.pk)
+        invoice_only_li.refresh_from_db()
+        self.assertEqual(invoice_only_li.qty_cancelled, Decimal('0.00'))
+
+    def test_cancel_ordinary_line_still_works(self):
+        po = self._make_issued_po()
+        ordinary_li = PurchaseOrderLineItem.objects.get(purchase_order=po)
+        PurchaseOrderReceivingService.cancel_line_item(po, ordinary_li.pk)
+        ordinary_li.refresh_from_db()
+        self.assertEqual(ordinary_li.qty_cancelled, ordinary_li.qty)
+
+
+class DefaultMarkupPercentTest(POReconciliationTestBase):
+    """PurchaseOrderService._default_markup_percent() — Configuration
+    lookup used by Task 3's compute_rate_prompts (not ported here). Returns
+    (percent: Decimal|None, found: bool); (None, False) whenever the config
+    row is missing or unparseable, never a bare 500."""
+
+    def test_missing_config_returns_none_and_false(self):
+        from apps.core.models import Configuration
+        Configuration.objects.filter(key='default_material_markup_percent').delete()
+        percent, found = PurchaseOrderService._default_markup_percent()
+        self.assertIsNone(percent)
+        self.assertFalse(found)
+
+    def test_present_config_returns_decimal_and_true(self):
+        from apps.core.models import Configuration
+        Configuration.objects.update_or_create(
+            key='default_material_markup_percent', defaults={'value': '35'},
+        )
+        percent, found = PurchaseOrderService._default_markup_percent()
+        self.assertEqual(percent, Decimal('35'))
+        self.assertTrue(found)
+
+    def test_unparseable_config_returns_none_and_false(self):
+        from apps.core.models import Configuration
+        Configuration.objects.update_or_create(
+            key='default_material_markup_percent', defaults={'value': 'not-a-number'},
+        )
+        percent, found = PurchaseOrderService._default_markup_percent()
+        self.assertIsNone(percent)
+        self.assertFalse(found)
+
+
+class AddLineItemInvoiceOnlyGuardTest(POReconciliationTestBase):
+    """Spec ruling 4 / fees' LATER item 3: the ordinary manual line-create
+    path (`PurchaseOrderService.add_line_item`, the service behind
+    `POST /api/purchase-orders/{id}/line-items/`) must refuse a
+    caller-supplied `invoice_only` — that field is reconciliation-owned and
+    is only ever set server-side by `reconcile()`'s appended_lines path.
+    Without this guard a caller could POST `invoice_only: true` directly on
+    an ordinary manual line, bypassing the receiving/reconcile machinery
+    entirely."""
+
+    def test_add_line_item_rejects_invoice_only_true(self):
+        po = PurchaseOrder.objects.create(business=self.business)  # draft
+        with self.assertRaises(ValidationError) as ctx:
+            PurchaseOrderService.add_line_item(
+                po.pk, description='Sneaky', qty=Decimal('1.00'),
+                price=Decimal('5.00'), accounting_category=self.cat.pk,
+                invoice_only=True,
+            )
+        self.assertIn('invoice_only', ctx.exception.message_dict)
+        self.assertFalse(
+            PurchaseOrderLineItem.objects.filter(purchase_order=po).exists()
+        )
+
+    def test_add_line_item_rejects_invoice_only_false(self):
+        """Rejected outright like any other unexpected field — even a
+        no-op `False` is refused, matching the appended_lines whitelist's
+        stance (AppendedLinesWhitelistTest.test_smuggled_invoice_only_false_rejected)."""
+        po = PurchaseOrder.objects.create(business=self.business)  # draft
+        with self.assertRaises(ValidationError) as ctx:
+            PurchaseOrderService.add_line_item(
+                po.pk, description='Sneaky', qty=Decimal('1.00'),
+                price=Decimal('5.00'), accounting_category=self.cat.pk,
+                invoice_only=False,
+            )
+        self.assertIn('invoice_only', ctx.exception.message_dict)
+
+    def test_add_line_item_without_invoice_only_still_works(self):
+        po = PurchaseOrder.objects.create(business=self.business)  # draft
+        li = PurchaseOrderService.add_line_item(
+            po.pk, description='Ordinary', qty=Decimal('1.00'),
+            price=Decimal('5.00'), accounting_category=self.cat.pk,
+        )
+        self.assertFalse(li.invoice_only)
