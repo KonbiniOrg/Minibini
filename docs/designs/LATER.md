@@ -728,6 +728,24 @@ Billing mechanics and money-record lifecycle.
   _Done when:_ merging is driven from the list rows with a searchable picker and an explicit
   before-commit preview of the outcome, no top-of-page dropdown hunting.
 
+- **PO "Change Job" button has no client-side permission gate, but its
+  write is server-gated.** — _added 2026-09-21 (noticed during
+  outsourced-work-port docs review)_
+  `PurchaseOrderDetail.svelte`'s post-issue/receive line Actions column
+  shows **Change Job** to any authenticated user whenever `canChangeJob(li)`
+  is true — no `canManageFinancials` check, unlike the sibling Cancel
+  Line/Reverse Receipt/Receive buttons which are genuinely open to anyone
+  (matching the server). But the underlying write
+  (`PATCH .../line-items/{id}/` with a bare `job` key, dispatched to
+  `change_line_job`) goes through `line_item_detail`, which is **not** in
+  `PurchaseOrderViewSet.get_permissions()`'s `IsAuthenticated`-only action
+  list — it falls to the default `CanManageFinancials` gate. A Viewer sees
+  a working-looking button that 403s on save. Pre-existing, not introduced
+  by the outsourced-work port; not fixed as part of that docs-only task.
+  _Done when:_ the button is hidden for non-Financials users (simplest
+  fix), or the server gate is deliberately relaxed to match — whichever
+  the team decides is the intended permission shape for this one action.
+
 ## Time tracking (shifts & bleps)
 
 - **Time managers can't reach the shift request queue / payroll report.** — _added 2026-05-31_
@@ -1416,3 +1434,42 @@ Cross-cutting UI/API conventions and shared components.
   small table/section on `JobDetail.svelte` near the header, shown only
   when the list is non-empty), or the team decides API-only is fine
   indefinitely and this entry is closed.
+
+- **`compute_rate_prompts` is an N+1 — one `is_invoiced` query per
+  qualifying line.** — _added 2026-09-21 (outsourced-work port Task 8
+  review)_
+  `PurchaseOrderService.compute_rate_prompts` (`apps/purchasing/services.py`)
+  loops over every PO line with a non-null `final_price` and a linked
+  task, calling `InvoiceClaimService.is_invoiced(SOURCE_TASK, task.pk)`
+  individually for each — one `.exists()` query per qualifying line
+  rather than one batched lookup. Only runs once per reconcile call and
+  a PO's line count is small in practice, so this isn't urgent, but it's
+  the same shape of gap other N+1 entries in this doc track.
+  _Done when:_ `compute_rate_prompts` resolves invoiced-ness for all
+  qualifying lines in one query (e.g. reusing `InvoiceClaimService`'s
+  batch `_map`/`claims_for_job`-style helper instead of per-row
+  `is_invoiced`), verified with `assertNumQueries` or similar.
+
+- **Rate-prompt Accept 400s on an already-complete task (RM to rule).**
+  — _added 2026-09-21 (outsourced-work port Task 7/8)_
+  `compute_rate_prompts` qualifies a line whenever it has a final price
+  and an uninvoiced linked task — it does not exclude a task that has
+  already been marked complete. But `TaskLifecycleService`/
+  `JobService.update_task` (`apps/jobs/services.py` ~L1201) freezes a
+  terminal (complete/cancelled) task's billing inputs ("Its work and
+  billing are settled; corrections belong on the invoice."), so
+  `RatePromptDialog.svelte`'s Accept — an ordinary
+  `PATCH .../tasks/{id}/ {rate: ...}` — 400s when the task completed
+  before the PO was reconciled. The realistic ordering is
+  receive → complete → bill → reconcile, so this bites more often than
+  the "accept before completing" happy path the outsourced-work-port
+  e2e spec deliberately orders around
+  (`e2e/specs/purchasing/po-reconciliation.spec.js`). Candidate fixes,
+  neither implemented: (a) have the qualifying rule in
+  `compute_rate_prompts` skip terminal tasks (silently drop the prompt
+  instead of offering one that can't be accepted), or (b) carve out this
+  one write so a rate-prompt Accept is allowed on a terminal task despite
+  the general freeze. RM to decide which (or whether the current 400 is
+  acceptable, given a per-row error + Retry is at least not a crash).
+  _Done when:_ RM rules on (a), (b), or "leave it," and (if a) or (b)) the
+  fix ships with a test covering a reconcile-after-complete rate prompt.

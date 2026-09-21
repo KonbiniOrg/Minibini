@@ -499,17 +499,26 @@ money-field edit: if the parent's own `rate` was `None` (deriving its
 price from children, §4.1a), the restamp sets an explicit `rate` that
 overrides the derivation — the existing rule, not new behavior.
 
-**Outsourced work (task-owned-money Phase 5)** is the one *suggested*
-path to that same edit: a flat task linked to a PO line
-(`materials-inventory-and-purchasing.md` §10a) can be the target of a
-**task-rate prompt** once that PO is reconciled with a per-line final
-cost that differs from what was ordered — "update the selling rate to
-final × markup?" A human must explicitly accept it; accepting issues
-the exact same `PATCH .../tasks/{id}/ {rate: ...}` call described
-above, so nothing here is a second money-writing code path. Declining
-leaves the quoted rate untouched, and nothing about the decline is
-persisted. Full mechanics — qualifying-line rule, the markup config,
-accept/decline — live in `materials-inventory-and-purchasing.md` §10a.
+**Outsourced work** (shape #11 of the fifteen shapes, Appendix below) is
+the one *suggested* path to that same edit, and it starts on the sell
+side with no new authoring surface: the outsourced charge is quoted as
+an ordinary hand service line, a flat-fee ServiceItem (§2.2a shape,
+amount on the item), or a task created via **Add Task** with a
+create-time rate override (§3.6c — type the vendor quote × markup as
+the rate right there). Acceptance/mint produces the task exactly like
+any other. On the buy side, the same task can optionally be linked to a
+PO line (`PurchaseOrderLineItem.task`,
+`materials-inventory-and-purchasing.md` §10a) when the work is ordered
+from the vendor. Once that PO is reconciled with a per-line final cost
+recorded (whether or not it happens to differ from what was ordered),
+the linked task becomes eligible for a **task-rate prompt** —
+"update the selling rate to final × markup?" A human must explicitly
+accept it; accepting issues the exact same `PATCH .../tasks/{id}/
+{rate: ...}` call described above, so nothing here is a second
+money-writing code path. Declining leaves the quoted rate untouched,
+and nothing about the decline is persisted. Full mechanics —
+qualifying-line rule, the markup config, accept/decline — live in
+`materials-inventory-and-purchasing.md` §10a.
 
 ### 3.6b Edit-task money-field gating uses `can_write_money`, not `can_manage` (RM browser-testing note 6)
 
@@ -3885,7 +3894,10 @@ a sane path through the surface being designed.
    machine-minutes entered-qty, translated to per-piece.
 9. **Jigs we may keep for re-use.**
 10. **Specialized tools owned by us afterwards, funded by the customer.**
-11. **Outsourced work** (powder coating, waterjet) — PO reconciliation.
+11. **Outsourced work** (powder coating, waterjet) — quoted as a hand
+    service line / flat-fee ServiceItem / Add-Task-time override (§3.6c),
+    optionally linked to a PO line and reconciled against the vendor's
+    actual bill (§3.6, `materials-inventory-and-purchasing.md` §10a).
 12. **Site visits** — priced up front.
 13. **Untracked consumables** (glue, staples, paint, nuts and bolts).
 14. **Deposits.**
@@ -3894,7 +3906,9 @@ a sane path through the surface being designed.
 Resolved shapes (better-fees): setup/delivery/site-visits → flat tasks;
 cutting/engraving → presets with modifiers; CAD → hourly task;
 jigs/tooling → ordinary tasks+materials (no asset registry — RM's call);
-outsourced → PO reconciliation (Phase 5); consumables/credits → signed
+outsourced → hand line/ServiceItem/Add-Task override authoring, PO link +
+reconciliation for the buy side (§3.6, materials-inventory-and-purchasing.md
+§10a); consumables/credits → signed
 hand lines; deposits built. #1 drove the quantity-structures/priced-
 deliverable discussions and the 2026-08-14 estimate/planning joint
 surface design (`docs/plans/2026-08-14-estimate-planning-surface.md`
