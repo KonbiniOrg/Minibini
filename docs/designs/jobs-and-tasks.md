@@ -1732,15 +1732,19 @@ state B, the CO's own source-pool in state D — keyed `"task:{id}"` /
      (state D) passes **"on change order"** / "Already on the draft
      change order" instead.
    - **`claimed_by_other`** — claimed by a different estimate or by a
-     change order on this job: a **disabled** checkbox with a `title`
-     tooltip naming the claimant — "Claimed by change order {number}" or
-     "Claimed by estimate {number}" (`bundleClaimNote`, CO branch checked
-     first since it's the more specific claim — mirrors
-     `EstimateEditView`'s own unselectable-pool-row note,
-     `estimates-and-prices.md` §12.1). In state D specifically, an atom
-     claimed by the job's own accepted estimate also reads
-     `claimed_by_other` here — correct, it's part of the agreement the CO
-     amends, not available to re-bundle.
+     change order on this job: no checkbox at all — a greyed-out/disabled
+     checkbox read as "broken" (RM 2026-09-20; "the only actual checkboxes
+     available are for available atoms"). Instead a passive chip
+     (`.bundle-claimed`, same class as the `claimed_by_current` chip)
+     reading **"on CO"** or **"on est"**, with a `title` tooltip naming the
+     claimant — "Claimed by change order {number}" or "Claimed by estimate
+     {number}" (`bundleClaimNote`, CO branch checked first since it's the
+     more specific claim — mirrors `EstimateEditView`'s own
+     unselectable-pool-row note, `estimates-and-prices.md` §12.1;
+     `bundleClaimLabel` picks the short chip text off the same branch). In
+     state D specifically, an atom claimed by the job's own accepted
+     estimate also reads `claimed_by_other` here — correct, it's part of
+     the agreement the CO amends, not available to re-bundle.
    - An atom absent from the pool (e.g. a cancelled task — the estimate
      pool excludes those, `estimates-and-prices.md` §8.1) renders no
      checkbox and no chip: `bundleAtom` is `null` and none of the three

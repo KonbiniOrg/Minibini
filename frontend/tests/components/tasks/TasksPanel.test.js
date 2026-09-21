@@ -639,8 +639,8 @@ describe('TasksPanel — estimate context (Task 2)', () => {
     ];
 
     it('State A: enabled checkbox only for the available atom, "estimated" chip for ' +
-       'claimed_by_current, disabled+titled checkbox for claimed_by_other, nothing for ' +
-       'the row absent from the pool', async () => {
+       'claimed_by_current, a passive "on CO" chip (no checkbox) for claimed_by_other, ' +
+       'nothing for the row absent from the pool', async () => {
       mockApiWithEstimates(
         [{ estimate_id: 42, estimate_number: 'EST-2026-0042', status: 'draft' }],
         { poolAtoms },
@@ -650,29 +650,30 @@ describe('TasksPanel — estimate context (Task 2)', () => {
       });
       await findByText(/Bundling into estimate EST-2026-0042/i);
 
-      // Exactly one enabled checkbox on the whole page.
+      // Exactly one checkbox on the whole page — the only actual checkboxes
+      // are for available atoms (RM 2026-09-20).
       const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]'));
-      const enabled = checkboxes.filter((cb) => !cb.disabled);
-      expect(enabled).toHaveLength(1);
+      expect(checkboxes).toHaveLength(1);
+      expect(checkboxes[0]).not.toBeDisabled();
 
       // claimed_by_current: "estimated" chip, no checkbox in its row.
       const claimedRow = getByText('Claimed Task').closest('tr');
       expect(within(claimedRow).getByText('estimated')).toBeInTheDocument();
       expect(within(claimedRow).queryByRole('checkbox')).toBeNull();
 
-      // claimed_by_other (the loose material): disabled checkbox with the CO note.
+      // claimed_by_other (the loose material): passive "on CO" chip, no checkbox.
       const materialRow = getByText('Steel').closest('tr');
-      const disabledCheckbox = within(materialRow).getByRole('checkbox');
-      expect(disabledCheckbox).toBeDisabled();
-      expect(disabledCheckbox).toHaveAttribute('title', 'Claimed by change order 7');
+      expect(within(materialRow).queryByRole('checkbox')).toBeNull();
+      const chip = within(materialRow).getByText('on CO');
+      expect(chip).toHaveAttribute('title', 'Claimed by change order 7');
 
       // Absent from the pool: no checkbox at all.
       const absentRow = getByText('Absent Task').closest('tr');
       expect(within(absentRow).queryByRole('checkbox')).toBeNull();
     });
 
-    it('claimed_by_other with an estimate (not change-order) claim shows the estimate ' +
-       'fallback note on the disabled checkbox', async () => {
+    it('claimed_by_other with an estimate (not change-order) claim shows the "on est" ' +
+       'chip with the estimate fallback note', async () => {
       const job = poolJob({
         materials: [
           { material_id: 5, description: 'Steel', quantity: '2', sell_price: '5',
@@ -695,9 +696,9 @@ describe('TasksPanel — estimate context (Task 2)', () => {
       await findByText(/Bundling into estimate EST-2026-0042/i);
 
       const materialRow = getByText('Copper').closest('tr');
-      const disabledCheckbox = within(materialRow).getByRole('checkbox');
-      expect(disabledCheckbox).toBeDisabled();
-      expect(disabledCheckbox).toHaveAttribute('title', 'Claimed by estimate EST-2026-0010');
+      expect(within(materialRow).queryByRole('checkbox')).toBeNull();
+      const chip = within(materialRow).getByText('on est');
+      expect(chip).toHaveAttribute('title', 'Claimed by estimate EST-2026-0010');
     });
 
     it('State C: canBundle false renders no checkboxes anywhere', async () => {

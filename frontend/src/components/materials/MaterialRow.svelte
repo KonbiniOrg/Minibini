@@ -102,6 +102,13 @@
     }
     return `Claimed by estimate ${atom.claiming_estimate_number || ''}`.trim();
   }
+
+  // Same CO-wins-then-estimate branch as bundleClaimNote, just the short
+  // chip label instead of the full hover sentence — "Est"/"CO" mirror the
+  // table's own "Est Qty"/"Est Time" header shorthand.
+  function bundleClaimLabel(atom) {
+    return atom.claiming_change_order_number ? 'on CO' : 'on est';
+  }
 </script>
 
 {#snippet availBadge(mat)}
@@ -147,7 +154,7 @@
       {:else if bundleAtom?.state === 'claimed_by_current'}
         <span class="bundle-claimed" title={bundleClaimedTitle}>{bundleClaimedLabel}</span>
       {:else if bundleAtom?.state === 'claimed_by_other'}
-        <input type="checkbox" disabled title={bundleClaimNote(bundleAtom)}>
+        <span class="bundle-claimed" title={bundleClaimNote(bundleAtom)}>{bundleClaimLabel(bundleAtom)}</span>
       {/if}
     </td>
   {/if}
