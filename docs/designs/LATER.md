@@ -780,9 +780,11 @@ Billing mechanics and money-record lifecycle.
   remove this atom from the line." — "atom" is our internal modeling term
   (billable atoms), not something a user should see. Predates the
   bundling-in-task-view feature; not touched by it. User-visible copy should
-  say "tasks and materials" or "work" instead.
-  _Done when:_ the strings are reworded (trivial, next time the file is
-  touched).
+  say "tasks and materials" or "work" instead. Same two strings also live in
+  `frontend/src/components/changeorders/COEditView.svelte` (~175, ~188 —
+  flagged again by the 2026-09-20 CO line-item-first review).
+  _Done when:_ the strings are reworded in BOTH files (trivial, next time
+  either is touched).
 
 - **Global success overlay never auto-dismisses and blocks clicks underneath
   it.** — _added 2026-09-19 (bundling-in-task-view final review)_
