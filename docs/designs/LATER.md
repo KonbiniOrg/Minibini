@@ -466,6 +466,17 @@ The CO surface and its estimate-parallel code.
 
 ## Invoicing, expenses & payments
 
+- **InvoiceEditView's claimed rows still render disabled checkboxes.** —
+  _added 2026-09-21 (claim-chips review follow-up; RM: not ready to work
+  on invoicing yet)_
+  The Tasks-page bundling surface replaced `claimed_by_other` disabled
+  checkboxes with passive chips ("on est" / "on CO", claim note as hover
+  title; checkboxes only for available rows — RM 2026-09-20).
+  `InvoiceEditView.svelte`'s older pool/picklist pattern still shows the
+  disabled-checkbox style for claimed rows.
+  _Done when:_ the invoice surface adopts the same chip treatment (or RM
+  rules the surfaces may diverge) during the next invoicing pass.
+
 - **Converter invoices carry no agreement-line refs → re-seeding duplicates
   them.** — _added 2026-08-12 (RM sighting, root-caused in session)_
   `build_invoices` emits invoice lines with `agreement_estimate_line`/
