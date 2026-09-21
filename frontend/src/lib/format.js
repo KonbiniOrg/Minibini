@@ -1,3 +1,17 @@
+// Currency formatting via Intl (handles negatives as "-$15.50", not
+// "$-15.50" — matters for PO reconciliation variance, which is routinely
+// negative). Distinct from lib/taskTotals.js's `fmtMoney` (which treats 0/
+// falsy as "no data" → '-', right for task-row totals but wrong here: a
+// reconciled $0.00 variance is a real, displayable amount).
+export function formatMoney(n, { decimals = 2 } = {}) {
+  return Number(n).toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
 export function formatQtyUnits(quantity, units) {
   if (quantity === null || quantity === undefined || quantity === '') {
     return '-';

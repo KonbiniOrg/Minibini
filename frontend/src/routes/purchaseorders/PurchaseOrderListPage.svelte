@@ -10,6 +10,7 @@
   let loading = $state(true);
   let error = $state(null);
   let statusFilter = $state('');
+  let awaitingReconciliationOnly = $state(false);
 
   let canManageFinancials = $derived($canManageFinancialsStore);
 
@@ -20,6 +21,9 @@
       let url = `/api/purchase-orders/?page=${page}`;
       if (statusFilter) {
         url += `&status=${statusFilter}`;
+      }
+      if (awaitingReconciliationOnly) {
+        url += '&awaiting_reconciliation=true';
       }
       purchaseOrders = await api.get(url);
     } catch (e) {
@@ -36,6 +40,7 @@
   $effect(() => {
     void page;
     void statusFilter;
+    void awaitingReconciliationOnly;
     loadPOs();
   });
 </script>
@@ -57,6 +62,10 @@
       <option value="received_in_full">Received in Full</option>
       <option value="cancelled">Cancelled</option>
     </select>
+  </label>
+  <label>
+    <input type="checkbox" bind:checked={awaitingReconciliationOnly} onchange={() => { page = 1; }}>
+    Awaiting reconciliation only
   </label>
 </p>
 

@@ -5,9 +5,14 @@
     onCancel,
   } = $props();
 
-  // Only show lines that still need receiving
+  // Only show lines that still need receiving. invoice_only lines
+  // (reconciliation-appended freight/etc.) were never ordered/received —
+  // the server rejects them outright (PurchaseOrderReceivingService), so
+  // they must never appear here in the supported reconcile-before-received
+  // flow.
   let receivableItems = $derived(
-    lineItems.filter(li => Number(li.qty_received) + Number(li.qty_cancelled) < Number(li.qty))
+    lineItems.filter(li => !li.invoice_only
+      && Number(li.qty_received) + Number(li.qty_cancelled) < Number(li.qty))
   );
 
   let entries = $state([]);
