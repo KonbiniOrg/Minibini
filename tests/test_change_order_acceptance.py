@@ -982,6 +982,12 @@ class SeedNewEmptyTest(ChangeOrderAcceptanceBase):
             f'/api/change-orders/{co.pk}/seed-new/', {'empty': True}, format='json')
         self.assertEqual(resp.status_code, 201, resp.data)
         self.assertEqual(len(resp.data['line_items']), 0)
+        # One-draft-CO-per-job (2026-09-20): the "start new" choice dialog
+        # offers seed-from-lines OR start-empty as ONE gesture, never both at
+        # once — discard the empty draft this test doesn't need before
+        # exercising the other half from the same terminal source, so the
+        # two calls don't try to leave two drafts coexisting on the job.
+        ChangeOrderService.discard_draft(resp.data['change_order_id'])
 
         resp2 = client.post(f'/api/change-orders/{co.pk}/seed-new/', {}, format='json')
         self.assertEqual(resp2.status_code, 201, resp2.data)

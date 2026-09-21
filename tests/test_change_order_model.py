@@ -34,7 +34,11 @@ class ChangeOrderModelTests(FixtureTestCase):
 
     def test_number_derives_from_estimate_with_co_ordinal(self):
         co1 = ChangeOrder.objects.create(job=self.job, estimate=self.est)
-        co2 = ChangeOrder.objects.create(job=self.job, estimate=self.est)
+        # One-draft-CO-per-job (2026-09-20): co2 must not also be draft while
+        # co1 still is — status is orthogonal to what this test checks (the
+        # numbering ordinal), so mint co2 straight into open.
+        co2 = ChangeOrder.objects.create(
+            job=self.job, estimate=self.est, status=ChangeOrder.STATUS_OPEN)
         self.assertEqual(co1.change_order_number, 'EST-CO-1-CO1')
         self.assertEqual(co2.change_order_number, 'EST-CO-1-CO2')
 
@@ -77,7 +81,9 @@ class ChangeOrderModelTests(FixtureTestCase):
 
     def test_public_token_unique_per_change_order(self):
         co1 = ChangeOrder.objects.create(job=self.job, estimate=self.est)
-        co2 = ChangeOrder.objects.create(job=self.job, estimate=self.est)
+        # One-draft-CO-per-job (2026-09-20): see ordinal test above.
+        co2 = ChangeOrder.objects.create(
+            job=self.job, estimate=self.est, status=ChangeOrder.STATUS_OPEN)
         self.assertNotEqual(co1.public_token, co2.public_token)
 
 

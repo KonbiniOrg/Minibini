@@ -338,6 +338,24 @@ class ChangeOrder(models.Model):
                     # run pre-email by ChangeOrderEmailService._validate_send.
                     ChangeOrderService.assert_all_bare_add_lines_have_ac(self)
 
+        # Only one draft change order per job (mirrors Estimate.clean()'s
+        # one-draft-estimate invariant, RM 2026-09-19/2026-09-20): the Tasks-
+        # page CO lens resolves "the job's draft CO" as a singleton. Draft-
+        # vs-draft only, self-excluded — request_changes's seed_new(
+        # move_claims=True) supersedes the source CO (status flips to
+        # SUPERSEDED and is saved) BEFORE seeding the new draft, so by the
+        # time the new draft CO is created the source is no longer draft;
+        # this never trips that transient. See
+        # ChangeOrderService.request_changes/seed_new for the order.
+        if self.status == self.STATUS_DRAFT:
+            existing_draft = ChangeOrder.objects.filter(
+                job=self.job,
+                status=self.STATUS_DRAFT,
+            ).exclude(pk=self.pk if self.pk else None)
+
+            if existing_draft.exists():
+                raise ValidationError(f'Job {self.job.job_number} already has a draft change order')
+
     def save(self, *args, **kwargs):
         from apps.core.models import Configuration
         from datetime import timedelta

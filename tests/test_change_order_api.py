@@ -574,6 +574,14 @@ class DeliverablesBaselineAPITest(FixtureTestCase):
         from apps.deliverables.models import DeliverableSnapshot
         from apps.estimates.models import ChangeOrder
 
+        # One-draft-CO-per-job (2026-09-20): setUp's self.co_id is an
+        # unrelated draft this test doesn't use — discard it FIRST (before
+        # minting any of this test's own COs) so change_order_number's
+        # count-based generation doesn't collide with prior_co's number by
+        # deleting a lower-numbered row out from under it later.
+        from apps.estimates.change_order_service import ChangeOrderService
+        ChangeOrderService.discard_draft(self.co_id)
+
         # Accept the first CO (creates snapshot on it via Trigger 2 path - but
         # here we test Trigger 1 on the NEXT CO).
         # We manually create an accepted CO and snapshot it to represent a prior agreement.

@@ -143,7 +143,12 @@ class ChangeOrderSourcePoolTest(COWizardServiceBase):
         self.assertEqual(entry['claiming_estimate_number'], self.estimate.estimate_number)
 
     def test_other_co_claimed_atom_is_claimed_by_other(self):
-        other_co = ChangeOrder.objects.create(job=self.job, estimate=self.estimate)
+        # One-draft-CO-per-job (2026-09-20): self.co (from setUp) is already
+        # the job's draft — model this "other" CO as open so the two don't
+        # collide as coexisting drafts (status is orthogonal to what this
+        # test checks: pool state for an atom claimed by a DIFFERENT CO).
+        other_co = ChangeOrder.objects.create(
+            job=self.job, estimate=self.estimate, status=ChangeOrder.STATUS_OPEN)
         other_li = ChangeOrderLineItem.objects.create(
             change_order=other_co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Other CO line', qty=Decimal('1'), price=Decimal('10.00'),
@@ -183,7 +188,10 @@ class ChangeOrderSourcePoolTest(COWizardServiceBase):
         self.assertEqual(entry['state'], 'available')
 
     def test_another_cos_remove_does_not_free_the_atom_here(self):
-        other_co = ChangeOrder.objects.create(job=self.job, estimate=self.estimate)
+        # One-draft-CO-per-job (2026-09-20): same reasoning as
+        # test_other_co_claimed_atom_is_claimed_by_other above.
+        other_co = ChangeOrder.objects.create(
+            job=self.job, estimate=self.estimate, status=ChangeOrder.STATUS_OPEN)
         ChangeOrderLineItem.objects.create(
             change_order=other_co, action=ChangeOrderLineItem.ACTION_REMOVE,
             target_line_item=self.claimed_line,

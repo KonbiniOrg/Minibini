@@ -1205,7 +1205,20 @@ Valid transitions (`ChangeOrder.VALID_TRANSITIONS`):
 
 #### Invariants
 
-- **One live CO per job**: at most one ChangeOrder per Job in `draft` or `open`.
+- **Only one draft change order per job** (RM 2026-09-20, Tasks-page
+  CO-lens): if status is `draft`, no other ChangeOrder for the same Job
+  can be `draft`. Enforced in `ChangeOrder.clean()` — mirrors Estimate's
+  "Only one draft estimate per job" (§1.13 above) exactly, including the
+  self-exclude-on-update and clean-level placement (MySQL cannot express
+  conditional unique constraints). Draft-vs-draft only:
+  `ChangeOrderService.request_changes`'s `seed_new(move_claims=True)`
+  supersedes the source CO (status → `superseded`, saved) **before**
+  seeding the new draft, so that transient never trips it. Covers every
+  creation path (`ChangeOrderService.create`, `seed_new`, the `seed-new`
+  API action) because `ChangeOrder.save()` calls `full_clean()`. Note:
+  this does NOT extend to "at most one live (draft-or-open) CO per job" —
+  nothing currently prevents a draft and an open CO, or two open COs,
+  from coexisting on one job; only draft-vs-draft is checked.
 - **Create requires the hold flag**: `ChangeOrderService.create` raises `ValidationError` unless `job.on_hold` is set and the job has an `accepted` Estimate.
 - **Line item requirement**: cannot transition out of `draft` without at least one ChangeOrderLineItem. Enforced in `ChangeOrder.clean()`.
 - **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`, no `ChangeOrderLineItemSource` — an atom-backed add line is exempt, same as the estimate side) lacks an `accounting_category` — the category rides the line onto the agreement and its invoice copy, so a category-less bare line would surface as an unclassifiable charge downstream; it must be pinned before the customer can accept. `remove`/`replace` lines are out of scope (the check only ever inspects `action=add`). Enforced in `ChangeOrder.clean()` (`ChangeOrderService.assert_all_bare_add_lines_have_ac`); `validate_data.check_change_order_line_categories` cross-checks the same predicate at rest (Phase 3 Task 8).
