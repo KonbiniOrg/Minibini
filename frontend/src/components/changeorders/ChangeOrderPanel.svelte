@@ -29,7 +29,6 @@
 
   let co = $state(null);
   let amended = $state(null);      // amended-agreement payload (rows + totals)
-  let sourcePool = $state(null);   // CO source-pool (uncovered work)
   let estimatesForNav = $state([]); // all estimate versions for this job (version subnav)
   let siblingCOs = $state([]);     // all COs for this job (used for display-status relabelling)
   let categories = $state([]);
@@ -177,16 +176,11 @@
           delivBaseline = [];
           deliverablesDiff = [];
         }
-        // Amended agreement + source pool — COEditView's own data.
+        // Amended agreement — COEditView's own data.
         try {
           amended = await api.get(`/api/change-orders/${coId}/amended-agreement/`);
         } catch (_) {
           amended = null;
-        }
-        try {
-          sourcePool = await api.get(`/api/change-orders/${coId}/source-pool/`);
-        } catch (_) {
-          sourcePool = { atoms: [] };
         }
       }
     } catch (e) {
@@ -407,7 +401,6 @@
       {canEdit}
       onChanged={handleEditChanged}
       {amended}
-      {sourcePool}
       {categories}
     />
   {:else if mode === 'customer'}

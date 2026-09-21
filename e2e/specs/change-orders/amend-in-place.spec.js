@@ -105,17 +105,29 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
   const struckRow = (desc) => editTable.locator('tr.co-struck-original').filter({ hasText: desc });
   const authoredRow = (desc) => editTable.locator('tr.co-authored').filter({ hasText: desc });
 
-  await test.step('Remove via CO strikes the row in place (parenthesized amount, revised total drops); the freed atom moves to the pool; Undo restores both', async () => {
+  await test.step('Remove via CO strikes the row in place (parenthesized amount, revised total drops); the freed atom becomes available again on the (kept, API-only) source pool; Undo restores both', async () => {
+    // The CO page's "Unquoted work" picklist is retired (RM 2026-09-20,
+    // line-item-first) — the underlying source-pool endpoint stays (a
+    // future Tasks-page bundling surface consumes it), so the "freed atom
+    // returns to the pool" business behavior is asserted at the API level
+    // here instead of against now-removed picklist UI.
+    const poolAtom = async () => {
+      const pool = await api.get(`${apiBase}/source-pool/`);
+      return pool.atoms.find((a) => a.type === 'task' && a.id === tasks.Remove.task_id);
+    };
+
     const before = await amended();
     const originalRow = agreementRowFor(before, lines.Remove.line_item_id);
-    const pool = page.locator('.uncovered-work-section');
     const claimedChild = editTable.locator('tr.doc-atom-row').filter({ hasText: tasks.Remove.name });
 
-    // The agreement line's claimed task displays nested under it, and NOT in
-    // the pool (it's covered work, shown under the line that covers it).
+    // The agreement line's claimed task displays nested under it. On the CO
+    // wizard's own pool lens, an atom claimed by the ESTIMATE (even the one
+    // this CO amends) always reads "claimed_by_other" — a CO never itself
+    // holds an EstimateLineItemSource row (ChangeOrderWizardService.
+    // get_source_pool's own contract).
     await expect(plainRow(lines.Remove.description)).toBeVisible();
     await expect(claimedChild).toBeVisible();
-    await expect(pool.locator('tbody tr').filter({ hasText: tasks.Remove.name })).toHaveCount(0);
+    expect((await poolAtom()).state).toBe('claimed_by_other');
 
     await plainRow(lines.Remove.description).getByRole('button', { name: 'Remove via CO' }).click();
 
@@ -124,12 +136,10 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
     await expect(struck).toContainText(fmtParen(originalRow.line.amount));
     await expect(struck.getByRole('button', { name: 'Undo' })).toBeVisible();
 
-    // Removing the line frees its claimed task back into the pool,
-    // selectable (re-adding it to this CO restates the work under new
+    // Removing the line frees its claimed task back to "available" on the
+    // pool (re-adding it to this CO would restate the work under new
     // terms); the nested child row is gone with its line.
-    const freedRow = pool.locator('tbody tr').filter({ hasText: tasks.Remove.name });
-    await expect(freedRow).toBeVisible();
-    await expect(freedRow.locator('input[type="checkbox"]')).toBeEnabled();
+    await expect.poll(async () => (await poolAtom()).state).toBe('available');
     await expect(claimedChild).toHaveCount(0);
 
     const afterRemove = await amended();
@@ -139,9 +149,9 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
     await struck.getByRole('button', { name: 'Undo' }).click();
     await expect(struckRow(lines.Remove.description)).toHaveCount(0);
     await expect(plainRow(lines.Remove.description)).toBeVisible();
-    // The claim is covered again: nested child back, pool row gone.
+    // The claim is covered again: nested child back, pool state reverted.
     await expect(claimedChild).toBeVisible();
-    await expect(pool.locator('tbody tr').filter({ hasText: tasks.Remove.name })).toHaveCount(0);
+    await expect.poll(async () => (await poolAtom()).state).toBe('claimed_by_other');
 
     const afterUndo = await amended();
     expect(afterUndo.revised_total).toBe(before.revised_total);
@@ -192,36 +202,28 @@ test('§3 Amend-in-place gestures: remove/undo, replace with inherited atoms, ad
     await expect(tfoot).toContainText(fmtTotal(after.revised_total));
   });
 
-  await test.step('"Bundle into line…" in Uncovered work adds a tinted CO add row carrying the atom', async () => {
-    const pool = page.locator('.uncovered-work-section');
-    const poolRow = pool.locator('tbody tr').filter({ hasText: tasks.Uncovered.name });
-    await expect(poolRow).toBeVisible();
-    await poolRow.locator('input[type="checkbox"]').check();
-
-    const createRow = page.locator('tr.doc-newline');
-    await expect(createRow).toBeVisible();
-    await createRow.getByRole('button', { name: 'Bundle into line…' }).click();
-
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toContainText('Bundle into line');
-    // One-unit is the modal's default (per-unit-lines spec) and leaves Qty
-    // blank until a multiplier is typed; this CO test just wants the atom
-    // billed at its own value, so switch to "the whole line" (qty/price
-    // seed straight from the atom, same as pre-per-unit-lines behavior).
-    await dialog.getByRole('radio', { name: /the whole line/i }).check();
-    await dialog.getByRole('button', { name: 'Create line' }).click();
-    await expect(dialog).toBeHidden();
+  await test.step('A line seeded from an uncovered atom via line-items-from-atoms (the CO page no longer drives this UI itself, RM 2026-09-20 — a Tasks-page bundling surface is the planned consumer) shows as a tinted CO add row', async () => {
+    // The CO page's own "Bundle into line…" gesture is retired; the
+    // endpoint it used to call is unchanged and kept for the follow-up
+    // Tasks-page surface, so seed the claim the same way that surface will
+    // and assert the same business outcomes the old UI-driven step did.
+    await api.post(`${apiBase}/line-items-from-atoms/`, {
+      atoms: [{ type: 'task', id: tasks.Uncovered.task_id }],
+    });
 
     const after = await amended();
     const addedRow = after.rows.find((r) => r.kind === 'added' && r.line.description === tasks.Uncovered.name);
     expect(addedRow).toBeTruthy();
 
+    await page.reload();
     const authored = authoredRow(tasks.Uncovered.name);
     await expect(authored).toBeVisible();
     await expect(authored.locator('.co-badge')).toHaveText(`CO ${addedRow.co_index}`);
 
-    // Claimed now, so it's gone from the still-uncovered pool.
-    await expect(pool.locator('tbody tr').filter({ hasText: tasks.Uncovered.name })).toHaveCount(0);
+    // Claimed now, so it no longer shows "available" on the source pool.
+    const pool = await api.get(`${apiBase}/source-pool/`);
+    const uncoveredAtom = pool.atoms.find((a) => a.type === 'task' && a.id === tasks.Uncovered.task_id);
+    expect(uncoveredAtom.state).toBe('claimed_by_current');
   });
 
   await test.step('A line billed on a live invoice shows both gesture buttons disabled with "billed on …"', async () => {

@@ -71,9 +71,6 @@ function mockApiFull(co, amended, { siblingCOs = [co] } = {}) {
     if (url === `/api/change-orders/${co.change_order_id}/amended-agreement/`) {
       return Promise.resolve(amended);
     }
-    if (url === `/api/change-orders/${co.change_order_id}/source-pool/`) {
-      return Promise.resolve({ atoms: [] });
-    }
     if (url.includes('deliverables-baseline')) {
       return Promise.resolve({ baseline: [] });
     }

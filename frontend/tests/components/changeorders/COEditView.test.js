@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, within } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -105,7 +105,6 @@ function baseProps(overrides = {}) {
     canEdit: true,
     onChanged: vi.fn(),
     amended: amendedPayload([agreementRow(), REMOVED_ROW, REPLACED_ROW, ADDED_ROW]),
-    sourcePool: { atoms: [] },
     categories: [{ id: 5, code: 'GEN', name: 'General' }],
     ...overrides,
   };
@@ -263,80 +262,6 @@ describe('COEditView Undo / Remove gestures', () => {
   });
 });
 
-describe('COEditView new-line-from-selected', () => {
-  it('ticking a pool row and clicking "Bundle into line…" opens BundleModal seeded from the atom, and Create POSTs overrides', async () => {
-    api.post.mockResolvedValue({
-      line_item_id: 99, line_number: 4, description: 'Sand edges', qty: '1', units: 'hour', price: '30.00',
-    });
-    const onChanged = vi.fn();
-    const { findByText, findByRole, container } = render(COEditView, {
-      props: baseProps({
-        onChanged,
-        sourcePool: {
-          atoms: [{
-            type: 'task', id: 41, description: 'Sand edges', qty: '1', rate: '30.00',
-            amount: '30.00', units: 'hour', state: 'available',
-            claiming_change_order_number: null, claiming_estimate_number: null,
-          }],
-        },
-      }),
-    });
-    await findByText('Sand edges');
-    const checkbox = container.querySelector('input[type="checkbox"]');
-    await fireEvent.click(checkbox);
-
-    const bundleBtn = await findByRole('button', { name: /bundle into line/i });
-    await fireEvent.click(bundleBtn);
-
-    const dialog = await findByRole('dialog');
-    // Bundle modal's default is the one-unit interpretation (spec §5) —
-    // switch to whole-line to exercise today's copy-from-atom seed.
-    await fireEvent.click(within(dialog).getByLabelText(/the whole line/i));
-    // Seeded from the single selected atom.
-    expect(within(dialog).getByLabelText(/Quantity/)).toHaveValue(1);
-    expect(within(dialog).getByLabelText(/Price/)).toHaveValue(30);
-
-    await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
-
-    expect(api.post).toHaveBeenCalledWith(
-      '/api/change-orders/3/line-items-from-atoms/',
-      {
-        atoms: [{ type: 'task', id: 41 }],
-        overrides: { description: 'Sand edges', qty: '1', units: 'hour', price: '30.00' },
-        per_unit: false,
-      },
-    );
-    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
-  });
-
-  it('never shows "Add selected here" on an added row, even with a pool atom ticked', async () => {
-    // Task 6: the attach-to-existing-line gesture is retired everywhere
-    // (estimate + CO); composing atoms into lines happens only via
-    // "New line from selected" / the bundle modal.
-    const { findByText, container } = render(COEditView, {
-      props: baseProps({
-        amended: amendedPayload([ADDED_ROW]),
-        sourcePool: {
-          atoms: [{
-            type: 'task', id: 41, description: 'Sand edges', qty: '1', rate: '30.00',
-            amount: '30.00', units: 'hour', state: 'available',
-            claiming_change_order_number: null, claiming_estimate_number: null,
-          }],
-        },
-      }),
-    });
-    await findByText('Sand edges');
-    expect(container.textContent).not.toContain('Add selected here');
-
-    const checkbox = container.querySelector('input[type="checkbox"]');
-    await fireEvent.click(checkbox);
-
-    expect(container.textContent).not.toContain('Add selected here');
-    expect(container.textContent).toContain('New line from selected');
-  });
-});
-
 describe('COEditView Replace… gestures', () => {
   it('Replace… on a plain agreement line opens the field-edit variant, prefilled', async () => {
     const { findByText, getByRole, getByLabelText } = render(COEditView, {
@@ -404,60 +329,41 @@ describe('COEditView agreement-row nested atoms', () => {
   });
 });
 
-describe('COEditView uncovered-work pool filtering', () => {
-  const POOL = {
-    atoms: [
-      {
-        type: 'task', id: 41, description: 'Sand edges', qty: '1', rate: '30.00',
-        amount: '30.00', units: 'hour', state: 'available',
-      },
-      {
-        // Claimed by THIS CO's own agreement — displays nested under its
-        // agreement line above, never as disabled pool noise.
-        type: 'task', id: 42, description: 'Covered agreement task', qty: '2',
-        rate: '100.00', amount: '200.00', units: 'hour', state: 'claimed_by_other',
-        claiming_estimate_id: 7, claiming_estimate_number: 'EST-0001',
-      },
-      {
-        // Claimed by a DIFFERENT estimate — still a real conflict, stays
-        // visible as a disabled row.
-        type: 'task', id: 43, description: 'Other estimate task', qty: '1',
-        rate: '50.00', amount: '50.00', units: 'hour', state: 'claimed_by_other',
-        claiming_estimate_id: 8, claiming_estimate_number: 'EST-0002',
-      },
-      {
-        type: 'task', id: 44, description: 'Other CO task', qty: '1',
-        rate: '40.00', amount: '40.00', units: 'hour', state: 'claimed_by_other',
-        claiming_change_order_id: 9, claiming_change_order_number: 'CO-9',
-      },
-    ],
-  };
-
-  it('hides atoms claimed by this CO\'s own agreement, keeps other claims as disabled rows', async () => {
-    const { findByText, queryByText } = render(COEditView, {
-      props: baseProps({ sourcePool: POOL }),
-    });
-    await findByText('Sand edges');
-    expect(queryByText('Covered agreement task')).toBeNull();
-    await findByText('Other estimate task');
-    await findByText(/Claimed by estimate EST-0002/);
-    await findByText('Other CO task');
-    await findByText(/Claimed by change order CO-9/);
-  });
-});
-
 describe('COEditView canEdit gating', () => {
-  it('hides Add line, all gesture buttons, and uncovered work when canEdit is false', async () => {
+  it('hides Add line and all gesture buttons when canEdit is false', async () => {
     const { findByText, queryByText, queryByRole } = render(COEditView, {
-      props: baseProps({
-        canEdit: false,
-        sourcePool: { atoms: [{ type: 'task', id: 41, description: 'Sand edges', qty: '1', rate: '30.00', amount: '30.00', units: 'hour', state: 'available' }] },
-      }),
+      props: baseProps({ canEdit: false }),
     });
     await findByText('Widget A');
     expect(queryByText('Add line')).toBeNull();
     expect(queryByRole('button', { name: 'Remove via CO' })).toBeNull();
     expect(queryByRole('button', { name: 'Undo' })).toBeNull();
-    expect(queryByText('Sand edges')).toBeNull();
+  });
+});
+
+describe('COEditView empty state (line-item-first, RM 2026-09-20)', () => {
+  it('shows the catalog/amend hint when there are no rows and canEdit is true', async () => {
+    const { findByText } = render(COEditView, {
+      props: baseProps({ amended: amendedPayload([]) }),
+    });
+    expect(await findByText(
+      'Add lines from the catalog, or amend existing estimate lines.'
+    )).toBeInTheDocument();
+  });
+
+  it('does not show the hint when canEdit is false, even with no rows', async () => {
+    const { queryByText } = render(COEditView, {
+      props: baseProps({ canEdit: false, amended: amendedPayload([]) }),
+    });
+    await vi.waitFor(() => {});
+    expect(queryByText(/Add lines from the catalog/)).toBeNull();
+  });
+
+  it('does not show the hint once rows exist', async () => {
+    const { findByText, queryByText } = render(COEditView, {
+      props: baseProps({ amended: amendedPayload([agreementRow()]) }),
+    });
+    await findByText('Widget A');
+    expect(queryByText(/Add lines from the catalog/)).toBeNull();
   });
 });
