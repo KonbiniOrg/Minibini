@@ -34,6 +34,7 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     spent_amount = serializers.SerializerMethodField()
     invoiced_amount = serializers.SerializerMethodField()
     profit_amount = serializers.SerializerMethodField()
+    linked_po_variances = serializers.SerializerMethodField()
 
     class Meta:
         model = Job
@@ -47,6 +48,7 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'tasks', 'materials', 'latest_change_request',
             'has_estimates', 'has_accepted_estimate',
             'estimated_amount', 'spent_amount', 'invoiced_amount', 'profit_amount',
+            'linked_po_variances',
         ]
         # on_hold/hold_reason are read-only — writes go through the hold/
         # release actions so the service guards always run.
@@ -117,6 +119,15 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
 
     def get_profit_amount(self, obj):
         return self._amount(obj, 'profit')
+
+    def get_linked_po_variances(self, obj):
+        """Job-level linked-PO variance rollup (outsourced-work port,
+        Task 4) — see `apps.jobs.financials._linked_po_variances`. `None`
+        in list context, matching the other `_financials`-backed fields."""
+        fin = self._financials(obj)
+        if fin is None:
+            return None
+        return fin['linked_po_variances']
 
     def get_project_manager_name(self, obj):
         pm = obj.project_manager

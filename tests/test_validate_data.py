@@ -1,16 +1,19 @@
 from decimal import Decimal
 from io import StringIO
 from django.test import TestCase
+from django.utils import timezone
 from django.core.management import call_command
-from apps.core.models import AccountingCategory
+from apps.core.models import AccountingCategory, User
 from apps.jobs.models import RateScheme, Job, Task
-from apps.contacts.models import Contact
+from apps.contacts.models import Business, Contact
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstimateLineItemSource,
     ChangeOrder, ChangeOrderLineItem, ChangeOrderLineItemSource,
 )
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.inventory.models import Material
+from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+from apps.purchasing.services import PurchaseOrderService
 
 
 def _task_scheme_fields(scheme):
@@ -883,3 +886,130 @@ class ValidateDataLineItemCategoryTest(TestCase):
         Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_PAID)
         output = self._run()
         self.assertIn(f'InvoiceLineItem {li.pk}', output)
+
+
+class ValidateDataPOReconciliationTest(TestCase):
+    """Tests for the PO reconciliation belt-checks added to
+    check_purchase_orders() (outsourced-work port, Task 4; ported from
+    feature/fees 544a4449/21c39b73):
+
+    - invoice_only line carrying receiving data (qty_received/received_by/
+      received_date/qty_cancelled) = ERROR. invoice_only lines are excluded
+      from receiving flows entirely by PurchaseOrderReceivingService
+      (including cancel_line_item); any receiving data on one can only
+      arise via a bypass — e.g. fixture loading — planted directly here.
+    - final_price set on a line while the PO is not reconciled = WARN
+      (stale partial entry — final_price is normally only ever set inside
+      PurchaseOrderService.reconcile(), which always sets
+      PurchaseOrder.reconciled=True in the same transaction).
+
+    NOTE: fees' third check here (task link pointing at a subtask) is
+    dropped — subtasks don't exist on this branch, and check_tasks()
+    already flags any non-NULL Task.parent_task globally.
+    """
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(name='POVal', code='POVAL')
+        self.vendor_contact = Contact.objects.create(
+            first_name='PO', last_name='Vendor', email='po-val@test.com',
+        )
+        self.vendor = Business.objects.create(
+            business_name='PO Val Vendor Co', default_contact=self.vendor_contact,
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _issued_po(self):
+        return PurchaseOrder.objects.create(
+            business=self.vendor, status=PurchaseOrder.STATUS_ISSUED,
+        )
+
+    def _line(self, po, **kwargs):
+        defaults = dict(
+            purchase_order=po, accounting_category=self.cat,
+            qty=Decimal('1'), price=Decimal('10.00'),
+        )
+        defaults.update(kwargs)
+        return PurchaseOrderLineItem.objects.create(**defaults)
+
+    # ── invoice_only + receiving data ────────────────────────────
+
+    def test_invoice_only_line_with_qty_received_is_error(self):
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, qty_received=Decimal('1.00'))
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
+    def test_invoice_only_line_with_received_by_is_error(self):
+        user = User.objects.create_user(username='povalworker', password='x')
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, received_by=user)
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
+    def test_invoice_only_line_with_received_date_is_error(self):
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, received_date=timezone.now())
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
+    def test_invoice_only_line_with_qty_cancelled_is_error(self):
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, qty_cancelled=Decimal('1.00'))
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
+    def test_invoice_only_line_without_receiving_data_not_flagged(self):
+        po = self._issued_po()
+        self._line(po, invoice_only=True)
+        output = self._run()
+        self.assertNotIn('invoice_only line has receiving data', output)
+
+    def test_ordinary_line_with_receiving_data_not_flagged(self):
+        po = self._issued_po()
+        self._line(po, invoice_only=False, qty_received=Decimal('1.00'))
+        output = self._run()
+        self.assertNotIn('invoice_only line has receiving data', output)
+
+    # ── final_price on an unreconciled PO ────────────────────────
+
+    def test_final_price_on_unreconciled_po_is_warned(self):
+        po = self._issued_po()
+        li = self._line(po, final_price=Decimal('12.00'))
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[WARN]', line)
+        self.assertIn('final_price', line)
+        self.assertIn('not reconciled', line)
+
+    def test_final_price_on_reconciled_po_not_flagged(self):
+        po = self._issued_po()
+        li = self._line(po, price=Decimal('10.00'))
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('12.00'),
+            line_finals={li.pk: Decimal('12.00')},
+        )
+        output = self._run()
+        self.assertNotIn('final_price is set but PO is not reconciled', output)
+
+    def test_no_final_price_on_unreconciled_po_not_flagged(self):
+        po = self._issued_po()
+        self._line(po)
+        output = self._run()
+        self.assertNotIn('final_price is set but PO is not reconciled', output)

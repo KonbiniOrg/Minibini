@@ -1463,12 +1463,13 @@ is the only place the `.summary-block`/`.stat-spread` markup lives.
 
 `JobHeader` shows four figures: **Estimate | Spent | Invoiced | Profit**. They
 are the single source of truth in `apps/jobs/financials.py`
-(`compute_job_financials(job)` → `{estimated, spent, invoiced, profit}`, all
-Decimal, quantized to cents), surfaced as detail-only serializer fields
-`estimated_amount` / `spent_amount` / `invoiced_amount` / `profit_amount` on
-`JobSerializer`. Like `latest_change_request`, they are computed once per detail
-render (memoized) and returned as `null` in list context, so the board list
-payload stays cheap; the header falls back to `$—` when a value is `null`.
+(`compute_job_financials(job)` → `{estimated, spent, invoiced, profit,
+linked_po_variances}`, the first four Decimal quantized to cents), surfaced as
+detail-only serializer fields `estimated_amount` / `spent_amount` /
+`invoiced_amount` / `profit_amount` / `linked_po_variances` on `JobSerializer`.
+Like `latest_change_request`, they are computed once per detail render
+(memoized) and returned as `null` in list context, so the board list payload
+stays cheap; the header falls back to `$—` when a value is `null`.
 
 - **Estimate** — `compose_agreement(job).grand_total` when the job was ever
   approved (keyed off the immutable `Job.start_date`; see data-constraints §1.8);
@@ -1503,6 +1504,17 @@ with no linked expense at cost (the same two terms the Spent bullet
 above describes, just not summed with labor). This is the job
 overview's Spend block's only data source (§9.1a) — the overview never
 re-derives the split.
+
+**`linked_po_variances`** (outsourced-work port Task 4, `_linked_po_variances`
+in the same module) is a list — not a number — of every PurchaseOrder with at
+least one line linked to this job (via `PurchaseOrderLineItem.task` on one of
+the job's tasks, or a `Material` this job owns referencing the PO line item),
+reported at PO granularity: `{po_id, po_number, status, reconciled,
+ordered_total, bill_total, variance, multi_job}`, money fields quantized to
+cents (`bill_total`/`variance` `None` pre-reconciliation). No proration — a PO
+whose lines also serve another job appears with its whole ordered/bill numbers
+on every job it touches, flagged `multi_job=True`. API-only for now; see
+`docs/designs/LATER.md` for the deferred job-page display.
 
 **Deferred — Billable.** A fifth figure (value of work earned, at selling price,
 optionally plus estimate for not-yet-actualed lines) is intentionally not built;

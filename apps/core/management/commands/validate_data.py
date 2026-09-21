@@ -55,6 +55,8 @@ Per-model field checks:
                    E  contact must have a business
                    E  cannot link to draft PO
                    E  non-draft must have at least one line item
+                   E  invoice_only PO line has receiving data
+                   W  line final_price set but PO not reconciled (stale)
   Invoice          E  valid status value
   Deliverable      E  must belong to a Job; qty_ordered must be positive
                    W  missing units
@@ -569,7 +571,12 @@ class Command(BaseCommand):
         from apps.purchasing.models import PurchaseOrder
         valid_statuses = {s[0] for s in PurchaseOrder.PO_STATUS_CHOICES}
 
-        for po in PurchaseOrder.objects.select_related('business', 'contact').all():
+        for po in (
+            PurchaseOrder.objects
+            .select_related('business', 'contact')
+            .prefetch_related('purchaseorderlineitem_set')
+            .all()
+        ):
             if po.status not in valid_statuses:
                 self.errors.append(f'PO {po.po_number}: invalid status "{po.status}"')
 
@@ -588,6 +595,40 @@ class Command(BaseCommand):
             # Cancelled POs should have cancel_date
             if po.status == PurchaseOrder.STATUS_CANCELLED and not po.cancel_date:
                 self.warnings.append(f'PO {po.po_number}: cancelled but no cancel_date')
+
+            # Reconciliation belt-checks (outsourced-work port, Task 4;
+            # ported from feature/fees): line items that bypassed
+            # save()/clean() (e.g. fixture loading), same purpose as the
+            # rest of this command. (fees' third check here — task link
+            # pointing at a subtask — is dropped: subtasks don't exist on
+            # this branch, and check_tasks() above already flags any
+            # non-NULL Task.parent_task globally.)
+            for li in po.purchaseorderlineitem_set.all():
+                # invoice_only lines are excluded from receiving flows
+                # entirely (PurchaseOrderReceivingService refuses to act on
+                # them, including cancel_line_item) — any receiving data on
+                # one is unreachable through normal use.
+                if li.invoice_only and (
+                    li.qty_received or li.received_by_id or li.received_date
+                    or li.qty_cancelled
+                ):
+                    self.errors.append(
+                        f'PO {po.po_number} line {li.line_number}: '
+                        'invoice_only line has receiving data (invoice_only '
+                        'lines are excluded from receiving flows)'
+                    )
+
+                # final_price is normally only ever written inside
+                # PurchaseOrderService.reconcile(), which always sets
+                # PurchaseOrder.reconciled=True in the same transaction — a
+                # final_price surviving on an unreconciled PO is a stale
+                # partial entry (or bypassed data).
+                if li.final_price is not None and not po.reconciled:
+                    self.warnings.append(
+                        f'PO {po.po_number} line {li.line_number}: '
+                        'final_price is set but PO is not reconciled '
+                        '(stale partial entry)'
+                    )
 
     # ── Invoices ──────────────────────────────────────────────
 
