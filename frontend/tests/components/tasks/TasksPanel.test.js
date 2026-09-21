@@ -868,4 +868,167 @@ describe('TasksPanel — estimate context (Task 2)', () => {
       await waitFor(() => expect(getByRole('button', { name: /bundle 0 selected into a line/i })).toBeDisabled());
     });
   });
+
+  // ── Tasks-page CO lens (state D) + hint state (RM 2026-09-20) ──
+  describe('Tasks-page CO lens (state D) and the held-job hint', () => {
+    // An accepted estimate — draftEstimate is null, so canBundle/canOfferEstimate
+    // are both false regardless of job status, isolating the CO lens.
+    const acceptedEstimateRows = [
+      { estimate_id: 10, estimate_number: 'EST-2026-0010', status: 'accepted' },
+    ];
+
+    function mockApiWithCO(changeOrderRows, { poolAtoms = [] } = {}) {
+      api.get.mockReset();
+      api.get.mockImplementation((url) => {
+        if (url.startsWith('/api/estimates/?job=')) {
+          return Promise.resolve({ results: acceptedEstimateRows });
+        }
+        if (url.startsWith('/api/change-orders/?job=')) {
+          return Promise.resolve({ results: changeOrderRows });
+        }
+        if (/\/api\/change-orders\/\d+\/source-pool\//.test(url)) {
+          return Promise.resolve({ atoms: poolAtoms });
+        }
+        if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
+        if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
+        return Promise.resolve([]);
+      });
+    }
+
+    function heldJob(overrides = {}) {
+      return makeJob({
+        can_manage: true, status: 'in_progress', on_hold: true,
+        tasks: [
+          { task_id: 1, name: 'Pre-hold Task', status: 'pending', parent_task: null },
+        ],
+        ...overrides,
+      });
+    }
+
+    it('State D: a draft CO shows the bundling context line with its number and a link ' +
+       'to the CO page, and checkboxes render', async () => {
+      mockApiWithCO(
+        [{ change_order_id: 7, change_order_number: 'EST-2026-0010-CO1', status: 'draft' }],
+        { poolAtoms: [{ type: 'task', id: 1, state: 'available', description: 'Pre-hold Task',
+                        qty: '1', units: 'hour', rate: '20.00', amount: '20.00' }] },
+      );
+      const { findByText, getByText } = render(TasksPanel, { props: { job: heldJob() } });
+      const line = await findByText(/Bundling into change order EST-2026-0010-CO1 \(draft\)/i);
+      const link = line.closest('p').querySelector('a');
+      expect(link).toHaveAttribute('href', '#/jobs/3/change-order/7');
+
+      const taskCb = within(getByText('Pre-hold Task').closest('tr')).getByRole('checkbox');
+      expect(taskCb).not.toBeDisabled();
+    });
+
+    it('State D: claimed_by_current chip reads "on change order", not "estimated"', async () => {
+      mockApiWithCO(
+        [{ change_order_id: 7, change_order_number: 'EST-2026-0010-CO1', status: 'draft' }],
+        { poolAtoms: [{ type: 'task', id: 1, state: 'claimed_by_current' }] },
+      );
+      const { findByText, getByText } = render(TasksPanel, { props: { job: heldJob() } });
+      await findByText(/Bundling into change order EST-2026-0010-CO1/i);
+      const row = getByText('Pre-hold Task').closest('tr');
+      const chip = within(row).getByText('on change order');
+      expect(chip).toHaveAttribute('title', 'Already on the draft change order');
+    });
+
+    it('State D: bundling posts to the CO apiBase, refetches, and shows the CO success message', async () => {
+      const onJobChange = vi.fn().mockResolvedValue();
+      mockApiWithCO(
+        [{ change_order_id: 7, change_order_number: 'EST-2026-0010-CO1', status: 'draft' }],
+        { poolAtoms: [{ type: 'task', id: 1, state: 'available', description: 'Pre-hold Task',
+                        qty: '1', units: 'hour', rate: '20.00', amount: '20.00' }] },
+      );
+      api.post.mockResolvedValueOnce({
+        line_item_id: 1, line_number: 1, description: 'Pre-hold Task', qty: '1',
+        units: 'hour', price: '20.00', sources: [],
+      });
+      const { findByRole, getByRole, getByText, container, queryByRole } = render(TasksPanel, {
+        props: { job: heldJob(), onJobChange },
+      });
+      await findByRole('button', { name: /bundle 0 selected into a line/i });
+      await fireEvent.click(within(getByText('Pre-hold Task').closest('tr')).getByRole('checkbox'));
+      await fireEvent.click(await findByRole('button', { name: /bundle 1 selected into a line/i }));
+      const dialog = await findByRole('dialog');
+
+      await fireEvent.input(within(dialog).getByLabelText(/Quantity/), { target: { value: '1' } });
+      await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
+
+      await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+        '/api/change-orders/7/line-items-from-atoms/', expect.anything()));
+      await waitFor(() => expect(get(overlayMessage)).toEqual({
+        kind: 'success', text: 'Line added to change order EST-2026-0010-CO1 (draft).',
+      }));
+      expect(onJobChange).toHaveBeenCalled();
+      expect(queryByRole('dialog')).toBeNull();
+    });
+
+    it('State D: a 409 conflict clears selection, refetches, and shows the shared conflict message', async () => {
+      const onJobChange = vi.fn().mockResolvedValue();
+      mockApiWithCO(
+        [{ change_order_id: 7, change_order_number: 'EST-2026-0010-CO1', status: 'draft' }],
+        { poolAtoms: [{ type: 'task', id: 1, state: 'available', description: 'Pre-hold Task',
+                        qty: '1', units: 'hour', rate: '20.00', amount: '20.00' }] },
+      );
+      api.post.mockRejectedValueOnce({ status: 409, data: {} });
+      const { findByRole, getByRole, getByText, queryByRole } = render(TasksPanel, {
+        props: { job: heldJob(), onJobChange },
+      });
+      await findByRole('button', { name: /bundle 0 selected into a line/i });
+      await fireEvent.click(within(getByText('Pre-hold Task').closest('tr')).getByRole('checkbox'));
+      await fireEvent.click(await findByRole('button', { name: /bundle 1 selected into a line/i }));
+      const dialog = await findByRole('dialog');
+
+      await fireEvent.input(within(dialog).getByLabelText(/Quantity/), { target: { value: '1' } });
+      await fireEvent.click(within(dialog).getByRole('button', { name: /create line/i }));
+
+      await waitFor(() => expect(get(overlayMessage)).toEqual({
+        kind: 'error',
+        text: 'Some of the selected work was claimed elsewhere in the meantime — refreshed.',
+      }));
+      expect(onJobChange).toHaveBeenCalled();
+      expect(queryByRole('dialog')).toBeNull();
+      await waitFor(() => expect(getByRole('button', { name: /bundle 0 selected into a line/i })).toBeDisabled());
+    });
+
+    it('Hint state: held job, accepted estimate, no draft CO — shows the link, no checkboxes', async () => {
+      mockApiWithCO([]);
+      const { findByRole, getByRole, container, queryByRole } = render(TasksPanel, {
+        props: { job: heldJob() },
+      });
+      const link = await findByRole('link', { name: /start a change order/i });
+      expect(link).toHaveAttribute('href', '#/jobs/3/estimate');
+      expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+      expect(queryByRole('button', { name: /bundle .* selected into a line/i })).toBeNull();
+    });
+
+    it('Hint state: an old terminal CO (rejected) still counts as "no draft CO" — hint still shows', async () => {
+      mockApiWithCO([
+        { change_order_id: 3, change_order_number: 'EST-2026-0010-CO1', status: 'rejected' },
+      ]);
+      const { findByRole } = render(TasksPanel, { props: { job: heldJob() } });
+      await findByRole('link', { name: /start a change order/i });
+    });
+
+    it('Not held: no hint, no CO context line, even with an accepted estimate', async () => {
+      mockApiWithCO([]);
+      const { findByRole, queryByText, queryByRole } = render(TasksPanel, {
+        props: { job: heldJob({ on_hold: false }) },
+      });
+      await findByRole('button', { name: /add work/i });
+      expect(queryByText(/start a change order/i)).toBeNull();
+      expect(queryByText(/Bundling into change order/i)).toBeNull();
+      expect(queryByRole('checkbox')).toBeNull();
+    });
+
+    it('Permission: held + accepted estimate but can_manage false — no hint, no checkboxes', async () => {
+      mockApiWithCO([]);
+      const { findByRole, queryByText } = render(TasksPanel, {
+        props: { job: heldJob({ can_manage: false }) },
+      });
+      await findByRole('button', { name: /add expense/i });
+      expect(queryByText(/start a change order/i)).toBeNull();
+    });
+  });
 });

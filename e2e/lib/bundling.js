@@ -11,10 +11,12 @@
 // themselves afterward — only navigation + selection + opening it is shared
 // here, since the modal's internals differ per journey.
 //
-// NOTE: this only covers the Tasks-page bundle flow (estimate lines). The
-// change-order page's own "Uncovered work" pool + "Bundle into line…" button
-// are untouched (amend-in-place.spec.js) — CO bundling still happens on the
-// CO page itself, not here.
+// NOTE: as of the Tasks-page CO lens (RM 2026-09-20), this ALSO covers
+// bundling into a job's draft change order — same checkboxes/CTA/modal, just
+// targeting `/api/change-orders/{id}` instead of `/api/estimates/{id}` once
+// a held job has a draft CO (see specs/task-view-bundling/co-lens.spec.js).
+// The change-order page's own former "Uncovered work" pool picker was
+// retired (c413c4f3) in favor of this single Tasks-page composition surface.
 import { expect } from '@playwright/test';
 
 export async function gotoTasksPage(page, jobId) {

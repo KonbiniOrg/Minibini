@@ -1443,7 +1443,7 @@ conventions.
 | Component | Path | Role |
 |---|---|---|
 | `EstimateEditView.svelte` | `frontend/src/components/estimates/` | The estimate's **Edit** mode — **document-only** since the bundling-in-task-view migration (Task 5, 2026-09-19): the line-items table (each row's atom claims nested via `AtomChildRow`), Add line/Add Adjustment, per-line Edit/Remove/Make Deliverable, and the mint/decline checklist. No pool and no `BundleModal` here any more — composing new lines from job atoms happens on the job's Tasks page (`TasksPanel.svelte`, `jobs-and-tasks.md`), which targets this job's single draft estimate directly. Presentation + gestures only; `EstimatePanel` owns data loading. See §12.1. |
-| `docsurface/*` kit | `frontend/src/components/docsurface/` | Ten shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `AtomCaptionRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `BundleModal`, `QtyUnits`, `DocCustomerView`, `DocReorderView`). Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched, but not every component is consumed by every surface: `DocModeBar`/`QtyUnits`/`DocCustomerView`/`DocReorderView` are common to all three (estimate, invoice, CO); `BackingChip`/`AtomChildRow`/`AtomCaptionRow` render existing atom claims wherever a line has any (estimate, invoice, CO alike) — this includes the **CO** edit view, unaffected by the change below. `UncoveredWorkSection`/`NewLineFromSelectedRow` are the pool-picker pairing; as of Task 5 (bundling-in-task-view, 2026-09-19) the estimate edit view doesn't import either, and as of **2026-09-20 (line-item-first CO, §14.4b) neither does the CO edit view** — the **invoice** edit view is now the only consumer of this pairing on a document surface (the job's **Tasks page** also opens `BundleModal` directly from row checkboxes, with no `UncoveredWorkSection`/`NewLineFromSelectedRow` of its own — see `jobs-and-tasks.md`). `BundleModal` is likewise no longer mounted by the CO edit view; the invoice side is not a `BundleModal` host either — its `NewLineFromSelectedRow` keeps its original one-click POST-directly behavior. `QtyUnits` (2026-08-11) renders a line's qty + units in every doc line table — inline, wrapping when squeezed; units `'none'` omitted. `BundleModal` (Task 8, 2026-08-15) is the "bundle into line" authoring modal — see §12.1a; a planned Tasks-page CO-lens bundling surface (§14.4b) is expected to become a second host of it, alongside the job's Tasks page. |
+| `docsurface/*` kit | `frontend/src/components/docsurface/` | Ten shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `AtomCaptionRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `BundleModal`, `QtyUnits`, `DocCustomerView`, `DocReorderView`). Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched, but not every component is consumed by every surface: `DocModeBar`/`QtyUnits`/`DocCustomerView`/`DocReorderView` are common to all three (estimate, invoice, CO); `BackingChip`/`AtomChildRow`/`AtomCaptionRow` render existing atom claims wherever a line has any (estimate, invoice, CO alike) — this includes the **CO** edit view, unaffected by the change below. `UncoveredWorkSection`/`NewLineFromSelectedRow` are the pool-picker pairing; as of Task 5 (bundling-in-task-view, 2026-09-19) the estimate edit view doesn't import either, and as of **2026-09-20 (line-item-first CO, §14.4b) neither does the CO edit view** — the **invoice** edit view is now the only consumer of this pairing on a document surface (the job's **Tasks page** also opens `BundleModal` directly from row checkboxes, with no `UncoveredWorkSection`/`NewLineFromSelectedRow` of its own — see `jobs-and-tasks.md`). `BundleModal` is likewise no longer mounted by the CO edit view; the invoice side is not a `BundleModal` host either — its `NewLineFromSelectedRow` keeps its original one-click POST-directly behavior. `QtyUnits` (2026-08-11) renders a line's qty + units in every doc line table — inline, wrapping when squeezed; units `'none'` omitted. `BundleModal` (Task 8, 2026-08-15) is the "bundle into line" authoring modal — see §12.1a; the Tasks-page CO-lens bundling surface (§14.4b, shipped 2026-09-20) is a second host of it, alongside the job's Tasks page's own estimate lens — both lenses share the one `TasksPanel.svelte` host and the one `BundleModal` mount, switching only `apiBase`/pool. |
 | `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines via **Add line** + per-line **Edit**. |
 
 The invoice side is structurally parallel — same source pool, add-atoms,
@@ -2824,14 +2824,21 @@ was a dead end. **The service class, its four endpoints, and every
 backend test below are unchanged and still live** — RM separately
 confirmed unclaimed atoms legitimately exist at CO time (work planned
 post-acceptance, before the hold) and should stay bundleable into an
-open draft CO, just via a **Tasks-page CO-lens bundling surface**
-(planned follow-up, design in progress, not this page) rather than the
-CO page's own picklist. A CO line's existing atom child rows,
+open draft CO, just via a **Tasks-page CO-lens bundling surface** (RM
+2026-09-20, shipped — `jobs-and-tasks.md` §9.5a state D) rather than the
+CO page's own picklist: `TasksPanel.svelte` resolves the job's at-most-one
+draft CO the same way it resolves its draft estimate, and reuses the
+exact same checkbox/CTA/`BundleModal` plumbing, just pointed at
+`/api/change-orders/{coId}` instead of `/api/estimates/{id}`. A held job
+with an accepted estimate but no draft CO yet gets a passive hint link
+there instead (never a create button — **unlike an estimate, a change
+order is always explicitly generated by a user**; the Tasks page never
+auto-creates one). A CO line's existing atom child rows,
 remove-from-line (`remove-atoms`), and drift/Revert affordances still
 render and work on the CO edit surface for whatever claims a line
-already carries (today: sources crystallized/inherited at acceptance;
-once the Tasks-page surface ships, once again draft-time authored
-claims too) — only the CO-page-native authoring UI is gone.
+already carries (sources crystallized/inherited at acceptance, or
+draft-time authored via the Tasks-page CO lens) — only the CO-page-native
+authoring UI is gone.
 
 A **draft** CO's own `add` lines can claim job atoms directly, the same
 gesture as the estimate wizard (§8), rather than only being crystallized
@@ -3143,13 +3150,14 @@ are resolved).
   the estimate's `source-pool` (§8), with claims unioned across both
   the estimate and CO lenses. **Not fetched by `ChangeOrderPanel`/
   `COEditView` any more** (§14.4b, 2026-09-20 — the CO page's own
-  picklist is gone); the endpoint and service method are unchanged and
-  kept for a planned Tasks-page CO-lens bundling surface.
+  picklist is gone); fetched instead by the Tasks-page CO lens
+  (`jobs-and-tasks.md` §9.5a state D, `TasksPanel.svelte`'s
+  `loadCOContext`).
 - `POST /api/change-orders/{id}/line-items-from-atoms/` — create a new
   `add` line from a set of atoms (mirrors §8's estimate action); accepts
   the same optional `overrides` body key (Task 8, §12.1a). **No longer
-  called from the CO page** (§14.4b) — kept for the same planned
-  consumer as `source-pool` above.
+  called from the CO page** (§14.4b) — called instead from the Tasks-page
+  CO lens's `BundleModal`, same as `source-pool` above.
 - `POST /api/change-orders/{id}/line-items/{lid}/remove-atoms/` — detach
   atoms from an existing CO line (409 `atoms_already_claimed` on a claim
   conflict, same contract as the estimate side). The sibling `add-atoms/`
@@ -3225,14 +3233,14 @@ Row kinds, per `compose_amended_agreement`'s row `kind`:
 - `removed` — the struck original alone (no nested atoms — its freed
   claims go back to `available` on the CO's `source-pool`, §14.4b — that
   pool has no picklist UI on this page any more, but the state change is
-  still there for the API/a future Tasks-page consumer to see); action
-  **Undo**.
+  what the Tasks-page CO lens's checkboxes see); action **Undo**.
 - `added` — CO-tinted, tagged `CO {co_index}`, its own `AtomChildRow`s
   (detachable via `remove-atoms` — still wired here, since a line can
-  carry claims from before 2026-09-20 or from a future authoring path)
-  and `BackingChip`; actions **Edit** / **Remove**. (The Task 6
-  attach-to-existing-line gesture is retired — there is no CO-page
-  affordance to compose NEW atoms into a line any more; see §14.4b.)
+  carry claims authored via the Tasks-page CO lens) and `BackingChip`;
+  actions **Edit** / **Remove**. (The Task 6 attach-to-existing-line
+  gesture is retired — there is no CO-page affordance to compose NEW
+  atoms into a line any more; that composition happens on the Tasks page,
+  see §14.4b.)
 
 The original/this-CO/revised totals render in the table foot from the
 payload. Below the table: when the amended agreement has **zero rows**
@@ -3250,9 +3258,10 @@ with AC + `is_material`. **There is no picklist/pool section on this
 page any more** (removed 2026-09-20 along with `UncoveredWorkSection`,
 `NewLineFromSelectedRow`, and the `BundleModal` mount — §14.4b); a CO's
 lines are composed only via Add Line, replace/amend of existing
-estimate lines, adjustments, and remove-line descoping, plus whatever a
-future Tasks-page CO-lens bundling surface authors through the
-still-live `source-pool`/`line-items-from-atoms`/`remove-atoms` endpoints.
+estimate lines, adjustments, and remove-line descoping, plus whatever the
+Tasks-page CO-lens bundling surface (`jobs-and-tasks.md` §9.5a state D)
+authors through the same `source-pool`/`line-items-from-atoms`/
+`remove-atoms` endpoints.
 
 **`COLineItemModal.svelte`** was reworked the same day from a single
 action/target-select form into a gesture-driven modal with **no**

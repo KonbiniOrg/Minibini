@@ -48,6 +48,11 @@
     poolByKey = null,
     bundleSelected = [],
     onToggleBundle = () => {},
+    // claimed_by_current chip text (Tasks-page CO lens) — pass-through to
+    // TaskRow/MaterialRow; their own defaults ('estimated' / 'Already on the
+    // draft estimate') keep every other consumer of this tree unchanged.
+    bundleClaimedLabel = 'estimated',
+    bundleClaimedTitle = 'Already on the draft estimate',
   } = $props();
 
   // Expenses that created a material show nested under it; material-less
@@ -169,6 +174,8 @@
         bundleAtom={poolByKey?.get(`task:${task.task_id}`) ?? null}
         bundleChecked={bundleSelected.includes(`task:${task.task_id}`)}
         onToggleBundle={() => onToggleBundle(`task:${task.task_id}`)}
+        {bundleClaimedLabel}
+        {bundleClaimedTitle}
       />
 
       <!-- Materials for this task -->
@@ -182,6 +189,8 @@
           bundleAtom={poolByKey?.get(`material:${mat.material_id}`) ?? null}
           bundleChecked={bundleSelected.includes(`material:${mat.material_id}`)}
           onToggleBundle={() => onToggleBundle(`material:${mat.material_id}`)}
+          {bundleClaimedLabel}
+          {bundleClaimedTitle}
         />
       {/each}
 
@@ -200,6 +209,8 @@
           bundleAtom={poolByKey?.get(`material:${mat.material_id}`) ?? null}
           bundleChecked={bundleSelected.includes(`material:${mat.material_id}`)}
           onToggleBundle={() => onToggleBundle(`material:${mat.material_id}`)}
+          {bundleClaimedLabel}
+          {bundleClaimedTitle}
         />
         {#if expenseByMaterial[mat.material_id]}
           {@render expenseRow(expenseByMaterial[mat.material_id], true)}

@@ -44,6 +44,10 @@
     bundleAtom = null,
     bundleChecked = false,
     onToggleBundle = null,
+    // claimed_by_current chip text (Tasks-page CO lens): the estimate lens's
+    // wording is the default so every other surface renders unchanged.
+    bundleClaimedLabel = 'estimated',
+    bundleClaimedTitle = 'Already on the draft estimate',
   } = $props();
 
   function isMaterialPending(mat) {
@@ -141,7 +145,7 @@
                onchange={onToggleBundle}
                aria-label={`Select ${material.description} for bundling`}>
       {:else if bundleAtom?.state === 'claimed_by_current'}
-        <span class="bundle-claimed" title="Already on the draft estimate">estimated</span>
+        <span class="bundle-claimed" title={bundleClaimedTitle}>{bundleClaimedLabel}</span>
       {:else if bundleAtom?.state === 'claimed_by_other'}
         <input type="checkbox" disabled title={bundleClaimNote(bundleAtom)}>
       {/if}
