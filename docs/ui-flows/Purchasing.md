@@ -78,15 +78,21 @@ Routes: list `#/purchase-orders`; create `#/purchase-orders/new`; detail
   **Add Line Item** offers **Manual** (description/qty/units/price/category)
   or **From Inventory** (an inventory-item picker that fills
   description/units/price) modes.
-- [ ] **Optional job attribution:** a line item may separately carry a **Job
-  (optional)** (for a linked Material) and a **Task Link (optional)** — the
-  two are independent; a line can attribute cost to a task on a job
-  different from its material's job.
-- [ ] **Task-link picker — every task on the picked job is eligible:** the
-  **Task Link** field cascades a job picker into a `<select>` of that job's
-  tasks (`TaskLinkPicker.svelte`) — no client-side filtering (subtasks are
-  not a concept on this branch). Linking is optional; `-- No task link --`
-  is always available.
+- [ ] **One Job picker, two meanings (PO Job/Task consolidation, RM
+  2026-09-21):** a line item has a single **Job (optional)** picker.
+  Picking a job reveals a **Task Link (optional)** picker cascading from
+  it (filter-as-you-type, `TaskLinkPicker.svelte`). Picking a task shows
+  a "Cost will be attributed to this task — no material is created" hint
+  and makes the line a **pure cost-attribution line**: no Material is
+  created and `inventory_item` stays null. Leaving Task Link unset is
+  exactly today's **material-procurement** flow, unchanged (Material
+  claim-or-create, lot establishment for hand lines).
+- [ ] **Guard — task and job/material are mutually exclusive:** picking a
+  task and submitting a job/material together (e.g. forced via the API)
+  is refused with a field error on `task`: "A line can attribute cost to
+  a task or procure a material for a job, not both." (Unreachable through
+  the consolidated form itself, since a task pick withholds `job` from the
+  payload — this exercises the server-side backstop directly.)
 - [ ] **Guard — task must belong to a job:** a task with no job cannot be
   linked; a stale/forced value is refused server-side with a field error on
   `task`: "Linked task must belong to a job." (In practice unreachable

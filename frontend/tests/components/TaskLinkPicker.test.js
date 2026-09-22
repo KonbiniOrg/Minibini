@@ -101,4 +101,73 @@ describe('TaskLinkPicker', () => {
     expect(queryByText('Old task')).toBeNull();
     expect(getByPlaceholderText('Search tasks…')).toBeInTheDocument();
   });
+
+  describe('controlled mode (job prop) -- PO Job/Task consolidation, RM 2026-09-21', () => {
+    it('hides its own JobPicker and cascades off the job prop when `job` is passed', async () => {
+      api.get.mockImplementation((url) => {
+        if (url === '/api/jobs/5/tasks/') {
+          return Promise.resolve([{ task_id: 10, name: 'Top task' }]);
+        }
+        return Promise.resolve([]);
+      });
+      const { queryByPlaceholderText, getByPlaceholderText } = render(TaskLinkPicker, {
+        props: { job: 5 },
+      });
+      // No internal JobPicker rendered in controlled mode.
+      expect(queryByPlaceholderText('Search jobs…')).toBeNull();
+      const taskInput = getByPlaceholderText('Search tasks…');
+      await new Promise((r) => setTimeout(r));
+      expect(taskInput).not.toBeDisabled();
+    });
+
+    it('disables the task search until the job prop is set', () => {
+      const { getByPlaceholderText, queryByPlaceholderText } = render(TaskLinkPicker, {
+        props: { job: null },
+      });
+      expect(queryByPlaceholderText('Search jobs…')).toBeNull();
+      expect(getByPlaceholderText('Search tasks…')).toBeDisabled();
+    });
+
+    it('clears the picked task when the job prop changes (a new job invalidates the old task)', async () => {
+      api.get.mockImplementation((url) => {
+        if (url === '/api/tasks/10/') {
+          return Promise.resolve({ task_id: 10, name: 'Top task', job: { id: 5, job_number: 'JOB-5', name: 'widget' } });
+        }
+        if (url === '/api/jobs/5/tasks/') return Promise.resolve([{ task_id: 10, name: 'Top task' }]);
+        if (url === '/api/jobs/6/tasks/') return Promise.resolve([{ task_id: 20, name: 'Other task' }]);
+        return Promise.resolve([]);
+      });
+      const { rerender, findByText, queryByText } = render(TaskLinkPicker, {
+        props: { job: 5, value: 10 },
+      });
+      await findByText('Top task');
+
+      // Changing the job prop (as LineItemForm would on a new job pick)
+      // clears the stale task -- mirrors handleJobSelect's clearing in
+      // uncontrolled mode, but driven by the prop instead of a click.
+      await rerender({ job: 6, value: 10 });
+      await new Promise((r) => setTimeout(r));
+      expect(queryByText('Top task')).toBeNull();
+    });
+
+    it('does not clear a caller-seeded value+job pair on the very first render (defaultJob prefill)', async () => {
+      api.get.mockImplementation((url) => {
+        // Both the tasks-list fetch AND the direct-fetch fallback are
+        // mocked: SearchPicker's own resolve-label effect can race
+        // loadTasks(job) and fall back to fetching the task directly (see
+        // the component's race-condition note) -- either path must land on
+        // the same label.
+        if (url === '/api/jobs/5/tasks/') return Promise.resolve([{ task_id: 10, name: 'Top task' }]);
+        if (url === '/api/tasks/10/') {
+          return Promise.resolve({ task_id: 10, name: 'Top task', job: { id: 5, job_number: 'JOB-5', name: 'widget' } });
+        }
+        return Promise.resolve([]);
+      });
+      const { findByText } = render(TaskLinkPicker, { props: { job: 5, value: 10 } });
+      // Mount with job and value both already set (e.g. an edit form
+      // seeding both at once) must not wipe the seeded value out --
+      // the resolved task label stays visible.
+      await findByText('Top task');
+    });
+  });
 });

@@ -746,6 +746,16 @@ Billing mechanics and money-record lifecycle.
   fix), or the server gate is deliberately relaxed to match — whichever
   the team decides is the intended permission shape for this one action.
 
+- **Revisit the PO process for service POs.** — _added 2026-09-21 (RM,
+  PO Job/Task consolidation)_
+  Allowing task-linked (service) PO lines eliminated the standing
+  assumption that a PO line orders a Material object; the procurement
+  flow (Job field semantics, material auto-creation, lot minting,
+  receiving/consumption arithmetic) needs a clarifying design pass now
+  that lines can be pure cost attribution. _Done when:_ RM runs that
+  design pass and the PO docs state the two line kinds' lifecycles
+  explicitly.
+
 ## Time tracking (shifts & bleps)
 
 - **Time managers can't reach the shift request queue / payroll report.** — _added 2026-05-31_

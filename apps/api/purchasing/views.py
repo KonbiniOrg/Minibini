@@ -138,14 +138,17 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         job = data.pop('job', None)
         material_id = data.pop('material_id', None)
         # `task` is writable (task-owned-money Phase 5 / outsourced-work
-        # port): cost→sell link. Model-level `clean()` enforces the
-        # task-link rule (400, field-shaped) on a bad target.
+        # port): cost→sell link. `PurchaseOrderService` rejects task
+        # together with job/material_id up front (PO Job/Task
+        # consolidation, RM 2026-09-21); model-level `clean()` enforces
+        # the deeper task/inventory_item and job-bearing rules on top.
 
         try:
             if pli_id and not has_manual_fields:
                 qty = data.get('qty', 0)
+                task = data.pop('task', None)
                 item = service.add_line_item_from_pli(
-                    parent.pk, pli_id, qty, job=job, material_id=material_id,
+                    parent.pk, pli_id, qty, job=job, material_id=material_id, task=task,
                 )
             else:
                 if job is not None:

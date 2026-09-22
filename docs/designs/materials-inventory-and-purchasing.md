@@ -855,7 +855,7 @@ not deletion, is the path for issued POs).
 | Field | Type | Notes |
 |---|---|---|
 | `purchase_order` | FK CASCADE | |
-| `task` | FK PROTECT nullable | Cost→sell attribution (outsourced-work port) — links this line's cost to the task it's outsourcing. Optional; independent of the line's Material/job attribution below. `PurchaseOrderLineItem.clean()` requires only **job-bearing** (`task.job_id is not None`); see §10a for why this branch drops fees' additional top-level-only check |
+| `task` | FK PROTECT nullable | Cost→sell attribution (outsourced-work port) — links this line's cost to the task it's outsourcing. Optional; **mutually exclusive, per line, with the line's own Material/job procurement below** (PO Job/Task consolidation, RM 2026-09-21 — see §10a). `PurchaseOrderLineItem.clean()` requires **job-bearing** (`task.job_id is not None`); see §10a for why this branch drops fees' additional top-level-only check |
 | `qty_received` | `Decimal(10,2)` default 0 | Cumulative correct items accepted |
 | `received_by` | FK User SET_NULL | Last receiver |
 | `received_date` | datetime nullable | Last receipt timestamp |
@@ -995,32 +995,59 @@ for the full click-by-click flow and `docs/designs/data-constraints.md`
 
 ### Task-link (cost→sell attribution) — §9's `task` field
 
-Set at line create/update time (`POST`/`PATCH .../line-items/...`),
-independent of reconciliation itself. `PurchaseOrderLineItem.clean()`
-(`apps/purchasing/models.py`) is the sole enforcement point (also
-exercised by every write inside `reconcile()`'s `appended_lines`
-handling, since those go through `full_clean()`/`save()` too):
+Set at line create time (`POST .../line-items/...`, via
+`PurchaseOrderService.add_line_item` / `add_line_item_from_pli`) or
+through `reconcile()`'s `appended_lines` (below). **Mutually exclusive,
+per line, with that line's job/Material procurement** (PO Job/Task
+consolidation, RM 2026-09-21) — a line either attributes cost to a task
+(pure attribution: no Material is ever created, `inventory_item` stays
+null) or procures a material for a job (§11's claim-or-create / lot-
+minting flow, unchanged). Never both on the same line — different lines
+on the same PO still attribute independently to different jobs/tasks.
 
-- **Job-bearing** — `task.job_id` must not be `None`. Error: *"Linked
-  task must belong to a job."*
-- **No top-level-only check.** The source design this was ported from
-  (`feature/fees`) additionally rejected a subtask link ("link the
-  parent task instead"). That check is deliberately **not** ported here:
-  `Task.parent_task` is dormant on this branch — no code may read or
-  write it — so subtasks don't exist as a linkable state to guard
-  against; `TaskLinkPicker.svelte` correspondingly offers every task a
-  job has, no client-side filtering.
-- A PO line's task link is **independent** of the line's own job/Material
-  attribution (§11) — a line can carry a Material for job A while its
-  cost attributes to a task on job B. One PO may therefore serve
-  multiple jobs through different lines, each attributing independently.
-- **Mutually exclusive with `inventory_item`** — this is a **pre-existing**
-  `BaseLineItem.clean()` rule (predates this port; also applies to the
-  retired `BillLineItem`), not something new here: a line cannot carry
-  both a `task` and an `inventory_item` at once (*"LineItem cannot have
-  both task and inventory_item"*). A task-outsourcing line is therefore
-  always the **manual/freeform** flavor of line (§10, `LineItemForm.svelte`'s
-  Manual mode) — never a catalog/PLI-sourced one.
+- **Server guard, before any material machinery runs**:
+  `PurchaseOrderService._reject_task_with_procurement` rejects `task`
+  supplied together with `job` or `material_id`, field-shaped —
+  `{'task': ['A line can attribute cost to a task or procure a material
+  for a job, not both.']}`. Runs in both `add_line_item` and
+  `add_line_item_from_pli`, ahead of `_resolve_material_for_line`. Before
+  this consolidation, `LineItemForm.svelte` had two independent Job
+  pickers (one driving Material procurement, one feeding
+  `TaskLinkPicker`'s own cascade) — filling both crashed at save: the
+  job-side minted a LOT and repointed `inventory_item` on a task-carrying
+  line, tripping the deep invariant below with a confusing message about
+  an inventory item the user never chose. The guard makes that path
+  unreachable with a clear message instead.
+- **`PurchaseOrderLineItem.clean()`** (`apps/purchasing/models.py`) stays
+  the deeper enforcement point (also exercised by every write inside
+  `reconcile()`'s `appended_lines` handling, since those go through
+  `full_clean()`/`save()` too):
+  - **Job-bearing** — `task.job_id` must not be `None`. Error: *"Linked
+    task must belong to a job."*
+  - **No top-level-only check.** The source design this was ported from
+    (`feature/fees`) additionally rejected a subtask link ("link the
+    parent task instead"). That check is deliberately **not** ported
+    here: `Task.parent_task` is dormant on this branch — no code may
+    read or write it — so subtasks don't exist as a linkable state to
+    guard against; `TaskLinkPicker.svelte` correspondingly offers every
+    task a job has, no client-side filtering.
+  - **Mutually exclusive with `inventory_item`** — this is a
+    **pre-existing** `BaseLineItem.clean()` rule (predates this port;
+    also applies to the retired `BillLineItem`), not something new here:
+    a line cannot carry both a `task` and an `inventory_item` at once
+    (*"LineItem cannot have both task and inventory_item"*). Only
+    reachable via `add_line_item_from_pli` when a caller explicitly picks
+    both an inventory item and a task with no job/material_id — the
+    server guard above doesn't cover this combination (the caller chose
+    both deliberately, so the message is the correct, sensible one
+    already). `LineItemForm.svelte`'s From-Inventory mode and Task Link
+    aren't meant to be combined; a task-outsourcing line from that form
+    is always the manual/freeform flavor.
+- **One Job picker on `LineItemForm.svelte`** feeds both purposes (§15):
+  picking a job reveals the Task Link picker cascading from it. Picking a
+  task sends `task` and withholds `job`/`material_id` from the payload
+  entirely — the task implies its job. Picking a job with no task is
+  exactly today's material-procurement flow, unchanged.
 
 ### `reconcile()` — allowed states, semantics
 
@@ -1491,12 +1518,22 @@ Components in `frontend/src/components/purchaseorders/`:
 - `PurchaseOrderDetail.svelte` — header, line items table, status
   actions, history; per-line "Change Job" action; consolidated sever
   modal on cancel-PO / cancel-line / delete-PO / line-job-change
-- `LineItemForm.svelte` — line entry; includes `JobPicker` (typeahead
-  against active jobs, built on `SearchPicker`), `InventoryItemPicker`
-  (server-side `?search=`, also built on `SearchPicker`), and
-  `TaskLinkPicker.svelte` (§10a — job picker cascading into a `<select>`
-  of that job's tasks, `frontend/src/components/TaskLinkPicker.svelte`;
-  also used inside `ReconciliationSection.svelte`'s appended-line rows)
+- `LineItemForm.svelte` — line entry; ONE `JobPicker` (typeahead against
+  active jobs, built on `SearchPicker`) feeds both material procurement
+  and, once a job is picked, a `TaskLinkPicker.svelte` (§10a) cascading
+  from it — picking a task shows a "Cost will be attributed to this
+  task — no material is created" hint and the payload sends `task`
+  without `job`/`material_id` (PO Job/Task consolidation, RM 2026-09-21).
+  Also includes `InventoryItemPicker` (server-side `?search=`, also built
+  on `SearchPicker`) for From-Inventory mode.
+  `TaskLinkPicker.svelte` (`frontend/src/components/TaskLinkPicker.svelte`)
+  takes an optional `job` prop: passed (even `null`) →  **controlled**,
+  the caller's job drives the cascade and the picker's own internal
+  `JobPicker` is hidden (`LineItemForm`'s usage); omitted → **uncontrolled**,
+  the component owns its own cascading `JobPicker`
+  (`ReconciliationSection.svelte`'s appended-line rows use this — those
+  lines never submit a `job` field at all, so the job there is transient,
+  narrowing-only UI state)
 - `MaterialSeverDialog.svelte` — keep/delete decisions for affected
   Materials. Reused by all sever paths
 - `ReceiveItemsForm.svelte` — line-by-line receipt entry

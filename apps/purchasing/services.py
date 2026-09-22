@@ -444,6 +444,27 @@ class PurchaseOrderService:
             )
 
     @staticmethod
+    def _reject_task_with_procurement(task_id, job_id, material_id):
+        """Server defense for the PO Job/Task consolidation (RM
+        2026-09-21): a line either attributes cost to a task (pure
+        attribution — no Material is created, `inventory_item` stays
+        null) or procures a material for a job (today's unchanged
+        Material claim-or-create / lot-minting flow) — never both.
+
+        Raised BEFORE any material machinery runs (in particular before
+        `_resolve_material_for_line`), so the deep `BaseLineItem.clean()`
+        task/inventory_item invariant's message — meant for the
+        auto-minted-lot case the old two-Job-picker form could trigger,
+        where the user never chose an inventory item themselves — is
+        unreachable from this path.
+        """
+        if task_id is not None and (job_id is not None or material_id is not None):
+            raise ValidationError({'task': [
+                'A line can attribute cost to a task or procure a '
+                'material for a job, not both.'
+            ]})
+
+    @staticmethod
     def _resolve_material_for_line(li, job_id, material_id):
         """Common job/material resolution for newly-created PO lines.
 
@@ -502,6 +523,8 @@ class PurchaseOrderService:
         # Pop transient params before they hit the model constructor
         job_id = kwargs.pop('job', None)
         material_id = kwargs.pop('material_id', None)
+        PurchaseOrderService._reject_task_with_procurement(
+            kwargs.get('task'), job_id, material_id)
 
         kwargs = LineItemService.normalize_fk_kwargs(PurchaseOrderLineItem, kwargs)
         with transaction.atomic():
@@ -512,14 +535,26 @@ class PurchaseOrderService:
         return li
 
     @staticmethod
-    def add_line_item_from_pli(po_id, inventory_item_id, qty, job=None, material_id=None):
-        """Add a line item from a InventoryItem to a draft PO. Accepts optional job, material_id."""
+    def add_line_item_from_pli(po_id, inventory_item_id, qty, job=None, material_id=None, task=None):
+        """Add a line item from a InventoryItem to a draft PO. Accepts optional job, material_id, task.
+
+        `task` mirrors `add_line_item`'s exclusivity guard (PO Job/Task
+        consolidation, RM 2026-09-21): rejected up front alongside
+        `job`/`material_id`. A PLI-backed line that sets `task` WITHOUT
+        job/material_id still trips `BaseLineItem.clean()`'s pre-existing
+        task/inventory_item exclusivity when `full_clean()` runs below —
+        that message is fine to reach here since the caller explicitly
+        chose both an inventory item and a task; this guard only
+        forecloses the job/material_id combination that used to crash
+        confusingly deeper in the material machinery.
+        """
         from apps.inventory.models import InventoryItem
         try:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
         PurchaseOrderService._validate_draft(po)
+        PurchaseOrderService._reject_task_with_procurement(task, job, material_id)
         try:
             pli = InventoryItem.objects.get(pk=inventory_item_id)
         except InventoryItem.DoesNotExist:
@@ -533,6 +568,7 @@ class PurchaseOrderService:
                 units=pli.units,
                 price=pli.purchase_price,
                 accounting_category=pli.accounting_category,
+                task_id=task,
             )
             li.full_clean()
             li.save()

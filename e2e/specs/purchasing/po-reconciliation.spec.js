@@ -112,16 +112,19 @@ test('PO task-link -> issue -> receive -> reconcile -> rate prompt -> invoice ac
     await page.getByLabel('Qty').fill('1');
     await page.getByLabel('Price').fill('20.00');
 
-    const picker = page.locator('.task-link-picker');
-    await picker.getByPlaceholder('Search jobs…').fill(job.job_number);
+    // PO Job/Task consolidation (RM 2026-09-21): ONE Job picker on the
+    // form now feeds both material attribution and the Task Link cascade
+    // -- picking a job reveals the task picker below it.
+    await page.getByPlaceholder('Search jobs…').fill(job.job_number);
     await page.getByRole('listbox').getByRole('button', { name: job.job_number }).click();
 
     // Task field (fix 3): filter-as-you-type SearchPicker, not a plain
     // <select> of every one of the job's tasks.
-    const taskInput = picker.getByPlaceholder('Search tasks…');
+    const taskInput = page.locator('.task-link-picker').getByPlaceholder('Search tasks…');
     await expect(taskInput).toBeEnabled();
     await taskInput.fill(taskName);
     await page.getByRole('listbox').getByRole('button', { name: taskName }).click();
+    await expect(page.getByText('Cost will be attributed to this task')).toBeVisible();
 
     await page.getByRole('button', { name: 'Add', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Add Line Item' })).toBeVisible();
@@ -137,6 +140,13 @@ test('PO task-link -> issue -> receive -> reconcile -> rate prompt -> invoice ac
     const li2 = reloaded.line_items.find((li) => li.description === line2Desc);
     expect(li1.task).toBe(task1.task_id);
     expect(li2.task).toBe(task2.task_id);
+    // PO Job/Task consolidation (RM 2026-09-21): a task-linked line is
+    // pure cost attribution -- no Material is ever created for it, even
+    // though a job was picked in the UI to drive the task cascade.
+    expect(li1.material).toBeNull();
+    expect(li2.material).toBeNull();
+    expect(li1.inventory_item).toBeNull();
+    expect(li2.inventory_item).toBeNull();
   });
 
   await test.step('Fix 2a: each line\'s task chip is visible on the PO detail page, linking to its task', async () => {

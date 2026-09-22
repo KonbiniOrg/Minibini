@@ -7,6 +7,16 @@
   //
   // `value` is the task id (or null — the link is always optional).
   //
+  // `job`: PO Job/Task consolidation (RM 2026-09-21). Two modes:
+  //   - omitted (undefined) — UNCONTROLLED: this component owns its own
+  //     cascading JobPicker (ReconciliationSection's appended-lines table
+  //     uses this — those lines never submit a `job` field at all, so the
+  //     job here is transient, narrowing-only UI state).
+  //   - passed (even null) — CONTROLLED: the caller owns the job (a single
+  //     shared Job picker feeds both material attribution and this task
+  //     cascade, LineItemForm's consolidated flow) — the internal JobPicker
+  //     is hidden and the task list cascades off the prop instead.
+  //
   // Fix 3 (RM browser-testing): the task field was a plain <select> of
   // every one of the picked job's tasks — unusable once a job has more
   // than a handful. Converted to the same filter-as-you-type SearchPicker
@@ -26,7 +36,9 @@
   import JobPicker from './JobPicker.svelte';
   import SearchPicker from './SearchPicker.svelte';
 
-  let { value = $bindable(null), disabled = false } = $props();
+  let { value = $bindable(null), job = undefined, disabled = false } = $props();
+
+  const controlled = $derived(job !== undefined);
 
   let jobId = $state(null);
   let jobRow = $state(null);
@@ -34,6 +46,8 @@
   let loadingTasks = $state(false);
   let lastFetchedJob = undefined; // sentinel distinct from null (no job picked)
   let resolvedFromValue = false;
+
+  const effectiveJobId = $derived(controlled ? job : jobId);
 
   const taskRowLabel = (t) => t.name;
   const searchTasks = (q) => {
@@ -61,18 +75,32 @@
   }
 
   $effect(() => {
-    const id = jobId;
+    const id = effectiveJobId;
     if (id === lastFetchedJob) return;
+    const isFirstRun = lastFetchedJob === undefined;
     lastFetchedJob = id;
     loadTasks(id);
+    // Controlled mode only: a job change from the caller invalidates a
+    // previously-picked task from the old job. Skipped on the very first
+    // run (mount, e.g. a defaultJob prop already carrying `job`) so a
+    // caller-seeded job doesn't wipe out a value it just seeded alongside
+    // it. In uncontrolled mode this clearing is handleJobSelect's job
+    // (below) — it fires only on a genuine user click, never on the
+    // resolve-from-value effect's programmatic `jobId` set just below,
+    // which this effect must NOT treat as a "job changed" event.
+    if (controlled && !isFirstRun) {
+      value = null;
+    }
   });
 
-  // Edit-mode entry: a task id was passed in before the job was ever
-  // picked locally (e.g. editing an existing line/appended entry). Resolve
-  // its job once so the cascading select has something to show — this is
-  // the only place `value` drives `jobId` instead of the reverse.
+  // Uncontrolled edit-mode entry only: a task id was passed in before the
+  // job was ever picked locally (e.g. editing an existing line/appended
+  // entry). Resolve its job once so the cascading select has something to
+  // show — this is the only place `value` drives `jobId` instead of the
+  // reverse. Not applicable in controlled mode — the caller owns `job` and
+  // is expected to supply it itself.
   $effect(() => {
-    if (resolvedFromValue || value == null || jobId != null) return;
+    if (controlled || resolvedFromValue || value == null || jobId != null) return;
     resolvedFromValue = true;
     api.get(`/api/tasks/${value}/`)
       .then((t) => {
@@ -92,12 +120,14 @@
 </script>
 
 <div class="task-link-picker">
-  <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={handleJobSelect} openOnly {disabled} />
+  {#if !controlled}
+    <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={handleJobSelect} openOnly {disabled} />
+  {/if}
   <SearchPicker bind:value
     search={searchTasks} resolveLabel={resolveTaskLabel} rowLabel={taskRowLabel}
     onPick={(t) => { value = t.task_id; }}
     onClear={() => { value = null; }}
-    disabled={disabled || !jobId || loadingTasks}
+    disabled={disabled || !effectiveJobId || loadingTasks}
     placeholder="Search tasks…" />
 </div>
 
