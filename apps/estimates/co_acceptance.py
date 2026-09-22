@@ -89,10 +89,20 @@ class ChangeOrderAcceptanceService:
         for li in adds:
             if li.sources.exists():          # already crystallized (re-run)
                 continue
+            if li.is_comment:                # informational — stays document-only
+                continue
             ChangeOrderAcceptanceService._crystallize(job, li, counts=counts)
 
         for li in replaces:
             if li.sources.exists():          # already inherited (re-run)
+                continue
+            if li.is_comment:
+                # A comment-marked replace is an annotated removal (merge
+                # 2026-09-21, adapting main's is_comment semantics to this
+                # branch's claim-move design): the note supersedes the line
+                # commercially, so claims never move onto the informational
+                # line — the target's atoms are descoped below alongside the
+                # removes, and compose_agreement drops the line.
                 continue
             ChangeOrderAcceptanceService._move_claims_to(li)
 
@@ -106,7 +116,11 @@ class ChangeOrderAcceptanceService:
             for add_li in adds for src in add_li.sources.all()
         }
 
-        for li in removes:
+        # Comment-marked replaces retire their target's atoms exactly like
+        # removes (annotated removal — see above).
+        comment_replaces = [li for li in replaces if li.is_comment]
+
+        for li in removes + comment_replaces:
             for source_type, atom in ChangeOrderAcceptanceService._current_atoms(li.target_line_item):
                 if (source_type, atom.pk) in readded:
                     continue

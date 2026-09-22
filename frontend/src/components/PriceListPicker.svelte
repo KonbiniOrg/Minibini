@@ -9,15 +9,18 @@
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
 
   // taskSurface: the task-list footer offers two explicit atom buttons
-  // (Task / Material). Default (estimate) footer is the material checkbox
-  // + "Add Line" (there, tasks come only from a ServiceItem pick).
+  // (Task / Material). Default (estimate) footer is a Comment checkbox
+  // + "Add Line" (there, tasks come only from a ServiceItem pick; and
+  // material-ness is decided later, by the Accounting Category chosen in
+  // the follow-up form, not here).
   let { open = false, onChoose = null, onclose = null, taskSurface = false } = $props();
   let pickerQuery = $state('');
+  let isComment = $state(false); // freeform: informational-only, no charge
 
   // Start fresh on every open: a cancelled add (or any other close) must not
-  // leave stale typing behind when reopened.
+  // leave stale typing or a stale comment toggle behind when reopened.
   $effect(() => {
-    if (open) { pickerQuery = ''; }
+    if (open) { pickerQuery = ''; isComment = false; }
   });
 
   const search = async (q) => {
@@ -49,8 +52,10 @@
   function emitFreeform() {
     // Estimate footer: material-ness is decided by the Accounting Category
     // chosen in the follow-up form (server-derived, RM 2026-08-11) — the
-    // old "is material?" checkbox is retired.
-    onChoose?.({ type: 'freeform', typed: pickerQuery });
+    // old "is material?" checkbox is retired. The Comment checkbox here
+    // decides is_comment up front, since a comment line skips the AC step
+    // entirely in the follow-up form.
+    onChoose?.({ type: 'freeform', typed: pickerQuery, isComment });
   }
   // Task-list footer: explicit per-atom emits.
   function emitFreeformMaterial() {
@@ -92,6 +97,7 @@
       <button type="button" onclick={emitFreeformTask}>Add Task</button>
       <button type="button" onclick={emitFreeformMaterial}>Add Material</button>
     {:else}
+      <label><input type="checkbox" bind:checked={isComment}> Comment (no charge)</label>
       <button type="button" onclick={emitFreeform}>Add Line</button>
     {/if}
   </div>

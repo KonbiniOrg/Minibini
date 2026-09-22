@@ -45,6 +45,8 @@
     ''
   );
 
+  const isComment = $derived(isFreeform && !!choice?.isComment);
+
   $effect(() => {
     if (!open || !choice) return;
     qty = '1'; units = 'none'; price = ''; error = '';
@@ -68,6 +70,11 @@
     } else if (choice.type === 'inventory') {
       payload = { inventory_item: choice.inventoryItem.inventory_item_id, qty };
       if (description !== prefillDescription) payload.description = description;
+    } else if (choice.isComment) {
+      payload = {
+        description, is_comment: true,
+        qty: '0', units: 'none', price: '0', accounting_category: null,
+      };
     } else {
       // Every hand line requires an AC — choosing the Materials AC is what
       // makes it a material (is_material derives server-side, RM 2026-08-11).
@@ -92,10 +99,12 @@
 
 <Modal open={open && choice} onCancel={onClose}>
 <form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
-      <h3>{title}</h3>
+      <h3>{isComment ? 'Add Comment' : title}</h3>
       <p><label>Description<br><input type="text" bind:value={description} style="width:100%;box-sizing:border-box;"></label></p>
-      <p><label>Quantity<br><input type="number" step="0.01" min="0" value={qty} oninput={(e) => qty = e.target.value}>{#if !isFreeform && baseUnits}<span class="qty-units">{baseUnits}</span>{/if}</label></p>
-      {#if isFreeform}
+      {#if !isComment}
+        <p><label>Quantity<br><input type="number" step="0.01" min="0" value={qty} oninput={(e) => qty = e.target.value}>{#if !isFreeform && baseUnits}<span class="qty-units">{baseUnits}</span>{/if}</label></p>
+      {/if}
+      {#if isFreeform && !isComment}
         <p><label>Units<br><UnitsSelect bind:value={units} /></label></p>
         <p><label>Price<br><input type="number" step="0.01" value={price} oninput={(e) => price = e.target.value}></label></p>
         <p><label>Accounting Category

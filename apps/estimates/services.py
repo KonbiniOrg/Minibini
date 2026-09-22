@@ -398,8 +398,12 @@ class EstimateService:
         from apps.core.services import LineItemService
         kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
         li = EstimateLineItem(estimate=estimate, **kwargs)
-        # A freshly-added line has no sources; if it isn't an adjustment it needs an AC.
-        if li.adjustment_service_id is None and li.accounting_category_id is None:
+        # A freshly-added line has no sources; if it isn't an adjustment or a
+        # comment (both document-only) it needs an AC. (Merge note 2026-09-21:
+        # main's is_comment exemption adopted; main's _apply_material_ac_default
+        # call NOT adopted — this branch's AC->is_material derivation, RM
+        # 2026-08-11, replaced that flag->default-AC direction.)
+        if li.adjustment_service_id is None and not li.is_comment and li.accounting_category_id is None:
             raise ValidationError(
                 {'accounting_category': (
                     'Accounting category is required for hand-line items '
@@ -520,10 +524,11 @@ class EstimateService:
         for field, value in kwargs.items():
             setattr(li, field, value)
         # Hand-lines (no atom source, not an adjustment) must have an accounting category.
-        # Atom-backed lines (sources exist) and adjustment lines are exempt.
+        # Atom-backed lines (sources exist), adjustment lines, and comment
+        # lines are exempt.
         is_adjustment = li.adjustment_service_id is not None
         has_source = li.sources.exists()
-        if not has_source and not is_adjustment and li.accounting_category_id is None:
+        if not has_source and not is_adjustment and not li.is_comment and li.accounting_category_id is None:
             raise ValidationError(
                 {'accounting_category': (
                     'Accounting category is required for hand-line items '

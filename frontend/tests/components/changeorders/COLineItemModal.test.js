@@ -36,7 +36,7 @@ describe('COLineItemModal — edit-fields variant (PATCH, gestures preset lineIt
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.patch).toHaveBeenCalledWith('/api/change-orders/3/line-items/12/', {
-      description: 'Widget C v3', qty: 5, units: 'ea', price: 30,
+      description: 'Widget C v3', is_comment: false, qty: 5, units: 'ea', price: 30,
     });
     expect(api.post).not.toHaveBeenCalled();
     expect(onSaved).toHaveBeenCalled();
@@ -64,7 +64,28 @@ describe('COLineItemModal — edit-fields variant (PATCH, gestures preset lineIt
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.patch).toHaveBeenCalledWith('/api/change-orders/3/line-items/13/', {
-      description: 'Extra Item', qty: 2, units: 'ea', price: 60, accounting_category: 7,
+      description: 'Extra Item', is_comment: false, qty: 2, units: 'ea', price: 60, accounting_category: 7,
+    });
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('checking Comment line drops the AC requirement and zeroes qty/units/price', async () => {
+    const onSaved = vi.fn();
+    const { getByLabelText, getByRole, queryByLabelText } = render(COLineItemModal, {
+      props: {
+        open: true, variant: 'edit-fields', coId: 3, lineItemId: 13,
+        needsAccountingCategory: true,
+        initialDescription: 'Extra Item', initialQty: '2', initialUnits: 'ea', initialPrice: '60',
+        categories: cats, onSaved,
+      },
+    });
+    await fireEvent.click(getByLabelText(/Comment line/));
+    expect(queryByLabelText(/Accounting Category/)).toBeNull();
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(api.patch).toHaveBeenCalledWith('/api/change-orders/3/line-items/13/', {
+      description: 'Extra Item', is_comment: true,
+      qty: '0', units: 'none', price: '0', accounting_category: null,
     });
     expect(onSaved).toHaveBeenCalled();
   });
@@ -100,7 +121,7 @@ describe('COLineItemModal — replace-prefill variant (POST, gestures preset tar
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.post).toHaveBeenCalledWith('/api/change-orders/3/line-items/', {
-      description: 'Widget A', qty: 2, units: 'ea', price: 120,
+      description: 'Widget A', is_comment: false, qty: 2, units: 'ea', price: 120,
       action: 'replace', target_line_item: 7,
     });
     expect(onSaved).toHaveBeenCalled();

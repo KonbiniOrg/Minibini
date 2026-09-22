@@ -85,6 +85,7 @@ def _fold(estimate, cos):
     """
     est_line_items = list(
         estimate.estimatelineitem_set
+        .exclude(is_comment=True)  # informational-only, not a billing line
         .select_related('adjustment_service')
         .prefetch_related('adjustment_target_categories')
         .order_by('line_number'))
@@ -113,9 +114,19 @@ def _fold(estimate, cos):
             elif action == ChangeOrderLineItem.ACTION_REPLACE:
                 target_pk = coli.target_line_item_id
                 if target_pk in keyed_lines and keyed_lines[target_pk] is not None:
-                    keyed_lines[target_pk] = _line_dict_from_co_item(coli)
+                    if coli.is_comment:
+                        # Mirrors co_acceptance.py: a comment-marked replace
+                        # retires the old line without a commercial successor,
+                        # so the line simply drops out of the agreement.
+                        # (Merge note 2026-09-21: main's fee-era source_fee_id
+                        # plumbing not adopted — Fee is deleted on this branch.)
+                        keyed_lines[target_pk] = None
+                    else:
+                        keyed_lines[target_pk] = _line_dict_from_co_item(coli)
 
             elif action == ChangeOrderLineItem.ACTION_ADD:
+                if coli.is_comment:  # informational-only, not a billing line
+                    continue
                 added_lines.append(_line_dict_from_co_item(coli))
 
     return keyed_lines, added_lines

@@ -176,6 +176,14 @@ Migration: `apps/invoicing/migrations/0023_invoicelineitem_agreement_co_line_and
 configured `fallback_accounting_category`. See "Fallback accounting
 category stamping" below.
 
+**Comment lines** — `is_comment` (inherited from `BaseLineItem`): a
+purely informational row, no charge, exempt from the pre-send
+categorization gate (`InvoiceEmailService._assert_all_lines_categorized`)
+and skipped entirely by the QBO push (`QBOInvoiceSyncService._build_qbo_invoice`)
+— it never reaches QBO. Independent of estimate comment lines by design:
+`compose_agreement` excludes them, so "copy from estimate" never carries
+one across. Full cross-entity writeup: architecture-and-conventions.md §4.
+
 ### InvoiceLineItemSource
 
 Polymorphic join between `InvoiceLineItem` and the job atom it represents (a `Task`, `Material`, or `Expense`) — or, for `source_type='deposit'`, another `InvoiceLineItem` (see Deposits below). "Polymorphic" only in the sense that the atom side may be one of several model types; this is not a Django generic relation.

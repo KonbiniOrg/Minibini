@@ -26,6 +26,7 @@
   let units = $state('none');
   let price = $state('');
   let accountingCategory = $state('');
+  let isComment = $state(false);
   let busy = $state(false);
   let formError = $state('');
   let fieldErrs = $state({});
@@ -40,12 +41,14 @@
         units = item.units || 'none';
         price = item.price ?? '';
         accountingCategory = item.accounting_category ?? '';
+        isComment = item.is_comment ?? false;
       } else {
         description = '';
         qty = '';
         units = 'none';
         price = '';
         accountingCategory = '';
+        isComment = false;
       }
       formError = '';
       fieldErrs = {};
@@ -103,18 +106,20 @@
       } else {
         // Every hand line requires an AC — choosing the Materials AC is what
         // makes it a material (is_material derives server-side, RM 2026-08-11;
-        // the old "Is this a material?" checkbox is retired).
-        if (!accountingCategory) {
+        // the old "Is this a material?" checkbox is retired). A comment line
+        // never touches the accounting side at all.
+        if (!accountingCategory && !isComment) {
           fieldErrs = { accounting_category: ['Accounting Category is required.'] };
           busy = false;
           return;
         }
         const payload = {
           description,
-          qty: qty || '0',
-          units,
-          price: price || '0',
-          accounting_category: accountingCategory ? Number(accountingCategory) : null,
+          is_comment: isComment,
+          qty: isComment ? '0' : (qty || '0'),
+          units: isComment ? 'none' : units,
+          price: isComment ? '0' : (price || '0'),
+          accounting_category: isComment ? null : (accountingCategory ? Number(accountingCategory) : null),
         };
         if (mode === 'edit' && item) {
           const suffix = updateDeliverables ? '?update_deliverables=true' : '';
@@ -174,34 +179,42 @@
           <FieldError errors={fieldErrs} field="description" />
         </p>
         <p>
-          <label><strong>Quantity</strong><br>
-            <input type="number" step="0.01" bind:value={qty}>
+          <label>
+            <input type="checkbox" bind:checked={isComment}>
+            Comment line (informational only — no charge)
           </label>
-          <FieldError errors={fieldErrs} field="qty" />
         </p>
-        <p>
-          <label><strong>Units</strong><br>
-            <UnitsSelect bind:value={units} />
-          </label>
-          <FieldError errors={fieldErrs} field="units" />
-        </p>
-        <p>
-          <label><strong>Price</strong><br>
-            <input type="number" step="0.01" bind:value={price}>
-          </label>
-          <FieldError errors={fieldErrs} field="price" />
-        </p>
-        <p>
-          <label><strong>Accounting Category *</strong><br>
-            <select bind:value={accountingCategory}>
-              <option value="">-- Select --</option>
-              {#each categories.filter((c) => !c.is_fallback) as cat}
-                <option value={cat.id}>{cat.code} - {cat.name}</option>
-              {/each}
-            </select>
-          </label>
-          <FieldError errors={fieldErrs} field="accounting_category" />
-        </p>
+        {#if !isComment}
+          <p>
+            <label><strong>Quantity</strong><br>
+              <input type="number" step="0.01" bind:value={qty}>
+            </label>
+            <FieldError errors={fieldErrs} field="qty" />
+          </p>
+          <p>
+            <label><strong>Units</strong><br>
+              <UnitsSelect bind:value={units} />
+            </label>
+            <FieldError errors={fieldErrs} field="units" />
+          </p>
+          <p>
+            <label><strong>Price</strong><br>
+              <input type="number" step="0.01" bind:value={price}>
+            </label>
+            <FieldError errors={fieldErrs} field="price" />
+          </p>
+          <p>
+            <label><strong>Accounting Category *</strong><br>
+              <select bind:value={accountingCategory}>
+                <option value="">-- Select --</option>
+                {#each categories.filter((c) => !c.is_fallback) as cat}
+                  <option value={cat.id}>{cat.code} - {cat.name}</option>
+                {/each}
+              </select>
+            </label>
+            <FieldError errors={fieldErrs} field="accounting_category" />
+          </p>
+        {/if}
       {/if}
 
       {#if deliverableChoiceOpen}

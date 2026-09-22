@@ -69,23 +69,35 @@ describe('PriceListPicker (onChoose emitter)', () => {
     });
   });
 
-  it('freeform commit emits typed text only — no isMaterial (checkbox retired, RM 2026-08-11)', async () => {
+  it('freeform commit emits typed text + isComment — no isMaterial (checkbox retired, RM 2026-08-11)', async () => {
     const props = baseProps();
     const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: '3/4 plywood' } });
     await fireEvent.click(await findByRole('button', { name: /add line/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood' });
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood', isComment: false });
   });
 
-  it('clears typed text when reopened', async () => {
+  it('freeform commit with the comment checkbox set emits isComment true', async () => {
     const props = baseProps();
-    const { getByPlaceholderText, rerender } = render(PriceListPicker, { props });
+    const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'See attached spec' } });
+    await fireEvent.click(await findByRole('checkbox', { name: /comment/i }));
+    await fireEvent.click(await findByRole('button', { name: /add line/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'See attached spec', isComment: true });
+  });
+
+  it('clears typed text and the comment toggle when reopened', async () => {
+    const props = baseProps();
+    const { getByPlaceholderText, getByRole, rerender } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'partial typing' } });
     expect(getByPlaceholderText(/search/i)).toHaveValue('partial typing');
+    await fireEvent.click(getByRole('checkbox', { name: /comment/i }));
+    expect(getByRole('checkbox', { name: /comment/i })).toBeChecked();
     // Cancel (close), then reopen — the picker must start fresh.
     await rerender({ ...props, open: false });
     await rerender({ ...props, open: true });
     expect(getByPlaceholderText(/search/i)).toHaveValue('');
+    expect(getByRole('checkbox', { name: /comment/i })).not.toBeChecked();
   });
 
   it('does not offer Add Task by default (estimate surface)', () => {
@@ -115,7 +127,7 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(addBtn).toBeInTheDocument();
     // Clicking with nothing typed still emits a freeform commit (empty typed).
     await fireEvent.click(addBtn);
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '' });
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '', isComment: false });
   });
 });
 

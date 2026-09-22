@@ -39,6 +39,7 @@
     initialPrice = '',
     initialPercent = '',
     initialAccountingCategory = '',
+    initialIsComment = false,
     categories = [],
     onSaved = () => {},
     onClose = () => {},
@@ -50,6 +51,7 @@
   let price = $state('');
   let percent = $state('');
   let accountingCategory = $state('');
+  let isComment = $state(false);
   let busy = $state(false);
   let formError = $state('');
   let fieldErrs = $state({});
@@ -64,6 +66,9 @@
     if (variant === 'replace-prefill') return 'Replace Line';
     return 'Edit Line';
   });
+  // A comment line never needs an AC, regardless of what the calling gesture
+  // preset — comments never crystallize into a billable atom.
+  let requiresAC = $derived(needsAccountingCategory && !isComment);
 
   $effect(() => {
     if (open) {
@@ -74,6 +79,7 @@
       percent = initialPercent ?? '';
       // Raw value so Svelte 5's strict-=== select matching finds the option.
       accountingCategory = initialAccountingCategory ?? '';
+      isComment = initialIsComment ?? false;
       formError = '';
       fieldErrs = {};
       savedAmount = null;
@@ -90,16 +96,19 @@
         payload.adjustment_percent = percent;
       }
     } else {
-      payload.qty = qty || '0';
-      payload.units = units;
-      payload.price = price || '0';
-      if (needsAccountingCategory) {
+      payload.is_comment = isComment;
+      payload.qty = isComment ? '0' : (qty || '0');
+      payload.units = isComment ? 'none' : units;
+      payload.price = isComment ? '0' : (price || '0');
+      if (requiresAC) {
         if (!accountingCategory) {
           fieldErrs = { accounting_category: ['Accounting Category is required.'] };
           busy = false;
           return;
         }
         payload.accounting_category = Number(accountingCategory);
+      } else if (isComment) {
+        payload.accounting_category = null;
       }
     }
     if (!isEdit) {
@@ -165,38 +174,47 @@
         </p>
       {:else}
         <p>
-          <label><strong>Quantity</strong><br>
-            <input type="number" step="0.01" bind:value={qty}>
+          <label>
+            <input type="checkbox" bind:checked={isComment}>
+            Comment line (informational only — no charge)
           </label>
-          <FieldError errors={fieldErrs} field="qty" />
         </p>
 
-        <p>
-          <label><strong>Units</strong><br>
-            <UnitsSelect bind:value={units} />
-          </label>
-          <FieldError errors={fieldErrs} field="units" />
-        </p>
-
-        <p>
-          <label><strong>Price</strong><br>
-            <input type="number" step="0.01" bind:value={price}>
-          </label>
-          <FieldError errors={fieldErrs} field="price" />
-        </p>
-
-        {#if needsAccountingCategory}
+        {#if !isComment}
           <p>
-            <label><strong>Accounting Category *</strong><br>
-              <select bind:value={accountingCategory}>
-                <option value="">-- Select --</option>
-                {#each categories.filter((c) => !c.is_fallback) as cat}
-                  <option value={cat.id}>{cat.code} - {cat.name}</option>
-                {/each}
-              </select>
+            <label><strong>Quantity</strong><br>
+              <input type="number" step="0.01" bind:value={qty}>
             </label>
-            <FieldError errors={fieldErrs} field="accounting_category" />
+            <FieldError errors={fieldErrs} field="qty" />
           </p>
+
+          <p>
+            <label><strong>Units</strong><br>
+              <UnitsSelect bind:value={units} />
+            </label>
+            <FieldError errors={fieldErrs} field="units" />
+          </p>
+
+          <p>
+            <label><strong>Price</strong><br>
+              <input type="number" step="0.01" bind:value={price}>
+            </label>
+            <FieldError errors={fieldErrs} field="price" />
+          </p>
+
+          {#if requiresAC}
+            <p>
+              <label><strong>Accounting Category *</strong><br>
+                <select bind:value={accountingCategory}>
+                  <option value="">-- Select --</option>
+                  {#each categories.filter((c) => !c.is_fallback) as cat}
+                    <option value={cat.id}>{cat.code} - {cat.name}</option>
+                  {/each}
+                </select>
+              </label>
+              <FieldError errors={fieldErrs} field="accounting_category" />
+            </p>
+          {/if}
         {/if}
       {/if}
 

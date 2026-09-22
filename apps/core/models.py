@@ -384,6 +384,14 @@ class BaseLineItem(models.Model):
         null=True,  # Nullable initially for migration; will be made required after data migration
         blank=True
     )
+    # Purely informational row (a "comment line") — no charge, no task/atom
+    # linkage of any kind. Valid on any document type; documents that
+    # crystallize lines into atoms (estimate acceptance) must skip these.
+    is_comment = models.BooleanField(
+        default=False,
+        help_text='Informational line only — no charge, not linked to any task/atom.',
+    )
+
     class Meta:
         abstract = True
 
@@ -405,6 +413,25 @@ class BaseLineItem(models.Model):
 
             if has_task and has_price_item:
                 raise ValidationError("LineItem cannot have both task and inventory_item")
+
+        if self.is_comment:
+            if self.qty:
+                raise ValidationError({'qty': 'A comment line cannot have a quantity.'})
+            if self.price:
+                raise ValidationError({'price': 'A comment line cannot have a price.'})
+            if self.inventory_item_id is not None:
+                raise ValidationError({'inventory_item': 'A comment line cannot reference an inventory item.'})
+            if task_fk is not None and self.task_id is not None:
+                raise ValidationError({'task': 'A comment line cannot reference a task.'})
+            # Fields that exist only on some subclasses (EstimateLineItem /
+            # InvoiceLineItem) — probed defensively so this stays generic
+            # across all four BaseLineItem subclasses.
+            if getattr(self, 'adjustment_service_id', None) is not None:
+                raise ValidationError({'adjustment_service': 'A comment line cannot be a percentage adjustment.'})
+            if getattr(self, 'is_material', False):
+                raise ValidationError({'is_material': 'A comment line cannot also be marked as a material.'})
+            if getattr(self, 'service_item_id', None) is not None:
+                raise ValidationError({'service_item': 'A comment line cannot reference a service item.'})
 
     def _populate_from_pli(self):
         """Copy description/units/accounting_category from linked InventoryItem if not already set.
