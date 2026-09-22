@@ -2,10 +2,16 @@
 the one-live-invoice-per-agreement-line invariant.
 
 Fixture: an accepted estimate with three agreement lines —
-  - backed_line: an atom-backed line (EstimateLineItemSource rows for a
-    complete Task and an unconsumed Material)
-  - hand_line: a bare hand line with no sources
+  - backed_line: a FULLY billable atom-backed line (EstimateLineItemSource
+    rows for a complete Task AND a consumed Material) — the "ALL claimable
+    atoms billable" regression fixture
+  - hand_line: a bare hand line with no sources — the "zero claimable
+    atoms" regression fixture
   - adj_line: a percentage-adjustment line
+
+Individual tests add a `partial_line` (some but not all claimable atoms
+terminal) to cover RM ruling 2026-09-21 "rule 2": a partially-backed
+agreement line must never seed/restore on the actuals basis.
 
 Covers seed_from_agreement, remaining_agreement_lines, restore_agreement_line,
 remove_line, and the select_for_update re-check that keeps an agreement line
@@ -62,13 +68,17 @@ class InvoiceSeedingTestCase(TestCase):
         self.task.stamp_from_scheme(self.scheme)
         self.task.save()
 
+        # Both of backed_line's atoms are terminal (task complete, material
+        # consumed) — this is the "ALL claimable atoms billable" regression
+        # fixture (RM ruling 2026-09-21 "rule 2"): it must keep seeding with
+        # claims + actuals re-derivation. The "SOME but not all billable"
+        # (must-be-skipped) shape is exercised separately below with its own
+        # dedicated fixture (partial_line), so the two concerns don't share
+        # — and can't accidentally mask each other in — one line.
         self.material = Material.objects.create(
             job=self.job, description='Steel bar', quantity=Decimal('3'),
             sell_price=Decimal('5.00'), accounting_category=self.cat,
-        )
-        self.assertEqual(
-            self.material.consumption_state,
-            Material.CONSUMPTION_STATE_PENDING,
+            consumption_state=Material.CONSUMPTION_STATE_CONSUMED,
         )
 
         self.backed_line = EstimateLineItem.objects.create(
@@ -100,8 +110,10 @@ class InvoiceSeedingTestCase(TestCase):
 
         # -- adj_line: percentage adjustment, targeted at ONLY backed_line's
         # category (cat) — hand_line's 25.00 (cat2) must NOT count toward
-        # the computed amount. Targeted: 200.00 (backed_line) * 10% = 20.00.
-        # Untargeted (the bug): (200.00 + 25.00) * 10% = 22.50.
+        # the computed amount. backed_line re-derives from its FULLY
+        # billable actuals (task $200.00 + material $15.00 = $215.00, price
+        # 215.00/2 = $107.50/hr). Targeted: 215.00 (backed_line) * 10% =
+        # 21.50. Untargeted (the bug): (215.00 + 25.00) * 10% = 24.00.
         self.rush_svc = RateScheme.objects.create(
             name='Rush-Seed', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
@@ -134,16 +146,25 @@ class InvoiceSeedingTestCase(TestCase):
         n = InvoiceService.seed_from_agreement(inv)
         self.assertEqual(n, 3)
         li = inv.invoicelineitem_set.get(agreement_estimate_line=self.backed_line)
-        self.assertEqual(li.qty, self.backed_line.qty)
-        self.assertEqual(li.price, self.backed_line.price)
+        self.assertEqual(li.qty, self.backed_line.qty)  # qty untouched by seeding
+        # price is RE-DERIVED from actuals (backed_line is fully billable),
+        # not copied from the estimate snapshot — see
+        # test_fully_billable_line_mirrors_all_claims_and_rederives_price.
+        self.assertEqual(li.price, Decimal('107.50'))
 
-    def test_backed_line_mirrors_claims_for_billable_atoms_only(self):
+    def test_fully_billable_line_mirrors_all_claims_and_rederives_price(self):
+        """RM ruling 2026-09-21 "rule 2" regression pin: ALL claimable
+        atoms billable (task complete AND material consumed) -> both are
+        mirrored and the price is re-derived from their combined actuals.
+        This is today's shipped behavior for a fully-done bundle — must
+        not change."""
         inv = self._seeded()
         li = inv.invoicelineitem_set.get(agreement_estimate_line=self.backed_line)
         types = set(li.sources.values_list('source_type', flat=True))
-        self.assertEqual(types, {'task'})
-        # the unconsumed material was NOT claimed
-        self.assertFalse(li.sources.filter(source_type='material').exists())
+        self.assertEqual(types, {'task', 'material'})
+        # task: 2 hr * $100/hr = $200.00; material: 3 * $5.00 = $15.00
+        self.assertEqual(li.price, Decimal('107.50'))
+        self.assertEqual(li.total_amount, Decimal('215.00'))
 
     def test_hand_line_seeds_without_claims(self):
         inv = self._seeded()
@@ -162,7 +183,7 @@ class InvoiceSeedingTestCase(TestCase):
         # processed, which is the normal compose_agreement ordering.
         inv = self._seeded()
         li = inv.invoicelineitem_set.get(agreement_estimate_line=self.adj_line)
-        self.assertEqual(li.price, Decimal('20.00'))
+        self.assertEqual(li.price, Decimal('21.50'))
 
     def test_restored_adjustment_amount_uses_targeted_subtotal_only(self):
         inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
@@ -173,7 +194,7 @@ class InvoiceSeedingTestCase(TestCase):
         InvoiceService.restore_agreement_line(
             inv, estimate_line_id=self.adj_line.pk)
         li = inv.invoicelineitem_set.get(agreement_estimate_line=self.adj_line)
-        self.assertEqual(li.price, Decimal('20.00'))
+        self.assertEqual(li.price, Decimal('21.50'))
 
     def test_seed_skips_atom_already_claimed_by_another_live_invoice(self):
         # A backed line's task atom was billed directly on an earlier
@@ -305,6 +326,41 @@ class InvoiceSeedingTestCase(TestCase):
         )
         return drift_line, drift_task
 
+    def _make_partial_line(self, line_number=4):
+        """A 4th agreement line backed by two task atoms, only one of
+        them terminal — the "SOME but not all claimable atoms billable"
+        shape RM ruling 2026-09-21 "rule 2" forbids from seeding on the
+        actuals basis. Returns (partial_line, billable_task, pending_task)."""
+        billable_task = Task(
+            job=self.job, name='Billable', status=Task.STATUS_COMPLETE,
+            actual_qty=Decimal('1'),
+        )
+        billable_task.stamp_from_scheme(self.scheme)
+        billable_task.save()
+        pending_task = Task(
+            job=self.job, name='Pending', status=Task.STATUS_IN_PROGRESS,
+            actual_qty=Decimal('5'),
+        )
+        pending_task.stamp_from_scheme(self.scheme)
+        pending_task.save()
+
+        partial_line = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=line_number, qty=Decimal('1'),
+            units='hour', description='Partial labor', price=Decimal('150.00'),
+            accounting_category=self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=partial_line,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=billable_task.pk,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=partial_line,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=pending_task.pk,
+        )
+        return partial_line, billable_task, pending_task
+
     def test_seeded_backed_line_rederives_price_from_actuals_on_drift(self):
         """A backed line whose complete task's actuals differ from the
         estimate snapshot seeds priced from actuals ($240.00 amount,
@@ -322,47 +378,113 @@ class InvoiceSeedingTestCase(TestCase):
         self.assertEqual(li.total_amount, Decimal('240.00'))
         self.assertEqual(derive_backing(li), 'actuals')
 
-    def test_seeded_line_price_derives_only_from_billable_claimed_subset(self):
-        """Partial billability: an agreement line with two task atoms,
-        only one of them complete, seeds claiming (and pricing from) only
-        the billable one — the in-progress task is never mirrored and
-        never contributes to the re-derived price."""
-        billable_task = Task(
-            job=self.job, name='Billable', status=Task.STATUS_COMPLETE,
-            actual_qty=Decimal('1'),
-        )
-        billable_task.stamp_from_scheme(self.scheme)
-        billable_task.save()
-        pending_task = Task(
-            job=self.job, name='Pending', status=Task.STATUS_IN_PROGRESS,
-            actual_qty=Decimal('5'),
-        )
-        pending_task.stamp_from_scheme(self.scheme)
-        pending_task.save()
+    # ── RM ruling 2026-09-21 "rule 2": partially-backed lines never seed ──
 
-        partial_line = EstimateLineItem.objects.create(
-            estimate=self.est, line_number=4, qty=Decimal('1'),
-            units='hour', description='Partial labor', price=Decimal('150.00'),
-            accounting_category=self.cat,
-        )
-        EstimateLineItemSource.objects.create(
-            estimate_line_item=partial_line,
-            source_type=EstimateLineItemSource.SOURCE_TASK,
-            source_pk=billable_task.pk,
-        )
-        EstimateLineItemSource.objects.create(
-            estimate_line_item=partial_line,
-            source_type=EstimateLineItemSource.SOURCE_TASK,
-            source_pk=pending_task.pk,
-        )
+    def test_partially_backed_line_is_not_seeded(self):
+        """A line with SOME but not all claimable atoms terminal (1 of 2
+        tasks complete) is skipped entirely at seed time — no
+        InvoiceLineItem is created for it — rather than seeding with a
+        price derived from just the done fraction."""
+        partial_line, _billable_task, _pending_task = self._make_partial_line()
+
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        n = InvoiceService.seed_from_agreement(inv)
+
+        self.assertEqual(n, 3)  # backed_line, hand_line, adj_line only
+        self.assertFalse(
+            inv.invoicelineitem_set.filter(
+                agreement_estimate_line=partial_line).exists())
+
+    def test_partially_backed_line_stays_in_remaining_agreement_lines(self):
+        """A skipped partial line is NOT consumed — remaining_agreement_lines
+        keys off live invoice-line references, and no reference was ever
+        created for it, so it genuinely reappears for a future seed."""
+        partial_line, _billable_task, _pending_task = self._make_partial_line()
 
         inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         InvoiceService.seed_from_agreement(inv)
 
+        remaining_ids = [
+            l['estimate_line_id']
+            for l in InvoiceService.remaining_agreement_lines(self.job)
+        ]
+        self.assertIn(partial_line.pk, remaining_ids)
+
+    def test_partially_backed_lines_terminal_atom_stays_pool_visible(self):
+        """The already-complete task on a skipped partial line is never
+        claimed — get_source_pool still reports it 'available', so a
+        deliberate manual pull of just that atom stays possible."""
+        from apps.invoicing.services import InvoiceWizardService
+
+        _partial_line, billable_task, pending_task = self._make_partial_line()
+
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceService.seed_from_agreement(inv)
+
+        pool = InvoiceWizardService.get_source_pool(inv)
+        atoms_by_id = {
+            a['id']: a
+            for group in pool['tasks'] for a in group['atoms']
+            if a['type'] == 'task'
+        }
+        self.assertEqual(atoms_by_id[billable_task.pk]['state'], 'available')
+        # the manual-pull path prices this atom on its own actuals (1 hr *
+        # $100/hr = $100.00) — sane, since it is a single-atom pull, not a
+        # fraction of the bundle's qty/description.
+        self.assertEqual(atoms_by_id[billable_task.pk]['amount'], Decimal('100.00'))
+        self.assertEqual(atoms_by_id[pending_task.pk]['state'], 'not_billable')
+
+    def test_partial_then_complete_then_reseed_seeds_full_actuals(self):
+        """RM's end-to-end sequence: seed while partial (skipped) ->
+        complete the remaining task -> re-seed -> now seeds on full
+        actuals reflecting BOTH tasks."""
+        partial_line, _billable_task, pending_task = self._make_partial_line()
+
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceService.seed_from_agreement(inv)
+        self.assertFalse(
+            inv.invoicelineitem_set.filter(
+                agreement_estimate_line=partial_line).exists())
+
+        pending_task.status = Task.STATUS_COMPLETE
+        pending_task.save()
+
+        InvoiceService.seed_from_agreement(inv)
+
         li = inv.invoicelineitem_set.get(agreement_estimate_line=partial_line)
-        self.assertEqual(li.sources.count(), 1)  # only the complete task claimed
-        # billable_task alone: 1 hr * $100/hr = $100.00 -> price = 100/1
-        self.assertEqual(li.price, Decimal('100.00'))
+        types = set(li.sources.values_list('source_type', flat=True))
+        self.assertEqual(types, {'task'})
+        self.assertEqual(li.sources.count(), 2)
+        # billable_task 1hr + pending_task(now complete) 5hr = 6hr * $100/hr
+        # = $600.00, over qty 1 -> price = $600.00
+        self.assertEqual(li.price, Decimal('600.00'))
+
+    def test_restoring_a_partially_backed_line_seeds_at_estimate_basis(self):
+        """Restore is an explicit human choice off the remaining-lines
+        picker — RM's "must not auto-generate" objection doesn't apply,
+        so the pick is honored (unlike seed_from_agreement, which skips
+        the line outright). But the underlying dishonesty rule 2 guards
+        against still applies: the restored line lands on the SAME
+        "estimate basis, zero claims" footing as a zero-billable line,
+        never priced from the partial actuals fraction."""
+        partial_line, billable_task, _pending_task = self._make_partial_line()
+
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceService.restore_agreement_line(
+            inv, estimate_line_id=partial_line.pk)
+
+        self.assertEqual(li.price, partial_line.price)  # estimate value, untouched
+        self.assertFalse(li.sources.exists())  # zero claims
+
+        # the terminal atom is still unclaimed (pool-visible), same as the
+        # seed-skip path.
+        from apps.invoicing.models import InvoiceLineItemSource
+        self.assertFalse(
+            InvoiceLineItemSource.objects.filter(
+                source_type=InvoiceLineItemSource.SOURCE_TASK,
+                source_pk=billable_task.pk,
+            ).exists()
+        )
 
     def test_hand_line_still_seeds_at_estimate_values(self):
         """A hand line (no claimable atoms) acquires zero claims, so it

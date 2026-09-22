@@ -466,6 +466,23 @@ The CO surface and its estimate-parallel code.
 
 ## Invoicing, expenses & payments
 
+- **Partially-backed agreement lines skip seeding entirely — per-unit
+  progress billing is the eventual real answer.** — _added 2026-09-21
+  (RM ruling "rule 2")_
+  `seed_from_agreement`/`restore_agreement_line` now refuse to seed a
+  bundled agreement line whose claimable atoms are only SOME (not zero,
+  not all) terminal — the line simply waits, unseeded, until its backing
+  is either fully done or the biller manually pulls the done atom(s) as
+  their own line (`invoicing-and-expenses.md` §"The three-way
+  completeness rule"). That's an honest interim: a bundle either bills
+  in full or waits. The real fix for a large bundle worked incrementally
+  (e.g. "10 of these, 6 done") is proper per-unit progress billing — "bill
+  K of N units" — landing at invoice time from the per-unit-lines work
+  (`docs/plans/2026-09-16-per-unit-lines.md`), not an all-or-nothing skip.
+  _Done when:_ per-unit-lines' invoice-side phase lets a partially-done
+  per-unit bundle bill its completed fraction directly, and this skip
+  rule is revisited for lines that qualify.
+
 - **InvoiceEditView's claimed rows still render disabled checkboxes.** —
   _added 2026-09-21 (claim-chips review follow-up; RM: not ready to work
   on invoicing yet)_

@@ -392,7 +392,46 @@ UI button that calls it a second way (the older "Apply everything" /
    targeting a re-derived sibling computes its percentage off the
    sibling's actuals amount, not its stale estimate snapshot.
 
-Returns the number of lines created.
+Returns the number of lines created (a skipped partial line, below,
+does not count).
+
+**The three-way completeness rule (RM ruling 2026-09-21 "rule 2").**
+Before building a line, `seed_from_agreement` classifies its claimable
+backing — the same `EstimateLineItemSource`/`ChangeOrderLineItemSource`
+row set step 4 mirrors (`InvoiceService._agreement_line_claimable_atoms`)
+— by how many of those atoms pass the billability gate:
+
+- **Zero claimable atoms, or none billable** → seeds at estimate values
+  with zero claims (steps 3-5 above naturally produce this — no special
+  case needed). A hand line, or a line whose only atoms are all still
+  in progress.
+- **ALL claimable atoms billable** → seeds with claims mirrored and
+  price re-derived from actuals (steps 4-5 above, unchanged) — a fully
+  worked bundle.
+- **SOME but not all billable** → the line is **skipped entirely**: no
+  `InvoiceLineItem` is created (`InvoiceService._agreement_line_backing_is_partial`,
+  checked before step 2). This is the state the first two bullets don't
+  cover, and seeding it anyway is exactly the bug this rule closes: a
+  bundle's full agreement description/qty seeded carrying a price
+  derived from just the done fraction of its backing (RM sighting: a
+  bundled per-unit line seeded carrying just its solo completed
+  outsourced task). A skipped line is not "consumed" in any way —
+  `remaining_agreement_lines` keys off live invoice-line references, and
+  no reference was ever written for it, so it genuinely reappears on the
+  next seed once the rest of its backing settles (e.g. the remaining
+  task completes). Its already-terminal atom(s) meanwhile stay
+  unclaimed — visible in `get_source_pool` as `available` — so a
+  deliberate manual pull of just that one atom (via
+  `add_atoms_to_new_line_item`/`add_atoms_to_line_item`, which enforce
+  the same billability gate) stays possible and prices sanely: a
+  single-atom pull is priced from that atom's own qty/rate, never a
+  fraction of the bundle's qty.
+
+This is a completeness rule, not a reconciliation-state rule — it
+composes with, and is unrelated to, the no-hard-block-from-reconciliation
+passage below: an outsourced task's PO reconciliation state never
+affects whether that task counts as "terminal" here, only its own
+`complete`/`cancelled` status does.
 
 A backed agreement line therefore arrives **already on `actuals`**
 (§"Backing model" below) whenever its work is ready, and priced from
@@ -415,6 +454,26 @@ one line (steps 3-5 above, including the actuals re-derivation). This is
 the **"add from agreement"** picker's backing call — it lists exactly
 the remaining lines not already on the draft — since 2026-08-12 the
 picker is the ONLY restore path (the in-table struck rows are gone).
+
+**Partial backing: restores at estimate basis, unlike seed (RM ruling
+2026-09-21 "rule 2").** `remaining_agreement_lines` — and so the
+picker — still offers a partially-backed line (§"The three-way
+completeness rule" above); it was never claimed, so it's never excluded.
+Restore is an explicit, one-at-a-time human choice off that picker, not
+an automatic sweep — RM's "must not auto-generate a partial line"
+objection is about `seed_from_agreement` silently doing this for every
+remaining line, which doesn't describe a human deliberately picking one
+line. But the underlying dishonesty the rule guards against (a bundle's
+full description/qty priced off just its done fraction) is exactly as
+real for an explicit restore as for an automatic seed, so the pick is
+honored on the SAME safe footing as a zero-billable line rather than on
+actuals: `restore_agreement_line` checks
+`_agreement_line_backing_is_partial` and, when true, skips **both**
+claim mirroring and actuals re-derivation — the line lands with zero
+claims, priced at its estimate value. Its terminal atom(s) stay
+unclaimed and pool-visible, same as the seed-skip path, so a deliberate
+manual pull of just the done atom is still available alongside the
+restored line.
 
 ### `remove_line(invoice, line_item)`
 
