@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -160,21 +160,26 @@ class ScheduleWorkCompleteHistoryTest(BaseTestCase):
         )
         self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
         self.task.save()
-        now = timezone.now()
+        # Midday anchor (not timezone.now()) so the -1h/-2h blep times can
+        # never fall before the schedule's local-midnight horizon_start,
+        # regardless of what time of day the suite runs.
+        self.now = timezone.make_aware(
+            datetime.combine(timezone.localdate(), time(12, 0))
+        )
         Blep.objects.create(
             user=self.worker,
             task=self.task,
-            start_time=now - timedelta(hours=2),
-            end_time=now - timedelta(hours=1),
+            start_time=self.now - timedelta(hours=2),
+            end_time=self.now - timedelta(hours=1),
         )
 
     def test_work_complete_job_absent_from_chip_strip(self):
-        result = ScheduleService.get_schedule(now=timezone.now())
+        result = ScheduleService.get_schedule(now=self.now)
         job_ids = [j['job_id'] for j in result['jobs']]
         self.assertNotIn(self.job.pk, job_ids)
 
     def test_work_complete_task_present_in_worker_lane(self):
-        result = ScheduleService.get_schedule(now=timezone.now())
+        result = ScheduleService.get_schedule(now=self.now)
         lane = next(
             (w for w in result['workers'] if w['user']['id'] == self.worker.pk),
             None,
@@ -186,7 +191,7 @@ class ScheduleWorkCompleteHistoryTest(BaseTestCase):
     def test_lane_bar_carries_job_number_and_name(self):
         """The bar is self-describing so the quick card doesn't need the job
         in the chip strip to show its number/name."""
-        result = ScheduleService.get_schedule(now=timezone.now())
+        result = ScheduleService.get_schedule(now=self.now)
         lane = next(
             w for w in result['workers'] if w['user']['id'] == self.worker.pk
         )
@@ -289,14 +294,19 @@ class ScheduleForecastScopeTest(BaseTestCase):
                         Job.STATUS_IN_PROGRESS)
         task = self._task(job, worker, Task.STATUS_BLOCKED,
                           blocked_reason='stuck')
-        now = timezone.now()
+        # Midday anchor (not timezone.now()) so the -1h/-2h blep times can
+        # never fall before the schedule's local-midnight horizon_start,
+        # regardless of what time of day the suite runs.
+        now = timezone.make_aware(
+            datetime.combine(timezone.localdate(), time(12, 0))
+        )
         Blep.objects.create(
             user=worker, task=task,
             start_time=now - timedelta(hours=2),
             end_time=now - timedelta(hours=1),
         )
 
-        result = ScheduleService.get_schedule(now=timezone.now())
+        result = ScheduleService.get_schedule(now=now)
         lane = next(
             (w for w in result['workers'] if w['user']['id'] == worker.pk), None
         )
@@ -589,7 +599,12 @@ class ScheduleWorkDrivenScopeTest(BaseTestCase):
         job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
                         Job.STATUS_IN_PROGRESS)
         task = self._task(job, worker, status=Task.STATUS_IN_PROGRESS)
-        now = timezone.now()
+        # Midday anchor (not timezone.now()) so the -1h/-2h blep times can
+        # never fall before the schedule's local-midnight horizon_start,
+        # regardless of what time of day the suite runs.
+        now = timezone.make_aware(
+            datetime.combine(timezone.localdate(), time(12, 0))
+        )
         Blep.objects.create(
             user=worker, task=task,
             start_time=now - timedelta(hours=2),
