@@ -465,6 +465,30 @@ class PurchaseOrderService:
             ]})
 
     @staticmethod
+    def _reject_job_change_on_task_line(li, new_job_id):
+        """Server defense for the PO Job/Task consolidation (RM
+        2026-09-21), the `change_line_job` half: a task-carrying line is
+        pure cost attribution and can never gain a job/material
+        attribution after the fact. Without this guard,
+        `MaterialService.resolve_or_create_for_line` ->
+        `_apply_po_line_cost` (`apps/inventory/services.py`) can mint a
+        lot and repoint `inventory_item` via a raw
+        `.save(update_fields=[...])` call that bypasses `full_clean()` —
+        silently persisting the same invalid task+inventory_item state
+        `_reject_task_with_procurement` exists to keep `add_line_item`/
+        `add_line_item_from_pli` from ever creating in the first place.
+
+        `new_job_id is None` (clearing the job) is left alone — a
+        task-carrying line never has a linked Material to begin with, so
+        that call is already a no-op.
+        """
+        if li.task_id is not None and new_job_id is not None:
+            raise ValidationError({'job': [
+                'This line attributes cost to a task and cannot procure '
+                'a material. Remove the task link first.'
+            ]})
+
+    @staticmethod
     def _resolve_material_for_line(li, job_id, material_id):
         """Common job/material resolution for newly-created PO lines.
 
@@ -580,6 +604,10 @@ class PurchaseOrderService:
         """Change a PO line's job attribution. Allowed on any non-cancelled PO
         as long as the linked Material (if any) is pending.
 
+        A task-carrying line (pure cost attribution, PO Job/Task
+        consolidation, RM 2026-09-21) rejects a non-null `new_job_id`
+        field-shaped on `job` — see `_reject_job_change_on_task_line`.
+
         If the line already has a linked Material, `sever_decision` ('keep'|'delete')
         is required. 'keep' unlinks the existing Material from the PO line (it stays
         on the old job); 'delete' removes the Material and backs out its earmark.
@@ -597,6 +625,7 @@ class PurchaseOrderService:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
         if li.purchase_order.status == PurchaseOrder.STATUS_CANCELLED:
             raise ValidationError('Cannot change job on a cancelled PO.')
+        PurchaseOrderService._reject_job_change_on_task_line(li, new_job_id)
 
         new_job_obj = None
         if new_job_id is not None:

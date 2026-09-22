@@ -242,7 +242,13 @@
             <td><UnitsSelect bind:value={editForm.units} /></td>
             <td><input type="number" bind:value={editForm.price} step="0.01" min="0" style="width:80px;text-align:right;"></td>
             <td class="text-right">${(Number(editForm.qty) * Number(editForm.price)).toFixed(2)}</td>
-            <td><JobPicker bind:value={editJobId} selectedItem={editJobRow} onSelect={(j) => { editJobRow = j; }} openOnly /></td>
+            <td>
+              {#if li.task_detail}
+                <small>Cost attributed to task — no job/material link</small>
+              {:else}
+                <JobPicker bind:value={editJobId} selectedItem={editJobRow} onSelect={(j) => { editJobRow = j; }} openOnly />
+              {/if}
+            </td>
             <td>
               {#if li.task_detail}
                 <a href="#/jobs/{li.task_detail.job_id}/tasks/{li.task_detail.task_id}">{li.task_detail.name}</a>
