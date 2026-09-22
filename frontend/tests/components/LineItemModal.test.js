@@ -66,6 +66,31 @@ describe('LineItemModal', () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  it('edit mode opens an existing comment line in comment mode and re-saves without corrupting it (regression guard — this surface passes the full item through, unlike CO)', async () => {
+    const onSaved = vi.fn();
+    const item = {
+      line_item_id: 9, description: 'See attached spec sheet', qty: '0', units: 'none', price: '0',
+      accounting_category: null, is_comment: true,
+    };
+    const { getByLabelText, getByRole, queryByLabelText } = render(LineItemModal, {
+      props: {
+        open: true, mode: 'edit', apiBase: '/api/estimates/7', item,
+        onSaved, categories: SAMPLE_CATEGORIES,
+      },
+    });
+    expect(getByLabelText(/Comment line/)).toBeChecked();
+    expect(queryByLabelText(/Quantity/)).not.toBeInTheDocument();
+    expect(queryByLabelText(/Accounting Category/)).not.toBeInTheDocument();
+
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(api.patch).toHaveBeenCalledWith('/api/estimates/7/line-items/9/', {
+      description: 'See attached spec sheet', is_comment: true,
+      qty: '0', units: 'none', price: '0', accounting_category: null,
+    });
+    expect(onSaved).toHaveBeenCalled();
+  });
+
   it('requires an accounting category in manual create mode', async () => {
     const onSaved = vi.fn();
     const { getByLabelText, getByRole, findByText } = render(LineItemModal, {

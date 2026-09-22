@@ -305,6 +305,71 @@ describe('COEditView Replace… gestures', () => {
   });
 });
 
+describe('COEditView Edit gestures on existing comment lines (is_comment wiring)', () => {
+  // co.line_items (the CO's own full serialized line list) is the source of
+  // truth for is_comment — the amended-agreement row dicts don't carry it.
+  const CO_WITH_COMMENTS = {
+    ...CO,
+    line_items: [
+      ...CO.line_items.map((li) => ({ ...li, is_comment: false })),
+    ],
+  };
+
+  it('Edit on a comment "replaced" row opens the modal in comment mode', async () => {
+    const co = {
+      ...CO_WITH_COMMENTS,
+      line_items: CO_WITH_COMMENTS.line_items.map((li) =>
+        li.line_item_id === 12 ? { ...li, is_comment: true } : li),
+    };
+    const { findByText, getByRole, getByLabelText, queryByLabelText } = render(COEditView, {
+      props: baseProps({ co, amended: amendedPayload([REPLACED_ROW]) }),
+    });
+    await findByText('Widget C v2');
+    await fireEvent.click(getByRole('button', { name: 'Edit' }));
+
+    expect(await findByText('Edit Line')).toBeInTheDocument();
+    expect(getByLabelText(/Comment line/)).toBeChecked();
+    expect(queryByLabelText(/Quantity/)).toBeNull();
+  });
+
+  it('Edit on a non-comment "replaced" row opens the modal unchecked (regression guard)', async () => {
+    const { findByText, getByRole, getByLabelText } = render(COEditView, {
+      props: baseProps({ co: CO_WITH_COMMENTS, amended: amendedPayload([REPLACED_ROW]) }),
+    });
+    await findByText('Widget C v2');
+    await fireEvent.click(getByRole('button', { name: 'Edit' }));
+
+    expect(await findByText('Edit Line')).toBeInTheDocument();
+    expect(getByLabelText(/Comment line/)).not.toBeChecked();
+    expect(getByLabelText(/Quantity/)).toHaveValue(5);
+  });
+
+  it('Edit on a comment "added" row opens the modal in comment mode, and Save round-trips is_comment without corrupting qty/price/AC', async () => {
+    const co = {
+      ...CO_WITH_COMMENTS,
+      line_items: CO_WITH_COMMENTS.line_items.map((li) =>
+        li.line_item_id === 13 ? { ...li, is_comment: true } : li),
+    };
+    const { findByText, getByRole, getByLabelText, queryByLabelText } = render(COEditView, {
+      props: baseProps({ co, amended: amendedPayload([ADDED_ROW]) }),
+    });
+    await findByText('Extra Item');
+    await fireEvent.click(getByRole('button', { name: 'Edit' }));
+
+    expect(await findByText('Edit Line')).toBeInTheDocument();
+    expect(getByLabelText(/Comment line/)).toBeChecked();
+    expect(queryByLabelText(/Quantity/)).toBeNull();
+    expect(queryByLabelText(/Accounting Category/)).toBeNull();
+
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(api.patch).toHaveBeenCalledWith('/api/change-orders/3/line-items/13/', {
+      description: 'Extra Item', is_comment: true,
+      qty: '0', units: 'none', price: '0', accounting_category: null,
+    });
+  });
+});
+
 describe('COEditView agreement-row nested atoms', () => {
   it("renders an agreement row's claimed atoms as read-only child rows", async () => {
     const row = agreementRow({

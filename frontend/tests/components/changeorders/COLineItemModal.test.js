@@ -103,6 +103,29 @@ describe('COLineItemModal — edit-fields variant (PATCH, gestures preset lineIt
     expect(getByLabelText(/Price/)).toHaveValue(60);
     expect(getByLabelText(/Accounting Category/)).toHaveValue('7');
   });
+
+  it('opens in comment mode from initialIsComment: checkbox checked, fields/AC hidden, and re-saving preserves is_comment', async () => {
+    const onSaved = vi.fn();
+    const { getByLabelText, getByRole, queryByLabelText } = render(COLineItemModal, {
+      props: {
+        open: true, variant: 'edit-fields', coId: 3, lineItemId: 13,
+        needsAccountingCategory: true, initialIsComment: true,
+        initialDescription: 'Note about scope', initialQty: '0', initialUnits: 'none', initialPrice: '0',
+        categories: cats, onSaved,
+      },
+    });
+    expect(getByLabelText(/Comment line/)).toBeChecked();
+    expect(queryByLabelText(/Quantity/)).toBeNull();
+    expect(queryByLabelText(/Accounting Category/)).toBeNull();
+
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(api.patch).toHaveBeenCalledWith('/api/change-orders/3/line-items/13/', {
+      description: 'Note about scope', is_comment: true,
+      qty: '0', units: 'none', price: '0', accounting_category: null,
+    });
+    expect(onSaved).toHaveBeenCalled();
+  });
 });
 
 describe('COLineItemModal — replace-prefill variant (POST, gestures preset targetLineItem)', () => {

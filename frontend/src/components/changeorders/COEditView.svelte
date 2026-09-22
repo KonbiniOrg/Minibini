@@ -81,20 +81,32 @@
   let modalInitialPrice = $state('');
   let modalInitialPercent = $state('');
   let modalInitialAC = $state('');
+  let modalInitialIsComment = $state(false);
 
   function handleModalSaved() {
     modalOpen = false;
     onChanged();
   }
 
+  /** Amended-agreement row dicts (compose_amended_agreement) don't carry
+      is_comment — the CO's own full line-item list (`co.line_items`, from
+      ChangeOrderLineItemSerializer) already has it authoritatively, so read
+      it from there rather than growing the agreement composition to
+      duplicate a field the parent CO object already provides. */
+  function coLineIsComment(coLineId) {
+    return (co.line_items || []).find((li) => li.line_item_id === coLineId)?.is_comment ?? false;
+  }
+
   /** 'agreement' row → [Replace…]: adjustment lines open the percent variant,
-      everything else opens replace-prefill seeded from the current line. */
+      everything else opens replace-prefill seeded from the current line.
+      Always a brand-new CO line, never an existing comment to restore. */
   function openReplace(row) {
     const line = row.line;
     modalLineItemId = null;
     modalTargetLineItem = line.estimate_line_id;
     modalInitialDescription = line.description || '';
     modalNeedsAC = false;
+    modalInitialIsComment = false;
     if (line.is_adjustment) {
       modalVariant = 'adjustment';
       modalInitialPercent = line.percent ?? '';
@@ -114,6 +126,7 @@
     modalTargetLineItem = null;
     modalInitialDescription = line.description || '';
     modalNeedsAC = false;
+    modalInitialIsComment = coLineIsComment(row.co_line_id);
     if (line.is_adjustment) {
       modalVariant = 'adjustment';
       modalInitialPercent = line.percent ?? '';
@@ -137,6 +150,7 @@
     modalInitialUnits = line.units || 'none';
     modalInitialPrice = line.price ?? '';
     modalInitialAC = line.accounting_category_id ?? '';
+    modalInitialIsComment = coLineIsComment(row.co_line_id);
     modalNeedsAC = true;
     modalOpen = true;
   }
@@ -434,6 +448,7 @@
   initialPrice={modalInitialPrice}
   initialPercent={modalInitialPercent}
   initialAccountingCategory={modalInitialAC}
+  initialIsComment={modalInitialIsComment}
   {categories}
   onSaved={handleModalSaved}
   onClose={() => { modalOpen = false; }}
