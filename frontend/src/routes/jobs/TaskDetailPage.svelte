@@ -472,6 +472,23 @@
     <p><button type="button" onclick={openAddMaterial}>Add Material</button></p>
   {/if}
 
+  <!-- Fix 2b (RM browser-testing): the reverse of the PO line's task chip
+       (PurchaseOrderDetail.svelte) — a task cost→sell attributed from a PO
+       line otherwise showed no trace of that link here. Only rendered when
+       at least one PO line attributes to this task (unlike Materials,
+       there's no "none" state worth stating). -->
+  {#if task.linked_po_lines?.length}
+    <h3>Purchase Orders</h3>
+    <ul class="po-links">
+      {#each task.linked_po_lines as pl (pl.line_item_id)}
+        <li>
+          <a href="#/purchase-orders/{pl.po_id}" use:link>{pl.po_number}</a>
+          <span class="status-badge status-{pl.po_status}">{pl.po_status.replace(/_/g, ' ')}</span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
   <MaterialModal
     open={matModalOpen}
     mode={matModalMode}
@@ -570,6 +587,9 @@
   .action-band :global(.actions) { display: contents; }
 
   .description { font-size: 14px; line-height: 1.6; max-width: 900px; }
+
+  .po-links { list-style: none; margin: 0 0 8px; padding: 0; font-size: 14px; }
+  .po-links li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
 
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;

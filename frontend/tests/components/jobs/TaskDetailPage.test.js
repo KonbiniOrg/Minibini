@@ -325,6 +325,29 @@ describe('TaskDetailPage action band', () => {
   });
 });
 
+describe('TaskDetailPage linked purchase orders (fix 2b)', () => {
+  it('shows a Purchase Orders note linking to each PO when the task has linked PO lines', async () => {
+    mockApi({
+      linked_po_lines: [
+        { line_item_id: 1, po_id: 8, po_number: 'PO-0008', po_status: 'issued' },
+      ],
+    });
+    const { findByRole, getByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByRole('heading', { name: 'Purchase Orders' })).toBeInTheDocument();
+    const link = getByRole('link', { name: 'PO-0008' });
+    expect(link).toHaveAttribute('href', '#/purchase-orders/8');
+    expect(getByText('issued')).toBeInTheDocument();
+  });
+
+  it('hides the Purchase Orders section when the task has no linked PO lines', async () => {
+    mockApi({ linked_po_lines: [] });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('heading', { name: 'Purchase Orders' })).toBeNull();
+  });
+});
+
 describe('TaskDetailPage section order', () => {
   it('runs Description → Materials → Work Sessions, with Add Entry available', async () => {
     mockApi({ description: 'Cut the panels' });

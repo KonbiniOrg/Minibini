@@ -104,7 +104,13 @@ describe('LineItemForm', () => {
     await new Promise((r) => setTimeout(r, 300));
     await fireEvent.mouseDown(await findByRole(container, 'button', { name: /JOB-5/ }));
     await new Promise((r) => setTimeout(r));
-    await fireEvent.change(container.querySelector('select[aria-label="Task"]'), { target: { value: '10' } });
+
+    // Task field is a filter-as-you-type SearchPicker now (fix 3), not a
+    // plain <select>.
+    const taskInput = container.querySelector('input[placeholder="Search tasks…"]');
+    await fireEvent.input(taskInput, { target: { value: 'Outsourced' } });
+    await new Promise((r) => setTimeout(r, 300));
+    await fireEvent.mouseDown(await findByRole(container, 'button', { name: 'Outsourced work' }));
 
     await fireEvent.click(getByRole('button', { name: 'Add' }));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ task: 10 }));

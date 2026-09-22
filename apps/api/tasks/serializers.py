@@ -431,9 +431,12 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
 class TaskDetailSerializer(TaskSerializer):
     job = serializers.SerializerMethodField()
     blep_minimum_minutes = serializers.SerializerMethodField()
+    linked_po_lines = serializers.SerializerMethodField()
 
     class Meta(TaskSerializer.Meta):
-        fields = TaskSerializer.Meta.fields + ['job', 'blep_minimum_minutes']
+        fields = TaskSerializer.Meta.fields + [
+            'job', 'blep_minimum_minutes', 'linked_po_lines',
+        ]
 
     def get_job(self, obj):
         job = obj.job
@@ -447,3 +450,24 @@ class TaskDetailSerializer(TaskSerializer):
     def get_blep_minimum_minutes(self, obj):
         from apps.jobs.services import blep_minimum_minutes
         return blep_minimum_minutes()
+
+    def get_linked_po_lines(self, obj):
+        """Fix 2b (RM browser-testing): the reverse of `task_detail` on
+        POLineItemSerializer — a task's own detail page shows which PO(s)
+        cost→sell attribute to it. Detail-only (TaskDetailSerializer, not
+        the base TaskSerializer used in job task lists), so no per-row
+        N+1 risk in list contexts."""
+        from apps.purchasing.models import PurchaseOrderLineItem
+        lines = (PurchaseOrderLineItem.objects
+                 .filter(task=obj)
+                 .select_related('purchase_order')
+                 .order_by('purchase_order_id', 'line_number'))
+        return [
+            {
+                'line_item_id': li.pk,
+                'po_id': li.purchase_order_id,
+                'po_number': li.purchase_order.po_number,
+                'po_status': li.purchase_order.status,
+            }
+            for li in lines
+        ]

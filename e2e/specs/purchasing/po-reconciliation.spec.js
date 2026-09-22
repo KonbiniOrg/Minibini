@@ -115,10 +115,13 @@ test('PO task-link -> issue -> receive -> reconcile -> rate prompt -> invoice ac
     const picker = page.locator('.task-link-picker');
     await picker.getByPlaceholder('Search jobs…').fill(job.job_number);
     await page.getByRole('listbox').getByRole('button', { name: job.job_number }).click();
-    const taskSelect = picker.getByLabel('Task');
-    await expect(taskSelect).toBeEnabled();
-    await expect(taskSelect.getByRole('option', { name: taskName })).toHaveCount(1);
-    await taskSelect.selectOption({ label: taskName });
+
+    // Task field (fix 3): filter-as-you-type SearchPicker, not a plain
+    // <select> of every one of the job's tasks.
+    const taskInput = picker.getByPlaceholder('Search tasks…');
+    await expect(taskInput).toBeEnabled();
+    await taskInput.fill(taskName);
+    await page.getByRole('listbox').getByRole('button', { name: taskName }).click();
 
     await page.getByRole('button', { name: 'Add', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Add Line Item' })).toBeVisible();
@@ -134,6 +137,27 @@ test('PO task-link -> issue -> receive -> reconcile -> rate prompt -> invoice ac
     const li2 = reloaded.line_items.find((li) => li.description === line2Desc);
     expect(li1.task).toBe(task1.task_id);
     expect(li2.task).toBe(task2.task_id);
+  });
+
+  await test.step('Fix 2a: each line\'s task chip is visible on the PO detail page, linking to its task', async () => {
+    const line1Row = page.locator('tr', { hasText: line1Desc });
+    const chip1 = line1Row.locator('a.task-chip');
+    await expect(chip1).toBeVisible();
+    await expect(chip1).toHaveText(task1Name);
+    await expect(chip1).toHaveAttribute('href', `#/jobs/${job.job_id}/tasks/${task1.task_id}`);
+
+    const line2Row = page.locator('tr', { hasText: line2Desc });
+    const chip2 = line2Row.locator('a.task-chip');
+    await expect(chip2).toBeVisible();
+    await expect(chip2).toHaveText(task2Name);
+  });
+
+  await test.step('Fix 2b: the task detail page shows a Purchase Orders note back to this PO', async () => {
+    await page.goto(`/#/jobs/${job.job_id}/tasks/${task1.task_id}`);
+    await expect(page.getByRole('heading', { name: 'Purchase Orders' })).toBeVisible();
+    const poLink = page.locator('.po-links').getByRole('link', { name: po.po_number });
+    await expect(poLink).toBeVisible();
+    await expect(poLink).toHaveAttribute('href', `#/purchase-orders/${po.po_id}`);
   });
 
   await test.step('Awaiting-reconciliation badge is absent before receiving', async () => {

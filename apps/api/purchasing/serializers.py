@@ -17,11 +17,12 @@ class POLineItemSerializer(serializers.ModelSerializer):
     effective_job_id = serializers.SerializerMethodField()
     effective_job_number = serializers.SerializerMethodField()
     material = serializers.SerializerMethodField()
+    task_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseOrderLineItem
         fields = [
-            'line_item_id', 'line_number', 'task', 'inventory_item',
+            'line_item_id', 'line_number', 'task', 'task_detail', 'inventory_item',
             'qty', 'units', 'description', 'price',
             'effective_job_id', 'effective_job_number', 'material',
             'accounting_category',
@@ -32,7 +33,7 @@ class POLineItemSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'line_item_id', 'qty_received', 'received_by', 'received_by_name',
             'received_date', 'receipt_note', 'qty_cancelled',
-            'effective_job_id', 'effective_job_number', 'material',
+            'effective_job_id', 'effective_job_number', 'material', 'task_detail',
             # `final_price` and `invoice_only` are reconciliation-owned
             # (task-owned-money Phase 5 / outsourced-work port) — the
             # sanctioned write path is PurchaseOrderService.reconcile(),
@@ -67,6 +68,22 @@ class POLineItemSerializer(serializers.ModelSerializer):
             'consumption_state': mat.consumption_state,
             'job_id': mat.job_id,
             'job_number': mat.job.job_number,
+        }
+
+    def get_task_detail(self, obj):
+        """Display-only nested shape for a task-linked line (Fix 2a,
+        RM browser-testing: the link was invisible — no display of it
+        anywhere on the PO). Mirrors `material`'s nested-display
+        convention above rather than adding flat `task_name`/
+        `task_job_number` fields."""
+        task = obj.task
+        if task is None:
+            return None
+        return {
+            'task_id': task.pk,
+            'name': task.name,
+            'job_id': task.job_id,
+            'job_number': task.job.job_number,
         }
 
 

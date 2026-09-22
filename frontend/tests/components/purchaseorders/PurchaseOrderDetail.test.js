@@ -61,4 +61,27 @@ describe('PurchaseOrderDetail', () => {
     await fireEvent.click(getByRole('button', { name: 'Mark as Issued' }));
     expect(onIssue).toHaveBeenCalled();
   });
+
+  it('shows a task chip linking to the task detail page when a line is task-linked (fix 2a)', () => {
+    const withTask = po();
+    withTask.line_items[0].task = 9;
+    withTask.line_items[0].task_detail = {
+      task_id: 9, name: 'Mill part', job_id: 4, job_number: 'JOB-4',
+    };
+    const { getByRole, getByText } = render(PurchaseOrderDetail, {
+      props: { po: withTask, canManageFinancials: true },
+    });
+    const link = getByRole('link', { name: /Mill part/ });
+    expect(link).toHaveAttribute('href', '#/jobs/4/tasks/9');
+    expect(getByText('JOB-4')).toBeInTheDocument();
+  });
+
+  it('shows a dash in the Task column when a line has no task link', () => {
+    const { getAllByRole } = render(PurchaseOrderDetail, {
+      props: { po: po(), canManageFinancials: true },
+    });
+    // No task-detail links anywhere in the table.
+    const links = getAllByRole('link').filter((a) => a.className === 'task-chip');
+    expect(links).toHaveLength(0);
+  });
 });
