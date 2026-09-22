@@ -484,6 +484,11 @@ class PurchaseOrderService:
                 'This field is set automatically during PO reconciliation '
                 'and cannot be supplied directly.'
             ]})
+        if 'final_price' in kwargs:
+            raise ValidationError({'final_price': [
+                'This field is set automatically during PO reconciliation '
+                'and cannot be supplied directly.'
+            ]})
 
         # Pop transient params before they hit the model constructor
         job_id = kwargs.pop('job', None)
@@ -579,13 +584,34 @@ class PurchaseOrderService:
 
     @staticmethod
     def update_line_item(line_item_id, **kwargs):
-        """Update a PO line item — validates draft status."""
+        """Update a PO line item — validates draft status.
+
+        `invoice_only` and `final_price` are reconciliation-owned — both are
+        set server-side only by `reconcile()`'s appended_lines path, and are
+        never valid caller input here. The line-item PATCH endpoint
+        (`apps/api/purchasing/views.py::line_item_detail`) passes raw
+        `request.data` straight into this method, so the serializer's
+        read-only declaration on these fields never applies; the guard has
+        to live here too (mirrors `add_line_item`'s guard, spec ruling 4).
+        """
         from apps.core.services import LineItemService
         try:
             li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
         except PurchaseOrderLineItem.DoesNotExist:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
         PurchaseOrderService._validate_draft(li.purchase_order)
+
+        if 'invoice_only' in kwargs:
+            raise ValidationError({'invoice_only': [
+                'This field is set automatically during PO reconciliation '
+                'and cannot be supplied directly.'
+            ]})
+        if 'final_price' in kwargs:
+            raise ValidationError({'final_price': [
+                'This field is set automatically during PO reconciliation '
+                'and cannot be supplied directly.'
+            ]})
+
         kwargs = LineItemService.normalize_fk_kwargs(PurchaseOrderLineItem, kwargs)
         for field, value in kwargs.items():
             setattr(li, field, value)

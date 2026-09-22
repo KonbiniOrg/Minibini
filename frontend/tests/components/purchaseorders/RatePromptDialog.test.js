@@ -117,13 +117,21 @@ describe('RatePromptDialog — has_active_modifiers note (outsourced-work port r
   });
 });
 
-describe('RatePromptDialog — wire-format decimals (API returns Decimal fields as strings)', () => {
+describe('RatePromptDialog — wire-format decimals (compute_rate_prompts values reach the client as JSON numbers)', () => {
   // apps/api/purchasing/views.py hands compute_rate_prompts' dict straight to
-  // Response(); DRF's JSON renderer coerces Decimal to string. The dialog
-  // must render that string faithfully and PATCH the exact string back —
-  // never round-trip it through Number(), which risks trailing-zero loss
-  // or float drift on values like '99.90'.
-  it('renders a string suggested_rate with trailing zeros intact', () => {
+  // Response(); these Decimal values are NOT run through a serializer
+  // DecimalField, so DRF's JSON encoder falls back to its bare-Decimal case
+  // (rest_framework/utils/encoders.py: `float(obj)`) and they arrive on the
+  // wire as ordinary JSON numbers, not strings. At 2 decimal places that
+  // number round-trips exactly (e.g. 99.90 survives float encode/decode
+  // losslessly), so there's no precision hazard here. The dialog never
+  // inspects or converts the type either way — `accept()` PATCHes back
+  // exactly the value it received (`rate: prompt.suggested_rate`) — so this
+  // suite fixes the prompt values as strings only as a convenient, type-
+  // agnostic way to prove that pass-through-without-coercion behavior;
+  // production payloads are numbers, and the component works identically
+  // either way.
+  it('renders a suggested_rate with trailing zeros intact', () => {
     const { getByText } = render(RatePromptDialog, {
       props: { prompts: prompts({ current_rate: '45.00', suggested_rate: '99.90' }), onClose: vi.fn() },
     });
@@ -131,7 +139,7 @@ describe('RatePromptDialog — wire-format decimals (API returns Decimal fields 
     expect(getByText('$99.90')).toBeInTheDocument();
   });
 
-  it('PATCHes the suggested_rate string byte-for-byte, not a coerced Number', async () => {
+  it('PATCHes back exactly the suggested_rate value it received, uncoerced', async () => {
     api.get.mockResolvedValue({ task_id: 10, job: { id: 5 } });
     api.patch.mockResolvedValue({});
     const { getByRole } = render(RatePromptDialog, {

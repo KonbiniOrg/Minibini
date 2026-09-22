@@ -1058,10 +1058,17 @@ class JobDetailInvoiceFieldTest(TestCase):
         # offer the manual approved -> in_progress edge only on jobs with no
         # accepted estimate (mirrors JobService.update_job's guard) — distinct
         # from has_estimates (any estimate, any status).
+        # +2 for `linked_po_variances` (outsourced-work port, Task 4,
+        # 2026-09-21): apps.jobs.financials._linked_po_variances runs two
+        # discovery queries to find POs linked to this job — one over
+        # PurchaseOrderLineItem.task__job, one over Material.job +
+        # po_line_item — before the (possibly-empty) per-PO totals loop.
+        # This job has no linked POs, so the loop itself adds nothing; the
+        # per-PO cost when POs ARE linked is covered by the N+1 LATER note.
         # If the jobs viewset gains new prefetches/annotations this number may need
         # updating — update it together with a comment explaining why the count changed.
         self.assertEqual(
-            count_one, 17,
-            f'Absolute query count for job-detail changed: expected 17, got {count_one}. '
+            count_one, 19,
+            f'Absolute query count for job-detail changed: expected 19, got {count_one}. '
             f'Update this pin if the viewset legitimately changed (add a comment explaining why).',
         )

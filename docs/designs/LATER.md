@@ -1445,10 +1445,23 @@ Cross-cutting UI/API conventions and shared components.
   rather than one batched lookup. Only runs once per reconcile call and
   a PO's line count is small in practice, so this isn't urgent, but it's
   the same shape of gap other N+1 entries in this doc track.
+  Same shape, separate call site: `_linked_po_variances`
+  (`apps/jobs/financials.py`, job-detail's `linked_po_variances` field)
+  runs two discovery queries up front (fine — fixed cost regardless of PO
+  count), but then loops `PurchaseOrder.objects.filter(pk__in=po_ids)`
+  and for each PO re-queries `PurchaseOrderLineItem` (linked job ids via
+  `task__job`) and `Material` (linked job ids via `po_line_item`) to
+  compute `multi_job` — two more queries per linked PO. A job linked to
+  several POs pays 2 + 2N queries on every job-detail fetch.
   _Done when:_ `compute_rate_prompts` resolves invoiced-ness for all
   qualifying lines in one query (e.g. reusing `InvoiceClaimService`'s
   batch `_map`/`claims_for_job`-style helper instead of per-row
-  `is_invoiced`), verified with `assertNumQueries` or similar.
+  `is_invoiced`), verified with `assertNumQueries` or similar; and
+  `_linked_po_variances` batches its per-PO `multi_job` lookups (e.g. one
+  `values_list('purchase_order_id', 'task__job_id')` /
+  `values_list('po_line_item__purchase_order_id', 'job_id')` pair grouped
+  in Python instead of a query per PO), also verified with
+  `assertNumQueries`.
 
 - **Rate-prompt Accept 400s on an already-complete task (RM to rule).**
   — _added 2026-09-21 (outsourced-work port Task 7/8)_
@@ -1473,3 +1486,24 @@ Cross-cutting UI/API conventions and shared components.
   acceptable, given a per-row error + Retry is at least not a crash).
   _Done when:_ RM rules on (a), (b), or "leave it," and (if a) or (b)) the
   fix ships with a test covering a reconcile-after-complete rate prompt.
+
+- **`ReconciliationSection`'s in-place update of a persisted invoice_only
+  line can't clear `accounting_category`/`task`.** — _added 2026-09-21
+  (outsourced-work port final review)_
+  `ReconciliationSection.svelte` builds each `appended_lines` entry by only
+  adding `accounting_category`/`task` keys when the row value is truthy
+  (`if (row.accounting_category) entry.accounting_category = ...`; same for
+  `task`), so clearing either field on an already-saved invoice_only row
+  (blanking the select / unlinking the task) omits the key from the PATCH
+  payload entirely rather than sending an explicit clear. The backend's
+  in-place update path only sets keys actually present in the payload, so
+  an omitted key leaves the old value untouched — the field silently fails
+  to clear. This is faithful to fees' original behavior (same
+  falsy-key-omission pattern), not a regression introduced by the port, but
+  it's a small dent in reconciliation's "complete, current statement of the
+  bill's invoice_only detail" contract (see `reconcile()`'s docstring).
+  _Done when:_ clearing either field on a saved invoice_only row round-trips
+  (e.g. the frontend always sends the key, using `null`/`''` to mean
+  "clear", and the backend in-place update path honors an explicit
+  null/empty distinctly from "not provided") — or RM rules the current
+  behavior is fine as-is.

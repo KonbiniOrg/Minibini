@@ -1067,6 +1067,60 @@ class AddLineItemInvoiceOnlyGuardTest(POReconciliationTestBase):
         )
         self.assertFalse(li.invoice_only)
 
+    def test_add_line_item_rejects_final_price(self):
+        """final_price is reconciliation-owned too (spec ruling 4 /
+        final-review item 2) — a manual line-create must not be able to
+        pre-seed it, matching the invoice_only guard's stance."""
+        po = PurchaseOrder.objects.create(business=self.business)  # draft
+        with self.assertRaises(ValidationError) as ctx:
+            PurchaseOrderService.add_line_item(
+                po.pk, description='Sneaky', qty=Decimal('1.00'),
+                price=Decimal('5.00'), accounting_category=self.cat.pk,
+                final_price=Decimal('4.00'),
+            )
+        self.assertIn('final_price', ctx.exception.message_dict)
+        self.assertFalse(
+            PurchaseOrderLineItem.objects.filter(purchase_order=po).exists()
+        )
+
+
+class UpdateLineItemGuardTest(POReconciliationTestBase):
+    """Final-review item 1: `PurchaseOrderService.update_line_item` is the
+    service behind the line-item PATCH endpoint
+    (`apps/api/purchasing/views.py::line_item_detail`), which passes raw
+    `request.data` straight through — the serializer's read-only
+    declaration on `invoice_only`/`final_price` never applies because the
+    view bypasses serializer validation entirely on write. Both fields are
+    reconciliation-owned (set only by `reconcile()`), so the guard has to
+    live in the service, mirroring `add_line_item`'s existing guard."""
+
+    def test_update_line_item_rejects_invoice_only(self):
+        po = PurchaseOrder.objects.create(business=self.business)  # draft
+        li = self._make_line(po)
+        with self.assertRaises(ValidationError) as ctx:
+            PurchaseOrderService.update_line_item(li.pk, invoice_only=True)
+        self.assertIn('invoice_only', ctx.exception.message_dict)
+        li.refresh_from_db()
+        self.assertFalse(li.invoice_only)
+
+    def test_update_line_item_rejects_final_price(self):
+        po = PurchaseOrder.objects.create(business=self.business)  # draft
+        li = self._make_line(po)
+        with self.assertRaises(ValidationError) as ctx:
+            PurchaseOrderService.update_line_item(li.pk, final_price=Decimal('4.00'))
+        self.assertIn('final_price', ctx.exception.message_dict)
+        li.refresh_from_db()
+        self.assertIsNone(li.final_price)
+
+    def test_update_line_item_without_reconciliation_fields_still_works(self):
+        po = PurchaseOrder.objects.create(business=self.business)  # draft
+        li = self._make_line(po)
+        updated = PurchaseOrderService.update_line_item(
+            li.pk, description='Renamed', price=Decimal('12.34'),
+        )
+        self.assertEqual(updated.description, 'Renamed')
+        self.assertEqual(updated.price, Decimal('12.34'))
+
 
 class RatePromptsTest(POReconciliationTestBase):
     """PurchaseOrderService.compute_rate_prompts (spec §7 rule 4,
