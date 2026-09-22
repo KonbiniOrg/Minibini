@@ -5,20 +5,28 @@
 // (quoted sell rate typed at creation, §3.6c create-time money override) ->
 // a PO with task-linked lines (the Task Link picker, TaskLinkPicker.svelte,
 // is new UI on this branch) -> issue -> receive-all -> the
-// awaiting-reconciliation badge + list filter -> reconcile (bill total,
-// vendor ref, per-line finals on both linked lines, an invoice-only
-// appended freight line, the persisted-removal notice) -> the resulting
-// task-rate prompt (Accept on the task whose line got a final that should
-// change its rate; Decline on the other, same "cheapest arrangement
-// covering both branches" fees used) -> the CURRENT-branch final assertion:
-// starting an invoice job-side AFTER the accept re-derives the backed
-// line's price from the task's NEW rate (InvoiceService.
-// _rederive_price_from_actuals, apps/invoicing/services.py:568) — NOT
-// "the invoice wizard reads the task rate live" (fees' framing; that read
-// path doesn't exist here — seed_from_agreement always re-derives a
-// claimed line's price from its atoms' CURRENT actuals at seed time, so
-// any rate change made before the invoice exists lands in the seeded
-// price for free).
+// awaiting-reconciliation badge + list filter -> complete both tasks
+// (settle-up qty) -> reconcile (bill total, vendor ref, per-line finals on
+// both linked lines, an invoice-only appended freight line, the
+// persisted-removal notice) -> the resulting task-rate prompt (Accept on
+// the task whose line got a final that should change its rate; Decline on
+// the other, same "cheapest arrangement covering both branches" fees used)
+// -> the CURRENT-branch final assertion: starting an invoice job-side
+// AFTER the accept re-derives the backed line's price from the task's NEW
+// rate (InvoiceService._rederive_price_from_actuals, apps/invoicing/
+// services.py:568) — NOT "the invoice wizard reads the task rate live"
+// (fees' framing; that read path doesn't exist here — seed_from_agreement
+// always re-derives a claimed line's price from its atoms' CURRENT
+// actuals at seed time, so any rate change made before the invoice exists
+// lands in the seeded price for free).
+//
+// Ordering note (RM ruling 2026-09-21, resolves LATER.md "rate-prompt
+// Accept fails on complete tasks"): both tasks complete BEFORE reconcile —
+// the realistic ordering for outsourced work (receive -> complete task ->
+// bill arrives -> reconcile -> accept the reprice). JobService.update_task
+// now carves out exactly this rate-only write on a COMPLETE, uninvoiced,
+// PO-linked task, so Accept's PATCH no longer needs the tasks left open as
+// a workaround.
 //
 // One continuous test.step() flow (same convention as
 // specs/task-view-bundling/co-lens.spec.js): every section after the first
@@ -93,12 +101,6 @@ test('PO task-link -> issue -> receive -> reconcile -> rate prompt -> invoice ac
   const jobDetail = await api.get(`/api/jobs/${job.job_id}/`);
   expect(jobDetail.status).toBe('in_progress'); // both lines atom-sourced -- auto-releases
 
-  // task1 stays pending/in_progress through the whole PO flow below —
-  // TaskLifecycleService.update_task freezes a COMPLETE task's billing
-  // inputs ("corrections belong on the invoice"), which would 400 the
-  // rate prompt's own PATCH — so completion (§8-equivalent, not the flow
-  // under test) happens later, right before the invoice is started,
-  // mirroring fees' own ordering.
   const po = await api.post('/api/purchase-orders/', { business: business.business_id });
 
   const line1Desc = `${stamp} outsourced line 1`;
@@ -153,6 +155,14 @@ test('PO task-link -> issue -> receive -> reconcile -> rate prompt -> invoice ac
     await page.getByRole('button', { name: 'Receive All' }).click();
     await expect(page.locator('.status-badge')).toHaveText('received in full');
     await dismissOverlay(page);
+  });
+
+  await test.step('Complete both tasks (settle-up qty) before reconciling -- the realistic ordering for outsourced work: receive, complete, bill arrives, reconcile, accept the reprice (RM ruling 2026-09-21 -- JobService.update_task carves out exactly this rate write)', async () => {
+    // add_qty matches each task's own est_qty exactly, so actual_qty pins
+    // to 1 and compute_amount() (actual_qty x effective_rate) stays
+    // deterministic for the final assertion below.
+    await api.post(`/api/tasks/${task1.task_id}/complete/`, { add_qty: '1' });
+    await api.post(`/api/tasks/${task2.task_id}/complete/`, { add_qty: '1' });
   });
 
   await test.step('Awaiting-reconciliation badge shows on the list, and the filter finds it', async () => {
@@ -269,12 +279,8 @@ test('PO task-link -> issue -> receive -> reconcile -> rate prompt -> invoice ac
 
   await test.step('Starting an invoice AFTER the accept seeds the backed line already re-derived onto task1\'s NEW rate', async () => {
     const check = await apiAs(personas.finjobs);
-    // Completing the task isn't the flow under test -- task completion is
-    // the billability gate, same precedent as specs/invoice-skeleton/
-    // seeded-invoice.spec.js's task completions. add_qty matches task1's
-    // own est_qty exactly, so actual_qty pins to 1 and compute_amount()
-    // (actual_qty x effective_rate) is deterministic below.
-    await check.post(`/api/tasks/${task1.task_id}/complete/`, { add_qty: '1' });
+    // task1 was already completed above (before reconcile, the realistic
+    // ordering) -- just read back its now-accepted rate.
     const t1 = await check.get(`/api/tasks/${task1.task_id}/`);
     await check.dispose();
     // actual_qty(1) x effective_rate -- InvoiceService._rederive_price_from_actuals

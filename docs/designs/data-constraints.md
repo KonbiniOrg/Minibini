@@ -909,6 +909,23 @@ Valid transitions:
 - All Tasks on a Job terminal → `TaskLifecycleService._check_job_work_complete`
   walks the Job toward `work_complete` (silent-fail on loose pending
   task-less Materials; see §2.6, §2.7).
+- **Terminal money freeze, with one exception (RM ruling 2026-09-21)**:
+  `JobService.update_task` rejects any field write other than `sort_order`
+  once a Task is terminal (`complete` or `cancelled`) — "Its work and
+  billing are settled; corrections belong on the invoice." The sole
+  exception: a request touching **only** `rate` is permitted when, at
+  write time, the task is **not** claimed by any live invoice
+  (`InvoiceClaimService.is_invoiced(SOURCE_TASK, task.pk)` is `False`)
+  **and** at least one `PurchaseOrderLineItem` links to the task
+  (`PurchaseOrderLineItem.objects.filter(task=task).exists()`). Both
+  `complete` and `cancelled` qualify — a cancelled task's recorded
+  actuals stay billable (§2.9's terminal-Bleps-closed constraint doesn't
+  make it unbillable), so it carries the same vendor-reprice claim as a
+  completed one. A request that touches `rate` plus any other field, or
+  a task failing either the invoice or PO-link condition, gets the full
+  rejection above. This is the money-write's WHEN gate only — the
+  existing WHO gate (`CanManageJobOrPM`/`can_manage_financials`,
+  `TaskSerializer.MONEY_FIELDS`) is unchanged.
 
 ---
 

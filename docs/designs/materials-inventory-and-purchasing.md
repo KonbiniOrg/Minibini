@@ -1126,15 +1126,32 @@ reconcile, and never mutates a task itself:
   `PATCH /api/jobs/{job_id}/tasks/{task_id}/ {rate: suggested_rate}` —
   the *existing* money-gated task-update path (`TaskSerializer.MONEY_FIELDS`,
   `jobs-and-tasks.md`). There is no dedicated "accept" endpoint.
-- **A terminal (complete/cancelled) task's PATCH 400s.**
-  `TaskLifecycleService`/`JobService.update_task` freezes a terminal
-  task's billing inputs ("Its work and billing are settled; corrections
-  belong on the invoice." — `apps/jobs/services.py`), and
-  `compute_rate_prompts` does not exclude terminal tasks from
-  qualifying. In the realistic ordering (receive → complete → bill →
-  reconcile) this rarely bites, but a reconcile that lands after a task
-  is already complete offers a prompt whose Accept then 400s. Tracked
-  in `docs/designs/LATER.md` (RM to rule on the fix).
+- **A terminal task's Accept PATCH is permitted, narrowly** (RM ruling
+  2026-09-21, resolving the earlier honest gap tracked in
+  `docs/designs/LATER.md`). `JobService.update_task`'s terminal freeze
+  ("Its work and billing are settled; corrections belong on the
+  invoice.") gets one exception: a `rate`-ONLY write on a task whose
+  status is COMPLETE **or** CANCELLED is allowed when the task is not
+  yet claimed by a live invoice AND has at least one linked
+  `PurchaseOrderLineItem`. Every other field on a terminal task, and
+  every field on any task claimed by an invoice, stays frozen; ordinary
+  (non-PO-linked) terminal tasks are entirely unchanged. Rationale, two
+  halves:
+  - For vendor-borne (outsourced) work, the economics settle at the
+    vendor bill, not at task completion — the realistic ordering is
+    receive → complete task → bill arrives → reconcile → accept the
+    reprice, which is exactly `RatePromptDialog.svelte`'s Accept PATCH.
+  - Cancelled is included, not just complete: a cancelled task's
+    recorded actuals stay billable (`invoicing-and-expenses.md` — the
+    billability line is "terminal, not complete"), so a cancelled
+    outsourced task the vendor partially performed and billed carries
+    the same legitimate reprice claim as a completed one.
+  This changes WHEN a rate write is allowed, not WHO — the serializer's
+  money-permission gate (manager/PM/financials) still applies unchanged
+  on top of it. `compute_rate_prompts` itself needed no terminal-status
+  skip: a prompt only exists when the line already carries a
+  `final_price`, i.e. the vendor actually billed it, on either a
+  complete or cancelled task alike.
 - **Decline** is purely local frontend state (`rowState[task_id] =
   {status: 'declined'}`) — no API call at all, nothing to reverse.
   Every reconcile call recomputes `rate_prompts` fresh from current
@@ -1692,6 +1709,3 @@ implementation, two placements. See `estimates-and-prices.md` §6.4 and
   `bill_total`/`vendor_invoice_ref`/`final_price` by hand today; a future
   pass could pull the vendor bill from QBO and pre-fill/match instead —
   see `quickbooks-integration.md`'s "Bills stay in QBO" note.
-- **Rate-prompt Accept can 400 on an already-complete task** (§10a's
-  terminal-money-freeze note) — tracked in `docs/designs/LATER.md`, RM
-  to rule on the fix.

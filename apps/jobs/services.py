@@ -1188,7 +1188,10 @@ class TaskService:
         Editability matrix (C1): pending is open to any authenticated user;
         in_progress/blocked require the manager atom, the job's PM, or the
         task's ASSIGNEE (checked when `user` is passed — the API always
-        passes it; internal callers may omit it); terminal is frozen.
+        passes it; internal callers may omit it); terminal is frozen, EXCEPT
+        a `rate`-only write on a TERMINAL (complete OR cancelled), uninvoiced,
+        PO-linked task (RM ruling 2026-09-21 — see the freeze check below for
+        the rationale).
         """
         try:
             task = Task.objects.get(pk=pk)
@@ -1198,12 +1201,45 @@ class TaskService:
         # A terminal task is frozen: its work and billing inputs are settled.
         # sort_order is cosmetic (list position) and stays editable so a
         # list containing a terminal task can still be reordered.
-        if (task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
-                and set(kwargs) - {'sort_order'}):
-            raise ValidationError(
-                f'Cannot edit a {task.status} task. Its work and billing are '
-                f'settled; corrections belong on the invoice.'
-            )
+        #
+        # RM ruling 2026-09-21 (LATER.md "rate-prompt Accept fails on
+        # complete tasks"): one narrow exception. A `rate`-ONLY write on a
+        # TERMINAL task (complete OR cancelled) is allowed when the task is
+        # not yet claimed by a live invoice AND has at least one linked
+        # PurchaseOrderLineItem. Rationale, two halves:
+        #   - For vendor-borne (outsourced) work, the economics settle at
+        #     the vendor bill, not at task completion — the realistic
+        #     ordering is receive -> complete task -> bill arrives ->
+        #     reconcile -> accept the reprice
+        #     (PurchaseOrderService.compute_rate_prompts's Accept gesture is
+        #     exactly this PATCH; see docs/designs/materials-inventory-and-
+        #     purchasing.md §10a).
+        #   - Cancelled is included, not just complete: a cancelled task's
+        #     recorded actuals stay billable (invoicing-and-expenses.md
+        #     ~L372 — the billability line is "terminal, not complete"), so
+        #     a cancelled outsourced task the vendor partially performed and
+        #     billed has the same legitimate reprice claim as a completed
+        #     one.
+        # This changes WHEN a rate write is allowed, not WHO — the
+        # serializer's money-permission gate (manager/PM/financials) still
+        # applies unchanged on top of this.
+        dirty_fields = set(kwargs) - {'sort_order'}
+        if task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED) and dirty_fields:
+            po_rate_exception = False
+            if dirty_fields == {'rate'}:
+                from apps.invoicing.claims import InvoiceClaimService
+                from apps.invoicing.models import InvoiceLineItemSource
+                from apps.purchasing.models import PurchaseOrderLineItem
+                po_rate_exception = (
+                    not InvoiceClaimService.is_invoiced(
+                        InvoiceLineItemSource.SOURCE_TASK, task.pk)
+                    and PurchaseOrderLineItem.objects.filter(task=task).exists()
+                )
+            if not po_rate_exception:
+                raise ValidationError(
+                    f'Cannot edit a {task.status} task. Its work and billing are '
+                    f'settled; corrections belong on the invoice.'
+                )
         if (user is not None
                 and task.status in (Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED)
                 and not JobService.user_can_manage(user, task.job)

@@ -1242,3 +1242,145 @@ class RatePromptsTest(POReconciliationTestBase):
         prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
         self.assertEqual(prompts[0]['current_rate'], self.task_a.rate)
         self.assertFalse(prompts[0]['has_active_modifiers'])
+
+    def test_prompt_still_offered_for_cancelled_task(self):
+        """RM ruling 2026-09-21: a cancelled task's recorded actuals stay
+        billable (terminal, not complete, is the billability line), so its
+        rate stays meaningful — compute_rate_prompts does NOT skip it. The
+        natural filter is already the flow: a prompt only exists when the
+        line got a final_price, i.e. the vendor actually billed it."""
+        po = self._make_issued_po(task=self.task_a)
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po, task=self.task_a)
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('18.00')},
+        )
+        self.task_a.status = Task.STATUS_CANCELLED
+        self.task_a.save(update_fields=['status'])
+        prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(prompts[0]['task_id'], self.task_a.pk)
+
+    def test_prompt_still_offered_for_complete_task(self):
+        """A COMPLETE task is NOT skipped — that is the whole point of the
+        RM ruling's carve-out (JobService.update_task allows the resulting
+        rate-only PATCH on a complete, uninvoiced, PO-linked task)."""
+        po = self._make_issued_po(task=self.task_a)
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po, task=self.task_a)
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('18.00')},
+        )
+        self.task_a.status = Task.STATUS_COMPLETE
+        self.task_a.save(update_fields=['status'])
+        prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(prompts[0]['task_id'], self.task_a.pk)
+
+
+class TerminalTaskRateExceptionTest(POReconciliationTestBase):
+    """RM ruling 2026-09-21 (resolves LATER.md "rate-prompt Accept fails on
+    complete tasks"): TaskService.update_task's terminal freeze gets one
+    narrow exception — a `rate`-only write on a TERMINAL (complete OR
+    cancelled) task is permitted when the task is not claimed by any
+    invoice and has at least one linked PurchaseOrderLineItem. Cancelled is
+    included because a cancelled task's recorded actuals stay billable
+    (terminal, not complete, is the billability line — see
+    invoicing-and-expenses.md), so a cancelled outsourced task the vendor
+    partially performed and billed has the same legitimate reprice claim
+    as a completed one. Service-layer coverage;
+    permission-gating (who) is unchanged and already covered by
+    tests/test_api_tasks.py's TaskMoneyPermissionTest — these tests call
+    TaskService.update_task directly (internal caller, no `user`), matching
+    the freeze's own service-level test shape.
+    """
+
+    def _mark_invoiced(self, task):
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        inv = Invoice.objects.create(job=task.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceLineItem.objects.create(
+            invoice=inv, description='x', qty=Decimal('1'),
+            units='none', price=Decimal('5.00'),
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li, source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+
+    def test_complete_po_linked_uninvoiced_rate_write_succeeds(self):
+        from apps.jobs.services import TaskService
+        self._make_line(self._make_issued_po(), task=self.task_a)
+        self.task_a.status = Task.STATUS_COMPLETE
+        self.task_a.save(update_fields=['status'])
+        updated = TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
+        self.assertEqual(updated.rate, Decimal('55.00'))
+
+    def test_complete_without_po_link_rejected(self):
+        from apps.jobs.services import TaskService
+        self.task_a.status = Task.STATUS_COMPLETE
+        self.task_a.save(update_fields=['status'])
+        with self.assertRaises(ValidationError) as cm:
+            TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
+        self.assertIn('settled', str(cm.exception))
+
+    def test_cancelled_po_linked_uninvoiced_rate_write_succeeds(self):
+        """Cancelled is included, not just complete: a cancelled task's
+        recorded actuals stay billable, so the same reprice exception
+        applies."""
+        from apps.jobs.services import TaskService
+        self._make_line(self._make_issued_po(), task=self.task_a)
+        self.task_a.status = Task.STATUS_CANCELLED
+        self.task_a.save(update_fields=['status'])
+        updated = TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
+        self.assertEqual(updated.rate, Decimal('55.00'))
+
+    def test_cancelled_without_po_link_rejected(self):
+        from apps.jobs.services import TaskService
+        self.task_a.status = Task.STATUS_CANCELLED
+        self.task_a.save(update_fields=['status'])
+        with self.assertRaises(ValidationError) as cm:
+            TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
+        self.assertIn('settled', str(cm.exception))
+
+    def test_cancelled_po_linked_but_invoiced_rejected(self):
+        from apps.jobs.services import TaskService
+        self._make_line(self._make_issued_po(), task=self.task_a)
+        self.task_a.status = Task.STATUS_CANCELLED
+        self.task_a.save(update_fields=['status'])
+        self._mark_invoiced(self.task_a)
+        with self.assertRaises(ValidationError) as cm:
+            TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
+        self.assertIn('settled', str(cm.exception))
+
+    def test_complete_po_linked_but_invoiced_rejected(self):
+        from apps.jobs.services import TaskService
+        self._make_line(self._make_issued_po(), task=self.task_a)
+        self.task_a.status = Task.STATUS_COMPLETE
+        self.task_a.save(update_fields=['status'])
+        self._mark_invoiced(self.task_a)
+        with self.assertRaises(ValidationError) as cm:
+            TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
+        self.assertIn('settled', str(cm.exception))
+
+    def test_complete_po_linked_uninvoiced_but_extra_money_field_rejected(self):
+        """The exception is rate-ONLY — a request that also touches another
+        money field (e.g. unit_label alongside rate) is rejected in full,
+        not partially applied."""
+        from apps.jobs.services import TaskService
+        self._make_line(self._make_issued_po(), task=self.task_a)
+        self.task_a.status = Task.STATUS_COMPLETE
+        self.task_a.save(update_fields=['status'])
+        with self.assertRaises(ValidationError) as cm:
+            TaskService.update_task(
+                self.task_a.pk, rate=Decimal('55.00'), unit_label='hour')
+        self.assertIn('settled', str(cm.exception))
+
+    def test_complete_po_linked_uninvoiced_non_rate_money_field_rejected(self):
+        """A write that touches only a DIFFERENT money field (not rate) on
+        an otherwise-qualifying task is still rejected — the carve-out is
+        specifically for `rate`, not the whole money block."""
+        from apps.jobs.services import TaskService
+        self._make_line(self._make_issued_po(), task=self.task_a)
+        self.task_a.status = Task.STATUS_COMPLETE
+        self.task_a.save(update_fields=['status'])
+        with self.assertRaises(ValidationError) as cm:
+            TaskService.update_task(self.task_a.pk, unit_label='hour')
+        self.assertIn('settled', str(cm.exception))

@@ -703,6 +703,22 @@ completion gets a new sibling task.)
   corrections belong on the invoice."
   ```
 
+- **One narrow exception (RM ruling 2026-09-21)**: a `rate`-ONLY write is
+  permitted on a terminal task (complete or cancelled) when the task is
+  not claimed by any invoice AND has at least one linked
+  `PurchaseOrderLineItem`. For vendor-borne (outsourced) work the
+  economics settle at the vendor bill, not at task completion — the
+  realistic ordering is receive → complete task → bill arrives →
+  reconcile → accept the reprice
+  (`PurchaseOrderService.compute_rate_prompts`'s Accept gesture, see
+  `materials-inventory-and-purchasing.md` §10a). Cancelled is included
+  because a cancelled task's recorded actuals stay billable (below), so
+  it carries the same reprice claim as a completed one. This changes
+  WHEN a rate write is allowed, not WHO — the money-permission gate
+  (manager/PM/financials) still applies unchanged. Every other field on
+  a terminal task, and every field on any invoice-claimed task, stays
+  frozen.
+
 - **No new Bleps**: `BlepService.create_historical` (and `start_work`)
   reject new time entries against a complete task:
 

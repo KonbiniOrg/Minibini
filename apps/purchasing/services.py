@@ -324,6 +324,15 @@ class PurchaseOrderService:
             task = li.task
             if InvoiceClaimService.is_invoiced(InvoiceLineItemSource.SOURCE_TASK, task.pk):
                 continue
+            # No terminal-status skip here (RM ruling 2026-09-21): a
+            # cancelled task's recorded actuals stay billable (terminal,
+            # not complete, is the billability line — invoicing-and-
+            # expenses.md), so its rate stays meaningful, and
+            # JobService.update_task's carve-out permits exactly the
+            # rate-only PATCH this prompt's Accept sends on COMPLETE or
+            # CANCELLED tasks alike. The natural filter is already the
+            # flow: a prompt only exists when the line got a final_price,
+            # i.e. the vendor actually billed it.
             if markup_applied:
                 suggested = (
                     li.final_price * (Decimal('1') + markup_percent / Decimal('100'))

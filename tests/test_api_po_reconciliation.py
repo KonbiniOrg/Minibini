@@ -466,3 +466,95 @@ class TaskLinkAPIWritableOnCreateTest(POReconciliationAPITestBase):
         self.assertEqual(response.data['task'], self.top_task.pk)
         li = PurchaseOrderLineItem.objects.get(pk=response.data['line_item_id'])
         self.assertEqual(li.task_id, self.top_task.pk)
+
+
+class TerminalTaskRateExceptionAPITest(POReconciliationAPITestBase):
+    """RM ruling 2026-09-21 (resolves LATER.md "rate-prompt Accept fails on
+    complete tasks"): PATCH /api/jobs/{job}/tasks/{id}/ {rate: ...} succeeds
+    on a TERMINAL task (complete OR cancelled) when it is uninvoiced and
+    PO-linked — exactly the PATCH RatePromptDialog.svelte's Accept gesture
+    sends. Cancelled is included because a cancelled task's recorded
+    actuals stay billable, so it carries the same reprice claim as a
+    completed one. API-level coverage on top of the service-level matrix
+    in TerminalTaskRateExceptionTest (tests/test_po_reconciliation.py)."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(user=self.admin)
+
+    def _task_url(self):
+        return f'/api/jobs/{self.job.pk}/tasks/{self.top_task.pk}/'
+
+    def _mark_invoiced(self, task):
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        inv = Invoice.objects.create(job=task.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceLineItem.objects.create(
+            invoice=inv, description='x', qty=Decimal('1'),
+            units='none', price=Decimal('5.00'),
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li, source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+
+    def test_complete_po_linked_uninvoiced_rate_patch_succeeds(self):
+        self._make_issued_po(task=self.top_task)
+        self.top_task.status = Task.STATUS_COMPLETE
+        self.top_task.save(update_fields=['status'])
+        response = self.client.patch(
+            self._task_url(), data={'rate': '155.00'}, format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.top_task.refresh_from_db()
+        self.assertEqual(self.top_task.rate, Decimal('155.00'))
+
+    def test_complete_without_po_link_rate_patch_rejected(self):
+        self.top_task.status = Task.STATUS_COMPLETE
+        self.top_task.save(update_fields=['status'])
+        response = self.client.patch(
+            self._task_url(), data={'rate': '155.00'}, format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('settled', str(response.data))
+
+    def test_cancelled_po_linked_uninvoiced_rate_patch_succeeds(self):
+        self._make_issued_po(task=self.top_task)
+        self.top_task.status = Task.STATUS_CANCELLED
+        self.top_task.save(update_fields=['status'])
+        response = self.client.patch(
+            self._task_url(), data={'rate': '155.00'}, format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.top_task.refresh_from_db()
+        self.assertEqual(self.top_task.rate, Decimal('155.00'))
+
+    def test_cancelled_without_po_link_rate_patch_rejected(self):
+        self.top_task.status = Task.STATUS_CANCELLED
+        self.top_task.save(update_fields=['status'])
+        response = self.client.patch(
+            self._task_url(), data={'rate': '155.00'}, format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('settled', str(response.data))
+
+    def test_complete_po_linked_invoiced_rate_patch_rejected(self):
+        self._make_issued_po(task=self.top_task)
+        self.top_task.status = Task.STATUS_COMPLETE
+        self.top_task.save(update_fields=['status'])
+        self._mark_invoiced(self.top_task)
+        response = self.client.patch(
+            self._task_url(), data={'rate': '155.00'}, format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('settled', str(response.data))
+
+    def test_complete_po_linked_uninvoiced_rate_plus_unit_label_rejected(self):
+        self._make_issued_po(task=self.top_task)
+        self.top_task.status = Task.STATUS_COMPLETE
+        self.top_task.save(update_fields=['status'])
+        response = self.client.patch(
+            self._task_url(),
+            data={'rate': '155.00', 'unit_label': 'hour'}, format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('settled', str(response.data))

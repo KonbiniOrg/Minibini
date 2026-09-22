@@ -1463,30 +1463,6 @@ Cross-cutting UI/API conventions and shared components.
   in Python instead of a query per PO), also verified with
   `assertNumQueries`.
 
-- **Rate-prompt Accept 400s on an already-complete task (RM to rule).**
-  — _added 2026-09-21 (outsourced-work port Task 7/8)_
-  `compute_rate_prompts` qualifies a line whenever it has a final price
-  and an uninvoiced linked task — it does not exclude a task that has
-  already been marked complete. But `TaskLifecycleService`/
-  `JobService.update_task` (`apps/jobs/services.py` ~L1201) freezes a
-  terminal (complete/cancelled) task's billing inputs ("Its work and
-  billing are settled; corrections belong on the invoice."), so
-  `RatePromptDialog.svelte`'s Accept — an ordinary
-  `PATCH .../tasks/{id}/ {rate: ...}` — 400s when the task completed
-  before the PO was reconciled. The realistic ordering is
-  receive → complete → bill → reconcile, so this bites more often than
-  the "accept before completing" happy path the outsourced-work-port
-  e2e spec deliberately orders around
-  (`e2e/specs/purchasing/po-reconciliation.spec.js`). Candidate fixes,
-  neither implemented: (a) have the qualifying rule in
-  `compute_rate_prompts` skip terminal tasks (silently drop the prompt
-  instead of offering one that can't be accepted), or (b) carve out this
-  one write so a rate-prompt Accept is allowed on a terminal task despite
-  the general freeze. RM to decide which (or whether the current 400 is
-  acceptable, given a per-row error + Retry is at least not a crash).
-  _Done when:_ RM rules on (a), (b), or "leave it," and (if a) or (b)) the
-  fix ships with a test covering a reconcile-after-complete rate prompt.
-
 - **`ReconciliationSection`'s in-place update of a persisted invoice_only
   line can't clear `accounting_category`/`task`.** — _added 2026-09-21
   (outsourced-work port final review)_
