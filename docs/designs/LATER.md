@@ -785,6 +785,14 @@ Billing mechanics and money-record lifecycle.
   that lines can be pure cost attribution. _Done when:_ RM runs that
   design pass and the PO docs state the two line kinds' lifecycles
   explicitly.
+  _Addendum 2026-09-21 (RM walkthrough findings, deliberately deferred to
+  this same design pass):_
+  (1) Receiving and task actuals are disconnected — RM received 80 across
+  two task-linked lines but completed the task at 40, and nothing surfaces
+  the gap. RM's direction: "the receiving should be the completion of the
+  Task and it should fill in the actuals. Or something closer to that."
+  (2) When multiple lines back one task, which line's amount the
+  reconciliation display reflects is unclear.
 
 ## Time tracking (shifts & bleps)
 

@@ -324,6 +324,18 @@ class PurchaseOrderService:
             task = li.task
             if InvoiceClaimService.is_invoiced(InvoiceLineItemSource.SOURCE_TASK, task.pk):
                 continue
+            # RM browser sighting 2026-09-21: a final_price that equals the
+            # ordered `price` never prompts. Both fields are the same
+            # DecimalField(10, 2) shape (BaseLineItem.price /
+            # PurchaseOrderLineItem.final_price), so a direct Decimal `==`
+            # is safe -- no quantize/rounding gap to bridge. Only an EMPTY
+            # final_price means "as ordered" at the model level, but a
+            # typed-back value that happens to match the ordered price is
+            # the same thing in substance and must read the same way, or
+            # re-typing the original number after trying a different final
+            # keeps re-prompting forever (the reported bug).
+            if li.final_price == li.price:
+                continue
             # No terminal-status skip here (RM ruling 2026-09-21): a
             # cancelled task's recorded actuals stay billable (terminal,
             # not complete, is the billability line — invoicing-and-

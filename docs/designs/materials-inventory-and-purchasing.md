@@ -1130,9 +1130,15 @@ reconcile, and never mutates a task itself:
   (`InvoiceClaimService.is_invoiced(SOURCE_TASK, task.pk)` — the same
   claim-tracking `invoicing-and-expenses.md` uses elsewhere). A line
   missing any of the three is silently skipped — no error, no prompt.
-  There is no additional check that the final price actually *differs*
-  from what was ordered — any clean final price on a qualifying line
-  prompts, even one that happens to match the original price.
+  **`final_price` must also differ from the line's ordered `price`**
+  (RM browser sighting 2026-09-21) — a clean final that happens to equal
+  the ordered price is skipped too, same as a null final. Both fields
+  share the same `Decimal(10, 2)` shape, so the comparison is a plain
+  `==`, no quantize/rounding gap. Without this, typing the ordered price
+  back into a line's Final Price (to "undo" an earlier different final)
+  still counted as an explicit final and kept re-prompting forever —
+  only an empty field meant "as ordered" at the model level, but in
+  substance a final equal to the order *is* "as ordered".
 - **Suggested rate**: reads `Configuration['default_material_markup_percent']`
   (the codebase's one generic cost→sell markup config — §2's
   `MaterialService.establish_reverse_markup`/lot-mint pricing reuses

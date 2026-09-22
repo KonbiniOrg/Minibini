@@ -1154,6 +1154,40 @@ class RatePromptsTest(POReconciliationTestBase):
         prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
         self.assertEqual(prompts, [])
 
+    def test_no_prompt_when_final_equals_ordered_price(self):
+        """RM browser sighting 2026-09-21: a final_price that matches the
+        line's ordered `price` is substantively "as ordered", not a real
+        vendor-billed change -- it must not qualify for a prompt, even
+        though the field itself is non-null (only an EMPTY final_price
+        means "as ordered" at the model level)."""
+        po = self._make_issued_po(task=self.task_a)
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po, task=self.task_a)
+        self.assertEqual(li.price, Decimal('10.00'))
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('10.00')},
+        )
+        prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertEqual(prompts, [])
+
+    def test_prompt_disappears_once_final_is_reset_to_the_ordered_price(self):
+        """The exact RM reproduction: type a different final (prompts),
+        then type the ordered price back in and reconcile again -- the
+        prompt must go away, not persist from the earlier different-final
+        reconcile call."""
+        po = self._make_issued_po(task=self.task_a)
+        li = PurchaseOrderLineItem.objects.get(purchase_order=po, task=self.task_a)
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('18.00')},
+        )
+        prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertEqual(len(prompts), 1)
+
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('20.00'), line_finals={li.pk: Decimal('10.00')},
+        )
+        prompts, _ = PurchaseOrderService.compute_rate_prompts(po)
+        self.assertEqual(prompts, [])
+
     def test_no_prompt_when_task_already_invoiced(self):
         po = self._make_issued_po(task=self.task_a)
         li = PurchaseOrderLineItem.objects.get(purchase_order=po, task=self.task_a)

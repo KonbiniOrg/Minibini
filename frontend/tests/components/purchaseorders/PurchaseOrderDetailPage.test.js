@@ -280,6 +280,38 @@ describe('PurchaseOrderDetailPage reconciliation wiring', () => {
     expect(queryByText('Update task rates?')).toBeNull();
   });
 
+  it('defers the success toast until the rate-prompt dialog closes, so it never sits on top of the dialog', async () => {
+    api.post.mockResolvedValue({
+      ...ISSUED_PO, reconciled: true,
+      rate_prompts: [{ task_id: 10, task_name: 'Outsourced work', current_rate: '100.00', suggested_rate: '132.00' }],
+    });
+    const { getByRole, findByText: find } = render(PurchaseOrderDetailPage, { props: { params: { id: '7' } } });
+    await vi.waitFor(() => expect(getByRole('button', { name: 'Reconcile' })).toBeInTheDocument());
+    await fireEvent.click(getByRole('button', { name: 'Reconcile' }));
+
+    const dialog = await find('Update task rates?');
+    expect(dialog).toBeInTheDocument();
+    // Dialog is open -- no toast underneath it yet.
+    expect(get(overlayMessage)).toBeNull();
+
+    await fireEvent.click(getByRole('button', { name: 'Close' }));
+    // Dialog closed -- the deferred toast fires now.
+    await vi.waitFor(() => {
+      expect(get(overlayMessage)).toEqual({ kind: 'success', text: 'Purchase order reconciled.' });
+    });
+  });
+
+  it('shows the success toast immediately when the reconcile response carries no prompts', async () => {
+    api.post.mockResolvedValue({ ...ISSUED_PO, reconciled: true, rate_prompts: [] });
+    const { getByRole } = render(PurchaseOrderDetailPage, { props: { params: { id: '7' } } });
+    await vi.waitFor(() => expect(getByRole('button', { name: 'Reconcile' })).toBeInTheDocument());
+    await fireEvent.click(getByRole('button', { name: 'Reconcile' }));
+
+    await vi.waitFor(() => {
+      expect(get(overlayMessage)).toEqual({ kind: 'success', text: 'Purchase order reconciled.' });
+    });
+  });
+
   it('threads markup_applied:false from the reconcile response into the rate-prompt dialog note', async () => {
     api.post.mockResolvedValue({
       ...ISSUED_PO, reconciled: true, markup_applied: false,

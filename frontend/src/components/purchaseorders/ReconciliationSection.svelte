@@ -162,6 +162,7 @@
       </p>
 
       {#if orderedLines.length}
+        <p><small>Leave a final price blank to accept the ordered price. A final equal to the ordered price never prompts a rate update.</small></p>
         <table class="data-table">
           <thead>
             <tr>

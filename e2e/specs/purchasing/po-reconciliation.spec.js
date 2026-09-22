@@ -41,10 +41,13 @@ const stamp = `e2e-por-${Date.now().toString(36)}`;
 
 // The global success/error toast (MessageOverlay.svelte) sits at --z-toast
 // (1000), ABOVE even a nested modal (--z-modal-nested: 900), and never
-// auto-dismisses (stores/messages.js has no route hook or timeout) — so it
-// silently intercepts pointer events on whatever comes next (here, the
-// rate-prompt modal that opens in the very same tick as reconcile's own
-// success toast) until dismissed. Same pattern as
+// auto-dismisses (stores/messages.js has no route hook or timeout). Reconcile
+// used to fire its success toast in the very same tick as opening the
+// rate-prompt modal, so the toast silently intercepted pointer events on the
+// modal underneath it — fixed by deferring the toast until the dialog closes
+// (PurchaseOrderDetailPage.svelte's `pendingReconcileSuccessMessage`), so the
+// dialog below is immediately interactable and the toast only needs
+// dismissing after Close. Same toast-stacking pattern as
 // specs/invoice-skeleton/estimate-three-modes.spec.js.
 async function dismissOverlay(page) {
   await page.getByRole('button', { name: 'Dismiss message' }).click();
@@ -235,10 +238,8 @@ test('PO task-link -> issue -> receive -> reconcile -> rate prompt -> invoice ac
     // Variance = bill_total(78.00) - ordered_total(20.00 + 20.00, invoice_only
     // excluded) = 38.00.
     await expect(page.locator('p', { hasText: 'Variance:' })).toContainText('$38.00');
-    // The success toast renders ABOVE the rate-prompt modal that opens in
-    // the same tick -- dismiss it before the next step reaches into the
-    // dialog.
-    await dismissOverlay(page);
+    // The success toast is deferred until the rate-prompt dialog (opening
+    // next) closes -- no overlay to dismiss before reaching into it.
   });
 
   let task1SuggestedRate;
@@ -267,6 +268,9 @@ test('PO task-link -> issue -> receive -> reconcile -> rate prompt -> invoice ac
 
     await dialog.getByRole('button', { name: 'Close' }).click();
     await expect(dialog).toHaveCount(0);
+
+    // The toast, deferred while the dialog was open, appears now.
+    await dismissOverlay(page);
   });
 
   await test.step('Accept PATCHed task1\'s rate; Decline left task2 exactly as quoted', async () => {
@@ -298,17 +302,18 @@ test('PO task-link -> issue -> receive -> reconcile -> rate prompt -> invoice ac
     await expect(page.locator('tr', { has: page.getByRole('button', { name: 'Remove' }) })).toBeVisible();
 
     await page.getByRole('button', { name: 'Update reconciliation' }).click();
-    await dismissOverlay(page);
 
     // Both lines still carry a non-null final_price and neither task is
     // yet on a live invoice, so re-reconciling re-offers the rate prompt
     // (compute_rate_prompts has no "already decided" memory) -- closing it
     // untouched is itself a safe no-op, proving Accept/Decline earlier
-    // aren't undone by simply re-viewing the prompt.
+    // aren't undone by simply re-viewing the prompt. The toast (deferred
+    // while this dialog is open) is dismissed after Close, not before.
     const dialog = page.getByRole('dialog', { name: 'Update task rates?' });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Close' }).click();
     await expect(dialog).toHaveCount(0);
+    await dismissOverlay(page);
   });
 
   await test.step('Starting an invoice AFTER the accept seeds the backed line already re-derived onto task1\'s NEW rate', async () => {

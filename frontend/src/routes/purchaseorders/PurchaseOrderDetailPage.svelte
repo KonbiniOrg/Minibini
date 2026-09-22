@@ -28,6 +28,14 @@
   let reconcileFieldErrs = $state({});
   let ratePrompts = $state(null); // rate_prompts array from the last reconcile response, or null
   let ratePromptsMarkupApplied = $state(true); // markup_applied from that same response
+  // Reconcile's success toast used to fire in the same tick as opening the
+  // rate-prompt dialog, so the toast (no auto-dismiss, click-intercepting)
+  // sat on top of the modal. When a reconcile response carries prompts,
+  // the toast text is stashed here instead of shown immediately, and fired
+  // from the dialog's onClose below -- so it's shown either right away
+  // (no prompts) or right after the dialog is dismissed (prompts present),
+  // never underneath it.
+  let pendingReconcileSuccessMessage = $state(null);
 
   // Prefill state when navigating in with ?prefill_material / ?prefill_inventory_item
   // (+ optional ?default_job). The neutral `prefilledLine` is what LineItemForm
@@ -375,13 +383,18 @@
     try {
       const data = await api.post(`/api/purchase-orders/${po.po_id}/reconcile/`, payload);
       await reload();
-      showSuccess(wasReconciled ? 'Reconciliation updated.' : 'Purchase order reconciled.');
+      const successMessage = wasReconciled ? 'Reconciliation updated.' : 'Purchase order reconciled.';
       // rate_prompts are money-equivalent suggestions — the dialog itself
       // PATCHes tasks through the same money-gated path, so only offer it
       // to users who can actually act on it.
       if (canManageFinancials && data.rate_prompts && data.rate_prompts.length) {
         ratePrompts = data.rate_prompts;
         ratePromptsMarkupApplied = data.markup_applied;
+        // Defer the toast until the dialog closes (see declaration above)
+        // instead of showing it now, on top of the dialog we're about to open.
+        pendingReconcileSuccessMessage = successMessage;
+      } else {
+        showSuccess(successMessage);
       }
     } catch (e) {
       const t = triageError(e);
@@ -500,6 +513,12 @@
   <RatePromptDialog
     prompts={ratePrompts}
     markupApplied={ratePromptsMarkupApplied}
-    onClose={() => { ratePrompts = null; }}
+    onClose={() => {
+      ratePrompts = null;
+      if (pendingReconcileSuccessMessage) {
+        showSuccess(pendingReconcileSuccessMessage);
+        pendingReconcileSuccessMessage = null;
+      }
+    }}
   />
 {/if}
