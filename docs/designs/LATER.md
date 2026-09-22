@@ -635,6 +635,36 @@ Billing mechanics and money-record lifecycle.
 (The procurement-machinery items moved into the freeform-materials plan
 2026-07-04; the plan shipped 2026-07-05 and the still-open ones returned below.)
 
+- **PO reconciliation lines (maybe all PO lines) save without an explicit
+  Save.** — _added 2026-09-21 (RM browser sighting)_
+  RM observed line edits persisting automatically during the reconciliation
+  walkthrough, against the explicit-save doctrine (saves are never
+  blur-only/implicit). Trigger not yet identified — no `onblur` handlers
+  exist in `frontend/src/components/purchaseorders/`, so it's likely a
+  change/submit handler firing per row (candidates: the inline line-edit
+  row's save path on the PO detail, or the add-line flow persisting each
+  row on Add). Reproduce, identify the trigger, and route the mutation
+  through a deliberate Save/confirm.
+  _Done when:_ every PO line mutation (add, edit, reconciliation fields)
+  commits only on an explicit action, verified in the browser by RM.
+
+- **Rate prompt is per-line-naive for multi-line and qty-N tasks.** —
+  _added 2026-09-21 (multi-link analysis; fold into the service-PO process
+  design pass below)_
+  A task may legitimately carry several PO lines (freight/setup
+  invoice-only attribution — shipped behavior; staged orders; redos;
+  split vendors), but `compute_rate_prompts` emits one prompt per finaled
+  line: two lines on one task yield two contradictory suggestions and
+  last-accept-wins. Separately, `suggested = final × markup` writes a
+  line TOTAL into `Task.rate`, which is only dimensionally right for
+  qty-1 flat tasks — on a qty-N entered task (e.g. 10 cabinets at
+  $X/cabinet) the honest suggestion is `Σ finals × markup ÷ est_qty`.
+  Schema stays many-to-one (constraining it would break the shipped
+  attribution cases); the fix is prompt-level: group per task, sum the
+  reconcile's finals, present in the task's own denomination.
+  _Done when:_ one prompt per task, suggestion denominated per the task's
+  qty shape, decided/refined during the service-PO process pass.
+
 - **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14; returned 2026-07-05 from the freeform-materials plan (consciously punted)_
   An expense is single-mode (cost OR stock receipt). One trip buying both an
   inventoried shortfall and a special non-item finish silently drops one side.
