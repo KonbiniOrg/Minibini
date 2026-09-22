@@ -168,7 +168,7 @@ must survive its agreement line vanishing. The `agreement_line`
 property returns whichever of the two is set (or `None`) — the single
 read path every consumer (the serializer's `agreement_ref`, the
 backing derivation) uses instead of checking both fields itself.
-Migration: `apps/invoicing/migrations/0023_invoicelineitem_agreement_co_line_and_more.py`
+Migration: `apps/invoicing/migrations/0024_invoicelineitem_agreement_co_line_and_more.py`
 (two plain `AddField` operations, no data migration).
 
 **`used_fallback_ac`** (Phase 3, 2026-08) — read-only, serializer-computed

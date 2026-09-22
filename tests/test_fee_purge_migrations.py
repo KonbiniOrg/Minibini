@@ -1,4 +1,4 @@
-"""estimates/0045 + invoicing/0024 fee-purge data migrations.
+"""estimates/0046 + invoicing/0025 fee-purge data migrations.
 
 The one data transform between the fee-removal branch and the dev DB's
 legacy rows: prove each migration's drop_fee_sources() deletes exactly the
@@ -31,9 +31,9 @@ from apps.jobs.models import Job
 
 # Module names start with digits, so importlib handles the dotted strings.
 _est_migration = importlib.import_module(
-    'apps.estimates.migrations.0045_alter_changeorderlineitem_is_material_and_more')
+    'apps.estimates.migrations.0046_alter_changeorderlineitem_is_material_and_more')
 _inv_migration = importlib.import_module(
-    'apps.invoicing.migrations.0024_alter_invoicelineitemsource_source_type')
+    'apps.invoicing.migrations.0025_alter_invoicelineitemsource_source_type')
 
 
 class FeePurgeMigrationTest(TestCase):

@@ -6,8 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        # Re-parented in the 2026-09-21 merge of origin/main (0022->0025).
-        ('invoicing', '0024_alter_invoicelineitemsource_source_type'),
+        ('invoicing', '0021_alter_invoicelineitemsource_source_type'),
     ]
 
     operations = [

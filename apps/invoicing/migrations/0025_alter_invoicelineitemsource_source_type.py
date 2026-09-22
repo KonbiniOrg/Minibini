@@ -21,7 +21,7 @@ def drop_fee_sources(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('invoicing', '0023_invoicelineitem_agreement_co_line_and_more'),
+        ('invoicing', '0024_invoicelineitem_agreement_co_line_and_more'),
     ]
 
     operations = [

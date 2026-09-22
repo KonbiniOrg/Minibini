@@ -1,4 +1,4 @@
-"""estimates/0047 descoped_by backfill data migration.
+"""estimates/0048 descoped_by backfill data migration.
 
 One-time historical backfill (CO amend-in-place plan, Task 4): legacy
 accepted-CO remove AND replace lines both retired their target's atom, so
@@ -29,7 +29,7 @@ from apps.jobs.models import Job, Task
 
 # Module name starts with a digit, so importlib handles the dotted string.
 _migration = importlib.import_module(
-    'apps.estimates.migrations.0047_backfill_descoped_by')
+    'apps.estimates.migrations.0048_backfill_descoped_by')
 
 
 class DescopeBackfillMigrationTest(TestCase):

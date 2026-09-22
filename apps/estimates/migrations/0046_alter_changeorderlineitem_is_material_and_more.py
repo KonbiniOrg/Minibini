@@ -22,7 +22,7 @@ def drop_fee_sources(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('estimates', '0044_estimatelineitem_adjustment_percent'),
+        ('estimates', '0045_estimatelineitem_adjustment_percent'),
     ]
 
     operations = [

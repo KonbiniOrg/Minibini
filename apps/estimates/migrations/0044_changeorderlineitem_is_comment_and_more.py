@@ -6,18 +6,17 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        # Re-parented in the 2026-09-21 merge of origin/main (0025->0026).
-        ('purchasing', '0025_po_reconciliation_fields'),
+        ('estimates', '0043_remove_changeorderlineitem_tax_rate_override_and_more'),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='billlineitem',
+            model_name='changeorderlineitem',
             name='is_comment',
             field=models.BooleanField(default=False, help_text='Informational line only — no charge, not linked to any task/atom.'),
         ),
         migrations.AddField(
-            model_name='purchaseorderlineitem',
+            model_name='estimatelineitem',
             name='is_comment',
             field=models.BooleanField(default=False, help_text='Informational line only — no charge, not linked to any task/atom.'),
         ),

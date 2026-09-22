@@ -581,7 +581,7 @@ class AdjustmentPercentBackfillMigrationTest(TestCase):
 
         self.assertIsNone(self.est_adj.adjustment_percent)
         mod = importlib.import_module(
-            'apps.estimates.migrations.0044_estimatelineitem_adjustment_percent'
+            'apps.estimates.migrations.0045_estimatelineitem_adjustment_percent'
         )
         mod.forwards(real_apps, None)
         self.est_adj.refresh_from_db()
@@ -593,7 +593,7 @@ class AdjustmentPercentBackfillMigrationTest(TestCase):
 
         self.assertIsNone(self.inv_adj.adjustment_percent)
         mod = importlib.import_module(
-            'apps.invoicing.migrations.0022_invoicelineitem_adjustment_percent'
+            'apps.invoicing.migrations.0023_invoicelineitem_adjustment_percent'
         )
         mod.forwards(real_apps, None)
         self.inv_adj.refresh_from_db()

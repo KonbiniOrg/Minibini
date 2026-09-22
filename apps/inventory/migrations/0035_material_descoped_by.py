@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('estimates', '0046_changeorderlineitem_adjustment_percent_and_more'),
+        ('estimates', '0047_changeorderlineitem_adjustment_percent_and_more'),
         ('inventory', '0034_inventoryitem_qbo_id'),
     ]
 

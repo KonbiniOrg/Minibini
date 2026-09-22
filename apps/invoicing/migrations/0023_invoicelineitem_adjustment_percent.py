@@ -27,7 +27,7 @@ def backwards(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('invoicing', '0021_alter_invoicelineitemsource_source_type'),
+        ('invoicing', '0022_invoicelineitem_is_comment'),
     ]
 
     operations = [

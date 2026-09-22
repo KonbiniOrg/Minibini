@@ -6,19 +6,17 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        # Re-parented in the 2026-09-21 merge of origin/main: authored on main
-        # against 0043; renumbered 0044->0050 onto this branch's chain.
-        ('estimates', '0049_changeorderlineitem_per_unit_and_more'),
+        ('purchasing', '0024_anchor_deliverables_latest'),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='changeorderlineitem',
+            model_name='billlineitem',
             name='is_comment',
             field=models.BooleanField(default=False, help_text='Informational line only — no charge, not linked to any task/atom.'),
         ),
         migrations.AddField(
-            model_name='estimatelineitem',
+            model_name='purchaseorderlineitem',
             name='is_comment',
             field=models.BooleanField(default=False, help_text='Informational line only — no charge, not linked to any task/atom.'),
         ),

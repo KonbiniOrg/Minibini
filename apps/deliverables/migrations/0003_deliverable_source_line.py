@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('deliverables', '0002_deliverablesnapshot'),
-        ('estimates', '0047_backfill_descoped_by'),
+        ('estimates', '0048_backfill_descoped_by'),
     ]
 
     operations = [

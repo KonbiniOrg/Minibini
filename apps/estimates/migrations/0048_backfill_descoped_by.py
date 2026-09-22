@@ -68,7 +68,7 @@ def stamp_descoped_atoms(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('estimates', '0046_changeorderlineitem_adjustment_percent_and_more'),
+        ('estimates', '0047_changeorderlineitem_adjustment_percent_and_more'),
         ('jobs', '0063_task_descoped_by'),
         ('inventory', '0035_material_descoped_by'),
     ]

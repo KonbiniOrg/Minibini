@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('purchasing', '0024_anchor_deliverables_latest'),
+        ('purchasing', '0025_billlineitem_is_comment_and_more'),
     ]
 
     operations = [

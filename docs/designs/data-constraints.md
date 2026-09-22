@@ -886,7 +886,7 @@ Valid transitions:
   target — replace moves the claim onto the CO line instead, see
   `estimates-and-prices.md` §14.11. Provenance only; the invoice pool
   reads it (`descoped_by_co_number`) for the "descoped by CO-N" chip.
-  Backfilled by `apps/estimates/migrations/0047_backfill_descoped_by.py`.
+  Backfilled by `apps/estimates/migrations/0048_backfill_descoped_by.py`.
 
 #### Implied state from other models
 
@@ -1370,11 +1370,11 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
   an authored-claimed atom already carries its own AC.
 
 **Migrations (CO amend-in-place, 2026-08-09):**
-`apps/estimates/migrations/0046_changeorderlineitem_adjustment_percent_and_more.py`
+`apps/estimates/migrations/0047_changeorderlineitem_adjustment_percent_and_more.py`
 (schema — the three adjustment fields), `apps/jobs/migrations/0063_task_descoped_by.py`
 and `apps/inventory/migrations/0035_material_descoped_by.py` (schema — the
 `descoped_by` FKs, both depending on `estimates.0046`), and
-`apps/estimates/migrations/0047_backfill_descoped_by.py` (data migration —
+`apps/estimates/migrations/0048_backfill_descoped_by.py` (data migration —
 walks every historical ACCEPTED `ChangeOrder` ordered `closed_date`,
 `change_order_id` ascending and stamps `descoped_by` on each `remove`/
 `replace` line's target's then-current claimed atom; a later-accepted CO's
@@ -1505,7 +1505,7 @@ Either a description or a `inventory_item` must be present.
   on a REPLACE target — replace moves the claim onto the CO line instead,
   see `estimates-and-prices.md` §14.11. Provenance only; the invoice pool
   reads it (`descoped_by_co_number`) for the "descoped by CO-N" chip.
-  Backfilled by `apps/estimates/migrations/0047_backfill_descoped_by.py`.
+  Backfilled by `apps/estimates/migrations/0048_backfill_descoped_by.py`.
 
 #### Implied state from other models
 

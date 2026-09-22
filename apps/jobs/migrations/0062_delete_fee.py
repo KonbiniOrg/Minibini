@@ -11,8 +11,8 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('jobs', '0061_flatten_subtasks'),
-        ('estimates', '0045_alter_changeorderlineitem_is_material_and_more'),
-        ('invoicing', '0024_alter_invoicelineitemsource_source_type'),
+        ('estimates', '0046_alter_changeorderlineitem_is_material_and_more'),
+        ('invoicing', '0025_alter_invoicelineitemsource_source_type'),
     ]
 
     operations = [

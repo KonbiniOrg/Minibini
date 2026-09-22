@@ -7,8 +7,8 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('estimates', '0044_estimatelineitem_adjustment_percent'),
-        ('invoicing', '0022_invoicelineitem_adjustment_percent'),
+        ('estimates', '0045_estimatelineitem_adjustment_percent'),
+        ('invoicing', '0023_invoicelineitem_adjustment_percent'),
     ]
 
     operations = [

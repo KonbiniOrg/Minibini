@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('estimates', '0047_backfill_descoped_by'),
+        ('estimates', '0048_backfill_descoped_by'),
     ]
 
     operations = [

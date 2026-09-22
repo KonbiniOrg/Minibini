@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('core', '0029_singular_units'),
-        ('estimates', '0045_alter_changeorderlineitem_is_material_and_more'),
+        ('estimates', '0046_alter_changeorderlineitem_is_material_and_more'),
         ('jobs', '0062_delete_fee'),
     ]
 

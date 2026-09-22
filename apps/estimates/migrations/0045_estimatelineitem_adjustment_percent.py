@@ -27,7 +27,7 @@ def backwards(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('estimates', '0043_remove_changeorderlineitem_tax_rate_override_and_more'),
+        ('estimates', '0044_changeorderlineitem_is_comment_and_more'),
     ]
 
     operations = [
