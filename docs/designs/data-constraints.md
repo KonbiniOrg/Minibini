@@ -909,23 +909,34 @@ Valid transitions:
 - All Tasks on a Job terminal → `TaskLifecycleService._check_job_work_complete`
   walks the Job toward `work_complete` (silent-fail on loose pending
   task-less Materials; see §2.6, §2.7).
-- **Terminal money freeze, with one exception (RM ruling 2026-09-21)**:
-  `JobService.update_task` rejects any field write other than `sort_order`
-  once a Task is terminal (`complete` or `cancelled`) — "Its work and
-  billing are settled; corrections belong on the invoice." The sole
-  exception: a request touching **only** `rate` is permitted when, at
-  write time, the task is **not** claimed by any live invoice
-  (`InvoiceClaimService.is_invoiced(SOURCE_TASK, task.pk)` is `False`)
-  **and** at least one `PurchaseOrderLineItem` links to the task
-  (`PurchaseOrderLineItem.objects.filter(task=task).exists()`). Both
-  `complete` and `cancelled` qualify — a cancelled task's recorded
-  actuals stay billable (§2.9's terminal-Bleps-closed constraint doesn't
-  make it unbillable), so it carries the same vendor-reprice claim as a
-  completed one. A request that touches `rate` plus any other field, or
-  a task failing either the invoice or PO-link condition, gets the full
-  rejection above. This is the money-write's WHEN gate only — the
-  existing WHO gate (`CanManageJobOrPM`/`can_manage_financials`,
-  `TaskSerializer.MONEY_FIELDS`) is unchanged.
+- **Terminal money freeze, with one financials-only exception (RM ruling
+  2026-09-21, tightened same day)**: `JobService.update_task` rejects any
+  field write other than `sort_order` once a Task is terminal (`complete`
+  or `cancelled`) — "Its work and billing are settled; corrections belong
+  on the invoice." The sole exception: a request touching **only** `rate`
+  is permitted when, at write time, the task is **not** claimed by any
+  live invoice (`InvoiceClaimService.is_invoiced(SOURCE_TASK, task.pk)` is
+  `False`), **at least one** `PurchaseOrderLineItem` links to the task
+  (`PurchaseOrderLineItem.objects.filter(task=task).exists()`), **and**
+  the acting `user` holds `can_manage_financials`
+  (`user.has_perm('core.can_manage_financials')`, checked directly in
+  `update_task` — `has_perm` returns `True` for `is_superuser`
+  automatically, so no separate superuser branch is needed). A caller
+  with no `user` threaded through (internal callers may omit it) never
+  qualifies — the exception fails closed rather than defaulting open.
+  Both `complete` and `cancelled` status qualify — a cancelled task's
+  recorded actuals stay billable (§2.9's terminal-Bleps-closed constraint
+  doesn't make it unbillable), so it carries the same vendor-reprice claim
+  as a completed one. A request that touches `rate` plus any other field,
+  a task failing the invoice or PO-link condition, or a caller lacking
+  `can_manage_financials`, all get the full rejection above — including a
+  job's PM or a plain `can_manage_jobs` holder, either of whom **can**
+  write `rate` on this same task while it is still open. This exception's
+  WHO gate is deliberately **narrower** than the ordinary money-write WHO
+  gate (`CanManageJobOrPM`/`can_manage_financials`,
+  `TaskSerializer.MONEY_FIELDS`) — which is unchanged for every
+  non-terminal write — because repricing already-settled work is treated
+  as a reconciliation act (a financials event), not an ordinary task edit.
 
 ---
 

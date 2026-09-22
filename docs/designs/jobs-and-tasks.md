@@ -703,21 +703,29 @@ completion gets a new sibling task.)
   corrections belong on the invoice."
   ```
 
-- **One narrow exception (RM ruling 2026-09-21)**: a `rate`-ONLY write is
-  permitted on a terminal task (complete or cancelled) when the task is
-  not claimed by any invoice AND has at least one linked
-  `PurchaseOrderLineItem`. For vendor-borne (outsourced) work the
-  economics settle at the vendor bill, not at task completion — the
-  realistic ordering is receive → complete task → bill arrives →
-  reconcile → accept the reprice
+- **One narrow, financials-only exception (RM ruling 2026-09-21, tightened
+  same day)**: a `rate`-ONLY write is permitted on a terminal task
+  (complete or cancelled) when the task is not claimed by any invoice,
+  has at least one linked `PurchaseOrderLineItem`, **and** the acting
+  user holds `can_manage_financials` (checked in `update_task` itself,
+  via the same `user` param the in_progress/blocked assignee check
+  already uses — an internal caller that omits `user` never qualifies).
+  For vendor-borne (outsourced) work the economics settle at the vendor
+  bill, not at task completion — the realistic ordering is receive →
+  complete task → bill arrives → reconcile → accept the reprice
   (`PurchaseOrderService.compute_rate_prompts`'s Accept gesture, see
   `materials-inventory-and-purchasing.md` §10a). Cancelled is included
   because a cancelled task's recorded actuals stay billable (below), so
-  it carries the same reprice claim as a completed one. This changes
-  WHEN a rate write is allowed, not WHO — the money-permission gate
-  (manager/PM/financials) still applies unchanged. Every other field on
-  a terminal task, and every field on any invoice-claimed task, stays
-  frozen.
+  it carries the same reprice claim as a completed one. **This exception's
+  WHO gate is narrower than the ordinary money-write gate**: the normal
+  MONEY_FIELDS rule for `rate` is manager atom OR the job's PM OR
+  financials, but this one exception is financials-only — a job's PM or a
+  plain `can_manage_jobs` holder can write `rate` on this same task while
+  it's still open, but gets the ordinary terminal-freeze rejection once
+  it's terminal, because repricing settled work is treated as a
+  reconciliation act (a financials event), not an ordinary task edit.
+  Every other field on a terminal task, and every field on any
+  invoice-claimed task, stays frozen.
 
 - **No new Bleps**: `BlepService.create_historical` (and `start_work`)
   reject new time entries against a complete task:

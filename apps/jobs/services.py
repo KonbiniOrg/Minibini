@@ -1190,8 +1190,14 @@ class TaskService:
         task's ASSIGNEE (checked when `user` is passed — the API always
         passes it; internal callers may omit it); terminal is frozen, EXCEPT
         a `rate`-only write on a TERMINAL (complete OR cancelled), uninvoiced,
-        PO-linked task (RM ruling 2026-09-21 — see the freeze check below for
-        the rationale).
+        PO-linked task by a `can_manage_financials` caller (RM ruling
+        2026-09-21, tightened same-day — see the freeze check below for the
+        rationale). Unlike the ordinary MONEY_FIELDS gate (manager atom OR
+        the job's PM OR financials), this one exception is financials-only:
+        a job's PM or a plain `can_manage_jobs` holder gets the ordinary
+        terminal-freeze rejection here, same as before the carve-out. A
+        caller with no `user` (internal callers) never qualifies either —
+        the exception fails closed without an actor to check.
         """
         try:
             task = Task.objects.get(pk=pk)
@@ -1203,10 +1209,14 @@ class TaskService:
         # list containing a terminal task can still be reordered.
         #
         # RM ruling 2026-09-21 (LATER.md "rate-prompt Accept fails on
-        # complete tasks"): one narrow exception. A `rate`-ONLY write on a
-        # TERMINAL task (complete OR cancelled) is allowed when the task is
-        # not yet claimed by a live invoice AND has at least one linked
-        # PurchaseOrderLineItem. Rationale, two halves:
+        # complete tasks"), tightened same-day: one narrow exception. A
+        # `rate`-ONLY write on a TERMINAL task (complete OR cancelled) is
+        # allowed when the task is not yet claimed by a live invoice AND
+        # has at least one linked PurchaseOrderLineItem AND the caller
+        # holds `can_manage_financials` (checked here, NOT the ordinary
+        # MONEY_FIELDS gate of manager-atom-OR-PM-OR-financials — a job's
+        # PM or a plain `can_manage_jobs` holder does NOT qualify for this
+        # exception and gets the ordinary rejection below). Rationale:
         #   - For vendor-borne (outsourced) work, the economics settle at
         #     the vendor bill, not at task completion — the realistic
         #     ordering is receive -> complete task -> bill arrives ->
@@ -1220,13 +1230,22 @@ class TaskService:
         #     a cancelled outsourced task the vendor partially performed and
         #     billed has the same legitimate reprice claim as a completed
         #     one.
-        # This changes WHEN a rate write is allowed, not WHO — the
-        # serializer's money-permission gate (manager/PM/financials) still
-        # applies unchanged on top of this.
+        #   - Financials-only, not the ordinary money gate: repricing
+        #     settled work is a reconciliation act — the vendor bill is a
+        #     financials event. Ordinary price adjustments discovered at
+        #     billing time belong on the invoice document, not a rewrite of
+        #     the task's own rate; a manager/PM's normal standing to write
+        #     `rate` applies only while the task is still open.
+        # This checks `user` the same way the in_progress/blocked gate below
+        # does — the API always passes `request.user`; an internal caller
+        # that omits `user` can never satisfy this (fails closed to the
+        # ordinary freeze), which is correct since there's no actor to
+        # check.
         dirty_fields = set(kwargs) - {'sort_order'}
         if task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED) and dirty_fields:
             po_rate_exception = False
-            if dirty_fields == {'rate'}:
+            if (dirty_fields == {'rate'} and user is not None
+                    and user.has_perm('core.can_manage_financials')):
                 from apps.invoicing.claims import InvoiceClaimService
                 from apps.invoicing.models import InvoiceLineItemSource
                 from apps.purchasing.models import PurchaseOrderLineItem

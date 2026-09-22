@@ -1278,20 +1278,39 @@ class RatePromptsTest(POReconciliationTestBase):
 
 class TerminalTaskRateExceptionTest(POReconciliationTestBase):
     """RM ruling 2026-09-21 (resolves LATER.md "rate-prompt Accept fails on
-    complete tasks"): TaskService.update_task's terminal freeze gets one
-    narrow exception — a `rate`-only write on a TERMINAL (complete OR
-    cancelled) task is permitted when the task is not claimed by any
-    invoice and has at least one linked PurchaseOrderLineItem. Cancelled is
-    included because a cancelled task's recorded actuals stay billable
-    (terminal, not complete, is the billability line — see
+    complete tasks"), tightened same-day: TaskService.update_task's
+    terminal freeze gets one narrow exception — a `rate`-only write on a
+    TERMINAL (complete OR cancelled) task is permitted when the task is
+    not claimed by any invoice, has at least one linked
+    PurchaseOrderLineItem, AND the caller holds `can_manage_financials`.
+    Cancelled is included because a cancelled task's recorded actuals stay
+    billable (terminal, not complete, is the billability line — see
     invoicing-and-expenses.md), so a cancelled outsourced task the vendor
     partially performed and billed has the same legitimate reprice claim
-    as a completed one. Service-layer coverage;
-    permission-gating (who) is unchanged and already covered by
-    tests/test_api_tasks.py's TaskMoneyPermissionTest — these tests call
-    TaskService.update_task directly (internal caller, no `user`), matching
-    the freeze's own service-level test shape.
+    as a completed one. The financials-only arm is deliberate and
+    NARROWER than the ordinary MONEY_FIELDS gate (manager atom OR PM OR
+    financials): repricing settled work is a reconciliation act (the
+    vendor bill is a financials event) — a job's PM or a plain
+    `can_manage_jobs` holder does NOT qualify here, even though either
+    could write `rate` on the same task while it was still open.
+    Service-layer coverage of the condition itself; the API-level matrix
+    in TerminalTaskRateExceptionAPITest (tests/test_api_po_reconciliation.py)
+    covers the same arm through the real request/permission stack.
     """
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import Permission
+        self.financials_user = User.objects.create_user(
+            username='svc_rate_fin', password='x')
+        self.financials_user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_financials'))
+        self.financials_user = User.objects.get(pk=self.financials_user.pk)
+        self.manager_user = User.objects.create_user(
+            username='svc_rate_mgr', password='x')
+        self.manager_user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_jobs'))
+        self.manager_user = User.objects.get(pk=self.manager_user.pk)
 
     def _mark_invoiced(self, task):
         from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
@@ -1305,23 +1324,49 @@ class TerminalTaskRateExceptionTest(POReconciliationTestBase):
             source_pk=task.pk,
         )
 
-    def test_complete_po_linked_uninvoiced_rate_write_succeeds(self):
+    def test_complete_po_linked_uninvoiced_rate_write_by_financials_succeeds(self):
         from apps.jobs.services import TaskService
         self._make_line(self._make_issued_po(), task=self.task_a)
         self.task_a.status = Task.STATUS_COMPLETE
         self.task_a.save(update_fields=['status'])
-        updated = TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
+        updated = TaskService.update_task(
+            self.task_a.pk, user=self.financials_user, rate=Decimal('55.00'))
         self.assertEqual(updated.rate, Decimal('55.00'))
 
-    def test_complete_without_po_link_rejected(self):
+    def test_complete_po_linked_uninvoiced_rate_write_by_manager_only_rejected(self):
+        """The exception is financials-only — a plain `can_manage_jobs`
+        holder does NOT qualify, even though they could write `rate` on
+        this same task while it was still open."""
         from apps.jobs.services import TaskService
+        self._make_line(self._make_issued_po(), task=self.task_a)
+        self.task_a.status = Task.STATUS_COMPLETE
+        self.task_a.save(update_fields=['status'])
+        with self.assertRaises(ValidationError) as cm:
+            TaskService.update_task(
+                self.task_a.pk, user=self.manager_user, rate=Decimal('55.00'))
+        self.assertIn('settled', str(cm.exception))
+
+    def test_complete_po_linked_uninvoiced_rate_write_without_user_rejected(self):
+        """No actor to check `can_manage_financials` against -- the
+        exception fails closed rather than defaulting open."""
+        from apps.jobs.services import TaskService
+        self._make_line(self._make_issued_po(), task=self.task_a)
         self.task_a.status = Task.STATUS_COMPLETE
         self.task_a.save(update_fields=['status'])
         with self.assertRaises(ValidationError) as cm:
             TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
         self.assertIn('settled', str(cm.exception))
 
-    def test_cancelled_po_linked_uninvoiced_rate_write_succeeds(self):
+    def test_complete_without_po_link_rejected(self):
+        from apps.jobs.services import TaskService
+        self.task_a.status = Task.STATUS_COMPLETE
+        self.task_a.save(update_fields=['status'])
+        with self.assertRaises(ValidationError) as cm:
+            TaskService.update_task(
+                self.task_a.pk, user=self.financials_user, rate=Decimal('55.00'))
+        self.assertIn('settled', str(cm.exception))
+
+    def test_cancelled_po_linked_uninvoiced_rate_write_by_financials_succeeds(self):
         """Cancelled is included, not just complete: a cancelled task's
         recorded actuals stay billable, so the same reprice exception
         applies."""
@@ -1329,15 +1374,27 @@ class TerminalTaskRateExceptionTest(POReconciliationTestBase):
         self._make_line(self._make_issued_po(), task=self.task_a)
         self.task_a.status = Task.STATUS_CANCELLED
         self.task_a.save(update_fields=['status'])
-        updated = TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
+        updated = TaskService.update_task(
+            self.task_a.pk, user=self.financials_user, rate=Decimal('55.00'))
         self.assertEqual(updated.rate, Decimal('55.00'))
+
+    def test_cancelled_po_linked_uninvoiced_rate_write_by_manager_only_rejected(self):
+        from apps.jobs.services import TaskService
+        self._make_line(self._make_issued_po(), task=self.task_a)
+        self.task_a.status = Task.STATUS_CANCELLED
+        self.task_a.save(update_fields=['status'])
+        with self.assertRaises(ValidationError) as cm:
+            TaskService.update_task(
+                self.task_a.pk, user=self.manager_user, rate=Decimal('55.00'))
+        self.assertIn('settled', str(cm.exception))
 
     def test_cancelled_without_po_link_rejected(self):
         from apps.jobs.services import TaskService
         self.task_a.status = Task.STATUS_CANCELLED
         self.task_a.save(update_fields=['status'])
         with self.assertRaises(ValidationError) as cm:
-            TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
+            TaskService.update_task(
+                self.task_a.pk, user=self.financials_user, rate=Decimal('55.00'))
         self.assertIn('settled', str(cm.exception))
 
     def test_cancelled_po_linked_but_invoiced_rejected(self):
@@ -1347,7 +1404,8 @@ class TerminalTaskRateExceptionTest(POReconciliationTestBase):
         self.task_a.save(update_fields=['status'])
         self._mark_invoiced(self.task_a)
         with self.assertRaises(ValidationError) as cm:
-            TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
+            TaskService.update_task(
+                self.task_a.pk, user=self.financials_user, rate=Decimal('55.00'))
         self.assertIn('settled', str(cm.exception))
 
     def test_complete_po_linked_but_invoiced_rejected(self):
@@ -1357,7 +1415,8 @@ class TerminalTaskRateExceptionTest(POReconciliationTestBase):
         self.task_a.save(update_fields=['status'])
         self._mark_invoiced(self.task_a)
         with self.assertRaises(ValidationError) as cm:
-            TaskService.update_task(self.task_a.pk, rate=Decimal('55.00'))
+            TaskService.update_task(
+                self.task_a.pk, user=self.financials_user, rate=Decimal('55.00'))
         self.assertIn('settled', str(cm.exception))
 
     def test_complete_po_linked_uninvoiced_but_extra_money_field_rejected(self):
@@ -1370,7 +1429,8 @@ class TerminalTaskRateExceptionTest(POReconciliationTestBase):
         self.task_a.save(update_fields=['status'])
         with self.assertRaises(ValidationError) as cm:
             TaskService.update_task(
-                self.task_a.pk, rate=Decimal('55.00'), unit_label='hour')
+                self.task_a.pk, user=self.financials_user,
+                rate=Decimal('55.00'), unit_label='hour')
         self.assertIn('settled', str(cm.exception))
 
     def test_complete_po_linked_uninvoiced_non_rate_money_field_rejected(self):
@@ -1382,5 +1442,6 @@ class TerminalTaskRateExceptionTest(POReconciliationTestBase):
         self.task_a.status = Task.STATUS_COMPLETE
         self.task_a.save(update_fields=['status'])
         with self.assertRaises(ValidationError) as cm:
-            TaskService.update_task(self.task_a.pk, unit_label='hour')
+            TaskService.update_task(
+                self.task_a.pk, user=self.financials_user, unit_label='hour')
         self.assertIn('settled', str(cm.exception))

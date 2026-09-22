@@ -1126,17 +1126,19 @@ reconcile, and never mutates a task itself:
   `PATCH /api/jobs/{job_id}/tasks/{task_id}/ {rate: suggested_rate}` —
   the *existing* money-gated task-update path (`TaskSerializer.MONEY_FIELDS`,
   `jobs-and-tasks.md`). There is no dedicated "accept" endpoint.
-- **A terminal task's Accept PATCH is permitted, narrowly** (RM ruling
-  2026-09-21, resolving the earlier honest gap tracked in
-  `docs/designs/LATER.md`). `JobService.update_task`'s terminal freeze
-  ("Its work and billing are settled; corrections belong on the
-  invoice.") gets one exception: a `rate`-ONLY write on a task whose
-  status is COMPLETE **or** CANCELLED is allowed when the task is not
-  yet claimed by a live invoice AND has at least one linked
-  `PurchaseOrderLineItem`. Every other field on a terminal task, and
-  every field on any task claimed by an invoice, stays frozen; ordinary
-  (non-PO-linked) terminal tasks are entirely unchanged. Rationale, two
-  halves:
+- **A terminal task's Accept PATCH is permitted, narrowly, and
+  financials-only** (RM ruling 2026-09-21, resolving the earlier honest
+  gap tracked in `docs/designs/LATER.md`; tightened to financials-only
+  the same day). `JobService.update_task`'s terminal freeze ("Its work
+  and billing are settled; corrections belong on the invoice.") gets one
+  exception: a `rate`-ONLY write on a task whose status is COMPLETE **or**
+  CANCELLED is allowed when the task is not yet claimed by a live invoice,
+  has at least one linked `PurchaseOrderLineItem`, **and** the caller
+  holds `can_manage_financials` (checked in `update_task` itself, not the
+  ordinary MONEY_FIELDS gate — see below). Every other field on a
+  terminal task, and every field on any task claimed by an invoice, stays
+  frozen; ordinary (non-PO-linked) terminal tasks are entirely unchanged.
+  Rationale, three parts:
   - For vendor-borne (outsourced) work, the economics settle at the
     vendor bill, not at task completion — the realistic ordering is
     receive → complete task → bill arrives → reconcile → accept the
@@ -1146,9 +1148,18 @@ reconcile, and never mutates a task itself:
     billability line is "terminal, not complete"), so a cancelled
     outsourced task the vendor partially performed and billed carries
     the same legitimate reprice claim as a completed one.
-  This changes WHEN a rate write is allowed, not WHO — the serializer's
-  money-permission gate (manager/PM/financials) still applies unchanged
-  on top of it. `compute_rate_prompts` itself needed no terminal-status
+  - **Financials-only, not the ordinary money gate.** The normal
+    MONEY_FIELDS gate for `rate` is manager atom OR the job's PM OR
+    financials (`jobs-and-tasks.md`) — but repricing *settled* work is a
+    reconciliation act (the vendor bill is a financials event), so this
+    one exception narrows to `can_manage_financials` only. A job's PM or
+    a plain `can_manage_jobs` holder can write `rate` on this same task
+    while it's still open, but gets the ordinary terminal-freeze
+    rejection once it's terminal — ordinary price adjustments discovered
+    at billing time belong on the invoice document, not a rewrite of the
+    task's own rate.
+  This changes WHEN a rate write is allowed (and, for this one exception,
+  narrows WHO). `compute_rate_prompts` itself needed no terminal-status
   skip: a prompt only exists when the line already carries a
   `final_price`, i.e. the vendor actually billed it, on either a
   complete or cancelled task alike.
@@ -1160,13 +1171,16 @@ reconcile, and never mutates a task itself:
   changes a task's rate — a human must click Accept, and the dialog is
   only ever rendered for a `can_manage_financials` user
   (`canManageFinancials` client-side gate in
-  `PurchaseOrderDetailPage.svelte`). A job's PM-only user (no
-  `can_manage_financials`) would also satisfy the PATCH's own
-  server-side money gate for their job's task, but the PO detail page
-  has no per-task job/PM context to evaluate client-side, so the
-  dialog simply never renders for them — not a hard block (they can
-  still edit the task's rate directly from its own detail page), just
-  a narrower client-side offer than the server would technically allow.
+  `PurchaseOrderDetailPage.svelte`). For a TERMINAL task this now matches
+  the server exactly (financials-only, per the ruling above); for a
+  still-open task the client gate is narrower than the server would
+  technically allow (a job's PM-only user, no `can_manage_financials`,
+  could PATCH that task's rate directly from its own detail page via the
+  ordinary MONEY_FIELDS gate) — the PO detail page has no per-task
+  job/PM context to evaluate client-side, so the dialog simply never
+  renders for a PM-only user regardless of the linked task's status. Not
+  a hard block on the open-task case, just a narrower client-side offer
+  than the server would technically allow there.
 
 ### No hard blocks — task completion is still the only billability gate
 

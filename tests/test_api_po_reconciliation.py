@@ -470,17 +470,53 @@ class TaskLinkAPIWritableOnCreateTest(POReconciliationAPITestBase):
 
 class TerminalTaskRateExceptionAPITest(POReconciliationAPITestBase):
     """RM ruling 2026-09-21 (resolves LATER.md "rate-prompt Accept fails on
-    complete tasks"): PATCH /api/jobs/{job}/tasks/{id}/ {rate: ...} succeeds
-    on a TERMINAL task (complete OR cancelled) when it is uninvoiced and
-    PO-linked — exactly the PATCH RatePromptDialog.svelte's Accept gesture
-    sends. Cancelled is included because a cancelled task's recorded
-    actuals stay billable, so it carries the same reprice claim as a
-    completed one. API-level coverage on top of the service-level matrix
-    in TerminalTaskRateExceptionTest (tests/test_po_reconciliation.py)."""
+    complete tasks"), tightened same-day: PATCH
+    /api/jobs/{job}/tasks/{id}/ {rate: ...} succeeds on a TERMINAL task
+    (complete OR cancelled) when it is uninvoiced, PO-linked, AND the
+    caller holds `can_manage_financials` — exactly the PATCH
+    RatePromptDialog.svelte's Accept gesture sends (that dialog is already
+    client-gated on `canManageFinancials`, so this makes the server match
+    the real flow rather than being looser than it). Cancelled is included
+    because a cancelled task's recorded actuals stay billable, so it
+    carries the same reprice claim as a completed one.
+
+    `self.admin` (used by most tests below) holds `can_manage_financials`
+    directly in the fixture (not `is_superuser`), so the success cases
+    below already exercise the financials arm for real, not via a
+    superuser bypass — `test_..._by_financials_only_user_succeeds` adds a
+    dedicated financials-only (no `can_manage_jobs`) user for a case that
+    can't be confused with "admin can do everything anyway."
+
+    The financials-only arm is narrower than the ordinary MONEY_FIELDS
+    gate (manager atom OR the job's PM OR financials): a job's PM or a
+    plain `can_manage_jobs` holder can write `rate` on this same task
+    while it's open, but gets the ordinary terminal-freeze rejection once
+    it's terminal — `test_..._by_manager_only_user_rejected` and
+    `test_..._by_job_pm_without_financials_rejected` pin that.
+    `test_pm_non_terminal_rate_patch_still_works` pins the unaffected
+    normal path (PM writing `rate` on a still-open task).
+
+    API-level coverage on top of the service-level matrix in
+    TerminalTaskRateExceptionTest (tests/test_po_reconciliation.py)."""
 
     def setUp(self):
         super().setUp()
         self.client.force_authenticate(user=self.admin)
+        from django.contrib.auth.models import Permission
+        self.financials_only_user = User.objects.create_user(
+            username='api_rate_fin', password='x')
+        self.financials_only_user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_financials'))
+        self.financials_only_user = User.objects.get(pk=self.financials_only_user.pk)
+        self.manager_only_user = User.objects.create_user(
+            username='api_rate_mgr', password='x')
+        self.manager_only_user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_jobs'))
+        self.manager_only_user = User.objects.get(pk=self.manager_only_user.pk)
+        self.job_pm_user = User.objects.create_user(
+            username='api_rate_pm', password='x')
+        self.job.project_manager = self.job_pm_user
+        self.job.save(update_fields=['project_manager'])
 
     def _task_url(self):
         return f'/api/jobs/{self.job.pk}/tasks/{self.top_task.pk}/'
@@ -496,6 +532,64 @@ class TerminalTaskRateExceptionAPITest(POReconciliationAPITestBase):
             invoice_line_item=li, source_type=InvoiceLineItemSource.SOURCE_TASK,
             source_pk=task.pk,
         )
+
+    def test_complete_po_linked_uninvoiced_rate_patch_by_financials_only_user_succeeds(self):
+        """A dedicated financials-only user (no `can_manage_jobs`) — not
+        `self.admin`, which holds every atom — proves the arm really is
+        `can_manage_financials`, not incidentally satisfied by admin's
+        other permissions."""
+        self._make_issued_po(task=self.top_task)
+        self.top_task.status = Task.STATUS_COMPLETE
+        self.top_task.save(update_fields=['status'])
+        self.client.force_authenticate(user=self.financials_only_user)
+        response = self.client.patch(
+            self._task_url(), data={'rate': '155.00'}, format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.top_task.refresh_from_db()
+        self.assertEqual(self.top_task.rate, Decimal('155.00'))
+
+    def test_complete_po_linked_uninvoiced_rate_patch_by_manager_only_user_rejected(self):
+        """A plain `can_manage_jobs` holder does NOT qualify for the
+        exception -- ordinary terminal-freeze rejection, same as before
+        the carve-out."""
+        self._make_issued_po(task=self.top_task)
+        self.top_task.status = Task.STATUS_COMPLETE
+        self.top_task.save(update_fields=['status'])
+        self.client.force_authenticate(user=self.manager_only_user)
+        response = self.client.patch(
+            self._task_url(), data={'rate': '155.00'}, format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('settled', str(response.data))
+
+    def test_complete_po_linked_uninvoiced_rate_patch_by_job_pm_without_financials_rejected(self):
+        """The job's own PM does NOT qualify either -- the exception is
+        financials-only, not the ordinary manager-OR-PM-OR-financials
+        MONEY_FIELDS gate."""
+        self._make_issued_po(task=self.top_task)
+        self.top_task.status = Task.STATUS_COMPLETE
+        self.top_task.save(update_fields=['status'])
+        self.client.force_authenticate(user=self.job_pm_user)
+        response = self.client.patch(
+            self._task_url(), data={'rate': '155.00'}, format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('settled', str(response.data))
+
+    def test_pm_non_terminal_rate_patch_still_works(self):
+        """Regression pin: the carve-out only narrows the TERMINAL-task
+        path -- the job's PM can still write `rate` on a still-open
+        (pending) task exactly as before, via the ordinary MONEY_FIELDS
+        gate (CanManageJobOrPM)."""
+        self.assertEqual(self.top_task.status, Task.STATUS_PENDING)
+        self.client.force_authenticate(user=self.job_pm_user)
+        response = self.client.patch(
+            self._task_url(), data={'rate': '155.00'}, format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.top_task.refresh_from_db()
+        self.assertEqual(self.top_task.rate, Decimal('155.00'))
 
     def test_complete_po_linked_uninvoiced_rate_patch_succeeds(self):
         self._make_issued_po(task=self.top_task)
