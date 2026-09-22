@@ -776,20 +776,26 @@ class InvoiceService:
         and re-deriving price from actuals the same way seed_from_agreement
         does (see its docstring / spec §7.3).
 
-        RM ruling 2026-09-21 "rule 2": seed_from_agreement skips a
-        partially-backed line (`_agreement_line_backing_is_partial`)
-        outright. Restore is different — a human explicitly picked THIS
-        line off the remaining-lines picker, so silently doing nothing
-        (or erroring) is worse than honoring the choice. But the
-        dishonesty rule 2 guards against — a bundle's full description/qty
-        priced off just the done fraction of its backing — applies
-        exactly as much to an explicit restore as to an automatic seed.
-        So a partial line still restores (the human's choice is honored),
-        but on the SAME "estimate basis, zero claims" footing as a
-        zero-billable line: `_mirror_agreement_claims` /
-        `_rederive_price_from_actuals` are skipped for it. Its
-        already-terminal atom(s) stay unclaimed and pool-visible, same as
-        the skip path.
+        RM ruling 2026-09-21 "rule 2" (corrected after review): a
+        partially-backed line (`_agreement_line_backing_is_partial`) is
+        REFUSED here exactly as `seed_from_agreement` skips it — raises
+        `ValidationError`, no line is created. An earlier version of this
+        method instead restored the line at estimate values with zero
+        claims (honoring the explicit pick while avoiding the actuals
+        dishonesty) — that carve-out was reviewed and rejected: it left
+        the line's already-terminal atom(s) unclaimed while the line
+        itself carried the FULL estimate price for that same work, so
+        `get_source_pool` (whose availability is keyed purely on
+        `InvoiceLineItemSource` existence, not on any agreement-line
+        state) would still offer the terminal atom for a manual pull —
+        a second charge for value the restored line already bills.
+        Unlike the seed-skip path (no line exists at all, so the manual
+        pull is the ONLY charge), a hybrid "line exists at estimate
+        price, atom still pullable" state has no safe reading. So restore
+        and seed now agree: a partial line simply cannot be placed on an
+        invoice at all until it's fully done, full stop — the picker
+        still lists it (a human can see it's there and why it's blocked)
+        but placing it raises.
 
         Exactly one of estimate_line_id / co_line_id must be given.
         """
@@ -813,6 +819,14 @@ class InvoiceService:
             )
             if line is None:
                 raise ValidationError('Agreement line not found.')
+
+            if InvoiceService._agreement_line_backing_is_partial(line):
+                raise ValidationError(
+                    "This agreement line's work is only partly finished. "
+                    "It can return to an invoice once all of its work is "
+                    "done; finished work can be billed now by pulling it "
+                    "from the unbilled pool."
+                )
 
             # exclude_invoice=None (not `invoice`): unlike seed_from_agreement,
             # this line came straight from compose_agreement rather than
@@ -839,9 +853,8 @@ class InvoiceService:
             if line.get('is_adjustment') and line.get('target_category_ids'):
                 li.adjustment_target_categories.set(line['target_category_ids'])
 
-            if not InvoiceService._agreement_line_backing_is_partial(line):
-                InvoiceService._mirror_agreement_claims(li, line)
-                InvoiceService._rederive_price_from_actuals(li)
+            InvoiceService._mirror_agreement_claims(li, line)
+            InvoiceService._rederive_price_from_actuals(li)
 
             # Deferred until li is priced (est OR re-derived actuals) —
             # see the matching comment in seed_from_agreement.

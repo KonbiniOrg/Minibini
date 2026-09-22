@@ -455,25 +455,39 @@ the **"add from agreement"** picker's backing call — it lists exactly
 the remaining lines not already on the draft — since 2026-08-12 the
 picker is the ONLY restore path (the in-table struck rows are gone).
 
-**Partial backing: restores at estimate basis, unlike seed (RM ruling
-2026-09-21 "rule 2").** `remaining_agreement_lines` — and so the
+**Partial backing: refused, same as seed (RM ruling 2026-09-21 "rule 2",
+corrected after review).** `remaining_agreement_lines` — and so the
 picker — still offers a partially-backed line (§"The three-way
 completeness rule" above); it was never claimed, so it's never excluded.
-Restore is an explicit, one-at-a-time human choice off that picker, not
-an automatic sweep — RM's "must not auto-generate a partial line"
-objection is about `seed_from_agreement` silently doing this for every
-remaining line, which doesn't describe a human deliberately picking one
-line. But the underlying dishonesty the rule guards against (a bundle's
-full description/qty priced off just its done fraction) is exactly as
-real for an explicit restore as for an automatic seed, so the pick is
-honored on the SAME safe footing as a zero-billable line rather than on
-actuals: `restore_agreement_line` checks
-`_agreement_line_backing_is_partial` and, when true, skips **both**
-claim mirroring and actuals re-derivation — the line lands with zero
-claims, priced at its estimate value. Its terminal atom(s) stay
-unclaimed and pool-visible, same as the seed-skip path, so a deliberate
-manual pull of just the done atom is still available alongside the
-restored line.
+`restore_agreement_line` checks `_agreement_line_backing_is_partial` and,
+when true, raises `ValidationError` — no `InvoiceLineItem` is created,
+same as `seed_from_agreement` skipping the line.
+
+An earlier version of this ruling instead let the explicit pick through
+at estimate basis with zero claims (the reasoning: a human choosing one
+line off a picker isn't the unattended sweep RM's "must not auto-generate"
+objection targets). Review rejected that carve-out: `get_source_pool`'s
+availability is keyed purely on whether an `InvoiceLineItemSource` row
+exists for an atom, with no notion of "this atom's value is already
+covered by a restored line's estimate price." So the restored line would
+sit on the invoice at its FULL estimate price while its already-terminal
+atom(s) were STILL offered as `available` in the pool — pullable onto a
+different line for their own actuals, a second, uncontrolled charge for
+value the restored line already bills. This is structurally different
+from the seed-skip path, where no line exists at all, so a manual pull
+of the terminal atom is the *only* charge for it. There is no safe
+hybrid: restore and seed now agree exactly — a partial line cannot be
+placed on an invoice under any path until every claimable atom on it is
+terminal. The picker still lists it (so a human can see it's there and
+why it can't be added yet); attempting to add it raises a sentence-form
+error (`"This agreement line's work is only partly finished. It can
+return to an invoice once all of its work is done; finished work can be
+billed now by pulling it from the unbilled pool."`), which the API's
+central handler renders as `{'detail': '<sentence>'}` — no view-level
+catch needed. `InvoiceEditView.svelte`'s `addFromAgreement` already
+routes any restore-line failure through `handleMutationError` →
+`errorMessage` → the global error overlay, so this sentence surfaces
+there with no frontend change.
 
 ### `remove_line(invoice, line_item)`
 

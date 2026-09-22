@@ -459,25 +459,30 @@ class InvoiceSeedingTestCase(TestCase):
         # = $600.00, over qty 1 -> price = $600.00
         self.assertEqual(li.price, Decimal('600.00'))
 
-    def test_restoring_a_partially_backed_line_seeds_at_estimate_basis(self):
-        """Restore is an explicit human choice off the remaining-lines
-        picker — RM's "must not auto-generate" objection doesn't apply,
-        so the pick is honored (unlike seed_from_agreement, which skips
-        the line outright). But the underlying dishonesty rule 2 guards
-        against still applies: the restored line lands on the SAME
-        "estimate basis, zero claims" footing as a zero-billable line,
-        never priced from the partial actuals fraction."""
+    def test_restoring_a_partially_backed_line_is_refused(self):
+        """Restore refuses a partially-backed line exactly as seed skips
+        it — raises ValidationError, no line is created, and the terminal
+        atom stays unclaimed. (Corrected after review: an earlier version
+        of this ruling restored the line at estimate values with zero
+        claims; that left the line carrying the FULL estimate price while
+        its already-done atom was STILL offered as available in the pool
+        — a second, uncontrolled charge for the same work if someone
+        pulled it. Restore and seed must agree: a partial line cannot be
+        placed on an invoice at all until it's fully done.)"""
         partial_line, billable_task, _pending_task = self._make_partial_line()
 
         inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
-        li = InvoiceService.restore_agreement_line(
-            inv, estimate_line_id=partial_line.pk)
+        with self.assertRaises(ValidationError):
+            InvoiceService.restore_agreement_line(
+                inv, estimate_line_id=partial_line.pk)
 
-        self.assertEqual(li.price, partial_line.price)  # estimate value, untouched
-        self.assertFalse(li.sources.exists())  # zero claims
+        self.assertFalse(
+            inv.invoicelineitem_set.filter(
+                agreement_estimate_line=partial_line).exists())
 
-        # the terminal atom is still unclaimed (pool-visible), same as the
-        # seed-skip path.
+        # the terminal atom is still unclaimed (pool-visible) — no line
+        # exists at all, so a manual pull of just that atom is the ONLY
+        # charge, same as the seed-skip path.
         from apps.invoicing.models import InvoiceLineItemSource
         self.assertFalse(
             InvoiceLineItemSource.objects.filter(
@@ -485,6 +490,85 @@ class InvoiceSeedingTestCase(TestCase):
                 source_pk=billable_task.pk,
             ).exists()
         )
+
+    def test_partially_backed_line_with_mixed_task_and_material_is_not_seeded(self):
+        """The Minor the review flagged: a partial line whose two
+        claimable atoms are a DIFFERENT-type mix (one task, one material)
+        — not just two tasks — is skipped exactly the same way. Guards
+        against a classification bug that only special-cased same-type
+        atom pairs."""
+        billable_task = Task(
+            job=self.job, name='Mixed-Billable', status=Task.STATUS_COMPLETE,
+            actual_qty=Decimal('1'),
+        )
+        billable_task.stamp_from_scheme(self.scheme)
+        billable_task.save()
+        pending_material = Material.objects.create(
+            job=self.job, description='Unfinished part', quantity=Decimal('2'),
+            sell_price=Decimal('10.00'), accounting_category=self.cat,
+        )
+        self.assertEqual(
+            pending_material.consumption_state,
+            Material.CONSUMPTION_STATE_PENDING,
+        )
+
+        mixed_partial_line = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=4, qty=Decimal('1'),
+            units='ea', description='Mixed partial', price=Decimal('120.00'),
+            accounting_category=self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=mixed_partial_line,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=billable_task.pk,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=mixed_partial_line,
+            source_type=EstimateLineItemSource.SOURCE_MATERIAL,
+            source_pk=pending_material.pk,
+        )
+
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        n = InvoiceService.seed_from_agreement(inv)
+
+        self.assertEqual(n, 3)  # backed_line, hand_line, adj_line only
+        self.assertFalse(
+            inv.invoicelineitem_set.filter(
+                agreement_estimate_line=mixed_partial_line).exists())
+
+    def test_cancelled_only_backing_is_all_billable_and_seeds_on_actuals(self):
+        """The other Minor: a line backed ENTIRELY by cancelled tasks (no
+        complete ones at all) is still the "ALL claimable atoms billable"
+        case — cancelled is terminal, same as complete (plan C3 doctrine)
+        — so it seeds normally with claims mirrored and price re-derived
+        from actuals, not treated as partial or as zero-billable."""
+        cancelled_task = Task(
+            job=self.job, name='Cancelled', status=Task.STATUS_CANCELLED,
+            actual_qty=Decimal('3'),
+        )
+        cancelled_task.stamp_from_scheme(self.scheme)
+        cancelled_task.save()
+
+        cancelled_line = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=4, qty=Decimal('2'),
+            units='hour', description='Stopped early', price=Decimal('100.00'),
+            accounting_category=self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=cancelled_line,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=cancelled_task.pk,
+        )
+
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        InvoiceService.seed_from_agreement(inv)
+
+        li = inv.invoicelineitem_set.get(agreement_estimate_line=cancelled_line)
+        self.assertEqual(
+            set(li.sources.values_list('source_type', flat=True)), {'task'})
+        # cancelled_task: 3hr * $100/hr = $300.00, over qty 2 -> $150.00/hr
+        self.assertEqual(li.price, Decimal('150.00'))
+        self.assertEqual(li.total_amount, Decimal('300.00'))
 
     def test_hand_line_still_seeds_at_estimate_values(self):
         """A hand line (no claimable atoms) acquires zero claims, so it
