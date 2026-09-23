@@ -317,6 +317,68 @@ class ChangeOrderCommentLineAcceptanceTest(TestCase):
         self.assertEqual(self.task.descoped_by_id, self.co.pk)
 
 
+class SendGateCommentLineExemptionTest(TestCase):
+    """The send-time AC gates exempt comment lines, matching their own
+    documented contract ("same predicate as EstimateAcceptanceService.
+    on_accept", which skips is_comment):
+    - EstimateService.assert_all_hand_lines_have_ac (mark_open / email)
+    - ChangeOrderService.assert_all_bare_add_lines_have_ac (draft-exit /
+      email)
+    Without the exemption a comment line makes its whole estimate/CO
+    unsendable — caught by the comment-lines e2e backfill (2026-09-22): the
+    unit tests above construct open/accepted documents directly and never
+    crossed mark_open with a comment on board.
+    """
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(code='GATE', name='Gate', taxable=True)
+        self.contact = Contact.objects.create(
+            first_name='Pat', last_name='Gate', email='pat.gate@acme.com', mobile_number='555-0107',
+        )
+        self.job = Job.objects.create(job_number='JOB-CMT-0007', contact=self.contact)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-CMT-0007', status=Estimate.STATUS_DRAFT,
+        )
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Real work',
+            qty=Decimal('1'), price=Decimal('100.00'), accounting_category=self.cat,
+        )
+
+    def test_estimate_send_gate_passes_with_comment_line(self):
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=2, description='See attached spec sheet',
+            is_comment=True, qty=Decimal('0'), price=Decimal('0'),
+        )
+        EstimateService.assert_all_hand_lines_have_ac(self.estimate)  # should not raise
+
+    def test_estimate_send_gate_still_blocks_bare_non_comment_line(self):
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=2, description='Bare hand-line',
+            qty=Decimal('1'), price=Decimal('10.00'),
+        )
+        with self.assertRaises(DjangoValidationError):
+            EstimateService.assert_all_hand_lines_have_ac(self.estimate)
+
+    def test_co_send_gate_passes_with_comment_add_line(self):
+        from apps.estimates.change_order_service import ChangeOrderService
+        co = ChangeOrder.objects.create(job=self.job, estimate=self.estimate)
+        ChangeOrderLineItem.objects.create(
+            change_order=co, line_number=1, action=ChangeOrderLineItem.ACTION_ADD,
+            description='FYI only', is_comment=True, qty=Decimal('0'), price=Decimal('0'),
+        )
+        ChangeOrderService.assert_all_bare_add_lines_have_ac(co)  # should not raise
+
+    def test_co_send_gate_still_blocks_bare_non_comment_add_line(self):
+        from apps.estimates.change_order_service import ChangeOrderService
+        co = ChangeOrder.objects.create(job=self.job, estimate=self.estimate)
+        ChangeOrderLineItem.objects.create(
+            change_order=co, line_number=1, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Bare add', qty=Decimal('1'), price=Decimal('10.00'),
+        )
+        with self.assertRaises(DjangoValidationError):
+            ChangeOrderService.assert_all_bare_add_lines_have_ac(co)
+
+
 class InvoiceCommentLineCategorizationTest(TestCase):
     """Comment lines are exempt from the pre-send categorization gate."""
 

@@ -43,7 +43,12 @@ test('freeform line with the Materials AC becomes a material (no checkbox anywhe
     await page.getByRole('button', { name: 'Add line' }).click();
     const picker = page.getByRole('dialog');
     await expect(picker.getByRole('button', { name: 'Add Line' })).toBeVisible();
-    await expect(picker.getByRole('checkbox')).toHaveCount(0);
+    // No material checkbox. The comment-lines merge (2026-09-21) added its
+    // own "Comment (no charge)" checkbox to this footer — the assertion
+    // here is that it is the ONLY one (the retired "is material?" box
+    // never came back), left unchecked for this material-by-AC journey.
+    await expect(picker.getByRole('checkbox')).toHaveCount(1);
+    await expect(picker.getByRole('checkbox', { name: 'Comment (no charge)' })).not.toBeChecked();
     await picker.getByPlaceholder(/search/i).fill(matLineDesc);
     await picker.getByRole('button', { name: 'Add Line' }).click();
 

@@ -1148,7 +1148,11 @@ resolve to) to keep this derivation N+1-free.
 
 - `is_comment` (inherited from `BaseLineItem`) — a purely informational
   row: no charge (`qty`/`price` forced to zero), exempt from the
-  hand-line accounting-category-required rule, and skipped entirely by
+  hand-line accounting-category-required rule — at add/update AND at the
+  send-time gates (`assert_all_hand_lines_have_ac`,
+  `assert_all_bare_add_lines_have_ac`; the send-time exemption was
+  restored 2026-09-22 after the comment-lines e2e backfill caught the
+  gates rejecting comment lines) — and skipped entirely by
   `on_accept` (§9.1) — it never crystallizes into a Task or Material.
   `compose_agreement` (§14.6) excludes it from the billing agreement, so
   it never flows onto an invoice via "copy from estimate." `ChangeOrderLineItem`
@@ -2948,7 +2952,8 @@ the composition (Estimate + accepted COs); the underlying
 was first sold.
 
 **Send guard (AC).** `ChangeOrder.clean()` blocks `draft → open` while
-any bare `add` line (no `service_item`, no `inventory_item`) lacks an
+any bare `add` line (no `service_item`, no `inventory_item`, not a
+comment — `is_comment` add lines are informational-only and exempt) lacks an
 `accounting_category` — the CO parallel of
 `assert_all_hand_lines_have_ac` (§5.1/§15). Such a line either
 crystallizes into a Material (`is_material=True`) at acceptance, where
@@ -3654,7 +3659,8 @@ multipart to `/api/estimates/{id}/send/`.
 (the draft→open shortcut) — every hand-line must have an accounting category.
 `EstimateService.assert_all_hand_lines_have_ac` raises `ValidationError` (400)
 listing the offending lines if any hand-line (no atom source, not a percentage
-adjustment — atom-backed and adjustment lines are exempt) lacks one. This hoists
+adjustment — atom-backed, adjustment, and comment (`is_comment`) lines are
+exempt) lacks one. This hoists
 the AC-required rule from acceptance (§9) to send-time, so the omission is caught
 before the estimate reaches the customer. (`mark_open` also still requires the job
 to have at least one Deliverable.)

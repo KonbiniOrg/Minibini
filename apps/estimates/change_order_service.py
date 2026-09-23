@@ -119,6 +119,10 @@ class ChangeOrderService:
                 inventory_item__isnull=True,
                 accounting_category__isnull=True,
                 sources__isnull=True,
+                # Comment lines are informational-only: no charge, no
+                # category — same exemption as the estimate gate and the
+                # invoice pre-send gate.
+                is_comment=False,
             )
         ]
         if missing:

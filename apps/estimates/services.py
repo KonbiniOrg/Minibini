@@ -176,13 +176,16 @@ class EstimateService:
         """Raise if any hand-line (no atom source, not a percentage adjustment)
         lacks an accounting category. Enforced at send-time (mark_open / email)
         so the AC-required rule is caught before the estimate goes out — not only
-        at acceptance. Atom-backed and adjustment lines are exempt (same predicate
-        as EstimateAcceptanceService.on_accept)."""
+        at acceptance. Atom-backed, adjustment, and comment lines are exempt
+        (same predicate as EstimateAcceptanceService.on_accept — comment lines
+        are informational-only and never carry a category)."""
         missing = []
         for li in estimate.estimatelineitem_set.all():
             if li.sources.exists():
                 continue
             if li.adjustment_service_id is not None:
+                continue
+            if li.is_comment:  # informational-only: no charge, no category
                 continue
             if li.accounting_category_id is None:
                 missing.append(li.description or f'line {li.line_number}')

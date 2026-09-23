@@ -1548,3 +1548,31 @@ Cross-cutting UI/API conventions and shared components.
   "clear", and the backend in-place update path honors an explicit
   null/empty distinctly from "not provided") — or RM rules the current
   behavior is fine as-is.
+
+- **Comment lines lost their informational rendering + client-side gate
+  exemptions in the docsurface edit views.** — _added 2026-09-22
+  (comment-lines e2e backfill)_
+  The comment-aware line table (`LineItemTable.svelte`: "Comment" badge,
+  dashed money cells, `!li.is_comment` guard on the needs-category marker)
+  is orphaned — zero importers — since the doc surfaces moved to
+  `EstimateEditView`/`InvoiceEditView`/`COEditView`. Consequences, all
+  UI-only (the backend contracts are correct and e2e-covered in
+  `e2e/specs/comment-lines/`):
+  (a) `EstimateEditView` and `InvoiceEditView` show the amber
+  "needs category" marker on comment rows (`li.accounting_category == null`
+  with no `is_comment` guard);
+  (b) `InvoicePanel`'s `allLinesHaveCategory` send gate doesn't exempt
+  comments, so the Send Invoice link is blocked in the UI whenever a
+  comment line exists even though the backend categorization gate passes
+  (proven at the API in `invoice-comment.spec.js`);
+  (c) no doc surface renders a comment row as informational (badge/dashes)
+  — it reads as an ordinary zero-money row;
+  (d) `EstimateService.unanswered_lines` doesn't exempt `is_comment`, so
+  after acceptance a comment line counts as "needs a work decision":
+  blocks auto-release and offers "Generate work…"/"No work needed" on an
+  informational row (backend, but display-driven — grouped here).
+  _Done when:_ comment rows render informationally on the three edit
+  views + customer views, the needs-category marker and the InvoicePanel
+  send gate exempt `is_comment`, `unanswered_lines` excludes comments, and
+  the deferred assertions noted in `invoice-comment.spec.js`'s header move
+  into the specs.
