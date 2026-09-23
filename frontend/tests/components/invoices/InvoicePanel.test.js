@@ -580,6 +580,52 @@ describe('InvoicePanel send gate', () => {
     expect(await findByText(/assign an accounting category to every line before sending/i)).toBeInTheDocument();
   });
 
+  it('a comment line (category-free by design) does NOT block the Send link', async () => {
+    // Mirrors the backend gate exactly: _assert_all_lines_categorized
+    // filters is_comment=False, so a categorized real line + a comment
+    // line is sendable (comment-lines e2e backfill fix, 2026-09-22).
+    user.set({ permissions: ['can_manage_financials'] });
+    const inv = makeInvoice({
+      status: 'draft',
+      line_items: [
+        makeLine({ accounting_category: { id: 1, name: 'Labor' } }),
+        makeLine({
+          line_item_id: 2, line_number: 2,
+          description: 'See attached warranty terms',
+          is_comment: true, qty: 0, price: '0.00', accounting_category: null,
+        }),
+      ],
+    });
+    mockApi(inv);
+    const { findByRole, findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Line Items');
+    expect(await findByRole('link', { name: /send invoice/i })).toBeInTheDocument();
+    expect(queryByText(/assign an accounting category to every line before sending/i)).not.toBeInTheDocument();
+  });
+
+  it('an uncategorized REAL line still blocks even when a comment line is also present', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const inv = makeInvoice({
+      status: 'draft',
+      line_items: [
+        makeLine({ accounting_category: null }),
+        makeLine({
+          line_item_id: 2, line_number: 2,
+          description: 'See attached warranty terms',
+          is_comment: true, qty: 0, price: '0.00', accounting_category: null,
+        }),
+      ],
+    });
+    mockApi(inv);
+    const { findByText, queryByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Line Items');
+    expect(queryByRole('link', { name: /send invoice/i })).not.toBeInTheDocument();
+    const sendBtn = await findByText('Send Invoice');
+    expect(sendBtn.tagName).toBe('BUTTON');
+    expect(sendBtn).toBeDisabled();
+    expect(await findByText(/assign an accounting category to every line before sending/i)).toBeInTheDocument();
+  });
+
   it('the disabled Send button is a <button>, not an <a>', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     const inv = makeInvoice({

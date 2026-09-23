@@ -63,8 +63,13 @@
     (invoice?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
   );
 
+  // Comment lines are informational-only and never carry a category —
+  // exempt them exactly like the backend send gate does
+  // (InvoiceEmailService._assert_all_lines_categorized filters
+  // is_comment=False), or a comment-bearing invoice could never be sent
+  // from the UI at all.
   let allLinesHaveCategory = $derived(
-    lineItems.every(li => li.accounting_category != null)
+    lineItems.every(li => li.is_comment || li.accounting_category != null)
   );
 
   // Doc-shaped rows for the read-only Customer/Reorder kit views — ALL lines
