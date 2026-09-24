@@ -225,6 +225,25 @@ class UniqueEmailTest(unittest.TestCase):
         self.assertEqual(build._unique_email('test+info@robot-six.com', seen),
                          'test+info2@robot-six.com')
 
+    def test_collisions_are_case_insensitive(self):
+        # MySQL's default *_ci collation makes Contact.email's unique index
+        # case-insensitive, so test+Brian@ and test+brian@ collide on load.
+        seen = set()
+        self.assertEqual(build._unique_email('test+Brian@robot-six.com', seen),
+                         'test+Brian@robot-six.com')
+        self.assertEqual(build._unique_email('test+brian@robot-six.com', seen),
+                         'test+brian1@robot-six.com')
+        self.assertEqual(build._unique_email('TEST+BRIAN@robot-six.com', seen),
+                         'TEST+BRIAN2@robot-six.com')
+
+    def test_numbering_skips_case_variants_already_taken(self):
+        # The registry holds lowercased keys (only _unique_email writes it).
+        seen = set()
+        build._unique_email('test+brian@robot-six.com', seen)
+        build._unique_email('test+Brian@robot-six.com', seen)   # -> Brian1
+        self.assertEqual(build._unique_email('test+BRIAN@robot-six.com', seen),
+                         'test+BRIAN2@robot-six.com')
+
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')

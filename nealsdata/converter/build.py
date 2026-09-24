@@ -317,16 +317,20 @@ def _unique_email(email, seen):
     """Return `email` if unused, else number the local part until free
     (test+info@… → test+info1@…, test+info2@…). Contact.email is DB-unique;
     distinct source contacts legitimately share a local part (info@a.com and
-    info@b.com both anonymize to test+info@robot-six.com)."""
-    if email not in seen:
-        seen.add(email)
+    info@b.com both anonymize to test+info@robot-six.com).
+
+    `seen` is keyed case-insensitively: the unique index sits on MySQL's
+    default `*_ci` collation, so test+Brian@ and test+brian@ are the same
+    key to the database even though they are distinct Python strings."""
+    if email.lower() not in seen:
+        seen.add(email.lower())
         return email
     local, _, domain = email.partition('@')
     n = 1
-    while f'{local}{n}@{domain}' in seen:
+    while f'{local}{n}@{domain}'.lower() in seen:
         n += 1
     numbered = f'{local}{n}@{domain}'
-    seen.add(numbered)
+    seen.add(numbered.lower())
     return numbered
 
 

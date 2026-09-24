@@ -866,6 +866,24 @@ Billing mechanics and money-record lifecycle.
 
 ## Platform & conventions
 
+- **Contact.email uniqueness is collation-dependent; never case-folded.** —
+  _added 2026-09-24 (nealseed load failure)_
+  `Contact.email` is `unique=True` and `Contact.clean()` only strips
+  whitespace — it never lowercases. On MySQL the column's default `*_ci`
+  collation makes the unique index case-insensitive, so `Foo@x.com` and
+  `foo@x.com` collide at the DB; `ContactService.create_contact` checks
+  `email__iexact` up front (rich 409), but `update_contact` relies on
+  `full_clean()`'s exact-match uniqueness check, which only catches case
+  variants because the collation happens to be case-insensitive (SQLite /
+  a `*_bin` collation would let the pair coexist). Surfaced when the
+  converter's exact-string dedupe let `test+Brian@` / `test+brian@` through
+  and `loaddata` hit the index. Converter side fixed 2026-09-24
+  (`_unique_email` keys `seen` case-insensitively); the app side is the
+  open item.
+  _Done when:_ `Contact.clean()` normalises email case (or an explicit
+  `iexact` check guards `update_contact` too), with a test that passes on a
+  case-sensitive backend.
+
 - **"Atom" leaks into user-visible error copy in EstimateEditView.** — _added
   2026-09-19 (bundling-in-task-view final review)_
   `handleMutationError`/`removeAtomFromLine` in
