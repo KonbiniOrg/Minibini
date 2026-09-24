@@ -14833,45 +14833,6 @@
   },
   {
     "model": "contacts.contact",
-    "pk": 377,
-    "fields": {
-      "first_name": "Verkada",
-      "middle_initial": "",
-      "last_name": ".75\" holes",
-      "email": "test+noreply+377@robot-six.com",
-      "addr1": "",
-      "addr2": "",
-      "addr3": "",
-      "city": "",
-      "municipality": "",
-      "postal_code": "",
-      "country_code": "",
-      "mobile_number": "",
-      "work_number": "555-555-5555",
-      "home_number": "",
-      "business": 203,
-      "qbo_customer_id": null
-    }
-  },
-  {
-    "model": "contacts.business",
-    "pk": 203,
-    "fields": {
-      "business_name": "Verkada .75\" holes",
-      "our_reference_code": "BUS-0203",
-      "default_contact": 377,
-      "business_address": "",
-      "business_phone": "",
-      "tax_exemption_number": "",
-      "website": "",
-      "terms": null,
-      "tax_multiplier": null,
-      "qbo_customer_id": null,
-      "qbo_vendor_id": null
-    }
-  },
-  {
-    "model": "contacts.contact",
     "pk": 378,
     "fields": {
       "first_name": "Francisco",
@@ -15909,7 +15870,7 @@
     "fields": {
       "job_number": "08157",
       "name": "1 set of 6 cabinets from prefin ply (2 types)",
-      "contact": 377,
+      "contact": 374,
       "status": "submitted",
       "created_date": "2026-09-13T00:00:00+00:00",
       "start_date": null,
@@ -212311,36 +212272,6 @@
       "entry_type": "audit",
       "object_type": "business",
       "object_id": 202,
-      "user": null,
-      "timestamp": "2024-01-01T00:00:00+00:00",
-      "changes": {
-        "_created": true
-      },
-      "text": ""
-    }
-  },
-  {
-    "model": "core.crmhistory",
-    "pk": 579,
-    "fields": {
-      "entry_type": "audit",
-      "object_type": "contact",
-      "object_id": 377,
-      "user": null,
-      "timestamp": "2024-01-01T00:00:00+00:00",
-      "changes": {
-        "_created": true
-      },
-      "text": ""
-    }
-  },
-  {
-    "model": "core.crmhistory",
-    "pk": 580,
-    "fields": {
-      "entry_type": "audit",
-      "object_type": "business",
-      "object_id": 203,
       "user": null,
       "timestamp": "2024-01-01T00:00:00+00:00",
       "changes": {
