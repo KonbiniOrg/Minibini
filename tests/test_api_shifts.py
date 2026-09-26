@@ -27,10 +27,12 @@ class ShiftAPITest(BaseTestCase):
         """Open a shift + an open blep on an ENTERED_QTY task for `user`.
         Fixture rate scheme 2 is entered_qty (unit 'minute')."""
         from decimal import Decimal
-        from apps.jobs.models import Job, Task, Blep
+        from apps.jobs.models import Job, Task, Blep, RateScheme
         from apps.core.models import Shift
         job = Job.objects.first()
-        task = Task.objects.create(name='CNC', job=job, rate_scheme_id=2)
+        task = Task(name='CNC', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=2))
+        task.save()
         Task.objects.filter(pk=task.pk).update(
             status=Task.STATUS_IN_PROGRESS, actual_qty=Decimal('9'))
         Shift.objects.create(
@@ -68,10 +70,12 @@ class ShiftAPITest(BaseTestCase):
         self.assertIsNone(a.data['shift'])
 
     def test_clock_out_no_prompt_for_elapsed_session(self):
-        from apps.jobs.models import Job, Task, Blep
+        from apps.jobs.models import Job, Task, Blep, RateScheme
         from apps.core.models import Shift
         job = Job.objects.first()
-        task = Task.objects.create(name='Labor', job=job, rate_scheme_id=1)
+        task = Task(name='Labor', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
         Shift.objects.create(
             user=self.user, start_time=timezone.now() - timedelta(hours=2))

@@ -2,7 +2,7 @@
   import { link } from 'svelte-spa-router';
   import TaskRow from './tasks/TaskRow.svelte';
   import MaterialRow from './materials/MaterialRow.svelte';
-  import { fmtMoney as fmt, taskTotal, materialTotal, feeTotal }
+  import { fmtMoney as fmt, taskTotal, materialTotal }
     from '../lib/taskTotals.js';
   import { canManageFinancials } from '../stores/permissions.js';
 
@@ -21,14 +21,11 @@
     // renders only when its callback was actually wired. A surface that
     // omits a callback gets a passive tree — never a dead button bound to
     // a no-op default. Every current surface wires the FULL material
-    // action set (the old page-based venue rule is gone); TaskDetailPage's
-    // subtask tree stays passive for task ops only (edit/del/cancel live
-    // on the subtask's own page).
+    // action set (the old page-based venue rule is gone).
     onEditTask = null,
     onDeleteTask = null,
     onAddMaterial = null,
     onEditMaterial = null,
-    onAddSubtask = null,
     onReorder = null,
     onTaskClick = () => {},
     onAssignTask = () => {},
@@ -44,9 +41,18 @@
     onEditExpense = () => {},
     onDeleteExpense = null,
     onRejectExpense = null,
-    fees = [],
-    onEditFee = () => {},
     selectedTaskId = $bindable(null),
+    // Bundle-selection checkboxes (Task 3) — off by default so every
+    // existing consumer of this shared tree renders unchanged.
+    bundleMode = false,
+    poolByKey = null,
+    bundleSelected = [],
+    onToggleBundle = () => {},
+    // claimed_by_current chip text (Tasks-page CO lens) — pass-through to
+    // TaskRow/MaterialRow; their own defaults ('estimated' / 'Already on the
+    // draft estimate') keep every other consumer of this tree unchanged.
+    bundleClaimedLabel = 'estimated',
+    bundleClaimedTitle = 'Already on the draft estimate',
   } = $props();
 
   // Expenses that created a material show nested under it; material-less
@@ -79,26 +85,20 @@
     let total = 0;
     for (const t of tasks) {
       total += taskWithMaterialsTotal(t);
-      for (const sub of (t.subtasks || [])) {
-        total += taskWithMaterialsTotal(sub);
-      }
     }
     for (const m of (jobMaterials || [])) {
       total += materialTotal(m);
     }
-    for (const f of (fees || [])) {
-      total += feeTotal(f);
-    }
     return total;
   });
 
-  const colCount = $derived(8 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1) + (readonly || jobLocked ? 0 : 1));
+  const colCount = $derived(6 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1) + (readonly || jobLocked ? 0 : 1) + (bundleMode ? 1 : 0));
 
   // Row rendering lives in the shared TaskRow / MaterialRow fragments —
   // the same components every surface uses.
   const taskCallbacks = $derived({
     onTaskClick, onAssignTask, onEditTask, onDeleteTask, onCancelTask,
-    onAddMaterial, onAddSubtask,
+    onAddMaterial,
   });
   const materialCallbacks = $derived({
     onMoveMaterial, onEditMaterial, onConsumeMaterial, onRestockMaterial,
@@ -108,6 +108,7 @@
 
 {#snippet expenseRow(exp, deep)}
   <tr class="expense-row">
+    {#if bundleMode}<td class="bundle-cell"></td>{/if}
     {#if !readonly && !jobLocked}<td class="move-cell"></td>{/if}
     <td class={deep ? 'indent-2' : 'indent'}>
       <span class="expense-marker">$</span> {exp.description || '(expense)'}
@@ -118,8 +119,6 @@
     {#if showStatus}<td>{#if exp.invoice}{@render invoicedLink(exp.invoice)}{/if}</td>{/if}
     <td class="text-right">-</td>
     <td class="text-right">-</td>
-    <td class="text-right">-</td>
-    <td></td>
     <td></td>
     <td class="text-right">{fmt(exp.amount)}</td>
     {#if !readonly}
@@ -149,15 +148,14 @@
 <table class="data-table task-tree-table">
   <thead>
     <tr>
+      {#if bundleMode}<th class="bundle-cell" aria-label="Select for bundling"></th>{/if}
       {#if !readonly && !jobLocked}<th class="move-cell" aria-label="Move target"></th>{/if}
       <th>Name</th>
       {#if showAssignee}<th>Assignee</th>{/if}
-      <th class="text-right">Scheduled Time</th>
+      <th class="text-right">Est Time</th>
       {#if showStatus}<th>Status</th>{/if}
       <th class="text-right">Est Qty</th>
       <th class="text-right">Actual</th>
-      <th class="text-right">Units</th>
-      <th class="text-right">Unit Cost</th>
       <th class="text-right">Sell Price</th>
       <th class="text-right"><span class="est-label">(Est)</span><br>Total</th>
       {#if !readonly}<th>Actions</th>{/if}
@@ -172,6 +170,12 @@
         {showAssignee} {showStatus}
         bind:selectedTaskId {onReorder}
         {...taskCallbacks}
+        {bundleMode}
+        bundleAtom={poolByKey?.get(`task:${task.task_id}`) ?? null}
+        bundleChecked={bundleSelected.includes(`task:${task.task_id}`)}
+        onToggleBundle={() => onToggleBundle(`task:${task.task_id}`)}
+        {bundleClaimedLabel}
+        {bundleClaimedTitle}
       />
 
       <!-- Materials for this task -->
@@ -181,29 +185,15 @@
           indentClass="indent" {showAssignee} {showStatus}
           {readonly} {jobLocked} {jobOnHold} {selectedTaskId}
           {...materialCallbacks}
+          {bundleMode}
+          bundleAtom={poolByKey?.get(`material:${mat.material_id}`) ?? null}
+          bundleChecked={bundleSelected.includes(`material:${mat.material_id}`)}
+          onToggleBundle={() => onToggleBundle(`material:${mat.material_id}`)}
+          {bundleClaimedLabel}
+          {bundleClaimedTitle}
         />
       {/each}
 
-      <!-- Subtasks for this task -->
-      {#each (task.subtasks || []) as sub}
-        <TaskRow
-          task={sub} isSubtask={true}
-          {readonly} {jobLocked} {jobOnHold} {canManage}
-          {showAssignee} {showStatus}
-          bind:selectedTaskId
-          {...taskCallbacks}
-        />
-
-        <!-- Materials for this subtask -->
-        {#each (sub.materials || []) as mat}
-          <MaterialRow
-            material={mat} ownerTask={sub} ownerTerminal={isTerminal(sub)}
-            indentClass="indent-2" {showAssignee} {showStatus}
-            {readonly} {jobLocked} {jobOnHold} {selectedTaskId}
-            {...materialCallbacks}
-          />
-        {/each}
-      {/each}
     {/each}
     {#if jobMaterials && jobMaterials.length}
       <tr class="job-materials-header">
@@ -215,6 +205,12 @@
           indentClass="indent" {showAssignee} {showStatus}
           {readonly} {jobLocked} {jobOnHold} {selectedTaskId}
           {...materialCallbacks}
+          {bundleMode}
+          bundleAtom={poolByKey?.get(`material:${mat.material_id}`) ?? null}
+          bundleChecked={bundleSelected.includes(`material:${mat.material_id}`)}
+          onToggleBundle={() => onToggleBundle(`material:${mat.material_id}`)}
+          {bundleClaimedLabel}
+          {bundleClaimedTitle}
         />
         {#if expenseByMaterial[mat.material_id]}
           {@render expenseRow(expenseByMaterial[mat.material_id], true)}
@@ -228,30 +224,6 @@
       </tr>
       {#each looseExpenses as exp (exp.id)}
         {@render expenseRow(exp, false)}
-      {/each}
-    {/if}
-
-    {#if fees && fees.length}
-      <tr class="job-materials-header">
-        <td colspan={colCount}><strong>Fees</strong></td>
-      </tr>
-      {#each fees as fee (fee.fee_id)}
-        <tr class="fee-row">
-          {#if !readonly && !jobLocked}<td class="move-cell"></td>{/if}
-          <td class="indent"><span class="fee-marker">$</span> {fee.description || '(fee)'}</td>
-          {#if showAssignee}<td></td>{/if}
-          <td></td>
-          {#if showStatus}<td>{#if fee.invoice}{@render invoicedLink(fee.invoice)}{/if}</td>{/if}
-          <td class="text-right">{fee.quantity ?? '-'}</td>
-          <td class="text-right">-</td>
-          <td class="text-right">-</td>
-          <td class="text-right">-</td>
-          <td class="text-right">{fmt(fee.unit_rate)}</td>
-          <td class="text-right">{fmt(feeTotal(fee))}</td>
-          {#if !readonly}
-            <td class="actions-cell row-actions">{#if !jobLocked}<button type="button" onclick={() => onEditFee(fee)}>edit</button>{/if}</td>
-          {/if}
-        </tr>
       {/each}
     {/if}
   </tbody>
@@ -274,18 +246,23 @@
   .indent-2 { padding-left: 48px; }
   /* Headerless radio column — just wide enough for the radio button. */
   .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
-  /* Fees are billable but not a task/material — tint them so they read distinctly. */
-  .fee-row { background: #f3e8ff; }
-  .fee-marker { color: #9333ea; font-weight: bold; margin-right: 4px; }
+  /* Bundle-selection checkbox column (Task 3) — same footprint as move-cell. */
+  .bundle-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
   /* .badge-invoiced comes from app.css. */
 
   /* Task and material rows style themselves in the shared TaskRow /
      MaterialRow fragments; the rules here cover only the rows TaskTree
-     still renders itself (fees, expenses, section headers, footer). */
+     still renders itself (expenses, section headers, footer). */
   .expense-row { background: #f0fdf4; }
   .expense-marker { color: #166534; font-weight: 600; margin-right: 4px; }
-  .grand-total-row { background: #ecfdf5; border-top: 2px solid #99f6e4; }
-  .job-materials-header td { background: #fef9c3; padding-top: 8px; }
+  /* Colorway-token bands (amber via .cw-tasks on the task pages; teal
+     defaults elsewhere). The section-header row is the 60%-soft tier —
+     an in-table divider, deliberately lighter than the header band. */
+  .grand-total-row { background: var(--doc-soft); border-top: 2px solid var(--doc-border); }
+  .job-materials-header td {
+    background: color-mix(in srgb, var(--doc-soft) 60%, #fff);
+    color: var(--doc-accent); padding-top: 8px;
+  }
 
   .actions-cell {
     max-width: 12em;

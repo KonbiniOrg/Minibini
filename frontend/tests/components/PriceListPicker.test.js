@@ -69,21 +69,12 @@ describe('PriceListPicker (onChoose emitter)', () => {
     });
   });
 
-  it('freeform commit defaults to a fee (isMaterial false)', async () => {
-    const props = baseProps();
-    const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
-    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Rush charge' } });
-    await fireEvent.click(await findByRole('button', { name: /add line/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Rush charge', isMaterial: false, isComment: false });
-  });
-
-  it('freeform commit with the material checkbox set emits isMaterial true', async () => {
+  it('freeform commit emits typed text + isComment — no isMaterial (checkbox retired, RM 2026-08-11)', async () => {
     const props = baseProps();
     const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: '3/4 plywood' } });
-    await fireEvent.click(await findByRole('checkbox', { name: /material/i }));
     await fireEvent.click(await findByRole('button', { name: /add line/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood', isMaterial: true, isComment: false });
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood', isComment: false });
   });
 
   it('freeform commit with the comment checkbox set emits isComment true', async () => {
@@ -92,35 +83,20 @@ describe('PriceListPicker (onChoose emitter)', () => {
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'See attached spec' } });
     await fireEvent.click(await findByRole('checkbox', { name: /comment/i }));
     await fireEvent.click(await findByRole('button', { name: /add line/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'See attached spec', isMaterial: false, isComment: true });
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'See attached spec', isComment: true });
   });
 
-  it('material and comment checkboxes are mutually exclusive', async () => {
-    const props = baseProps();
-    const { findByRole } = render(PriceListPicker, { props });
-    const materialBox = await findByRole('checkbox', { name: /material/i });
-    const commentBox = await findByRole('checkbox', { name: /comment/i });
-    await fireEvent.click(materialBox);
-    expect(materialBox).toBeChecked();
-    await fireEvent.click(commentBox);
-    expect(commentBox).toBeChecked();
-    expect(materialBox).not.toBeChecked();
-    await fireEvent.click(materialBox);
-    expect(materialBox).toBeChecked();
-    expect(commentBox).not.toBeChecked();
-  });
-
-  it('clears typed text and the material/comment toggles when reopened', async () => {
+  it('clears typed text and the comment toggle when reopened', async () => {
     const props = baseProps();
     const { getByPlaceholderText, getByRole, rerender } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'partial typing' } });
-    await fireEvent.click(getByRole('checkbox', { name: /material/i }));
     expect(getByPlaceholderText(/search/i)).toHaveValue('partial typing');
+    await fireEvent.click(getByRole('checkbox', { name: /comment/i }));
+    expect(getByRole('checkbox', { name: /comment/i })).toBeChecked();
     // Cancel (close), then reopen — the picker must start fresh.
     await rerender({ ...props, open: false });
     await rerender({ ...props, open: true });
     expect(getByPlaceholderText(/search/i)).toHaveValue('');
-    expect(getByRole('checkbox', { name: /material/i })).not.toBeChecked();
     expect(getByRole('checkbox', { name: /comment/i })).not.toBeChecked();
   });
 
@@ -129,29 +105,44 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(queryByRole('button', { name: /add task/i })).toBeNull();
   });
 
-  it('task surface offers explicit Task/Material/Fee buttons (no checkbox/Add Line)', async () => {
+  it('task surface offers exactly Task/Material buttons (no Fee, no checkbox/Add Line)', async () => {
     const props = { ...baseProps(), taskSurface: true };
     const { getByPlaceholderText, getByRole, queryByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Custom milling' } });
     expect(queryByRole('button', { name: /add line/i })).toBeNull();
     expect(queryByRole('checkbox')).toBeNull();
+    expect(queryByRole('button', { name: /add fee/i })).toBeNull();
     await fireEvent.click(getByRole('button', { name: /add task/i }));
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform-task', typed: 'Custom milling' });
     await fireEvent.click(getByRole('button', { name: /add material/i }));
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Custom milling', isMaterial: true });
-    await fireEvent.click(getByRole('button', { name: /add fee/i }));
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Custom milling', isMaterial: false });
   });
 
-  it('shows the material checkbox and Add Line button constantly, from the start', async () => {
+  it('shows the Add Line button constantly (no material checkbox on the estimate surface)', async () => {
     const props = baseProps();
-    const { getByRole } = render(PriceListPicker, { props });
-    // Constant affordances — present before anything is typed, label never changes.
-    expect(getByRole('checkbox', { name: /material/i })).toBeInTheDocument();
+    const { getByRole, queryByRole } = render(PriceListPicker, { props });
+    // Constant affordance — present before anything is typed.
+    expect(queryByRole('checkbox', { name: /material/i })).toBeNull();
     const addBtn = getByRole('button', { name: /add line/i });
     expect(addBtn).toBeInTheDocument();
     // Clicking with nothing typed still emits a freeform commit (empty typed).
     await fireEvent.click(addBtn);
-    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '', isMaterial: false, isComment: false });
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '', isComment: false });
+  });
+});
+
+describe('PriceListPicker display_rate (flat-fee, 2026-08-16)', () => {
+  it('shows display_rate when present, over rate_scheme_detail.rate', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/api/service-items/')) return Promise.resolve({ results: [{
+        template_id: 12, template_name: 'Delivery', description: '',
+        rate_scheme: 9, display_rate: '50.00',
+        rate_scheme_detail: { rate_scheme_id: 9, name: 'Flat fee', rate: '0.00', unit_label: 'fee' },
+      }], count: 1 });
+      return Promise.resolve({ results: [], count: 0 });
+    });
+    const { getByPlaceholderText, findByText } = render(PriceListPicker, { props: { open: true, onChoose: vi.fn(), onclose: vi.fn() } });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'del' } });
+    expect(await findByText(/50\.00/)).toBeTruthy();
   });
 });

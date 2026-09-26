@@ -25,7 +25,7 @@
 
 {#if error}<p class="error">{error}</p>
 {:else if job}
-  <JobShell {job} {contact} current="tasks" onJobChange={loadJob}>
+  <JobShell {job} {contact} current="tasks" colorway="cw-tasks" onJobChange={loadJob}>
     <TasksPanel {job} onJobChange={loadJob} />
   </JobShell>
 {:else}<p>Loading…</p>{/if}

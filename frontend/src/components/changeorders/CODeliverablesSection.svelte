@@ -349,7 +349,9 @@
   .section-head h3 { margin: 0; }
   .spacer { flex: 1; }
 
-  /* ---- Merged diff table (shared idiom with COLineItemsSection) ---- */
+  /* ---- Merged diff table (this section's own dense idiom — the
+     line-item side moved to COEditView's .data-table amended-agreement
+     view 2026-08-09, so this is no longer shared with a sibling). ---- */
   .diff-table {
     width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px;
   }

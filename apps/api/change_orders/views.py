@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -11,8 +13,25 @@ from apps.api.permissions import CanManageJobOrPM
 from apps.core.services import NotFoundError
 from apps.estimates.change_order_service import ChangeOrderService
 from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
+from apps.estimates.services import ChangeOrderClaimConflict, ChangeOrderWizardService
 
-from .serializers import ChangeOrderLineItemSerializer, ChangeOrderSerializer
+from .serializers import (
+    ChangeOrderLineItemSerializer, ChangeOrderSerializer, serialize_amended_agreement,
+)
+
+
+def _coerce_qty_override(overrides):
+    """Coerce a bundle-modal `overrides['qty']` to Decimal before it reaches
+    the wizard service. Mirrors apps.api.estimates.views._coerce_qty_override
+    — see there for why this is needed."""
+    if not overrides or 'qty' not in overrides or overrides['qty'] in (None, ''):
+        return overrides, None
+    try:
+        coerced = Decimal(str(overrides['qty']))
+    except (InvalidOperation, TypeError, ValueError):
+        return overrides, Response(
+            {'qty': ['Enter a valid number.']}, status=status.HTTP_400_BAD_REQUEST)
+    return {**overrides, 'qty': coerced}, None
 
 
 class ChangeOrderViewSet(
@@ -40,7 +59,10 @@ class ChangeOrderViewSet(
     }
 
     def get_permissions(self):
-        read_actions = ('list', 'retrieve', 'deliverables_baseline')
+        read_actions = (
+            'list', 'retrieve', 'deliverables_baseline', 'deliverables_diff',
+            'amended_agreement', 'source_pool',
+        )
         if self.action in read_actions:
             return [IsAuthenticated()]
         if self.action == 'line_items' and self.request.method == 'GET':
@@ -115,21 +137,104 @@ class ChangeOrderViewSet(
                 co.pk,
                 request.data.get('service_item'),
                 request.data.get('qty'),
+                description=request.data.get('description'),
             )
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
         serializer = ChangeOrderLineItemSerializer(line_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['get'], url_path='source-pool')
+    def source_pool(self, request, pk=None):
+        """Return the CO wizard's source pool, drawn from the job's
+        Tasks/Materials — same shape as the estimate wizard's, with claims
+        unioned across both the estimate and CO lenses (Task 7)."""
+        co = self.get_object()
+        pool = ChangeOrderWizardService.get_source_pool(co)
+        return Response(_serialize_pool(pool))
+
+    @action(detail=True, methods=['post'], url_path='line-items-from-atoms')
+    def line_items_from_atoms(self, request, pk=None):
+        """Create a new action='add' CO line item from a list of atoms."""
+        co = self.get_object()
+        atoms = request.data.get('atoms', [])
+        overrides = request.data.get('overrides')
+        overrides, error = _coerce_qty_override(overrides)
+        if error is not None:
+            return error
+        try:
+            line_item = ChangeOrderWizardService.add_atoms_to_new_line_item(
+                co, atoms, overrides=overrides,
+                per_unit=bool(request.data.get('per_unit')),
+                split_materials=bool(request.data.get('split_materials')))
+        except ChangeOrderClaimConflict as e:
+            return Response(
+                {'detail': 'Some of these atoms are already claimed by another '
+                           'estimate or change order.',
+                 'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
+                status=status.HTTP_409_CONFLICT,
+            )
+        ChangeOrderService.recompute_adjustment_replaces(co)
+        materials_line_item = getattr(line_item, 'materials_line_item', None)
+        if materials_line_item is not None:
+            return Response(
+                {
+                    'line_item': ChangeOrderLineItemSerializer(line_item).data,
+                    'materials_line_item': ChangeOrderLineItemSerializer(materials_line_item).data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+        serializer = ChangeOrderLineItemSerializer(line_item)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True, methods=['post'],
+        url_path=r'line-items/(?P<line_item_pk>[^/.]+)/remove-atoms',
+    )
+    def remove_atoms(self, request, pk=None, line_item_pk=None):
+        """Remove atoms from an existing line item."""
+        co = self.get_object()
+        try:
+            line_item = ChangeOrderLineItem.objects.get(pk=line_item_pk, change_order=co)
+        except ChangeOrderLineItem.DoesNotExist:
+            return Response({'detail': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        source_ids = request.data.get('source_ids', [])
+        result = ChangeOrderWizardService.remove_atoms_from_line_item(line_item, source_ids)
+        ChangeOrderService.recompute_adjustment_replaces(co)
+
+        if result['line_item_deleted']:
+            return Response({'line_item_deleted': True, 'line_item': None})
+
+        line_item.refresh_from_db()
+        return Response({
+            'line_item_deleted': False,
+            'line_item': ChangeOrderLineItemSerializer(line_item).data,
+        })
+
     @action(detail=True, methods=['post'], url_path='seed-new', url_name='seed-new')
     def seed_new(self, request, pk=None):
-        """Create a new draft CO by copying all line items from an existing CO."""
+        """Create a new draft CO from an existing one — copying its line
+        items by default, or empty with body {'empty': true} (the start-new
+        choice dialog's two halves, RM 2026-08-12)."""
         try:
-            new_co = ChangeOrderService.seed_new(pk)
+            new_co = ChangeOrderService.seed_new(
+                pk, empty=bool(request.data.get('empty')))
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
         serializer = self.get_serializer(new_co)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='restamp-atom')
+    def restamp_atom(self, request, pk=None):
+        """Revert (restamp) one per-unit claim's atom back to the
+        agreement's expectation (per-unit-lines spec Task 6). Mirrors
+        apps.api.estimates.views.EstimateViewSet.restamp_atom — same
+        default-permission reasoning applies (falls through to
+        `[IsAuthenticated(), CanManageJobOrPM()]`)."""
+        co = self.get_object()
+        ChangeOrderWizardService.restamp_atom(co, request.data.get('source_id'))
+        return Response({'message': 'Atom restamped to the per-unit agreement.'})
 
     @action(detail=True, methods=['get'], url_path='send-defaults')
     def send_defaults(self, request, pk=None):
@@ -178,6 +283,21 @@ class ChangeOrderViewSet(
     @action(
         detail=True,
         methods=['get'],
+        url_path='deliverables-diff',
+        url_name='deliverables-diff',
+        permission_classes=[IsAuthenticated],
+    )
+    def deliverables_diff(self, request, pk=None):
+        """Baseline-vs-live deliverable diff
+        (`ChangeOrderService.compose_deliverable_diff`) — the same rows the
+        customer portal payload and the CO PDF render, so the shop Customer
+        mode (COCustomerView) mirrors them exactly."""
+        co = self.get_object()
+        return Response({'rows': ChangeOrderService.compose_deliverable_diff(co)})
+
+    @action(
+        detail=True,
+        methods=['get'],
         url_path='deliverables-baseline',
         url_name='deliverables-baseline',
         permission_classes=[IsAuthenticated],
@@ -206,3 +326,43 @@ class ChangeOrderViewSet(
 
         serializer = DeliverableSnapshotSerializer(snapshots, many=True)
         return Response({'baseline': serializer.data})
+
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path='amended-agreement',
+        url_name='amended-agreement',
+        permission_classes=[IsAuthenticated],
+    )
+    def amended_agreement(self, request, pk=None):
+        """Server-composed "amended agreement": the baseline (estimate +
+        accepted COs preceding this one) with this CO's own add/remove/
+        replace lines applied — the CO edit view's one-table composition,
+        computed server-side so the view, footer totals, and future seeding
+        can never disagree (apps.estimates.agreement.compose_amended_agreement).
+        """
+        from apps.estimates.agreement import compose_amended_agreement
+        co = self.get_object()
+        result = compose_amended_agreement(co)
+        return Response(serialize_amended_agreement(result))
+
+
+def _serialize_pool(pool):
+    """Convert Decimals/timedeltas in the pool to strings for JSON
+    serialization. Mirrors apps.api.estimates.views._serialize_pool."""
+    from datetime import timedelta
+    from django.utils.duration import duration_string
+
+    def _s(value):
+        if isinstance(value, Decimal):
+            return str(value)
+        if isinstance(value, timedelta):
+            return duration_string(value)
+        return value
+
+    return {
+        'atoms': [
+            {k: _s(v) for k, v in atom.items()}
+            for atom in pool['atoms']
+        ],
+    }

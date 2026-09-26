@@ -1,16 +1,21 @@
 """ChangeOrderAcceptanceService — CO acceptance crystallizes deltas onto Job atoms.
 
-Mirrors EstimateAcceptanceService.on_accept (tests/test_acceptance_fees.py):
-- add    → crystallize a new atom via the same four-way discriminator
-           (service_item → Task, inventory_item → Material, is_material bare →
-           established Material with reverse-markup cost, else → Fee),
-           source-linked to the CO line.
-- remove → retire the target line's current atom: cancel a Task (bleps
-           preserved), delete a pending un-invoiced Material (earmark released),
-           delete an un-invoiced Fee. Consumed / invoiced / terminal atoms are
-           left alone; document-only targets (adjustments) are a no-op.
-- replace → crystallize the replacement first (a bare CO line mirrors the old
-           atom's type), then retire the old atom.
+Mirrors EstimateAcceptanceService.on_accept (tests/test_acceptance_plain_lines.py):
+- add    → crystallize a new atom via the same discriminator (service_item →
+           Task, inventory_item → Material, is_material bare → established
+           Material with reverse-markup cost, else → skip: a plain line stays
+           document-only, no atom, no source row), source-linked to the CO
+           line when an atom is created.
+- remove → stamp `descoped_by = co` on the target's current atom(s), then
+           retire: cancel a Task (bleps preserved), release a pending
+           un-invoiced Material (earmark backed out). Consumed / invoiced /
+           terminal atoms are still stamped but otherwise left alone (the
+           stamp is descope provenance, not a retirement outcome);
+           document-only targets (adjustments, plain lines) are a no-op.
+- replace → backing inheritance: the target's current claim rows move onto
+           the replacement CO line. Nothing is crystallized, nothing is
+           retired — the underlying Task/Material is untouched (same pk,
+           same status). A plain (document-only) target stays document-only.
 Then earmark the job's inventoried materials, exactly like estimate acceptance.
 """
 from datetime import timedelta
@@ -30,7 +35,7 @@ from apps.estimates.models import (
 )
 from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.inventory.services import MaterialService
-from apps.jobs.models import Blep, Fee, Job, RateScheme, Task
+from apps.jobs.models import Blep, Job, RateScheme, Task
 
 
 class ChangeOrderAcceptanceBase(TestCase):
@@ -89,10 +94,12 @@ class ChangeOrderAcceptanceBase(TestCase):
     # --- estimate-side atom-backed lines (as estimate acceptance leaves them) ---
 
     def _task_backed_line(self, line_number=1, est_qty=Decimal('10')):
-        task = Task.objects.create(
-            job=self.job, name='Cutting', rate_scheme=self.scheme,
+        task = Task(
+            job=self.job, name='Cutting',
             est_qty=est_qty,
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         line = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=line_number,
             description='Cutting labor', qty=est_qty, price=Decimal('100.00'),
@@ -124,23 +131,30 @@ class ChangeOrderAcceptanceBase(TestCase):
         )
         return line, material
 
-    def _fee_backed_line(self, line_number=1):
-        fee = Fee.objects.create(
-            job=self.job, description='Rush handling', quantity=Decimal('1'),
-            unit_rate=Decimal('75.00'), accounting_category=self.cat,
-            sort_order=line_number,
+
+class COLineDescriptionOverrideTests(ChangeOrderAcceptanceBase):
+    """CO lens on the shared editable-description behavior (2026-09-20) —
+    same contract as the estimate/invoice twins: an explicit description
+    wins over the catalog derivation on both catalog-pull paths; absent it
+    derives exactly as before. Not a full matrix re-run — that lives on
+    the estimate lens (tests/test_deferred_service_crystallization.py,
+    tests/test_catalog_line_item_adds.py); this just proves CO shares it."""
+
+    def test_description_override_honored_on_both_catalog_paths(self):
+        co = self._make_co()
+        service_line = ChangeOrderService.add_line_item_from_service(
+            co.pk, self.service_item.pk, Decimal('2'),
+            description='CO service override',
         )
-        line = EstimateLineItem.objects.create(
-            estimate=self.estimate, line_number=line_number,
-            description='Rush handling', qty=Decimal('1'), price=Decimal('75.00'),
-            accounting_category=self.cat,
+        pli_line = ChangeOrderService.add_line_item_from_pli(
+            co.pk, self.pli.pk, Decimal('1'),
+            description='CO pli override',
         )
-        EstimateLineItemSource.objects.create(
-            estimate_line_item=line,
-            source_type=EstimateLineItemSource.SOURCE_FEE,
-            source_pk=fee.pk,
-        )
-        return line, fee
+        self.assertEqual(service_line.description, 'CO service override')
+        self.assertEqual(pli_line.description, 'CO pli override')
+        # Price/qty untouched by the override.
+        self.assertEqual(service_line.price, Decimal('100.00'))
+        self.assertEqual(pli_line.price, Decimal('100.00'))
 
 
 class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
@@ -154,7 +168,7 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
 
         task = Task.objects.get(job=self.job, name='CNC cutting')
         self.assertEqual(task.est_qty, Decimal('4'))
-        self.assertEqual(task.rate_scheme, self.scheme)
+        self.assertEqual(task.source_scheme, self.scheme)
         self.assertEqual(task.status, Task.STATUS_PENDING)
         src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
         self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_TASK)
@@ -194,11 +208,15 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         # not left provisional.
         Configuration.objects.create(
             key='default_material_markup_percent', value='25')
+        Configuration.objects.create(
+            key='default_material_accounting_category', value=str(self.mat_cat.pk))
         co = self._make_co()
+        # Choosing the Materials AC is what makes this a material line
+        # (is_material derives server-side; the checkbox is retired).
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Dragon skin', qty=Decimal('2'), price=Decimal('400.00'),
-            units='sheet', is_material=True, accounting_category=self.mat_cat.pk,
+            units='sheet', accounting_category=self.mat_cat.pk,
         )
         self._accept(co)
 
@@ -213,7 +231,10 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_MATERIAL)
         self.assertEqual(src.source_pk, mat.pk)
 
-    def test_bare_add_line_crystallizes_fee(self):
+    def test_bare_add_line_stays_document_only(self):
+        # A plain add line (no service_item, no inventory_item, not
+        # is_material) crystallizes NOTHING: no atom, no source row — it
+        # stays a document-only line.
         co = self._make_co()
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
@@ -222,13 +243,20 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         )
         self._accept(co)
 
-        fee = Fee.objects.get(job=self.job, description='Extra scope')
-        self.assertEqual(fee.quantity, Decimal('3'))
-        self.assertEqual(fee.unit_rate, Decimal('25.00'))
-        self.assertEqual(fee.accounting_category, self.cat)
-        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
-        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_FEE)
-        self.assertEqual(src.source_pk, fee.pk)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
+        self.assertEqual(Material.objects.filter(job=self.job).count(), 0)
+        self.assertFalse(
+            ChangeOrderLineItemSource.objects.filter(
+                change_order_line_item=li).exists())
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
+        self.assertEqual(Material.objects.filter(job=self.job).count(), 0)
+        # The line itself is untouched — still present on the document.
+        li.refresh_from_db()
+        self.assertEqual(li.description, 'Extra scope')
+        self.assertEqual(li.qty, Decimal('3'))
+        self.assertEqual(li.price, Decimal('25.00'))
+        co.refresh_from_db()
+        self.assertEqual(co.status, ChangeOrder.STATUS_ACCEPTED)
 
     def test_bare_add_line_without_ac_blocks_send(self):
         co = self._make_co()
@@ -243,17 +271,14 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
     def test_on_accept_is_idempotent(self):
         from apps.estimates.co_acceptance import ChangeOrderAcceptanceService
         co = self._make_co()
-        ChangeOrderService.add_line_item(
-            co.pk, action=ChangeOrderLineItem.ACTION_ADD,
-            description='Extra scope', qty=Decimal('1'), price=Decimal('10.00'),
-            accounting_category=self.cat.pk,
-        )
+        ChangeOrderService.add_line_item_from_service(
+            co.pk, self.service_item.pk, Decimal('4'))
         self._accept(co)
         # Re-running acceptance must not duplicate atoms: crystallized lines
         # already carry a source row and are skipped.
         ChangeOrderAcceptanceService.on_accept(co)
         self.assertEqual(
-            Fee.objects.filter(job=self.job, description='Extra scope').count(), 1)
+            Task.objects.filter(job=self.job, name='CNC cutting').count(), 1)
 
 
 class CORemoveCrystallizationTests(ChangeOrderAcceptanceBase):
@@ -274,21 +299,25 @@ class CORemoveCrystallizationTests(ChangeOrderAcceptanceBase):
         )
         co = self._make_co()
         self._remove_line(co, line)
-        self._accept(co)
+        co = self._accept(co)
 
         task.refresh_from_db()
         self.assertEqual(task.status, Task.STATUS_CANCELLED)
         self.assertTrue(Blep.objects.filter(pk=blep.pk).exists())
+        # Stored descope provenance — stamped regardless of the retirement
+        # outcome, and what the invoice pool's badge reads.
+        self.assertEqual(task.descoped_by_id, co.pk)
 
-    def test_remove_complete_task_is_left_alone(self):
+    def test_remove_complete_task_is_left_alone_but_stamped(self):
         line, task = self._task_backed_line()
         Task.objects.filter(pk=task.pk).update(status=Task.STATUS_COMPLETE)
         co = self._make_co()
         self._remove_line(co, line)
-        self._accept(co)
+        co = self._accept(co)
 
         task.refresh_from_db()
         self.assertEqual(task.status, Task.STATUS_COMPLETE)
+        self.assertEqual(task.descoped_by_id, co.pk)
 
     def test_remove_material_line_releases_material_and_earmark(self):
         line, material = self._material_backed_line()
@@ -297,7 +326,7 @@ class CORemoveCrystallizationTests(ChangeOrderAcceptanceBase):
             Decimal('7'))
         co = self._make_co()
         self._remove_line(co, line)
-        self._accept(co)
+        co = self._accept(co)
 
         # A CO target is by definition claimed → released, not deleted: the
         # quantity moves to released_qty and the claim stays resolvable history.
@@ -309,49 +338,95 @@ class CORemoveCrystallizationTests(ChangeOrderAcceptanceBase):
         self.assertFalse(
             Earmark.objects.filter(job=self.job, inventory_item=self.pli).exists())
         self.assertEqual(line.sources.get().resolve().pk, material.pk)
+        self.assertEqual(material.descoped_by_id, co.pk)
 
-    def test_remove_consumed_material_is_left_alone(self):
+    def test_remove_consumed_material_is_left_alone_but_stamped(self):
         line, material = self._material_backed_line()
         MaterialService.consume(material)
         co = self._make_co()
         self._remove_line(co, line)
-        self._accept(co)
+        co = self._accept(co)
 
         material.refresh_from_db()
         self.assertEqual(
             material.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+        self.assertEqual(material.descoped_by_id, co.pk)
 
-    def test_remove_fee_line_deletes_fee(self):
-        line, fee = self._fee_backed_line()
-        co = self._make_co()
-        self._remove_line(co, line)
-        self._accept(co)
-
-        self.assertFalse(Fee.objects.filter(pk=fee.pk).exists())
-        self.assertFalse(line.sources.exists())
-
-    def test_remove_invoiced_fee_is_left_alone(self):
-        from apps.invoicing.models import (
-            Invoice, InvoiceLineItem, InvoiceLineItemSource,
-        )
-        line, fee = self._fee_backed_line()
-        invoice = Invoice.objects.create(
-            job=self.job, invoice_number='INV-2026-0001')
+    def test_remove_invoiced_material_is_left_alone_but_stamped(self):
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        line, material = self._material_backed_line()
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         inv_li = InvoiceLineItem.objects.create(
-            invoice=invoice, description='Rush handling',
-            qty=Decimal('1'), price=Decimal('75.00'),
-            accounting_category=self.cat,
+            invoice=inv, description='Plywood', qty=material.quantity,
+            units='ea', price=material.sell_price,
         )
         InvoiceLineItemSource.objects.create(
             invoice_line_item=inv_li,
-            source_type=InvoiceLineItemSource.SOURCE_FEE,
-            source_pk=fee.pk,
+            source_type=InvoiceLineItemSource.SOURCE_MATERIAL,
+            source_pk=material.pk,
         )
         co = self._make_co()
         self._remove_line(co, line)
-        self._accept(co)
+        co = self._accept(co)
 
-        self.assertTrue(Fee.objects.filter(pk=fee.pk).exists())
+        material.refresh_from_db()
+        # Billed reality is not unwound by a document — left pending.
+        self.assertEqual(
+            material.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        self.assertEqual(material.descoped_by_id, co.pk)
+
+    def test_remove_then_readd_atom_on_same_co_is_not_retired(self):
+        # RM 2026-08-10: removing a line frees its atoms into the CO pool, so
+        # the same CO can re-claim one on an add line ("restate the work under
+        # new terms"). Acceptance must then carry the work forward — no
+        # cancel, no descope stamp — instead of retiring it out from under
+        # the add line it now backs.
+        line, task = self._task_backed_line()
+        co = self._make_co()
+        self._remove_line(co, line)
+        add_li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            line_number=2, description='Cutting, rescoped',
+            qty=Decimal('10'), price=Decimal('120.00'),
+            accounting_category=self.cat,
+        )
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=add_li,
+            source_type=ChangeOrderLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+        co = self._accept(co)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, Task.STATUS_PENDING)
+        self.assertIsNone(task.descoped_by_id)
+        # The authored claim survives untouched — nothing re-crystallized.
+        self.assertEqual(add_li.sources.get().resolve().pk, task.pk)
+
+    def test_remove_then_readd_material_on_same_co_is_not_released(self):
+        line, material = self._material_backed_line()
+        co = self._make_co()
+        self._remove_line(co, line)
+        add_li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            line_number=2, description='Plywood, rescoped',
+            qty=Decimal('7'), price=Decimal('110.00'),
+            accounting_category=self.mat_cat,
+        )
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=add_li,
+            source_type=ChangeOrderLineItemSource.SOURCE_MATERIAL,
+            source_pk=material.pk,
+        )
+        co = self._accept(co)
+
+        material.refresh_from_db()
+        self.assertEqual(
+            material.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        self.assertEqual(material.quantity, Decimal('7'))
+        self.assertIsNone(material.descoped_by_id)
+        self.assertTrue(
+            Earmark.objects.filter(job=self.job, inventory_item=self.pli).exists())
 
     def test_remove_adjustment_line_is_document_only(self):
         adj_scheme = RateScheme.objects.create(
@@ -372,8 +447,11 @@ class CORemoveCrystallizationTests(ChangeOrderAcceptanceBase):
 
 
 class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
-    """Accepted CO `replace` lines retire the old atom and crystallize its
-    replacement. A bare CO line mirrors the old atom's type."""
+    """Accepted CO `replace` lines are backing inheritance (spec §9.3 / §11
+    #1): the target's current claim rows move onto the replacement CO line.
+    Nothing is crystallized, nothing is retired — the underlying Task/
+    Material is completely untouched (same pk, same status, never
+    cancelled)."""
 
     def _replace_line(self, co, target, **fields):
         defaults = dict(
@@ -383,100 +461,114 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         defaults.update(fields)
         return ChangeOrderService.add_line_item(co.pk, **defaults)
 
-    def test_replace_task_line_cancels_old_and_mirrors_new_task(self):
-        line, old_task = self._task_backed_line(est_qty=Decimal('10'))
+    def test_replace_task_line_moves_claim_not_crystallize(self):
+        from apps.estimates.co_acceptance import ChangeOrderAcceptanceService
+        line, task = self._task_backed_line(est_qty=Decimal('10'))
+        co = self._make_co()
+        li = self._replace_line(
+            co, line, description='Cutting labor (more)', qty=Decimal('15'),
+            price=Decimal('100.00'), units='hour',
+        )
+        counts = ChangeOrderAcceptanceService.on_accept(co)
+
+        self.assertEqual(counts, {
+            'tasks_created': 0, 'materials_created': 0,
+            'tasks_cancelled': 0, 'materials_removed': 0,
+        })
+        # The target's claim row is gone…
+        self.assertFalse(line.sources.exists())
+        # …and an identical claim row now lives on the replacement CO line.
+        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
+        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_TASK)
+        self.assertEqual(src.source_pk, task.pk)
+        # The task itself: same pk, same status, NOT cancelled — the CO line
+        # only re-prices/re-describes the work, it doesn't touch the atom.
+        task.refresh_from_db()
+        self.assertEqual(task.status, Task.STATUS_PENDING)
+        self.assertIsNone(task.descoped_by_id)
+        self.assertEqual(task.est_qty, Decimal('10'))  # unchanged by the CO's qty=15
+
+    def test_replace_material_line_moves_claim_not_crystallize(self):
+        from apps.estimates.co_acceptance import ChangeOrderAcceptanceService
+        line, material = self._material_backed_line(qty=Decimal('7'))
+        earmark_before = Earmark.objects.get(job=self.job, inventory_item=self.pli).quantity
+        co = self._make_co()
+        li = self._replace_line(
+            co, line, description='Plywood (more)', qty=Decimal('4'),
+            price=Decimal('110.00'), units='ea',
+        )
+        counts = ChangeOrderAcceptanceService.on_accept(co)
+
+        self.assertEqual(counts, {
+            'tasks_created': 0, 'materials_created': 0,
+            'tasks_cancelled': 0, 'materials_removed': 0,
+        })
+        self.assertFalse(line.sources.exists())
+        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
+        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_MATERIAL)
+        self.assertEqual(src.source_pk, material.pk)
+        material.refresh_from_db()
+        self.assertEqual(
+            material.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        self.assertIsNone(material.descoped_by_id)
+        self.assertEqual(material.quantity, Decimal('7'))  # unchanged by the CO's qty=4
+        # Untouched atom → untouched earmark (no re-crystallization to earmark).
+        self.assertEqual(
+            Earmark.objects.get(job=self.job, inventory_item=self.pli).quantity,
+            earmark_before)
+
+    def test_replace_plain_line_stays_document_only(self):
+        # A plain estimate line (no source rows — post-narrowing acceptance
+        # left it document-only) replaced by a bare CO line: the delta stays
+        # document-level. No claim row to move, so the CO line stays sourceless.
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1,
+            description='Rush handling', qty=Decimal('1'), price=Decimal('75.00'),
+            accounting_category=self.cat,
+        )
+        co = self._make_co()
+        li = self._replace_line(
+            co, line, description='Rush handling (expanded)', qty=Decimal('2'),
+            price=Decimal('90.00'), accounting_category=self.cat.pk,
+        )
+        self._accept(co)
+
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
+        self.assertEqual(Material.objects.filter(job=self.job).count(), 0)
+        self.assertFalse(
+            ChangeOrderLineItemSource.objects.filter(
+                change_order_line_item=li).exists())
+        co.refresh_from_db()
+        self.assertEqual(co.status, ChangeOrder.STATUS_ACCEPTED)
+
+    def test_replace_is_idempotent_on_rerun(self):
+        from apps.estimates.co_acceptance import ChangeOrderAcceptanceService
+        line, task = self._task_backed_line(est_qty=Decimal('10'))
         co = self._make_co()
         li = self._replace_line(
             co, line, description='Cutting labor (more)', qty=Decimal('15'),
             price=Decimal('100.00'), units='hour',
         )
         self._accept(co)
-
-        old_task.refresh_from_db()
-        self.assertEqual(old_task.status, Task.STATUS_CANCELLED)
-        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
-        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_TASK)
-        new_task = Task.objects.get(pk=src.source_pk)
-        self.assertEqual(new_task.est_qty, Decimal('15'))
-        self.assertEqual(new_task.rate_scheme, self.scheme)
-        self.assertEqual(new_task.name, old_task.name)
-        self.assertEqual(new_task.description, 'Cutting labor (more)')
-        self.assertEqual(new_task.status, Task.STATUS_PENDING)
-
-    def test_replace_material_line_inherits_inventory_item(self):
-        line, old_material = self._material_backed_line(qty=Decimal('7'))
-        co = self._make_co()
-        li = self._replace_line(
-            co, line, description='Plywood', qty=Decimal('4'),
-            price=Decimal('110.00'), units='ea',
-        )
-        self._accept(co)
-
-        old_material.refresh_from_db()
         self.assertEqual(
-            old_material.consumption_state, Material.CONSUMPTION_STATE_RELEASED)
-        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
-        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_MATERIAL)
-        new_mat = Material.objects.get(pk=src.source_pk)
-        self.assertEqual(new_mat.inventory_item, self.pli)
-        self.assertEqual(new_mat.quantity, Decimal('4'))
-        self.assertEqual(new_mat.sell_price, Decimal('110.00'))
-        earmark = Earmark.objects.get(job=self.job, inventory_item=self.pli)
-        self.assertEqual(earmark.quantity, Decimal('4'))
+            ChangeOrderLineItemSource.objects.filter(change_order_line_item=li).count(), 1)
 
-    def test_bare_replace_of_provisional_material_establishes_replacement(self):
-        # A pre-parity CO could leave a crystallized material provisional; a
-        # bare replace mirrors its inventory_item (None). The replacement must
-        # still be born established — no material is born provisional from a
-        # document.
-        provisional = MaterialService.create_on_job(
-            job=self.job, description='Foam', quantity=Decimal('3'),
-            sell_price=Decimal('100.00'), inventory_item=None,
-            accounting_category=self.mat_cat, units='sheet',
-        )
-        line = EstimateLineItem.objects.create(
-            estimate=self.estimate, line_number=1,
-            description='Foam', qty=Decimal('3'), price=Decimal('100.00'),
-            units='sheet', accounting_category=self.mat_cat, is_material=True,
-        )
-        EstimateLineItemSource.objects.create(
-            estimate_line_item=line,
-            source_type=EstimateLineItemSource.SOURCE_MATERIAL,
-            source_pk=provisional.pk,
-        )
-        co = self._make_co()
-        li = self._replace_line(
-            co, line, description='Foam v2', qty=Decimal('2'),
-            price=Decimal('120.00'), units='sheet',
-        )
-        self._accept(co)
+        # Re-running acceptance must not move the (already-moved) claim again
+        # or duplicate the source row — the line already has sources, so the
+        # replace loop skips it outright.
+        counts = ChangeOrderAcceptanceService.on_accept(co)
 
-        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
-        new_mat = Material.objects.get(pk=src.source_pk)
-        self.assertIsNotNone(new_mat.inventory_item)
-        self.assertEqual(new_mat.cost_source, Material.COST_SOURCE_ESTIMATED)
-        self.assertEqual(new_mat.sell_price, Decimal('120.00'))
-
-    def test_replace_fee_line_recreates_fee(self):
-        line, old_fee = self._fee_backed_line()
-        co = self._make_co()
-        li = self._replace_line(
-            co, line, description='Rush handling (expanded)', qty=Decimal('2'),
-            price=Decimal('90.00'),
-        )
-        self._accept(co)
-
-        self.assertFalse(Fee.objects.filter(pk=old_fee.pk).exists())
-        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
-        self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_FEE)
-        new_fee = Fee.objects.get(pk=src.source_pk)
-        self.assertEqual(new_fee.quantity, Decimal('2'))
-        self.assertEqual(new_fee.unit_rate, Decimal('90.00'))
-        # AC inherited from the old fee (the bare CO line supplied none).
-        self.assertEqual(new_fee.accounting_category, self.cat)
+        self.assertEqual(counts, {
+            'tasks_created': 0, 'materials_created': 0,
+            'tasks_cancelled': 0, 'materials_removed': 0,
+        })
+        self.assertEqual(
+            ChangeOrderLineItemSource.objects.filter(change_order_line_item=li).count(), 1)
+        task.refresh_from_db()
+        self.assertEqual(task.status, Task.STATUS_PENDING)
 
     def test_second_co_replace_resolves_through_first_replacement(self):
-        line, original_task = self._task_backed_line(est_qty=Decimal('10'))
+        line, task = self._task_backed_line(est_qty=Decimal('10'))
         co1 = self._make_co()
         li1 = self._replace_line(
             co1, line, description='Cutting v2', qty=Decimal('15'),
@@ -484,9 +576,11 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         )
         self._accept(co1)
         src1 = ChangeOrderLineItemSource.objects.get(change_order_line_item=li1)
-        co1_task = Task.objects.get(pk=src1.source_pk)
+        self.assertEqual(src1.source_pk, task.pk)
 
-        # Job went back to approved; hold it again for CO2.
+        # Job went back to approved; hold it again for CO2, also targeting
+        # the original estimate line — the claim now lives on li1, not on
+        # the estimate line, so CO2 must chain through li1 to find it.
         co2 = self._make_co()
         li2 = self._replace_line(
             co2, line, description='Cutting v3', qty=Decimal('20'),
@@ -494,11 +588,14 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         )
         self._accept(co2)
 
-        co1_task.refresh_from_db()
-        self.assertEqual(co1_task.status, Task.STATUS_CANCELLED)
+        task.refresh_from_db()
+        self.assertEqual(task.status, Task.STATUS_PENDING)  # never touched
+        self.assertIsNone(task.descoped_by_id)
+        # li1 handed its claim row off to li2 — it no longer carries one.
+        self.assertFalse(
+            ChangeOrderLineItemSource.objects.filter(change_order_line_item=li1).exists())
         src2 = ChangeOrderLineItemSource.objects.get(change_order_line_item=li2)
-        new_task = Task.objects.get(pk=src2.source_pk)
-        self.assertEqual(new_task.est_qty, Decimal('20'))
+        self.assertEqual(src2.source_pk, task.pk)
 
     def test_adds_crystallize_before_removes(self):
         """A CO that removes the job's only task while adding a new one must
@@ -521,6 +618,149 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)
 
 
+class ChecklistAnsweredByAcceptedCOTests(ChangeOrderAcceptanceBase):
+    """Finding 1 (final review, CRITICAL — chain-aware answeredness):
+    EstimateService.unanswered_lines / EstimateLineItemSerializer.
+    needs_work_decision must count a line answered once an accepted CO's
+    replace or remove line targets it — even though `_move_claims_to`
+    moves (replace) or never creates (remove) an EstimateLineItemSource row
+    on the original estimate line itself. Before this fix: a replaced hand
+    line showed phantom mint/decline affordances and could double-mint; a
+    replaced catalog line silently blocked auto-release forever (no UI
+    path to answer it, since it carries no plain-hand-line escape hatch)."""
+
+    def _replace_line(self, co, target, **fields):
+        defaults = dict(
+            action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=target.pk,
+        )
+        defaults.update(fields)
+        return ChangeOrderService.add_line_item(co.pk, **defaults)
+
+    def test_replace_accepted_plain_hand_line_no_longer_unanswered(self):
+        from apps.api.estimates.serializers import EstimateLineItemSerializer
+        from apps.estimates.services import EstimateService
+
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Rush handling',
+            qty=Decimal('1'), price=Decimal('75.00'), accounting_category=self.cat,
+        )
+        co = self._make_co()
+        self._replace_line(
+            co, line, description='Rush handling (expanded)', qty=Decimal('2'),
+            price=Decimal('90.00'), accounting_category=self.cat.pk,
+        )
+        self._accept(co)
+
+        self.assertNotIn(line, list(EstimateService.unanswered_lines(self.estimate)))
+        self.assertFalse(EstimateLineItemSerializer(line).data['needs_work_decision'])
+
+    def test_replace_accepted_catalog_line_doesnt_block_auto_release(self):
+        """A catalog (service_item-backed) line, sourced exactly as estimate
+        acceptance leaves it, replaced by an accepted CO — its OWN source
+        row moves off (backing inheritance), which used to be its only
+        answered signal. A second, still-unanswered plain hand line proves
+        the job releases once THAT line is answered — the replaced catalog
+        line was never really blocking it."""
+        from apps.estimates.services import EstimateService
+
+        task = Task(job=self.job, name='CNC cutting', est_qty=Decimal('4'))
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        catalog_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='CNC cutting',
+            qty=Decimal('4'), price=Decimal('400.00'), units='hour',
+            accounting_category=self.cat, service_item=self.service_item,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=catalog_line,
+            source_type=EstimateLineItemSource.SOURCE_TASK, source_pk=task.pk,
+        )
+        other_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=2, description='Plain hand line',
+            qty=Decimal('1'), price=Decimal('50.00'), accounting_category=self.cat,
+        )
+
+        co = self._make_co()
+        self._replace_line(
+            co, catalog_line, description='CNC cutting (more)', qty=Decimal('6'),
+            price=Decimal('600.00'), units='hour', accounting_category=self.cat.pk,
+        )
+        self._accept(co)
+
+        # The catalog line lost its own source row (moved to the CO line)…
+        self.assertFalse(catalog_line.sources.exists())
+        # …but must NOT reappear as unanswered.
+        unanswered = list(EstimateService.unanswered_lines(self.estimate))
+        self.assertNotIn(catalog_line, unanswered)
+        self.assertIn(other_line, unanswered)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_APPROVED)  # other_line still unanswered
+
+        # Answer the OTHER line — the job releases; the replaced catalog
+        # line was never the thing blocking it.
+        EstimateService.update_line_item(other_line.pk, work_declined=True)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_decline_last_then_replace_ordering(self):
+        """Answering order must not matter: decline the last unanswered
+        line FIRST (before any CO exists) — the job releases. THEN author
+        + accept a replace CO against the already-answered (source-backed)
+        line: the checklist must stay satisfied and the job must not
+        un-release."""
+        from apps.estimates.services import EstimateService
+
+        task = Task(job=self.job, name='CNC cutting', est_qty=Decimal('4'))
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        catalog_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='CNC cutting',
+            qty=Decimal('4'), price=Decimal('400.00'), units='hour',
+            accounting_category=self.cat, service_item=self.service_item,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=catalog_line,
+            source_type=EstimateLineItemSource.SOURCE_TASK, source_pk=task.pk,
+        )
+        other_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=2, description='Plain hand line',
+            qty=Decimal('1'), price=Decimal('50.00'), accounting_category=self.cat,
+        )
+
+        EstimateService.update_line_item(other_line.pk, work_declined=True)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+
+        co = self._make_co()
+        self._replace_line(
+            co, catalog_line, description='CNC cutting (more)', qty=Decimal('6'),
+            price=Decimal('600.00'), units='hour', accounting_category=self.cat.pk,
+        )
+        self._accept(co)
+
+        self.assertFalse(EstimateService.unanswered_lines(self.estimate).exists())
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_remove_targeted_plain_line_is_answered(self):
+        from apps.api.estimates.serializers import EstimateLineItemSerializer
+        from apps.estimates.services import EstimateService
+
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Skip this',
+            qty=Decimal('1'), price=Decimal('40.00'), accounting_category=self.cat,
+        )
+        co = self._make_co()
+        ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REMOVE, target_line_item=line.pk,
+        )
+        self._accept(co)
+
+        self.assertNotIn(line, list(EstimateService.unanswered_lines(self.estimate)))
+        self.assertFalse(EstimateLineItemSerializer(line).data['needs_work_decision'])
+
+
 class COAuthoringParityTests(ChangeOrderAcceptanceBase):
     """Part A: CO line authoring mirrors the estimate's service pick and
     is_material marker rules."""
@@ -538,34 +778,46 @@ class COAuthoringParityTests(ChangeOrderAcceptanceBase):
         self.assertEqual(li.price, Decimal('100'))
         self.assertEqual(li.accounting_category, self.cat)
 
-    def test_is_material_line_defaults_ac_from_config(self):
+    def test_is_material_derives_from_the_materials_ac(self):
+        # RM 2026-08-11: the checkbox is retired — a bare add line IS a
+        # material exactly when its AC is the configured Materials AC.
         Configuration.objects.create(
             key='default_material_accounting_category', value=str(self.mat_cat.pk))
         co = self._make_co()
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Mystery membrane', qty=Decimal('1'),
-            price=Decimal('200.00'), is_material=True,
+            price=Decimal('200.00'), accounting_category=self.mat_cat.pk,
         )
-        self.assertEqual(li.accounting_category, self.mat_cat)
+        self.assertTrue(li.is_material)
+        other = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Rush', qty=Decimal('1'),
+            price=Decimal('50.00'), accounting_category=self.cat.pk,
+        )
+        self.assertFalse(other.is_material)
 
-    def test_is_material_invalid_with_inventory_item(self):
+    def test_is_material_stays_false_on_inventory_line_even_with_material_ac(self):
+        Configuration.objects.create(
+            key='default_material_accounting_category', value=str(self.mat_cat.pk))
         co = self._make_co()
-        with self.assertRaises(ValidationError):
-            ChangeOrderService.add_line_item(
-                co.pk, action=ChangeOrderLineItem.ACTION_ADD,
-                description='PLY', qty=Decimal('1'), price=Decimal('100.00'),
-                inventory_item=self.pli.pk, is_material=True,
-            )
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+            description='PLY', qty=Decimal('1'), price=Decimal('100.00'),
+            inventory_item=self.pli.pk, accounting_category=self.mat_cat.pk,
+        )
+        self.assertFalse(li.is_material)
 
     def test_seed_new_copies_crystallization_fields(self):
+        Configuration.objects.create(
+            key='default_material_accounting_category', value=str(self.mat_cat.pk))
         co = self._make_co()
         ChangeOrderService.add_line_item_from_service(
             co.pk, self.service_item.pk, Decimal('4'))
         ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Membrane', qty=Decimal('1'), price=Decimal('50.00'),
-            is_material=True, accounting_category=self.mat_cat.pk,
+            accounting_category=self.mat_cat.pk,
         )
         ChangeOrderService.mark_open(co.pk)
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_REJECTED)
@@ -580,51 +832,186 @@ class COAuthoringParityTests(ChangeOrderAcceptanceBase):
         self.assertEqual(mat_copy.accounting_category, self.mat_cat)
 
 
-class COAgreementBillingTests(ChangeOrderAcceptanceBase):
-    """No double-billing: the agreement traces crystallized CO fees so the
-    invoice claims them (parity with estimate hand-line source_fee_id)."""
+class ReplaceInheritsTargetAcTest(ChangeOrderAcceptanceBase):
+    """A REPLACE line authored without an AC inherits its target's
+    (2026-08-12 — closes the gap Task 8 flagged: replace lines had no AC
+    rule anywhere, so an accepted AC-less replacement became a null-AC
+    agreement line and every later invoice seed demanded the fallback)."""
 
-    def test_compose_agreement_emits_source_fee_id_for_co_add(self):
-        from apps.estimates.agreement import compose_agreement
+    def test_replace_without_ac_inherits_targets(self):
+        line, _task = self._task_backed_line()
         co = self._make_co()
         li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=line.pk, description='Revised',
+            qty=Decimal('2'), units='hour', price=Decimal('120.00'),
+        )
+        self.assertEqual(li.accounting_category_id, line.accounting_category_id)
+
+    def test_replace_with_explicit_ac_is_respected(self):
+        line, _task = self._task_backed_line()
+        co = self._make_co()
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=line.pk, description='Revised',
+            qty=Decimal('2'), units='hour', price=Decimal('120.00'),
+            accounting_category=self.mat_cat.pk,
+        )
+        self.assertEqual(li.accounting_category_id, self.mat_cat.pk)
+
+
+class ReplaceInheritsTargetPerUnitTest(ChangeOrderAcceptanceBase):
+    """Final-review Finding 1: a REPLACE line targeting a per_unit estimate
+    line must itself be per_unit=True — otherwise derive_co_line_backing's
+    per-unit branch is unreachable for replace lines (the line gets judged
+    against the whole-job atom total instead of the per-unit Σ, and shows
+    'edited work' for an untouched per-unit agreement). Mirrors the AC-
+    inherit pattern immediately above."""
+
+    def _per_unit_task_backed_line(self, line_number=1, qty=Decimal('10'),
+                                    per_unit_qty=Decimal('0.75')):
+        task = Task(
+            job=self.job, name='Cutting',
+            est_qty=(per_unit_qty * qty).quantize(Decimal('0.01')),
+        )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        price = (per_unit_qty * task.effective_rate()).quantize(Decimal('0.01'))
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=line_number,
+            description='Cutting labor', qty=qty, price=price,
+            units='hour', accounting_category=self.cat, per_unit=True,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=line,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+            per_unit_qty=per_unit_qty,
+        )
+        return line, task
+
+    def test_replace_line_targeting_per_unit_line_inherits_flag(self):
+        line, _task = self._per_unit_task_backed_line()
+        co = self._make_co()
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=line.pk, description='Revised',
+            qty=line.qty, units='hour', price=line.price,
+        )
+        self.assertTrue(li.per_unit)
+
+        # Exercises derive_co_line_backing's per-unit branch — dead code
+        # before this fix, since a replace line was always per_unit=False.
+        from apps.api.change_orders.serializers import derive_co_line_backing
+        self.assertEqual(derive_co_line_backing(li), 'planned_work')
+
+    def test_replace_line_retargeted_to_non_per_unit_line_resets_flag(self):
+        pu_line, _pu_task = self._per_unit_task_backed_line()
+        other_line, _other_task = self._task_backed_line(line_number=2)
+        co = self._make_co()
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=pu_line.pk, description='Revised',
+            qty=pu_line.qty, units='hour', price=pu_line.price,
+        )
+        self.assertTrue(li.per_unit)
+
+        li = ChangeOrderService.update_line_item(
+            li.pk, target_line_item=other_line.pk, price=Decimal('999.00'))
+        self.assertFalse(li.per_unit)
+
+    def test_replace_line_on_per_unit_target_accepts_end_to_end(self):
+        line, task = self._per_unit_task_backed_line()
+        co = self._make_co()
+        li = ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_REPLACE,
+            target_line_item=line.pk, description='Revised',
+            qty=line.qty, units='hour', price=line.price,
+        )
+        co = self._accept(co)
+        self.assertEqual(co.status, ChangeOrder.STATUS_ACCEPTED)
+
+        li.refresh_from_db()
+        self.assertTrue(li.per_unit)
+        moved = li.sources.get(source_type='task', source_pk=task.pk)
+        self.assertEqual(moved.per_unit_qty, Decimal('0.75'))
+
+
+class SeedNewEmptyTest(ChangeOrderAcceptanceBase):
+    """RM 2026-08-12: 'Start new change order' offers a choice — seed from
+    the prior CO's lines, or start empty. seed_new(empty=True) is the
+    empty half: same parent lineage, zero copied lines."""
+
+    def test_seed_new_empty_copies_nothing_but_keeps_lineage(self):
+        co = self._make_co()
+        ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Extra scope', qty=Decimal('1'), price=Decimal('50.00'),
+            accounting_category=self.cat.pk,
+        )
+        ChangeOrderService.mark_open(co.pk)
+        ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_REJECTED)
+
+        new_co = ChangeOrderService.seed_new(co.pk, empty=True)
+        self.assertEqual(new_co.parent_id, co.pk)
+        self.assertEqual(new_co.estimate_id, co.estimate_id)
+        self.assertEqual(new_co.status, ChangeOrder.STATUS_DRAFT)
+        self.assertEqual(
+            ChangeOrderLineItem.objects.filter(change_order=new_co).count(), 0)
+
+    def test_seed_new_endpoint_empty_body_flag(self):
+        from rest_framework.test import APIClient
+        from apps.core.models import User
+        from tests.base import grant_atoms
+        client = APIClient()
+        manager = grant_atoms(
+            User.objects.create_user(username='co_seed_empty', password='x'),
+            'can_manage_jobs')
+        client.force_authenticate(user=manager)
+
+        co = self._make_co()
+        ChangeOrderService.add_line_item(
+            co.pk, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Extra scope', qty=Decimal('1'), price=Decimal('50.00'),
+            accounting_category=self.cat.pk,
+        )
+        ChangeOrderService.mark_open(co.pk)
+        ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_REJECTED)
+
+        resp = client.post(
+            f'/api/change-orders/{co.pk}/seed-new/', {'empty': True}, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(len(resp.data['line_items']), 0)
+        # One-draft-CO-per-job (2026-09-20): the "start new" choice dialog
+        # offers seed-from-lines OR start-empty as ONE gesture, never both at
+        # once — discard the empty draft this test doesn't need before
+        # exercising the other half from the same terminal source, so the
+        # two calls don't try to leave two drafts coexisting on the job.
+        ChangeOrderService.discard_draft(resp.data['change_order_id'])
+
+        resp2 = client.post(f'/api/change-orders/{co.pk}/seed-new/', {}, format='json')
+        self.assertEqual(resp2.status_code, 201, resp2.data)
+        self.assertEqual(len(resp2.data['line_items']), 1)
+
+
+class COAgreementBillingTests(ChangeOrderAcceptanceBase):
+    """The agreement still carries CO document lines (no atom behind them).
+    The source_fee_id agreement channel is gone: line dicts carry no such
+    key."""
+
+    def test_compose_agreement_includes_co_add_line_without_fee(self):
+        # A plain CO add line rides the agreement as a document line; the
+        # line dict no longer carries a source_fee_id key at all.
+        from apps.estimates.agreement import compose_agreement
+        co = self._make_co()
+        ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra scope', qty=Decimal('1'), price=Decimal('10.00'),
             accounting_category=self.cat.pk,
         )
         self._accept(co)
 
-        fee = ChangeOrderLineItemSource.objects.get(
-            change_order_line_item=li).source_pk
         agreement = compose_agreement(self.job)
         co_lines = [l for l in agreement['lines'] if l['origin'] == 'change_order']
         self.assertEqual(len(co_lines), 1)
-        self.assertEqual(co_lines[0]['source_fee_id'], fee)
-
-    def test_copy_from_estimate_claims_crystallized_co_fee(self):
-        from apps.invoicing.models import Invoice, InvoiceLineItemSource
-        from apps.invoicing.services import InvoiceService
-        # An estimate hand-line fee plus a CO-added fee: both must be claimed.
-        line, est_fee = self._fee_backed_line()
-        co = self._make_co()
-        li = ChangeOrderService.add_line_item(
-            co.pk, action=ChangeOrderLineItem.ACTION_ADD,
-            description='Extra scope', qty=Decimal('1'), price=Decimal('10.00'),
-            accounting_category=self.cat.pk,
-        )
-        self._accept(co)
-        co_fee_pk = ChangeOrderLineItemSource.objects.get(
-            change_order_line_item=li).source_pk
-
-        invoice = Invoice.objects.create(
-            job=self.job, invoice_number='INV-2026-0001')
-        InvoiceService.copy_from_estimate(invoice)
-
-        claimed = set(
-            InvoiceLineItemSource.objects.filter(
-                invoice_line_item__invoice=invoice,
-                source_type=InvoiceLineItemSource.SOURCE_FEE,
-            ).values_list('source_pk', flat=True)
-        )
-        self.assertIn(est_fee.pk, claimed)
-        self.assertIn(co_fee_pk, claimed)
+        self.assertNotIn('source_fee_id', co_lines[0])

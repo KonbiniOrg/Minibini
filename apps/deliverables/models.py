@@ -16,6 +16,17 @@ class Deliverable(models.Model):
     description = models.TextField()
     qty_ordered = models.DecimalField(max_digits=10, decimal_places=2)
     units = models.CharField(max_length=50)
+    # Provenance only (the source_scheme pattern): which estimate line this
+    # deliverable was minted from via the Make Deliverable button. Display,
+    # button suppression, and mismatch badging read it — no compute path, no
+    # sync (better-fees spec §6). SET_NULL: deleting the deliverable or the
+    # line just breaks the link. revise_estimate re-points it to the copied
+    # line so provenance follows the live agreement (RM 2026-08-12).
+    source_line = models.ForeignKey(
+        'estimates.EstimateLineItem',
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='deliverables',
+    )
     sort_order = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

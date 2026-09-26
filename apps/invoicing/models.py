@@ -155,14 +155,39 @@ class InvoiceLineItem(BaseLineItem):
     """Line item for invoices - inherits shared functionality from BaseLineItem."""
 
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
+    # adjustment_service: provenance ONLY (task-owned-money Phase 1, Task 5) —
+    # which preset this adjustment line was created from. Still what SELECTS a
+    # line as an adjustment (adjustment_service_id is not None is identity, not
+    # computation) but never read for math; adjustment_percent below is the
+    # price of record.
     adjustment_service = models.ForeignKey(
         'jobs.RateScheme', on_delete=models.PROTECT,
         null=True, blank=True, related_name='+',
         help_text='Set when this line is a percentage adjustment (rush/discount).',
     )
+    adjustment_percent = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True,
+        help_text=(
+            "Snapshot of adjustment_service's rate at creation time. "
+            "compute_adjustment_amount reads this field, never the live scheme."
+        ),
+    )
     adjustment_target_categories = models.ManyToManyField(
         'core.AccountingCategory', blank=True, related_name='+',
         help_text='Categories the adjustment applies to; empty = all non-adjustment lines.',
+    )
+    # Reference/provenance fields for seeding + backing — which estimate line
+    # or change-order line was the source for this invoice line. Release
+    # semantics live in the service (see docs/designs/invoicing-and-expenses.md
+    # §7.1). On delete=SET_NULL so an invoice line survives its agreement line
+    # vanishing.
+    agreement_estimate_line = models.ForeignKey(
+        'estimates.EstimateLineItem', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='invoice_lines',
+    )
+    agreement_co_line = models.ForeignKey(
+        'estimates.ChangeOrderLineItem', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='invoice_lines',
     )
 
     class Meta:
@@ -174,6 +199,11 @@ class InvoiceLineItem(BaseLineItem):
     def task(self):
         """InvoiceLineItem no longer has a direct task FK. Kept as None for BaseLineItem.clean() compatibility."""
         return None
+
+    @property
+    def agreement_line(self):
+        """Return whichever agreement reference is set: estimate line or change order line."""
+        return self.agreement_estimate_line or self.agreement_co_line
 
     def get_parent_field_name(self):
         """Get the name of the parent field for this line item type."""
@@ -223,13 +253,11 @@ class InvoiceLineItemSource(models.Model):
     SOURCE_MATERIAL = 'material'
     SOURCE_TASK = 'task'
     SOURCE_EXPENSE = 'expense'
-    SOURCE_FEE = 'fee'
     SOURCE_DEPOSIT = 'deposit'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_MATERIAL, 'Material'),
         (SOURCE_TASK, 'Task'),
         (SOURCE_EXPENSE, 'Expense'),
-        (SOURCE_FEE, 'Fee'),
         (SOURCE_DEPOSIT, 'Deposit'),
     ]
 
@@ -257,9 +285,6 @@ class InvoiceLineItemSource(models.Model):
         if self.source_type == self.SOURCE_EXPENSE:
             from apps.expenses.models import Expense
             return Expense.objects.get(pk=self.source_pk)
-        if self.source_type == self.SOURCE_FEE:
-            from apps.jobs.models import Fee
-            return Fee.objects.get(pk=self.source_pk)
         if self.source_type == self.SOURCE_DEPOSIT:
             return InvoiceLineItem.objects.filter(pk=self.source_pk).first()
         raise ValueError(f'Unknown source_type: {self.source_type}')

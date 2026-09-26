@@ -34,13 +34,24 @@
     choice?.type === 'inventory' ? (choice.inventoryItem?.units || '') :
     ''
   );
+  // The description the server would derive for this pick if none is sent —
+  // byte-identical to InvoiceService.add_line_item_from_service /
+  // add_line_item_from_pli's own defaults (service_item.template_name /
+  // pli.description). Used both to prefill the field and to decide whether
+  // an edit is an override worth sending (§3.6c pattern).
+  const prefillDescription = $derived(
+    choice?.type === 'service' ? (choice.serviceItem?.template_name || '') :
+    choice?.type === 'inventory' ? (choice.inventoryItem?.description || '') :
+    choice?.type === 'freeform' ? (choice.typed || '') :
+    ''
+  );
 
   const isComment = $derived(isFreeform && !!choice?.isComment);
 
   $effect(() => {
     if (!open || !choice) return;
     qty = '1'; units = 'none'; price = ''; error = '';
-    description = choice.type === 'freeform' ? (choice.typed || '') : '';
+    description = prefillDescription;
     accountingCategory = '';
   });
 
@@ -52,8 +63,12 @@
     if (choice.type === 'service') {
       url = `/api/invoices/${invoiceId}/line-items-from-service/`;
       payload = { service_item: choice.serviceItem.template_id, qty };
+      // The server derives this same description by default — only send an
+      // override when the user actually changed it.
+      if (description !== prefillDescription) payload.description = description;
     } else if (choice.type === 'inventory') {
       payload = { inventory_item: choice.inventoryItem.inventory_item_id, qty };
+      if (description !== prefillDescription) payload.description = description;
     } else if (choice.isComment) {
       payload = {
         description, is_comment: true,
@@ -89,9 +104,7 @@
 <Modal open={open && choice} onCancel={onClose}>
 <form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
       <h3>{isComment ? 'Add Comment' : title}</h3>
-      {#if isFreeform}
-        <p><label>Description<br><input type="text" bind:value={description} style="width:100%;box-sizing:border-box;"></label></p>
-      {/if}
+      <p><label>Description<br><input type="text" bind:value={description} style="width:100%;box-sizing:border-box;"></label></p>
       {#if !isComment}
         <p><label>Quantity<br><input type="number" step="0.01" min="0" value={qty} oninput={(e) => qty = e.target.value}>{#if !isFreeform && baseUnits}<span class="qty-units">{baseUnits}</span>{/if}</label></p>
       {/if}
@@ -101,7 +114,7 @@
         <p><label>Accounting Category
           <br><select bind:value={accountingCategory}>
             <option value="">-- Select --</option>
-            {#each categories as cat}<option value={cat.id}>{cat.code} - {cat.name}</option>{/each}
+            {#each categories.filter((c) => !c.is_fallback) as cat}<option value={cat.id}>{cat.code} - {cat.name}</option>{/each}
           </select></label></p>
       {/if}
       <div class="buttons">

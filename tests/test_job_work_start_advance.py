@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from tests.base import BaseTestCase
 from apps.core.models import User, Shift
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, RateScheme, Task
 from apps.jobs.services import BlepService, JobService, TaskLifecycleService
 
 
@@ -70,15 +70,21 @@ class WorkStartAdvancesJobTest(BaseTestCase):
 
     def test_start_work_advances_approved_job(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
-        task = Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        task = Task(name='T', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         TaskLifecycleService.start_work(task.pk, self.user)
         job.refresh_from_db()
         self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
 
     def test_complete_task_advances_approved_job_with_others_remaining(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
-        t1 = Task.objects.create(name='T1', job=job, rate_scheme_id=1)
-        Task.objects.create(name='T2', job=job, rate_scheme_id=1)
+        t1 = Task(name='T1', job=job)
+        t1.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        t1.save()
+        t2 = Task(name='T2', job=job)
+        t2.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        t2.save()
         now = timezone.now()
         BlepService._create(t1, self.user, start_time=now - timedelta(hours=1), end_time=now)
         TaskLifecycleService.complete_task(t1.pk)
@@ -87,7 +93,9 @@ class WorkStartAdvancesJobTest(BaseTestCase):
 
     def test_create_historical_advances_approved_job(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
-        task = Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        task = Task(name='T', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         now = timezone.now()
         BlepService.create_historical(
             self.user, task, now - timedelta(hours=2), now - timedelta(hours=1),
@@ -98,7 +106,9 @@ class WorkStartAdvancesJobTest(BaseTestCase):
     def test_create_historical_on_work_complete_job_stays_work_complete(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
                       Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE)
-        task = Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        task = Task(name='T', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         now = timezone.now()
         BlepService.create_historical(
             self.user, task, now - timedelta(hours=2), now - timedelta(hours=1),

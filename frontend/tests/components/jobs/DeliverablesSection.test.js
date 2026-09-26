@@ -50,4 +50,22 @@ describe('DeliverablesSection', () => {
     await findByText('X'); // wait for load to settle
     expect(queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
   });
+
+
+  it('re-fetches when the host refreshes the job object (onJobChange chain)', async () => {
+    mockApi({ items: [{ id: 1, description: 'Chairs', qty_ordered: '3.00', units: 'ea' }] });
+    const props = { jobId: 5, job: { job_id: 5 } };
+    const { findByText, rerender } = render(DeliverablesSection, { props });
+    await findByText('Chairs');
+    const callsBefore = api.get.mock.calls.length;
+
+    mockApi({ items: [
+      { id: 1, description: 'Chairs', qty_ordered: '3.00', units: 'ea' },
+      { id: 2, description: 'Table', qty_ordered: '1.00', units: 'ea' },
+    ] });
+    // Same jobId, NEW job object identity — as loadJob produces upstream.
+    await rerender({ ...props, job: { job_id: 5 } });
+    await findByText('Table');
+    expect(api.get.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
 });

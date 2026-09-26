@@ -8,6 +8,19 @@ from apps.core.services import NotFoundError
 from apps.core.wizard import BaseWizardService
 
 
+# Every invoice status except cancelled — "live" for the one-live-invoice-
+# per-agreement-line invariant (remaining_agreement_lines / seed_from_agreement
+# / restore_agreement_line). Deliberately broader than DEAD_INVOICE_STATUSES
+# (apps/invoicing/claims.py, which also treats `superseded` as dead for atom
+# claims) — a superseded invoice has no writer yet, and the agreement-line
+# invariant was scoped to "not cancelled" specifically (better-fees skeleton
+# phase, Task 3).
+LIVE_INVOICE_STATUSES = [
+    status for status, _label in Invoice.INVOICE_STATUS_CHOICES
+    if status != Invoice.STATUS_CANCELLED
+]
+
+
 class InvoiceService:
     """Service for invoice operations."""
 
@@ -17,6 +30,78 @@ class InvoiceService:
             raise ValidationError(
                 'Can only modify line items on draft invoices.'
             )
+
+    @staticmethod
+    def resolve_line_category():
+        """The configured fallback AccountingCategory instance, for
+        stamping a line whose deriving atom(s) carry no category of their
+        own — a null-AC Task atom flowing through the invoice wizard, or
+        a seeded/restored agreement line whose source estimate/CO line
+        was never categorized (Phase 3 Task 5).
+
+        Raises ValidationError naming the `fallback_accounting_category`
+        Configuration key when it is unset, blank, or points at an id
+        that no longer resolves to a usable AccountingCategory — deleted,
+        deactivated, or (new) flipped to `is_deposit=True` after being
+        configured as the fallback. The `is_deposit=False` re-check
+        mirrors the designation-time validation
+        (`apps/api/templates_config/views.py`'s `fallback_accounting_category`
+        PATCH handler already rejects `is_deposit=True` at configure time)
+        — without it here, a later edit to the designated category could
+        silently start stamping a deposit-collection category onto
+        ordinary work lines. All of these are treated identically to
+        "unconfigured" rather than distinct errors, since none gives the
+        caller a usable category. Mirrors the shape of
+        `_resolve_deposit_category` above.
+        """
+        from apps.core.models import AccountingCategory, Configuration
+        cfg = Configuration.objects.filter(
+            key='fallback_accounting_category').first()
+        pk = (cfg.value or '').strip() if cfg else ''
+        error = ValidationError({'accounting_category': [
+            'This work has no accounting category and no fallback is '
+            'configured. Set the fallback_accounting_category setting '
+            'or categorize the work first.']})
+        if not pk:
+            raise error
+        try:
+            return AccountingCategory.objects.get(
+                pk=pk, is_active=True, is_deposit=False)
+        except (AccountingCategory.DoesNotExist, ValueError, TypeError):
+            raise error
+
+    @staticmethod
+    def _agreement_category_id(line):
+        """The accounting_category_id to stamp when building an
+        InvoiceLineItem from a compose_agreement line dict — the line's
+        own id, or the configured fallback's when the line (built from a
+        null-AC task atom) carries none. Shared by _build_agreement_line_item
+        (seed_from_agreement + restore_agreement_line) and
+        copy_from_estimate — every InvoiceLineItem construction site that
+        reads `accounting_category_id` straight off a compose_agreement
+        line. Raises resolve_line_category's ValidationError when a
+        fallback is needed but unconfigured/stale.
+
+        Adjustment lines pass their `accounting_category_id` through
+        UNTOUCHED — never fallback-stamped, but never stripped either. In
+        production an adjustment line always carries a real AC:
+        EstimateService.add_adjustment_line / InvoiceService.add_adjustment_line
+        both stamp `svc.accounting_category` from the (required,
+        non-nullable) RateScheme field, and compose_agreement passes that
+        value straight through. The fallback must never override it — an
+        adjustment targets *other* lines' categories, so silently
+        substituting the fallback here would be wrong even though the
+        line has a real AC. The reverse bug (stripping a real AC to null)
+        is exactly as wrong: a null adjustment AC only exists for
+        legacy/hand-built data, and forcing it to null here just breaks
+        `_assert_all_lines_categorized` at send with no way to fix it
+        (the exemption also skips stamping the fallback), for no benefit."""
+        if line.get('is_adjustment'):
+            return line.get('accounting_category_id')
+        category_id = line.get('accounting_category_id')
+        if category_id is not None:
+            return category_id
+        return InvoiceService.resolve_line_category().pk
 
     @staticmethod
     def _resolve_deposit_category():
@@ -59,8 +144,15 @@ class InvoiceService:
         return li
 
     @staticmethod
-    def add_line_item_from_pli(invoice_pk, pli_pk, qty):
-        """Add a line item from a InventoryItem to a draft invoice."""
+    def add_line_item_from_pli(invoice_pk, pli_pk, qty, description=None):
+        """Add a line item from a InventoryItem to a draft invoice.
+
+        `description`: optional caller override of the catalog-derived
+        description (Add Line modal editable-description feature,
+        2026-09-20 — mirrors the Task create-money-override pattern,
+        estimates-and-prices.md §3.6c, and EstimateService's twin).
+        Present and non-blank (after strip) wins; absent or
+        blank/whitespace falls back to `pli.description`, unchanged."""
         from apps.inventory.models import InventoryItem
         from apps.core.services import LineItemService
         try:
@@ -75,7 +167,7 @@ class InvoiceService:
         li = InvoiceLineItem(
             invoice=invoice,
             inventory_item=pli,
-            description=pli.description,
+            description=(description or '').strip() or pli.description,
             qty=qty,
             units=pli.units,
             price=pli.selling_price,
@@ -86,9 +178,14 @@ class InvoiceService:
         return li
 
     @staticmethod
-    def add_line_item_from_service(invoice_pk, service_item_pk, qty):
+    def add_line_item_from_service(invoice_pk, service_item_pk, qty, description=None):
         """Ad-hoc service billing: snapshot description/units/price/AC off
-        the ServiceItem's rate scheme. No Task, no source row — pure line."""
+        the ServiceItem's rate scheme. No Task, no source row — pure line.
+
+        `description`: optional caller override of the catalog-derived
+        description — see add_line_item_from_pli's docstring for the
+        contract (present+non-blank wins; else falls back to
+        `service_item.template_name`)."""
         from apps.estimates.models import ServiceItem
         from apps.estimates.services import _decimal_or_invalid
         try:
@@ -105,7 +202,7 @@ class InvoiceService:
         scheme = service_item.rate_scheme
         li = InvoiceLineItem(
             invoice=invoice,
-            description=service_item.template_name,
+            description=(description or '').strip() or service_item.template_name,
             # str() first: a raw JSON float would expand to its binary value
             # and trip the 2-decimal-places validator.
             qty=_decimal_or_invalid(qty, 'qty'),
@@ -191,6 +288,21 @@ class InvoiceService:
         # cancelled is one of DEAD_INVOICE_STATUSES (apps/invoicing/claims.py).
         invoice.status = Invoice.STATUS_CANCELLED
         invoice.save()
+
+        # A cancelled invoice's lines must stop counting as "on this
+        # invoice" for the agreement-reference invariant — NULL both ref
+        # FKs so remaining_agreement_lines / restore_agreement_line's
+        # re-check see the agreement line as free again. (LIVE_INVOICE_STATUSES
+        # already excludes cancelled invoices by status, but a stray direct
+        # FK lookup elsewhere should not need to know that.) Iterate + save
+        # per instance (not QuerySet.update()) per house rule — Model.save()
+        # runs full_clean() but has no other side effects for this field pair.
+        for li in invoice.invoicelineitem_set.all():
+            if li.agreement_estimate_line_id or li.agreement_co_line_id:
+                li.agreement_estimate_line = None
+                li.agreement_co_line = None
+                li.save()
+
         return invoice
 
     @staticmethod
@@ -201,17 +313,15 @@ class InvoiceService:
 
     @staticmethod
     def delete_line_item(line_item_id):
-        """Delete an invoice line item and renumber — validates draft status."""
-        from apps.core.services import LineItemService
+        """Delete an invoice line item — the generic LineItemMixin's DELETE
+        entrypoint. Routes through remove_line (not a direct
+        LineItemService call) so an agreement-backed line's reference and
+        mirrored claims release the same way a wizard-driven removal does."""
         try:
             line_item = InvoiceLineItem.objects.get(pk=line_item_id)
         except InvoiceLineItem.DoesNotExist:
             raise NotFoundError(f'InvoiceLineItem {line_item_id} not found')
-        if line_item.invoice.status != Invoice.STATUS_DRAFT:
-            raise ValidationError(
-                'Cannot modify line items on a non-draft invoice.'
-            )
-        return LineItemService.delete_line_item_with_renumber(line_item)
+        return InvoiceService.remove_line(line_item.invoice, line_item)
 
     @staticmethod
     def copy_from_estimate(invoice):
@@ -219,8 +329,10 @@ class InvoiceService:
 
         Creates one InvoiceLineItem per line returned by compose_agreement(invoice.job),
         preserving description, qty, price, units, and accounting_category. Adjustment
-        lines also receive adjustment_service and adjustment_target_categories so the
-        agreement panel dedup sees them as already_added.
+        lines also receive adjustment_service, adjustment_percent (the snapshot carried
+        forward from the estimate line — never re-read off the live scheme), and
+        adjustment_target_categories so the agreement panel dedup sees them as
+        already_added.
 
         Preconditions (raise ValidationError if violated):
         - invoice.status == Invoice.STATUS_DRAFT
@@ -257,8 +369,6 @@ class InvoiceService:
 
         from apps.core.services import LineItemService
 
-        from apps.invoicing.models import InvoiceLineItemSource
-
         with transaction.atomic():
             for line_number, line in enumerate(lines, start=1):
                 li = InvoiceLineItem(
@@ -268,26 +378,17 @@ class InvoiceService:
                     qty=line['qty'],
                     price=line['price'],
                     units=line['units'],
-                    accounting_category_id=line.get('accounting_category_id'),
+                    accounting_category_id=InvoiceService._agreement_category_id(line),
                 )
                 if line.get('is_adjustment') and line.get('adjustment_service_id'):
                     li.adjustment_service_id = line['adjustment_service_id']
+                    li.adjustment_percent = line.get('percent')
 
                 LineItemService.save_line_item(li)
 
                 # Set M2M after the initial save so the PK exists.
                 if line.get('is_adjustment') and line.get('target_category_ids'):
                     li.adjustment_target_categories.set(line['target_category_ids'])
-
-                # If this line was crystallized from a hand-line into a Fee at
-                # acceptance time, create the InvoiceLineItemSource so the wizard
-                # pool marks the Fee as claimed and blocks double-billing.
-                if line.get('source_fee_id'):
-                    InvoiceLineItemSource.objects.create(
-                        invoice_line_item=li,
-                        source_type=InvoiceLineItemSource.SOURCE_FEE,
-                        source_pk=line['source_fee_id'],
-                    )
 
         return len(lines)
 
@@ -324,6 +425,7 @@ class InvoiceService:
                 price=Decimal('0.00'),
                 accounting_category=svc.accounting_category,
                 adjustment_service=svc,
+                adjustment_percent=svc.rate,
             )
             line.save()
             if target_category_ids:
@@ -331,6 +433,450 @@ class InvoiceService:
             LineItemService.save_line_item(line)
             line.refresh_from_db()
             return line
+
+    # ── agreement seeding / remaining / restore / remove ────────────────
+
+    @staticmethod
+    def remaining_agreement_lines(job):
+        """compose_agreement(job)'s lines minus those already referenced by
+        a live (non-cancelled) invoice's line item — for ANY live invoice on
+        the job, including one currently being seeded or edited.
+
+        A line already on a live invoice never reappears as remaining, even
+        when that invoice is the caller's own draft: that is exactly what
+        stops the restore picker from re-offering a line the draft already
+        carries, and what stops seed_from_agreement from double-seeding a
+        line onto a partially-seeded draft.
+        """
+        from apps.estimates.agreement import compose_agreement
+
+        lines = compose_agreement(job)['lines']
+
+        refs = InvoiceLineItem.objects.filter(
+            invoice__job=job, invoice__status__in=LIVE_INVOICE_STATUSES,
+        )
+
+        claimed_estimate_ids = set(
+            refs.filter(agreement_estimate_line_id__isnull=False)
+            .values_list('agreement_estimate_line_id', flat=True)
+        )
+        claimed_co_ids = set(
+            refs.filter(agreement_co_line_id__isnull=False)
+            .values_list('agreement_co_line_id', flat=True)
+        )
+
+        return [
+            line for line in lines
+            if line['estimate_line_id'] not in claimed_estimate_ids
+            and line['co_line_id'] not in claimed_co_ids
+        ]
+
+    @staticmethod
+    def _assert_agreement_line_unclaimed(line, exclude_invoice):
+        """Re-check under select_for_update (on the agreement line's own
+        pk) that no live invoice already references this agreement line —
+        closes the race between reading remaining_agreement_lines and
+        writing the new reference. Raises ValidationError naming the
+        invoice that already holds it.
+
+        exclude_invoice=None means "the current draft's own existing
+        reference also counts" — restore_agreement_line's call, since it
+        reads the raw compose_agreement line rather than
+        remaining_agreement_lines and so has no earlier filter that already
+        dropped lines the current draft holds. seed_from_agreement passes
+        its own invoice here instead: remaining_agreement_lines has already
+        excluded anything the current draft holds, so this call is purely
+        the race check against *other* invoices."""
+        from apps.estimates.models import EstimateLineItem, ChangeOrderLineItem
+
+        if line['estimate_line_id'] is not None:
+            EstimateLineItem.objects.select_for_update().get(
+                pk=line['estimate_line_id'])
+            ref_filter = {'agreement_estimate_line_id': line['estimate_line_id']}
+        else:
+            ChangeOrderLineItem.objects.select_for_update().get(
+                pk=line['co_line_id'])
+            ref_filter = {'agreement_co_line_id': line['co_line_id']}
+
+        qs = InvoiceLineItem.objects.filter(
+            invoice__status__in=LIVE_INVOICE_STATUSES, **ref_filter,
+        ).select_related('invoice')
+        if exclude_invoice is not None:
+            qs = qs.exclude(invoice=exclude_invoice)
+        existing = qs.first()
+        if existing is not None:
+            raise ValidationError(
+                f'This agreement line is already on invoice '
+                f'{existing.invoice.display_number}.'
+            )
+
+    @staticmethod
+    def _agreement_line_source_rows(line):
+        """The EstimateLineItemSource / ChangeOrderLineItemSource queryset
+        backing a compose_agreement `line` dict — the row-level lookup
+        shared by `_mirror_agreement_claims` (mirrors the billable subset
+        onto a new invoice line) and `_agreement_line_backing_is_partial`
+        (classifies the line's overall completeness at seed/restore time,
+        RM ruling 2026-09-21 "rule 2"). Empty for a hand line or
+        adjustment line (neither estimate_line_id nor co_line_id set)."""
+        from apps.estimates.models import (
+            EstimateLineItemSource, ChangeOrderLineItemSource,
+        )
+
+        if line['estimate_line_id'] is not None:
+            return EstimateLineItemSource.objects.filter(
+                estimate_line_item_id=line['estimate_line_id'])
+        if line['co_line_id'] is not None:
+            return ChangeOrderLineItemSource.objects.filter(
+                change_order_line_item_id=line['co_line_id'])
+        return EstimateLineItemSource.objects.none()
+
+    @staticmethod
+    def _agreement_line_claimable_atoms(line):
+        """Resolve `line`'s claimable source atoms (Task/Material
+        instances) via `_agreement_line_source_rows`, silently dropping
+        dangling rows whose atom was deleted before its source row was
+        purged (`src.resolve()` raises ObjectDoesNotExist — same
+        tolerance `_mirror_agreement_claims` already applies to this
+        pre-existing data shape). Does NOT consider whether an atom is
+        already claimed by a live invoice elsewhere (InvoiceClaimService)
+        — that's an orthogonal double-claim concern, not part of whether
+        the atom itself has reached a terminal state."""
+        from django.core.exceptions import ObjectDoesNotExist
+
+        atoms = []
+        for src in InvoiceService._agreement_line_source_rows(line):
+            try:
+                atoms.append(src.resolve())
+            except ObjectDoesNotExist:
+                continue
+        return atoms
+
+    @staticmethod
+    def _agreement_line_backing_is_partial(line):
+        """RM ruling 2026-09-21 "rule 2": True iff `line`'s claimable
+        atoms (see `_agreement_line_claimable_atoms`) are a MIX of
+        terminal (billable) and non-terminal atoms.
+
+        The honest states for a bundled agreement line at seed time are
+        "zero claimable atoms, or none billable" (stays on estimate
+        values, zero claims — today's behavior, unchanged) and "ALL
+        claimable atoms billable" (mirrors claims and re-derives price
+        from actuals — today's behavior, unchanged). A line with SOME
+        but not all atoms terminal is neither: `_rederive_price_from_actuals`
+        would price the bundle's full description/qty off just the done
+        fraction (RM sighting: a bundled per-unit line seeded carrying
+        just its solo completed outsourced task's actuals). Callers must
+        skip such a line entirely rather than seed/restore it.
+        """
+        atoms = InvoiceService._agreement_line_claimable_atoms(line)
+        if not atoms:
+            return False
+        billable = 0
+        for atom in atoms:
+            try:
+                InvoiceWizardService._assert_atom_billable(atom)
+                billable += 1
+            except ValidationError:
+                pass
+        return 0 < billable < len(atoms)
+
+    @staticmethod
+    def _mirror_agreement_claims(li, line):
+        """Copy the accepted agreement line's source rows (task/material
+        claims) onto the new invoice line — skipping atoms that fail the
+        billability gate (task not complete, material not consumed). An
+        unbillable atom is simply not claimed yet; the source pool still
+        offers it.
+
+        Also skips (rather than erroring) two edge cases that would
+        otherwise abort the whole seed:
+        - an atom already claimed by a live invoice (InvoiceClaimService)
+          — e.g. a deferred line's atom was billed directly on an earlier
+          invoice. The atom-level unique constraint on InvoiceLineItemSource
+          would raise IntegrityError if we tried to claim it again; instead
+          the new line simply arrives referenced but unclaimed for that
+          atom, matching the designed fallback (spec §7.2).
+        - a dangling EstimateLineItemSource/ChangeOrderLineItemSource whose
+          atom was deleted before its source row was purged — src.resolve()
+          raises ObjectDoesNotExist, same tolerance the estimate/CO source
+          serializers already apply to this pre-existing data shape.
+
+        Caller (seed_from_agreement / restore_agreement_line) is
+        responsible for never calling this on a line whose backing is
+        partial (`_agreement_line_backing_is_partial`) — this method
+        itself has no notion of "partial", it just mirrors whatever
+        billable atoms it finds.
+        """
+        from django.core.exceptions import ObjectDoesNotExist
+        from apps.invoicing.models import InvoiceLineItemSource
+        from apps.invoicing.claims import InvoiceClaimService
+
+        sources = InvoiceService._agreement_line_source_rows(line)
+
+        for src in sources:
+            if InvoiceClaimService.is_invoiced(src.source_type, src.source_pk):
+                continue
+            try:
+                instance = src.resolve()
+            except ObjectDoesNotExist:
+                continue
+            try:
+                InvoiceWizardService._assert_atom_billable(instance)
+            except ValidationError:
+                continue
+            InvoiceLineItemSource.objects.create(
+                invoice_line_item=li,
+                source_type=src.source_type,
+                source_pk=src.source_pk,
+            )
+
+    @staticmethod
+    def _rederive_price_from_actuals(li):
+        """After `_mirror_agreement_claims` has populated `li.sources`,
+        re-derive the line's price from those claimed atoms' actuals so a
+        seeded/restored backed line arrives already on the actuals basis
+        (spec §7.3: "seeded backed lines arrive already on the actuals
+        basis") rather than the (possibly stale) estimate snapshot
+        compose_agreement supplied.
+
+        Skips adjustment lines (their price comes from
+        recompute_adjustments, not source atoms) and lines that acquired
+        zero claims (hand lines, or every claimable atom failed the
+        billability gate) — those correctly stay on the agreement's
+        estimate values, since there's no completed work yet to price
+        from.
+
+        Reuses InvoiceWizardService._sum_sources /
+        BaseWizardService._expected_per_unit — the exact same
+        Σ-compute_amount / qty rounding the wizard's own in-sync rule
+        uses — rather than hand-rolling new rounding, so `derive_backing`
+        (apps/api/invoicing/serializers.py) reads the result as 'actuals'.
+
+        qty/units/description are left untouched (still the agreement's
+        3 ea / hand-typed description); only price moves.
+
+        Caller must plain-`.save()` `li` first (this does not itself
+        save) — mirrors the surrounding loop's "plain save, one deferred
+        recompute_adjustments pass at the end" pattern so this never
+        fires a premature per-line adjustment recompute.
+        """
+        if li.adjustment_service_id is not None:
+            return
+        if not li.sources.exists():
+            return
+        new_sum = InvoiceWizardService._sum_sources(li)
+        li.price = InvoiceWizardService._expected_per_unit(new_sum, li.qty)
+        li.save()
+
+    @staticmethod
+    def _build_agreement_line_item(invoice, line, line_number):
+        """Construct (unsaved) an InvoiceLineItem from one compose_agreement
+        line dict — shared by seed_from_agreement and restore_agreement_line."""
+        li = InvoiceLineItem(
+            invoice=invoice,
+            line_number=line_number,
+            description=line['description'],
+            qty=line['qty'],
+            price=line['price'],
+            units=line['units'],
+            accounting_category_id=InvoiceService._agreement_category_id(line),
+            agreement_estimate_line_id=line['estimate_line_id'],
+            agreement_co_line_id=line['co_line_id'],
+        )
+        if line.get('is_adjustment') and line.get('adjustment_service_id'):
+            li.adjustment_service_id = line['adjustment_service_id']
+            li.adjustment_percent = line.get('percent')
+        return li
+
+    @staticmethod
+    def seed_from_agreement(invoice):
+        """Create one InvoiceLineItem per *remaining* agreement line (see
+        remaining_agreement_lines) on a draft invoice.
+
+        Values (description/qty/units/price/accounting category) start
+        from the compose_agreement dict. An estimate-origin or CO-origin
+        line's billable source atoms are mirrored onto the new line
+        (InvoiceLineItemSource) so the wizard pool shows them claimed —
+        and once a (non-adjustment) line has ≥1 such claim, its price is
+        immediately re-derived from those atoms' actuals
+        (_rederive_price_from_actuals), so it arrives already on the
+        actuals basis (spec §7.3) rather than the estimate snapshot.
+        Hand lines and lines whose only claimable atoms fail the
+        billability gate acquire zero claims and stay on the agreement's
+        estimate values — there's no completed work yet to price from.
+
+        RM ruling 2026-09-21 "rule 2": a line whose claimable atoms are
+        SOME but not all terminal (`_agreement_line_backing_is_partial`)
+        is skipped entirely — no InvoiceLineItem is created for it. It
+        simply remains in `remaining_agreement_lines` (which keys off
+        live invoice-line references, not off a per-line "already
+        considered" flag) for a future seed once the rest of its backing
+        settles. Its already-terminal atom(s) stay unclaimed and
+        therefore pool-visible in the meantime — a deliberate manual pull
+        of just that atom stays possible.
+
+        Returns the number of lines created (skipped partial lines do
+        not count).
+        """
+        from django.db import transaction
+        from django.db.models import Max
+        from apps.core.adjustments import recompute_adjustments
+
+        InvoiceService._validate_draft(invoice)
+
+        with transaction.atomic():
+            lines = InvoiceService.remaining_agreement_lines(invoice.job)
+
+            max_ln = (InvoiceLineItem.objects.filter(invoice=invoice)
+                      .aggregate(Max('line_number'))['line_number__max'] or 0)
+
+            created = 0
+            for line in lines:
+                if InvoiceService._agreement_line_backing_is_partial(line):
+                    continue
+
+                InvoiceService._assert_agreement_line_unclaimed(
+                    line, exclude_invoice=invoice)
+
+                max_ln += 1
+                li = InvoiceService._build_agreement_line_item(
+                    invoice, line, max_ln)
+                # Plain save (not LineItemService.save_line_item): that
+                # helper recomputes adjustment prices immediately, which
+                # would fire before this line's own target-category M2M is
+                # set (needs a pk first) and before later sibling lines in
+                # this same loop exist. Defer to one recompute pass after
+                # every line + M2M in the batch is settled, below.
+                li.save()
+
+                if line.get('is_adjustment') and line.get('target_category_ids'):
+                    li.adjustment_target_categories.set(line['target_category_ids'])
+
+                InvoiceService._mirror_agreement_claims(li, line)
+                InvoiceService._rederive_price_from_actuals(li)
+
+                created += 1
+
+            if created:
+                # Deferred until every line in the batch is priced (est OR
+                # re-derived actuals, per _rederive_price_from_actuals
+                # above) so a percentage adjustment computes against its
+                # siblings' FINAL amounts, not their stale estimate
+                # snapshots.
+                recompute_adjustments(
+                    InvoiceLineItem.objects.filter(invoice=invoice))
+
+        return created
+
+    @staticmethod
+    def restore_agreement_line(invoice, *, estimate_line_id=None, co_line_id=None):
+        """Re-add a single agreement line (previously removed from this
+        draft, or never seeded) as a new line on `invoice`, mirroring claims
+        and re-deriving price from actuals the same way seed_from_agreement
+        does (see its docstring / spec §7.3).
+
+        RM ruling 2026-09-21 "rule 2" (corrected after review): a
+        partially-backed line (`_agreement_line_backing_is_partial`) is
+        REFUSED here exactly as `seed_from_agreement` skips it — raises
+        `ValidationError`, no line is created. An earlier version of this
+        method instead restored the line at estimate values with zero
+        claims (honoring the explicit pick while avoiding the actuals
+        dishonesty) — that carve-out was reviewed and rejected: it left
+        the line's already-terminal atom(s) unclaimed while the line
+        itself carried the FULL estimate price for that same work, so
+        `get_source_pool` (whose availability is keyed purely on
+        `InvoiceLineItemSource` existence, not on any agreement-line
+        state) would still offer the terminal atom for a manual pull —
+        a second charge for value the restored line already bills.
+        Unlike the seed-skip path (no line exists at all, so the manual
+        pull is the ONLY charge), a hybrid "line exists at estimate
+        price, atom still pullable" state has no safe reading. So restore
+        and seed now agree: a partial line simply cannot be placed on an
+        invoice at all until it's fully done, full stop — the picker
+        still lists it (a human can see it's there and why it's blocked)
+        but placing it raises.
+
+        Exactly one of estimate_line_id / co_line_id must be given.
+        """
+        from django.db import transaction
+        from django.db.models import Max
+        from apps.core.adjustments import recompute_adjustments
+        from apps.estimates.agreement import compose_agreement
+
+        if bool(estimate_line_id) == bool(co_line_id):
+            raise ValidationError(
+                'Exactly one of estimate_line_id or co_line_id is required.')
+
+        InvoiceService._validate_draft(invoice)
+
+        with transaction.atomic():
+            line = next(
+                (l for l in compose_agreement(invoice.job)['lines']
+                 if l['estimate_line_id'] == estimate_line_id
+                 and l['co_line_id'] == co_line_id),
+                None,
+            )
+            if line is None:
+                raise ValidationError('Agreement line not found.')
+
+            if InvoiceService._agreement_line_backing_is_partial(line):
+                raise ValidationError(
+                    "This agreement line's work is only partly finished. "
+                    "It can return to an invoice once all of its work is "
+                    "done; finished work can be billed now by pulling it "
+                    "from the unbilled pool."
+                )
+
+            # exclude_invoice=None (not `invoice`): unlike seed_from_agreement,
+            # this line came straight from compose_agreement rather than
+            # remaining_agreement_lines, so it has NOT already been checked
+            # against the current draft's own held references. Excluding the
+            # current invoice here would let a line already on this draft be
+            # restored a second time (double-click Restore -> duplicate
+            # reference) — see test_invoice_seeding.py.
+            InvoiceService._assert_agreement_line_unclaimed(
+                line, exclude_invoice=None)
+
+            max_ln = (InvoiceLineItem.objects.filter(invoice=invoice)
+                      .aggregate(Max('line_number'))['line_number__max'] or 0)
+            li = InvoiceService._build_agreement_line_item(
+                invoice, line, max_ln + 1)
+            # Plain save, then set the M2M, then one explicit recompute over
+            # every line on the invoice — see the matching comment in
+            # seed_from_agreement. Using LineItemService.save_line_item here
+            # would recompute this adjustment line's own price before its
+            # target-category M2M exists, always landing on the untargeted
+            # (all-siblings) amount.
+            li.save()
+
+            if line.get('is_adjustment') and line.get('target_category_ids'):
+                li.adjustment_target_categories.set(line['target_category_ids'])
+
+            InvoiceService._mirror_agreement_claims(li, line)
+            InvoiceService._rederive_price_from_actuals(li)
+
+            # Deferred until li is priced (est OR re-derived actuals) —
+            # see the matching comment in seed_from_agreement.
+            recompute_adjustments(InvoiceLineItem.objects.filter(invoice=invoice))
+
+        return li
+
+    @staticmethod
+    def remove_line(invoice, line_item):
+        """Remove one seeded/restored line from a draft invoice.
+
+        Routes through LineItemService.delete_line_item_with_renumber, which
+        deletes the row (dropping its agreement_estimate_line/agreement_co_line
+        reference along with it) and cascades its InvoiceLineItemSource rows
+        (claims) — the agreement line becomes "remaining" again.
+        """
+        InvoiceService._validate_draft(invoice)
+        if line_item.invoice_id != invoice.pk:
+            raise ValidationError('Line item does not belong to this invoice.')
+
+        from apps.core.services import LineItemService
+        return LineItemService.delete_line_item_with_renumber(line_item)
 
 
 class InvoiceEmailService:
@@ -426,7 +972,9 @@ class InvoiceEmailService:
             nums = ', '.join(str(n) for n in missing)
             raise ValidationError(
                 f'Every line item needs an accounting category before sending'
-                f' (line(s) {nums}).'
+                f' (line(s) {nums}). Categorize the line(s) directly, or'
+                f' configure the fallback_accounting_category setting so'
+                f' new lines are auto-categorized.'
             )
 
     @staticmethod
@@ -550,16 +1098,16 @@ class WizardAtomLabels:
 
     @staticmethod
     def qty_source_label(task):
-        """Describe where the billable quantity came from for a Task atom."""
-        from apps.jobs.models import RateScheme
-        scheme = task.rate_scheme
-        if scheme.algorithm == RateScheme.ELAPSED_TIME:
-            qty = scheme.get_actual_qty(task)
-            return f'{qty:.2f} {scheme.unit_label} from timeslips'
-        if scheme.algorithm == RateScheme.ENTERED_QTY:
-            qty = scheme.get_actual_qty(task)
-            return f'{qty} {scheme.unit_label} entered'
-        return 'flat fee'
+        """Describe where the billable quantity came from for a Task atom
+        (task-owned-money Phase 1 — branches on the task's own qty_source,
+        no RateScheme lookup)."""
+        if task.qty_source == task.QTY_ELAPSED:
+            qty = task.get_actual_qty()
+            return f'{qty:.2f} {task.unit_label} from timeslips'
+        if task.qty_source == task.QTY_ENTERED:
+            qty = task.get_actual_qty()
+            return f'{qty} {task.unit_label} entered'
+        raise ValueError(f'Unknown qty_source: {task.qty_source!r}')
 
 
 class InvoiceWizardService(BaseWizardService):
@@ -584,10 +1132,15 @@ class InvoiceWizardService(BaseWizardService):
     }
 
     @staticmethod
-    def open_for_job(job):
+    def open_for_job(job, seed=True):
         """Return the job's draft Invoice, creating one if none exists.
 
         Raises ValidationError if the job is in a status that doesn't allow invoicing.
+
+        A newly created draft auto-seeds from the job's agreement
+        (InvoiceService.seed_from_agreement) unless seed=False — the
+        deposit-invoice path opts out since it wants an empty, deposit-only
+        draft. An existing draft is returned as-is and never re-seeded.
         """
         if job.status not in InvoiceWizardService.BILLABLE_JOB_STATUSES:
             raise ValidationError(
@@ -602,7 +1155,10 @@ class InvoiceWizardService(BaseWizardService):
         if existing:
             return existing
 
-        return Invoice.objects.create(job=job, status=Invoice.STATUS_DRAFT)
+        invoice = Invoice.objects.create(job=job, status=Invoice.STATUS_DRAFT)
+        if seed:
+            InvoiceService.seed_from_agreement(invoice)
+        return invoice
 
     @staticmethod
     def get_source_pool(invoice):
@@ -624,13 +1180,6 @@ class InvoiceWizardService(BaseWizardService):
             .exclude(invoice_line_item__invoice__status=Invoice.STATUS_CANCELLED)
             .select_related('invoice_line_item', 'invoice_line_item__invoice__job')
         )
-        # Atoms an accepted change order struck from the agreement but
-        # crystallization left live (consumed/complete/expense-bound/…).
-        # They bill normally, but the biller must choose consciously — same
-        # doctrine as the cancelled-task badge.
-        from apps.estimates.change_order_service import ChangeOrderService
-        struck = ChangeOrderService.struck_atom_keys(job)
-
         claims = {}
         for src in claimed_sources:
             li = src.invoice_line_item
@@ -682,7 +1231,7 @@ class InvoiceWizardService(BaseWizardService):
 
         tasks = (
             Task.objects.filter(job=job)
-            .select_related('rate_scheme')
+            .select_related('descoped_by')
             .order_by('sort_order', 'pk')
         )
         task_list = []
@@ -695,7 +1244,7 @@ class InvoiceWizardService(BaseWizardService):
             atoms.append({
                 'type': 'task',
                 'id': task.pk,
-                'description': f'{task.name} ({task.rate_scheme.name})',
+                'description': task.name,
                 'sub_info': WizardAtomLabels.qty_source_label(task),
                 'qty': detail['qty'],
                 'rate': detail['rate'],
@@ -704,16 +1253,21 @@ class InvoiceWizardService(BaseWizardService):
                 # Cancelled tasks stay billable (work done before the stop)
                 # but the biller must choose consciously — flag the row.
                 'task_cancelled': task.status == Task.STATUS_CANCELLED,
+                'descoped_by_co_number': (
+                    task.descoped_by.change_order_number
+                    if task.descoped_by_id else None),
                 # Suppressed on cancelled tasks: one amber badge is a prompt,
                 # two is noise, and cancelled already forces the choice.
                 'struck_from_agreement': (
-                    key in struck and task.status != Task.STATUS_CANCELLED),
+                    task.descoped_by_id is not None
+                    and task.status != Task.STATUS_CANCELLED),
                 **state_info,
             })
 
             # Material atoms
             materials = (
                 Material.objects.filter(task=task, quantity__gt=0)
+                .select_related('descoped_by')
                 .order_by('pk')
             )
             for mat in materials:
@@ -729,7 +1283,10 @@ class InvoiceWizardService(BaseWizardService):
                     'rate': detail['rate'],
                     'units': detail['units'],
                     'amount': detail['amount'],
-                    'struck_from_agreement': key in struck,
+                    'descoped_by_co_number': (
+                        mat.descoped_by.change_order_number
+                        if mat.descoped_by_id else None),
+                    'struck_from_agreement': mat.descoped_by_id is not None,
                     **state_info,
                 })
 
@@ -743,6 +1300,7 @@ class InvoiceWizardService(BaseWizardService):
         # "Materials (no task)" group - task-less Materials with quantity > 0
         loose = (
             Material.objects.filter(job=job, task__isnull=True, quantity__gt=0)
+            .select_related('descoped_by')
             .order_by('pk')
         )
         loose_atoms = []
@@ -759,7 +1317,10 @@ class InvoiceWizardService(BaseWizardService):
                 'rate': detail['rate'],
                 'units': detail['units'],
                 'amount': detail['amount'],
-                'struck_from_agreement': key in struck,
+                'descoped_by_co_number': (
+                    mat.descoped_by.change_order_number
+                    if mat.descoped_by_id else None),
+                'struck_from_agreement': mat.descoped_by_id is not None,
                 **state_info,
             })
         task_list.append({
@@ -800,35 +1361,6 @@ class InvoiceWizardService(BaseWizardService):
             'name': 'Expenses',
             'has_billable_atoms': len(expense_atoms) > 0,
             'atoms': expense_atoms,
-        })
-
-        # "Fees" group — job-owned Fee atoms; always billable (no completion gate).
-        from apps.jobs.models import Fee
-        fees = (
-            Fee.objects.filter(job=job)
-            .order_by('sort_order', 'pk')
-        )
-        fee_atoms = []
-        for fee in fees:
-            detail = InvoiceWizardService._atom_detail(fee)
-            key = (InvoiceLineItemSource.SOURCE_FEE, fee.pk)
-            state_info = claims.get(key, default_state)
-            fee_atoms.append({
-                'type': 'fee',
-                'id': fee.pk,
-                'description': fee.description,
-                'sub_info': '',
-                'qty': detail['qty'],
-                'rate': detail['rate'],
-                'units': detail['units'],
-                'amount': detail['amount'],
-                **state_info,
-            })
-        task_list.append({
-            'task_id': None,
-            'name': 'Fees',
-            'has_billable_atoms': len(fee_atoms) > 0,
-            'atoms': fee_atoms,
         })
 
         # "Deposit credits" group — deposit lines on PAID invoices of this
@@ -932,9 +1464,10 @@ class InvoiceWizardService(BaseWizardService):
     # ── deposit atom rules (no bundling; same-job only; deduction lines
     #    take no further atoms) ─────────────────────────────────────────
     @classmethod
-    def add_atoms_to_new_line_item(cls, container, atoms):
+    def add_atoms_to_new_line_item(cls, container, atoms, *, overrides=None, per_unit=False):
         cls._assert_deposit_atom_rules(container, atoms)
-        return super().add_atoms_to_new_line_item(container, atoms)
+        return super().add_atoms_to_new_line_item(
+            container, atoms, overrides=overrides, per_unit=per_unit)
 
     @classmethod
     def add_atoms_to_line_item(cls, line_item, atoms):
@@ -985,6 +1518,17 @@ class InvoiceWizardService(BaseWizardService):
             raise ValidationError('Can only modify draft invoices.')
 
     @classmethod
+    def _resolve_line_category(cls, category):
+        """Invoice override of BaseWizardService's identity hook: a null
+        `category` (single null-AC task atom, or a mixed-category bundle
+        collapsed to None) stamps the configured fallback
+        AccountingCategory instead of leaving the line uncategorized —
+        raises if none is configured (InvoiceService.resolve_line_category)."""
+        if category is not None:
+            return category
+        return InvoiceService.resolve_line_category()
+
+    @classmethod
     def _assert_atom_billable(cls, instance):
         from apps.jobs.models import Task
         from apps.inventory.models import Material
@@ -1013,8 +1557,8 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _resolve_atom(cls, atom_ref):
-        """Given {'type': 'material'|'task'|'expense'|'fee', 'id': N}, return the instance."""
-        from apps.jobs.models import Task, Fee
+        """Given {'type': 'material'|'task'|'expense'|'deposit', 'id': N}, return the instance."""
+        from apps.jobs.models import Task
         from apps.inventory.models import Material
         if atom_ref['type'] == 'material':
             return Material.objects.get(pk=atom_ref['id'])
@@ -1022,8 +1566,6 @@ class InvoiceWizardService(BaseWizardService):
             return Task.objects.get(pk=atom_ref['id'])
         if atom_ref['type'] == 'expense':
             return cls._expense_model().objects.get(pk=atom_ref['id'])
-        if atom_ref['type'] == 'fee':
-            return Fee.objects.get(pk=atom_ref['id'])
         if atom_ref['type'] == 'deposit':
             try:
                 return InvoiceLineItem.objects.select_related(
@@ -1031,11 +1573,11 @@ class InvoiceWizardService(BaseWizardService):
             except InvoiceLineItem.DoesNotExist:
                 raise ValidationError(
                     f"Deposit line {atom_ref['id']} not found")
-        raise ValueError(f"Unknown atom type: {atom_ref['type']}")
+        raise ValidationError(f"Unknown atom type: {atom_ref['type']}")
 
     @classmethod
     def _atom_source_type(cls, atom_instance):
-        from apps.jobs.models import Task, Fee
+        from apps.jobs.models import Task
         from apps.inventory.models import Material
         from apps.invoicing.models import InvoiceLineItemSource
         if isinstance(atom_instance, InvoiceLineItem):
@@ -1046,17 +1588,16 @@ class InvoiceWizardService(BaseWizardService):
             return InvoiceLineItemSource.SOURCE_MATERIAL
         if isinstance(atom_instance, cls._expense_model()):
             return InvoiceLineItemSource.SOURCE_EXPENSE
-        if isinstance(atom_instance, Fee):
-            return InvoiceLineItemSource.SOURCE_FEE
         raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
 
     @classmethod
     def _atom_units(cls, atom_instance):
-        """Units label for an atom — rate scheme unit, PLI units, or 'none'."""
+        """Units label for an atom — the task's own unit_label
+        (task-owned-money Phase 1), PLI units, or 'none'."""
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if isinstance(atom_instance, Task):
-            return atom_instance.rate_scheme.unit_label
+            return atom_instance.unit_label or 'none'
         if isinstance(atom_instance, Material):
             if atom_instance.inventory_item_id:
                 return atom_instance.inventory_item.units
@@ -1067,7 +1608,7 @@ class InvoiceWizardService(BaseWizardService):
     def _atom_computed_amount(cls, atom_instance):
         # InvoiceLineItem (deposit credits) has no compute_amount() — the
         # base helper's atom_instance.compute_amount() only applies to
-        # Task/Material/Fee/Expense. A deposit credit's billable amount is
+        # Task/Material/Expense. A deposit credit's billable amount is
         # the negated deposit line total.
         if isinstance(atom_instance, InvoiceLineItem):
             return (-atom_instance.total_amount).quantize(Decimal('0.01'))
@@ -1075,10 +1616,7 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _atom_category(cls, atom_instance):
-        from apps.jobs.models import Fee
         if isinstance(atom_instance, InvoiceLineItem):
-            return atom_instance.accounting_category
-        if isinstance(atom_instance, Fee):
             return atom_instance.accounting_category
         if isinstance(atom_instance, cls._expense_model()):
             return atom_instance.accounting_category
@@ -1086,11 +1624,8 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _atom_description(cls, atom_instance):
-        from apps.jobs.models import Fee
         if isinstance(atom_instance, InvoiceLineItem):
             return f'Less deposit ({atom_instance.invoice.display_number})'
-        if isinstance(atom_instance, Fee):
-            return atom_instance.description
         if isinstance(atom_instance, cls._expense_model()):
             return atom_instance.description or (
                 atom_instance.accounting_category.name
@@ -1100,14 +1635,10 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _atom_qty_and_price(cls, atom_instance, total_price):
-        from apps.jobs.models import Fee
         # A deposit credit is always pulled solo: qty 1 at the negated
         # deposit total (total_price already equals that amount).
         if isinstance(atom_instance, InvoiceLineItem):
             return Decimal('1'), total_price
-        # A fee line item copies over quantity × unit_rate directly.
-        if isinstance(atom_instance, Fee):
-            return atom_instance.quantity, atom_instance.unit_rate
         # A material-less expense bills at pass-through cost: qty 1 × amount.
         if isinstance(atom_instance, cls._expense_model()):
             return Decimal('1'), atom_instance.amount
@@ -1115,19 +1646,10 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _atom_detail(cls, atom_instance):
-        from apps.jobs.models import Fee
         if isinstance(atom_instance, InvoiceLineItem):
             amount = cls._atom_computed_amount(atom_instance)
             return {'qty': Decimal('1'), 'rate': amount,
                     'units': 'none', 'amount': amount}
-        if isinstance(atom_instance, Fee):
-            amount = cls._atom_computed_amount(atom_instance)
-            return {
-                'qty': atom_instance.quantity,
-                'rate': atom_instance.unit_rate.quantize(Decimal('0.01')),
-                'units': 'none',
-                'amount': amount,
-            }
         if isinstance(atom_instance, cls._expense_model()):
             amount = cls._atom_computed_amount(atom_instance)
             return {'qty': Decimal('1'), 'rate': amount,
@@ -1136,15 +1658,15 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _task_qty_and_price(cls, task, total_price):
-        # Both algorithms carry a real per-unit qty × rate: entered_qty from
-        # the worker-entered quantity, elapsed_time from blep hours. Either
-        # way qty × effective_rate == the computed amount exactly, and it
-        # matches what _uniform_scheme_bundle produces for the same task.
-        if task.rate_scheme_id:
-            scheme = task.rate_scheme
-            return scheme.get_actual_qty(task), task.effective_rate()
+        # Both qty_source values carry a real per-unit qty × rate: entered_qty
+        # from the worker-entered quantity, elapsed_time from blep hours.
+        # Either way qty × effective_rate == the computed amount exactly, and
+        # it matches what _uniform_money_bundle produces for the same task
+        # (task-owned-money Phase 1 — no RateScheme lookup).
+        if task.rate is not None:
+            return task.get_actual_qty(), task.effective_rate()
         return Decimal('1'), total_price
 
     @classmethod
     def _task_actual_qty(cls, task):
-        return task.rate_scheme.get_actual_qty(task)
+        return task.get_actual_qty()

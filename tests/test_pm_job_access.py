@@ -283,16 +283,17 @@ class TaskAndContactGuardTest(BaseTestCase):
             job_number='JOB-TK-0001', name='TK', status=Job.STATUS_DRAFT,
             contact=self.contact, project_manager=self.pm,
         )
-        # Task.rate_scheme is NOT NULL at the DB level; supply one.
         self.cat = AccountingCategory.objects.create(code='LAB-tk', name='Labor TK')
         self.scheme = RateScheme.objects.create(
             name='Hourly TK', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Mill', rate_scheme=self.scheme, sort_order=1,
+        self.task = Task(
+            job=self.job, name='Mill', sort_order=1,
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
     def _client(self, user):
         c = APIClient(); c.force_authenticate(user=user); return c
@@ -344,9 +345,11 @@ class TaskAssignPMAccessTest(BaseTestCase):
             name='ASG-S', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='T', rate_scheme=scheme, sort_order=1,
+        self.task = Task(
+            job=self.job, name='T', sort_order=1,
         )
+        self.task.stamp_from_scheme(scheme)
+        self.task.save()
 
     def _client(self, user):
         c = APIClient()

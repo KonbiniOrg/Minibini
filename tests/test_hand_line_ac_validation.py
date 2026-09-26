@@ -15,7 +15,7 @@ from apps.estimates.models import (
     Estimate, EstimateLineItem, EstimateLineItemSource,
 )
 from apps.estimates.services import EstimateService
-from apps.jobs.models import Fee, Job, RateScheme, Task
+from apps.jobs.models import Job, RateScheme, Task
 
 
 class HandLineACValidationSetup(TestCase):
@@ -38,9 +38,11 @@ class HandLineACValidationSetup(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Setup', rate_scheme=self.scheme, est_qty=Decimal('2'),
+        self.task = Task(
+            job=self.job, name='Setup', est_qty=Decimal('2'),
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-2026-0001',
             status=Estimate.STATUS_DRAFT,
@@ -75,6 +77,7 @@ class HandLineACValidationSetup(TestCase):
             qty=Decimal('1'), price=Decimal('50.00'),
             accounting_category=None,  # also None to confirm adjustment exemption
             adjustment_service=self.adj_scheme,
+            adjustment_percent=self.adj_scheme.rate,
         )
 
 
@@ -161,45 +164,40 @@ class EstimateSendACGuardTest(HandLineACValidationSetup):
         self.assertEqual(result.status, Estimate.STATUS_OPEN)
 
 
-class AcceptanceDefensiveGuardTest(HandLineACValidationSetup):
-    """EstimateAcceptanceService.on_accept() must raise a clear ValidationError
-    (not IntegrityError) when a hand-line has no accounting_category."""
+class AcceptancePlainLineACTest(HandLineACValidationSetup):
+    """Plain hand-lines crystallize nothing at acceptance, so a null-AC plain
+    line no longer raises there — the AC-required rule is enforced at entry time
+    (create/update/mark_open), not at acceptance."""
 
     def setUp(self):
         super().setUp()
         # Create a hand-line with NULL AC via ORM bypass (simulates bad historical data).
-        # We skip the service to bypass the new service-level validation.
+        # We skip the service to bypass the service-level validation.
         self.bad_hand_line = EstimateLineItem.objects.create(
-            estimate=self.estimate, line_number=4, description='No-category fee',
+            estimate=self.estimate, line_number=4, description='No-category charge',
             qty=Decimal('1'), price=Decimal('10.00'),
-            accounting_category=None,  # the problem condition
+            accounting_category=None,
         )
         # Advance the estimate to open so on_accept can run.
         Estimate.objects.filter(pk=self.estimate.pk).update(status=Estimate.STATUS_OPEN)
         self.estimate.refresh_from_db()
 
-    def test_accept_with_null_ac_hand_line_raises_clear_validation_error(self):
-        """on_accept() raises ValidationError (not IntegrityError) for a null-AC hand-line."""
-        from django.db import IntegrityError
+    def test_accept_with_null_ac_plain_line_does_not_raise(self):
+        """on_accept() skips plain lines entirely — even null-AC ones —
+        since nothing is crystallized from them."""
+        result = EstimateAcceptanceService.on_accept(self.estimate)
+        self.assertNotIn('fees_created', result)
+        self.assertFalse(self.bad_hand_line.sources.exists())
 
-        # Must raise ValidationError — not IntegrityError — so callers get a
-        # meaningful message, not a cryptic DB constraint failure.
-        with self.assertRaises(ValidationError) as ctx:
-            EstimateAcceptanceService.on_accept(self.estimate)
-        msg = str(ctx.exception)
-        # Should mention the line or accounting category in a useful way
-        self.assertIn('accounting', msg.lower())
-
-    def test_accept_with_ac_hand_line_succeeds(self):
-        """on_accept() succeeds when every hand-line has an accounting_category."""
-        # The bad_hand_line would fail; give it a category so the test verifies success.
+    def test_accept_with_ac_plain_line_creates_nothing(self):
+        """Plain lines with an AC also crystallize nothing — no atom, no source row."""
         EstimateLineItem.objects.filter(pk=self.bad_hand_line.pk).update(
             accounting_category=self.cat,
         )
         self.bad_hand_line.refresh_from_db()
 
-        # Also remove atom_line and adj_line's null-AC items from the picture by
-        # ensuring they're properly handled (atom-backed + adjustment — both fine).
         result = EstimateAcceptanceService.on_accept(self.estimate)
-        # hand_line (cat=self.cat) + bad_hand_line (now cat=self.cat) = 2 fees
-        self.assertGreaterEqual(result['fees_created'], 1)
+        self.assertEqual(result['tasks_created'], 0)
+        self.assertEqual(result['materials_created'], 0)
+        self.assertFalse(self.hand_line.sources.exists())
+        self.assertFalse(self.bad_hand_line.sources.exists())

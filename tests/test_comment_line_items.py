@@ -8,8 +8,12 @@ Covers:
   exclusive with inventory_item/task/adjustment_service/is_material/service_item)
 - Estimate/ChangeOrder add_line_item + update_line_item exempt comment lines
   from the accounting-category-required rule
-- EstimateAcceptanceService.on_accept / ChangeOrderAcceptanceService.on_accept
-  never crystallize a comment line into a Task/Material/Fee
+- EstimateAcceptanceService.on_accept never crystallizes a comment line into a
+  Task/Material (it stays document-only, same as a plain hand-line)
+- ChangeOrderAcceptanceService.on_accept never crystallizes a comment add
+  line, and treats a comment replace as an annotated removal: the target's
+  current atom is stamped `descoped_by` and retired — no claims move onto
+  the comment line itself
 - InvoiceEmailService._assert_all_lines_categorized exempts comment lines
 - QBOInvoiceSyncService._build_qbo_invoice never pushes a comment line
 - PurchaseOrderService.add_line_item accepts a comment line with no category
@@ -26,12 +30,13 @@ from apps.estimates.acceptance import EstimateAcceptanceService
 from apps.estimates.co_acceptance import ChangeOrderAcceptanceService
 from apps.estimates.models import (
     ChangeOrder, ChangeOrderLineItem, Estimate, EstimateLineItem,
-    EstimateLineItemSource,
+    EstimateLineItemSource, ServiceItem,
 )
 from apps.estimates.services import EstimateService
+from apps.inventory.models import Material
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.invoicing.services import InvoiceEmailService
-from apps.jobs.models import Fee, Job, RateScheme, Task
+from apps.jobs.models import Job, RateScheme, Task
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.purchasing.services import PurchaseOrderService
 from apps.qbo.services import QBOInvoiceSyncService
@@ -130,7 +135,9 @@ class CommentLineValidationTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME, rate=Decimal('50'),
             unit_label='hour', accounting_category=self.cat,
         )
-        task = Task.objects.create(job=self.job, name='Setup', rate_scheme=scheme, est_qty=Decimal('1'))
+        task = Task(job=self.job, name='Setup', est_qty=Decimal('1'))
+        task.stamp_from_scheme(scheme)
+        task.save()
         li = PurchaseOrderLineItem(
             purchase_order=po, description='Note', is_comment=True,
             qty=Decimal('0'), price=Decimal('0'), task=task,
@@ -185,7 +192,10 @@ class EstimateCommentLineAddUpdateTest(TestCase):
 
 
 class EstimateAcceptanceSkipsCommentLinesTest(TestCase):
-    """Acceptance must never crystallize a comment line into a Fee/Task/Material."""
+    """Acceptance must never crystallize a comment line into a Task/Material —
+    it stays document-only exactly like a plain (bare) hand-line. A real
+    service_item-backed line in the same estimate proves acceptance is still
+    doing its job elsewhere."""
 
     def setUp(self):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
@@ -203,37 +213,48 @@ class EstimateAcceptanceSkipsCommentLinesTest(TestCase):
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-2026-0002', status=Estimate.STATUS_OPEN,
         )
-        self.hand_line = EstimateLineItem.objects.create(
+        self.scheme = RateScheme.objects.create(
+            name='Rush handling service', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.service_item = ServiceItem.objects.create(
+            template_name='Rush handling', rate_scheme=self.scheme,
+        )
+        self.task_line = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=1, description='Rush handling',
             qty=Decimal('3'), price=Decimal('25.00'), accounting_category=self.cat,
+            service_item=self.service_item,
         )
         self.comment_line = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=2, description='Please see attached drawing',
             is_comment=True, qty=Decimal('0'), price=Decimal('0'),
         )
 
-    def test_comment_line_produces_no_fee_task_or_material(self):
+    def test_comment_line_produces_no_task_or_material(self):
         EstimateAcceptanceService.on_accept(self.estimate)
         self.assertFalse(
-            Fee.objects.filter(job=self.job, description='Please see attached drawing').exists()
+            Task.objects.filter(job=self.job, name='Please see attached drawing').exists()
         )
         self.assertFalse(
-            Task.objects.filter(job=self.job, name='Please see attached drawing').exists()
+            Material.objects.filter(job=self.job, description='Please see attached drawing').exists()
         )
 
     def test_comment_line_gets_no_source_row(self):
         EstimateAcceptanceService.on_accept(self.estimate)
         self.assertFalse(EstimateLineItemSource.objects.filter(estimate_line_item=self.comment_line).exists())
 
-    def test_only_hand_line_counted_in_fees_created(self):
+    def test_only_service_item_line_counted_in_tasks_created(self):
         result = EstimateAcceptanceService.on_accept(self.estimate)
-        self.assertEqual(result['fees_created'], 1)
-        self.assertEqual(Fee.objects.filter(job=self.job).count(), 1)
+        self.assertEqual(result['tasks_created'], 1)
+        self.assertEqual(result['materials_created'], 0)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 1)
 
 
 class ChangeOrderCommentLineAcceptanceTest(TestCase):
-    """CO acceptance never crystallizes a comment add/replace line; a comment
-    replace still retires the old atom (mirrors co_acceptance.py semantics)."""
+    """CO acceptance never crystallizes a comment add line. A comment replace
+    is an annotated removal (co_acceptance.py, merge 2026-09-21): the target's
+    *current* atom is stamped `descoped_by` and retired exactly like a
+    plain remove — no claims move onto the comment line itself."""
 
     def setUp(self):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
@@ -251,17 +272,20 @@ class ChangeOrderCommentLineAcceptanceTest(TestCase):
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-2026-0003', status=Estimate.STATUS_ACCEPTED,
         )
+        self.scheme = RateScheme.objects.create(
+            name='Rush handling service', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.task = Task(job=self.job, name='Rush handling', est_qty=Decimal('3'))
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         self.hand_line = EstimateLineItem.objects.create(
             estimate=self.estimate, line_number=1, description='Rush handling',
             qty=Decimal('3'), price=Decimal('25.00'), accounting_category=self.cat,
         )
-        self.fee = Fee.objects.create(
-            job=self.job, description='Rush handling', quantity=Decimal('3'),
-            unit_rate=Decimal('25.00'), accounting_category=self.cat,
-        )
         EstimateLineItemSource.objects.create(
             estimate_line_item=self.hand_line,
-            source_type=EstimateLineItemSource.SOURCE_FEE, source_pk=self.fee.pk,
+            source_type=EstimateLineItemSource.SOURCE_TASK, source_pk=self.task.pk,
         )
         self.co = ChangeOrder.objects.create(job=self.job, estimate=self.estimate)
 
@@ -272,20 +296,87 @@ class ChangeOrderCommentLineAcceptanceTest(TestCase):
             qty=Decimal('0'), price=Decimal('0'),
         )
         result = ChangeOrderAcceptanceService.on_accept(self.co)
-        self.assertEqual(result['fees_created'], 0)
         self.assertEqual(result['tasks_created'], 0)
         self.assertEqual(result['materials_created'], 0)
 
-    def test_comment_replace_retires_old_fee_without_crystallizing(self):
-        ChangeOrderLineItem.objects.create(
+    def test_comment_replace_retires_old_task_without_crystallizing(self):
+        replace_li = ChangeOrderLineItem.objects.create(
             change_order=self.co, line_number=1, action=ChangeOrderLineItem.ACTION_REPLACE,
             description='Cancelled — see note', is_comment=True,
             qty=Decimal('0'), price=Decimal('0'), target_line_item=self.hand_line,
         )
         result = ChangeOrderAcceptanceService.on_accept(self.co)
-        self.assertEqual(result['fees_created'], 0)
-        self.assertEqual(result['fees_removed'], 1)
-        self.assertFalse(Fee.objects.filter(pk=self.fee.pk).exists())
+        self.assertEqual(result['tasks_created'], 0)
+        self.assertEqual(result['materials_created'], 0)
+        self.assertEqual(result['tasks_cancelled'], 1)
+        # No claims moved onto the comment line — backing inheritance is
+        # skipped for a comment-marked replace.
+        self.assertFalse(replace_li.sources.exists())
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_CANCELLED)
+        self.assertEqual(self.task.descoped_by_id, self.co.pk)
+
+
+class SendGateCommentLineExemptionTest(TestCase):
+    """The send-time AC gates exempt comment lines, matching their own
+    documented contract ("same predicate as EstimateAcceptanceService.
+    on_accept", which skips is_comment):
+    - EstimateService.assert_all_hand_lines_have_ac (mark_open / email)
+    - ChangeOrderService.assert_all_bare_add_lines_have_ac (draft-exit /
+      email)
+    Without the exemption a comment line makes its whole estimate/CO
+    unsendable — caught by the comment-lines e2e backfill (2026-09-22): the
+    unit tests above construct open/accepted documents directly and never
+    crossed mark_open with a comment on board.
+    """
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(code='GATE', name='Gate', taxable=True)
+        self.contact = Contact.objects.create(
+            first_name='Pat', last_name='Gate', email='pat.gate@acme.com', mobile_number='555-0107',
+        )
+        self.job = Job.objects.create(job_number='JOB-CMT-0007', contact=self.contact)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-CMT-0007', status=Estimate.STATUS_DRAFT,
+        )
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Real work',
+            qty=Decimal('1'), price=Decimal('100.00'), accounting_category=self.cat,
+        )
+
+    def test_estimate_send_gate_passes_with_comment_line(self):
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=2, description='See attached spec sheet',
+            is_comment=True, qty=Decimal('0'), price=Decimal('0'),
+        )
+        EstimateService.assert_all_hand_lines_have_ac(self.estimate)  # should not raise
+
+    def test_estimate_send_gate_still_blocks_bare_non_comment_line(self):
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=2, description='Bare hand-line',
+            qty=Decimal('1'), price=Decimal('10.00'),
+        )
+        with self.assertRaises(DjangoValidationError):
+            EstimateService.assert_all_hand_lines_have_ac(self.estimate)
+
+    def test_co_send_gate_passes_with_comment_add_line(self):
+        from apps.estimates.change_order_service import ChangeOrderService
+        co = ChangeOrder.objects.create(job=self.job, estimate=self.estimate)
+        ChangeOrderLineItem.objects.create(
+            change_order=co, line_number=1, action=ChangeOrderLineItem.ACTION_ADD,
+            description='FYI only', is_comment=True, qty=Decimal('0'), price=Decimal('0'),
+        )
+        ChangeOrderService.assert_all_bare_add_lines_have_ac(co)  # should not raise
+
+    def test_co_send_gate_still_blocks_bare_non_comment_add_line(self):
+        from apps.estimates.change_order_service import ChangeOrderService
+        co = ChangeOrder.objects.create(job=self.job, estimate=self.estimate)
+        ChangeOrderLineItem.objects.create(
+            change_order=co, line_number=1, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Bare add', qty=Decimal('1'), price=Decimal('10.00'),
+        )
+        with self.assertRaises(DjangoValidationError):
+            ChangeOrderService.assert_all_bare_add_lines_have_ac(co)
 
 
 class InvoiceCommentLineCategorizationTest(TestCase):

@@ -1,8 +1,9 @@
 import logging
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from apps.core.history import record_history, record_action
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,19 @@ from apps.core.services import NotFoundError, NumberGenerationService
 
 class PurchaseOrderService:
     """Service for purchase order operations."""
+
+    # Whitelist for `reconcile`'s `appended_lines` entries (task-owned-money
+    # Phase 5, outsourced-work port): the same field set `add_line_item`
+    # accepts, plus the optional `line_item_id` target handled separately.
+    # `invoice_only` is always set server-side and is therefore NOT in this
+    # set — a caller-supplied `invoice_only` (true or false) is rejected
+    # like any other unknown field. Anything outside this set (e.g.
+    # qty_received, line_number, received_by) is a smuggling attempt
+    # through a call site that isn't the receiving flow and is rejected
+    # wholesale.
+    APPENDED_LINE_FIELDS = frozenset({
+        'description', 'qty', 'units', 'price', 'accounting_category', 'task',
+    })
 
     @staticmethod
     def create_po(**kwargs):
@@ -51,6 +65,300 @@ class PurchaseOrderService:
         po.full_clean()
         po.save()
         return po
+
+    @staticmethod
+    def reconcile(po_id, bill_total=None, vendor_invoice_ref='',
+                   line_finals=None, appended_lines=None):
+        """Record vendor-bill reconciliation data against a PO (spec §7 rule
+        3). The bill is entered once in QBO by whoever does payables —
+        Minibini captures only the delta.
+
+        Allowed once the PO has been ISSUED (any non-draft status,
+        including cancelled — a vendor bill can still land for whatever
+        actually shipped before cancellation). NOT gated on receiving
+        state: `awaiting_reconciliation` is a downstream nudge, not a
+        precondition here — the plan explicitly decided "reconcile allowed
+        once ISSUED".
+
+        Reconcile is editable, not a lifecycle lock: calling this again on
+        an already-reconciled PO overwrites the PO-level fields — it's
+        bookkeeping, not a one-shot transition. `reconciled`/
+        `reconciled_date` are always (re)set. `bill_total` = None if not
+        supplied.
+
+        `line_finals`: {line_item_id: Decimal} — sets the optional
+        per-line `final_price` (null elsewhere means "as ordered"). Every
+        key must reference a line item that belongs to THIS PO (invoice_only
+        lines included, if one was targeted deliberately).
+
+        REPLACE semantics, not merge: each call mirrors the vendor's bill
+        wholesale — every non-`invoice_only` line on the PO that is NOT a
+        key in this call's `line_finals` has its `final_price` cleared back
+        to `None` ("as ordered"), even if a *previous* reconcile call had
+        set it. A smaller `line_finals` set on a later call is therefore
+        not additive; it is the new complete statement of which lines carry
+        a final price. `invoice_only` lines are never auto-cleared by this
+        sweep (they aren't "ordered" lines to begin with) — one is only
+        touched if its id is explicitly present in `line_finals`.
+
+        `appended_lines`: a list of PurchaseOrderLineItem field kwargs
+        (same shape as `add_line_item`, task may be included for optional
+        attribution) for the `invoice_only=True` lines this call's vendor
+        bill carries — e.g. freight or other vendor-invoice-only charges
+        that were never ordered/received.
+
+        APPEND-ONLY MIRROR, not additive: each reconcile call is the
+        complete, current statement of the bill's invoice_only detail,
+        mirroring the vendor bill wholesale the same way `line_finals` does
+        for ordered lines' `final_price`. Each dict may carry an optional
+        `line_item_id` key to target an existing invoice_only line on this
+        PO for an in-place update; omit it to create a new one. Any
+        invoice_only line already on the PO whose id is NOT present in
+        this call's `appended_lines` is DELETED via
+        `LineItemService.delete_line_item_with_renumber` (repo law: never
+        `.delete()` a line item directly — see CLAUDE.md). Every entry
+        (new or updated) goes through the model's normal `full_clean()`,
+        including the task-link validation in
+        `PurchaseOrderLineItem.clean()`.
+        """
+        from apps.core.services import LineItemService
+
+        line_finals = line_finals or {}
+        appended_lines = appended_lines or []
+
+        try:
+            po = PurchaseOrder.objects.get(pk=po_id)
+        except PurchaseOrder.DoesNotExist:
+            raise NotFoundError(f'PurchaseOrder {po_id} not found')
+
+        if po.status == PurchaseOrder.STATUS_DRAFT:
+            raise ValidationError(
+                'Cannot reconcile a purchase order before it has been issued.'
+            )
+
+        # Malformed vendor-bill input (non-numeric bill_total/line_finals
+        # values, non-integer appended-line ids) is arbitrary API-caller
+        # input, not a programming error — coerce up front and raise a
+        # field-shaped ValidationError instead of letting a bare
+        # Decimal()/int() conversion 500.
+        if bill_total is not None and not isinstance(bill_total, Decimal):
+            try:
+                bill_total = Decimal(str(bill_total))
+            except (InvalidOperation, ValueError, TypeError):
+                raise ValidationError({'bill_total': [
+                    f'{bill_total!r} is not a valid number.'
+                ]})
+
+        converted_line_finals = {}
+        for line_id, value in line_finals.items():
+            if value is None or isinstance(value, Decimal):
+                converted_line_finals[line_id] = value
+                continue
+            try:
+                converted_line_finals[line_id] = Decimal(str(value))
+            except (InvalidOperation, ValueError, TypeError):
+                raise ValidationError({'line_finals': [
+                    f'Line item {line_id}: {value!r} is not a valid number.'
+                ]})
+        line_finals = converted_line_finals
+
+        all_lines_by_id = {
+            li.pk: li for li in PurchaseOrderLineItem.objects.filter(purchase_order=po)
+        }
+        missing = set(line_finals.keys()) - set(all_lines_by_id.keys())
+        if missing:
+            raise ValidationError({'line_finals': [
+                f'Line item {line_id} does not belong to PO {po.po_number}.'
+                for line_id in sorted(missing)
+            ]})
+
+        existing_invoice_only = {
+            pk: li for pk, li in all_lines_by_id.items() if li.invoice_only
+        }
+
+        # Each appended-line dict is whitelisted to the fields
+        # `add_line_item` itself accepts (plus the optional `line_item_id`
+        # target) — closes a smuggling path where a caller sneaks
+        # receiving-state fields (qty_received, line_number, ...) into a
+        # reconcile call, bypassing the receiving flow's own guards.
+        appended_ids = set()
+        for entry in appended_lines:
+            unknown = (
+                set(entry.keys()) - PurchaseOrderService.APPENDED_LINE_FIELDS
+                - {'line_item_id'}
+            )
+            if unknown:
+                raise ValidationError({'appended_lines': [
+                    f'Unknown field(s): {", ".join(sorted(unknown))}.'
+                ]})
+            raw_id = entry.get('line_item_id')
+            if raw_id is None:
+                continue
+            try:
+                appended_ids.add(int(raw_id))
+            except (ValueError, TypeError):
+                raise ValidationError({'appended_lines': [
+                    f'{raw_id!r} is not a valid line item id.'
+                ]})
+        bad_ids = appended_ids - set(existing_invoice_only.keys())
+        if bad_ids:
+            raise ValidationError({'appended_lines': [
+                f'Invoice-only line {line_id} does not belong to PO {po.po_number}.'
+                for line_id in sorted(bad_ids)
+            ]})
+
+        with transaction.atomic():
+            for li in all_lines_by_id.values():
+                if li.pk in line_finals:
+                    li.final_price = line_finals[li.pk]
+                elif not li.invoice_only:
+                    # REPLACE semantics: an omitted ordered line reverts to
+                    # "as ordered" — see docstring. invoice_only lines not
+                    # targeted this call are left untouched entirely.
+                    if li.final_price is None:
+                        continue
+                    li.final_price = None
+                else:
+                    continue
+                li.full_clean()
+                li.save()
+
+            seen_invoice_only_ids = set()
+            for line_data in appended_lines:
+                data = dict(line_data)
+                line_id = data.pop('line_item_id', None)
+                data['invoice_only'] = True
+                data = LineItemService.normalize_fk_kwargs(PurchaseOrderLineItem, data)
+                if line_id is not None:
+                    line_id = int(line_id)
+                    li = existing_invoice_only[line_id]
+                    for field, value in data.items():
+                        setattr(li, field, value)
+                    li.full_clean()
+                    li.save()
+                    seen_invoice_only_ids.add(line_id)
+                else:
+                    li = PurchaseOrderLineItem(purchase_order=po, **data)
+                    li.full_clean()
+                    li.save()
+
+            # Append-only mirror: any previously-appended invoice_only line
+            # not re-sent this call exists only on a stale prior statement
+            # of the bill — drop it, per-line via the repo's mandated
+            # renumbering delete path (never raw QuerySet/.delete()).
+            for pk, li in existing_invoice_only.items():
+                if pk not in seen_invoice_only_ids:
+                    LineItemService.delete_line_item_with_renumber(li)
+
+            po.bill_total = bill_total
+            po.vendor_invoice_ref = vendor_invoice_ref or ''
+            po.reconciled = True
+            po.reconciled_date = timezone.now()
+            po.full_clean()
+            po.save()
+
+        return po
+
+    @staticmethod
+    def _default_markup_percent():
+        """The system's one "default markup" Configuration row. Named
+        `default_material_markup_percent` (materials app) and used
+        elsewhere to derive InventoryItem `selling_price` from
+        `purchase_price` — but it's already reused beyond that literal
+        scope (`MaterialService.establish_reverse_markup` uses it to price
+        a bare-material hand-line at crystallization), so it functions as
+        the codebase's one generic cost→sell markup rather than something
+        InventoryItem-exclusive. No task/service-specific markup
+        Configuration key exists anywhere in the codebase — this is the
+        config a future rate-prompt feature (task-owned-money Phase 5 spec
+        §7 rule 4) reuses for its "final × markup" task-rate suggestion.
+
+        Returns (percent: Decimal | None, found: bool).
+        """
+        from apps.core.models import Configuration
+        try:
+            raw = Configuration.objects.get(key='default_material_markup_percent').value
+        except Configuration.DoesNotExist:
+            return None, False
+        try:
+            return Decimal(raw), True
+        except Exception:
+            return None, False
+
+    @staticmethod
+    def compute_rate_prompts(po):
+        """Task-rate prompt support (spec §7 rule 4, task-owned-money Phase
+        5 / outsourced-work port Task 3): for each PO line with a clean
+        (non-null) `final_price` whose linked task is not yet on a live
+        invoice, suggest updating that task's rate. NEVER mutates
+        anything — purely a read: the client offers the prompt and, on
+        accept, PATCHes the task itself through the existing money-gated
+        path (no endpoint here accepts the suggestion).
+
+        suggested_rate = final_price × (1 + markup/100) when
+        `default_material_markup_percent` exists (see
+        `_default_markup_percent`); otherwise suggested_rate = final_price
+        and the caller should surface `markup_applied=False`.
+
+        `current_rate` = `task.effective_rate()` (modifiers-aware —
+        outsourced-work port re-shape from fees' raw `task.rate`), plus
+        `has_active_modifiers` (bool) so the caller can note "modifiers
+        apply on top of this suggestion".
+
+        Returns (prompts: list[dict], markup_applied: bool). Each prompt:
+        {'task_id', 'task_name', 'current_rate', 'suggested_rate',
+        'has_active_modifiers'}.
+        """
+        from apps.invoicing.claims import InvoiceClaimService
+        from apps.invoicing.models import InvoiceLineItemSource
+
+        markup_percent, markup_applied = PurchaseOrderService._default_markup_percent()
+
+        prompts = []
+        lines = (
+            PurchaseOrderLineItem.objects
+            .filter(purchase_order=po, final_price__isnull=False, task__isnull=False)
+            .select_related('task')
+        )
+        for li in lines:
+            task = li.task
+            if InvoiceClaimService.is_invoiced(InvoiceLineItemSource.SOURCE_TASK, task.pk):
+                continue
+            # RM browser sighting 2026-09-21: a final_price that equals the
+            # ordered `price` never prompts. Both fields are the same
+            # DecimalField(10, 2) shape (BaseLineItem.price /
+            # PurchaseOrderLineItem.final_price), so a direct Decimal `==`
+            # is safe -- no quantize/rounding gap to bridge. Only an EMPTY
+            # final_price means "as ordered" at the model level, but a
+            # typed-back value that happens to match the ordered price is
+            # the same thing in substance and must read the same way, or
+            # re-typing the original number after trying a different final
+            # keeps re-prompting forever (the reported bug).
+            if li.final_price == li.price:
+                continue
+            # No terminal-status skip here (RM ruling 2026-09-21): a
+            # cancelled task's recorded actuals stay billable (terminal,
+            # not complete, is the billability line — invoicing-and-
+            # expenses.md), so its rate stays meaningful, and
+            # JobService.update_task's carve-out permits exactly the
+            # rate-only PATCH this prompt's Accept sends on COMPLETE or
+            # CANCELLED tasks alike. The natural filter is already the
+            # flow: a prompt only exists when the line got a final_price,
+            # i.e. the vendor actually billed it.
+            if markup_applied:
+                suggested = (
+                    li.final_price * (Decimal('1') + markup_percent / Decimal('100'))
+                ).quantize(Decimal('0.01'))
+            else:
+                suggested = li.final_price
+            prompts.append({
+                'task_id': task.pk,
+                'task_name': task.name,
+                'current_rate': task.effective_rate(),
+                'suggested_rate': suggested,
+                'has_active_modifiers': bool(task.active_modifiers),
+            })
+        return prompts, markup_applied
 
     @staticmethod
     def _sever_line_material(li, sever_decision):
@@ -148,6 +456,51 @@ class PurchaseOrderService:
             )
 
     @staticmethod
+    def _reject_task_with_procurement(task_id, job_id, material_id):
+        """Server defense for the PO Job/Task consolidation (RM
+        2026-09-21): a line either attributes cost to a task (pure
+        attribution — no Material is created, `inventory_item` stays
+        null) or procures a material for a job (today's unchanged
+        Material claim-or-create / lot-minting flow) — never both.
+
+        Raised BEFORE any material machinery runs (in particular before
+        `_resolve_material_for_line`), so the deep `BaseLineItem.clean()`
+        task/inventory_item invariant's message — meant for the
+        auto-minted-lot case the old two-Job-picker form could trigger,
+        where the user never chose an inventory item themselves — is
+        unreachable from this path.
+        """
+        if task_id is not None and (job_id is not None or material_id is not None):
+            raise ValidationError({'task': [
+                'A line can attribute cost to a task or procure a '
+                'material for a job, not both.'
+            ]})
+
+    @staticmethod
+    def _reject_job_change_on_task_line(li, new_job_id):
+        """Server defense for the PO Job/Task consolidation (RM
+        2026-09-21), the `change_line_job` half: a task-carrying line is
+        pure cost attribution and can never gain a job/material
+        attribution after the fact. Without this guard,
+        `MaterialService.resolve_or_create_for_line` ->
+        `_apply_po_line_cost` (`apps/inventory/services.py`) can mint a
+        lot and repoint `inventory_item` via a raw
+        `.save(update_fields=[...])` call that bypasses `full_clean()` —
+        silently persisting the same invalid task+inventory_item state
+        `_reject_task_with_procurement` exists to keep `add_line_item`/
+        `add_line_item_from_pli` from ever creating in the first place.
+
+        `new_job_id is None` (clearing the job) is left alone — a
+        task-carrying line never has a linked Material to begin with, so
+        that call is already a no-op.
+        """
+        if li.task_id is not None and new_job_id is not None:
+            raise ValidationError({'job': [
+                'This line attributes cost to a task and cannot procure '
+                'a material. Remove the task link first.'
+            ]})
+
+    @staticmethod
     def _resolve_material_for_line(li, job_id, material_id):
         """Common job/material resolution for newly-created PO lines.
 
@@ -177,7 +530,14 @@ class PurchaseOrderService:
 
     @staticmethod
     def add_line_item(po_id, **kwargs):
-        """Add a manual line item to a draft PO. Accepts optional transient job, material_id."""
+        """Add a manual line item to a draft PO. Accepts optional transient job, material_id.
+
+        `invoice_only` is reconciliation-owned — it is set server-side only
+        by `reconcile()`'s `appended_lines` path and is never a valid
+        caller input here (spec ruling 4 / fees' LATER item 3: the
+        serializer's read-only declaration alone doesn't stop a raw POST
+        body from reaching this service, so the guard belongs here too).
+        """
         from apps.core.services import LineItemService
         try:
             po = PurchaseOrder.objects.get(pk=po_id)
@@ -185,9 +545,22 @@ class PurchaseOrderService:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
         PurchaseOrderService._validate_draft(po)
 
+        if 'invoice_only' in kwargs:
+            raise ValidationError({'invoice_only': [
+                'This field is set automatically during PO reconciliation '
+                'and cannot be supplied directly.'
+            ]})
+        if 'final_price' in kwargs:
+            raise ValidationError({'final_price': [
+                'This field is set automatically during PO reconciliation '
+                'and cannot be supplied directly.'
+            ]})
+
         # Pop transient params before they hit the model constructor
         job_id = kwargs.pop('job', None)
         material_id = kwargs.pop('material_id', None)
+        PurchaseOrderService._reject_task_with_procurement(
+            kwargs.get('task'), job_id, material_id)
 
         kwargs = LineItemService.normalize_fk_kwargs(PurchaseOrderLineItem, kwargs)
         with transaction.atomic():
@@ -198,14 +571,26 @@ class PurchaseOrderService:
         return li
 
     @staticmethod
-    def add_line_item_from_pli(po_id, inventory_item_id, qty, job=None, material_id=None):
-        """Add a line item from a InventoryItem to a draft PO. Accepts optional job, material_id."""
+    def add_line_item_from_pli(po_id, inventory_item_id, qty, job=None, material_id=None, task=None):
+        """Add a line item from a InventoryItem to a draft PO. Accepts optional job, material_id, task.
+
+        `task` mirrors `add_line_item`'s exclusivity guard (PO Job/Task
+        consolidation, RM 2026-09-21): rejected up front alongside
+        `job`/`material_id`. A PLI-backed line that sets `task` WITHOUT
+        job/material_id still trips `BaseLineItem.clean()`'s pre-existing
+        task/inventory_item exclusivity when `full_clean()` runs below —
+        that message is fine to reach here since the caller explicitly
+        chose both an inventory item and a task; this guard only
+        forecloses the job/material_id combination that used to crash
+        confusingly deeper in the material machinery.
+        """
         from apps.inventory.models import InventoryItem
         try:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
         PurchaseOrderService._validate_draft(po)
+        PurchaseOrderService._reject_task_with_procurement(task, job, material_id)
         try:
             pli = InventoryItem.objects.get(pk=inventory_item_id)
         except InventoryItem.DoesNotExist:
@@ -219,6 +604,7 @@ class PurchaseOrderService:
                 units=pli.units,
                 price=pli.purchase_price,
                 accounting_category=pli.accounting_category,
+                task_id=task,
             )
             li.full_clean()
             li.save()
@@ -229,6 +615,10 @@ class PurchaseOrderService:
     def change_line_job(line_item_id, new_job_id, sever_decision=None):
         """Change a PO line's job attribution. Allowed on any non-cancelled PO
         as long as the linked Material (if any) is pending.
+
+        A task-carrying line (pure cost attribution, PO Job/Task
+        consolidation, RM 2026-09-21) rejects a non-null `new_job_id`
+        field-shaped on `job` — see `_reject_job_change_on_task_line`.
 
         If the line already has a linked Material, `sever_decision` ('keep'|'delete')
         is required. 'keep' unlinks the existing Material from the PO line (it stays
@@ -247,6 +637,7 @@ class PurchaseOrderService:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
         if li.purchase_order.status == PurchaseOrder.STATUS_CANCELLED:
             raise ValidationError('Cannot change job on a cancelled PO.')
+        PurchaseOrderService._reject_job_change_on_task_line(li, new_job_id)
 
         new_job_obj = None
         if new_job_id is not None:
@@ -279,13 +670,34 @@ class PurchaseOrderService:
 
     @staticmethod
     def update_line_item(line_item_id, **kwargs):
-        """Update a PO line item — validates draft status."""
+        """Update a PO line item — validates draft status.
+
+        `invoice_only` and `final_price` are reconciliation-owned — both are
+        set server-side only by `reconcile()`'s appended_lines path, and are
+        never valid caller input here. The line-item PATCH endpoint
+        (`apps/api/purchasing/views.py::line_item_detail`) passes raw
+        `request.data` straight into this method, so the serializer's
+        read-only declaration on these fields never applies; the guard has
+        to live here too (mirrors `add_line_item`'s guard, spec ruling 4).
+        """
         from apps.core.services import LineItemService
         try:
             li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
         except PurchaseOrderLineItem.DoesNotExist:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
         PurchaseOrderService._validate_draft(li.purchase_order)
+
+        if 'invoice_only' in kwargs:
+            raise ValidationError({'invoice_only': [
+                'This field is set automatically during PO reconciliation '
+                'and cannot be supplied directly.'
+            ]})
+        if 'final_price' in kwargs:
+            raise ValidationError({'final_price': [
+                'This field is set automatically during PO reconciliation '
+                'and cannot be supplied directly.'
+            ]})
+
         kwargs = LineItemService.normalize_fk_kwargs(PurchaseOrderLineItem, kwargs)
         for field, value in kwargs.items():
             setattr(li, field, value)
@@ -346,7 +758,6 @@ class PurchaseOrderReceivingService:
         Material.quantity is unchanged — planned consumption is set at line-add time.
         QOH bumps by received qty for inventoried PLIs. Overage is accepted."""
         from apps.inventory.services import InventoryService
-        from django.utils import timezone
 
         if po.status not in (
             PurchaseOrder.STATUS_ISSUED,
@@ -366,6 +777,11 @@ class PurchaseOrderReceivingService:
                     pk=item_data['line_item_id'],
                     purchase_order=po,
                 )
+                if li.invoice_only:
+                    raise ValidationError(
+                        f'Line item #{li.line_number} is invoice-only and '
+                        'excluded from receiving.'
+                    )
                 qty = Decimal(str(item_data['qty_received']))
                 if qty <= 0:
                     continue
@@ -413,9 +829,13 @@ class PurchaseOrderReceivingService:
     @staticmethod
     def receive_all(po, user):
         """
-        Receive all remaining items on a PO at full quantity.
+        Receive all remaining items on a PO at full quantity. `invoice_only`
+        lines (reconciliation-appended, e.g. freight) are excluded — they
+        were never ordered/received and take no part in receiving flows.
         """
-        line_items = PurchaseOrderLineItem.objects.filter(purchase_order=po)
+        line_items = PurchaseOrderLineItem.objects.filter(
+            purchase_order=po, invoice_only=False,
+        )
         items = []
         for li in line_items:
             remaining = li.qty - li.qty_received - li.qty_cancelled
@@ -450,6 +870,11 @@ class PurchaseOrderReceivingService:
             li = PurchaseOrderLineItem.objects.select_for_update().get(
                 pk=line_item_id, purchase_order=po,
             )
+            if li.invoice_only:
+                raise ValidationError(
+                    f'Line item #{li.line_number} is invoice-only and was '
+                    'never ordered/received — it cannot be cancelled.'
+                )
             if li.qty_received + li.qty_cancelled >= li.qty:
                 raise ValidationError(
                     f'Line item #{li.line_number} has no outstanding quantity to cancel.'
@@ -548,8 +973,16 @@ class PurchaseOrderReceivingService:
 
     @staticmethod
     def _update_po_status(po):
-        """Recalculate PO status based on line item receipt state."""
-        all_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        """Recalculate PO status based on line item receipt state.
+
+        `invoice_only` lines (reconciliation-appended) are excluded from
+        this computation — they were never ordered or received, so their
+        permanently-zero qty_received must never hold the PO back from (or
+        knock it out of) `received_in_full`.
+        """
+        all_items = list(PurchaseOrderLineItem.objects.filter(
+            purchase_order=po, invoice_only=False,
+        ))
         if not all_items:
             return
 

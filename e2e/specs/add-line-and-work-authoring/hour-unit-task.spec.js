@@ -60,21 +60,22 @@ test('hour-unit task: single Estimated-hours input, one estimate shown, assign n
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
-  await test.step('Task list shows the 2h estimate once, not duplicated as a qty too', async () => {
+  await test.step('Task list shows the 2h estimate and the Est Qty with its unit inline', async () => {
     const row = page.locator('tr', { hasText: taskName });
     await expect(row).toBeVisible();
     await expect(row.getByText('2h', { exact: true })).toBeVisible();
-    // A broken pair-fill or a missing dedupe would show a bare "2" here too
-    // (the Est Qty column restating the same number).
-    await expect(row.getByText('2', { exact: true })).toHaveCount(0);
+    // Hour-unit tasks show Est Qty like every other unit, even though it
+    // restates Est Time (backend pair-fills them) — the old
+    // duplicate-suppression '-' read as missing data (RM 2026-08-06).
+    await expect(row.getByText('2.00 hour', { exact: true }).first()).toBeVisible();
     await page.getByRole('button', { name: taskName }).click();
   });
 
-  await test.step('Task detail shows the estimate once (Est Time chip, no Est Qty chip)', async () => {
+  await test.step('Task detail shows both Est Time and Est Qty chips (pair-filled, both visible)', async () => {
     await expect(page.getByRole('heading', { name: taskName })).toBeVisible();
     await expect(page.getByText('Est Time')).toBeVisible();
     await expect(page.getByText('2h 0m')).toBeVisible();
-    await expect(page.getByText('Est Qty')).toHaveCount(0);
+    await expect(page.getByText('Est Qty')).toBeVisible();
   });
 
   await test.step('Assign to a worker: no worker-time prompt (est_worker_time already pair-filled)', async () => {

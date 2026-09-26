@@ -13,7 +13,6 @@
     choice = null,
     coId,
     categories = [],
-    defaultMaterialCategoryId = null,
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -39,18 +38,25 @@
     choice?.type === 'inventory' ? (choice.inventoryItem?.units || '') :
     ''
   );
+  // The description the server would derive for this pick if none is sent —
+  // byte-identical to ChangeOrderService.add_line_item_from_service /
+  // add_line_item_from_pli's own defaults (service_item.template_name /
+  // pli.description). Used both to prefill the field and to decide whether
+  // an edit is an override worth sending (§3.6c pattern).
+  const prefillDescription = $derived(
+    choice?.type === 'service' ? (choice.serviceItem?.template_name || '') :
+    choice?.type === 'inventory' ? (choice.inventoryItem?.description || '') :
+    choice?.type === 'freeform' ? (choice.typed || '') :
+    ''
+  );
 
   const isComment = $derived(isFreeform && !!choice?.isComment);
 
   $effect(() => {
     if (!open || !choice) return;
     qty = '1'; units = 'none'; price = ''; error = '';
-    description = choice.type === 'freeform' ? (choice.typed || '') : '';
-    // Freeform material prefills the AC from the config default (overridable);
-    // everything else starts blank. Keep as the raw number so Svelte 5's
-    // strict-=== option-matching in the select finds the correct option.
-    accountingCategory = (choice.type === 'freeform' && choice.isMaterial && defaultMaterialCategoryId != null)
-      ? defaultMaterialCategoryId : '';
+    description = prefillDescription;
+    accountingCategory = '';
   });
 
   async function save() {
@@ -59,16 +65,21 @@
     if (choice.type === 'service') {
       url = `/api/change-orders/${coId}/line-items-from-service/`;
       payload = { service_item: choice.serviceItem.template_id, qty };
+      // The server derives this same description by default — only send an
+      // override when the user actually changed it.
+      if (description !== prefillDescription) payload.description = description;
     } else if (choice.type === 'inventory') {
       payload = { action: 'add', inventory_item: choice.inventoryItem.inventory_item_id, qty };
+      if (description !== prefillDescription) payload.description = description;
     } else if (choice.isComment) {
       payload = {
         action: 'add', description, is_comment: true,
         qty: '0', units: 'none', price: '0', accounting_category: null,
       };
     } else {
-      // Fees require an AC; materials default it server-side.
-      if (!accountingCategory && !choice.isMaterial) { error = 'Accounting Category is required.'; return; }
+      // Every hand line requires an AC — choosing the Materials AC is what
+      // makes it a material (is_material derives server-side, RM 2026-08-11).
+      if (!accountingCategory) { error = 'Accounting Category is required.'; return; }
       payload = {
         action: 'add',
         description,
@@ -76,7 +87,6 @@
         units,
         price: price || '0',
         accounting_category: accountingCategory ? Number(accountingCategory) : null,
-        is_material: choice.isMaterial,
       };
     }
     busy = true; error = '';
@@ -92,9 +102,7 @@
 <Modal open={open && choice} onCancel={onClose}>
 <form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
       <h3>{isComment ? 'Add Comment' : title}</h3>
-      {#if isFreeform}
-        <p><label>Description<br><input type="text" bind:value={description} style="width:100%;box-sizing:border-box;"></label></p>
-      {/if}
+      <p><label>Description<br><input type="text" bind:value={description} style="width:100%;box-sizing:border-box;"></label></p>
       {#if !isComment}
         <p><label>Quantity<br><input type="number" step="0.01" min="0" value={qty} oninput={(e) => qty = e.target.value}>{#if !isFreeform && baseUnits}<span class="qty-units">{baseUnits}</span>{/if}</label></p>
       {/if}
@@ -104,7 +112,7 @@
         <p><label>Accounting Category
           <br><select bind:value={accountingCategory}>
             <option value="">-- Select --</option>
-            {#each categories as cat}<option value={cat.id}>{cat.code} - {cat.name}</option>{/each}
+            {#each categories.filter((c) => !c.is_fallback) as cat}<option value={cat.id}>{cat.code} - {cat.name}</option>{/each}
           </select></label></p>
       {/if}
       <div class="buttons">

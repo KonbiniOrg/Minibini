@@ -7,35 +7,38 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Task, RateScheme
+from apps.jobs.models import Task
 from apps.inventory.models import Material, InventoryItem
-
-
-def _make_scheme(suffix):
-    ac = AccountingCategory.objects.create(code=f'CF-{suffix}', name=f'cf-{suffix}')
-    return RateScheme.objects.create(
-        name=f'S-cf-{suffix}', algorithm=RateScheme.ENTERED_QTY,
-        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
-    )
 
 
 class CopyActiveModifiersTest(TestCase):
     def test_copy_active_modifiers_always_returns_list(self):
         from apps.jobs.models import copy_active_modifiers
-        self.assertEqual(copy_active_modifiers(['a', 'b']), ['a', 'b'])
         self.assertEqual(copy_active_modifiers(None), [])
         # legacy dict shape collapses to empty list (price now lives on the service)
         self.assertEqual(copy_active_modifiers({'flat_fee_price': '5'}), [])
+        # legacy list-of-keys shape (pre-Phase-1 snapshot) also collapses —
+        # can't be resolved into {key,label,percent} dicts without a scheme.
+        self.assertEqual(copy_active_modifiers(['a', 'b']), [])
+
+    def test_copy_active_modifiers_deep_copies_dict_list(self):
+        from apps.jobs.models import copy_active_modifiers
+        mods = [{'key': 'rush', 'label': 'Rush', 'percent': 50}]
+        result = copy_active_modifiers(mods)
+        self.assertEqual(result, mods)
+        self.assertIsNot(result, mods)
+        self.assertIsNot(result[0], mods[0])
 
 
 class TaskBaseCopyFieldsTest(TestCase):
     def test_copy_fields_returns_full_taskbase_field_set(self):
-        scheme = _make_scheme('task')
-        mods = ['mod_a', 'mod_b']
+        ac = AccountingCategory.objects.create(code='CF-task', name='cf-task')
+        mods = [{'key': 'rush', 'label': 'Rush', 'percent': 50}]
         t = Task(
             name='Cut', description='cut to length', sort_order=5,
             est_worker_time=timedelta(hours=2), est_qty=Decimal('3.00'),
-            rate_scheme=scheme, active_modifiers=mods,
+            qty_source=Task.QTY_ENTERED, rate=Decimal('10.00'), unit_label='ea',
+            accounting_category=ac, active_modifiers=mods,
         )
         self.assertEqual(t.copy_fields(), {
             'name': 'Cut',
@@ -43,24 +46,28 @@ class TaskBaseCopyFieldsTest(TestCase):
             'sort_order': 5,
             'est_worker_time': timedelta(hours=2),
             'est_qty': Decimal('3.00'),
-            'rate_scheme_id': scheme.pk,
+            'qty_source': Task.QTY_ENTERED,
+            'rate': Decimal('10.00'),
+            'unit_label': 'ea',
+            'accounting_category_id': ac.pk,
             'service_item_id': None,
             'active_modifiers': mods,
         })
 
     def test_copy_fields_deep_copies_active_modifiers(self):
-        scheme = _make_scheme('mods')
-        mods = ['x']
-        t = Task(name='T', rate_scheme=scheme, active_modifiers=mods,
+        ac = AccountingCategory.objects.create(code='CF-mods', name='cf-mods')
+        mods = [{'key': 'rush', 'label': 'Rush', 'percent': 50}]
+        t = Task(name='T', accounting_category=ac, active_modifiers=mods,
                  est_qty=Decimal('1'))
         self.assertIsNot(t.copy_fields()['active_modifiers'], mods)
 
     def test_copy_fields_works_on_task_subclass_too(self):
-        scheme = _make_scheme('exec')
-        t = Task(name='Weld', rate_scheme=scheme, est_qty=Decimal('2'))
+        ac = AccountingCategory.objects.create(code='CF-exec', name='cf-exec')
+        t = Task(name='Weld', accounting_category=ac, rate=Decimal('20.00'),
+                 est_qty=Decimal('2'))
         fields = t.copy_fields()
         self.assertEqual(fields['name'], 'Weld')
-        self.assertEqual(fields['rate_scheme_id'], scheme.pk)
+        self.assertEqual(fields['accounting_category_id'], ac.pk)
 
 
 class MaterialBaseCopyFieldsTest(TestCase):

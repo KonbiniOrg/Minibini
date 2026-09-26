@@ -82,7 +82,7 @@ test.describe('worker side', () => {
       });
       if (!candidate) break;
       const enteredPending = pendingTasks(candidate.job)
-        .filter((t) => t.scheme_algorithm === 'entered_qty');
+        .filter((t) => t.qty_source === 'entered_qty');
       if (enteredPending.length === 1) { hit = candidate; used.add(candidate.job.job_id); break; }
     }
     test.skip(!hit, 'seed gap: no job with exactly one pending entered_qty task');

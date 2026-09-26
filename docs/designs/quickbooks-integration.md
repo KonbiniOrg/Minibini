@@ -306,11 +306,52 @@ Service flow (`InvoiceEmailService.send_invoice`, `apps/invoicing/services.py`):
 
 On any exception, `QBOSyncLog` records `status='failed'` with the error message, and the exception re-raises. There is no compensating action — if step 7 succeeds but step 9 fails, the invoice exists in QBO with `qbo_id` set on Minibini but is in an inconsistent "marked sent, not emailed" state. Manual cleanup is required.
 
+### Defensive null-AC guards (Phase 3, 2026-08)
+
+Step 1's `_assert_all_lines_categorized` gate (`invoicing-and-expenses.md`
+§"Fallback accounting category stamping") is the primary block — it fires
+before any external call, and given invoice-line authoring now stamps the
+configured fallback onto every atom-derived null-AC line (and an
+agreement-seeded adjustment line always inherits its source estimate/CO
+adjustment's own real AC in production), the gate is only realistically
+reachable via an uncorrected manual hand line, or legacy/hand-built
+adjustment-line data that bypassed the real creation service. QBO push
+itself carries a second, independent line of defense in case that primary
+gate is ever bypassed or refactored around:
+
+- `QBOInvoiceSyncService._require_line_category(line_item)` (shared static
+  helper) raises `ValidationError` naming the line number, description, and
+  the `fallback_accounting_category` Configuration key when
+  `line_item.accounting_category_id` is `None`. Wired at the **top of
+  `_build_qbo_invoice`'s per-line loop** (fails fast, before
+  `_resolve_item_ref` or any QBO API call — no wasted work, no
+  side-effecting lazy Item mint before the failure), and again inside
+  `_resolve_item_ref`'s fallback branch (self-contained coverage for
+  direct/test callers that invoke it independently of the per-line loop).
+- `QBOItemMintService.ensure_item`'s two category reads
+  (`InventoryItem.accounting_category`, `ServiceItem.effective_accounting_category`
+  → `RateScheme.accounting_category`) are **not guarded** — both source
+  FKs are non-nullable at the model level, so a null category is
+  unreachable there regardless of the invoice-line's own AC state; the
+  existing `if not category or not category.qbo_item_id: return ''` on
+  the line right after already covers the (only realistically reachable)
+  "category has no `qbo_item_id` mapped" case.
+
+Do not confuse this Configuration key with "The category's generic
+fallback Item" below (`AccountingCategory.qbo_item_id`) — that's a
+per-category QBO **Item** mapping used when a line has no catalog entity
+of its own; `fallback_accounting_category` is a Minibini-side
+**AccountingCategory** substituted onto a line that would otherwise have
+no category at all. The two "fallback" concepts are unrelated and can
+both apply to the same line (a hand line with no catalog entity *and* a
+null AC gets the AC fallback stamped at authoring, then resolves its
+ItemRef via the category's own Item mapping at push time).
+
 ### ItemRef resolution — `QBOInvoiceSyncService._resolve_item_ref`
 
 Each pushed line's `ItemRef` resolves in order:
 
-1. **The line's catalog entity's mirrored QBO Item** — `_catalog_entity_for_line` finds the single `InventoryItem` or `ServiceItem` the line sells: the line's direct `inventory_item` FK, else its source atoms (all task sources sharing one `Task.service_item`, or all material sources sharing one `Material.inventory_item`). Adjustment lines, expense/fee sources, provisional materials, mixed bundles, and hand lines have no catalog identity → fall through.
+1. **The line's catalog entity's mirrored QBO Item** — `_catalog_entity_for_line` finds the single `InventoryItem` or `ServiceItem` the line sells: the line's direct `inventory_item` FK, else its source atoms (all task sources sharing one `Task.service_item`, or all material sources sharing one `Material.inventory_item`). Adjustment lines, expense sources, provisional materials, mixed bundles, and hand lines have no catalog identity → fall through.
 2. **The category's generic fallback Item** — `AccountingCategory.qbo_item_id` (the pre-existing per-category mapping, now demoted to fallback).
 3. **No ItemRef** — QBO applies its default item.
 
@@ -321,6 +362,25 @@ When step 1 finds a catalog entity with no `qbo_id`, the QBO Item is created mid
 ## Bill push — retired 2026-07-23
 
 `QBOBillSyncService` (bill push, bill-payment push/update/void) was deleted with the bill retirement — vendor invoices and their payments are entered directly in QBO, so there is nothing to push. The `/api/bills/{id}/send-to-qbo/` and bill-payment endpoints are gone. `Bill`/`BillLineItem`/`BillPayment` survive only as schema-only stubs (materials-inventory-and-purchasing.md §13); `QBOSyncLog` rows with `entity_type` `'bill'` / `'bill_payment'` remain as history.
+
+**Bills stay in QBO — PO reconciliation (outsourced-work port) does not
+reopen this door.** `PurchaseOrderService.reconcile()`
+(`materials-inventory-and-purchasing.md` §10a) is a **konbini-side-only**
+capture of the delta between a PO's ordered lines and what the vendor
+actually billed — `bill_total`, `vendor_invoice_ref`, optional per-line
+`final_price`, optional `invoice_only` lines. None of it is pushed to
+QBO, reads from QBO, or resurrects `Bill`/`BillPayment`; a human still
+types the bill total by hand, having read it off the real bill already
+sitting in QBO. There is no PO→QBO push either (never built, never
+planned — POs are a konbini-only planning document).
+
+**Future: a phase-2 pull-matcher.** The one gap this leaves: reconciling
+still requires manually copying `bill_total`/`vendor_invoice_ref` from
+QBO into the Minibini form. A later pass could pull the matching vendor
+bill from QBO (by vendor + date range, or a stored PO↔bill correlation)
+and pre-fill/match the reconcile form instead of a blank one — read-only
+from QBO's side, still no push, still no `Bill` model revival. Not
+started; no design work done beyond noting the shape here.
 
 ## Expense push — `QBOExpenseSyncService`
 

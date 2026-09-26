@@ -1,3 +1,17 @@
+// Currency formatting via Intl (handles negatives as "-$15.50", not
+// "$-15.50" — matters for PO reconciliation variance, which is routinely
+// negative). Distinct from lib/taskTotals.js's `fmtMoney` (which treats 0/
+// falsy as "no data" → '-', right for task-row totals but wrong here: a
+// reconciled $0.00 variance is a real, displayable amount).
+export function formatMoney(n, { decimals = 2 } = {}) {
+  return Number(n).toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
 export function formatQtyUnits(quantity, units) {
   if (quantity === null || quantity === undefined || quantity === '') {
     return '-';
@@ -6,6 +20,22 @@ export function formatQtyUnits(quantity, units) {
     return String(quantity);
   }
   return `${quantity} ${units}`;
+}
+
+// Short bracketed tag ("[task]", "[mat]", ...) for an atom's `kind`/`type` —
+// shared by the docsurface kit's AtomChildRow (nested atom rows under a
+// backing line) and UncoveredWorkSection (the pick-list rows) so the two
+// never drift. Additive: unknown kinds fall back to 'mat', same as the
+// pre-existing binary task/mat mapping.
+const ATOM_KIND_TAGS = {
+  task: 'task',
+  material: 'mat',
+  expense: 'exp',
+  deposit: 'dep',
+};
+
+export function atomKindTag(kind) {
+  return ATOM_KIND_TAGS[kind] || 'mat';
 }
 
 // Parse user duration input to an ISO 8601 duration string ("PT1H30M").

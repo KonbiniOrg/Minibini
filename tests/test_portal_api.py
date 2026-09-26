@@ -23,7 +23,14 @@ class PortalApiTest(TestCase):
         EstimateLineItem.objects.create(
             estimate=self.est, description='Work', qty=Decimal('1'),
             price=Decimal('100.00'),
-            accounting_category=AccountingCategory.objects.first())
+            # Deliberately non-deposit: this line represents ordinary
+            # billable work whose acceptance-checklist decision (mint or
+            # decline) is still pending — `.first()` would grab "Customer
+            # Deposits" (Meta.ordering=['name'] sorts it first), which is
+            # excluded from the checklist and would auto-release the job
+            # immediately (Task 5, answeredness + auto-release), defeating
+            # this fixture's purpose of a real unanswered hand line.
+            accounting_category=AccountingCategory.objects.filter(is_deposit=False).first())
         EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
         self.est.refresh_from_db()
         self.token = self.est.public_token

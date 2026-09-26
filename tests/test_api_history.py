@@ -164,9 +164,11 @@ class JobHistoryCollationTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
 
     def test_collates_new_object_types_and_labels(self):
-        from apps.jobs.models import Job, Task
+        from apps.jobs.models import Job, Task, RateScheme
         job = Job.objects.first()
-        task = Task.objects.create(job=job, name='History test task', rate_scheme_id=1)
+        task = Task(job=job, name='History test task')
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         record_history(
             entry_type='audit', object_type='task', object_id=task.pk,
             changes={'status': {'old': 'pending', 'new': 'complete'}},
@@ -214,12 +216,16 @@ class JobHistoryCollationTest(BaseTestCase):
 
     def test_source_links_for_estimate_invoice_shipment(self):
         from apps.jobs.models import Job
+        from apps.contacts.models import Contact
         from apps.estimates.models import Estimate
         from apps.invoicing.models import Invoice
         from apps.deliverables.models import Shipment
         from apps.api.jobs.history import build_job_history
 
-        job = Job.objects.first()
+        # Own job (not Job.objects.first()) — the fixture job already carries
+        # a draft estimate, and a job may only have one (Estimate.clean()).
+        contact = Contact.objects.create(first_name='L', last_name='Ink', email='link@test.com')
+        job = Job.objects.create(contact=contact, job_number='JOB-LINK-1')
         est = Estimate.objects.create(
             job=job, estimate_number='LINK-EST', version=1, status='draft',
         )

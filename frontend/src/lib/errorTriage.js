@@ -24,7 +24,9 @@ export function triageError(err) {
   }
   if (typeof data.detail === 'string' || typeof data.error === 'string') {
     // Operation error: detail is the whole story; sibling keys (code,
-    // supersede_url, atom_ids...) are machine payload for flow decisions.
+    // atom_ids...) are machine payload for flow decisions — e.g. the 409
+    // estimates/invoicing throw on claim conflicts: {detail, code:
+    // 'atoms_already_claimed', atom_ids}.
     return { overlay: null, message: errorMessage(err), fields: {} };
   }
   const { non_field_errors, ...fields } = data;

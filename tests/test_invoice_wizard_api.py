@@ -36,9 +36,11 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
             rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Labor', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Labor',
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         start = timezone.now() - timezone.timedelta(hours=2)
         Blep.objects.create(
             task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -73,7 +75,9 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         long-form description) so the wizard line item card shows something
         between the arrow and the X."""
         # setUp already claims self.task; create a second task for this test.
-        other_task = Task.objects.create(job=self.job, name='Cleanup', rate_scheme=self.scheme)
+        other_task = Task(job=self.job, name='Cleanup')
+        other_task.stamp_from_scheme(self.scheme)
+        other_task.save()
         task_li = InvoiceLineItem.objects.create(
             invoice=self.invoice,
             description='', qty=Decimal('1'), price=Decimal('0.00'),
@@ -117,9 +121,11 @@ class SourcePoolEndpointTest(TestCase):
             rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Labor', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Labor',
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
             task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -143,6 +149,14 @@ class SourcePoolEndpointTest(TestCase):
         self.assertEqual(atom['type'], 'task')
         self.assertEqual(atom['id'], self.task.pk)
         self.assertEqual(atom['state'], 'available')
+
+    def test_no_fees_group_in_pool(self):
+        """The Fees pseudo-group is retired (fee removal Task 4): the pool
+        never produces a 'Fees' group."""
+        response = self.client.get(f'/api/invoices/{self.invoice.pk}/source-pool/')
+        self.assertEqual(response.status_code, 200)
+        names = [g['name'] for g in response.json()['tasks']]
+        self.assertNotIn('Fees', names)
 
     def test_requires_authentication(self):
         self.client.logout()
@@ -182,9 +196,11 @@ class LineItemsFromAtomsEndpointTest(TestCase):
             rate=Decimal('25.00'), unit_label='hour',
             accounting_category=self.category,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Labor', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Labor',
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
             task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -229,6 +245,26 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.assertEqual(data['code'], 'atoms_already_claimed')
         self.assertIn({'type': 'task', 'id': self.task.pk}, data['atom_ids'])
 
+    def test_fee_atom_type_returns_400(self):
+        """'fee' is no longer an atom type (fee removal Task 4): posting a
+        fee ref must 400 like any unknown type — never 500."""
+        response = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items-from-atoms/',
+            {'atoms': [{'type': 'fee', 'id': 12345}]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_unknown_atom_type_returns_400(self):
+        """An unrecognized atom type is a ValidationError (400), not a
+        KeyError/ValueError (500)."""
+        response = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items-from-atoms/',
+            {'atoms': [{'type': 'bogus', 'id': 1}]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_returns_400_on_non_draft_invoice(self):
         # Need a line item to transition out of draft
         InvoiceLineItem.objects.create(
@@ -271,17 +307,21 @@ class AddAtomsEndpointTest(TestCase):
             accounting_category=self.category,
         )
         # task1 with a 2h blep — task atom = $50
-        self.task = Task.objects.create(
-            job=self.job, name='Labor', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Labor',
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         start = timezone.now() - timezone.timedelta(hours=4)
         Blep.objects.create(
             task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         # task2 with a 1h blep — task atom = $25
-        self.task2 = Task.objects.create(
-            job=self.job, name='Cleanup', rate_scheme=self.scheme,
+        self.task2 = Task(
+            job=self.job, name='Cleanup',
         )
+        self.task2.stamp_from_scheme(self.scheme)
+        self.task2.save()
         Blep.objects.create(
             task=self.task2, user=self.user,
             start_time=start + timezone.timedelta(hours=3),
@@ -311,6 +351,15 @@ class AddAtomsEndpointTest(TestCase):
         # Adding task2 makes {task, task2} a uniform same-scheme bundle, so the
         # line item is re-summarized: qty = 3h, price = scheme rate $25.00.
         self.assertEqual(data['price'], '25.00')
+
+    def test_fee_atom_type_returns_400(self):
+        """add-atoms rejects 'fee' refs with 400 (fee removal Task 4)."""
+        response = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items/{self.line_item.pk}/add-atoms/',
+            {'atoms': [{'type': 'fee', 'id': 12345}]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_returns_409_on_claim_conflict(self):
         # Claim task2 on a different line item first
@@ -357,13 +406,17 @@ class RemoveAtomsEndpointTest(TestCase):
             accounting_category=self.category,
         )
         # task1 with a 2h blep — task atom = $50
-        self.task1 = Task.objects.create(job=self.job, name='Labor 1', rate_scheme=self.scheme)
+        self.task1 = Task(job=self.job, name='Labor 1')
+        self.task1.stamp_from_scheme(self.scheme)
+        self.task1.save()
         start = timezone.now() - timezone.timedelta(hours=4)
         Blep.objects.create(
             task=self.task1, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         # task2 with a 1h blep — task atom = $25
-        self.task2 = Task.objects.create(job=self.job, name='Labor 2', rate_scheme=self.scheme)
+        self.task2 = Task(job=self.job, name='Labor 2')
+        self.task2.stamp_from_scheme(self.scheme)
+        self.task2.save()
         Blep.objects.create(
             task=self.task2, user=self.user,
             start_time=start + timezone.timedelta(hours=3),

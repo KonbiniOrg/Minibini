@@ -13,6 +13,7 @@ from imap_tools import MailBox
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
 from apps.core.units import HOUR_UNIT
+from apps.jobs.models import RateScheme
 from apps.api.permissions import CanManageConfig, CanManageJobsOrFinancialsOrConfig
 from apps.api.mixins import JSONDestroyMixin
 from apps.inventory.models import TemplateMaterialAssociation
@@ -20,6 +21,7 @@ from .serializers import (
     WorkTemplateSerializer, ServiceItemSerializer,
     ConfigurationSerializer, AccountingCategorySerializer,
     TemplateMaterialAssociationSerializer,
+    _resolve_fallback_category_id,
 )
 
 
@@ -118,9 +120,15 @@ class ServiceItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         serializer.instance = template
 
     def perform_update(self, serializer):
-        WorkTemplateService.update_service_item(
+        # Mirror perform_create: point the serializer at the object the
+        # service actually saved, not the pre-update instance DRF fetched
+        # before validation — otherwise the PATCH/PUT response renders
+        # stale field values (surfaced by display_rate, a derived field
+        # that must reflect the just-saved default_active_modifiers).
+        updated = WorkTemplateService.update_service_item(
             self.get_object().pk, **serializer.validated_data
         )
+        serializer.instance = updated
 
     def perform_destroy(self, instance):
         WorkTemplateService.delete_service_item(instance.pk)
@@ -131,6 +139,28 @@ class AccountingCategoryViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     serializer_class = AccountingCategorySerializer
     lookup_field = 'pk'
     destroy_response_message = 'Accounting category deleted.'
+
+    def get_queryset(self):
+        qs = AccountingCategory.objects.all()
+        if self.action == 'list' and \
+                self.request.query_params.get('exclude_fallback') == 'true':
+            fallback_id = self._fallback_category_id()
+            if fallback_id is not None:
+                qs = qs.exclude(pk=fallback_id)
+        return qs
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        # Resolved once per request (memoized on the view instance) and
+        # handed to every row's serializer via context, rather than each
+        # row re-querying Configuration for is_fallback.
+        context['fallback_category_id'] = self._fallback_category_id()
+        return context
+
+    def _fallback_category_id(self):
+        if not hasattr(self, '_cached_fallback_category_id'):
+            self._cached_fallback_category_id = _resolve_fallback_category_id()
+        return self._cached_fallback_category_id
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
@@ -279,6 +309,39 @@ def settings_view(request):
                 return Response(
                     {'default_deposit_accounting_category':
                      'unknown, inactive, or not a deposit category'},
+                    status=400)
+    if 'fallback_accounting_category' in request.data:
+        raw = request.data['fallback_accounting_category']
+        raw = '' if raw is None else str(raw).strip()
+        if raw != '':
+            try:
+                pk = int(raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {'fallback_accounting_category': 'must be a category id'},
+                    status=400)
+            if not AccountingCategory.objects.filter(
+                    pk=pk, is_active=True, is_deposit=False).exists():
+                return Response(
+                    {'fallback_accounting_category':
+                     'unknown, inactive, or a deposit category'},
+                    status=400)
+    if 'default_rate_scheme' in request.data:
+        raw = request.data['default_rate_scheme']
+        raw = '' if raw is None else str(raw).strip()
+        if raw != '':
+            try:
+                pk = int(raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {'default_rate_scheme': 'must be a rate scheme id'},
+                    status=400)
+            if not RateScheme.objects.filter(
+                    pk=pk, is_active=True
+            ).exclude(algorithm=RateScheme.PERCENTAGE).exists():
+                return Response(
+                    {'default_rate_scheme':
+                     'unknown, inactive, or a percentage rate scheme'},
                     status=400)
     for key, value in request.data.items():
         # The envelope is stored as canonical JSON; a dict payload must be

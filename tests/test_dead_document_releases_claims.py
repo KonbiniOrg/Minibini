@@ -43,9 +43,11 @@ class DeadDocumentBase(TestCase):
         self.scheme = RateScheme.objects.create(
             name='Hourly', algorithm=RateScheme.ENTERED_QTY, rate=Decimal('100'),
             unit_label='hour', accounting_category=self.cat)
-        self.task = Task.objects.create(
-            job=self.job, name='Cut', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Cut',
             est_qty=Decimal('2'))
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
     def _estimate_claiming_task(self, number='EST-1', status=Estimate.STATUS_OPEN):
         est = Estimate.objects.create(
@@ -80,11 +82,28 @@ class EstimateReleasesClaimsTest(DeadDocumentBase):
 
         self.assertEqual(self._task_claims(), 0)
 
-    def test_expiring_an_open_estimate_releases_its_claims(self):
+    def test_expiring_an_open_estimate_KEEPS_its_claims(self):
+        # RM 2026-08-13: expiry no longer releases — an expired estimate is
+        # reactivatable in place (unexpire, main's estimate-renewal feature),
+        # so it holds its work pending renewal. Freeing the atoms requires
+        # actually killing the document (reject) or superseding it.
         est = self._estimate_claiming_task()
         est.status = Estimate.STATUS_EXPIRED
         est.save()
-        self.assertEqual(self._task_claims(), 0)
+        self.assertEqual(self._task_claims(), 1)
+
+    def test_unexpired_estimate_still_has_its_claims(self):
+        from apps.core.models import Configuration
+        from apps.estimates.services import EstimateService
+        Configuration.objects.update_or_create(
+            key='est_expire_days', defaults={'value': '30'})
+        est = self._estimate_claiming_task()
+        est.status = Estimate.STATUS_EXPIRED
+        est.save()
+        EstimateService.unexpire(est.pk)
+        est.refresh_from_db()
+        self.assertEqual(est.status, Estimate.STATUS_OPEN)
+        self.assertEqual(self._task_claims(), 1)
 
     def test_rejecting_a_draft_estimate_releases_its_claims(self):
         # draft -> rejected is a legal transition; it kills the document just
@@ -124,13 +143,23 @@ class EstimateReleasesClaimsTest(DeadDocumentBase):
         self.assertEqual(self._task_claims(), 1)
 
     def test_rejecting_one_estimate_leaves_another_documents_claims(self):
-        other_task = Task.objects.create(
-            job=self.job, name='Sand', rate_scheme=self.scheme,
+        other_task = Task(
+            job=self.job, name='Sand',
             est_qty=Decimal('1'))
+        other_task.stamp_from_scheme(self.scheme)
+        other_task.save()
         keeper = Estimate.objects.create(
             job=self.job, estimate_number='EST-K', status=Estimate.STATUS_DRAFT)
         EstimateWizardService.add_atoms_to_new_line_item(
             keeper, [{'type': 'task', 'id': other_task.pk}])
+        # Move keeper out of draft before staging a second document on the
+        # same job — Estimate.clean() refuses two simultaneous drafts on one
+        # job (2026-09-19). Open holds claims exactly like draft (only
+        # rejected/expired release them), so this is a legal transition that
+        # doesn't affect what's under test: that rejecting `doomed` leaves
+        # `keeper`'s claim alone.
+        keeper.status = Estimate.STATUS_OPEN
+        keeper.save()
 
         doomed = self._estimate_claiming_task(number='EST-D')
         doomed.status = Estimate.STATUS_REJECTED
@@ -155,9 +184,11 @@ class ChangeOrderReleasesClaimsTest(DeadDocumentBase):
             change_order=co, description='extra', qty=Decimal('1'),
             price=Decimal('50.00'), accounting_category=self.cat,
             action=ChangeOrderLineItem.ACTION_ADD)
-        co_task = Task.objects.create(
-            job=self.job, name='Extra', rate_scheme=self.scheme,
+        co_task = Task(
+            job=self.job, name='Extra',
             est_qty=Decimal('1'))
+        co_task.stamp_from_scheme(self.scheme)
+        co_task.save()
         ChangeOrderLineItemSource.objects.create(
             change_order_line_item=li,
             source_type=ChangeOrderLineItemSource.SOURCE_TASK,

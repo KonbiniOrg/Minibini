@@ -6,7 +6,7 @@ import { user } from '@/stores/auth.js';
 function task(overrides) {
   return {
     task_id: 1, name: 'Cut', status: 'pending', est_qty: '2', effective_rate: '25',
-    computed_charge: '0', est_worker_time: null, scheme_unit_label: 'hr', materials: [], ...overrides,
+    computed_charge: '0', est_worker_time: null, unit_label: 'hr', materials: [], ...overrides,
   };
 }
 
@@ -22,31 +22,32 @@ describe('TaskTree', () => {
     expect(getByText('$65.00')).toBeInTheDocument();
   });
 
-  it('includes fees as rows in the same table and in the grand total', async () => {
+  it('renders no Fees group and ignores a stale fees prop in the grand total', () => {
+    // Fees are gone (better-fees, 2026-08): a caller still passing a legacy
+    // `fees` array must get no Fees section and a tasks+materials-only total.
     const t = task({}); // task total 2*25 = $50.00
-    const onEditFee = vi.fn();
-    // fee 4 * 12.50 = $50.00 → grand total 50 + 50 = $100.00
     const fee = { fee_id: 3, description: 'Setup fee', quantity: '4', unit_rate: '12.50' };
-    const { getByText, container } = render(TaskTree, {
-      props: { tasks: [t], fees: [fee], canManage: true, onEditFee },
+    const { queryByText, container } = render(TaskTree, {
+      props: { tasks: [t], fees: [fee], canManage: true },
     });
-    expect(getByText('Setup fee')).toBeInTheDocument();          // fee row present in the same table
-    const feeRow = container.querySelector('.fee-row');
-    expect(feeRow).not.toBeNull();                               // distinguishable styling
-    expect(getByText('$100.00')).toBeInTheDocument();            // fee is in the grand total
-    // the fee's own edit affordance calls back with the fee
-    await fireEvent.click(feeRow.querySelector('button'));
-    expect(onEditFee).toHaveBeenCalledWith(expect.objectContaining({ fee_id: 3 }));
+    expect(queryByText('Fees')).toBeNull();
+    expect(queryByText('Setup fee')).toBeNull();
+    expect(container.querySelector('.fee-row')).toBeNull();
+    // tasks + materials only — the fee's $50.00 is NOT added ($100.00 nowhere)
+    expect(container.querySelector('.grand-total-row').textContent).toContain('$50.00');
+    expect(queryByText('$100.00')).toBeNull();
   });
 
-  it('shows material units in the units column, not appended to qty', () => {
+  it('shows material units inline beside the qty (the Units column is gone)', () => {
+    // RM 2026-08-06: the task tree dropped its Units and Unit Cost columns;
+    // the unit rides beside the quantity like Est Time's "h" suffix.
     const t = task({
       materials: [{ material_id: 9, description: 'Steel', quantity: '3', sell_price: '5',
                     units: 'kg', consumption_state: 'pending' }],
     });
     const { getByText, queryByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(getByText('kg')).toBeInTheDocument();       // its own cell
-    expect(queryByText('3 kg')).toBeNull();            // no longer glued to qty
+    expect(getByText('3 kg')).toBeInTheDocument();     // glued to qty
+    expect(queryByText('kg', { exact: true })).toBeNull(); // no standalone cell
   });
 
   it('badges an in-progress task waiting on understocked material', () => {
@@ -150,7 +151,7 @@ describe('TaskTree', () => {
     const { queryByRole } = render(TaskTree, {
       props: { tasks: [task({ status: 'pending', has_bleps: false })], canManage: false,
                onEditTask: vi.fn(), onDeleteTask: vi.fn(), onCancelTask: vi.fn(),
-               onAddMaterial: vi.fn(), onAddSubtask: vi.fn(), onReorder: vi.fn() },
+               onAddMaterial: vi.fn(), onReorder: vi.fn() },
     });
     // edit/del/cancel open
     expect(queryByRole('button', { name: 'edit' })).toBeInTheDocument();
@@ -160,9 +161,8 @@ describe('TaskTree', () => {
     expect(queryByRole('button', { name: 'assign' })).toBeNull();
     expect(queryByRole('button', { name: '▼' })).toBeNull();
     expect(queryByRole('button', { name: '▲' })).toBeNull();
-    // material/subtask adds still available
+    // material add still available
     expect(queryByRole('button', { name: '+mat' })).toBeInTheDocument();
-    expect(queryByRole('button', { name: '+sub' })).toBeInTheDocument();
   });
 
   it('shows cancel + assign + reorder when canManage is true (cancellable status)', () => {
@@ -330,9 +330,9 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
   });
 
   it('renders NO fulfillment or material-op buttons when callbacks are not wired (passive surface)', () => {
-    // TaskDetailPage's subtask tree passes readonly=false but wires only
-    // onEditMaterial — every other material action must stay hidden, never a
-    // dead button bound to a no-op default.
+    // A surface that wires only onEditMaterial must keep every other
+    // material action hidden — never a dead button bound to a no-op
+    // default.
     user.set({ id: 1, permissions: ['can_manage_financials'] });
     const t = matTask({
       material_id: 8, description: 'Ply', quantity: '4', sell_price: '5', units: 'sheet',
@@ -468,7 +468,7 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
 describe('TaskTree null-guarded task ops (A3/C2), on-hold gating (B2), can_edit (C1)', () => {
   const wired = () => ({
     onEditTask: vi.fn(), onDeleteTask: vi.fn(), onCancelTask: vi.fn(),
-    onAddSubtask: vi.fn(), onAddMaterial: vi.fn(), onReorder: vi.fn(),
+    onAddMaterial: vi.fn(), onReorder: vi.fn(),
   });
 
   it('renders no task-op buttons when their callbacks are not wired', () => {
@@ -484,7 +484,7 @@ describe('TaskTree null-guarded task ops (A3/C2), on-hold gating (B2), can_edit 
     expect(getByText('edit')).toBeInTheDocument();
     expect(getByText('del')).toBeInTheDocument();
     expect(getByText('cancel')).toBeInTheDocument();
-    expect(getByText('+sub')).toBeInTheDocument();
+    expect(getByText('+mat')).toBeInTheDocument();
   });
 
   it('offers cancel to non-managers when wired (C2)', async () => {
@@ -629,65 +629,43 @@ describe('TaskTree — expense delete/reject', () => {
 });
 
 describe('TaskTree task rows are one shared fragment (TaskRow)', () => {
-  it('badges a subtask waiting on understocked material, same as a top-level task', () => {
-    // Drift symptom of the old duplicated subtask-row block: the badge only
-    // rendered on top-level rows, so the same subtask told different
-    // stories on the job list vs its parent's detail page.
-    const parent = task({
-      task_id: 21, name: 'Parent', status: 'in_progress',
-      subtasks: [{
-        task_id: 22, name: 'Starving sub', status: 'in_progress',
-        est_qty: '1', effective_rate: '10', computed_charge: '0',
-        materials: [{ description: 'Ply', quantity: '3', sell_price: '5',
-                      units: 'sheet', consumption_state: 'pending',
-                      inventory_item: 7, qty_on_hand: '1.00' }],
-      }],
+  it('badges a task waiting on understocked material', () => {
+    const t = task({
+      task_id: 22, name: 'Starving task', status: 'in_progress',
+      est_qty: '1', effective_rate: '10', computed_charge: '0',
+      materials: [{ description: 'Ply', quantity: '3', sell_price: '5',
+                    units: 'sheet', consumption_state: 'pending',
+                    inventory_item: 7, qty_on_hand: '1.00' }],
     });
-    const { queryAllByText } = render(TaskTree, { props: { tasks: [parent], canManage: true } });
-    // Parent has no starving materials of its own; the badge must come
-    // from the SUBTASK row.
+    const { queryAllByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
     expect(queryAllByText('waiting on materials').length).toBe(1);
-  });
-
-  it('keeps the deliberate subtask omissions: no +sub, no reorder arrows', () => {
-    const parent = task({
-      task_id: 21, name: 'Parent',
-      subtasks: [task({ task_id: 22, name: 'Sub' })],
-    });
-    const { queryAllByText } = render(TaskTree, {
-      props: { tasks: [parent], canManage: true,
-               onAddSubtask: vi.fn(), onReorder: vi.fn() },
-    });
-    expect(queryAllByText('+sub').length).toBe(1);   // parent row only
-    expect(queryAllByText('▲').length).toBe(1);      // parent row only
   });
 });
 
-describe('TaskRow Est Qty duplicate suppression', () => {
-  // Same dedupe as TaskDetailPage's Est Qty chip: for an hour-unit scheme,
-  // est_qty restates est_worker_time (backend pair-fills them, Task 8) — the
-  // Scheduled Time column already shows the number, so the Est Qty cell
-  // becomes redundant and renders '-' instead.
+describe('TaskRow Est Qty on hour-unit tasks', () => {
+  // Hour-unit tasks show Est Qty like every other unit, even though it
+  // restates Est Time (backend pair-fills them) — the old
+  // duplicate-suppression '-' read as missing data (RM 2026-08-06).
   function estQtyCell(container) {
     const row = container.querySelector('tbody tr.task-row');
     return row.querySelectorAll('td')[5];
   }
 
-  it('renders "-" for Est Qty when it duplicates est_worker_time on an hour-unit scheme', () => {
-    const t = task({ est_worker_time: '2:00:00', est_qty: '2', scheme_unit_label: 'hour' });
+  it('shows Est Qty even when it duplicates est_worker_time on an hour-unit scheme', () => {
+    const t = task({ est_worker_time: '2:00:00', est_qty: '2', unit_label: 'hour' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(estQtyCell(container).textContent.trim()).toBe('-');
+    expect(estQtyCell(container).textContent.trim()).toBe('2 hour');
   });
 
-  it('still shows Est Qty when it diverges from est_worker_time (legacy row)', () => {
-    const t = task({ est_worker_time: '2:00:00', est_qty: '3', scheme_unit_label: 'hour' });
+  it('shows Est Qty when it diverges from est_worker_time (legacy row)', () => {
+    const t = task({ est_worker_time: '2:00:00', est_qty: '3', unit_label: 'hour' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(estQtyCell(container).textContent.trim()).toBe('3');
+    expect(estQtyCell(container).textContent.trim()).toBe('3 hour');
   });
 
   it('shows Est Qty normally for a non-hour-unit scheme', () => {
-    const t = task({ est_worker_time: null, est_qty: '5', scheme_unit_label: 'pcs' });
+    const t = task({ est_worker_time: null, est_qty: '5', unit_label: 'pcs' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(estQtyCell(container).textContent.trim()).toBe('5');
+    expect(estQtyCell(container).textContent.trim()).toBe('5 pcs');
   });
 });

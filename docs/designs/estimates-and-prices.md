@@ -1,16 +1,19 @@
 # Estimates and Billing
 
-Reference for the estimating side of Minibini: `RateScheme` as the
-unit of billing identity, supersession, the billable-atom abstraction,
-the estimate wizard, the job-atom projection (documents-as-lenses),
-acceptance crystallizing hand-lines into atoms (Materials or Fees), and AC pass-through.
+Reference for the estimating side of Minibini: `RateScheme` as an
+editable service-price preset, task-owned money (a `Task` stamps a
+permanent copy of a preset's pricing at creation time), the
+billable-atom abstraction, the estimate wizard, the job-atom projection
+(documents-as-lenses), acceptance crystallizing hand-lines into atoms
+(Tasks or Materials — a plain, no-descriptor line stays a document
+line), and AC pass-through.
 Read alongside:
 
 - `docs/designs/architecture-and-conventions.md` — service-layer
   pattern, `LineItemMixin`, exception hierarchy
-  (`ServiceError` / `NotFoundError` / `SchemeSupersededError`).
-- `docs/designs/jobs-and-tasks.md` — `Task`, `Material`,
-  `Fee` (the Job's work atoms), the Work surface, populate paths, signal
+  (`ServiceError` / `NotFoundError` / `SchemeInactiveError`).
+- `docs/designs/jobs-and-tasks.md` — `Task`, `Material`
+  (the Job's work atoms), the Work surface, populate paths, signal
   receivers (`estimate_accepted`, `estimate_status_changed_for_job`).
 - `docs/designs/materials-inventory-and-purchasing.md` — `Material`
   (the other atom family), `InventoryItem`.
@@ -19,7 +22,7 @@ Read alongside:
 - `CLAUDE.md` — status constants, document-numbering service,
   `AccountingCategory` shape, line-item delete rule.
 
-> **Job-owns-atoms model.** Work atoms (`Task`, `Material`, `Fee`) live
+> **Job-owns-atoms model.** Work atoms (`Task`, `Material`) live
 > directly on the **Job**, created at any status (including `draft`). The
 > former planning layer — `EstWorksheet`, `PlanTask`, `PlanMaterial`, the
 > worksheet API, and worksheet→job carry-over — has been **removed**.
@@ -33,17 +36,20 @@ Read alongside:
 
 This doc owns:
 
-- `RateScheme` model, modifier algebra, supersession lineage.
-- Billing identity on `Task` / `ServiceItem` (the FK to `RateScheme` and
-  the `active_modifiers` / `est_qty` / `actual_qty` semantics).
+- `RateScheme` model, modifier algebra, `is_active` retirement.
+- Task-owned money: the task's own `qty_source` / `rate` / `unit_label` /
+  `accounting_category` / `active_modifiers` block, `stamp_from_scheme`,
+  and `source_scheme` provenance. Billing identity on `ServiceItem` (the
+  live FK to `RateScheme`) and the `est_qty` / `actual_qty` semantics.
 - `Estimate`, `EstimateLineItem`, `EstimateLineItemSource`.
 - `ChangeOrder`, `ChangeOrderLineItem`, the agreement-of-record
   composition over (Estimate + accepted COs).
-- The atom abstraction (atoms are Tasks, Materials, and Fees; whole-atom
+- The atom abstraction (atoms are Tasks and Materials; whole-atom
   billing).
 - `EstimateWizardService`, the wizard endpoints, and the wizard UI.
 - `EstimateAcceptanceService` — what fires when an Estimate is accepted
-  (hand-line → Material/Fee crystallization, earmarks).
+  (hand-line → Task/Material crystallization, or nothing for a plain
+  line; earmarks).
 - AC pass-through rules from RateScheme → Task / line item.
 
 It does **not** own:
@@ -51,8 +57,6 @@ It does **not** own:
 - The Job/Task shape or status machines (jobs-tasks doc).
 - The Material side of the atom family beyond the pieces the wizard
   touches (materials doc).
-- The `Fee` atom model shape (jobs-tasks doc) beyond its role as a
-  billable atom and acceptance crystallization target.
 - Invoice-side wizard or `InvoiceLineItemSource` (invoicing doc).
 - Service-layer mechanics, mixin catalog, permission atoms (architecture
   doc).
@@ -64,11 +68,17 @@ It does **not** own:
 `RateScheme` (`apps/jobs/models.py`, `db_table = 'rate_schemes'`,
 FK field `rate_scheme`, API `/api/rate-schemes/`) is the **service
 price list** — the catalog of named, priced services the shop performs.
-It owns the math (rate, algorithm, modifiers), the `AccountingCategory`
-(and therefore taxability / QBO income mapping), and its own version
-lineage. Every `Task` and `ServiceItem` references exactly one
-`RateScheme` and inherits the rest. (Fixed one-off charges are the `Fee`
-atom — see §4.5 — not a RateScheme.)
+It owns the math (rate, algorithm, modifiers) and the `AccountingCategory`
+(and therefore taxability / QBO income mapping). A `RateScheme` is a
+**freely editable preset** (task-owned-money Phase 1): a `Task` copies
+its pricing fields onto itself at creation time
+(`Task.stamp_from_scheme`, §3) and that copy — not a live FK — is the
+task's price of record from then on, so editing a preset never reprices
+an already-stamped task. `ServiceItem` still holds a **live** FK to
+exactly one `RateScheme` and reads its rate directly (no stamping) until
+it in turn generates a Task. (Fixed one-off charges are authored as a
+plain hand-line — see §4.5 — not a RateScheme; a plain hand-line has no
+job atom backing it and stays a document line forever.)
 
 ### 2.1 Identity fields
 
@@ -77,13 +87,12 @@ atom — see §4.5 — not a RateScheme.)
 | `rate_scheme_id` | AutoField PK | |
 | `name` | CharField(100), unique | display name; e.g. "CNC Router", "Hourly Labor", "Tap a hole" |
 | `description` | TextField, blank | longer admin explanation |
-| `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `percentage` |
-| `rate` | Decimal(10,2) | the per-unit price for `elapsed_time`/`entered_qty`; holds the percent value for `percentage` (negative = discount) |
+| `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `percentage`, `flat_fee` |
+| `rate` | Decimal(10,2) | the per-unit price for `elapsed_time`/`entered_qty`; holds the percent value for `percentage` (negative = discount); **locked to `0` for `flat_fee`** (`clean()` enforces — the money lives on each Service Item) |
 | `unit_label` | CharField(50) | the customer-facing unit; validated against the configured units list (`apps/core/units.py`). `elapsed_time` schemes are pinned to `'hour'` — `RateScheme.clean()` raises a `unit_label` `ValidationError` for any other value, and the rate-scheme serializer force-sets `unit_label='hour'` for `elapsed_time` (so the field is redundant, not user-chosen, once that algorithm is picked). `percentage` still defaults `unit_label='none'`. |
-| `modifiers` | JSONField | list of `{key, label, percent}` dicts |
+| `modifiers` | JSONField | list of `{key, label, percent}` dicts; **must be `[]` for `flat_fee`** (no mixing — see §2.2a) |
 | `accounting_category` | FK → `AccountingCategory` (PROTECT) | required, NOT NULL |
-| `replaced_by` | FK self (PROTECT, nullable) | supersession pointer |
-| `replaced_at` | DateTimeField, nullable | when supersession happened |
+| `is_active` | BooleanField, default `True` | retirement flag — hides the preset from *new* task stampings only (§3.1); does not affect tasks already stamped from it |
 
 `accounting_category_id` is enforced at the application layer in
 `RateScheme.clean()` (raises `ValidationError`).
@@ -95,12 +104,65 @@ atom — see §4.5 — not a RateScheme.)
 | `elapsed_time` | `RateScheme.ELAPSED_TIME` | sum of `Blep` durations on the task in hours | hourly labor (assembly, bench work); unit is always `'hour'` (pinned — see §2.1) |
 | `entered_qty` | `RateScheme.ENTERED_QTY` | `Task.actual_qty` | machine-minutes, piece work; worker enters the count |
 | `percentage` | `RateScheme.PERCENTAGE` | n/a — document-layer computation only | surcharges and discounts (rush fee, volume discount) |
+| `flat_fee` | `RateScheme.FLAT_FEE` | `Task.actual_qty` (stamps `qty_source=ENTERED_QTY` — no new task branch) | fixed charges at many prices: delivery, per-machine setup, rush minimums (§2.2a) |
 
-> **`flat_fee` removed.** RateScheme no longer has a `flat_fee` algorithm.
-> A fixed one-off or per-unit charge (tap a hole, plywood coating, setup
-> fee) is now the **`Fee` atom** on the Job — `quantity × unit_rate` with
-> its own `accounting_category` (see §4.5). `copy_active_modifiers()`
-> collapses any legacy `{'flat_fee_price': …}` dict to `[]`.
+#### 2.2a The `flat_fee` algorithm (reintroduced 2026-08-16)
+
+> History: an earlier `flat_fee` algorithm was removed with the `jobs.Fee`
+> retirement (2026-08-09); one-off fixed charges were then plain
+> hand-lines only. RM reintroduced the algorithm 2026-08-16 in a new
+> shape (`docs/plans/2026-08-16-flat-fee-schemes.md`) because repeatable
+> flat charges — delivery, per-machine setup fees, rush minimums — are
+> ONE billing behavior at MANY prices, and welding price to the scheme
+> forced a scheme-per-price duplication. One-off flat charges remain
+> plain hand-lines (§4.5); `copy_active_modifiers()` still collapses the
+> legacy `{'flat_fee_price': …}` dict shape to `[]`.
+
+A `flat_fee` scheme is **pure behavior**: `rate` locked to `0`, own
+`modifiers` locked to `[]` (both enforced by `clean()`), never edited
+after creation — so scheme supersession churn can never apply to fee
+price changes. Each **ServiceItem** referencing it carries its own
+amount in `default_active_modifiers` as exactly one
+`{amount: > 0, label?}` entry (no `percent` key — **no mixing**: fee
+amounts and percent modifiers never compose).
+
+**Encapsulation (the load-bearing rule):** the config JSON's dual shape
+(percent-style key list vs. flat-fee amount entry) is interpreted ONLY
+by `RateScheme`. Three algorithm-owned methods:
+
+- `resolve_stamp(item_config)` → the dict `Task.stamp_from_scheme`
+  assigns (`qty_source`, `rate`, `unit_label`, `accounting_category`,
+  `active_modifiers`). For `flat_fee` it returns
+  `qty_source=ENTERED_QTY`, **`rate` = the item's amount**, and
+  `active_modifiers=[]` — the amount resolves INTO `Task.rate` at stamp
+  time, so every downstream consumer (task money math, snapshots,
+  serializer validation, bundle math, invoicing) is untouched and
+  scheme-ignorant.
+- `validate_item_config(entries)` → algorithm-owned config validation,
+  called from `ServiceItem.clean()` and the ServiceItem serializer
+  (clean 400s on API writes). Percent algorithms: entries must be key
+  strings present in the scheme's own `modifiers`. `flat_fee`: exactly
+  one amount entry.
+- `effective_rate(...)` → branches for `flat_fee` (returns the config's
+  amount); feeds line pricing (`add_line_item_from_service`) and the
+  serializer's read-only `display_rate`, which the Add-line picker
+  shows.
+
+**Documented edge:** a manual task stamped from a `flat_fee` scheme with
+no ServiceItem (no amount source) stamps `rate = 0.00` by default — the
+fee's money otherwise lives on the estimate line, so the task is
+valuation only. As of the Add-Task-time money overrides (§3.6c), a
+money-capable caller can replace that `0.00` with a real rate in the
+SAME create request instead of a follow-up PATCH — the RM scenario §3.6c
+was built for.
+
+**UI:** the scheme manager's "Flat fee" mode hides the rate input and
+modifiers editor (shows the amount-lives-on-items explanation); the
+ServiceItem editor swaps the modifier pre-check region for a single
+**Amount** field — the word "modifier" never renders on the flat-fee
+path. The converter emits the shared flat-fee scheme from its internal
+`CONVERTER_SCHEMES` table (schemes are converter-sourced, never read
+from the RM-managed seed files — `nealsdata/converter/build.py`).
 
 #### The `percentage` algorithm
 
@@ -126,15 +188,16 @@ that resolves a percentage line's dollar amount at the document layer:
 compute_adjustment_amount(adjustment_line, sibling_lines) → Decimal
 ```
 
-1. Reads `service.rate` (the percent) and the line's
-   `adjustment_target_categories` M2M set.
+1. Reads the line's own `adjustment_percent` snapshot (§10.3) — **never**
+   the live `adjustment_service.rate`, which is provenance only — and the
+   line's `adjustment_target_categories` M2M set.
 2. Sums `total_amount` (`qty × price`) of every **non-adjustment** sibling
    line whose `accounting_category_id` is in the target set. An **empty**
    target set matches **all** non-adjustment siblings.
 3. Adjustment lines are explicitly skipped — no stacking: an adjustment
    never sums other adjustments.
-4. Result: `(rate / 100) × base_total`, quantized to `Decimal('0.01')`
-   (nearest cent).
+4. Result: `(adjustment_percent / 100) × base_total`, quantized to
+   `Decimal('0.01')` (nearest cent).
 
 `RateScheme.get_actual_qty(task)` resolves the right quantity per
 algorithm:
@@ -160,22 +223,32 @@ Each modifier in the scheme's `modifiers` JSON list is a dict:
 {"key": "messy", "label": "Messy materials", "percent": 10}
 ```
 
-- `key`: stable identifier; recorded in `Task.active_modifiers` (and
-  `ServiceItem.default_active_modifiers`).
+- `key`: stable identifier. Selected on `ServiceItem.default_active_modifiers`
+  (a list of keys) and, at task-stamping time, resolved by
+  `Task.stamp_from_scheme` into full `{key, label, percent}` snapshot
+  dicts on `Task.active_modifiers` (§3) — not live keys.
 - `label`: display string shown in checkboxes and on the line item.
 - `percent`: additive percent surcharge over the base rate.
 
 Active modifiers stack additively: messy (+10%) + doublestick (+5%)
-= +15% on `rate`. Validation that `active_modifiers` keys are a subset
-of the scheme's modifier keys is up to the form/serializer layer.
+= +15% on `rate`. Validation that a `modifier_keys` argument to
+`stamp_from_scheme` is a subset of the scheme's modifier keys is up to
+the form/serializer layer — unknown keys are silently dropped (`dict(m)
+for m in scheme.modifiers if m.get('key') in keys`).
 
-**`active_modifiers` is always a list.** `active_modifiers` on `Task`,
-and `default_active_modifiers` on `ServiceItem`, are always a **list** of
-modifier keys — never a dict. The `copy_active_modifiers()` helper
-(`apps/jobs/models.py`) returns a list copy; legacy dict values (e.g. an
-old `{'flat_fee_price': …}` encoding) collapse to `[]`.
+**`active_modifiers` shape differs by model.**
+`ServiceItem.default_active_modifiers` is a **list of modifier-key
+strings**. `Task.active_modifiers` is a **list of `{key, label,
+percent}` snapshot dicts** — the resolved modifiers as they stood at
+stamp time, not scheme-relative keys, so a later edit to the scheme's
+`modifiers` list never reaches an already-stamped task. The
+`copy_active_modifiers()` helper (`apps/jobs/models.py`, used by
+`Task.copy_fields()` when cloning a task) deep-copies each snapshot
+dict; legacy shapes it can't resolve without a scheme — a bare dict (the
+old `{'flat_fee_price': …}` encoding) or a list of bare modifier-key
+strings (the pre-Phase-1 snapshot shape) — collapse to `[]`.
 
-### 2.4 Effective rate and compute
+### 2.4 Effective rate and compute (preset preview)
 
 ```python
 RateScheme.effective_rate(active_modifiers)
@@ -188,165 +261,385 @@ RateScheme.compute_charge(qty, active_modifiers)
     → qty * effective_rate(active_modifiers)
 ```
 
+**Preset preview only.** `RateScheme.effective_rate()` /
+`compute_charge()` / `get_actual_qty(task)` are never called against a
+stamped Task's own money math — `Task.effective_rate()` /
+`compute_amount()` / `compute_estimate_amount()` (§4.1) read the task's
+own fields instead. These RateScheme methods back the
+`RateSchemeManager` preview and the rate-scheme serializer's detail
+view, and are still what `ServiceItem`'s deferred service line uses
+(§6.4) before a Task exists.
+
 There is no minimum-charge floor on RateScheme — that field was
 removed.
 
 ### 2.5 Reference checks
 
-`RateScheme.is_referenced()` returns `True` if any `Task` or
-`ServiceItem` points at this service price.
+`RateScheme.is_referenced()` returns `True` if any `Task` has ever
+stamped from this preset (`self.stamped_tasks.exists()`), or any
+`ServiceItem` points at it. **Display only** (the outdated-schemes UI,
+reference counts) — it no longer gates edits or deletes; a stamped task
+owns a permanent copy of its money fields, so editing or deleting a
+referenced preset can't reprice or orphan anything (§3).
 
 `RateScheme.reference_counts()` returns:
 
 ```python
 {
-    'task_count':          Task.objects.filter(rate_scheme=self).count(),
+    'task_count':          self.stamped_tasks.count(),
     'service_item_count': ServiceItem.objects.filter(rate_scheme=self).count(),
 }
 ```
 
-Used by both the edit-in-use guard and the outdated-schemes UI.
+Display only — the outdated-schemes UI and the serializer's
+`reference_counts` field.
 
 ---
 
-## 3. Supersession
+## 3. Task-owned money: stamping and preset retirement
 
-Once any work item references a `RateScheme`, the service price is
-**frozen** in place. To change rate / modifiers / AC after that, the user
-**supersedes** the entry — creates a new row, leaves the old one
-intact, and links them via `replaced_by` / `replaced_at`. Existing
-work items keep pointing at the old entry; future picks pull from
-active (non-superseded) entries.
+**Supersession is gone (task-owned-money Phase 1).** A `RateScheme` is
+no longer frozen once referenced, and there is no `replaced_by` /
+`replaced_at` / `FROZEN_FIELDS` / `supersede()` machinery — all
+retired. In its place: a `Task` copies a preset's pricing fields onto
+itself at creation time and that copy becomes the price of record, so
+the preset itself stays a plain, freely editable row.
 
-### 3.1 Frozen fields
+### 3.1 stamp_from_scheme
 
-`RateScheme.FROZEN_FIELDS`:
+`Task.stamp_from_scheme(scheme, modifier_keys=None)`
+(`apps/jobs/models.py`) runs before a task's first save, on **every**
+creation path (`TaskService.create_direct`, `TaskService.create_from_template`,
+`ServiceItem.generate_task`). It sets, on the task itself:
 
-```python
-('name', 'description', 'algorithm', 'rate', 'unit_label',
- 'modifiers', 'accounting_category')
-```
+- `qty_source` — copied from `scheme.algorithm` (`elapsed_time` /
+  `entered_qty`; a `percentage` scheme raises `ValueError` — percentage
+  services are document adjustments and can never stamp a task).
+- `rate`, `unit_label`, `accounting_category` — copied straight from
+  the scheme.
+- `active_modifiers` — `modifier_keys` (a list of `scheme.modifiers`
+  `key` strings; `None` activates none) resolved into full `{key,
+  label, percent}` snapshot dicts (§2.3).
+- `source_scheme` — the scheme FK itself, kept **only as provenance**.
+  It is never read by any compute path (`Task.effective_rate()` /
+  `get_actual_qty()` / `compute_amount()` / `compute_estimate_amount()`
+  all read the task's own fields, §4.1) — deleting the scheme later
+  (`on_delete=SET_NULL`) can never disturb an already-stamped task's
+  billing.
 
-`RateScheme.clean()` rejects any change to these fields when
-`is_referenced()` is true. The only allowed mutations on a frozen
-entry are `replaced_by` and `replaced_at` (and the `name` rename
-that `supersede()` itself performs — see below).
+Because the copy is permanent, editing (or even deleting) a `RateScheme`
+after tasks have stamped from it never reprices or orphans them — the
+frozen-fields rule this section used to describe no longer applies to
+anything.
 
-The freeze is full, not split into "math vs metadata". Shops catch
-typos quickly, and a single rule is easier to reason about.
+### 3.2 is_active retirement
 
-### 3.2 supersede()
+`RateScheme.is_active` (default `True`) replaces the old
+`replaced_by`/`replaced_at` pair. Retiring a preset only hides it from
+*new* stampings:
 
-```python
-RateScheme.supersede(**overrides) → new RateScheme
-```
+- The creation-time guard lives in the calling service, not
+  `stamp_from_scheme` itself: `TaskService.create_direct`,
+  `TaskService.create_from_template`, and `ServiceItem.generate_task`
+  each check `scheme.is_active` and raise `SchemeInactiveError`
+  (`apps/jobs/models.py`) when it's `False` and the caller didn't pass
+  `allow_inactive_scheme=True`. The API translates `SchemeInactiveError`
+  to **HTTP 409 Conflict**, e.g.:
 
-In one transaction:
+  > Template "Hourly Labor — assembly" references an inactive
+  > RateScheme. Update the template before adding tasks from it.
 
-1. Renames `self` in place to `<orig_name> (vN)` where `N` counts
-   predecessors in the chain. This frees the unique-name slot for the
-   new row without needing a partial-unique index.
-2. Creates a new `RateScheme` row with all of `self`'s field values,
-   then applies `**overrides`.
-3. Sets `self.replaced_by = new` and `self.replaced_at = now()`.
-
-The chain is preserved without auto-collapse:
-`A.replaced_by → B.replaced_by → C` stays navigable. Existing
-`Task` / `ServiceItem` rows always keep their FK to the entry they were
-created with — no migration of historical references on supersede, ever.
-That's how billing history is preserved.
-
-`supersede()` raises `ValueError` if the entry is already superseded.
+- `allow_inactive_scheme=True` bypasses the rejection. The intended
+  callers are acceptance-time crystallization
+  (`generate_task(allow_inactive_scheme=True)`, §9.1/§14.11) — a hand-line
+  whose scheme was retired after the estimate was authored can still
+  crystallize into a Task — and any path that must faithfully replay a
+  historical stamping.
+- Retiring (or reactivating) a preset never touches tasks that already
+  stamped from it — `is_active` is read only at stamp time.
 
 ### 3.3 API
 
 | Verb + path | Behavior |
 |---|---|
-| `GET /api/rate-schemes/` | List active entries (`replaced_by IS NULL`) |
-| `GET /api/rate-schemes/?include_superseded=true` | List all entries |
-| `GET /api/rate-schemes/?only_superseded=true` | List just superseded |
-| `GET /api/rate-schemes/{id}/` | Retrieve any entry (active or superseded) |
+| `GET /api/rate-schemes/` | List active entries by default (`is_active=True`) |
+| `GET /api/rate-schemes/?include_inactive=true` | List all entries |
+| `GET /api/rate-schemes/?task_applicable=true` | Active, non-percentage entries — the task-creation picker's feed (always active regardless of `include_inactive`) |
+| `GET /api/rate-schemes/{id}/` | Retrieve any entry |
 | `POST /api/rate-schemes/` | Create — `CanManageConfig` |
-| `PUT/PATCH /api/rate-schemes/{id}/` | Edit — **HTTP 409** if referenced (see below) |
-| `POST /api/rate-schemes/{id}/supersede/` | Create new version, set `replaced_by`/`replaced_at` on the old row — `CanManageConfig` |
-| `DELETE /api/rate-schemes/{id}/` | Delete — possible only for never-referenced entries (PROTECT cascade) |
+| `PUT/PATCH /api/rate-schemes/{id}/` | Edit any field directly — `CanManageConfig`. No 409, no frozen-fields rejection, referenced or not. |
+| `POST /api/rate-schemes/{id}/retire/` | Flip `is_active` to `False` — `CanManageConfig`. Rejected (400) if this scheme is the current `default_rate_scheme` (§3.4). |
+| `POST /api/rate-schemes/{id}/reactivate/` | Flip `is_active` back to `True` — `CanManageConfig` |
+| `DELETE /api/rate-schemes/{id}/` | Delete — allowed even with stamped tasks (`Task.source_scheme` is `SET_NULL`); blocked (409 via `ProtectedError`) while a `ServiceItem` still references it (`ServiceItem.rate_scheme` is `PROTECT`), and rejected (400) if this scheme is the current `default_rate_scheme` (§3.4) |
 
 Permissions: read is `IsAuthenticated`; all write actions require
 `CanManageConfig`.
 
-Create/update/delete/supersede route through
-`ConfigurationService.{create,update,delete,supersede}_rate_scheme`
-(`apps/core/services.py`) — the referenced-freeze decision lives in the
-service (raised as a `ValidationError` with `code='referenced'`); the
-viewset only shapes the 409 payload below.
+Create/update/delete/retire/reactivate route through
+`ConfigurationService.{create,update,delete,retire,reactivate}_rate_scheme`
+(`apps/core/services.py`). The serializer exposes `reference_counts`
+(display only, §2.5) and `is_default` (§3.4, computed) and validates
+`unit_label` against the configured units list (`apps/core/units.get_units_list`).
 
-The serializer exposes `superseded` (computed bool:
-`replaced_by_id is not None`) and `reference_counts` for the
-outdated-schemes UI. `unit_label` is validated against the configured
-units list (`apps/core/units.get_units_list`).
+### 3.4 Default preset
 
-### 3.4 Edit-in-use block
+The `default_rate_scheme` Configuration key (string-encoded `RateScheme`
+pk, or `''` — see `data-constraints.md` §1.1) preselects the CREATE
+dropdown on the manual task-creation form (`WorkItemForm`) for every
+user, manager or worker alike. Set via the RateSchemeManager's default
+preset picker (`PATCH /api/settings/` with `default_rate_scheme`,
+explicit Save — not auto-committed on change) — that endpoint stays
+`CanManageConfig`-gated.
 
-`PUT/PATCH` against a referenced entry returns **HTTP 409 Conflict**:
+Everywhere else, the default's *identity* is read from `is_default`, a
+computed field on `RateSchemeSerializer` (`True` iff the row's pk equals
+the configured `default_rate_scheme`, one Configuration read per
+response via serializer-context caching, never per row). The list/
+retrieve endpoints are `IsAuthenticated`-only, so this is how a
+permissionless worker's create-task form preselects the default — it
+never calls `/api/settings/` for it. (RM browser-testing note 3: it used
+to, and a worker's fetch there 403'd silently, so the dropdown never
+preselected and submitting without picking one hit the
+required-`rate_scheme` validation error.)
 
-```json
-{
-    "detail": "Scheme is referenced; create a new version instead of editing.",
-    "supersede_url": "https://.../api/rate-schemes/{id}/supersede/",
-    "reference_counts": {
-        "task_count":          12,
-        "service_item_count": 1
-    }
-}
-```
+- `PATCH /api/settings/` rejects a value that isn't blank or an
+  **active** RateScheme id.
+- Retiring or deleting the current default preset is **rejected outright**
+  (`ValidationError`, "This Rate Scheme is the default for new tasks —
+  change the default first."), not silently cleared — an RM browser-testing
+  finding: the old auto-clear-on-retire behavior gave no warning that the
+  scheme being retired was the default. `ConfigurationService.
+  _raise_if_default_rate_scheme` is the single gate, called from
+  `retire_rate_scheme`, `delete_rate_scheme`, and the general
+  `update_rate_scheme` path whenever `is_active` transitions
+  `True → False` (a plain field-level `PATCH {"is_active": false}` goes
+  through the same guard, not just `retire()`). The caller must change
+  `default_rate_scheme` to something else (or blank) first.
+- RateSchemeManager (the Settings → Pricing UI) doesn't wait for the
+  server rejection: the row matching the current default renders a
+  greyed-out "default" note in place of the Retire/Delete buttons
+  entirely, so the guard is mostly unreachable from the SPA — it's a
+  backstop for any other caller.
 
-The frontend uses this to surface "Create new version" affordances
-and explain *why* an edit was blocked.
+### 3.5 Picker filtering
 
-### 3.5 Template guard
+Task-creation pickers request `?task_applicable=true` (active,
+non-percentage only). The RateSchemeManager (outdated-schemes /
+retirement UI) defaults to active-only and reveals the full set via
+`?include_inactive=true`.
 
-When `ServiceItem.generate_task(container, est_qty, ...)` runs, it
-checks `template.rate_scheme.replaced_by_id is None`. If the template
-points at a superseded entry, it raises `SchemeSupersededError`
-(`apps/core/services.py`), which the API translates to **HTTP 409
-Conflict** with a message identifying the template:
+### 3.6 Post-stamp rate changes
 
-> Template "Hourly Labor — assembly" references a superseded
-> RateScheme. Update the template before adding tasks from it.
+Once stamped, a task's `rate` is an ordinary money-gated field — a
+manager/PM or `can_manage_financials` user can edit it directly at any
+time (`PATCH .../tasks/{id}/ {rate: ...}`), same as any other
+`MONEY_FIELDS` entry. `source_scheme` provenance stays put on an
+ordinary field-level edit like that one — it only moves via the
+edit-task Rate Scheme **dropdown**, a separate, deliberate re-pick
+described next (§3.6a).
 
-The same guard fires on `TaskService.create_from_template`.
+### 3.6a Edit-task restamp (RM browser-testing note 5)
 
-The shop owner is forced to deliberately decide whether the template
-should adopt a new entry or pick a different one. Silent retroactive
-change to template behavior is never acceptable.
+The edit-task form (`WorkItemForm.svelte`, edit mode) offers a **Rate
+Scheme** dropdown fed by the same `?task_applicable=true` list the
+create-mode dropdown uses (active, non-percentage presets), preselected
+to the task's current `source_scheme`:
 
-### 3.6 Picker filtering
+- A currently-**retired** `source_scheme` (absent from the
+  task-applicable list) renders as a disabled placeholder option labeled
+  with its name + "(retired)".
+- A **null** `source_scheme` renders as a disabled "—" placeholder.
+- Neither placeholder is a selectable **target** — real options are only
+  active, non-percentage, task-applicable schemes, same as create mode.
 
-All service-price pickers default to active entries only. The
-frontend gets this for free from the `GET /api/rate-schemes/`
-default filter; passing `?include_superseded=true` reveals the full
-set for the outdated-schemes view.
+Picking a **different** scheme (a genuine `change` event — re-selecting
+the current value is naturally a no-op, nothing to build a same-value
+reset path for) triggers a **client-side restamp**: the form prefills
+`rate`/`unit_label`/`accounting_category` from the newly-picked scheme's
+already-fetched list data, and replaces the modifier checkboxes
+**wholesale** with the new scheme's definitions, none checked — the
+user re-ticks before saving. Nothing persists until Save (explicit-save
+doctrine); the reset path back to the original scheme's values is
+A → B → A, each hop a real change that restamps — landing back on A
+restamps to A's *own current* list data, not a memory of the task's
+pre-edit values (a fresh pick of A means exactly A's current data, even
+if A's preset has since been edited).
 
-### 3.7 PROTECT cascade
+On Save, the PATCH carries the same full money block edit mode always
+sends (`rate`/`unit_label`/`accounting_category`/`active_modifiers`,
+money-gated as ever) **plus** `source_scheme` — but only when the
+selection actually differs from the task's original provenance; an
+unchanged re-select never adds the key.
 
-`replaced_by`, `Task.rate_scheme`, and `ServiceItem.rate_scheme` all use
-`on_delete=PROTECT`. An entry that
-has entered the lineage is effectively un-deletable — orphaning a
-work item or breaking the supersession chain is structurally
-impossible.
+**Backend:** `TaskSerializer.source_scheme` is writable on **UPDATE
+only** — create keeps its `rate_scheme` server-stamp contract untouched
+for *provenance* (`validate_source_scheme` rejects the field outright
+when there's no instance yet, i.e. on create); `rate`/`unit_label`/
+`accounting_category` themselves are a different story on create — see
+§3.6c for the Add-Task-time override that lets a money-capable caller
+replace those three stamped fields in the SAME create request, without
+touching `source_scheme`. `source_scheme` joined `MONEY_FIELDS`
+(§10.1 in `jobs-and-tasks.md`), so the key's mere presence in a PATCH
+gates on `CanManageJobOrPM`/`can_manage_financials` like every other
+money field. Validation on write mirrors create's `rate_scheme` rules —
+must exist, `is_active=True`, non-percentage — as field-shaped 400s
+(no `allow_inactive_scheme` escape hatch here; a restamp is always a
+deliberate pick from the CURRENTLY-offered target list). The server
+does **not** re-derive the money block from the new `source_scheme` —
+it just records the pointer; the client's `rate`/`unit_label`/
+`accounting_category`/`active_modifiers` values in the same request
+ARE the restamp (same precedent as the estimate Work-form's
+client-computed stamp). A write where the money fields don't actually
+match the new scheme's current data isn't rejected — it shows up as
+drift on the task, which is the provenance pointer doing its job as an
+audit trail, not a bug for the serializer to guard against.
+
+A restamp PATCH reaches a **parent** task the same as any other
+money-field edit: if the parent's own `rate` was `None` (deriving its
+price from children, §4.1a), the restamp sets an explicit `rate` that
+overrides the derivation — the existing rule, not new behavior.
+
+**Outsourced work** (shape #11 of the fifteen shapes, Appendix below) is
+the one *suggested* path to that same edit, and it starts on the sell
+side with no new authoring surface: the outsourced charge is quoted as
+an ordinary hand service line, a flat-fee ServiceItem (§2.2a shape,
+amount on the item), or a task created via **Add Task** with a
+create-time rate override (§3.6c — type the vendor quote × markup as
+the rate right there). Acceptance/mint produces the task exactly like
+any other. On the buy side, the same task can optionally be linked to a
+PO line (`PurchaseOrderLineItem.task`,
+`materials-inventory-and-purchasing.md` §10a) when the work is ordered
+from the vendor. Once that PO is reconciled with a per-line final cost
+recorded (whether or not it happens to differ from what was ordered),
+the linked task becomes eligible for a **task-rate prompt** —
+"update the selling rate to final × markup?" A human must explicitly
+accept it; accepting issues the exact same `PATCH .../tasks/{id}/
+{rate: ...}` call described above, so nothing here is a second
+money-writing code path. Declining leaves the quoted rate untouched,
+and nothing about the decline is persisted. Full mechanics —
+qualifying-line rule, the markup config, accept/decline — live in
+`materials-inventory-and-purchasing.md` §10a.
+
+### 3.6b Edit-task money-field gating uses `can_write_money`, not `can_manage` (RM browser-testing note 6)
+
+`WorkItemForm.svelte`'s edit-mode money-field gating (the Rate Scheme
+dropdown, Rate/Unit, Accounting Category, and modifier checkboxes — every
+`{#if effectiveCanWriteMoney}`/`disabled={!effectiveCanWriteMoney}` site)
+reads `item.can_write_money`, **not** `item.can_manage`. The two look
+similar but test different things: `can_manage`
+(`JobScopedCanManageMixin`, §3 of `users-and-permissions.md`) is the
+`can_manage_jobs`-atom-or-PM test only, while the server's actual
+money-write gate (`TaskSerializer._can_write_money`, §"Task money-field
+writes" in `users-and-permissions.md`) additionally accepts the
+`can_manage_financials` atom. A financials-only caller (no
+`can_manage_jobs`, not the job's PM) therefore has `can_manage=False` but
+`can_write_money=True` — gating the UI on `can_manage` disabled/greyed
+fields the server would happily accept the write for.
+
+`can_write_money` is a read-only `SerializerMethodField` on
+`TaskSerializer` that calls `_can_write_money()` directly, so it is
+*literally* the same predicate the server enforces on write — not a
+second, independently-maintained approximation of it. `_can_write_money`
+takes an optional `job` argument: the `validate()` write path calls it
+with no argument (resolves via `self.instance`/context, correct for a
+single-instance POST/PATCH); `get_can_write_money` passes `obj.job`
+explicitly, because DRF's `ListSerializer` never sets `self.instance`
+per-row on a shared child serializer — reading `self.instance` there
+would silently misreport for every row in a task list (e.g.
+`GET /api/jobs/{id}/tasks/`), not just the detail view. Same pattern
+`JobScopedCanManageMixin.get_can_manage` already uses for `can_manage`.
+
+Create mode has no `item` yet, so it keeps reading the `canManage` prop
+(a caller override, default `true`) — there's no server-computed
+create-time equivalent to fetch ahead of the POST; the server's own
+create-time `MONEY_FIELDS` gate is enforced independently by
+`TaskSerializer.validate()` regardless of what the create form renders.
+
+`can_manage` on the Task serializer keeps its original job-management
+meaning unchanged (non-money task affordances, e.g. the manager-only
+actions in `users-and-permissions.md` §3) — this was purely a matter of
+routing the *money-field* gate to the field that actually matches the
+server's money-write test.
+
+### 3.6c Add-Task-time money overrides (2026-09-19)
+
+RM decision: "if it's editable [in the edit-task modal], it should be
+changeable at add time as well." `stamp_from_scheme` (§3.1) still runs
+first on every creation path and remains the DEFAULT — but on the
+ordinary job-nested create (`POST /api/jobs/{id}/tasks/`, the Add Task
+modal's manual-mode target; `apps.api.mixins.JobTaskMixin.tasks`), any of
+`rate`/`unit_label`/`accounting_category` PRESENT in the create request
+now replaces that one stamped field after the stamp runs. Absent keys
+keep the stamp exactly as before. `active_modifiers` keeps its existing
+create contract unchanged (a list of modifier key strings, resolved by
+the stamp — not touched by this feature). `source_scheme` stays
+create-rejected (§3.6a, `validate_source_scheme`) — an override never
+disturbs provenance, same as an ordinary field-level edit leaves
+`source_scheme` alone post-stamp (§3.6).
+
+Permission: identical to §3.6/§3.6a — `rate`/`unit_label`/
+`accounting_category` are already `MONEY_FIELDS` entries, so
+`TaskSerializer.validate()`'s raw-key-presence gate (`_can_write_money()`,
+`CanManageJobOrPM` or `can_manage_financials`) already covered a create
+POST carrying one of these keys; a non-money caller gets the exact same
+`PermissionDenied` shape create or update. What changed is plumbing, not
+gating: `TaskService.create_direct` now accepts these three keys as
+overrides (applied via `setattr` AFTER `stamp_from_scheme`, never before
+— stamping would just clobber a pre-stamp assignment) and
+`JobTaskMixin.tasks()` forwards a key only when it was actually present
+in the raw request body. Previously a money-capable caller's `rate`/
+`unit_label`/`accounting_category` in a create POST passed validation but
+was silently dropped before reaching `TaskService.create_direct` — this
+closes that gap rather than opening a new one.
+
+This is the flat_fee documented edge's escape hatch (§2.2a): a manual
+task stamped from a `flat_fee` scheme with no ServiceItem still stamps
+`rate = 0.00` by default, but a money-capable caller can now override
+`rate` in the SAME create request instead of a follow-up PATCH.
+
+**Frontend** (`WorkItemForm.svelte`, manual create mode only): once a
+scheme is picked, the same Rate/Unit/Accounting Category block edit mode
+shows appears, prefilled from the picked scheme's own list data (a
+create-mode mirror of `selectedScheme`/`editSelectedScheme`), gated on
+`effectiveCanWriteMoney` (the `canManage` prop, since create has no
+`item.can_write_money` to read yet — §3.6b). Re-picking a different
+scheme reseeds the fields wholesale from the new pick, same A→B→A
+semantics as §3.6a's edit-mode restamp; user edits after seeding stick
+until the next re-pick. The create POST includes `rate`/`unit_label`/
+`accounting_category` only when the block is shown (money-capable);
+otherwise the payload carries nothing extra and the server stamps exactly
+as before.
+
+**Template mode is explicitly out of scope for this feature.**
+Template-mode create posts to `POST /api/jobs/{id}/add-from-template/`
+(`apps.api.jobs.views.add_from_template`), which does not go through
+`TaskSerializer`/`TaskService.create_direct` at all — it reads a fixed
+set of keys off `request.data` directly and calls
+`ServiceItem.generate_task` (`TaskService.create_from_template`), neither
+of which accepts a money override today. `WorkItemForm`'s create-seed
+effect is guarded to manual mode only for this reason; template-mode
+create keeps its existing stamp-only behavior and read-only preview.
+Extending `add_from_template`'s contract to accept the same overrides is
+a real, separate design question (unaddressed here, same as the mint/
+claim creation endpoints, which also don't go through this path).
 
 ---
 
-## 4. Task billing (and the Fee atom)
+## 4. Task billing
 
-`Task` carries billing identity directly via `TaskBase` (the abstract
-base in `apps/jobs/models.py`). The full field shape lives in
-`docs/designs/jobs-and-tasks.md`. Recap of the billing fields:
+**Task-owned money (Phase 1).** `Task` carries its own permanent money
+block directly — not a live FK to `RateScheme` — stamped once at
+creation by `Task.stamp_from_scheme` (§3.1). The full field shape lives
+in `docs/designs/jobs-and-tasks.md` §4.4. Recap of the billing fields:
 
-| Field | On TaskBase / Task | Notes |
+| Field | On Task | Notes |
 |---|---|---|
-| `rate_scheme` | declared on Task | FK to `RateScheme` (PROTECT). NOT NULL at the DB level. |
-| `active_modifiers` | declared on Task | JSON list of modifier keys (always a list, never a dict — see §2.3) |
+| `qty_source` | own field | `'elapsed_time'` / `'entered_qty'` (`Task.QTY_ELAPSED` / `QTY_ENTERED`); copied from `scheme.algorithm` at stamp time. Never `'percentage'` — percentage schemes can't stamp a task. |
+| `rate` | own field | Decimal, nullable. `effective_rate()` returns `0.00` when `None` (e.g. a task cloned or built without a scheme). |
+| `unit_label` | own field | CharField, default `'none'` |
+| `accounting_category` | own field | FK → `AccountingCategory` (PROTECT), nullable at the DB level and, as of Phase 3, on the API serializer too (§10) — a task may go uncategorized until invoicing |
+| `active_modifiers` | own field | JSON list of `{key, label, percent}` **snapshot** dicts — resolved at stamp time, not live scheme keys (§2.3) |
+| `source_scheme` | own field | FK → `RateScheme` (`SET_NULL`, `related_name='stamped_tasks'`) — **provenance only**, never read for money math |
 | `est_qty` | inherited from `TaskBase` | nullable on Task |
 | `est_worker_time` | inherited from `TaskBase` | DurationField for scheduling |
 | `actual_qty` | declared on Task only | Decimal nullable; worker-entered for `entered_qty` schemes |
@@ -356,53 +649,60 @@ base in `apps/jobs/models.py`). The full field shape lives in
 `Task` implements the uniform atom interface
 `compute_amount(active_modifiers=None) → Decimal` (the **invoice** view —
 bills actuals) plus a parallel `compute_estimate_amount()` (the
-**estimate** view — bills `est_qty`):
+**estimate** view — bills `est_qty`). Both compute entirely from the
+task's own fields — **no RateScheme lookup**:
 
 ```python
 class Task:
+    def effective_rate(self):
+        # Own rate + own active_modifiers surcharges.
+        if self.rate is None:
+            return Decimal('0.00')
+        pct = sum(Decimal(str(m.get('percent', 0))) for m in (self.active_modifiers or []))
+        return (self.rate * (1 + pct / 100)).quantize(Decimal('0.01'))
+
+    def get_actual_qty(self):
+        # Own qty_source — no RateScheme lookup.
+        if self.qty_source == self.QTY_ELAPSED:
+            return timedelta_to_hours(sum(blep elapsed)).quantize(Decimal('0.01'))
+        return self.actual_qty or Decimal('0')
+
     def compute_amount(self, active_modifiers=None):
         # Invoice side: qty from actuals (bleps / actual_qty).
-        qty = self.rate_scheme.get_actual_qty(self)  # algorithm-aware
-        charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
-        return charge.quantize(Decimal('0.01'))
+        return (self.get_actual_qty() * self.effective_rate()).quantize(Decimal('0.01'))
 
     def compute_estimate_amount(self, active_modifiers=None):
         # Estimate side: qty is est_qty (what the job is *expected* to cost).
-        charge = self.rate_scheme.compute_charge(
-            self.est_qty or Decimal('0'), self.active_modifiers,
-        )
-        return charge.quantize(Decimal('0.01'))
+        return ((self.est_qty or Decimal('0')) * self.effective_rate()).quantize(Decimal('0.01'))
 ```
 
 This is the crux of **documents-as-lenses** (§7): the *estimate* projects
 `est_qty` via `compute_estimate_amount`; the *invoice* bills the locked
 `actual_qty` of a complete task via `compute_amount`. Both are quantized
-to cents: `compute_charge` is `qty * effective_rate`, and a
-modifier-adjusted rate can carry more than 2 decimals.
+to cents — a modifier-adjusted rate can carry more than 2 decimals.
 
-The `active_modifiers` parameter is accepted to match the atom interface
-but is ignored — both use `self.active_modifiers`. `compute_amount` uses
-the algorithm to resolve qty:
+The `active_modifiers` parameter on both methods is accepted only to
+match the shared `BillableAtom` interface (the same signature `Material`
+uses) — both **ignore** it and read `self.active_modifiers`.
+`get_actual_qty()` resolves the qty source:
 
-| Algorithm | Task.compute_amount qty source |
+| `qty_source` | `Task.get_actual_qty()` source |
 |---|---|
 | `elapsed_time` | sum of Blep durations in hours |
 | `entered_qty` | `task.actual_qty or 0` |
 
-An `elapsed_time` task's unit is always `'hour'` — the scheme is pinned
-(§2.1) — so this qty is always a count of hours.
+An `elapsed_time` task's `unit_label` is always `'hour'` (copied from
+the `elapsed_time`-pinned scheme it stamped from — §2.1) — so this qty
+is always a count of hours.
 
-`effective_rate()` returns `rate_scheme.effective_rate(self.active_modifiers)`.
-
-`RateScheme.effective_rate()` for `elapsed_time` / `entered_qty`
-quantizes to 2 decimal places (cents): a percentage modifier divides by
-100, so `rate × (1 + percent/100)` can carry more than 2 places (e.g.
-`99.99 × 1.05 = 104.9895`). The per-unit rate is a money value that is
-copied straight onto a line item's `price` field (a 2-decimal
-`DecimalField`), so it must be trimmed at the source — every caller that
-uses it as a price (the estimate wizard's single-atom and "send all
-atoms" paths, the bundle summary, the source-pool detail) is then safe
-without having to remember its own `.quantize()`.
+`effective_rate()` quantizes to 2 decimal places (cents): a percentage
+modifier divides by 100, so `rate × (1 + percent/100)` can carry more
+than 2 places (e.g. `99.99 × 1.05 = 104.9895`). The per-unit rate is a
+money value that is copied straight onto a line item's `price` field (a
+2-decimal `DecimalField`), so it must be trimmed at the source — every
+caller that uses it as a price (the estimate wizard's single-atom and
+"send all atoms" paths, the bundle summary, the source-pool detail) is
+then safe without having to remember its own `.quantize()`.
 
 ### 4.2 actual_qty semantics
 
@@ -500,31 +800,24 @@ exposes `effective_accounting_category`, and is claimed by a line item
 exactly like a Task. Full model shape is in
 `materials-inventory-and-purchasing.md`.
 
-### 4.5 Fee — the fixed-charge atom
+### 4.5 Fee — retired
 
-`Fee` (`apps/jobs/models.py`, `db_table = 'fees'`) is the third billable
-atom and the **crystallized form of an accepted hand-line** (§9). It is a
-pure pricing decision, not a record of work:
-
-| Field | Type | Notes |
-|---|---|---|
-| `fee_id` | AutoField PK | |
-| `job` | FK → Job (CASCADE, `related_name='fees'`) | owning job |
-| `task` | OneToOne → Task (SET_NULL, nullable) | optional link to the work behind the charge |
-| `description` | CharField(255), blank | |
-| `quantity` | Decimal(10,2), default `1.00` | |
-| `unit_rate` | Decimal(10,2) | **required** |
-| `accounting_category` | FK → AccountingCategory (PROTECT) | **required, NOT NULL** |
-| `sort_order` | PositiveInteger, default 0 | |
-
-`Fee.compute_amount() → (quantity × unit_rate).quantize('0.01')`;
-`effective_accounting_category` returns its own `accounting_category`;
-`units` is `'none'`. A Fee has no lifecycle and no actuals — it is
-**always billable** (unlike a Task, which must be `complete`, or a
-Material, which must be `consumed`). Writes go through `FeeService`
-(`apps/jobs/services.py`) — `create_on_job` / `update` / `delete`, all
-respecting the job's on-hold guard — and the API at
-`POST /api/jobs/{id}/fees/`.
+**Fee retired 2026-08-09** — the `jobs.Fee` model (`apps/jobs/models.py`,
+`db_table = 'fees'`) was deleted
+(`apps/jobs/migrations/0062_delete_fee.py`, alongside
+`apps/estimates/migrations/0046_alter_changeorderlineitem_is_material_and_more.py`
+and `apps/invoicing/migrations/0025_alter_invoicelineitemsource_source_type.py`).
+There is no longer a pure-money job atom. A **plain hand-line** — no
+`service_item`, no `inventory_item`, `is_material=False` — never
+crystallizes into a job atom on acceptance (§9.1); it stays a document
+line on the Estimate/CO forever, and it is **always billable** in the
+sense that it needs no lifecycle gate (there's no atom readiness state
+to check — it's just text, qty, and a price on the document). It
+transits to an Invoice later via an **agreement-line reference**
+(`InvoiceLineItem.agreement_estimate_line` / `agreement_co_line`, the
+`compose_agreement` / `seed_from_agreement` / `restore_agreement_line`
+machinery in `apps/invoicing/services.py`), not via a Fee atom + claim.
+See `invoicing-and-expenses.md` for the invoice-side mechanics.
 
 ---
 
@@ -695,8 +988,9 @@ keeps revisions distinct.
 ### 5.3a Adjustment lines and `revise_estimate`
 
 `revise_estimate` preserves adjustment lines exactly like normal lines:
-`adjustment_service_id` and the `adjustment_target_categories` M2M set are
-both copied onto the new revision's line items. The revision's adjustment line
+`adjustment_service_id`, `adjustment_percent` (the price-of-record
+snapshot — §10.3), and the `adjustment_target_categories` M2M set are
+all copied onto the new revision's line items. The revision's adjustment line
 amounts are frozen at the inherited values until a line-item change triggers
 auto-recompute (see §5.3b). Source atom rows (`EstimateLineItemSource`) are
 moved onto the new line items as usual (see §5.3).
@@ -709,8 +1003,9 @@ mutation — `add_line_item`, `add_line_item_from_pli`, `update_line_item`,
 methods. (Direct authoring `add_line_item` / `add_line_item_from_pli` were
 removed in the 2026-06 consolidation, then **restored** — the estimate detail
 page authors hand-lines again alongside atom-backed lines; hand-lines
-crystallize into atoms at acceptance — catalog lines into Materials, the rest
-into Fees.) There is no manual recalculate step. Freeze is implicit:
+crystallize into atoms at acceptance — catalog and bare-material lines
+into Materials, deferred-service lines into Tasks, and plain lines stay
+document-only forever.) There is no manual recalculate step. Freeze is implicit:
 all mutations are draft-gated, so once an estimate leaves `draft` the stored
 price is frozen automatically.
 
@@ -728,10 +1023,17 @@ price is frozen automatically.
 | `POST /api/estimates/{id}/adjustment-lines/` | Body: `{adjustment_service: <PK>, target_category_ids: [<AC PKs>]}`. Returns 201 with the serialized line item (price already computed). Returns 400 if not draft or service is not PERCENTAGE. Permission: `CanManageJobs` (or the job's PM). |
 
 **`compose_agreement` surfacing.** `compose_agreement(job)` line dicts carry
-`is_adjustment` (bool), `adjustment_service_id`, `percent` (the rate, or
-`None` for non-adjustment lines), and `target_category_ids` for
-estimate-origin lines. CO-origin lines always have falsey adjustment fields
-(adjustments are estimate-only).
+`is_adjustment` (bool), `adjustment_service_id`, `percent` (the line's own
+`adjustment_percent` snapshot — never the live `adjustment_service.rate`,
+which is provenance only — or `None` for non-adjustment lines), and
+`target_category_ids`. Estimate-origin lines read these off the
+`EstimateLineItem` itself. **CO-origin lines can carry the same triple too
+(2026-08-09, CO amend-in-place)** — but only a `replace` line targeting an
+*already-adjustment* estimate line is allowed to
+(`ChangeOrderLineItem.clean()`, §14.4); a plain `add`/`remove`/other
+`replace` line always reads falsey. `_line_dict_from_co_item` emits the same
+shape `_line_dict_from_estimate_item` does either way, so a downstream
+reader never has to branch on origin to find the adjustment fields.
 
 ### 5.4 Document numbering
 
@@ -787,7 +1089,13 @@ taxability reads `accounting_category.taxable` directly). Declared in
 - `adjustment_service` — nullable FK to `RateScheme` (PROTECT). Set
   when this line is a percentage adjustment. A line with
   `adjustment_service_id` set is an **adjustment line**; one without is
-  a normal line.
+  a normal line. **Provenance/identity only** since task-owned-money
+  Phase 1 — still what *selects* a line as an adjustment, but never read
+  for the dollar computation (see `adjustment_percent` below).
+- `adjustment_percent` — nullable Decimal(6,2). Snapshot of
+  `adjustment_service.rate` taken at line-creation time; the **price of
+  record** — `compute_adjustment_amount` (§2.2) reads this field, never
+  the live scheme (§10.3).
 - `adjustment_target_categories` — M2M to `AccountingCategory`. The
   categories whose lines this adjustment applies to. Empty = all
   non-adjustment lines.
@@ -795,24 +1103,57 @@ taxability reads `accounting_category.taxable` directly). Declared in
   (no `inventory_item`, non-adjustment) freeform line as a
   **material**: at acceptance it crystallizes into a `Material`
   (established with a reverse-markup placeholder cost — §9.1)
-  instead of a `Fee`. Invalid on a line that already has an
-  `inventory_item` (already a catalog material) or that has an
-  `adjustment_service` (document-only adjustments can't be materials) —
-  enforced by `EstimateService._assert_is_material_only_on_bare_line`.
+  instead of staying a plain, uncrystallized hand-line.
+  **Server-derived, never client-sent (RM 2026-08-11):**
+  `EstimateService._derive_is_material` sets it on every hand-line
+  add/update — True exactly when the line is bare and its AC is the
+  configured `default_material_accounting_category`; non-bare lines
+  (inventory/service/adjustment descriptors, or atom-backed) are forced
+  False. The old "Is this a material?" checkbox and the AC-defaulting
+  helper (`_apply_material_ac_default`) are retired; serializers expose
+  the field read-only. The CO side wraps the same derivation
+  (`ChangeOrderService._derive_is_material`), additionally forcing
+  False on non-`add` lines (remove/replace forbid the marker in
+  `clean()`).
 - `service_item` — nullable FK to `estimates.ServiceItem` (PROTECT,
   `related_name='+'`). Deferred service descriptor: the line carries the
   `ServiceItem`'s snapshotted price at authoring time, and the FK is the
   crystallization target that `on_accept` resolves to a `Task` (§9.1).
+- `work_declined` — BooleanField, default `False`, migration `0048`
+  (estimating-structure spec, 2026-08-15). The acceptance-checklist "no
+  work needed" answer: a plain hand line (no sources, not an adjustment,
+  not a deposit line, no catalog identity) is marked declined instead of
+  minted. **Set-able only while the estimate is `accepted`** — the one
+  field on this model writable outside the normal draft-only window; see
+  §9a for the full mint/decline/checklist model.
 
 The serializer exposes a read-only `adjustment_service_detail` dict
 `{name, rate, algorithm}` for display purposes when `adjustment_service`
 is set. It also exposes `service_item` (writable FK PK, nullable) and a
 read-only `service_item_detail` dict `{template_id, name}` (or `null`).
 
+**`backing` / `backing_total` (2026-08, skeleton phase — never stored,
+derived on every read).** `EstimateLineItemSerializer` exposes read-only
+`backing` — one of `'adjustment'` / `'from_catalog'` / `'planned_work'` /
+`'planned_materials'` / `'edited'` / `'hand'`, via the module-level
+`derive_estimate_backing(line)` function
+(`apps/api/estimates/serializers.py`) — and `backing_total` (the summed
+source `compute_estimate_amount`/`compute_amount`, `null` when the line
+has no sources; the "work totals $X" reference figure, independent of
+`backing` itself). See §12.2 for the derivation order and the
+chip vocabulary; `derive_estimate_backing`'s own docstring is the
+authoritative source for the two post-acceptance quirks noted there.
+The list/retrieve queryset prefetches `sources` (and the atoms they
+resolve to) to keep this derivation N+1-free.
+
 - `is_comment` (inherited from `BaseLineItem`) — a purely informational
   row: no charge (`qty`/`price` forced to zero), exempt from the
-  hand-line accounting-category-required rule, and skipped entirely by
-  `on_accept` (§9.1) — it never crystallizes into a Task/Material/Fee.
+  hand-line accounting-category-required rule — at add/update AND at the
+  send-time gates (`assert_all_hand_lines_have_ac`,
+  `assert_all_bare_add_lines_have_ac`; the send-time exemption was
+  restored 2026-09-22 after the comment-lines e2e backfill caught the
+  gates rejecting comment lines) — and skipped entirely by
+  `on_accept` (§9.1) — it never crystallizes into a Task or Material.
   `compose_agreement` (§14.6) excludes it from the billing agreement, so
   it never flows onto an invoice via "copy from estimate." `ChangeOrderLineItem`
   carries the same field and the same acceptance carve-out (§14.11's
@@ -831,7 +1172,7 @@ atom(s).
 EstimateLineItemSource:
     source_id           AutoField PK
     estimate_line_item  FK → EstimateLineItem (CASCADE, related_name='sources')
-    source_type         CharField — 'task' | 'material' | 'fee'
+    source_type         CharField — 'task' | 'material'
     source_pk           PositiveIntegerField
 
     Meta:
@@ -839,30 +1180,39 @@ EstimateLineItemSource:
         unique_together = [('source_type', 'source_pk')]
 ```
 
-Atoms are the Job's `Task`, `Material`, and `Fee` (`SOURCE_TASK`,
-`SOURCE_MATERIAL`, `SOURCE_FEE`). These are the **same** job atoms the
+Atoms are the Job's `Task` and `Material` (`SOURCE_TASK`,
+`SOURCE_MATERIAL`). These are the **same** job atoms the
 invoice lens claims (via `InvoiceLineItemSource`, owned by the invoicing
 doc) — both documents are lenses over one set of atoms on the Job. The
 unique constraint on `(source_type, source_pk)` enforces **whole-atom
 claim at the database level**: an atom can be referenced by at most one
 estimate line item at a time.
 
-Because that constraint is *global* and `rejected`/`expired` are terminal,
-a dead document holding claims would lock its atoms out of every future
-estimate on the job — forever. So **entering `rejected` or `expired`
-releases the claims**: `Estimate.save()` deletes the document's source rows
-via `claims.release_estimate_claims` (2026-07-28), and `ChangeOrder.save()`
-does the same through `release_change_order_claims`. `accepted` keeps its
-rows — they are the agreement record — and `superseded` already holds none,
-since `revise_estimate` re-points them. The release lives in `save()`
-rather than a service so every writer is covered: the portal decline
-endpoints, the expiry sweep, the status-transition actions, and the admin.
+Because that constraint is *global*, a dead document holding claims would
+lock its atoms out of every future estimate on the job — forever. The
+release rule is **per document kind** (split 2026-08-13, RM):
+
+- **Estimate:** only `rejected` releases
+  (`claims.ESTIMATE_DEAD_STATUSES`). `expired` KEEPS its claims — expiry
+  is reactivatable in place (unexpire, the estimate-renewal feature), so
+  an expired quote holds its work pending renewal; freeing the atoms means
+  actually rejecting or superseding it.
+- **ChangeOrder:** `rejected` and `expired` both release
+  (`claims.CO_DEAD_STATUSES`) — a CO has no revival path.
+
+`Estimate.save()` deletes the source rows via
+`claims.release_estimate_claims` (2026-07-28), `ChangeOrder.save()`
+through `release_change_order_claims`. `accepted` keeps its rows — they
+are the agreement record — and `superseded` already holds none, since
+`revise_estimate` re-points them. The release lives in `save()` rather
+than a service so every writer is covered: the portal decline endpoints,
+the expiry sweep, the status-transition actions, and the admin.
 The line items themselves are untouched, so a rejected estimate stays a
 readable frozen snapshot of what was offered — the same shape a superseded
 one takes. This mirrors `InvoiceService.cancel` on the billing lens.
 
-`source.resolve()` returns the concrete atom instance (`Task`,
-`Material`, or `Fee`).
+`source.resolve()` returns the concrete atom instance (`Task` or
+`Material`).
 
 CASCADE on `EstimateLineItem` deletion: deleting a line item releases
 its claims. On revision, `revise_estimate` **moves** the source rows onto
@@ -870,12 +1220,12 @@ the new line items (§5.3), so the live estimate is always the one lens
 over the atoms; superseding/rejecting/expiring otherwise does not touch
 claims.
 
-**No source row outlives its atom.** `Material.delete()`, `Fee.delete()`,
-and `Task.delete()` call `purge_source_rows_for_atom`
+**No source row outlives its atom.** `Material.delete()` and
+`Task.delete()` call `purge_source_rows_for_atom`
 (`apps/estimates/claims.py`), which drops the estimate-, CO-, and
 invoice-lens source rows pointing at the deleted atom. This holds on
 *every* deletion path — restock-to-zero (incl. the job-completion
-loose-material release), PO sever, fee/task delete, CO retirement — so
+loose-material release), PO sever, task/material delete, CO retirement — so
 `resolve()` consumers never hit a dangling pk. The source serializers
 additionally render a dangling row (pre-purge data) as `null` rather
 than 500ing. Paths that must not delete a billed atom guard *before*
@@ -886,7 +1236,7 @@ the consistency backstop, not the guard.
 
 | Source rows on a line item | What it represents |
 |---|---|
-| 0 | A **hand-line** — manually authored, no atom backs it. Crystallizes at acceptance via the four-way discriminator (§9.1): `service_item` → Task, `inventory_item` → Material, `is_material` bare → established Material (reverse-markup cost), else → Fee. |
+| 0 | A **hand-line** — manually authored, no atom backs it. Crystallizes at acceptance via the four-way discriminator (§9.1): `service_item` → Task, `inventory_item` → Material, `is_material` bare → established Material (reverse-markup cost), else → nothing (a plain line stays a document-only line forever). |
 | 1 | Single-atom conversion (bulk send-all or a wizard pick of one atom) |
 | N | Wizard-grouped from multiple atoms |
 
@@ -902,7 +1252,7 @@ sharing one `RateScheme` and identical `active_modifiers`, the line is
 **summarized** — `units` from the service price, `qty` = summed
 quantities (`est_qty` on the estimate side, actuals on the invoice side),
 `price` = the common effective rate. Any other multi-atom bundle (a
-material or fee atom present, mixed service prices, or mixed modifiers)
+material atom present, mixed service prices, or mixed modifiers)
 falls back to blank description, `units = 'none'`, `qty = 1`,
 `price = sum(compute_amount)`.
 
@@ -919,15 +1269,21 @@ falls back to blank description, `units = 'none'`, `qty = 1`,
 | `accounting_category` | `service_item.effective_accounting_category` (from the rate scheme) |
 | `service_item` | FK pointer; crystallizes to a `Task` at acceptance |
 
-No `Task` is created at authoring time. The Task is created at acceptance by `on_accept` (§9.1, discriminator step 1), with `description=li.description` (the edited line description) and `allow_superseded_scheme=True` so a line whose scheme was superseded after authoring can still crystallize.
+No `Task` is created at authoring time. The Task is created at acceptance by `on_accept` (§9.1, discriminator step 1), with `description=li.description` (the edited line description) and `allow_inactive_scheme=True` so a line whose scheme was retired after authoring can still crystallize.
 
-**`_apply_material_ac_default`.** `is_material=True` bare lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. Fee (non-`is_material`) hand-lines still require an explicit AC. The key is editable via a "Default material category" picker (`DefaultMaterialCategorySetting.svelte`, extracted out of `AccountingCategories.svelte`), rendered in both Settings' Accounting and Pricing tabs; `PATCH /api/settings/` validates it as blank-or-active-category-id (`data-constraints.md` §1.1).
+**Editable description at add time (2026-09-20).** Both catalog-pull creation paths — `add_line_item_from_service` above and `add_line_item_from_pli` (the `line-items/` POST's `inventory_item` branch, via `LineItemMixin.line_items`) — take an optional `description` kwarg/body key. Present and non-blank (after `.strip()`) it's used verbatim; absent, or blank/whitespace-only, falls back to the same derivation shown in the table above (`service_item.template_name` / `pli.description`), unchanged from before this feature. This is the same design shape as the Add-Task-time money overrides (§3.6c) — the server-side stamp/derivation stays the default, and a caller-supplied value at create time replaces just that one field. Nothing else about qty/price/units/AC changes.
+
+`LineItemMixin.line_items`'s dispatch (`apps/api/mixins.py`) previously forked to the manual hand-line path (`add_line_item`) whenever *any* `description` accompanied an `inventory_item` — that would have dropped the PLI linkage, its derived price/units/AC, and the hand-line AC requirement, on the very payload this feature sends. The dispatch now only forks on `price` (a real hand-line signal); `description` alone rides the PLI path as an override. Only the estimate/change-order/invoice viewsets go through this shared mixin action — `PurchaseOrderViewSet` overrides `line_items` with its own copy (`apps/api/purchasing/views.py`) and is unaffected.
+
+**Frontend** (`EstimateAddLineForm.svelte` and its CO/invoice siblings): a service or inventory pick now shows the same Description input the freeform branch always had, prefilled with exactly the string the server would derive (`serviceItem.template_name` / `inventoryItem.description` off the picker's own payload — byte-identical to the backend derivation, so an untouched field and an absent field produce the same line). The field is sent in the POST body only when it differs from that prefill; an untouched or re-blanked field sends nothing, keeping the server derivation authoritative. Re-picking (or reopening the modal) reseeds the field from the new choice via the existing reset `$effect`. The freeform branch is untouched — it already always sends `description`.
+
+**`_apply_material_ac_default`.** `is_material=True` bare lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. Plain (non-`is_material`) hand-lines still require an explicit AC. The key is editable via a "Default material category" picker (`DefaultMaterialCategorySetting.svelte`, extracted out of `AccountingCategories.svelte`), rendered in both Settings' Accounting and Pricing tabs; `PATCH /api/settings/` validates it as blank-or-active-category-id (`data-constraints.md` §1.1).
 
 **API endpoint:**
 
 | Verb + path | Behavior |
 |---|---|
-| `POST /api/estimates/{id}/line-items-from-service/` | Body: `{service_item: <PK>, qty: <N>}`. Returns 201 with the serialized line. Permission: `CanManageJobs`. |
+| `POST /api/estimates/{id}/line-items-from-service/` | Body: `{service_item: <PK>, qty: <N>, description?}`. `description` is optional (see above); non-blank wins, absent/blank derives as shown in the table above. Returns 201 with the serialized line. Permission: `CanManageJobs`. |
 
 **`PriceListPicker.svelte` — the unified picker.** Both the estimate detail page and the job task-list page use `PriceListPicker` as the single "Add line / Add Work" entry point. The component is a pure `onChoose` emitter — zero surface-specific logic. It searches service items and catalog inventory items in parallel via their respective `?search=` endpoints and emits one of:
 
@@ -939,35 +1295,36 @@ No `Task` is created at authoring time. The Task is created at acceptance by `on
 
 On the **estimate detail page** (`EstimatePanel.svelte`, hosted at `#/jobs/:jobId/estimate/:docId`), the picker is followed by `EstimateAddLineForm.svelte`, which handles the post-selection form (qty, units, AC) and dispatches to the correct endpoint: `line-items-from-service/` for service picks, the standard `line-items/` POST for inventory or freeform picks.
 
-On the **job task-list page** (`JobTaskListPage.svelte`), the same picker opens `WorkItemForm` (service pick → Task via `/add-from-template/`), `MaterialModal` (inventory pick — `presetPli`, `presetDescription`, `defaultMaterialCategoryId`), or `FeeModal` (freeform non-material — `presetDescription`). See `docs/designs/jobs-and-tasks.md` §9.5.
+On the **job task-list page** (`JobTaskListPage.svelte` → `TasksPanel.svelte`), the picker opens with `taskSurface={true}`: it offers only explicit **Add Task** / **Add Material** buttons (plus the service/inventory search) — there is no plain-freeform option on this surface, since a job-owned atomless charge doesn't exist (that's an Estimate/CO-only concept, §11.3). `handleChoose` routes a service pick or "Add Task" to `WorkItemForm` (service pick → Task via `/add-from-template/`; "Add Task" → manual mode, rate scheme picked in the form), and an inventory pick or "Add Material" to `MaterialModal` (`presetPli`, `presetDescription`, `defaultMaterialCategoryId`). See `docs/designs/jobs-and-tasks.md` §9.5.
 
 ---
 
 ## 7. Billable atoms (documents as lenses)
 
-An **atom** is a billable unit owned by the **Job**: a `Task`,
-`Material`, or `Fee`. Atoms implement a uniform interface:
+An **atom** is a billable unit owned by the **Job**: a `Task` or
+`Material`. Atoms implement a uniform interface:
 
 - `compute_amount(active_modifiers=None) → Decimal` (Task also has
   `compute_estimate_amount()` — the estimate-side projection of `est_qty`)
 - a description (`atom.description` or `atom.name` for tasks)
-- units (from the rate scheme on tasks; from the atom for materials; `'none'` for fees)
-- an `accounting_category` (derived for tasks via the rate scheme; direct on materials and fees)
+- units (from the rate scheme on tasks; from the atom for materials)
+- an `accounting_category` (derived for tasks via the rate scheme; direct on materials)
 - a source-pointer identity (`source_type` + pk)
 
 An `Estimate` and an `Invoice` are **lenses** over these job atoms: each
 document's line items optionally link to an atom via its source table
 (`EstimateLineItemSource` / `InvoiceLineItemSource`). The **estimate**
 projects `est_qty` (`Task.compute_estimate_amount`); the **invoice** bills
-the locked `actual_qty` of complete tasks (`Task.compute_amount`); Fees
-are always billable on either side. A line item with no source is a
-**hand-line**.
+the locked `actual_qty` of complete tasks (`Task.compute_amount`). A
+line item with no source is a **hand-line** — a plain (no-descriptor)
+hand-line never becomes an atom; it stays a document line and transits
+to invoices via an agreement-line reference instead (§4.5,
+`invoicing-and-expenses.md`).
 
 | Atom | Owner doc | Estimate amount | Invoice amount |
 |---|---|---|---|
 | `Task` | this doc / jobs-tasks | `compute_estimate_amount` (est_qty) | `compute_amount` (actuals; task must be complete) |
 | `Material` | materials doc | `compute_amount` (qty × sell_price) | same (must be consumed) |
-| `Fee` | jobs-tasks (§4.5 here) | `compute_amount` (qty × unit_rate) | same (always billable) |
 | `Expense` (material-less) | invoicing doc | _(invoice-only)_ | `compute_amount` |
 
 Bleps are read-only detail under their task's atom; they are never
@@ -981,7 +1338,7 @@ Atom claim semantics (per document):
 - An atom is **claimed** if a source row exists pointing at it.
 - The DB-level unique on `(source_type, source_pk)` makes
   double-claim impossible within one document table.
-- **Claim state on the job detail page.** Each Task/Material/Fee
+- **Claim state on the job detail page.** Each Task/Material
   serializer exposes a `claimed` boolean — true iff the atom is referenced
   by the job's **live (non-superseded) estimate**. Unclaimed atoms are
   pre-approval / released work that no current estimate lens covers.
@@ -999,9 +1356,11 @@ yet ready:
 | `Expense` (material-less) | always (submitted is sufficient; no readiness gate) |
 
 Non-billable atoms appear in the pool with `state='not_billable'` and a
-`not_billable_reason` (`'task_incomplete'` or `'material_unconsumed'`). They
-are rendered greyed-out and non-selectable in `WizardSourcePool.svelte` so
-the invoicer can see what is pending without being able to add it yet.
+`not_billable_reason` (`'task_incomplete'` or `'material_unconsumed'`).
+`InvoiceEditView`'s `UncoveredWorkSection` (§12.1's invoice-side
+counterpart; see `invoicing-and-expenses.md`) renders them dimmed and
+non-selectable (`unselectableNote`) so the invoicer can see what is
+pending without being able to add it yet.
 
 `InvoiceWizardService._assert_atom_billable` is the service-side enforcement
 point: it re-checks readiness when atoms are actually submitted to the wizard
@@ -1029,16 +1388,17 @@ orchestration layer for the wizard. It subclasses `BaseWizardService`
 `_atom_units`) that wire it to the Job's atoms, and `get_source_pool`.
 
 The wizard projects the **Job's own atoms** (Tasks + Materials) — there is
-no longer a worksheet source. (Fees are created by acceptance, not picked
-in the wizard.)
+no longer a worksheet source. (A plain hand-line never becomes an atom,
+so it's never picked in the wizard either — it's authored directly on
+the document, §6.4/§11.3.)
 
 ### 8.1 Methods
 
 | Method | Purpose |
 |---|---|
 | `get_source_pool(estimate)` | Walks the estimate's **Job's** Tasks and Materials, returns a flat pool of atoms. Each atom carries `type` (`'task'`/`'material'`), `id`, `description`, the `qty`/`rate`/`units`/`amount` breakdown, `category_id`, and claim state: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). Task amounts use `compute_estimate_amount` (`est_qty`). **Cancelled tasks are excluded** — estimates project planned work, and a cancelled task is not planned work (the *invoice* pool is the opposite: recorded actuals on a cancelled task stay billable — see `invoicing-and-expenses.md`). |
-| `add_atoms_to_new_line_item(estimate, atoms)` | Creates a new `EstimateLineItem` with a source row per atom. Single-atom case copies atom's description/units/qty/price; multi-atom case summarizes a uniform same-scheme task bundle, else falls back to blanks (see §6.3). |
-| `send_all_atoms(estimate)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines. `POST /api/estimates/{id}/send-all-atoms/` → `{'created': N}`; the wizard's "Send all to Estimate" button. |
+| `add_atoms_to_new_line_item(estimate, atoms, *, overrides=None)` | Creates a new `EstimateLineItem` with a source row per atom. Single-atom case copies atom's description/units/qty/price; multi-atom case summarizes a uniform same-scheme task bundle, else falls back to blanks (see §6.3). `overrides` (Task 8, bundle modal): optional `{'description','qty','units','price'}` applied over the derived defaults before save — a partial dict merges onto the derivation field-by-field; an unknown key raises a plain `ValidationError` (→ `{'detail': ...}` 400). Draft-gating and claim/atomicity behavior are unchanged by overrides. |
+| `send_all_atoms(estimate)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines. `POST /api/estimates/{id}/send-all-atoms/` → `{'created': N}`. **UI-orphaned** since the bundling-in-task-view migration (Task 5, 2026-09-19): the old wizard button that called this was already gone (§8.4's 2026-08 skeleton retirement), and the Tasks-page bundling surface that replaced manual composition (§12.1, `jobs-and-tasks.md`) doesn't call it either. The endpoint and service method are retained; `docs/designs/LATER.md` tracks whether RM wires it into the new surface or deletes it. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), it is re-derived: a uniform same-scheme task bundle is re-summarized (units/qty/price), otherwise qty is kept and the per-unit price recomputed. An overridden line item is left untouched. |
 | `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Same re-derive-if-in-sync rule as `add_atoms_to_line_item`. Deletes the line item if no sources remain. |
 
@@ -1061,11 +1421,25 @@ Estimate wizard endpoints live on `EstimateViewSet`
 | Verb + path | Action method | Calls |
 |---|---|---|
 | `GET /api/estimates/{id}/source-pool/` | `source_pool` | `EstimateWizardService.get_source_pool(estimate)` — drawn from the job's Tasks/Materials |
-| `POST /api/estimates/{id}/line-items-from-atoms/` | `line_items_from_atoms` | `add_atoms_to_new_line_item(estimate, atoms)` |
-| `POST /api/estimates/{id}/line-items/{lid}/add-atoms/` | `add_atoms` | `add_atoms_to_line_item(line_item, atoms)` |
+| `POST /api/estimates/{id}/line-items-from-atoms/` | `line_items_from_atoms` | `add_atoms_to_new_line_item(estimate, atoms, overrides=overrides)` |
 | `POST /api/estimates/{id}/line-items/{lid}/remove-atoms/` | `remove_atoms` | `remove_atoms_from_line_item(line_item, source_ids)` |
 
+**Removed (final-review fix, 2026-08-16, docs/plans/2026-08-15-estimating-
+structure.md "Removals"):** `POST /api/estimates/{id}/line-items/{lid}/
+add-atoms/` ("Add selected here" — attaching pool atoms onto an already-
+existing line) is gone at the API level; composing atoms into a line only
+ever happens via `line-items-from-atoms` (a NEW line, through the bundle
+modal). The change-order equivalent (§14.8) is retired the same way. The
+underlying `add_atoms_to_line_item` service method is unchanged and still
+shared by the invoice side (§8.4 below / `invoicing-and-expenses.md`),
+which keeps its own `add-atoms` endpoint.
+
 Request body shape for atoms: `{atoms: [{type: 'task'|'material', id: N}, ...]}`.
+`line-items-from-atoms` also accepts an optional `overrides` body key
+(Task 8, bundle modal): `{atoms: [...], overrides: {description, qty,
+units, price}}` — see §8.1. The change-order equivalent
+(`POST /api/change-orders/{id}/line-items-from-atoms/`, §14.8) grows the
+same key.
 
 The estimate itself is created directly on the job — `POST /api/estimates/`
 with `{job}` (→ `EstimateService.create_for_job`), surfaced in the SPA as
@@ -1077,22 +1451,30 @@ Permissions: read is `IsAuthenticated`; write actions require
 
 ### 8.4 Frontend components
 
+**Retired 2026-08 (skeleton + three-mode surface, Task 13 of the
+2026-08-08 plan):** `ReconcileMode.svelte`, `WizardActions.svelte`,
+`WizardLineItemCard.svelte`, `WizardAtomRow.svelte`, and both
+`WizardSourcePool.svelte` files (estimate and invoice) are **deleted**.
+The two-column "reconcile mode" presentation they built is gone; the
+service methods this section documents (§8.1–§8.3) are **unchanged** —
+only the surface that calls them moved. See §12 for what replaced it
+(`EstimateEditView.svelte` + the shared `docsurface` component kit) and
+`architecture-and-conventions.md` §5.5b for the kit's cross-cutting
+conventions.
+
 | Component | Path | Role |
 |---|---|---|
-| `ReconcileMode.svelte` | `frontend/src/components/wizards/` | Reconcile-mode view, rendered in place by `EstimatePanel`/`InvoicePanel` (§12; `jobs-and-tasks.md` §9.6) — not a route. Two-column layout (source pool left, line items right), parameterized per `docType` via a config block. Loads doc + line-items + source-pool on mount; re-fetches line items after every action and reconciles atom states locally |
-| `WizardSourcePool.svelte` | `frontend/src/components/estimates/` | Renders the flat atom list; binds `selectedAtoms` to `ReconcileMode`. Each atom is a `WizardAtomRow`. The invoice wizard has its own task-grouped `WizardSourcePool.svelte` that reuses the same row. |
-| `WizardAtomRow.svelte` | `frontend/src/components/wizards/` | One source-pool atom row, shared by both wizards: checkbox + `description — qty units × $rate = $total` + claim state |
-| `WizardLineItemCard.svelte` | `frontend/src/components/wizards/` | One line-item card with its source rows; surfaces "Add Here" and per-source remove |
-| `WizardActions.svelte` | `frontend/src/components/wizards/` | Bottom action bar (Discard draft, Done — flips the panel back to lines mode in place) |
-| `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines again via **Add Line Item** + per-line **Edit** (Phase 6's atoms-only projection was reversed). |
+| `EstimateEditView.svelte` | `frontend/src/components/estimates/` | The estimate's **Edit** mode — **document-only** since the bundling-in-task-view migration (Task 5, 2026-09-19): the line-items table (each row's atom claims nested via `AtomChildRow`), Add line/Add Adjustment, per-line Edit/Remove/Make Deliverable, and the mint/decline checklist. No pool and no `BundleModal` here any more — composing new lines from job atoms happens on the job's Tasks page (`TasksPanel.svelte`, `jobs-and-tasks.md`), which targets this job's single draft estimate directly. Presentation + gestures only; `EstimatePanel` owns data loading. See §12.1. |
+| `docsurface/*` kit | `frontend/src/components/docsurface/` | Ten shared components (`DocModeBar`, `BackingChip`, `AtomChildRow`, `AtomCaptionRow`, `UncoveredWorkSection`, `NewLineFromSelectedRow`, `BundleModal`, `QtyUnits`, `DocCustomerView`, `DocReorderView`). Not estimate- or invoice-specific — every prop is content/config, never `docType`-branched, but not every component is consumed by every surface: `DocModeBar`/`QtyUnits`/`DocCustomerView`/`DocReorderView` are common to all three (estimate, invoice, CO); `BackingChip`/`AtomChildRow`/`AtomCaptionRow` render existing atom claims wherever a line has any (estimate, invoice, CO alike) — this includes the **CO** edit view, unaffected by the change below. `UncoveredWorkSection`/`NewLineFromSelectedRow` are the pool-picker pairing; as of Task 5 (bundling-in-task-view, 2026-09-19) the estimate edit view doesn't import either, and as of **2026-09-20 (line-item-first CO, §14.4b) neither does the CO edit view** — the **invoice** edit view is now the only consumer of this pairing on a document surface (the job's **Tasks page** also opens `BundleModal` directly from row checkboxes, with no `UncoveredWorkSection`/`NewLineFromSelectedRow` of its own — see `jobs-and-tasks.md`). `BundleModal` is likewise no longer mounted by the CO edit view; the invoice side is not a `BundleModal` host either — its `NewLineFromSelectedRow` keeps its original one-click POST-directly behavior. `QtyUnits` (2026-08-11) renders a line's qty + units in every doc line table — inline, wrapping when squeezed; units `'none'` omitted. `BundleModal` (Task 8, 2026-08-15) is the "bundle into line" authoring modal — see §12.1a; the Tasks-page CO-lens bundling surface (§14.4b, shipped 2026-09-20) is a second host of it, alongside the job's Tasks page's own estimate lens — both lenses share the one `TasksPanel.svelte` host and the one `BundleModal` mount, switching only `apiBase`/pool. |
+| `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines via **Add line** + per-line **Edit**. |
 
-The invoice-side wizard is structurally parallel — same source pool,
-add-atoms, remove-atoms, in-sync rule. Both wizards now read the **same**
-Job atoms (Tasks + Materials). Components are partially shared (e.g.
-`WizardLineItemCard`, `WizardActions`); the invoice WizardSourcePool is
-its own component (`frontend/src/components/invoices/WizardSourcePool.svelte`)
-because the invoice pool also surfaces billability gates (task complete /
-material consumed) and Expenses. Pointer: invoicing doc.
+The invoice side is structurally parallel — same source pool, add-atoms,
+remove-atoms, in-sync rule, and the same `docsurface` kit consumed by its
+own `InvoiceEditView.svelte`. Both surfaces now read the **same** Job
+atoms (Tasks + Materials) through the identical component family;
+invoice-only concerns (agreement `backing`, seeded lines, deposit
+credits) live in `InvoiceEditView` itself, not the shared kit. Pointer:
+invoicing doc.
 
 ---
 
@@ -1107,12 +1489,16 @@ In the job-owns-atoms model the work already lives on the Job
 (Tasks/Materials were created directly), so there is **nothing to copy
 from a worksheet** — the old `AtomCarryOverService` /
 `materialize_worksheet_onto_job` carry-over is gone. Acceptance instead
-**crystallizes the estimate's hand-lines into job atoms** so the agreed
-price of a hand-authored line becomes a real, billable job atom. Each
-sourceless hand-line (no `EstimateLineItemSource`, not a percentage
-adjustment) goes through a **four-way discriminator** in order:
-`service_item` → Task, `inventory_item` → Material, `is_material` bare →
-established Material (reverse-markup cost), else → Fee.
+**crystallizes the estimate's descriptor-bearing hand-lines into job
+atoms** so the agreed price of a service-item, catalog, or bare-material
+hand-line becomes a real, billable job atom. A **plain** hand-line (no
+descriptor) is the exception: it never crystallizes into anything — it
+stays a document line forever, and transits to invoices later via an
+agreement-line reference, not an atom (§4.5). Each sourceless hand-line
+(no `EstimateLineItemSource`, not a percentage adjustment) goes through a
+**four-way discriminator** in order: `service_item` → Task,
+`inventory_item` → Material, `is_material` bare → established Material
+(reverse-markup cost), else → nothing.
 
 ### 9.1 What `on_accept` does
 
@@ -1125,7 +1511,7 @@ In one `transaction.atomic()` block:
 
    - **Service-item line** (`service_item_id is not None`) →
      call `service_item.generate_task(job, est_qty=li.qty or 1,
-     description=li.description or '', allow_superseded_scheme=True)`.
+     description=li.description or '', allow_inactive_scheme=True)`.
      `Task.name` comes from the `ServiceItem.template_name`; `Task.description`
      comes from the estimate line's (user-edited) `description`. Record an
      `EstimateLineItemSource` with `source_type='task'`.
@@ -1156,33 +1542,37 @@ In one `transaction.atomic()` block:
      > cost. CO acceptance establishes identically (shared
      > `MaterialService.establish_reverse_markup`; parity 2026-07-05).
 
-   - **Fee (default)** → create a `Fee`: `description`, `quantity = li.qty or
-     1`, `unit_rate = li.price or 0`, `accounting_category`, `sort_order =
-     li.line_number or 0`. A defensive guard raises `ValidationError` if the
-     line has no `accounting_category` (the fee atom requires it NOT NULL;
-     the error gives a useful message instead of an opaque IntegrityError).
-     Record an `EstimateLineItemSource` with `source_type='fee'`.
+   - **Plain line (default, no crystallization)** → the line has no
+     `service_item`, no `inventory_item`, and `is_material=False`. Nothing
+     is created and no `EstimateLineItemSource` is recorded — the line
+     stays a document-only line for the rest of its life. It reaches an
+     invoice later, if at all, via an agreement-line reference
+     (`InvoiceLineItem.agreement_estimate_line`, §4.5), never through an
+     atom claim.
 
-   Either way the line becomes atom-backed, so `copy_from_estimate`
-   (invoice side) can trace which hand-line maps to which atom and claim it.
+   A descriptor-bearing line becomes atom-backed (the first three
+   branches above), which is what lets the invoice wizard's source pool
+   (§7) offer it for billing. A plain line never does — there is nothing
+   for a source row to point at.
 
 2. Atom-backed lines (those that already have an `EstimateLineItemSource`
    for a Task / Material) are skipped — their atoms are already on the
    job. Adjustment lines stay document-only (they recompute against the
-   live lines and never become Fees).
+   live lines and never crystallize).
 3. Call `InventoryService.create_earmarks_for_job(job)`, so accepting an
    estimate earmarks the job's inventoried materials (including any just
    crystallized from catalog hand-lines or bare material lines).
 
-`on_accept` returns `{'fees_created': int, 'materials_created': int, 'tasks_created': int}`.
+`on_accept` returns `{'materials_created': int, 'tasks_created': int}`.
 
 ### 9.2 Idempotency
 
-Because each crystallized hand-line gets a source row (fee, material, or
+Because each crystallized hand-line gets a source row (material or
 task), re-firing acceptance would find those lines already source-backed
-and skip them — the same guard that protects atom-backed lines. The
-earmark step is an absolute aggregate sweep, so it is idempotent on
-re-run too.
+and skip them — the same guard that protects atom-backed lines. A plain
+hand-line never gets a source row in the first place, so it is
+inherently a no-op on re-run — there's nothing to guard. The earmark
+step is an absolute aggregate sweep, so it is idempotent on re-run too.
 
 ### 9.3 Job status side effects
 
@@ -1206,46 +1596,522 @@ never-sent draft dying does not reject the Job (out of scope). Only the
 Pointer: `docs/designs/jobs-and-tasks.md` §13 for the full
 receiver-by-receiver behavior.
 
+### 9a. The acceptance checklist — mint, decline, and auto-release
+
+**(estimating-structure spec, 2026-08-15 — "claims by construction".
+Supersedes any earlier reading of this document that implied a line's
+claims could be attached after the fact; see
+`docs/plans/2026-08-15-estimating-structure.md` for the design
+narrative and the failed-experiment post-mortem it opens with.)**
+
+A line's claims exist for exactly one of two reasons, never both, and
+never by later attachment:
+
+- **Projected** — built from plan atoms via the bundle gesture (§12.1a).
+  Its claims exist because the atoms *made* the line, at draft time.
+- **Generative** — hand-written or catalog-picked. §9's four-way
+  discriminator resolves `service_item`/`inventory_item`/`is_material`
+  lines automatically at acceptance; a **plain** hand line instead
+  *mints* its work later (or is explicitly declined) — the mint creates
+  a new atom claimed at birth. Its claims exist because the line made
+  the atom.
+
+There is no gesture anywhere that links a **pre-existing** atom to a
+**pre-existing** line — that was the prior design's failure mode
+(overlapping/faithless claims, silent crystallization conflicts, a
+remove-last-atom-deletes-the-line trap). Mint and decline exist **only
+on `accepted` estimates** — a line is frozen (`open`) before its work
+decision is even askable, and a document that's still `draft` is still
+being composed, not yet a commitment to answer for. **Estimate-only, not
+Change Orders**: `MintService.claim_atom_for_line` gates on
+`Estimate.status`, not `ChangeOrder.status`, and `ChangeOrderService`
+rejects `work_declined` outright as "not a valid field for change order
+line items." A CO's own bare hand (`add`) line has no mint/decline path
+at all in this pass — it crystallizes nothing at CO acceptance (the
+same four-way discriminator as §9, minus a checklist) and stays
+document-only permanently, same as it did before this spec. Confirmed
+in scope at design time (leanest first pass); a CO-side checklist is not
+built.
+
+**The acceptance checklist.** After §9's crystallization pass, every
+plain hand line without a source row and without a decline mark still
+owes a work decision. `EstimateService.unanswered_lines(estimate)`
+computes exactly that set: non-adjustment, non-deposit lines with no
+`EstimateLineItemSource` and `work_declined=False`. (Catalog-identity
+lines never appear here — §9's discriminator already gave them a
+source row by the time acceptance returns.) The estimate surface
+(§12.1) shows this as a checklist banner and per-line "Generate work…"
+/ "No work needed" buttons; the job automatically starts once every
+line is answered — see "Auto-release" below.
+
+**Mint — `MintService.claim_atom_for_line`** (`apps/estimates/mint.py`).
+Binds a just-created atom (a Task or Material) to a line as its source,
+the same claim shape §6.2 describes for the wizard's atom-to-line-item
+sourcing — but constructed the opposite direction: the line already
+exists and the atom is minted *for* it, one-shot, rather than the atom
+pre-existing and the line built from a selection of atoms.
+
+```python
+MINT_STATUSES = (Estimate.STATUS_ACCEPTED,)
+```
+
+`claim_atom_for_line(line_item, source_type, source_pk, per_unit_qty=None,
+per_unit_worker_time=None, set_line_per_unit=None)` raises a plain-
+sentence `ValidationError` (never a field-keyed one — this is a
+programmatic binding call, not a form) when:
+
+- the estimate's status isn't in `MINT_STATUSES` (draft, open, and every
+  dead status all refuse — "Cannot plan work on an estimate in status
+  \"{status}\".");
+- the line is an adjustment line;
+- the line carries catalog identity (`service_item`, `inventory_item`,
+  or `is_material`) — those crystallize their own atom at acceptance and
+  must never also be claimable through this gesture;
+- the line is already marked `work_declined` — un-mark it first (mint
+  and decline are mutually exclusive answers to the same question);
+- `set_line_per_unit` is non-`None`, the line already has sources, and
+  the value differs from the line's current `per_unit` — "This line's
+  one-unit-or-whole-line choice is already set." (the ask-once rule,
+  §9a.1 below);
+- the line ends up `per_unit` and `per_unit_qty` is `None` — "A
+  per-unit quantity is required for this line.";
+- the atom is missing, belongs to a different job, or is already
+  claimed by another line (mirrors §6.2's whole-atom-claim invariant).
+
+On success it creates the `EstimateLineItemSource` row (storing
+`per_unit_qty`/`per_unit_worker_time` on it only when the line is
+`per_unit`) and calls `JobService.maybe_auto_release(estimate.job)`
+unconditionally — the estimate is always `accepted` here (the gate
+above admits nothing else), so this claim may be the checklist's last
+unanswered line.
+
+**The `claim_estimate_line` gesture** is how a mint actually gets its
+atom: an optional body key on `POST /api/jobs/{id}/tasks/`,
+`POST /api/jobs/{id}/add-from-template/`, and (as of Task 5)
+`POST /api/jobs/{id}/materials/` that binds the just-created atom to an
+existing estimate line as its mint claim, atomically with creation —
+there is no separate "create then claim" round trip. Presence-gated on
+`CanManageJobOrPM`, checked *before* serializer validation so a
+non-manager attaching the key to an otherwise-invalid body still 403s
+rather than 400s; a non-numeric or off-job line id 400s. Full gate
+mechanics: `users-and-permissions.md`; endpoint table:
+`jobs-and-tasks.md` §3.4.
+
+**On the estimate surface** (§12.1), "Generate work…" opens
+`WorkItemForm` mirror-seeded from the line — `presetName` from the
+line's description, `presetQty` from its qty, `claimEstimateLine` set
+to the line's id — so the ~common case (a 1:1 hand or service-pick line
+minting one task) is effectively one click: the seed is already right,
+Save closes the modal, and the claim lands atomically with the Task.
+The mint modal's interior is deliberately minimal in this first pass
+(RM, 2026-08-15): Save-&-close plus decline only — no "Save & add
+another" for a multi-task mint yet; see the plan doc's "Open questions"
+for what's deferred.
+
+**Decline — `EstimateService._set_work_declined`** (invoked only
+through `update_line_item`'s single-field carve-out — see §6.1 and
+`architecture-and-conventions.md` §4). The "no work needed" answer:
+reversible (`False` unmarks it), refused on the same shapes mint
+refuses (atom-backed, adjustment, deposit, catalog-identity), and calls
+`JobService.maybe_auto_release` on every flip in either direction (an
+undecline can reopen a checklist that had just closed). On the estimate
+surface, "No work needed" and its "Undo" carry **no confirmation
+dialog** — both directions are freely reversible, per the UI
+convention that confirmation is reserved for the irreversible.
+
+**Auto-release** replaces the old manual "release to floor" pill
+action; the full trigger/on_hold-interaction mechanics live in
+`jobs-and-tasks.md` §3.3 (owner: Job status), and the invariant this
+section's checklist maintains is recorded in `data-constraints.md` §1.8
+"Answeredness invariant". In short: `JobService.maybe_auto_release`
+walks an `approved`, non-`on_hold` job to `in_progress` the moment its
+accepted estimate has no unanswered lines — fired right after
+acceptance (so an **all-catalog estimate releases to the floor
+automatically at acceptance**, nothing left to answer), after every
+mint claim, and after every decline flip. A job whose every hand line
+was declined releases with **no tasks at all** — a supported, deliberate
+flow, not a guard to add.
+
+**Bad-mint recovery has no dedicated undo.** The expected fix for a
+wrong mint (bad scheme, wrong qty, mistyped name) is simply **editing
+the minted Task** — task editing already permits this, so the claim
+itself never needs unwinding. There is no "un-mint" gesture and none is
+planned; a claim is released only through the general atom-**deletion**
+path (§6.2's `purge_source_rows_for_atom`), which would reopen the line
+on the checklist as unanswered again — that is not a recovery flow,
+it's what deleting any claimed atom already does everywhere in the
+system. **Cancelling** the minted Task (as opposed to deleting it) does
+**not** purge the claim — `purge_source_rows_for_atom` fires only from
+`Task.delete()` — so a cancelled-but-not-deleted mint leaves the line
+"answered" via its still-live source row even though the work behind it
+is dead. Whether that's the right read for a cancelled mint was an open
+question at design time (RM, 2026-08-15: "verify during build that no
+path actually needs un-minting... what a CANCELLED minted task means
+for the line's checklist state") that this pass did not settle further
+— flagged here rather than asserted as resolved.
+
+### 9a.1 Per-unit mint (per-unit-lines spec §5/§6, Task 5)
+
+See §9b for the consolidated per-unit reference (fields, the
+snapshot-then-stamp rule, drift/Revert, split-materials, the CO sibling
+reminder) — this subsection is the mint-flow implementation detail it
+points back to.
+
+A plain accepted hand line's atoms can be born describing **one unit**
+of the line's qty instead of the whole-job total — the same
+one-unit-or-whole-line choice the bundle modal offers (§12.1a-i), now
+also available on the mint-first flow (a task/material created
+*through the checklist*, then bound to the line, rather than bundled
+from already-existing atoms). Unlike the bundle modal, the mint flow's
+question is asked **exactly once per line**: the first mint against a
+line with no existing sources may set `EstimateLineItem.per_unit`; every
+later mint against that same line inherits the answer and the question
+never reappears (`set_line_per_unit`'s ask-once gate on
+`claim_atom_for_line`, described above).
+
+**Atoms are born with totals, never restamped.** The API view — not the
+service — does the multiplication: when the target line is (or is being
+set) `per_unit`, the submitted `est_qty` / `quantity` / `est_worker_time`
+are treated as PER-UNIT values, multiplied by `claim_line.qty` *before*
+the Task/Material is created (`Decimal` qty products quantized to
+`'0.01'`; a duration multiplies as `timedelta * float(qty)`, never
+`timedelta * Decimal` — `Decimal.__mul__` doesn't accept a `timedelta`
+operand). The **raw**, un-multiplied per-unit values are passed to
+`claim_atom_for_line` as `per_unit_qty`/`per_unit_worker_time` for the
+claim-row snapshot. There is no post-create restamp step — this mirrors
+`_stamp_atom_per_unit`'s "snapshot then stamp to total" shape (§12.1a-ii)
+but the multiply happens once, at the view boundary, instead of via a
+separate stamp call, since the mint flow creates the atom fresh rather
+than mutating a pre-existing one.
+
+**The `claim_line_per_unit` param** (bool, optional) is the mint-flow
+sibling of the bundle modal's `perUnit` choice: sent on
+`POST /api/jobs/{id}/tasks/`, `.../add-from-template/`, and
+`.../materials/` alongside `claim_estimate_line`. Read as tri-state
+(`True` / `False` / absent-means-`None`) by both endpoints' view code
+(`apps.api.jobs.views._resolve_claim_line_per_unit`, inline-mirrored in
+`apps.api.mixins.JobTaskMixin.tasks` for the same layering reason
+`_resolve_claim_line` itself documents) and forwarded to
+`claim_atom_for_line` as `set_line_per_unit`. The value actually used to
+decide whether to multiply (`effective_per_unit`) falls back to the
+line's own current `per_unit` when the param is omitted — so a later
+mint that sends nothing still multiplies correctly, inheriting the first
+mint's answer, and only a genuine first-mint request needs to say
+anything at all.
+
+**Mint modal (`WorkItemForm`).** `EstimateEditView` passes three new
+props alongside `claimEstimateLine`: `claimLineHasSources` (does the
+target line already have a claimed source?), `claimLinePerUnit` (the
+line's current `per_unit`), and `claimLineQty` (for the caption text).
+When `claimLineHasSources` is false (first mint), the form shows the
+same two-option radio choice as the bundle modal ("one unit — multiply
+by quantity" / "the whole line", one-unit default,
+`mintPerUnit = $state(true)`) and sends `claim_line_per_unit` with
+whichever the user picked. When `claimLineHasSources` is true (a later
+mint), the choice is gone — replaced by a static caption ("Values here
+are per unit — quantities multiply by {qty}.") when `claimLinePerUnit`
+is true, or nothing at all for a whole-line line — and
+`claim_line_per_unit` is omitted from the payload entirely, letting the
+service infer from the line's already-set value. Materials have no
+worker-time field, so the material-create path only ever multiplies/
+snapshots `quantity`; `create_material` did not accept
+`claim_estimate_line` before Task 5 (see the note above) — it does now,
+though no UI surface currently drives a material mint (the checklist's
+"Generate work…" button only opens the task-creation form).
+
+### 9b. Per-unit lines — consolidated reference (per-unit-lines spec, Tasks 1-8)
+
+A single-page-summary of the whole feature; the sections it points at
+(§12.1a-i/ii/iii, §9a.1, §14.9) carry the implementation detail — this
+section exists so a reader doesn't have to assemble the picture from
+five scattered places.
+
+**The idea.** A line's claimed atoms (Tasks/Materials) can describe
+either the **whole job** (today's original reading) or **one unit** of
+the line's own `qty` — e.g. "these values are per chair; this line bills
+10 chairs." Atoms themselves **always** store the whole-job total
+(`Task.est_qty`/`est_worker_time`, `Material.quantity` never hold a
+per-unit number) — the per-unit reading is a **claim-time
+interpretation**, snapshotted once on the claim row and multiplied
+through immediately. There is no persistent "per-unit atom"; the choice
+lives entirely on the line and its claims.
+
+**Fields:**
+
+| Field | Model | Meaning |
+|---|---|---|
+| `per_unit` (bool, default False) | `EstimateLineItem`, `ChangeOrderLineItem` | This line's claimed atoms are read as one-unit. Set once, server-derived from the authoring gesture — never a bare client toggle after the fact (see "ask-once", below). |
+| `per_unit_qty` (nullable Decimal(10,2)) | `EstimateLineItemSource`, `ChangeOrderLineItemSource` | The per-unit value snapshotted onto this claim at the moment it was stamped — `None` on every claim belonging to a non-`per_unit` line. |
+| `per_unit_worker_time` (nullable Duration) | same two source tables | The per-unit schedule-time snapshot, task claims only. Bundle time: unconditional — always the task's pre-stamp `est_worker_time`, whether pre-existing or just entered via the modal. Mint time: whatever per-unit duration the biller submitted, absent if none — see "the two stamping moments" below. |
+
+**Where `per_unit` may be set.** Only by the two authoring gestures below,
+both of which build a line with **no catalog identity** (no
+`service_item`, no `inventory_item`) **and no adjustment**
+(`adjustment_service` unset) — a catalog/service line crystallizes its
+own atom at acceptance and an adjustment line has none at all, so
+neither has a meaningful "per unit of what." This isn't a model-level
+`clean()` constraint; it's the natural consequence of `per_unit` only
+being a parameter on `add_atoms_to_new_line_item` (bundle) and
+`claim_atom_for_line` (mint), neither of which ever runs against a
+catalog/adjustment line. See `data-constraints.md` §1.13/§1.13a for the
+field-by-field, constraint-reference version.
+
+**The derivation rule — "snapshot then stamp to total," never
+restamped.** Whichever gesture stamps a claim (`_stamp_atom_per_unit` in
+`apps/core/wizard.py`, or the mint view's inline multiply): the raw,
+un-multiplied value the biller entered is written to
+`per_unit_qty`/`per_unit_worker_time` on the claim row, and the atom
+itself is set to `raw × line.qty` (qty products quantized to `'0.01'`; a
+duration multiplies as `timedelta * float(qty)`, never against a
+`Decimal`) — a one-time write via `.save()`, not a live formula. Nothing
+recomputes the atom automatically afterward; if the atom or the line's
+qty later changes, the two simply diverge (see "Drift", below).
+
+**The two stamping moments** (same rule, two different call sites,
+never both on the same claim):
+
+- **Bundle time** (§12.1a-i, Tasks 3-4): `BundleModal`'s "one unit —
+  multiply by quantity" choice, over **already-existing** pool atoms
+  selected for a **new** line. Stamping happens the instant the line is
+  created (`add_atoms_to_new_line_item(..., per_unit=True)`) — draft
+  time, well before acceptance, and the stamped totals are visible on
+  the task/material immediately.
+- **Mint time** (§9a.1, Task 5): `WorkItemForm`'s identical choice, over
+  a **brand-new** atom being created *for* an already-`accepted` line via
+  the acceptance checklist's "Generate work…" gesture
+  (`MintService.claim_atom_for_line`). The multiply happens at the API
+  view boundary before the Task/Material row is even inserted — there is
+  no separate "create, then stamp" step here, unlike the bundle path
+  (which stamps a pre-existing atom in place).
+- **Ask-once, per line, regardless of which moment set it first**: once
+  a line has any claimed source, its `per_unit` value is fixed —
+  `claim_atom_for_line` refuses a later mint that tries to flip it
+  ("This line's one-unit-or-whole-line choice is already set."), and the
+  append-to-existing-line bundle path refuses to touch a `per_unit` line
+  at all (§12.1a-ii). A later mint against an already-`per_unit` line
+  simply inherits the standing answer and multiplies without asking again.
+
+**Split materials onto their own line** (§12.1a-iii, Task 8): a
+one-unit-mode-only bundle variant that mints TWO sibling `per_unit`
+lines from one gesture (a labor line claiming only the selected task
+atoms, a materials line claiming only the selected material atoms) so a
+per-chair labor rate and a per-chair materials cost can each drift and
+invoice independently. No structural link is stored between the two
+lines — see "Split-pair lifecycle gap" below.
+
+**Drift and Revert** (Task 6-7): because a per-unit atom's total is
+written once and never recomputed, it can go stale two ways — a direct
+hand-edit of the atom (someone retypes a task's `est_qty`), or the
+*line's* qty changing later (a CO re-quantifies the line the claim
+belongs to, so `per_unit_qty × new qty` no longer matches what's stamped
+on the atom). `BaseWizardService._per_unit_drift_info(source_row,
+line_qty)` (`apps/core/wizard.py`) computes, for one claim row against
+whichever line currently backs it:
+
+- `None` when the claim isn't a per-unit claim (`per_unit_qty` unset) —
+  callers must omit every drift key entirely in that case, never emit
+  `False`/`null` (the serializer contract below).
+- Otherwise `{'per_unit_qty', 'expected_total', 'drift': bool}`, plus
+  `'expected_worker_time'` when the claim snapshotted one.
+  `expected_total = (per_unit_qty × line_qty)` quantized to cents before
+  comparison (so Decimal noise never produces phantom drift);
+  `expected_worker_time = per_unit_worker_time × float(line_qty)`.
+  `drift` is True if the resolved atom's live `est_qty`/`quantity` (or,
+  for a task with a snapshotted schedule, its live `est_worker_time`)
+  doesn't match. A dangling atom (deleted out from under the claim)
+  reports `drift: False` rather than raising — the same
+  dangling-tolerant convention as `_resolve_sources`.
+
+  **Serializer contract**: `EstimateLineItemSerializer` /
+  `ChangeOrderLineItemSerializer`'s per-source payload adds
+  `per_unit_qty`, `expected_total`, `drift`, and (task claims with a
+  snapshotted duration) `expected_worker_time` **plus** `worker_time`
+  (the atom's *current* live `est_worker_time`, added as a Task 7 fix so
+  the frontend can tell a schedule-only drift — qty in sync, only the
+  scheduled time diverged — apart from a qty drift) — all of these keys
+  are **absent entirely** on a non-per-unit claim, never `null`/`false`.
+
+- **`POST /api/estimates/{id}/restamp-atom/`** /
+  **`POST /api/change-orders/{id}/restamp-atom/`** (body `{'source_id':
+  N}`, `EstimateWizardService.restamp_atom` /
+  `ChangeOrderWizardService.restamp_atom`, both thin wrappers over the
+  shared `BaseWizardService.restamp_atom`): the **Revert** gesture behind
+  a drift badge. Sets the atom's `est_qty`
+  (+ `est_worker_time` when a duration was snapshotted) or `quantity` to
+  `per_unit_qty (× per_unit_worker_time) × the backing line's CURRENT
+  qty`, via a direct field-set + `.save()` (never `QuerySet.update()`).
+  Guards (plain-sentence `ValidationError`, matching this module's
+  mint-adjacent style): the claim must belong to *this* container's own
+  document, must actually be a per-unit claim, and the claimed atom must
+  still resolve. There is no bulk/all-drifted-lines revert — one claim
+  at a time, matching the badge-per-claim UI below.
+- **Frontend**: `AtomChildRow` renders a `"≠ agreement"` badge only when
+  the source's `drift` key is `true`, opening `DriftModal`
+  (`frontend/src/components/docsurface/DriftModal.svelte`) — **never a
+  one-click revert** (RM 2026-09-16: drift is an unfamiliar concept and a
+  restamp overwrites the atom's live value, so the modal always spells
+  out the agreement expectation with its actual numbers, the atom's
+  current value, and a one-line explanation of where each number comes
+  from, before offering **Revert to agreement**). No nested `confirm()`
+  on top — the modal itself is the deliberate step, per the UI
+  convention that confirmation is reserved for the irreversible. The
+  modal posts to `${apiBase}/restamp-atom/` itself (self-contained, like
+  `BundleModal`/`AdjustmentModal`) and calls `onReverted()` on success,
+  which the caller uses to refresh and close.
+
+**Removal symmetry — "un-stamp on removal"** (RM decision 2026-09-19):
+stamping multiplies an atom up to the whole-job total; removing the claim
+that stamped it now does the symmetric inverse rather than silently
+abandoning the multiplied total. `apps/core/wizard.py`'s
+`restore_per_unit_claim(line, source_row)` / `restore_per_unit_claims(line)`
+restore a claim's atom toward its snapshot right before the claim row is
+deleted — per FIELD, and only when that field currently sits at EXACTLY the
+value `_stamp_atom_per_unit` would have produced for the line's current qty
+(same expected-value arithmetic `_per_unit_drift_info` uses — Decimal qty
+product quantized to cents, `per_unit_worker_time × float(qty)` for a
+duration). A drifted (hand-edited) field is left exactly as-is — restoring
+would clobber a deliberate edit — so a task whose `est_qty` drifted but
+whose `est_worker_time` didn't gets only the worker time restored. Applies
+in two places, both draft-only (no new gates added — the paths were already
+draft-gated):
+
+- **`BaseWizardService.remove_atoms_from_line_item`** (wizard.py:~815):
+  restores each claim in `source_ids` before `sources.filter(...).delete()`
+  runs, guarded by `getattr(line_item, 'per_unit', False)` (the same
+  dispatcher convention as `_line_sum`). Removing the last claim still
+  restores the atom before the line itself is deleted.
+- **Whole-line deletion** — `LineItemService.delete_line_item_with_renumber`
+  (`apps/core/services.py`): a `getattr(line_item, 'per_unit', False)`
+  pre-pass calls `restore_per_unit_claims(line_item)` over every source row
+  before `line_item.delete()` cascades them away. The `getattr` guard means
+  InvoiceLineItem/PurchaseOrderLineItem (no `per_unit` field at all) never
+  reach `.sources`/the restore helper — proven by a direct test, not just
+  inspection.
+
+The restore functions are module-level in `wizard.py` (not
+`BaseWizardService` classmethods): the atom models a per-unit claim can
+point at (Task/Material) don't vary by container, so the generic,
+container-agnostic `delete_line_item_with_renumber` can call
+`restore_per_unit_claims` without needing a wizard subclass's `cls`
+context.
+
+**Paths that deliberately do NOT restore:** `revise_estimate` (re-points
+source rows onto the new revision, never deletes them); CO replace-
+acceptance's `_move_claims_to` (`apps/estimates/co_acceptance.py` — moves a
+claim row onto the replace line, doesn't delete it); and discarding a draft
+estimate (`EstimateService.discard_draft` → `estimate.delete()` cascades via
+Django's bulk-delete, which skips per-instance `.delete()`/`.save()`
+entirely, so no code runs to catch the atom before the cascade). The
+discard case is **ruled acceptable** (RM 2026-09-20): a user discarding a
+whole draft is nearly always scrapping everything and starting over, so
+the stranded multiplied totals don't need rescuing — not a gap, a
+decision.
+
+The append-guard message ("Tasks and materials cannot be added to a
+per-unit line yet. Remove the line and bundle again.", §12.1a-ii) is now
+literally true end-to-end: removing the line restores its claimed atoms to
+their one-unit values first, so bundling them again stamps from a clean
+one-unit baseline instead of multiplying an already-multiplied total.
+
+**CO sibling reminder** (§14.9, Task 8): when a change order replaces a
+`per_unit` line, `COEditView` renders one info line per **other**
+`per_unit` line on the same estimate that shared the target's pre-CO
+qty (`apps.api.change_orders.serializers._sibling_per_unit_lines`):
+`"Also qty {qty}: {description} — update it too?"`. This is a **nudge
+only** — nothing is clickable, there is no structural link recorded
+between sibling lines (deliberately: that's parent-task-style
+complexity sneaking back into the document, spec §5.3/§9), and nothing
+stops the customer from accepting a CO that replaces one sibling and
+leaves the other's now-stale per-unit agreement untouched.
+
+**Split-pair lifecycle gap (known, deferred).** A split-materials pair
+(and, more generally, any two `per_unit` lines a biller privately treats
+as siblings) has **no enforced lifecycle link** outside that CO-replace
+reminder: un-answering one sibling on the *original* estimate (declining
+it, or deleting its claimed atom) orphans its stamped atom and strands
+the other sibling with no signal at all — the reminder only fires on a
+CO replace row. See `docs/designs/LATER.md` for the tracked entry;
+revisiting this is explicitly bundled with the modal-restructure phase
+(spec §10, RM-gated, not scheduled).
+
 ---
 
 ## 10. AccountingCategory pass-through
 
 `AccountingCategory` (`apps/core/models.py`) is required on
-`RateScheme` (NOT NULL). Every billable concept either references a
-`RateScheme` (and inherits AC) or carries AC directly (Materials with
-no PLI; Expenses).
+`RateScheme` (NOT NULL). `Task` carries its **own** `accounting_category`
+(stamped from the preset at creation, but editable afterward — nullable
+at the DB level and, as of Phase 3, on the API serializer too, §4: a
+task may be cleared back to uncategorized and categorized later, at
+invoicing). `ServiceItem` still reads AC live off its `RateScheme` FK.
+Every other billable concept carries AC directly (Materials with no
+PLI; Expenses).
 
 ### 10.1 Where AC comes from
 
 | Object | AC source |
 |---|---|
 | `RateScheme` | own field, required |
-| `Task` | `task.rate_scheme.accounting_category` (via `Task.effective_accounting_category`) |
-| `ServiceItem` | `template.rate_scheme.accounting_category` (via `ServiceItem.effective_accounting_category`) |
+| `Task` | own field — stamped from `scheme.accounting_category` by `Task.stamp_from_scheme` at creation (§3.1); `Task.effective_accounting_category` returns it directly, no FK traversal. Nullable at the DB level and, as of Phase 3, on the API's `TaskSerializer` too (`required=False, allow_null=True`) — creation still fills it via the stamp in the overwhelming common case, but an edit may explicitly clear it back to null (categorized later, at invoicing). |
+| `ServiceItem` | `template.rate_scheme.accounting_category` (via `ServiceItem.effective_accounting_category`) — still a live FK read; ServiceItem doesn't stamp |
 | `Material` (PLI-linked) | `material.inventory_item.accounting_category` (copy/derivation; materials doc owns this) |
 | `Material` (freeform) | direct on the material |
-| `Fee` | own field, required (NOT NULL) |
 | `EstimateLineItem` from atom | derived from the atom's effective AC at line-item creation; snapshot |
 | `EstimateLineItem` service-line | snapshotted from `service_item.effective_accounting_category` at `add_line_item_from_service` |
 | `EstimateLineItem` `is_material` hand-line | `Configuration['default_material_accounting_category']` if no explicit AC supplied (see §6.4); required if the key is absent |
-| `EstimateLineItem` bare hand-line (Fee path) | user-entered; required before send; carried onto the crystallized `Fee` at acceptance |
+| `EstimateLineItem` plain hand-line (no descriptor) | user-entered; required before send (§15); the line never crystallizes into an atom, so the AC just stays on the document line and rides along into any invoice agreement-line reference |
 
-Each model that has an `effective_accounting_category` property
-exposes it for serializers and the wizard's pool building. Wizard
-single-atom line-item creation pulls `category` from the atom's
-effective AC; multi-atom creation only sets `category` if all atoms
-share one.
+`ServiceItem.effective_accounting_category` exposes AC for serializers
+and the wizard's pool building. Wizard single-atom line-item creation
+pulls `category` from the atom's effective AC (for a Task, its own
+field); multi-atom creation only sets `category` if all atoms share one.
+
+**Late binding — estimate/CO lines from a null-AC atom stay null (Phase
+3, 2026-08).** A null-AC Task atom (§4) produces a null-AC
+`EstimateLineItem`/`ChangeOrderLineItem` — the wizard never substitutes
+anything in its place. `BaseWizardService` (`apps/core/wizard.py`)
+exposes a `_resolve_line_category(category)` hook wrapping the single
+`accounting_category=` assignment at line-item creation; the base
+implementation (used by both the estimate and CO wizards) is identity.
+Categorization of a null-AC line is deliberately deferred all the way
+to **invoicing** — only `InvoiceWizardService` overrides the hook to
+stamp the configured fallback category, and only on the invoice line
+itself (never retroactively on the Task or the estimate/CO line). See
+`invoicing-and-expenses.md` §"Fallback accounting category stamping"
+for the full mechanism (the resolve helper, the agreement-seeding path,
+`used_fallback_ac`, the chip/warning UI, the send gate) and
+`data-constraints.md` §1.1 for the `fallback_accounting_category`
+Configuration key.
 
 ### 10.2 What changes when AC moves
 
-`RateScheme.accounting_category` is in `FROZEN_FIELDS`. Once the
-entry is referenced, AC change requires supersession. Existing tasks
-that referenced the old entry keep the old AC; future tasks pick the
-new entry and get the new AC.
+Editing `RateScheme.accounting_category` is unrestricted — presets are
+freely editable (§3) — but it only affects *future* stampings: a task's
+own `accounting_category` was copied at creation time and never
+re-reads the preset, so editing (or retiring) the preset never changes
+an already-stamped task's AC.
 
 For line items, AC is **snapshotted** at line-item creation time —
 it's a field on `BaseLineItem`, not derived live. Once the estimate
 is sent (out of draft), the snapshot is permanent.
+
+### 10.3 Adjustment-line percent snapshot
+
+Percentage adjustment lines (rush/discount) snapshot the same way:
+`EstimateLineItem.adjustment_percent` / `InvoiceLineItem.adjustment_percent`
+(Decimal(6,2), nullable) copy `adjustment_service.rate` (the percent
+value) at line-creation time. `compute_adjustment_amount` (§2.2) reads
+`adjustment_percent`, never the live scheme — so editing an adjustment
+`RateScheme`'s percent after a line was created never moves an
+already-created line's charge. `adjustment_service` itself is kept as
+**provenance/identity only** — it's still what *selects* a line as an
+adjustment (`adjustment_service_id is not None`), but the dollar amount
+never reads its live `rate`. `ChangeOrderLineItem` gained the identical
+three fields 2026-08-09 (CO amend-in-place) — but they're legal only on
+a `replace` line targeting an already-adjustment estimate line
+(`ChangeOrderLineItem.clean()`, §14.4); the value is still recomputed
+off the amended-agreement basis, not a live scheme read — see §14.4/§14.9
+("adjustment-replace amendment") for the CO-side recompute mechanics.
 
 ---
 
@@ -1266,7 +2132,9 @@ a small redirect shim into the job-scoped URL (old bookmarks, emitted
 
 ### 11.1 Layout
 
-Top-down:
+Top-down (settled 2026-08-08 wireframe session; design authority
+`docs/plans/2026-08-06-better-fees.md` §9 and the wireframe artifact
+linked there):
 
 1. **JobHeader + JobNavRail + JobContextBand** — the job workspace
    shell (`JobShell`), shared by every job section page.
@@ -1279,20 +2147,18 @@ Top-down:
    extraction (see `jobs-and-tasks.md` §9.6).
 3. **Toolbar** — back link, page title (with `superseded` styling
    when applicable), status pill (interactive `<select>` for users
-   with `can_manage_jobs` when transitions are allowed), action
-   buttons, and a **Reconcile** / **Back to lines** toggle (§12).
+   with `can_manage_jobs` when transitions are allowed), and document
+   action buttons (Send/Resend/Revise/Create Change Order — §11.2).
+   There is no mode toggle here anymore — that moved to its own row
+   (item 5).
 4. **Field table** — estimate number, job link, version, status, dates.
-5. **Line Items area** — heading, then (when `canEdit` = `canManageJobs && isDraft`)
-   an actions row with a single **"Add line"** button, an **"Add Adjustment"**
-   button, and a **"Show Tasks & Materials"** button that flips the panel into
-   reconcile mode (§12) in place — no navigation. "Add line" opens
-   `PriceListPicker` (§6.4) — one entry point for service picks, inventory
-   picks, and freeform fee/material lines.
-6. **Line items table** (`LineItemTable.svelte`) — line items with per-line
-   **Edit** / **Delete** and reorder (move-up / move-down) when editable, plus an
-   "⚠ out of sync with atoms" marker on any line whose stored price no longer
-   matches its atoms' computed total. (Atom-backed lines are still pulled/edited
-   via reconcile mode; hand-lines are authored directly.)
+5. **`DocModeBar`** (`docsurface/DocModeBar.svelte`) — three buttons,
+   **Edit** / **Customer** / **Reorder**, `aria-pressed` on the active
+   one. Flips the panel's local `mode` in place at the same URL — never
+   a navigation, never a modal (§12).
+6. **Mode content** — `EstimateEditView` in Edit mode (line items only —
+   document-only, no pool/bundle UI, §12.1); `DocCustomerView`/
+   `DocReorderView` in Customer/Reorder mode (§12.3).
 
 ### 11.2 Action buttons
 
@@ -1300,34 +2166,41 @@ Top-down:
 |---|---|---|
 | `draft` | "Send Email" (navigation link) | navigates to `#/estimates/{id}/send` — the send-form page that calls `EstimateEmailService.send_estimate` on submit |
 | `open` | "Resend Email" (navigation link) | navigates to `#/estimates/{id}/send` |
-| `draft` | "Add line" | opens `PriceListPicker` → `EstimateAddLineForm` (§6.4) — unified entry for service, inventory, and freeform (fee or material) lines |
-| `draft` | "Add Adjustment" | opens `AdjustmentModal` (percentage `RateScheme`) |
-| `draft` | "Show Tasks & Materials" / "Reconcile" | flips `EstimatePanel`'s local `mode` to `'reconcile'` — same route, same panel, no navigation (pulls the job's atoms into atom-backed lines; §12) |
+| `open`, no CO yet, job on hold | "Create Change Order" | `POST /api/change-orders/` `{job}` → navigates to the new CO's page |
 | `open` | "Revise Estimate" | `POST /api/estimates/{id}/revise/` → opens new draft revision |
 | any | status `<select>` | `PATCH /api/estimates/{id}/` with `{status}` (when transitions are valid) |
 
-Editing rules: `canEdit = canManageJobs && status === 'draft'`.
+Editing rules: `canEdit = canManageJobs && status === 'draft'`. **Add
+line** and **Add Adjustment** are no longer toolbar buttons — they live
+inside `EstimateEditView` itself, above its line-items table (§12.1),
+since Edit mode is now the only place authoring happens.
 
 ### 11.3 Line item authoring — estimate vs invoice
 
-**Estimate.** The estimate detail page authors line items via the unified
-**"Add line"** button (§6.4, §11.2). A single `PriceListPicker` → `EstimateAddLineForm`
-flow replaces the former separate "Add Line Item" and "Add from Service" buttons.
-`AddServiceItemModal.svelte` has been deleted; the estimate detail no longer
-creates a Task immediately on service pick — the Task is deferred to acceptance.
-Per-line **Edit** / **Delete** and reorder remain; atom-backed lines still show an
-"⚠ out of sync with atoms" marker and are pulled/edited via the wizard.
-`POST /api/estimates/{id}/line-items/` (hand-lines) and
-`POST /api/estimates/{id}/line-items-from-service/` (service lines) are the two
-create endpoints; GET list, per-line `PATCH`/`DELETE`, reorder, and
-`POST .../adjustment-lines/` are unchanged.
+**Estimate.** `EstimateEditView` (Edit mode, §12.1) authors line items
+via the unified **"Add line"** button. A single `PriceListPicker` →
+`EstimateAddLineForm` flow covers service picks, inventory picks, and
+freeform (plain or material) lines — the estimate detail doesn't create a
+Task immediately on a service pick; the Task is deferred to acceptance.
+Per-line **Edit** / **Remove** remain (never "Delete" — §12.1); a line's
+current backing renders as a `BackingChip` with its atom claims nested
+underneath (`AtomChildRow`) rather than an "out of sync" marker — an
+`edited` chip (with a "work totals $X" caption) is what used to be the
+⚠ marker. `POST /api/estimates/{id}/line-items/` (hand-lines) and
+`POST /api/estimates/{id}/line-items-from-service/` (service lines) are
+the two create endpoints; GET list, per-line `PATCH`/`DELETE`, reorder
+(now driven from Reorder mode, §12.3), and `POST .../adjustment-lines/`
+are unchanged.
 
-**Invoice.** `LineItemModal.svelte` is still used by the **invoice** detail
-page for direct (no-atom) line authoring — a toggle between **manual entry**
-and **"From Price List"** (catalog mode: pick an `InventoryItem`; the server
-copies `description`, `units`, `selling_price`, `accounting_category`). Editing
-an existing line shows fields only. Bringing the invoice onto the same
-atoms-only projection is a deferred consolidation pass.
+**Invoice.** `LineItemModal.svelte` is still used by the **invoice**
+edit view for direct (no-atom) line authoring and for field-editing any
+line (`InvoiceEditView`, `invoicing-and-expenses.md`) — a toggle between
+**manual entry** and **"From Price List"** (catalog mode: pick an
+`InventoryItem`; the server copies `description`, `units`,
+`selling_price`, `accounting_category`) when adding, field-only when
+editing. The invoice surface additionally carries agreement-seeded lines
+and backing controls (**Use estimate** / **Use actuals**) the estimate
+side has no equivalent for — see `invoicing-and-expenses.md`.
 
 ### 11.4 Starting an estimate — Create/View model
 
@@ -1353,74 +2226,427 @@ The Create/View model now lives entirely on `EstimatePanel.svelte`
 
 ---
 
-## 12. UI: Estimate Wizard (reconcile mode)
+## 12. UI: The three-mode surface (Edit / Customer / Reorder)
 
-The "wizard" is no longer a separate route — it's **reconcile mode**,
-one of two view modes (`'lines'` | `'reconcile'`) that `EstimatePanel`
-(§11) toggles in place, both rendered at the same
-`#/jobs/:jobId/estimate/:docId` URL, same job load, no remount. In
-reconcile mode the panel renders the shared
-`ReconcileMode.svelte` (`frontend/src/components/wizards/`) —
-parameterized per `docType` (`'estimate'` | `'invoice'`; the invoice
-side is structurally identical, see `invoicing-and-expenses.md`) — in
-place of the line-items view. The former standalone
-`EstimateWizardPage.svelte` is gone; the old route
-`#/estimates/:id/wizard` is now a redirect shim
-(`EstimateWizardRedirect.svelte`) that remembers `'reconcile'` mode for
-that document (`rememberMode`, `stores/jobWorkspace.js`) and bounces to
-the job-scoped URL, so old bookmarks land back in reconcile mode.
+**Retired 2026-08 — the old two-mode ("lines"/"reconcile") panel and the
+two-column `ReconcileMode` wizard presentation are gone.** In their
+place: one merged editing surface (`EstimateEditView`) plus two
+read-only projections (`DocCustomerView`, `DocReorderView`), all three
+switched in place by `DocModeBar` (§11.1) at the same
+`#/jobs/:jobId/estimate/:docId` URL — never a navigation, never a
+remount, never a modal. This is the estimate side of a shared
+`docsurface` component kit also consumed by the invoice
+(`InvoiceEditView`, `invoicing-and-expenses.md`) and the change order
+(`ChangeOrderPanel`, §14.9a). Design authority:
+`docs/plans/2026-08-06-better-fees.md` §9 (the settled surface) and the
+wireframe artifact it links — build-to-the-artifact was the standing
+instruction; this section records the shape as built.
+`architecture-and-conventions.md` §5.5b documents the kit's own
+cross-cutting conventions (the seven components, shared `app.css`
+classes, the flip-in-place pattern, the no-dead-buttons rule).
 
-**Mode persistence and validation.** Which mode a document was left in
-is remembered per document id (`stores/jobWorkspace.js`, keyed by
-`docId` — not by section, so leaving invoice #22 in reconcile can't
-leak into invoice #23). Restoring a remembered `'reconcile'` mode is
-**validated against the estimate's live status**: reconcile is only
-offered while the document is still an editable `draft`, so an estimate
-sent/accepted/superseded since the mode was last remembered falls back
-to `'lines'` instead of resurrecting an edit surface on a closed
-document.
+The former standalone `EstimateWizardPage.svelte` is gone; the old route
+`#/estimates/:id/wizard` is still a redirect shim
+(`EstimateWizardRedirect.svelte`), but it now remembers **`'edit'`**
+mode for that document (`rememberMode`, `stores/jobWorkspace.js`) before
+bouncing to the job-scoped URL — old wizard bookmarks land on the
+merged Edit view, not a resurrected reconcile pane.
 
-### 12.1 Flow
+**Mode persistence and normalization.** Which mode a document was left
+in is remembered per document id (`stores/jobWorkspace.js`, keyed by
+`est:{estimateId}` — not by section, so leaving invoice #22 in Reorder
+can't leak into invoice #23). The store itself keeps whatever was
+written, **unmigrated** — normalization happens at the read site
+(`EstimatePanel`, and identically in `InvoicePanel`): a remembered
+`'lines'` or `'reconcile'` (both pre-dating this surface) folds to
+`'edit'`; a remembered `'reorder'` additionally falls back to `'edit'`
+if the document is no longer editable (`canEdit` false — e.g. the
+estimate was sent/accepted since the mode was last remembered).
 
-Two columns, unchanged from the former wizard page's behavior:
+### 12.1 Edit mode — `EstimateEditView` — document-only
 
-- **Source pool** (left) — `WizardSourcePool` shows every Task and
-  Material on the **Job**. Each atom is clickable (checkbox-style) when
-  `available`; locked-out otherwise with a "claimed by …" indicator. The
-  component binds `selectedAtoms`.
-- **Line items** (right) — list of `WizardLineItemCard`s for the
-  current estimate, each with its source rows expanded. Each card
-  has an "Add Here" button (enabled when atoms are selected) that
-  appends the selected atoms via `add-atoms`. A trailing "New line
-  item" placeholder card has its own "Add Here" that calls
-  `line-items-from-atoms`. Estimates don't offer a manual-line button
-  here (`hasManualLine: false` in `ReconcileMode`'s per-doc-type
-  config) — hand lines are added from the lines view's "Add line".
+**Composing new lines from job atoms happens on the job's Tasks page,
+not here** (bundling-in-task-view migration, Task 5, 2026-09-19 —
+`jobs-and-tasks.md`'s Tasks-page section). `EstimateEditView` is
+**document-only**: one `.data-table` of the estimate's line items, field
+editing, remove, adjustments, and the accept-time mint/decline
+checklist — no pool, no bundle gesture, no "Add as its own line" direct
+bill. `EstimatePanel` owns data loading (estimate, categories — no
+source pool any more) and passes it down; `EstimateEditView` is
+presentation + gestures only, calling back (`onChanged`) after every
+mutation so the panel can refresh both silently
+(`loadEstimate({silent: true})` — a non-silent refresh would blank the
+surface and lose in-flight state such as an open edit modal; see
+`architecture-and-conventions.md` §5.5b for this idiom generalized).
 
-After every action, `ReconcileMode` re-fetches the estimate + line
-items, then **reconciles** atom states client-side from the new
-claims map without re-fetching the source pool. `claimed_by_other`
-atoms (snapshotted at mount) are left alone.
+An empty draft (no line items yet, `canEdit`) shows a hint instead of a
+dead table: "No line items yet — compose lines from the Tasks page by
+selecting work and bundling it," linking to `#/jobs/{job}/tasks`.
 
-### 12.2 Bottom actions
+The job can have at most one draft `Estimate` at a time
+(`Estimate.clean()`, `docs/designs/data-constraints.md` — "Only one
+draft estimate per job") — the Tasks page resolves that single draft
+as its bundling target, so there is never an ambiguity about which
+estimate a bundled line lands on.
 
-`WizardActions` provides:
+- **Authoring buttons** above the table: **"Add line"** (opens
+  `PriceListPicker` → `EstimateAddLineForm`, §6.4/§11.3) and **"Add
+  Adjustment"** (opens `AdjustmentModal`).
+- **Table columns:** `#`, Description (+ a small provenance caption —
+  `+N% {scheme name}` for an adjustment line, `Catalog: {name}` for a
+  catalog-sourced line, and a **`needs category`** amber marker when
+  `accounting_category` is null on an editable line — the same send-gate
+  precondition the old ⚠ marker used to carry), Qty, Price, Amount,
+  **Based on** (a `BackingChip`; the column header was renamed from
+  "Backing" in the 2026-08-14 vocab pass — code keeps the `backing`
+  name; §9.2 vocabulary below), and — while
+  `canEdit` or a caller has wired `onMakeDeliverable` (currently no
+  caller does; see below) — Actions.
+- **Backing chip + reference.** Every line renders its derived
+  `backing` (`derive_estimate_backing`, §6.1); when `backing ===
+  'edited'` the chip is followed by a `work totals {backing_total}`
+  caption — the reference figure "today's ⚠ out-of-sync made a
+  first-class chip" per the design doc.
+- **Atom nest.** Each line's `sources` render as indented
+  `AtomChildRow`s directly beneath it, introduced by an
+  `AtomCaptionRow` ("based on 2 tasks:", 2026-08-14) — kind tag (task/material),
+  description, qty/rate/amount, and (while `canEdit`) a per-atom
+  **Remove** button that calls `remove-atoms`.
+- **Per-line actions (while `canEdit`):** **Edit** (opens
+  `LineItemModal` in field-edit mode — editing price flips `backing` to
+  `'edited'`), **Remove** (`DELETE .../line-items/{id}/`, single-phase —
+  the estimate has no two-phase confirm gate here since a removed line's
+  atoms are freely re-claimable afterward, from the Tasks page's
+  bundling pool — EXCEPT a line with a linked deliverable, which opens a
+  three-way dialog: "Remove line and deliverable"
+  (`?delete_deliverables=true`), "Remove line, keep deliverable" (the
+  SET_NULL FK just unlinks), or Cancel — deleting a persisted deliverable
+  is the irreversible half, RM 2026-08-12). Attaching a ticked selection
+  onto an *existing* line ("Add selected here") was already removed
+  before this page went document-only (estimating-structure spec,
+  2026-08-15) — composing atoms into a line only ever happens as a NEW
+  line, and as of Task 5 that gesture lives entirely on the Tasks page
+  (below). **The word "delete" does not appear anywhere on this
+  surface** — Remove releases the line's backing work untouched, it does
+  not destroy the atoms.
+- **"Make Deliverable"** (built 2026-08-12 — spec §6; label per RM,
+  placeholder until a better one lands). Per-line button, wired by
+  `EstimatePanel` while `canEdit`, POSTing
+  `.../line-items/{id}/make-deliverable/` →
+  `DeliverableService.create_from_estimate_line`: copies the line's
+  description/qty/units into a new Deliverable on the job with a
+  `source_line` provenance FK (SET_NULL, `related_name='deliverables'`)
+  — provenance only, no sync, no compute path. The FK drives:
+  **suppression** (the button hides on a line whose
+  `linked_deliverables` is non-empty — the serializer exposes
+  `{id, description, qty_ordered, units}` per linked deliverable),
+  a **passive mismatch caption** (`deliverable: {qty} {units}`, amber,
+  when the line's qty/units drift from the deliverable's — a human
+  reconciles; nothing auto-syncs), the Remove dialog above, and the
+  **edit dialog** (RM 2026-08-12): saving an edit that touches
+  description/qty/units on a linked line first asks "Update it to match
+  these changes?" — "Save and update deliverable" rides the PATCH as
+  `?update_deliverables=true`
+  (`EstimateService.update_line_item(update_linked_deliverables=True)` →
+  `DeliverableService.update`, so editability/shipped-frozen guards
+  apply), "Save, keep deliverable as is" saves the line alone, Back
+  returns to the form. Price-only edits never ask (deliverables carry no
+  price). The update choice also refreshes the job-context band.
+  `revise_estimate` RE-POINTS `source_line` to the copied line (same
+  move as claim rows), so suppression follows the live revision.
+  Availability follows `DeliverableService.is_editable` server-side.
+  Both deliverable-touching gestures (the button; the dialog's "remove
+  both") also fire `onJobChange`, and `DeliverablesSection`'s load
+  effect keys on the job object identity — so the job-context band's
+  Deliverables panel above refreshes in place (the standard
+  props-down/callback-up partial-refresh chain).
+- **Checklist banner + mint/decline (Task 7, estimating-structure
+  spec, 2026-08-15 — see §9a for the model).** While the estimate is
+  `accepted` and any line still owes a work decision, a banner above the
+  table reads "N line(s) need a work decision — the job starts
+  automatically when all are answered." — visible to **any** viewer of
+  an accepted estimate (informational, like the "needs category"
+  marker), independent of `canMint`, which gates only the action
+  buttons. `needsWorkDecision(li)` mirrors `EstimateService.
+  unanswered_lines`'s predicate client-side (no sources, not declined,
+  not an adjustment, not a deposit, no catalog identity). Per line
+  (while `canMint = canManageJobs && estimate.status === 'accepted'`):
+  an unanswered line gets **"Generate work…"** (opens `WorkItemForm`
+  mirror-seeded from the line — name/qty preset, `claimEstimateLine`
+  bound to the line's id, §9a) and **"No work needed"**
+  (`PATCH .../line-items/{id}/ {work_declined: true}`); a declined line
+  instead shows a muted "no work needed" caption and **Undo**
+  (`{work_declined: false}`). Neither direction confirms — both are
+  freely reversible.
+- **No pool, no bundle gesture, on this page.** `EstimateEditView`
+  carries none of the "Uncovered work" / "Object-first composition" /
+  "Add as its own line" (direct bill) machinery any more — all of that
+  moved off the estimate document entirely (bundling-in-task-view Task
+  5, 2026-09-19). Composing a new line from job atoms is now done from
+  the job's **Tasks page** (`jobs-and-tasks.md`), which resolves this
+  job's single draft estimate as the bundling target, offers
+  bundle-selection checkboxes directly on task/material rows, and opens
+  the same `BundleModal` (§12.1a) from its own toolbar CTA. `remove-atoms`
+  (removing one atom from an existing line, above) is the only
+  atom-claim mutation left on this page; its own 409 handling
+  (`handleMutationError`) still lives here — a claim conflict refreshes
+  the doc and shows a "…refreshed" message via the global overlay rather
+  than the generic error text (`architecture-and-conventions.md` §5.5b's
+  409-refresh idiom). The bundle-conflict refresh that used to live here
+  (clearing a pool selection on a 409) moved to `TasksPanel.svelte`
+  alongside the rest of the pool state.
 
-- **Discard draft** — `DELETE /api/estimates/{id}/?confirm=true` (sends
-  the confirm token to the discard-draft path on `EstimateService.discard_draft`).
-- **Done** — flips the panel back to `'lines'` mode at the same URL
-  (`onExit`, no navigation); flushed pending edits first
-  (`flushRegistry.flushAll()`).
+### 12.1a BundleModal (Task 8: draft-time composition + keep-the-total)
 
-### 12.3 Reconcile-mode entry
+`BundleModal.svelte` (`docsurface/`) is the shared "bundle into line"
+authoring modal, unchanged in itself by this migration — only *which
+surface opens it* moved on the estimate side. Two hosts open it: the
+job's **Tasks page** (`TasksPanel.svelte`, `jobs-and-tasks.md`), which as
+of Task 5 is the *only* way to bundle job atoms into an estimate line
+(the estimate's own edit surface no longer hosts it — §12.1 above), and
+the **CO edit surface** (`COEditView.svelte`, §14.9a, via its own
+`UncoveredWorkSection` + `NewLineFromSelectedRow` pool, entirely
+unchanged by this migration). The **invoice** side is not a `BundleModal`
+host at all — its `NewLineFromSelectedRow` keeps its original one-click
+POST-directly behavior, no modal, untouched. It is self-contained like
+`AdjustmentModal`/`LineItemModal`: it owns its own POST to
+`${apiBase}/line-items-from-atoms/`, not a callback the parent runs.
+
+- **Props:** `open`, `atoms` (the selected atoms in raw source-pool
+  shape — `{type, id, description, qty, units, rate, amount,
+  worker_time?}`, read straight off `sourcePool.atoms` filtered by the
+  ticked ids on either host, whether the selection UI is the CO's
+  `UncoveredWorkSection` picklist — whose own `uncoveredRows` only
+  carries a formatted `qty_display`, not the raw fields the modal
+  needs — or the Tasks page's row checkboxes, which key the same map
+  (`poolByKey`) directly off `sourcePool.atoms`).
+  `worker_time` (a task atom's current `est_worker_time`, DRF
+  `"H:MM:SS"` duration-string shape, always absent for a material) is
+  added by `BaseWizardService._atom_detail`/`_pool_atoms` for the
+  one-unit preview below. `apiBase`, `onCreated(newLine)`,
+  `onConflict(err)` (409 only — see above), `onClose`.
+- **Display:** each selected atom's kind tag / description / qty /
+  amount (reusing the `atomKindTag`/`fmtMoney`/`formatQtyUnits`
+  idioms), plus the summed total.
+- **Authoring fields:** description, qty, units, price — seeded from
+  the single atom's own values when exactly one is selected. For 2+
+  atoms, `deriveMultiAtomSeed` (Task 8 follow-up fix) mirrors the
+  backend's uniform-bundle detection (§8.1's `_uniform_money_bundle`)
+  client-side: when every selected atom is a Task, shares the same
+  units, and shares the same effective rate, it seeds `qty` = the
+  summed qty (rounded to cents — plain float addition of two-decimal
+  quantities like three `1.10`s otherwise produces binary-float garbage
+  a `DecimalField(decimal_places=2)` rejects on submit), `units`/`price`
+  from the shared values, `description=''`. Anything else (mixed atom
+  types, differing units/rate) falls back to a plain lump sum (`qty=1`,
+  `units='none'`, `price=`the summed total) — keep-total's qty→price
+  re-derivation is the tool for reshaping that lump sum. This is an
+  **approximation of the backend's own rule**, not a duplicate of it:
+  the source-pool atom shape only exposes each task's effective rate +
+  unit label, not the raw stamped `rate`/`active_modifiers` the backend
+  actually compares — harmless, because the modal always sends
+  description/qty/units/price as explicit overrides (WYSIWYG), so a
+  seed that doesn't exactly match the backend's own (unused once
+  overrides are present) derivation can never make the created line
+  differ from what's displayed.
+- **Keep-the-total gesture, ON by default:** while the "keep total $X"
+  checkbox is checked, editing qty re-derives `price = total ÷ qty`
+  (rounded to cents). Editing price directly is a **one-way** exit —
+  it unchecks keep-total rather than reverse-deriving qty (RM's
+  simpler rule: qty→price only, avoiding divide-by-zero/qty-churn).
+  Re-checking the box re-derives price from the current qty so the
+  invariant (`price × qty == total` whenever checked) always holds the
+  moment it's checked. Qty of `0`/empty never divides by zero (the
+  re-derivation is skipped) and disables the Create button.
+- **Submit:** `POST line-items-from-atoms` with
+  `{atoms: [{type, id, per_unit_worker_time?}, ...], overrides:
+  {description, qty, units, price}, per_unit}` — i.e. it **always**
+  sends all four override fields (not just the ones the user touched),
+  since the modal's displayed values are the authored truth regardless
+  of how closely they mirror the backend's own (unused, once overrides
+  are present) derivation. On success, calls `onCreated(newLine)`; the
+  parent view closes the modal, clears `selected`, and calls
+  `onChanged()` — no follow-up `LineItemModal` edit landing (the bundle
+  modal *is* the authoring step).
+
+#### 12.1a-i The interpretation choice (per-unit-lines spec §5, Task 4: minimal additions)
+
+See §9b for the consolidated per-unit reference (fields, the
+snapshot-then-stamp rule, drift/Revert, split-materials, the CO sibling
+reminder) — this subsection is the bundle-modal implementation detail it
+points back to.
+
+Above qty, a two-option choice reads "The values on these tasks and
+materials are for: (•) one unit — multiply by quantity ( ) the whole
+line" — the per-unit-lines spec's single binary choice (never stacked
+toggles), backed by `perUnit = $state(true)`: **one-unit is the modal's
+default** (RM predicts it's the common case). This is a **minimal
+addition** to the existing modal — the full restructure (field order,
+load, materials-split) is a later, RM-gated phase (spec §12 phasing);
+this phase only adds the choice, the preview table, and the payload
+wiring below.
+
+- **One-unit mode (default):** the keep-total checkbox is hidden
+  (irrelevant — there's no total to keep, the total is derived).
+  Price seeds to `total.toFixed(2)` (the summed *current* atom amounts,
+  now read as a per-unit price); qty seeds **empty** — a real
+  multiplier has to be typed, never assumed. A live "Line total: qty ×
+  price" readout updates as either field changes. Once qty is valid, a
+  preview table lists one row per atom: its current qty scaled by qty
+  (`"0.75 hour → 7.50 hour"`, `"4 BF → 40 BF"`) — the reinterpretation
+  and the coming atom stamps must be unmissable before Create (spec
+  §12 Q1). A task atom that already carries `worker_time` also shows
+  its schedule commitment scaled the same way; a task with **no**
+  `worker_time` instead offers an optional per-unit duration input
+  (`"e.g. 0:45 or 0.75"`, parsed via `lib/format.js`'s
+  `parseDurationToISO`) — a filled value rides along as that atom's
+  `per_unit_worker_time` in the POST body (task-atom entries only;
+  never sent for materials or for a task that already has a schedule
+  time, since the backend multiplies that one automatically regardless
+  of unit denomination — spec §5.2).
+- **Whole-line mode:** exactly today's UI (§12.1a above) — keep-total
+  ON by default, editing qty re-derives price. Switching interpretation
+  mid-session re-seeds qty/price via the same seed functions the modal
+  uses on open (`seedPerUnit`/`seedWholeLine`) — description/units are
+  seeded once, from the atom(s), regardless of which interpretation is
+  chosen.
+- **Submit:** always sends `per_unit: true|false`; `per_unit: false`
+  posts exactly today's shape (no `per_unit_worker_time` keys).
+
+#### 12.1a-ii Server-side per-unit guards (Task 4 controller-added scope)
+
+- `add_atoms_to_new_line_item(..., per_unit=True)` requires **all
+  four** overrides (description, qty, units, price) present — a
+  field-shaped `ValidationError` (one entry per missing field, `qty`'s
+  own message preserved verbatim for backward compatibility with the
+  earlier qty-only check) rather than deriving a partial per-unit line
+  from defaults. The modal always sends all four, so this only fires
+  on a malformed direct API call.
+- **View-boundary qty coercion:** `apps.api.estimates.views.
+  _coerce_qty_override` / `apps.api.change_orders.views.
+  _coerce_qty_override` convert `overrides['qty']` to `Decimal` before
+  the service ever sees it, returning a clean `{'qty': [...]}` 400
+  instead of letting a string/garbage qty hit the per-unit path's
+  `qty_override <= 0` comparison and raise an uncaught `TypeError`.
+  Applied on both the estimate and CO `line-items-from-atoms` actions,
+  regardless of `per_unit`.
+- **Append guard:** `add_atoms_to_line_item` (append atoms to an
+  *existing* line — the retired-at-API-level path still used by tests
+  and the invoice wizard) now rejects a `per_unit` line outright:
+  `ValidationError('Tasks and materials cannot be added to a per-unit
+  line yet. Remove the line and bundle again.')`. An appended claim
+  gets no `per_unit_qty` snapshot (only the new-line per-unit path
+  stamps one), so without this guard it would silently contribute $0
+  to `_sum_per_unit_sources`. Real append semantics for a per-unit line
+  are deferred to the modal-restructure phase (spec §10).
+
+#### 12.1a-iii Split materials onto their own line (per-unit-lines spec §5.3, Task 8)
+
+A **"Split materials onto their own line"** checkbox appears only in
+one-unit mode, and only when the selection has **both** ≥1 task and ≥1
+material (`hasTaskAndMaterial` — hidden the instant either kind is
+absent, or interpretation flips to whole-line). Checking it re-seeds
+`price` down to the **task-only** per-unit sum (not the full selection's
+total) — the controller ruling for Task 8: both lines this checkbox will
+spawn must be born in sync, and the labor line's price has to be the
+task claims' own sum for that to hold. Unchecking restores the ordinary
+one-unit seed (full total). Once checked and qty is valid, the modal
+also shows the (non-editable) materials line's derived price and a
+combined-total readout so the user sees the whole picture before
+confirming.
+
+**Submit:** adds `split_materials: true` to the POST body (omitted
+entirely when unchecked — same "don't send what wasn't touched" style as
+`per_unit_worker_time`).
+
+**Server (`add_atoms_to_new_line_item(..., split_materials=True)`,
+`apps/core/wizard.py`):** valid only with `per_unit=True` (plain-sentence
+`ValidationError` otherwise) and only when the atom selection contains
+at least one task AND one material (same otherwise). On success,
+atomically mints **two** per-unit lines instead of one, via a shared
+`_build_per_unit_line` helper (stamp-and-snapshot factored out of the
+single-line path so it can run twice):
+
+- **Labor line** — claims only the task atoms; description/qty/units/
+  price come straight from `overrides`, exactly like the single-line
+  per_unit path (WYSIWYG — the server does not recompute or validate the
+  submitted price against the task claims; a mismatch is a legitimate
+  "edited" split, same kind-preserving drift as any other per-unit line).
+- **Materials line** — claims only the material atoms; description is
+  `overrides['description'] + ' — materials'`, same qty/units as the
+  labor line, price = Σ the material atoms' *current* (pre-stamp,
+  per-unit) computed amounts — read before either line's atoms are
+  stamped to whole-job totals.
+
+Both lines save through the normal `line_number` sequencing (labor
+first, so it gets the lower number) and each atom is stamped/snapshotted
+exactly once (`_stamp_atom_per_unit` + a claim row, task atoms only on
+the labor line, material atoms only on the materials line — the two
+sets partition the selection, never overlap). **No structural link is
+stored between the two lines** — no line-group object, deliberately
+(spec §5.3: that's parent-task complexity sneaking back in via the
+document). The service returns the labor line with the materials line
+riding along as a transient `.materials_line_item` attribute (not a
+model field); the API layer
+(`apps/api/estimates/views.py`/`apps/api/change_orders/views.py`
+`line_items_from_atoms`) checks for that attribute and, only when
+present, wraps the response as `{'line_item': ..., 'materials_line_item':
+...}` instead of the ordinary flat serializer payload — an ordinary
+(non-split) call's response shape is unchanged.
+
+### 12.2 Backing chips (design doc §9.2 vocabulary)
+
+The estimate has no actuals yet, so its `backing` enum and chip labels
+(`docsurface/BackingChip.svelte`) are domain-specific — see §6.1 for the
+derivation, and `docs/plans/2026-08-06-better-fees.md` §9.2 for the full
+cross-document chip vocabulary (both estimate and invoice). On the
+estimate: `planned_work` → **"planned work"** (any task
+among the line's sources), `planned_materials` → **"planned materials"**
+(materials only), `from_catalog` → **"from catalog"** (a `service_item`
+or `inventory_item` ref — the two deferred-crystallization catalog
+kinds), `hand` → **"none"** (the "hand line" term is internal-only —
+RM 2026-08-10; the chip answers "what backs this price?" and a typed-in
+line has no backing), `edited` → **"edited"** (with the
+"work totals $X" reference caption), `adjustment` → **"adjustment"**.
+`derive_estimate_backing`'s docstring documents this as **draft-surface
+semantics**: the enum is designed for the estimate wizard's chip labels,
+not as a general-purpose lifecycle indicator — a catalog-sourced line
+keeps reading `from_catalog` for its whole life even after acceptance
+crystallizes it into a live Task/Material source on that same line (rule
+2 fires before rule 3, deliberately). A **plain** hand-line never
+crystallizes into anything, so it keeps reading `hand` for its whole
+life too, even after acceptance — there's no source row to promote it to
+`planned_work`/`planned_materials`.
+
+### 12.3 Customer and Reorder modes
+
+**Customer mode** renders `DocCustomerView` — the collapsed, read-only
+document exactly as it will read to the customer: `#`, description,
+qty, price, amount, and a grand-total footer row, for **every** line
+including adjustments, numbered by the document's own stored
+`line_number`. No backing column, no atom rows, no struck rows, no
+buttons of any kind — the settled rule is that a mode is never a modal
+and Customer mode carries zero interactive affordances.
+
+**Reorder mode** renders `DocReorderView` — **the identical rows as
+Customer mode plus a trailing arrows column** (↑/↓, boundary arrows
+disabled), so reordering never carries sub-line ambiguity. Clicking an
+arrow (`handleReorderDoc`) swaps the line's `line_number` with its
+neighbor in the full ordered id list and POSTs the existing
+`.../line-items/reorder/` endpoint with the full `item_ids` order, then
+reloads the estimate. Reorder is only offered in the mode bar
+(`modes`, §11.1) while `canEdit` is true; a document that stops being
+editable while remembered in `'reorder'` falls back to `'edit'` on next
+load (§12 intro).
+
+### 12.4 Entry
 
 The estimate is reached from the rail's Estimates link (§11): "Start
 Estimate" creates the draft estimate directly on the job
 (`POST /api/estimates/` with `{job}`), landing on
-`#/jobs/:jobId/estimate/:newId`. "Show Tasks & Materials" / "Reconcile"
-(on the estimate panel, §11.2) flips that same page into reconcile
-mode. There is no longer a worksheet page, a worksheet-side wizard
-entry, or a separate wizard route.
+`#/jobs/:jobId/estimate/:newId` in Edit mode (the panel's default). The
+mode bar (§11.1) is present unconditionally once the estimate is loaded
+— no separate reconcile entry point or worksheet page exists.
 
 ---
 
@@ -1435,7 +2661,7 @@ worksheet layer.)
 | Signal | Fires when | Receiver | Effect |
 |---|---|---|---|
 | `estimate_status_changed_for_job` | draft→open, any→accepted, or open→{rejected, expired} | `update_job_status` | walks the Job through submitted/approved/rejected with HistoryEntry rows (see §9.3) |
-| `estimate_accepted` | any→accepted | acceptance receiver | calls `EstimateAcceptanceService.on_accept(estimate)` — crystallizes hand-lines into Tasks/Materials/Fees via the four-way discriminator and earmarks the job (§9) |
+| `estimate_accepted` | any→accepted | acceptance receiver | calls `EstimateAcceptanceService.on_accept(estimate)` — crystallizes descriptor-bearing hand-lines into Tasks/Materials via the four-way discriminator (a plain hand-line stays document-only) and earmarks the job (§9) |
 
 The `estimate_accepted` signal is the one this doc owns. The other is
 summarized here only so acceptance fits into the picture; its full
@@ -1467,8 +2693,9 @@ are not COs — they're "cancel and start a new job" territory
   `InventoryItem`). It does not project or mutate the Job's atoms while
   draft/open, and it never runs the estimate wizard.
 - **Acceptance crystallizes the deltas onto the Job's atoms** (§14.11),
-  exactly parallel to estimate acceptance (§9): an `add` line becomes a
-  Task / Material / Fee, a `remove` retires the target line's atom, a
+  exactly parallel to estimate acceptance (§9): a descriptor-bearing
+  `add` line becomes a Task or Material (a plain `add` line stays
+  document-only), a `remove` retires the target line's atom, a
   `replace` retires the old atom and crystallizes its replacement. The
   amended work becomes real — schedulable, blep-trackable, earmarked —
   the moment the customer says yes. (The living Job can still be edited
@@ -1544,24 +2771,180 @@ terminal.
 | `target_line_item` | FK → EstimateLineItem (PROTECT). Required for `remove` / `replace`; must be null for `add`. Enforced in `clean()`. |
 | `inventory_item` | Optional catalog pointer, parallel to `EstimateLineItem` provenance. At acceptance the line crystallizes into a `Material` on this item. |
 | `service_item` | Nullable FK → `ServiceItem` (PROTECT). Deferred service descriptor, identical to `EstimateLineItem.service_item` (§6.1): the line snapshots the service's price at authoring and crystallizes to a `Task` at CO acceptance. |
-| `is_material` | Marks a bare (no descriptor) line as a material: crystallizes into an **established Material** (reverse-markup placeholder cost, `cost_source='estimated'`) instead of a Fee, same as `EstimateLineItem.is_material`. Authoring applies the `default_material_accounting_category` config default and rejects the marker on lines that already carry an `inventory_item`/`service_item`. |
+| `is_material` | Marks a bare (no descriptor) line as a material: crystallizes into an **established Material** (reverse-markup placeholder cost, `cost_source='estimated'`) instead of staying a plain, uncrystallized document line, same as `EstimateLineItem.is_material`. Authoring applies the `default_material_accounting_category` config default and rejects the marker on lines that already carry an `inventory_item`/`service_item`. |
+| `adjustment_service` | Nullable FK → `RateScheme` (PROTECT), added 2026-08-09. Mirrors `EstimateLineItem.adjustment_service` field-for-field — provenance/identity only, never read for the dollar amount. |
+| `adjustment_percent` | Nullable Decimal(6,2), added 2026-08-09. Snapshot of `adjustment_service.rate` at line-creation/recompute time — the price of record, mirroring `EstimateLineItem.adjustment_percent`. |
+| `adjustment_target_categories` | M2M → `AccountingCategory`, blank, added 2026-08-09. Mirrors `EstimateLineItem.adjustment_target_categories`. |
 
-`clean()` also rejects `service_item` / `is_material` on a `remove` line
-(its own fields are display-only; it never crystallizes anything).
+**Replace is commercial-only (2026-08-09).** `clean()` rejects
+`service_item` / `inventory_item` / `is_material` on an `action='replace'`
+line — a replace can only override description/qty/price/units/AC in
+place; a typed crystallization change (e.g. "this used to be a plain line,
+now it should mint a Task") goes through a **remove + add** pair instead,
+never a typed replace. `clean()` also rejects `service_item` / `is_material`
+on a `remove` line (its own fields are display-only; it never crystallizes
+anything).
+
+**The adjustment triple is valid only on a replace-of-adjustment
+(2026-08-09).** `adjustment_service`/`adjustment_percent` (either non-null)
+are legal exclusively when `action == 'replace'` **and**
+`target_line_item.adjustment_service_id` is already set — i.e. the CO is
+amending an existing percentage-adjustment estimate line's percent/target
+categories, never creating a new adjustment or touching a non-adjustment
+line. See "Adjustment-replace amendment" below (§14.4c) for the recompute
+mechanics this unlocks.
 
 The `action` field is the heart of CO semantics:
 
 - **`add`** — a brand-new line. The line's qty/price/description live
   on the CO row; there's no `target_line_item`. Composed at the **end**
   of the agreement (after all estimate lines), in line-number order
-  within the CO.
+  within the CO. May also carry claimed atoms authored directly through
+  the CO wizard (§14.4b) — a claimed `add` line crystallizes nothing new
+  at acceptance (§14.11).
 - **`remove`** — strikes the `target_line_item` from the agreement.
   The CO row's own qty/price/description are display-only (what the
   customer agreed to remove). The line vanishes from the composed
   output.
 - **`replace`** — overrides the `target_line_item`'s qty / price /
   description with the CO row's values, in place. The original line
-  number is preserved in the composed output.
+  number is preserved in the composed output. Commercial-only per above
+  — replacing never changes *what kind of thing* backs the line, only
+  its description/qty/price (or, for an adjustment replace, its percent
+  and target categories).
+
+### 14.4a Live-invoice guard on remove/replace targets
+
+`ChangeOrderService._assert_target_not_billed(target_line_item)`
+(2026-08-09) blocks saving a `remove`/`replace` CO line whose
+`target_line_item` is referenced by a **live** (non-cancelled) invoice —
+`ValidationError`. Wired into both `add_line_item` and `update_line_item`,
+after `full_clean()`, whenever `li.action in (ACTION_REMOVE, ACTION_REPLACE)`
+and `li.target_line_item_id` is set. `update_line_item` re-evaluates this
+against the line's **current** target on every call (not only when
+`target_line_item` is in the update payload), so it also catches a line
+whose target becomes billed *after* the CO line was created, not only an
+explicit retarget. "Live" here is every `Invoice` status except
+`cancelled` (`LIVE_INVOICE_STATUSES`, `apps/invoicing/services.py`) —
+deliberately broader than `claims.py`'s `DEAD_INVOICE_STATUSES` (which
+also treats `superseded` as dead for atom claims; that's a different
+invariant). The frontend surfaces this as both **Remove via CO** and
+**Replace…** disabling with a `title="Billed on {billed_on}"` tooltip and
+caption once `compose_amended_agreement`'s row carries a `billed_on`
+value (§14.6, §14.9).
+
+### 14.4b Authoring claims — `ChangeOrderWizardService`
+
+**The CO PAGE itself no longer drives any of this (RM 2026-09-20,
+line-item-first).** `COEditView`'s "Unquoted work" picklist, its atom
+selection state, the "Bundle into line…" CTA, and the `BundleModal`
+mount were removed from the CO edit surface — RM's rationale: the CO
+page's plan-first composition only ever helped when unclaimed atoms
+already existed, and a job on hold (where a CO necessarily lives) can't
+have *new* work added, so plan-first composition on the CO page itself
+was a dead end. **The service class, its four endpoints, and every
+backend test below are unchanged and still live** — RM separately
+confirmed unclaimed atoms legitimately exist at CO time (work planned
+post-acceptance, before the hold) and should stay bundleable into an
+open draft CO, just via a **Tasks-page CO-lens bundling surface** (RM
+2026-09-20, shipped — `jobs-and-tasks.md` §9.5a state D) rather than the
+CO page's own picklist: `TasksPanel.svelte` resolves the job's at-most-one
+draft CO the same way it resolves its draft estimate, and reuses the
+exact same checkbox/CTA/`BundleModal` plumbing, just pointed at
+`/api/change-orders/{coId}` instead of `/api/estimates/{id}`. A held job
+with an accepted estimate but no draft CO yet gets a passive hint link
+there instead (never a create button — **unlike an estimate, a change
+order is always explicitly generated by a user**; the Tasks page never
+auto-creates one). A CO line's existing atom child rows,
+remove-from-line (`remove-atoms`), and drift/Revert affordances still
+render and work on the CO edit surface for whatever claims a line
+already carries (sources crystallized/inherited at acceptance, or
+draft-time authored via the Tasks-page CO lens) — only the CO-page-native
+authoring UI is gone.
+
+A **draft** CO's own `add` lines can claim job atoms directly, the same
+gesture as the estimate wizard (§8), rather than only being crystallized
+implicitly at acceptance. `ChangeOrderWizardService`
+(`apps/estimates/services.py`) subclasses `EstimateWizardService` so a
+CO's pool/claim semantics inherit the estimate wizard's rules (est_qty
+billing, cancelled tasks and released materials excluded) — it overrides
+`add_atoms_to_line_item` to refuse a non-`add` CO line (a `remove`/
+`replace` line has nothing to claim onto) and `get_source_pool(co)` to
+union **both** claim lenses: an atom already claimed by an estimate line
+shows `claimed_by_other` (`claiming_estimate_number`); one claimed by
+*another* CO's add line also shows `claimed_by_other`
+(`claiming_change_order_number`) — the estimate wizard's own pool got the
+symmetric fix so an estimate never offers an atom a CO has already
+claimed either.
+
+**This CO's removes free their atoms** (RM 2026-08-10): an atom currently
+backing a line THIS CO removes (resolved chain-aware via
+`ChangeOrderAcceptanceService._current_atoms`) is suppressed from the
+claim lookup and returns to the pool as `available` — descoping frees the
+work, and re-adding it to the same CO restates it under new terms. The
+freed set suppresses agreement-lens claims (the estimate's own row, or an
+*accepted* CO's inherited claim on the removed target) but never a
+draft/open CO's claim, which is still a live conflict. The acceptance-side
+counterpart: `on_accept`'s remove loop skips any atom the same CO
+re-claimed on an add line — no `descoped_by` stamp, no retirement; the
+work carries forward under its new line (§14.11).
+
+There is **no DB-level constraint spanning the two claim
+tables** (`EstimateLineItemSource` vs `ChangeOrderLineItemSource`) — the
+pool-level display is the only defense against a same-atom cross-lens
+race; see `LATER.md`. A CO `add` line that already carries claimed atoms
+is exempt from the bare-add-line AC send guard (§14.4 above —
+`assert_all_bare_add_lines_have_ac` filters `sources__isnull=True`),
+since a claimed atom already carries its own AC.
+
+Endpoints (§14.8): `GET .../source-pool/`, `POST .../line-items-from-atoms/`,
+`POST .../line-items/{lid}/remove-atoms/` — identical body/response shape
+to the estimate wizard's equivalents, 409 `atoms_already_claimed` on a
+claim conflict. (`POST .../line-items/{lid}/add-atoms/` is retired
+API-level, §8.3 above — `add_atoms_to_line_item`'s add-lines-only override
+stays as service-layer behavior, just unreachable via HTTP now.) Each mutating action also
+re-runs `ChangeOrderService.recompute_adjustment_replaces(co)` (§14.4c,
+"Adjustment-replace amendment") so claiming/releasing an atom on a line an
+adjustment-replace targets recomputes that percentage immediately.
+
+### 14.4c Adjustment-replace amendment
+
+An adjustment-replace CO line (§14.4's adjustment triple) doesn't take a
+user-entered `price` — the server computes it from the **amended-agreement
+basis** (the agreement as it will read once this CO is accepted, same basis
+`compose_amended_agreement` composes), via
+`ChangeOrderService.recompute_adjustment_replaces(co)` reusing
+`agreement.adjustment_expected_amount` (promoted from a private helper to a
+public one so the two call sites — the "stale adjustment" hint on an
+untouched `agreement` row, and the actual replace-line price — can never
+disagree). The adjustment-replace row correctly excludes **itself** (and
+every other adjustment row) from its own basis via the same
+`is_adjustment`/identity skip `compute_adjustment_amount`/
+`adjustment_expected_amount` already apply.
+
+**Recomputed on every CO mutator** that could move the basis: `add_line_item`,
+`update_line_item`, `delete_line_item`, `reorder_line_items`, `add_line_item_from_pli`,
+`add_line_item_from_service`, and the three wizard atom-mutation endpoints
+(§14.4b) — each wrapped in `@transaction.atomic` so the recompute commits
+with the triggering mutation. `COLineItemModal`'s `adjustment` variant
+(description + percent only, §14.9) POSTs/PATCHes `adjustment_percent`; the
+server computes `price` and the modal shows the computed amount as a
+readback with an explicit **Done** button (never auto-closing — saves stay
+explicit).
+
+**Retargeting away from an adjustment clears the triple.** If a CO line's
+`target_line_item` changes (or is reassigned) to a line that isn't itself an
+adjustment line, but the CO line still carries a stale
+`adjustment_service_id`/`adjustment_percent`, both are cleared (and the M2M
+target-category set is emptied) rather than left to fail `clean()`'s
+adjustment-triple rule — idempotent in both directions (into and out of
+adjustment-replace shape).
+
+**Acceptance crystallizes nothing** for an adjustment-replace line — the
+target has no `EstimateLineItemSource` rows to move (§14.11's REPLACE step
+is a no-op when there's nothing to move), so accepting one only updates the
+composed agreement's percent/price; no Task/Material is ever created or
+retired by an adjustment change.
 
 The estimate's line items are never mutated. The agreement is always
 the composition (Estimate + accepted COs); the underlying
@@ -1569,12 +2952,16 @@ the composition (Estimate + accepted COs); the underlying
 was first sold.
 
 **Send guard (AC).** `ChangeOrder.clean()` blocks `draft → open` while
-any bare `add` line (no `service_item`, no `inventory_item`) lacks an
+any bare `add` line (no `service_item`, no `inventory_item`, not a
+comment — `is_comment` add lines are informational-only and exempt) lacks an
 `accounting_category` — the CO parallel of
-`assert_all_hand_lines_have_ac` (§5.1/§15). Such a line crystallizes
-into a Fee or Material at acceptance, and the category must
-be pinned *before* the customer can say yes, so acceptance can never
-fail on it. The check is `ChangeOrderService.assert_all_bare_add_lines_have_ac`
+`assert_all_hand_lines_have_ac` (§5.1/§15). Such a line either
+crystallizes into a Material (`is_material=True`) at acceptance, where
+the category must be pinned *before* the customer can say yes so
+acceptance can never fail on it, or — if not marked as a material —
+stays a plain document line forever, where the category is still
+required up front (§15's send-time AC guard applies regardless of
+whether the line will ever back an atom). The check is `ChangeOrderService.assert_all_bare_add_lines_have_ac`
 (2026-07-20), shared by the model's `clean()` — so the guard holds on every
 send path (mark-open action, status PATCH, `send_change_order`) — and by
 `ChangeOrderEmailService._validate_send` as a pre-email copy, so a refusal
@@ -1596,13 +2983,22 @@ no line items was refused outright.
 
 **`ChangeOrderLineItemSource`** (`db_table = 'co_li_sources'`) is the CO
 analog of `EstimateLineItemSource` (§6.2): a polymorphic join
-(`source_type ∈ {task, material, fee}` + `source_pk`, unique together)
-from a CO line to the atom it **crystallized** at acceptance. It is the
-provenance record (compose_agreement traces crystallized CO fees so the
-invoice claims them exactly once — §14.6) and the idempotency marker (a
-line with a source row is already crystallized). `resolve()` returns the
-concrete atom. Unlike the estimate table, rows exist only for
-add/replace lines of **accepted** COs — authoring never creates one.
+(`source_type ∈ {task, material}` + `source_pk`, unique together)
+from a CO line to the atom that backs it. `resolve()` returns the concrete
+atom. A row on an `add` line means that atom either was **crystallized**
+by acceptance (§14.11) or was **claimed directly** by an authoring user
+through the CO wizard before acceptance (§14.4b — since 2026-08-09,
+authoring *can* create rows, unlike the pre-amend-in-place doc's "authoring
+never creates one"); a row on a `replace` line was **moved** onto it at
+acceptance from whatever the target line held (§14.11's REPLACE step —
+never newly crystallized). `remove` lines never carry rows (display-only,
+nothing to claim). A row's presence on an `add`/`replace` line is what
+makes acceptance idempotent — a line that already has sources is skipped
+(add) or left alone (replace, already-moved). (Billing no longer traces
+through this table at all — see §14.6's note on the retired
+`source_fee_id` channel; the invoice side now claims agreement value via
+`agreement_estimate_line`/`agreement_co_line` references instead,
+invoicing doc.)
 
 ### 14.5 Job on_hold gate
 
@@ -1658,6 +3054,18 @@ function that produces the agreement-of-record:
 where `origin` is `'estimate'` or `'change_order'`. Empty dict (lines
 `[]`, total `0`) when the Job has no accepted Estimate.
 
+**Line identity (2026-08, skeleton phase).** Every line dict also
+carries `estimate_line_id` and `co_line_id` (int or `None`) — exactly
+one is non-null per line: an estimate-origin line carries its
+`EstimateLineItem.pk` (and `co_line_id: None`); a CO-origin line (add or
+replace) carries its `ChangeOrderLineItem.pk` (and `estimate_line_id:
+None`) — a CO *replacement* line dict is CO-origin, since the CO's own
+line is the row of record once accepted. This identity is what
+`InvoiceService` (`invoicing-and-expenses.md` §"Agreement-line
+references and seeding") matches against to decide which agreement
+lines are "remaining" (not yet on a live invoice) and to enforce the
+one-live-invoice-per-agreement-line invariant.
+
 The composition rules:
 
 1. Start with the accepted Estimate's `EstimateLineItem` rows in
@@ -1677,21 +3085,35 @@ The composition rules:
 `amount = qty * price` on each line, matching `BaseLineItem.total_amount`.
 The grand total is the sum of all surviving line amounts.
 
-Every line also carries `source_fee_id` — the pk of the Fee the line
-crystallized into, when it did: for estimate-origin lines that's the
-hand-line fee provenance (`EstimateLineItemSource`, §9.1), and for
-CO-origin add/replace lines the `ChangeOrderLineItemSource` fee row
-written at CO acceptance (§14.11). Both are bulk-prefetched.
-`InvoiceService.copy_from_estimate` claims each `source_fee_id` with an
-`InvoiceLineItemSource` so the wizard pool marks the Fee as billed and
-double-billing is impossible — the agreement stays the **billing**
-source of truth; the crystallized atoms are the *work* mirror, and the
-source rows are what keep the two views counting each Fee once.
+Line dicts carry **no** `source_fee_id` key (the fee-provenance channel
+was removed 2026-08, fee-removal Task 3 — `copy_from_estimate` no longer
+creates fee claims from agreement lines; legacy `SOURCE_FEE` rows on
+estimate/CO lines are simply ignored by the composition). Line identity
+is `estimate_line_id` / `co_line_id` only.
 
 This function is the single source of truth for what the customer owes.
 The Invoice wizard reads it; PDF rendering of the agreement reads it;
 the Estimate-detail page surfaces the composed view alongside the
 underlying Estimate.
+
+**`compose_amended_agreement(co)`** (same module, CO amend-in-place
+2026-08-09) is the sibling composer that answers "what will the
+agreement read if `co` is accepted" — the baseline (the estimate plus
+whichever accepted COs precede `co` in acceptance order) with `co`'s
+own draft add/remove/replace lines applied on top. It shares `_fold`
+(the add/remove/replace walk) with `compose_agreement` so the two can
+never diverge. Returns `{'rows', 'original_total', 'co_delta',
+'revised_total'}`; each row is kind-tagged —
+`agreement` (untouched baseline line; carries `billed_on` and, for a
+stale adjustment line, `adjustment_expected_amount`), `replaced` (the
+CO's replacement line dict + the struck `original`), `removed` (struck
+`original` only), `added` (the CO's new line dict) — with `replaced`/
+`added` rows numbered `co_index` (1… in line_number order). This is the
+engine behind `COEditView` (§14.9) and its `GET .../amended-agreement/`
+endpoint (§14.8); `apps/api/change_orders/serializers.py`'s
+`serialize_amended_agreement` adds the per-row display extras (backing
+classification, resolvable `sources`, JSON stringification) the same
+way `EstimateLineItemSerializer` does for the estimate side.
 
 ### 14.7 Auto-expiry — `mark_change_orders_expired`
 
@@ -1729,8 +3151,9 @@ are resolved).
 - `POST /api/change-orders/{id}/line-items/from-pli/` — add from
   InventoryItem
 - `POST /api/change-orders/{id}/line-items-from-service/` — add a
-  deferred service line (body `{service_item, qty}`; snapshots price,
-  mints no Task — mirrors the estimate action, §6.4)
+  deferred service line (body `{service_item, qty, description?}`;
+  snapshots price, mints no Task — mirrors the estimate action, §6.4,
+  including the optional-`description`-override contract)
 - `PATCH /api/change-orders/{id}/line-items/{liid}/` — update
 - `POST /api/change-orders/{id}/line-items/reorder/`
 - `DELETE /api/change-orders/{id}/line-items/{liid}/`
@@ -1738,6 +3161,32 @@ are resolved).
   of deliverables-at-CO-creation used to render the CO-edit view's
   baseline (see `jobs-and-tasks.md` §12 for snapshot
   mechanics)
+- `GET /api/change-orders/{id}/deliverables-diff/` — `{'rows': [...]}`
+  from `ChangeOrderService.compose_deliverable_diff(co)` — the same
+  baseline-vs-live kind rows the portal payload and CO PDF render;
+  drives the Customer mode's "What you'll receive" table (§14.9a)
+- `GET /api/change-orders/{id}/amended-agreement/` — the
+  `compose_amended_agreement(co)` result (§14.6), serialized —
+  `COEditView`'s (§14.9) one-table data source
+- `GET /api/change-orders/{id}/source-pool/` — the CO wizard's source
+  pool (`ChangeOrderWizardService.get_source_pool`), same atom shape as
+  the estimate's `source-pool` (§8), with claims unioned across both
+  the estimate and CO lenses. **Not fetched by `ChangeOrderPanel`/
+  `COEditView` any more** (§14.4b, 2026-09-20 — the CO page's own
+  picklist is gone); fetched instead by the Tasks-page CO lens
+  (`jobs-and-tasks.md` §9.5a state D, `TasksPanel.svelte`'s
+  `loadCOContext`).
+- `POST /api/change-orders/{id}/line-items-from-atoms/` — create a new
+  `add` line from a set of atoms (mirrors §8's estimate action); accepts
+  the same optional `overrides` body key (Task 8, §12.1a). **No longer
+  called from the CO page** (§14.4b) — called instead from the Tasks-page
+  CO lens's `BundleModal`, same as `source-pool` above.
+- `POST /api/change-orders/{id}/line-items/{lid}/remove-atoms/` — detach
+  atoms from an existing CO line (409 `atoms_already_claimed` on a claim
+  conflict, same contract as the estimate side). The sibling `add-atoms/`
+  action (append onto an existing line) is retired API-level (2026-08-16
+  final-review fix) — composing atoms into a line only happens via
+  `line-items-from-atoms` above, never an in-table attach.
 - `GET /api/change-orders/{id}/send-defaults/` — pre-populated
   send-to-customer form fields (to / subject / body with the portal
   link; `attachments_preview` lists the auto-attached CO PDF)
@@ -1756,24 +3205,103 @@ is authoritative.
 `ChangeOrderPanel.svelte` (`components/changeorders/`, hosted at
 `#/jobs/:jobId/change-order/:coId` by `routes/jobs/JobChangeOrderPage.svelte`
 inside `JobShell` — extracted 2026-07-19 from the old
-`ChangeOrderDetailPage` route) is the CO edit view. It renders a merged
-baseline-vs-proposal diff using the CO's line items and the
-`deliverables-baseline` endpoint: `lib/changeOrderDiff.js` derives the
-rows (unit-tested), `CODeliverablesSection.svelte` owns the deliverables
-grid + inline drafting forms, and `COLineItemsSection.svelte` renders the
-line diff with actions as callbacks to the panel.
-**"+ New line"** opens the unified `PriceListPicker` (§6.4) — the same
-service / inventory / freeform (+ is-material checkbox) entry point as
-the estimate detail page — followed by `COAddLineForm.svelte`
+`ChangeOrderDetailPage` route) is the CO edit view. It owns CO-scoped
+loading (the CO, its `amended-agreement`, sibling COs for display-status
+relabelling, and the deliverables live/baseline pair) plus the toolbar
+and status actions — it no longer fetches `source-pool` itself (§14.4b:
+the CO page dropped its picklist 2026-09-20; nothing else on this page
+consumed the pool). `CODeliverablesSection.svelte`
+owns the deliverables grid + inline drafting forms
+(`lib/changeOrderDiff.js`'s `buildDeliverableRows`, unit-tested), and
+`COEditView.svelte` owns the line-item surface.
+
+**`COEditView.svelte`** (CO amend-in-place, 2026-08-09 — replaced the
+old flat `COLineItemsSection` line-diff table) renders **one**
+`.data-table doc-edit-table` of the CO's `amended-agreement` (§14.6,
+§14.8): "the agreement as it will read if this CO is accepted", with
+gesture buttons rather than a diff. It follows the same structural
+contract as `EstimateEditView`/`InvoiceEditView` (§12, the `docsurface`
+kit) — presentation + gestures only, the panel owns loading and a
+silent (`{silent:true}`) refresh after every mutation so an
+in-progress edit modal or atom selection survives the round trip.
+Row kinds, per `compose_amended_agreement`'s row `kind`:
+
+- `agreement` — an untouched baseline line: `BackingChip` + **Remove
+  via CO** / **Replace…** (POST a `remove`/`replace` CO line targeting
+  it). The line's claimed atoms render nested beneath it as read-only
+  `AtomChildRow`s (RM 2026-08-10 — the serializer puts the estimate
+  line's own claim rows in the row's `sources`; no per-atom Remove:
+  covered work is changed via the line gestures, never atom-by-atom).
+  Both buttons disable with `title="Billed on {billed_on}"` (and a
+  caption) once a live invoice references the line; a stale adjustment
+  line shows a muted "recomputes to {amount} if replaced" caption.
+  Replace on an adjustment line (`line.is_adjustment`) opens the
+  modal's `adjustment` variant instead of `replace-prefill`.
+- `replaced` — CO-tinted (`.co-authored`), tagged `CO {co_index}`, the
+  replacement line above its struck `original` (excluded from totals)
+  and the inherited-preview `AtomChildRow`s (each labelled "inherited
+  from line {n}" — the claims that backed the original line, per
+  `derive_co_line_backing`); actions **Edit** / **Undo** (DELETE the CO
+  line, reverting to the `agreement` row). When the target line is
+  `per_unit`, the row also carries a **sibling reminder** (per-unit-lines
+  spec §9, Task 8 — reminder only, no enforcement, no structural link):
+  the serializer's `sibling_per_unit_lines` lists the target's own
+  estimate's OTHER `per_unit` lines sharing the target's (pre-CO) qty
+  (`apps.api.change_orders.serializers._sibling_per_unit_lines` — `[]`
+  when the target isn't per_unit or has no matching siblings), and
+  `COEditView` renders one info line per sibling beneath the atom rows:
+  `"Also qty {qty}: {description} — update it too?"`. Nothing is
+  clickable; it's purely a nudge to also replace the sibling line if the
+  qty change should apply there too.
+- `removed` — the struck original alone (no nested atoms — its freed
+  claims go back to `available` on the CO's `source-pool`, §14.4b — that
+  pool has no picklist UI on this page any more, but the state change is
+  what the Tasks-page CO lens's checkboxes see); action **Undo**.
+- `added` — CO-tinted, tagged `CO {co_index}`, its own `AtomChildRow`s
+  (detachable via `remove-atoms` — still wired here, since a line can
+  carry claims authored via the Tasks-page CO lens) and `BackingChip`;
+  actions **Edit** / **Remove**. (The Task 6 attach-to-existing-line
+  gesture is retired — there is no CO-page affordance to compose NEW
+  atoms into a line any more; that composition happens on the Tasks page,
+  see §14.4b.)
+
+The original/this-CO/revised totals render in the table foot from the
+payload. Below the table: when the amended agreement has **zero rows**
+and the CO is editable, a one-line hint — "Add lines from the catalog,
+or amend existing estimate lines." — replaces what used to be the
+Unquoted-work picklist's empty state (no "atom"/"wizard" wording, house
+empty-state style). Otherwise: **"Add line"** opens the unified
+`PriceListPicker` (§6.4) — the same service / inventory / freeform entry
+point as the estimate detail page — followed by `COAddLineForm.svelte`
 (`components/changeorders/`), which posts a service pick to
 `line-items-from-service/`, an inventory pick to `line-items/` (the
-from-pli path), and a freeform line manually with AC + `is_material`.
-`COLineItemModal.svelte` remains the editor for existing lines and the
-Change/replace flow; on `add`-action lines it carries an Accounting
-Category select (required for bare fee lines, config-defaulted for
-material lines — the send guard's authoring face). The Estimate detail
-page shows accepted COs as pills/badges in the deliverables and
-line-items sections.
+from-pli path) — both with an editable, catalog-prefilled Description
+sent only when the user changed it (§6.4) — and a freeform line manually
+with AC + `is_material`. **There is no picklist/pool section on this
+page any more** (removed 2026-09-20 along with `UncoveredWorkSection`,
+`NewLineFromSelectedRow`, and the `BundleModal` mount — §14.4b); a CO's
+lines are composed only via Add Line, replace/amend of existing
+estimate lines, adjustments, and remove-line descoping, plus whatever the
+Tasks-page CO-lens bundling surface (`jobs-and-tasks.md` §9.5a state D)
+authors through the same `source-pool`/`line-items-from-atoms`/
+`remove-atoms` endpoints.
+
+**`COLineItemModal.svelte`** was reworked the same day from a single
+action/target-select form into a gesture-driven modal with **no**
+action or target selects — the calling gesture presets everything via
+props, and create-vs-PATCH is derived from whether `lineItemId` (a
+PATCH target) is set. Three variants: `edit-fields`
+(description/qty/units/price; an Accounting Category select only when
+editing an `add` line — replace lines inherit AC from their target),
+`replace-prefill` (same fields, prefilled from the `agreement` line
+being replaced; POSTs `{action:'replace', target_line_item, …}`), and
+`adjustment` (description + percent only — the server recomputes
+`price` against the amended-agreement basis,
+`ChangeOrderService.recompute_adjustment_replaces` — the modal shows
+that computed amount as a readback with an explicit **Done** button
+before closing, never auto-closing on save). The Estimate detail page
+shows accepted COs as pills/badges in the deliverables and line-items
+sections.
 
 **The "amended" status label.** An accepted estimate that an accepted
 change order amends keeps its stored `status = accepted` — it is still
@@ -1803,6 +3331,74 @@ The draft toolbar's **Send to customer** link routes to
 re-emails), alongside the shop's internal **Record Accepted / Record
 Rejected** buttons for decisions relayed out-of-band. This mirrors the
 estimate detail page's Send / Resend Email affordance.
+
+### 14.9a The CO's own three-mode surface (Edit / Customer / Reorder)
+
+**Added 2026-08-09**, on top of the amend-in-place `COEditView` (§14.9):
+`ChangeOrderPanel` grows the same `DocModeBar` (§11.1/§12) — **Edit** /
+**Customer** / **Reorder**, `aria-pressed` on the active one, flipped in
+place at the same `#/jobs/:jobId/change-order/:coId` URL. `canEdit =
+canManageJobs && isDraft` (the same gate `COEditView` and
+`CODeliverablesSection` already used); `modes` is `['edit', 'customer',
+'reorder']` while `canEdit`, else `['edit', 'customer']`. Mode memory is
+namespaced `co:{coId}` (`stores/jobWorkspace.js`, key-generic — no store
+change needed); a remembered `'reorder'` falls back to `'edit'` when the
+CO is no longer editable, identical to the estimate/invoice normalization
+rule (§12 intro).
+
+**Deliverables in Edit mode only.** `CODeliverablesSection` — the grid +
+inline drafting forms — renders only when `mode === 'edit'`; Customer and
+Reorder are read-only document projections and never show it.
+
+**Date chips.** The toolbar carries the same `.stat-chips doc-stat-chips`
+strip as the estimate/invoice panels — Created / Sent / Expires / Closed,
+`fmtDate(co.{created,sent,expiration,closed}_date)`, muted `-` when a date
+is null — always rendered once the CO is loaded.
+
+**Customer mode — `COCustomerView.svelte`** (`components/changeorders/`).
+**Reworked 2026-08-11 (RM):** shows the **whole amended agreement**, not a
+changed-lines-only delta list — mirroring the customer portal
+(`ChangeOrderPortal.svelte` over `compose_change_order_diff`, §14.10) so
+the shop preview and what the customer actually opens read the same. It
+remains a sibling of `DocCustomerView` (same `.doc-customer-view` /
+`.data-table` / `tr.grand` classes) rather than a wrapper — struck
+originals and three footer totals don't fit its one-line-one-amount
+props. Built from the `GET .../amended-agreement/` `rows` (§14.6, §14.8),
+every row renders with plain (unsigned) amounts, styled with the
+portal's `row-<kind>` classes:
+
+- `agreement` → plain row (`row-unchanged`).
+- `replaced` → the revised line tinted (`row-changed`) directly above its struck original (`row-changed-orig`).
+- `removed` → the original, struck (`row-removed`).
+- `added` → tinted (`row-added`) with a `+` tag, appended in row order.
+
+Footer: **Previous total** (`amended.original_total`), **New total**
+(`amended.revised_total`, bold), **Change** (`amended.co_delta`, signed
+`+`/`-`) — the portal's three totals. Title: `Change Order
+{change_order_number}`.
+
+Above the lines, a **"What you'll receive"** deliverables table (added
+2026-08-11) — the same `compose_deliverable_diff` kind rows the portal
+renders, served by `GET .../deliverables-diff/` (§14.8) and passed down
+by `ChangeOrderPanel` as the `deliverables` prop: unchanged plain,
+changed above its struck original, removed struck, added tinted with a
+`+` tag; Item + merged Qty columns; the section is omitted when the
+diff is empty.
+
+**Reorder mode** renders `DocReorderView` (unmodified) over the CO's
+**own** `added`/`replaced` rows only — pulled from the same
+`amended-agreement` payload, sorted by `co_index`, each labeled `CO
+{co_index} — {description}` in the Description cell (so a reordered add
+or replace line is never mistaken for an untouched baseline line). The
+`removed` rows have no `co_index` and aren't offered as reorderable rows
+at all — but the reorder endpoint (`POST .../line-items/reorder/`)
+renumbers **every** `item_id` it's given from 1 and silently no-ops any
+`ChangeOrderLineItem` left out of the list, so a payload built only from
+the visible add+replace ids would leave the CO's remove lines with stale,
+colliding `line_number`s. `handleReorderDoc` therefore appends the CO's
+own `action='remove'` line ids (read from `co.line_items`, sorted by
+their current `line_number`) to the end of every reorder POST, unseen but
+present.
 
 ### 14.10 Customer portal
 
@@ -1845,7 +3441,13 @@ login.
     stays held).
   - `POST …/request-changes/` (body `{reason}`) →
     `ChangeOrderService.request_changes`: supersede the open CO and
-    `seed_new` a fresh draft, job stays held.
+    `seed_new` a fresh draft, job stays held. (Shop-side, the terminal
+  toolbar's **Start new change order** button asks — when the prior CO
+  has lines — whether to seed the new draft from them (adds/removes/
+  replaces incl. adjustment amendments; prices recomputed on the new
+  basis) or start empty (`seed_new(empty=True)`, body `{empty: true}` on
+  the seed-new endpoint); a line-less CO skips the dialog. RM
+  2026-08-12.)
 - **Actionability.** A CO is actionable only when `status == open` and
   its job is held (`co.job.on_hold` — the CO analog of an estimate
   being `open` with its job `submitted`). A click that races a shop
@@ -1894,94 +3496,148 @@ Lines are processed **adds → replaces → removes** (each group in
 transiently empties the live work set and trips the auto-advance to
 `work_complete`.
 
-- **add** — crystallize via the same four-way discriminator as estimate
-  acceptance (§9.1): `service_item` → Task
-  (`generate_task(allow_superseded_scheme=True)`; name from the
+**Rewritten 2026-08-09 (CO amend-in-place, Task 3).** REPLACE no longer
+crystallizes a new atom and retires the old one — it **moves the existing
+claim** onto the CO line, so the same physical Task/Material stays live and
+un-touched under new document terms. Only REMOVE retires an atom, and it now
+stamps `descoped_by` before doing so, replacing the old derived
+`struck_atom_keys` badge lookup with a stored field. ADD gained a skip: a
+line already claimed through the CO wizard (§14.4b) has nothing left to
+crystallize.
+
+- **add** — **skipped entirely if the line already has
+  `ChangeOrderLineItemSource` rows** (an atom claimed directly through the
+  CO wizard, §14.4b — there's nothing to crystallize, the claim already
+  exists). Otherwise crystallizes via the same four-way discriminator as
+  estimate acceptance (§9.1): `service_item` → Task
+  (`generate_task(allow_inactive_scheme=True)`; name from the
   ServiceItem, description from the line), `inventory_item` → Material
   (line price = sell price), `is_material` bare → established Material
   via `MaterialService.establish_reverse_markup` (parity with §9.1 —
-  cost backed out of the locked sell, `cost_source='estimated'`; a bare
-  replace whose mirrored atom was provisional is likewise established),
-  else → Fee (defensive ValidationError if no AC — normally unreachable
-  past the send guard). Write a `ChangeOrderLineItemSource` row.
-- **remove** — resolve the target estimate line to its **current** atom
-  and retire it:
+  cost backed out of the locked sell, `cost_source='estimated'`), else →
+  nothing — a **plain** add line crystallizes no atom and gets no
+  `ChangeOrderLineItemSource` row; it stays a document-only delta,
+  exactly like a plain estimate hand-line (§9.1). Descriptor-bearing
+  branches write a `ChangeOrderLineItemSource` row.
+- **replace** — **moves the target's claim onto the CO line; never
+  crystallizes, never retires.** `_move_claims_to(li)`
+  (`ChangeOrderAcceptanceService`, `apps/estimates/co_acceptance.py`)
+  resolves the target's **current** claim rows (through the multi-CO
+  chain, below) and, for each, **deletes the old row then creates the
+  identical row on the CO line** — delete-before-create, inside the same
+  `on_accept` transaction, because in a chained-replace scenario the
+  moved row can itself be a `ChangeOrderLineItemSource` (a prior accepted
+  replace's row), and the table's `(source_type, source_pk)` unique
+  constraint would collide if the new row were created before the old one
+  is gone. A no-op when the CO line already has sources (idempotent
+  re-run) or the target has none (a plain line, or an adjustment line —
+  document-only, stays document-only). The physical atom's pk, status,
+  and cancellation state are **completely untouched** — a replace is a
+  document reassignment of an existing claim, not a swap of the
+  underlying work. (A replace line can also carry the adjustment triple
+  instead of a descriptor — §14.4c covers that path, which crystallizes
+  nothing regardless.)
+- **remove** — resolve the target estimate line to its **current** atom(s)
+  (through the multi-CO chain, below) and, for each, **stamp
+  `Task`/`Material.descoped_by = co` and save it, before attempting
+  retirement** — so a task/material `_retire` leaves alone still records
+  that it was descoped:
   - *Task*: `TaskLifecycleService.cancel_task` — **bleps are
-    preserved**; already complete/cancelled tasks are left alone.
+    preserved**; already complete/cancelled tasks are stamped but
+    otherwise left alone.
   - *Material*: **released** (`MaterialService.release` — earmark backed
     out, quantity moved to `released_qty`, state → `released`, claims
     kept as job history), but **only if** pending, not expense-bound,
     not PO-linked, and not on a live invoice — physical or billed
-    reality is never unwound by a document; those are left for the
-    human to reconcile.
-  - *Fee*: deleted unless on a live invoice (its estimate-line claim is
-    purged; the CO line remains the record of the removal — a Fee
-    `retired` state is deferred to the Fee.task / fixed-price pass).
-  - A document-only target (adjustment line, or an atom already
-    retired) is a no-op — the delta stays document-only, matching
-    `compose_agreement`.
+    reality is never unwound by a document; those are stamped but left
+    for the human to reconcile.
+  - A document-only target (adjustment line, a plain line that never
+    crystallized, or an atom already retired) is a no-op — nothing to
+    stamp, the delta stays document-only, matching `compose_agreement`.
+  - **A REPLACE target is never stamped** — replace moves the claim
+    instead of descoping the atom (above), so a replaced task/material's
+    `descoped_by` stays `None` even though the estimate line it used to
+    sit on is gone from the agreement.
+  - **An atom the same CO re-claimed on an add line is never stamped or
+    retired** (RM 2026-08-10) — the wizard pool frees a removed line's
+    atoms back into this CO's pool (§14.4b), so "remove line, re-add its
+    work under new terms" is a supported flow; the remove loop skips any
+    `(source_type, source_pk)` present on the CO's own add-line sources,
+    and the work carries forward untouched under its new line.
 
-  **Surfacing the skips (decided 2026-07-20):** the skip itself stays
-  silent at acceptance, but the invoice wizard pool badges every
-  struck-but-still-live atom **"struck from agreement"** (amber, like
-  the cancelled-task badge; suppressed when the task is also cancelled)
-  so the biller decides consciously at the money moment. The set is
-  derived, never stored — `ChangeOrderService.struck_atom_keys(job)`
-  walks the persisted chain (accepted CO remove/replace line → target
-  estimate line → claim rows → atom); "still live in the pool" is the
-  whole skip test, so the skip-reason logic is not replicated.
+  **Surfacing the skips (decided 2026-07-20, mechanism rewritten
+  2026-08-09):** the skip itself stays silent at acceptance, but the
+  invoice wizard pool badges every stamped-but-still-live atom
+  **"descoped by {CO-N}"** (amber, like the cancelled-task badge;
+  suppressed when the task is also cancelled) so the biller decides
+  consciously at the money moment. The badge now reads the **stored**
+  `descoped_by` field directly (`struck_from_agreement:
+  task.descoped_by_id is not None`, `descoped_by_co_number:
+  task.descoped_by.change_order_number`) — the old derived
+  `ChangeOrderService.struck_atom_keys(job)` walk (accepted CO
+  remove/replace line → target estimate line → claim rows → atom,
+  re-executed on every pool build) is **deleted**; the stamp written once
+  at acceptance is now the single source of truth, and a data migration
+  (`apps/estimates/migrations/0048_backfill_descoped_by.py`) backfilled it
+  for every pre-2026-08-09 accepted CO. See `invoicing-and-expenses.md`
+  ("Uncovered-work section chips") for the chip's full read side.
   **Considered and declined for now:** keeping the job held after CO
   acceptance (making release-hold the worker's reconciliation act,
   parallel to release-to-floor) plus a SCOPE reconciliation banner. RM
   2026-07-20: don't change a working system — acceptance keeps
   auto-clearing the hold, no second hold layer, no job-status changes.
-  Revisit if the badge alone proves insufficient in practice; the
-  banner would reuse `struck_atom_keys` (built shared-ready). Note the
+  Revisit if the badge alone proves insufficient in practice. Note the
   inherent limit either way: work added outside the estimate has no
   claim chain, so no mechanism can identify it — that reconciliation is
   always the human's.
   When an atom is hard-deleted, source rows pointing at it are purged so
   no lens dangles; release never purges.
-- **replace** — crystallize the replacement **first**, then retire the
-  old atom (as above). A CO line carrying its own descriptor
-  (service/inventory/is_material) crystallizes per that descriptor; a
-  **bare** replace line mirrors the retired atom's type — a Task target
-  yields a new pending Task with the same name / rate scheme /
-  modifiers / sort order / assignee (`TaskBase.copy_fields`) at the CO
-  line's qty and description; a Material target a new Material on the
-  same inventory item (AC/units inherited when the line omits them); a
-  Fee target a new Fee (AC inherited from the old fee if absent on the
-  line).
+
+**Live-invoice guard runs before any of this.** A `remove`/`replace` CO
+line can't even be *saved* against a target already referenced by a live
+invoice — §14.4a's `_assert_target_not_billed` guard fires at
+`add_line_item`/`update_line_item` time, not at acceptance, so by the time
+`on_accept` runs, every remove/replace target is guaranteed unbilled.
 
 **Current-atom resolution (multi-CO chain).** The target of a
 remove/replace is always an `EstimateLineItem`, but after an earlier
-accepted CO replaced that line, the live atom is the *earlier CO line's*
-crystallized atom, not the estimate's. Resolution therefore picks the
-sources of the latest accepted-CO replace line targeting the same
-estimate line (acceptance order: `closed_date`, then id), falling back
-to the estimate line's own sources. This is how consecutive COs against
-one line chain correctly. (The `compose_change_order_diff` display
-baseline still has the documented single-CO limitation — see LATER.md;
-crystallization does not share it.)
+accepted CO replaced that line, the live claim now sits on the *earlier
+CO line* (moved there by that CO's own `_move_claims_to`), not the
+estimate's. Resolution therefore picks the sources of the latest
+accepted-CO replace line targeting the same estimate line (acceptance
+order: `closed_date`, then id), falling back to the estimate line's own
+sources. This is how consecutive COs against one line chain correctly —
+a third CO removing a line two prior COs replaced descopes the atom the
+second replace moved the claim onto, not the estimate's original atom.
+(The `compose_change_order_diff` display baseline still has the
+documented single-CO limitation — see `LATER.md`'s "unify onto
+`compose_amended_agreement`" item; crystallization/claim-move does not
+share it.)
 
 After the walk, `InventoryService.create_earmarks_for_job(job)` re-runs
 the absolute earmark sweep — same as estimate acceptance — so
 crystallized and retired materials net out to correct reservations.
 
-**Idempotency** mirrors §9.2: crystallized lines carry a source row and
-are skipped on re-run; retirement re-checks atom state (a cancelled
-task, a deleted material) before acting.
+**Idempotency** mirrors §9.2: an add line with sources (crystallized or
+authored-claimed) is skipped; a replace line with sources is skipped (the
+move already happened); retirement re-checks atom state (a cancelled
+task, a deleted material) before acting, and the `descoped_by` stamp is a
+plain field write, safe to re-apply.
 
 **Billing stays with the agreement.** Crystallization never creates
-billing lines; §14.6's `source_fee_id` plumbing is what keeps the
-document and atom views counting each crystallized Fee once. Bleps on a
-task cancelled by a remove/replace stay on record under the cancelled
+billing lines. (The former `source_fee_id` plumbing in §14.6 — the
+channel that fed crystallized Fees into `copy_from_estimate` claims —
+was removed 2026-08, fee-removal Task 3.) Bleps on a
+task cancelled by a remove stay on record under the cancelled
 task (the invoice wizard's complete-task gate applies as usual — the
 cancelled work's time is reconciled by the human at invoicing).
 
-Returns `{'tasks_created', 'materials_created', 'fees_created',
-'tasks_cancelled', 'materials_removed', 'fees_removed'}`. Tests:
-`tests/test_change_order_acceptance.py`.
+Returns `{'tasks_created', 'materials_created',
+'tasks_cancelled', 'materials_removed'}` — a replace's claim-move
+contributes to none of these counters (nothing was created, cancelled, or
+removed). Tests: `tests/test_change_order_acceptance.py`,
+`tests/test_co_struck_badge.py`, `tests/test_co_live_invoice_guard.py`,
+`tests/test_co_authoring_claims.py`, `tests/test_co_adjustment_amendment.py`.
 
 ---
 
@@ -2003,7 +3659,8 @@ multipart to `/api/estimates/{id}/send/`.
 (the draft→open shortcut) — every hand-line must have an accounting category.
 `EstimateService.assert_all_hand_lines_have_ac` raises `ValidationError` (400)
 listing the offending lines if any hand-line (no atom source, not a percentage
-adjustment — atom-backed and adjustment lines are exempt) lacks one. This hoists
+adjustment — atom-backed, adjustment, and comment (`is_comment`) lines are
+exempt) lacks one. This hoists
 the AC-required rule from acceptance (§9) to send-time, so the omission is caught
 before the estimate reaches the customer. (`mark_open` also still requires the job
 to have at least one Deliverable.)
@@ -2159,12 +3816,11 @@ transitions the CO `draft → open`.
 
 ## 16. Unfinished work
 
-- **Default service price for worker quick-add** — the worker-side
-  `WorkItemForm` flow currently still requires the worker to pick a
-  service price. A `default_worker_rate_scheme` Configuration key
-  that the form would silently default to when the user lacks
-  `can_manage_jobs` has been designed but not shipped. Pairs with the
-  broader worker-friendly mid-job task creation work.
+> **Default service price for worker quick-add — RESOLVED (task-owned-money
+> Phase 1, §3.4).** The `default_rate_scheme` Configuration key now
+> preselects the CREATE dropdown on `WorkItemForm` for every user
+> (worker or manager), set via the RateSchemeManager's default-preset
+> picker.
 
 - **Per-blep entered-qty provenance (deferred extension)** — per-session
   quantities are BUILT (see §4.2) as a single accumulator on Task; if
@@ -2206,11 +3862,69 @@ transitions the CO `draft → open`.
   estimating-related event but don't surface in the Job HistoryPanel.
   Tracked in `jobs-and-tasks.md`.
 
-- **`accounting_category` required on `EstimateLineItem`** — part of the
-  project-wide line-item AC-NOT-NULL migration tracked in
-  `architecture-and-conventions.md`.
+- **`accounting_category` required on `EstimateLineItem` — RESOLVED,
+  opposite direction (Phase 3 nullable-AC plan, 2026-08).** The "make it
+  NOT NULL everywhere" migration this TODO used to track was superseded:
+  the field stays nullable by design. Atom-backed lines (an
+  `EstimateLineItemSource` exists) may be null when the backing atom is
+  itself uncategorized; adjustment lines (`adjustment_service_id` set)
+  never carry one. What's actually required: a **hand line** (no atom
+  source, not an adjustment) must have an AC — enforced immediately at
+  add/update time (Decision 1) and again at send-time
+  (`EstimateService.assert_all_hand_lines_have_ac`, §15). The CO parallel
+  is the "AC send guard" above (§14.9). `validate_data.check_estimate_line_categories`
+  / `check_change_order_line_categories` cross-check both at rest (Phase
+  3 Task 8) — see `data-constraints.md` §1.16.
 
-- **Review `EstimateAcceptanceService.on_accept` in detail.** The current
-  behaviour is documented in §9 — crystallize each hand-line into a `Fee`
-  (recording a `fee` source link), then earmark the job. Review against
-  real estimate-accept scenarios and revise if needed.
+- **`EstimateAcceptanceService.on_accept` review — RESOLVED (superseded
+  by the 2026-08-09 Fee retirement).** The item used to ask for a review
+  of a design where every hand-line crystallized into a `Fee`. That
+  design is gone: the current behaviour (§9) crystallizes only
+  descriptor-bearing hand-lines into Tasks/Materials; a plain hand-line
+  crystallizes nothing and stays a document line, transiting to invoices
+  via an agreement-line reference instead (§4.5). This is the settled
+  shape, not an open review item.
+
+## Appendix: the fifteen shapes — everything the shop estimates and works
+
+RM's canonical list (2026-08 better-fees design sessions; recovered from
+session transcripts 2026-08-14 after its original home, the superseded
+task-owned-money spec, was deleted). This is the acceptance test for any
+design touching estimating, planning, or invoicing: every shape must have
+a sane path through the surface being designed.
+
+1. **N finished items we manufacture** — the deep case ("the most complex
+   problem"): the estimate's structure emerges from digging into the
+   tasks; may reduce to combinations of the shapes below, or split
+   design / prototyping / finished-object work — multiple tasks
+   coalescing into one or more estimate lines.
+2. **A material we're reselling.**
+3. **Making N parts from a particular material** (may or may not also
+   sell the material).
+4. **Setup fee** — flat.
+5. **Delivery** — usually flat.
+6. **CAD/design time** — hourly.
+7. **Engraving** (router or laser) — preset.
+8. **Cutting charges of various sorts** — usually produce N parts;
+   machine-minutes entered-qty, translated to per-piece.
+9. **Jigs we may keep for re-use.**
+10. **Specialized tools owned by us afterwards, funded by the customer.**
+11. **Outsourced work** (powder coating, waterjet) — quoted as a hand
+    service line / flat-fee ServiceItem / Add-Task-time override (§3.6c),
+    optionally linked to a PO line and reconciled against the vendor's
+    actual bill (§3.6, `materials-inventory-and-purchasing.md` §10a).
+12. **Site visits** — priced up front.
+13. **Untracked consumables** (glue, staples, paint, nuts and bolts).
+14. **Deposits.**
+15. **Credits.**
+
+Resolved shapes (better-fees): setup/delivery/site-visits → flat tasks;
+cutting/engraving → presets with modifiers; CAD → hourly task;
+jigs/tooling → ordinary tasks+materials (no asset registry — RM's call);
+outsourced → hand line/ServiceItem/Add-Task override authoring, PO link +
+reconciliation for the buy side (§3.6, materials-inventory-and-purchasing.md
+§10a); consumables/credits → signed
+hand lines; deposits built. #1 drove the quantity-structures/priced-
+deliverable discussions and the 2026-08-14 estimate/planning joint
+surface design (`docs/plans/2026-08-14-estimate-planning-surface.md`
+while in flight).

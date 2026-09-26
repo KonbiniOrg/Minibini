@@ -20,7 +20,9 @@ class MaterialFieldsTest(TestCase):
             name='S-mf', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.cat,
         )
-        self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
+        self.task = Task(job=self.job, name='t')
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
     def test_material_has_job_consumption_state_released_qty(self):
         m = Material.objects.create(
@@ -160,7 +162,9 @@ class MaterialTaskSetNullTest(TestCase):
             name='S-tsn', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=cat,
         )
-        self.task = Task.objects.create(job=self.job, name='deletable', rate_scheme=scheme)
+        self.task = Task(job=self.job, name='deletable')
+        self.task.stamp_from_scheme(scheme)
+        self.task.save()
 
     def test_delete_task_keeps_material_with_null_task_and_original_job(self):
         cat = AccountingCategory.objects.create(name='tsn-mat', code='TSN-MAT')

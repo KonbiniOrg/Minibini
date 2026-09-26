@@ -1,14 +1,33 @@
 from decimal import Decimal
 from django.test import TestCase
 from apps.core.models import AccountingCategory
-from apps.jobs.models import RateScheme, Task
+from apps.jobs.models import RateScheme
 from apps.estimates.models import ServiceItem
 from apps.jobs.flat_fee_reframe import reframe_flat_fee_prices
 
-# The live PlanTask model has been removed (job-owns-atoms refactor). The
-# historical migration helper still takes a PlanTask-shaped arg (the data
-# migration passes its frozen historical model); these live-model unit tests
-# pass Task in that slot — it's empty here, so the helper just re-scans Task.
+# The live PlanTask model has been removed (job-owns-atoms refactor), and
+# live Task itself no longer has a same-named FK to stand in for the
+# migration-era Task/PlanTask (task-owned-money Phase 1 renamed it to the
+# provenance-only source_scheme, and active_modifiers is now a snapshot
+# list, not the {'flat_fee_price': ...} dict this helper's Task/PlanTask
+# branch expects). These tests never create any Task rows — the Task/
+# PlanTask branch was always meant to be a no-op scan here — so both slots
+# get a genuine empty stand-in instead of the live Task class, rather than
+# coupling this migration-helper test to Task's current live shape.
+
+
+class _EmptyModel:
+    """Stand-in for the migration-era Task/PlanTask args: always reports
+    zero rows, regardless of `fk_field`, so reframe_flat_fee_prices's
+    Task/PlanTask branch is a no-op — these tests only exercise the
+    ServiceItem branch."""
+    class objects:
+        @staticmethod
+        def select_related(*args, **kwargs):
+            class _EmptyQuerySet:
+                def all(self):
+                    return []
+            return _EmptyQuerySet()
 
 
 class _BareCreateProxy:
@@ -58,7 +77,8 @@ class FlatFeeReframeTest(TestCase):
         t1 = self._template('1.00')
         t2 = self._template('30.00')
         t3 = self._template('1.00')  # same price as t1 -> shares minted service
-        worklist = reframe_flat_fee_prices(_BareCreateProxy, Task, Task, ServiceItem, fk_field='rate_scheme')
+        worklist = reframe_flat_fee_prices(
+            _BareCreateProxy, _EmptyModel, _EmptyModel, ServiceItem, fk_field='rate_scheme')
         t1.refresh_from_db(); t2.refresh_from_db(); t3.refresh_from_db()
         self.assertEqual(t1.rate_scheme.rate, Decimal('1.00'))
         self.assertEqual(t2.rate_scheme.rate, Decimal('30.00'))
@@ -69,5 +89,6 @@ class FlatFeeReframeTest(TestCase):
 
     def test_logs_unresolved_zero_price(self):
         bad = self._template('0')
-        worklist = reframe_flat_fee_prices(_BareCreateProxy, Task, Task, ServiceItem, fk_field='rate_scheme')
+        worklist = reframe_flat_fee_prices(
+            _BareCreateProxy, _EmptyModel, _EmptyModel, ServiceItem, fk_field='rate_scheme')
         self.assertTrue(any(r[0] == 'ServiceItem' and r[1] == bad.pk for r in worklist))

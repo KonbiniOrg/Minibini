@@ -8,26 +8,20 @@
   import { api } from '../lib/api.js';
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
 
-  // taskSurface: the task-list footer offers three explicit atom buttons
-  // (Task / Material / Fee). Default (estimate) footer is the material checkbox
-  // + "Add Line" (there, tasks come only from a ServiceItem pick).
+  // taskSurface: the task-list footer offers two explicit atom buttons
+  // (Task / Material). Default (estimate) footer is a Comment checkbox
+  // + "Add Line" (there, tasks come only from a ServiceItem pick; and
+  // material-ness is decided later, by the Accounting Category chosen in
+  // the follow-up form, not here).
   let { open = false, onChoose = null, onclose = null, taskSurface = false } = $props();
   let pickerQuery = $state('');
-  let isMaterial = $state(false); // freeform: unchecked → Fee, checked → Material
-  let isComment = $state(false); // freeform: informational-only, no charge — exclusive with isMaterial
+  let isComment = $state(false); // freeform: informational-only, no charge
 
   // Start fresh on every open: a cancelled add (or any other close) must not
-  // leave stale typing or a stale material/comment toggle behind when reopened.
+  // leave stale typing or a stale comment toggle behind when reopened.
   $effect(() => {
-    if (open) { pickerQuery = ''; isMaterial = false; isComment = false; }
+    if (open) { pickerQuery = ''; isComment = false; }
   });
-
-  function onMaterialCheck(e) {
-    if (e.target.checked) isComment = false;
-  }
-  function onCommentCheck(e) {
-    if (e.target.checked) isMaterial = false;
-  }
 
   const search = async (q) => {
     const enc = encodeURIComponent(q);
@@ -39,7 +33,9 @@
     const invRows = inv.results || inv;
     const rows = [
       ...svcRows.map((s) => ({ kind: 'service', id: s.template_id, label: s.template_name,
-        sub: s.description || '', price: s.rate_scheme_detail?.rate, unit: s.rate_scheme_detail?.unit_label, item: s })),
+        // display_rate resolves the item's real price (e.g. a flat-fee
+        // item's own amount) — the raw scheme rate is the fallback only.
+        sub: s.description || '', price: s.display_rate ?? s.rate_scheme_detail?.rate, unit: s.rate_scheme_detail?.unit_label, item: s })),
       ...invRows.map((m) => ({ kind: 'inventory', id: m.inventory_item_id, label: m.code,
         sub: m.description || '', price: m.selling_price, unit: m.units, item: m })),
     ];
@@ -54,15 +50,16 @@
     else onChoose?.({ type: 'inventory', inventoryItem: r.item });
   }
   function emitFreeform() {
-    // Estimate footer: the "is material?"/"comment" checkboxes decide the kind.
-    onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial, isComment });
+    // Estimate footer: material-ness is decided by the Accounting Category
+    // chosen in the follow-up form (server-derived, RM 2026-08-11) — the
+    // old "is material?" checkbox is retired. The Comment checkbox here
+    // decides is_comment up front, since a comment line skips the AC step
+    // entirely in the follow-up form.
+    onChoose?.({ type: 'freeform', typed: pickerQuery, isComment });
   }
   // Task-list footer: explicit per-atom emits.
   function emitFreeformMaterial() {
     onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial: true });
-  }
-  function emitFreeformFee() {
-    onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial: false });
   }
   function emitFreeformTask() {
     // A manual/freeform Task — rate scheme picked in the follow-up WorkItemForm.
@@ -99,10 +96,8 @@
     {#if taskSurface}
       <button type="button" onclick={emitFreeformTask}>Add Task</button>
       <button type="button" onclick={emitFreeformMaterial}>Add Material</button>
-      <button type="button" onclick={emitFreeformFee}>Add Fee</button>
     {:else}
-      <label><input type="checkbox" bind:checked={isMaterial} onchange={onMaterialCheck}> Is this a material?</label>
-      <label><input type="checkbox" bind:checked={isComment} onchange={onCommentCheck}> Comment (no charge)</label>
+      <label><input type="checkbox" bind:checked={isComment}> Comment (no charge)</label>
       <button type="button" onclick={emitFreeform}>Add Line</button>
     {/if}
   </div>

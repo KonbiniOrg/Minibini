@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers as drf_serializers, status, viewsets
@@ -21,6 +21,23 @@ from apps.estimates.services import (
 )
 
 from .serializers import EstimateLineItemSerializer, EstimateSerializer
+
+
+def _coerce_qty_override(overrides):
+    """Coerce a bundle-modal `overrides['qty']` to Decimal before it reaches
+    the wizard service. `add_atoms_to_new_line_item`'s per-unit path
+    compares `qty_override <= 0` assuming a numeric type — a string/garbage
+    qty there would raise an uncaught TypeError (500) instead of a clean
+    400. Returns `(overrides, error_response)`; `error_response` is None on
+    success. Mirrors apps.api.change_orders.views._coerce_qty_override."""
+    if not overrides or 'qty' not in overrides or overrides['qty'] in (None, ''):
+        return overrides, None
+    try:
+        coerced = Decimal(str(overrides['qty']))
+    except (InvalidOperation, TypeError, ValueError):
+        return overrides, Response(
+            {'qty': ['Enter a valid number.']}, status=status.HTTP_400_BAD_REQUEST)
+    return {**overrides, 'qty': coerced}, None
 
 
 class EstimateViewSet(
@@ -109,8 +126,43 @@ class EstimateViewSet(
     # Line-item GET (list) + POST (create) are provided by LineItemMixin.line_items;
     # 'line_items' stays in get_permissions' mixed_actions so GET is IsAuthenticated
     # and POST requires CanManageJobOrPM. Direct line authoring is supported again
-    # (hand-lines crystallize into Fees at acceptance); atom-backed lines still come
-    # via line-items-from-atoms / add-atoms.
+    # (typed hand-lines crystallize into Tasks/Materials at acceptance; plain
+    # hand-lines stay document-only); atom-backed lines still come via
+    # line-items-from-atoms (composing a NEW line) — attaching atoms onto an
+    # EXISTING line (add-atoms) is retired, API-level, docs/plans/
+    # 2026-08-15-estimating-structure.md "Removals".
+
+    def line_item_update_kwargs(self, request):
+        # The Make Deliverable edit dialog's "update both" choice (RM
+        # 2026-08-12): ?update_deliverables=true syncs linked deliverables'
+        # description/qty/units to the line's new values.
+        if request.query_params.get('update_deliverables') == 'true':
+            return {'update_linked_deliverables': True}
+        return {}
+
+    def line_item_delete_kwargs(self, request):
+        # The Make Deliverable dialog's "remove both" choice (RM 2026-08-12):
+        # ?delete_deliverables=true also deletes deliverables minted from the
+        # line; omitted, the SET_NULL FK leaves them unlinked.
+        if request.query_params.get('delete_deliverables') == 'true':
+            return {'delete_linked_deliverables': True}
+        return {}
+
+    @action(detail=True, methods=['post'],
+            url_path=r'line-items/(?P<item_id>[0-9]+)/make-deliverable',
+            url_name='line-item-make-deliverable')
+    def make_deliverable(self, request, pk=None, item_id=None):
+        """The Make Deliverable button (better-fees spec §6): copy this line's
+        description/qty/units into a new Deliverable on the job, linked back
+        via the source_line provenance FK (which suppresses the button)."""
+        from apps.api.deliverables.serializers import DeliverableSerializer
+        from apps.deliverables.services import DeliverableService
+        estimate = self.get_object()
+        item = self._get_line_item_or_404(estimate, item_id)
+        deliverable = DeliverableService.create_from_estimate_line(item)
+        serializer = DeliverableSerializer(
+            deliverable, context=self.get_serializer_context())
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='revise')
     def revise(self, request, pk=None):
@@ -151,6 +203,7 @@ class EstimateViewSet(
                 estimate.pk,
                 request.data.get('service_item'),
                 request.data.get('qty'),
+                description=request.data.get('description'),
             )
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
@@ -162,42 +215,32 @@ class EstimateViewSet(
         """Create a new estimate line item from a list of atoms."""
         estimate = self.get_object()
         atoms = request.data.get('atoms', [])
+        overrides = request.data.get('overrides')
+        overrides, error = _coerce_qty_override(overrides)
+        if error is not None:
+            return error
         try:
-            line_item = EstimateWizardService.add_atoms_to_new_line_item(estimate, atoms)
+            line_item = EstimateWizardService.add_atoms_to_new_line_item(
+                estimate, atoms, overrides=overrides,
+                per_unit=bool(request.data.get('per_unit')),
+                split_materials=bool(request.data.get('split_materials')))
         except EstimateClaimConflict as e:
             return Response(
                 {'detail': 'Some of these atoms are already claimed by another estimate.',
                  'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
                 status=status.HTTP_409_CONFLICT,
+            )
+        materials_line_item = getattr(line_item, 'materials_line_item', None)
+        if materials_line_item is not None:
+            return Response(
+                {
+                    'line_item': EstimateLineItemSerializer(line_item).data,
+                    'materials_line_item': EstimateLineItemSerializer(materials_line_item).data,
+                },
+                status=status.HTTP_201_CREATED,
             )
         serializer = EstimateLineItemSerializer(line_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(
-        detail=True, methods=['post'],
-        url_path=r'line-items/(?P<line_item_pk>[^/.]+)/add-atoms',
-    )
-    def add_atoms(self, request, pk=None, line_item_pk=None):
-        """Append atoms to an existing line item."""
-        estimate = self.get_object()
-        try:
-            line_item = EstimateLineItem.objects.get(pk=line_item_pk, estimate=estimate)
-        except EstimateLineItem.DoesNotExist:
-            return Response({'detail': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        atoms = request.data.get('atoms', [])
-        try:
-            EstimateWizardService.add_atoms_to_line_item(line_item, atoms)
-        except EstimateClaimConflict as e:
-            return Response(
-                {'detail': 'Some of these atoms are already claimed by another estimate.',
-                 'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        line_item.refresh_from_db()
-        serializer = EstimateLineItemSerializer(line_item)
-        return Response(serializer.data)
 
     @action(
         detail=True, methods=['post'],
@@ -239,6 +282,19 @@ class EstimateViewSet(
             target_category_ids=request.data.get('target_category_ids') or [],
         )
         return Response(EstimateLineItemSerializer(line).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='restamp-atom')
+    def restamp_atom(self, request, pk=None):
+        """Revert (restamp) one per-unit claim's atom back to the
+        agreement's expectation (per-unit-lines spec Task 6 — the Revert
+        affordance behind a drift badge). Body: {'source_id': N}. No
+        special-cased permission wiring needed — this action isn't in
+        get_permissions' read/mixed lists, so it already falls through to
+        the default `[IsAuthenticated(), CanManageJobOrPM()]`, same gate
+        every other per-unit authoring endpoint on this viewset uses."""
+        estimate = self.get_object()
+        EstimateWizardService.restamp_atom(estimate, request.data.get('source_id'))
+        return Response({'message': 'Atom restamped to the per-unit agreement.'})
 
     @action(detail=True, methods=['get'], url_path='send-defaults')
     def send_defaults(self, request, pk=None):
@@ -292,10 +348,18 @@ class EstimateViewSet(
 
 
 def _serialize_pool(pool):
-    """Convert Decimals in the pool to strings for JSON serialization."""
+    """Convert Decimals/timedeltas in the pool to strings for JSON
+    serialization. A task atom's `worker_time` (a timedelta or None)
+    renders in the same "H:MM:SS" shape DRF's own DurationField uses
+    elsewhere, so the frontend's existing duration parsers apply unchanged."""
+    from datetime import timedelta
+    from django.utils.duration import duration_string
+
     def _s(value):
         if isinstance(value, Decimal):
             return str(value)
+        if isinstance(value, timedelta):
+            return duration_string(value)
         return value
 
     return {

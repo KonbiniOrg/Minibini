@@ -43,7 +43,7 @@ test('creating a scheme through the modal round-trips to the list', async ({ pag
   // the unit-lock test below) — pick entered_qty here so Unit label is a
   // free <select> this generic create test can exercise.
   await modal.getByLabel('Algorithm *').selectOption('entered_qty');
-  await modal.getByLabel('Unit label').selectOption({ index: 1 });
+  await modal.getByLabel('Unit').selectOption({ index: 1 });
   await modal.getByLabel('Accounting Category').selectOption({ index: 1 });
   await modal.getByRole('button', { name: 'Save' }).click();
 
@@ -52,9 +52,11 @@ test('creating a scheme through the modal round-trips to the list', async ({ pag
 });
 
 test('editing an existing scheme opens the modal prefilled', async ({ page }) => {
-  // Built here rather than found in the seed: every seeded scheme is
-  // referenced by tasks/service items, so they all offer "Create new version"
-  // instead of Edit. A fresh scheme is unreferenced by construction.
+  // Built here rather than found in the seed: every scheme now offers Edit
+  // regardless of reference count (supersession removed, task-owned-money
+  // Phase 1 — see specs/settings/rate-scheme-presets.spec.js for that
+  // coverage). A fresh scheme just keeps this test isolated from other
+  // specs mutating seeded rows.
   const name = `${stamp}-edit`;
   const api = await apiAs(personas.configtime);
   const cats = await api.get('/api/accounting-categories/');
@@ -84,13 +86,13 @@ test('elapsed-time schemes lock the unit to hour; switching algorithm frees it a
   const modal = page.getByLabel('New Rate Scheme');
 
   await modal.getByLabel('Algorithm *').selectOption('elapsed_time');
-  const unitControl = modal.getByLabel('Unit label');
+  const unitControl = modal.getByLabel('Unit');
   await expect(unitControl).toBeVisible();
   await expect(unitControl).toBeDisabled();
   await expect(unitControl).toHaveValue('hour');
 
   await modal.getByLabel('Algorithm *').selectOption('entered_qty');
-  const unitSelect = modal.getByLabel('Unit label');
+  const unitSelect = modal.getByLabel('Unit');
   await expect(unitSelect).toBeVisible();
   await expect(unitSelect).toBeEnabled();
   // A real, empty-by-default <select> — not the locked stand-in.

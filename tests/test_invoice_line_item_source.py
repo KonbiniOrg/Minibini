@@ -37,11 +37,12 @@ class InvoiceLineItemSourceTest(TestCase):
             name='S-ilis', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job,
             name='Labor',
-            rate_scheme=self.scheme,
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
         self.invoice = Invoice.objects.create(job=self.job)
         self.line_item = InvoiceLineItem.objects.create(

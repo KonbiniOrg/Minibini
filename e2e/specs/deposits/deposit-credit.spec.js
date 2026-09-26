@@ -10,6 +10,15 @@
 // e2e-reachable — sending requires a real QBO push, unavailable in this
 // env — and is covered by Vitest only
 // (frontend/tests/routes/invoices/InvoiceSendPage.test.js).
+//
+// UPDATED for the better-fees skeleton phase (Task 13 retired the old
+// Reconcile-wizard toggle): the invoice document now has ONE merged Edit
+// view (line-items table + "Uncovered work" pool + a dedicated "Deposit
+// credits" section) instead of a separate lines view / Reconcile wizard —
+// no "Reconcile"/"Back to lines" toggle to drive, and pulling a deposit
+// credit is a direct one-click "Apply to this invoice" button (no
+// checkbox + "Add Here"). See frontend/src/components/invoices/
+// InvoiceEditView.svelte's deposit-credits-section.
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { loadBackdrop } from '../../fixtures/lookups.js';
@@ -30,11 +39,12 @@ function jobChip(page) {
   return page.locator('.job-chip').filter({ has: page.getByText(job.job_number, { exact: true }) });
 }
 
-// The deposit credit row in the reconcile pool, in either its selectable
-// ("available", a <label>) or claimed ("claimed_by_current", a <span>) state
-// — WizardAtomRow renders one or the other, but both carry this text.
+// The deposit credit row in the Edit view's "Deposit credits" section
+// (InvoiceEditView.svelte) — only rendered while the credit is still
+// unclaimed ('available'); once claimed it disappears from here entirely
+// and shows up as a "Less deposit" line in the main table instead.
 function depositCreditRow(page) {
-  return page.locator('label, span').filter({ hasText: 'Deposit credit — INV-E2E-DEP-1' });
+  return page.locator('.deposit-credits-section tr').filter({ hasText: 'Deposit credit — INV-E2E-DEP-1' });
 }
 
 async function discardDraft() {
@@ -62,50 +72,53 @@ test('§2-3 Deposit credit: board banner, pulling the credit, claim lifecycle', 
     await expect(popup.locator('.deposit-banner')).toHaveText('DEP PAID');
   });
 
-  await test.step('Start a second invoice and open Reconcile', async () => {
-    await page.goto(`/#/jobs/${job.job_id}/invoice`);
+  await test.step('Start a second invoice: the new draft shows the "Unapplied deposit credit" notice', async () => {
     // The job already carries the seeded paid deposit invoice, so the panel
     // lands on it (not the empty "no invoices yet" state) — a second invoice
     // is started via the subnav's "+ New invoice" trailing action.
+    await page.goto(`/#/jobs/${job.job_id}/invoice`);
     await page.getByRole('button', { name: '+ New invoice' }).click();
-    await page.getByRole('button', { name: 'Reconcile' }).click();
-    await expect(page.getByRole('heading', { name: 'Tasks and Materials' })).toBeVisible();
-  });
-
-  await test.step('The new draft shows the "Unapplied deposit credit" notice', async () => {
-    await page.getByRole('button', { name: 'Back to lines' }).click();
     await expect(page.getByText(/Unapplied deposit credit .* INV-E2E-DEP-1/)).toBeVisible();
-    await page.getByRole('button', { name: 'Reconcile' }).click();
-    await expect(page.getByRole('heading', { name: 'Tasks and Materials' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Line Items' })).toBeVisible();
   });
 
-  await test.step('Reconcile shows a "Deposit credits" group with the credit row', async () => {
-    await expect(page.getByText('Deposit credits', { exact: true })).toBeVisible();
+  await test.step('The Edit view shows a "Deposit credits" section with the credit row', async () => {
+    await expect(page.getByRole('heading', { name: 'Deposit credits' })).toBeVisible();
     const row = depositCreditRow(page);
-    await expect(row).toContainText('[deposit]');
-    await expect(row).toContainText('$5,000.00 credit');
+    await expect(row).toContainText('Deposit on 08026');
+    // The pool amount is already the deduction VALUE (negative) — same
+    // number the resulting "Less deposit" line below will carry.
+    await expect(row).toContainText('$-5000.00');
   });
 
-  await test.step('Pulling it (Add Here) creates a negative "Less deposit" line', async () => {
-    await depositCreditRow(page).locator('input[type="checkbox"]').check();
-    await page.getByRole('button', { name: 'Add Here' }).click();
-    // Claimed in place, live — the Deposit credits group's has_billable_atoms
-    // is presence-based (apps/invoicing/services.py get_source_pool), same
-    // as every other pool group, so the row stays visible and now shows its
-    // claimed marker instead of the group collapsing.
-    await expect(depositCreditRow(page)).toContainText('→ line 1');
-    await page.getByRole('button', { name: 'Back to lines' }).click();
-    const row = page.locator('tr', { hasText: 'Less deposit (INV-E2E-DEP-1)' });
+  await test.step('Pulling it ("Apply to this invoice") creates a negative "Less deposit" line', async () => {
+    await depositCreditRow(page).getByRole('button', { name: 'Apply to this invoice' }).click();
+    // Claimed — the atom is no longer 'available', so it drops out of the
+    // Deposit credits section (InvoiceEditView filters that section to
+    // state === 'available'); the section itself disappears once it was
+    // the only credit on the job.
+    await expect(depositCreditRow(page)).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Deposit credits' })).toHaveCount(0);
+
+    // Scoped to the row carrying a BackingChip — the parent line row, not
+    // its own nested AtomChildRow underneath (same description substring,
+    // no chip) — so the locator stays a strict-mode-safe single match.
+    const row = page.locator('tr', { hasText: 'Less deposit (INV-E2E-DEP-1)' })
+      .filter({ has: page.locator('.backing-chip') });
     await expect(row).toBeVisible();
     await expect(row).toContainText('$-5000.00');
+    // Its BackingChip reads the dedicated deposit-credit classification.
+    await expect(row.locator('.backing-chip')).toHaveText('deposit credit');
     // Now applied — the notice from the earlier step is gone.
     await expect(page.getByText(/Unapplied deposit credit/)).toHaveCount(0);
   });
 
-  await test.step('Re-opening the pool still shows the credit as claimed', async () => {
-    await page.getByRole('button', { name: 'Reconcile' }).click();
-    await expect(page.getByText('Deposit credits', { exact: true })).toBeVisible();
-    await expect(depositCreditRow(page)).toContainText('→ line 1');
+  await test.step('Reloading still shows the credit as claimed (persisted, not local-only)', async () => {
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Deposit credits' })).toHaveCount(0);
+    const row = page.locator('tr', { hasText: 'Less deposit (INV-E2E-DEP-1)' })
+      .filter({ has: page.locator('.backing-chip') });
+    await expect(row).toBeVisible();
   });
 
   await test.step('While claimed by this live draft, the board DEP PAID banner clears', async () => {

@@ -314,7 +314,7 @@ class QBOSuggestionService:
         elif area == 'services':
             from apps.jobs.models import RateScheme
             out['scheme_options'] = list(
-                RateScheme.objects.filter(replaced_by__isnull=True)
+                RateScheme.objects.filter(is_active=True)
                 .values('pk', 'name'))
         elif area == 'contacts':
             # Customers referencing QBO terms konbini doesn't have yet →
@@ -392,7 +392,7 @@ class QBOSuggestionService:
         from apps.jobs.models import RateScheme
         imported_ids = set(ServiceItem.objects.exclude(qbo_id='')
                            .values_list('qbo_id', flat=True))
-        # A mapped item whose scheme still exists (even superseded) was
+        # A mapped item whose scheme still exists (even retired/inactive) was
         # imported by a scheme commit — ServiceItems only appear later, at
         # the catalog commit, so the map is the authoritative marker here.
         scheme_pks = set(RateScheme.objects.values_list('pk', flat=True))
@@ -443,10 +443,10 @@ class QBOSuggestionService:
 
         from apps.jobs.models import RateScheme
         scheme_by_name = dict(
-            RateScheme.objects.filter(replaced_by__isnull=True)
+            RateScheme.objects.filter(is_active=True)
             .values_list('name', 'pk'))
         scheme_map = _load_scheme_map()
-        live = set(RateScheme.objects.filter(replaced_by__isnull=True)
+        live = set(RateScheme.objects.filter(is_active=True)
                    .values_list('pk', flat=True))
         category_map = _category_by_income_account(snapshot)
         inv_by_qbo = {i.qbo_id: i for i in
@@ -642,21 +642,18 @@ class QBOImportCommitService:
                 + '. Commit your accounting categories first if the '
                   'pulldowns are empty.']})
 
-        from apps.core.models import AccountingCategory
         from apps.core.services import ConfigurationService
-        from apps.estimates.models import ServiceItem
 
         stored_map = _load_scheme_map()
 
         def current(pk):
-            """The live end of pk's supersession chain, or None if gone."""
+            """The mapped scheme, or None if it's gone. Task 4 removes
+            supersession — presets are edited in place forever, so the
+            stored pk IS the current scheme; no chain to walk."""
             try:
-                scheme = RateScheme.objects.get(pk=pk)
+                return RateScheme.objects.get(pk=pk)
             except RateScheme.DoesNotExist:
                 return None
-            while scheme.replaced_by_id:
-                scheme = scheme.replaced_by
-            return scheme
 
         # Rows whose item was committed before update their existing scheme;
         # only genuinely new rows insert — so a stale panel or a re-apply
@@ -706,25 +703,11 @@ class QBOImportCommitService:
                         }
                         changed = any(getattr(target, f) != v
                                       for f, v in fields.items())
-                        if changed and target.is_referenced():
-                            # Frozen once referenced: new pricing is a new
-                            # version. supersede() does NOT repoint catalog
-                            # users, so repoint ServiceItems explicitly.
-                            new = ConfigurationService.supersede_rate_scheme(
-                                target,
-                                name=row['name'],
-                                algorithm=row['algorithm'],
-                                rate=fields['rate'],
-                                unit_label=row['unit_label'],
-                                accounting_category=AccountingCategory.objects
-                                    .get(pk=row['accounting_category']),
-                            )
-                            for svc in ServiceItem.objects.filter(
-                                    rate_scheme=target):
-                                svc.rate_scheme = new
-                                svc.save()
-                            target = new
-                        elif changed:
+                        if changed:
+                            # Task 4: presets are freely editable — no
+                            # supersession, no frozen fields. Referenced
+                            # schemes (ServiceItem, stamped tasks) update in
+                            # place; nothing to repoint.
                             ConfigurationService.update_rate_scheme(
                                 target, **fields)
                         handled[original_pk] = target
@@ -834,12 +817,11 @@ def _catalog_commit_rows(rows):
                 if (row.get('rate') is not None
                         and qbo_moved
                         and svc.rate_scheme.rate != new_rate):
-                    # Pricing integrity: price changes supersede, never a
-                    # bare rate edit. supersede() does NOT repoint catalog
-                    # users, so repoint the ServiceItem explicitly.
-                    new_scheme = ConfigurationService.supersede_rate_scheme(
+                    # Task 4: presets are freely editable — update the
+                    # scheme's rate in place. No supersession, so nothing to
+                    # repoint on the ServiceItem.
+                    ConfigurationService.update_rate_scheme(
                         svc.rate_scheme, rate=new_rate)
-                    svc.rate_scheme = new_scheme
                 if row.get('name'):
                     svc.template_name = row['name']
                 svc.save()

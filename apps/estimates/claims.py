@@ -52,10 +52,9 @@ def purge_source_rows_for_atom(source_type, source_pk):
 
     Invariant: no EstimateLineItemSource / ChangeOrderLineItemSource /
     InvoiceLineItemSource row may outlive its atom — a dangling row breaks
-    resolve() consumers (serializers, compose_agreement's fee maps, wizard
-    bundle math). Called from Material.delete(), Fee.delete(), and
-    Task.delete(), so every deletion path (restock-to-zero, PO sever,
-    fee/task delete, CO retirement) upholds it. Paths that must NOT delete a
+    resolve() consumers (serializers, wizard bundle math). Called from
+    Material.delete() and Task.delete(), so every deletion path
+    (restock-to-zero, PO sever, task delete, CO retirement) upholds it. Paths that must NOT delete a
     billed atom guard *before* deleting (e.g. _assert_not_invoiced, the CO
     retirement skips); this purge is the consistency backstop, not the guard.
     """
@@ -115,15 +114,33 @@ class EstimateClaimService:
 #   rejected / expired  — the document died; nothing was promised, so its
 #                         atoms return to the pool.
 #   accepted            — NO. The claims ARE the agreement record (what was
-#                         sold on which line); compose_agreement and
-#                         ChangeOrderService.struck_atom_keys read them.
+#                         sold on which line); compose_agreement reads them,
+#                         and ChangeOrderAcceptanceService._current_atoms
+#                         walks them (through the replace chain) to resolve
+#                         a remove/replace target's current atom.
 #   superseded          — already holds none: EstimateService.revise_estimate
-#                         re-points the rows onto the new revision.
+#                         re-points the rows onto the new revision, and
+#                         ChangeOrderService.request_changes does the CO-side
+#                         equivalent (seed_new's move_claims=True moves each
+#                         superseded line's source rows onto its copy in the
+#                         freshly-seeded draft before the CO transitions to
+#                         superseded).
 #
 # Called from Estimate.save() / ChangeOrder.save() rather than a service, so
 # every writer is covered — the portal decline endpoints, the expiry sweep,
 # the status-transition actions, and the admin all go through save().
-DEAD_DOCUMENT_STATUSES = ('rejected', 'expired')
+#
+# Split per document (RM 2026-08-13): an ESTIMATE keeps its claims on
+# expiry, because expiry is reactivatable in place (unexpire, the
+# estimate-renewal feature) — an expired quote holds its work pending
+# renewal, and freeing the atoms means actually killing the document
+# (reject) or superseding it. A CHANGE ORDER has no revival path, so its
+# expiry still releases.
+ESTIMATE_DEAD_STATUSES = ('rejected',)
+CO_DEAD_STATUSES = ('rejected', 'expired')
+# Back-compat alias (docstrings/comments reference it); prefer the
+# per-document constants above.
+DEAD_DOCUMENT_STATUSES = CO_DEAD_STATUSES
 
 
 def release_estimate_claims(estimate):

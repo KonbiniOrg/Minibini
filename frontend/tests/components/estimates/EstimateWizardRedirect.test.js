@@ -15,13 +15,13 @@ beforeEach(() => {
 });
 
 describe('EstimateWizardRedirect shim', () => {
-  it('fetches the estimate, remembers reconcile mode, then replaces the hash with the job-scoped URL', async () => {
+  it('fetches the estimate, remembers edit mode, then replaces the hash with the job-scoped URL', async () => {
     api.get.mockResolvedValue({ estimate_id: 11, job: 9 });
 
     render(EstimateWizardRedirect, { props: { params: { id: '11' } } });
 
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/api/estimates/11/'));
-    await waitFor(() => expect(rememberMode).toHaveBeenCalledWith(9, 'est:11', 'reconcile'));
+    await waitFor(() => expect(rememberMode).toHaveBeenCalledWith(9, 'est:11', 'edit'));
     await waitFor(() => expect(window.location.hash).toBe('#/jobs/9/estimate/11'));
   });
 

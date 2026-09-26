@@ -27,10 +27,13 @@ test.beforeAll(async () => {
 });
 
 test('§5 Send gate — truly empty refused; deliverables-only sendable', async ({ page }) => {
+  // noChangeOrders: this test creates the job's first CO — a candidate that
+  // already carries one (e.g. from another spec earlier in the same run)
+  // would fail change-order creation, which requires no existing CO.
   const hit = await findJobWithEstimate(jobs, {
-    jobStatus: 'in_progress', estimateStatus: 'accepted', used,
+    jobStatus: 'in_progress', estimateStatus: 'accepted', used, noChangeOrders: true,
   });
-  test.skip(!hit, 'seed gap: no in_progress job with an accepted estimate');
+  test.skip(!hit, 'seed gap: no in_progress job with an accepted estimate and no change order yet');
   const { job } = hit;
 
   // API-side setup: the CO room entry flow is §1's spec; this one is about

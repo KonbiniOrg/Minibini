@@ -33,7 +33,7 @@ class TaskEstQtyCarryOverTest(TestCase):
         )
         task = template.generate_task(self.job, est_qty=Decimal('3'))
         self.assertEqual(task.est_qty, Decimal('3'))
-        self.assertEqual(task.rate_scheme_id, scheme.pk)
+        self.assertEqual(task.source_scheme_id, scheme.pk)
 
     def test_template_generate_task_honors_name_and_description_overrides(self):
         """User-entered name and description must survive the template-add path."""

@@ -59,10 +59,13 @@ class ItemRefResolutionTests(TestCase):
         return InvoiceLineItem.objects.create(**defaults)
 
     def _task(self, service_item=None, name='T'):
-        return Task.objects.create(
-            job=self.job, name=name, rate_scheme=self.scheme,
+        task = Task(
+            job=self.job, name=name,
             service_item=service_item,
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        return task
 
     def _source(self, line, atom):
         if isinstance(atom, Task):
@@ -129,14 +132,6 @@ class ItemRefResolutionTests(TestCase):
         line = self._line(adjustment_service=self.scheme)
         self.assertIsNone(QBOInvoiceSyncService._catalog_entity_for_line(line))
 
-    def test_fee_source_has_no_entity(self):
-        line = self._line()
-        InvoiceLineItemSource.objects.create(
-            invoice_line_item=line,
-            source_type=InvoiceLineItemSource.SOURCE_FEE, source_pk=999,
-        )
-        self.assertIsNone(QBOInvoiceSyncService._catalog_entity_for_line(line))
-
     def test_sourceless_hand_line_has_no_entity(self):
         line = self._line()
         self.assertIsNone(QBOInvoiceSyncService._catalog_entity_for_line(line))
@@ -170,3 +165,16 @@ class ItemRefResolutionTests(TestCase):
         line = self._line(accounting_category=bare_cat)
         self.assertIsNone(
             QBOInvoiceSyncService._resolve_item_ref(line, MagicMock()))
+
+    def test_null_category_with_no_entity_raises_clear_error(self):
+        """A sourceless hand line (no catalog entity) with a null AC — the
+        entity path can't resolve an ItemRef and there's no category to
+        fall back to, so this must raise a clear ValidationError naming
+        the line rather than an AttributeError on a None category."""
+        from django.core.exceptions import ValidationError
+        line = self._line(accounting_category=None)
+        with self.assertRaises(ValidationError) as ctx:
+            QBOInvoiceSyncService._resolve_item_ref(line, MagicMock())
+        msg = str(ctx.exception)
+        self.assertIn(str(line.line_number), msg)
+        self.assertIn('fallback_accounting_category', msg)

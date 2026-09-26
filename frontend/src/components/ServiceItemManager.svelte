@@ -38,7 +38,7 @@
       const [tmplResp, schemeResp, allSchemeResp] = await Promise.all([
         api.get('/api/service-items/'),
         api.get('/api/rate-schemes/'),
-        api.get('/api/rate-schemes/?include_superseded=true'),
+        api.get('/api/rate-schemes/?include_inactive=true'),
       ]);
       templates = tmplResp.results || tmplResp;
       schemes = schemeResp.results || schemeResp;
@@ -53,6 +53,12 @@
   const selectedScheme = $derived(
     schemes.find(s => s.rate_scheme_id === Number(form.rate_scheme)) || null
   );
+  // flat_fee schemes: the item's config is one {amount} entry, not a list of
+  // pre-checked modifier keys — the scheme owns that interpretation
+  // (RateScheme.validate_item_config). The UI shows a single Amount field
+  // and the word "modifier" never renders on this path (RM 2026-08-16).
+  const isFlatFeeScheme = $derived(selectedScheme?.algorithm === 'flat_fee');
+  let flatFeeAmount = $state('');
 
   function schemeFor(id) {
     return allSchemes.find(s => s.rate_scheme_id === id);
@@ -68,19 +74,38 @@
       .join(', ');
   }
 
-  function isSuperseded(template) {
+  // Full price note for the list (RM 2026-08-17): every row shows what the
+  // item actually costs. Percent-style with modifiers reads
+  // "at $25.00, Rush (+50%) — $37.50/hour"; without modifiers just
+  // "$25.00/hour"; flat-fee shows its amount "$50.00/ea". The effective
+  // figure is the server's display_rate (scheme-owned math — never
+  // re-derived here); percentage schemes get no money note (their rate is
+  // a percent, not a price).
+  function priceNote(template, scheme) {
+    if (!scheme || scheme.algorithm === 'percentage') return '';
+    const eff = template.display_rate ?? scheme.rate;
+    if (eff == null) return '';
+    const unit = scheme.unit_label && scheme.unit_label !== 'none'
+      ? `/${scheme.unit_label}` : '';
+    if (scheme.algorithm === 'flat_fee') return `$${eff}${unit}`;
+    const mods = activeModifierNote(template, scheme);
+    if (mods) return `at $${scheme.rate}, ${mods} — $${eff}${unit}`;
+    return `$${eff}${unit}`;
+  }
+
+  function isInactiveScheme(template) {
     const s = schemeFor(template.rate_scheme);
-    return !!(s && s.superseded);
+    return !!(s && !s.is_active);
   }
 
   async function refreshSchemes() {
     // The schemes list is loaded once on mount, but a RateScheme can be
-    // edited/superseded elsewhere on the settings page while this component
+    // edited/retired elsewhere on the settings page while this component
     // sits open — re-fetch on form open so the picker is never stale.
     try {
       const [schemeResp, allSchemeResp] = await Promise.all([
         api.get('/api/rate-schemes/'),
-        api.get('/api/rate-schemes/?include_superseded=true'),
+        api.get('/api/rate-schemes/?include_inactive=true'),
       ]);
       schemes = schemeResp.results || schemeResp;
       allSchemes = allSchemeResp.results || allSchemeResp;
@@ -91,19 +116,27 @@
 
   function startCreate() {
     form = emptyForm();
+    flatFeeAmount = '';
     editingId = 'new';
     clearFormMessages();
     refreshSchemes();
   }
 
   function startEdit(tmpl) {
-    // active_modifiers is always a list of modifier keys.
+    // Config shape is scheme-owned: a list of modifier KEYS for percent-style
+    // schemes, one {amount} entry for flat_fee ones. Prefill both local
+    // shapes; save() emits whichever the picked scheme calls for.
     const dm = tmpl.default_active_modifiers;
+    const amountEntry = Array.isArray(dm)
+      ? dm.find((m) => m && typeof m === 'object' && 'amount' in m)
+      : null;
+    flatFeeAmount = amountEntry ? String(amountEntry.amount) : '';
     form = {
       template_name: tmpl.template_name,
       description: tmpl.description || '',
       rate_scheme: tmpl.rate_scheme || '',
-      default_active_modifiers: Array.isArray(dm) ? [...dm] : [],
+      default_active_modifiers:
+        Array.isArray(dm) && !amountEntry ? [...dm] : [],
       is_active: tmpl.is_active,
     };
     editingId = tmpl.template_id;
@@ -129,7 +162,12 @@
         template_name: form.template_name,
         description: form.description,
         rate_scheme: form.rate_scheme || null,
-        default_active_modifiers: form.default_active_modifiers,
+        default_active_modifiers: isFlatFeeScheme
+          // Number-input binding yields a number; emit the backend's string
+          // convention at 2 decimals (matches Decimal(str(amount)) parsing).
+          ? (flatFeeAmount !== '' && flatFeeAmount != null
+              ? [{ amount: Number(flatFeeAmount).toFixed(2) }] : [])
+          : form.default_active_modifiers,
         is_active: form.is_active,
       };
       if (editingId === 'new') {
@@ -183,11 +221,11 @@
           <td>{t.template_name}</td>
           <td>
             {scheme ? scheme.name : '—'}
-            {#if activeModifierNote(t, scheme)}
-              <br><small>{activeModifierNote(t, scheme)}</small>
+            {#if priceNote(t, scheme)}
+              <br><small>{priceNote(t, scheme)}</small>
             {/if}
-            {#if isSuperseded(t)}
-              <br><strong style="color:#a8071a">WARNING: Rate Scheme is superseded — update before next use</strong>
+            {#if isInactiveScheme(t)}
+              <br><strong style="color:#a8071a">WARNING: Rate Scheme is inactive — update before next use</strong>
             {/if}
           </td>
           <td>{t.is_active ? 'Yes' : 'No'}</td>
@@ -228,20 +266,28 @@
     <FieldError errors={fieldErrs} field="rate_scheme" /></p>
 
     {#if selectedScheme}
-      <p><strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label} <small>(from rate scheme)</small></p>
-      {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
-        <fieldset>
-          <legend><strong>Default Modifiers</strong></legend>
-          {#each selectedScheme.modifiers as mod}
-            <label>
-              <input type="checkbox"
-                checked={form.default_active_modifiers.includes(mod.key)}
-                onchange={() => toggleModifier(mod.key)}>
-              {mod.label} (+{mod.percent}%)
-            </label><br>
-          {/each}
-        </fieldset>
-        <FieldError errors={fieldErrs} field="default_active_modifiers" />
+      {#if isFlatFeeScheme}
+        <p><label><strong>Amount *</strong><br>
+          <input type="number" step="0.01" min="0.01" bind:value={flatFeeAmount}>
+        </label>
+        <small>per {selectedScheme.unit_label}</small>
+        <FieldError errors={fieldErrs} field="default_active_modifiers" /></p>
+      {:else}
+        <p><strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label} <small>(from rate scheme)</small></p>
+        {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
+          <fieldset>
+            <legend><strong>Default Modifiers</strong></legend>
+            {#each selectedScheme.modifiers as mod}
+              <label>
+                <input type="checkbox"
+                  checked={form.default_active_modifiers.includes(mod.key)}
+                  onchange={() => toggleModifier(mod.key)}>
+                {mod.label} (+{mod.percent}%)
+              </label><br>
+            {/each}
+          </fieldset>
+          <FieldError errors={fieldErrs} field="default_active_modifiers" />
+        {/if}
       {/if}
     {/if}
 

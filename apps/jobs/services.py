@@ -14,7 +14,7 @@ from django.db.models import Q, Prefetch
 from django.utils import timezone
 from django.utils.dateparse import parse_duration
 
-from apps.jobs.models import Job, Task, Blep, Fee, RateScheme, copy_active_modifiers
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.estimates.models import (
     Estimate, WorkTemplate, ServiceItem,
     EstimateLineItem,
@@ -39,12 +39,16 @@ def _coerce_duration(value):
     return None
 
 
-def hours_pair_fill(scheme, est_qty, est_worker_time):
-    """For hour-denominated schemes, est_qty (billable hours) and
+def hours_pair_fill(unit_label, est_qty, est_worker_time):
+    """For hour-denominated units, est_qty (billable hours) and
     est_worker_time (schedulable duration) are one number in two encodings.
     When exactly one is provided, derive the other. Convenience, not an
-    invariant — both-provided passes through untouched."""
-    if scheme is None or scheme.unit_label != HOUR_UNIT:
+    invariant — both-provided passes through untouched.
+
+    Takes a bare ``unit_label`` string (not a RateScheme) — task-owned
+    money (Phase 1) means the unit of record lives on the Task itself, not
+    on a scheme lookup."""
+    if unit_label != HOUR_UNIT:
         return est_qty, est_worker_time
     if est_qty is not None and not est_worker_time:
         try:
@@ -563,6 +567,26 @@ class JobService:
                 'the job status directly.'
             )
 
+        # Manual release-to-floor is retired FOR A JOB WITH AN ACCEPTED
+        # ESTIMATE: approved -> in_progress happens only via auto-release
+        # (every checklist line answered) or another system-driven walk
+        # (timeslip-start, work-complete's intermediate hop, invoice-
+        # completion cascade) — never a direct status edit, mirroring the
+        # direct-approval gate above. A job with NO accepted estimate has
+        # no checklist to auto-release it (it reached `approved` via the
+        # direct-approval path just above, or an estimate was drafted
+        # afterward but never accepted) — a manual release is the only way
+        # such a job ever moves, so it stays allowed.
+        if (status_changed and old_status == Job.STATUS_APPROVED
+                and job.status == Job.STATUS_IN_PROGRESS
+                and not system_transition
+                and job.estimate_set.filter(status=Estimate.STATUS_ACCEPTED).exists()):
+            raise ValidationError(
+                'Release to the floor happens automatically once the '
+                'estimate\'s checklist is fully answered — it cannot be '
+                'set directly.'
+            )
+
         # A held job is parked: no status changes except cancellation, which
         # (like release) requires any live change order to be resolved first
         # and drops the flag as part of the transition.
@@ -857,7 +881,8 @@ class JobService:
         # only the loose-material-stranded approved/in_progress cases arrive
         # here short of work_complete; their materials were just released).
         if job.status == Job.STATUS_APPROVED:
-            job = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
+            job = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS,
+                                        system_transition=True)
         if job.status == Job.STATUS_IN_PROGRESS:
             job = JobService.update_job(job.pk, status=Job.STATUS_WORK_COMPLETE)
         job = JobService.update_job(job.pk, status=Job.STATUS_COMPLETED)
@@ -880,7 +905,39 @@ class JobService:
         status — pre-APPROVED jobs are left alone, and the state machine
         forbids a direct jump from DRAFT/SUBMITTED to IN_PROGRESS."""
         if job.status == Job.STATUS_APPROVED:
-            JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
+            JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS,
+                                     system_transition=True)
+
+    @staticmethod
+    def maybe_auto_release(job):
+        """approved → in_progress (system transition) when the job's
+        accepted estimate exists and unanswered_lines() is empty. Fires
+        after acceptance, after each mint claim on an accepted estimate,
+        and after each work_declined flip. Idempotent; does nothing for
+        any other job status (on_hold, already in_progress, ...).
+
+        on_hold is checked explicitly (not merely relying on update_job's
+        while-held status guard): a held job keeps its true status
+        underneath (e.g. still 'approved'), so without this check a
+        checklist completing while held would attempt the status write and
+        hit update_job's "release it before changing its status"
+        ValidationError instead of silently no-opping. Auto-release is not
+        one of the on_hold escape hatches — hold wins; only the explicit
+        hold-release path (JobService.release_job) lifts the flag, and it
+        does not itself re-check the checklist."""
+        job.refresh_from_db()
+        if job.status != Job.STATUS_APPROVED or job.on_hold:
+            return
+        accepted_estimates = Estimate.objects.filter(
+            job=job, status=Estimate.STATUS_ACCEPTED)
+        if not accepted_estimates.exists():
+            return
+        from apps.estimates.services import EstimateService
+        for estimate in accepted_estimates:
+            if EstimateService.unanswered_lines(estimate).exists():
+                return
+        JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS,
+                                 system_transition=True)
 
     @staticmethod
     def mark_work_reopened(job):
@@ -965,12 +1022,6 @@ class JobService:
                 **task.copy_fields(),
             )
             task_map[task.pk] = new_task
-        # Second pass: wire parent_task hierarchy onto the new tasks.
-        for task in source_tasks:
-            if task.parent_task_id and task.parent_task_id in task_map:
-                new_task = task_map[task.pk]
-                new_task.parent_task = task_map[task.parent_task_id]
-                new_task.save()
         # Materials (task-attached follow their remapped task; task-less stay
         # loose). Released materials are the SOURCE job's "planned it, didn't
         # use it" history — copying them would mint empty qty-0 rows.
@@ -1017,76 +1068,88 @@ class TaskService:
     @staticmethod
     def create_from_template(template, job, assignee=None, est_qty=None):
         """
-        Create Task from ServiceItem. Writes billing fields directly on Task.
+        Create Task from ServiceItem. Stamps billing fields from the
+        template's RateScheme onto the Task (task-owned money Phase 1) via
+        ``Task.stamp_from_scheme`` before first save.
         """
-        from apps.core.services import SchemeSupersededError
+        from apps.jobs.models import SchemeInactiveError
 
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
-        if template.rate_scheme_id and template.rate_scheme.replaced_by_id is not None:
-            raise SchemeSupersededError(
-                f'Template "{template.template_name}" references a superseded RateScheme.'
-            )
         if not template.rate_scheme_id:
             raise ValidationError(
                 f'Template "{template.template_name}" has no rate_scheme.'
             )
+        scheme = template.rate_scheme
+        if not scheme.is_active:
+            raise SchemeInactiveError(
+                f'Template "{template.template_name}" references an inactive RateScheme.'
+            )
         with transaction.atomic():
-            task = Task.objects.create(
+            task = Task(
                 job=job,
                 name=template.template_name,
                 assignee=assignee,
                 service_item=template,
-                rate_scheme=template.rate_scheme,
-                active_modifiers=copy_active_modifiers(template.default_active_modifiers),
                 est_qty=est_qty if est_qty is not None else Decimal('1'),
             )
+            task.stamp_from_scheme(scheme, modifier_keys=template.default_active_modifiers)
+            task.save()
             JobService.mark_work_reopened(job)
         return task
 
     @staticmethod
     def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
                       est_qty=None, est_worker_time=None, actual_qty=None,
-                      allow_superseded_scheme=False, parent_task_id=None,
+                      allow_inactive_scheme=False,
                       **task_fields):
-        """Create Task directly. Requires rate_scheme_id.
+        """Create Task directly. Requires rate_scheme_id — stamps its billing
+        fields onto the Task (task-owned money Phase 1) via
+        ``Task.stamp_from_scheme`` before first save.
 
-        ``allow_superseded_scheme`` bypasses the superseded-scheme rejection.
+        ``allow_inactive_scheme`` bypasses the inactive-preset rejection.
         The only intended caller is the worksheet→job copy/carry-over core,
         which must clone a worksheet faithfully even when its rate scheme has
-        since been superseded.
+        since been retired.
 
-        This is the single creation gate for direct tasks AND subtasks (the
-        /api/tasks/{id}/subtasks/ endpoint routes here too) — the on-hold,
-        superseded-scheme, depth, and assignee guards can't be skipped by
-        picking a different endpoint.
+        Add-Task-time money overrides (2026-09-19): ``rate``/``unit_label``/
+        ``accounting_category`` in ``task_fields`` are money OVERRIDES, not
+        plain construction kwargs — the stamp remains the default, and a
+        PRESENT override key replaces that one stamped field after
+        ``stamp_from_scheme`` runs (never before: stamp_from_scheme would
+        just clobber a pre-stamp assignment). Callers (``JobTaskMixin.tasks``)
+        are responsible for only forwarding a key here when it was actually
+        present in the request — permission gating (the ``MONEY_FIELDS``/
+        ``_can_write_money`` predicate) already happened at the serializer
+        layer, same test as the PATCH money-field gate; this method has no
+        gate of its own.
+
+        This is the single creation gate for direct tasks — the on-hold,
+        inactive-scheme, and assignee guards can't be skipped by picking a
+        different endpoint. (Subtasks were removed 2026-08, better-fees
+        spec §3 — tasks are one flat level.)
         """
+        from apps.jobs.models import SchemeInactiveError
+
+        money_overrides = {
+            key: task_fields.pop(key)
+            for key in ('rate', 'unit_label', 'accounting_category')
+            if key in task_fields
+        }
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not rate_scheme_id:
             raise ValidationError({'rate_scheme': 'Required.'})
         scheme = RateScheme.objects.get(pk=rate_scheme_id)
-        if scheme.replaced_by_id is not None and not allow_superseded_scheme:
-            raise ValidationError(
-                {'rate_scheme': 'Selected RateScheme is superseded.'}
+        if not scheme.is_active and not allow_inactive_scheme:
+            raise SchemeInactiveError(
+                'Selected RateScheme is inactive.'
             )
         if scheme.algorithm == RateScheme.PERCENTAGE:
             raise ValidationError(
                 {'rate_scheme': 'Percentage services are document adjustments and cannot bill a task.'}
             )
-        if parent_task_id:
-            try:
-                parent = Task.objects.get(pk=parent_task_id)
-            except Task.DoesNotExist:
-                raise ValidationError({'parent_task': ['Parent task not found.']})
-            if parent.job_id != job.pk:
-                raise ValidationError(
-                    {'parent_task': ['Parent task belongs to a different job.']})
-            if parent.parent_task_id is not None:
-                raise ValidationError({'parent_task': [
-                    'Subtasks cannot have their own subtasks — '
-                    'one level of subtasks only.']})
-        est_qty, est_worker_time = hours_pair_fill(scheme, est_qty, est_worker_time)
+        est_qty, est_worker_time = hours_pair_fill(scheme.unit_label, est_qty, est_worker_time)
         # A type _coerce_duration can't parse (e.g. a raw JSON int from this
         # endpoint's unserialized POST) would otherwise reach Task.save()'s
         # full_clean() and hit DurationField.to_python(), which only catches
@@ -1103,16 +1166,17 @@ class TaskService:
             raise ValidationError({'est_worker_time': [
                 'An assigned task must have an estimated worker time.']})
         with transaction.atomic():
-            task = Task.objects.create(
+            task = Task(
                 job=job, name=name,
-                rate_scheme=scheme,
-                active_modifiers=copy_active_modifiers(active_modifiers),
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
                 actual_qty=actual_qty,
-                parent_task_id=parent_task_id,
                 **task_fields,
             )
+            task.stamp_from_scheme(scheme, modifier_keys=active_modifiers)
+            for field, value in money_overrides.items():
+                setattr(task, field, value)
+            task.save()
             if task.status not in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
                 JobService.mark_work_reopened(job)
         return task
@@ -1124,7 +1188,16 @@ class TaskService:
         Editability matrix (C1): pending is open to any authenticated user;
         in_progress/blocked require the manager atom, the job's PM, or the
         task's ASSIGNEE (checked when `user` is passed — the API always
-        passes it; internal callers may omit it); terminal is frozen.
+        passes it; internal callers may omit it); terminal is frozen, EXCEPT
+        a `rate`-only write on a TERMINAL (complete OR cancelled), uninvoiced,
+        PO-linked task by a `can_manage_financials` caller (RM ruling
+        2026-09-21, tightened same-day — see the freeze check below for the
+        rationale). Unlike the ordinary MONEY_FIELDS gate (manager atom OR
+        the job's PM OR financials), this one exception is financials-only:
+        a job's PM or a plain `can_manage_jobs` holder gets the ordinary
+        terminal-freeze rejection here, same as before the carve-out. A
+        caller with no `user` (internal callers) never qualifies either —
+        the exception fails closed without an actor to check.
         """
         try:
             task = Task.objects.get(pk=pk)
@@ -1134,12 +1207,58 @@ class TaskService:
         # A terminal task is frozen: its work and billing inputs are settled.
         # sort_order is cosmetic (list position) and stays editable so a
         # list containing a terminal task can still be reordered.
-        if (task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
-                and set(kwargs) - {'sort_order'}):
-            raise ValidationError(
-                f'Cannot edit a {task.status} task. Its work and billing are '
-                f'settled; corrections belong on the invoice.'
-            )
+        #
+        # RM ruling 2026-09-21 (LATER.md "rate-prompt Accept fails on
+        # complete tasks"), tightened same-day: one narrow exception. A
+        # `rate`-ONLY write on a TERMINAL task (complete OR cancelled) is
+        # allowed when the task is not yet claimed by a live invoice AND
+        # has at least one linked PurchaseOrderLineItem AND the caller
+        # holds `can_manage_financials` (checked here, NOT the ordinary
+        # MONEY_FIELDS gate of manager-atom-OR-PM-OR-financials — a job's
+        # PM or a plain `can_manage_jobs` holder does NOT qualify for this
+        # exception and gets the ordinary rejection below). Rationale:
+        #   - For vendor-borne (outsourced) work, the economics settle at
+        #     the vendor bill, not at task completion — the realistic
+        #     ordering is receive -> complete task -> bill arrives ->
+        #     reconcile -> accept the reprice
+        #     (PurchaseOrderService.compute_rate_prompts's Accept gesture is
+        #     exactly this PATCH; see docs/designs/materials-inventory-and-
+        #     purchasing.md §10a).
+        #   - Cancelled is included, not just complete: a cancelled task's
+        #     recorded actuals stay billable (invoicing-and-expenses.md
+        #     ~L372 — the billability line is "terminal, not complete"), so
+        #     a cancelled outsourced task the vendor partially performed and
+        #     billed has the same legitimate reprice claim as a completed
+        #     one.
+        #   - Financials-only, not the ordinary money gate: repricing
+        #     settled work is a reconciliation act — the vendor bill is a
+        #     financials event. Ordinary price adjustments discovered at
+        #     billing time belong on the invoice document, not a rewrite of
+        #     the task's own rate; a manager/PM's normal standing to write
+        #     `rate` applies only while the task is still open.
+        # This checks `user` the same way the in_progress/blocked gate below
+        # does — the API always passes `request.user`; an internal caller
+        # that omits `user` can never satisfy this (fails closed to the
+        # ordinary freeze), which is correct since there's no actor to
+        # check.
+        dirty_fields = set(kwargs) - {'sort_order'}
+        if task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED) and dirty_fields:
+            po_rate_exception = False
+            if (dirty_fields == {'rate'} and user is not None
+                    and user.has_perm('core.can_manage_financials')):
+                from apps.invoicing.claims import InvoiceClaimService
+                from apps.invoicing.models import InvoiceLineItemSource
+                from apps.purchasing.models import PurchaseOrderLineItem
+                po_rate_exception = (
+                    not InvoiceClaimService.is_invoiced(
+                        InvoiceLineItemSource.SOURCE_TASK, task.pk)
+                    and PurchaseOrderLineItem.objects.filter(task=task).exists()
+                )
+            if not po_rate_exception:
+                raise ValidationError(
+                    f'Cannot edit a {task.status} task. Its work and billing are '
+                    f'settled; corrections belong on the invoice.'
+                )
         if (user is not None
                 and task.status in (Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED)
                 and not JobService.user_can_manage(user, task.job)
@@ -1148,16 +1267,20 @@ class TaskService:
                 'Only a manager, the project manager, or the assignee may '
                 'edit a task that is in progress or blocked.'
             )
-        scheme = kwargs.get('rate_scheme') or task.rate_scheme
-        if scheme is not None and scheme.unit_label == HOUR_UNIT:
+        # Task-owned money (Phase 1): the unit of record is the task's own
+        # unit_label, not a RateScheme lookup — an in-flight unit_label
+        # edit (money-permission-gated at the serializer layer) wins over
+        # the task's current value for this same-request qty/time sync.
+        effective_unit_label = kwargs.get('unit_label', task.unit_label)
+        if effective_unit_label == HOUR_UNIT:
             if ('est_qty' in kwargs and 'est_worker_time' not in kwargs
                     and kwargs['est_qty'] is not None):
                 _, kwargs['est_worker_time'] = hours_pair_fill(
-                    scheme, kwargs['est_qty'], None)
+                    effective_unit_label, kwargs['est_qty'], None)
             elif ('est_worker_time' in kwargs and 'est_qty' not in kwargs
                     and kwargs['est_worker_time']):
                 kwargs['est_qty'], _ = hours_pair_fill(
-                    scheme, None, kwargs['est_worker_time'])
+                    effective_unit_label, None, kwargs['est_worker_time'])
         # Explicit assignment must be schedulable (invariant lives here and
         # on assign/create_direct, not Task.clean — auto-assign is exempt).
         if kwargs.get('assignee'):
@@ -1228,14 +1351,9 @@ class TaskService:
 
     @staticmethod
     def reorder_tasks(task_id, direction):
-        """Reorder a task among its PEERS — delegates to BundlingService.
-
-        Peer-scoped (B3): a top-level task swaps only with other top-level
-        tasks, a subtask only with its siblings. The peer group falls out of
-        the task itself (parent_task=None ⇒ top level), so both the job
-        task list (top-level arrows) and the parent task's detail page
-        (sibling arrows) use this same entry point.
-        """
+        """Reorder a task among the job's tasks — delegates to
+        BundlingService. (Tasks are one flat level — better-fees spec §3 —
+        so the peer group is simply the job's task list.)"""
         from apps.core.services import BundlingService
 
         try:
@@ -1244,8 +1362,7 @@ class TaskService:
             raise NotFoundError(f'Task {task_id} not found')
         _assert_job_not_on_hold(task.job, 'reorder tasks on this job')
 
-        items_qs = Task.objects.filter(
-            job=task.job, parent_task=task.parent_task)
+        items_qs = Task.objects.filter(job=task.job)
 
         BundlingService.reorder_container_items(
             items_qs, 'task', task_id, direction,
@@ -1272,90 +1389,14 @@ class TaskService:
         task.worker_queue = worker_queue
         if est_worker_time is not None:
             task.est_worker_time = est_worker_time
-            if task.rate_scheme_id and task.est_qty is None:
+            # Task-owned money (Phase 1): sync from the task's own
+            # unit_label, not a RateScheme lookup (hours_pair_fill no-ops
+            # when the unit isn't hours).
+            if task.est_qty is None:
                 task.est_qty, _ = hours_pair_fill(
-                    task.rate_scheme, None, est_worker_time)
+                    task.unit_label, None, est_worker_time)
         task.save()
         return task
-
-
-class FeeService:
-    """Service for Fee (job-owned billable atom) writes.
-
-    A Fee is a fixed charge owned by the Job — a pure pricing decision, not a
-    record of work. Mirrors the create/update/delete shape of TaskService and
-    respects the on-hold guard like the other job atoms.
-    """
-
-    @staticmethod
-    def _next_sort_order(job):
-        from django.db.models import Max
-        current_max = Fee.objects.filter(job=job).aggregate(m=Max('sort_order'))['m']
-        return (current_max or 0) + 1
-
-    @staticmethod
-    def create_on_job(job, *, description='', quantity=Decimal('1.00'),
-                      unit_rate=None, accounting_category=None, task=None,
-                      sort_order=None):
-        """Create a Fee on `job`. `accounting_category` and `unit_rate` are
-        required by the model — a missing one surfaces as a ValidationError
-        (→ 400) via full_clean, never a 500."""
-        _assert_job_not_on_hold(job, 'add a fee to this job')
-        with transaction.atomic():
-            if sort_order is None:
-                sort_order = FeeService._next_sort_order(job)
-            fee = Fee(
-                job=job, task=task,
-                description=description or '',
-                quantity=quantity if quantity is not None else Decimal('1.00'),
-                unit_rate=unit_rate,
-                accounting_category=accounting_category,
-                sort_order=sort_order,
-            )
-            fee.full_clean()
-            fee.save()
-        return fee
-
-    @staticmethod
-    def update(fee_pk, **kwargs):
-        try:
-            fee = Fee.objects.get(pk=fee_pk)
-        except Fee.DoesNotExist:
-            raise NotFoundError(f'Fee {fee_pk} not found')
-        _assert_job_not_on_hold(fee.job, 'edit this fee')
-        for field, value in kwargs.items():
-            setattr(fee, field, value)
-        fee.full_clean()
-        fee.save()
-        return fee
-
-    @staticmethod
-    def delete(fee_pk):
-        """Delete a fee — but only while nothing references it (Rule 1).
-
-        A claimed fee is part of an agreement's story: removing an agreed
-        charge is a change order, not a delete. An invoiced fee is billed
-        money. Unreferenced fees (setup scratch, mistakes) delete freely.
-        """
-        from apps.estimates.claims import atom_is_claimed
-        from apps.invoicing.claims import InvoiceClaimService
-        from apps.invoicing.models import InvoiceLineItemSource
-        try:
-            fee = Fee.objects.get(pk=fee_pk)
-        except Fee.DoesNotExist:
-            raise NotFoundError(f'Fee {fee_pk} not found')
-        _assert_job_not_on_hold(fee.job, 'delete this fee')
-        if atom_is_claimed('fee', fee.pk):
-            raise ValidationError(
-                'This fee backs an estimate or change-order line. To stop '
-                'charging it, remove the line (draft) or issue a change order.'
-            )
-        if InvoiceClaimService.is_invoiced(
-                InvoiceLineItemSource.SOURCE_FEE, fee.pk):
-            raise ValidationError(
-                'This fee is on an invoice; remove it from the invoice first.'
-            )
-        fee.delete()
 
 
 class TaskLifecycleService:
@@ -1419,7 +1460,7 @@ class TaskLifecycleService:
             task = Task.objects.select_for_update().get(pk=task_pk)
             if task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
                 raise ValidationError('Task is already settled.')
-            if task.rate_scheme.algorithm != RateScheme.ENTERED_QTY:
+            if task.qty_source != Task.QTY_ENTERED:
                 raise ValidationError(
                     'Task is not billed by entered quantity.')
             try:
@@ -1457,17 +1498,17 @@ class TaskLifecycleService:
                     f"Cannot complete task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
-            if task.rate_scheme.algorithm == RateScheme.ENTERED_QTY:
+            if task.qty_source == Task.QTY_ENTERED:
                 if add_qty is None:
                     raise TaskActualQtyRequired(
-                        task.rate_scheme.unit_label, task.actual_qty)
+                        task.unit_label, task.actual_qty)
                 final = (task.actual_qty or Decimal('0')) + add_qty
                 if final <= 0:
                     raise ValidationError({'add_qty': [
                         'Final quantity must be greater than 0.']})
                 task.actual_qty = final
-            if (task.rate_scheme.algorithm == RateScheme.ELAPSED_TIME
-                    and task.rate_scheme.get_actual_qty(task) <= 0):
+            if (task.qty_source == Task.QTY_ELAPSED
+                    and task.get_actual_qty() <= 0):
                 raise TaskTimeRequired()
             # A complete task can never blep again, so nothing would ever
             # consume a leftover pending material — it would sit unbillable
@@ -1529,7 +1570,8 @@ class TaskLifecycleService:
         if all_terminal:
             try:
                 if job.status == Job.STATUS_APPROVED:
-                    JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
+                    JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS,
+                                             system_transition=True)
                 JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
             except ValidationError:
                 pass  # Pending task-less materials block auto-advance; task completion itself succeeds.
@@ -1568,12 +1610,12 @@ class TaskLifecycleService:
                     })
                 return {'conflict': 'active_workers', 'workers': workers}
             if (user is not None and not prior_qty_handled
-                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and task.qty_source == Task.QTY_ENTERED
                     and open_bleps.filter(user=user).exists()):
                 return {
                     'conflict': 'prior_session_qty',
                     'prior_task': {'task_id': task.pk, 'name': task.name},
-                    'unit_label': task.rate_scheme.unit_label,
+                    'unit_label': task.unit_label,
                     'current_qty': (
                         str(task.actual_qty)
                         if task.actual_qty is not None else None
@@ -1626,14 +1668,14 @@ class TaskLifecycleService:
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
             if (user is not None and not prior_qty_handled
-                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and task.qty_source == Task.QTY_ENTERED
                     and Blep.objects.filter(
                         task=task, user=user, end_time__isnull=True,
                     ).exists()):
                 return {
                     'conflict': 'prior_session_qty',
                     'prior_task': {'task_id': task.pk, 'name': task.name},
-                    'unit_label': task.rate_scheme.unit_label,
+                    'unit_label': task.unit_label,
                     'current_qty': (
                         str(task.actual_qty)
                         if task.actual_qty is not None else None
@@ -1689,8 +1731,8 @@ class TaskLifecycleService:
         the SPA to settle it first."""
         qs = Blep.objects.filter(
             user=user, end_time__isnull=True,
-            task__rate_scheme__algorithm=RateScheme.ENTERED_QTY,
-        ).select_related('task__rate_scheme')
+            task__qty_source=Task.QTY_ENTERED,
+        ).select_related('task')
         if exclude_task_pk is not None:
             qs = qs.exclude(task_id=exclude_task_pk)
         prior = qs.first()
@@ -1703,7 +1745,7 @@ class TaskLifecycleService:
                 'task_id': prior_task.pk,
                 'name': prior_task.name,
             },
-            'unit_label': prior_task.rate_scheme.unit_label,
+            'unit_label': prior_task.unit_label,
             'current_qty': (
                 str(prior_task.actual_qty)
                 if prior_task.actual_qty is not None else None
@@ -1848,21 +1890,21 @@ class TaskLifecycleService:
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             if (on_behalf_of is None and not prior_qty_handled
-                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and task.qty_source == Task.QTY_ENTERED
                     and Blep.objects.filter(
                         task=task, user=target, end_time__isnull=True,
                     ).exists()):
                 return {
                     'conflict': 'prior_session_qty',
                     'prior_task': {'task_id': task.pk, 'name': task.name},
-                    'unit_label': task.rate_scheme.unit_label,
+                    'unit_label': task.unit_label,
                     'current_qty': (
                         str(task.actual_qty)
                         if task.actual_qty is not None else None
                     ),
                 }
             if add_qty is not None:
-                if task.rate_scheme.algorithm != RateScheme.ENTERED_QTY:
+                if task.qty_source != Task.QTY_ENTERED:
                     raise ValidationError(
                         'Task is not billed by entered quantity.')
                 if add_qty <= 0:

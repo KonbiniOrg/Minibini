@@ -13,9 +13,11 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from decimal import Decimal
+
 from apps.contacts.models import Contact
-from apps.core.models import User
-from apps.estimates.models import Estimate
+from apps.core.models import AccountingCategory, User
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import EstimateService
 from apps.jobs.models import Job
 from apps.jobs.services import JobService
@@ -56,6 +58,20 @@ class DirectApprovalGuardTest(TestCase):
 
     def test_acceptance_still_approves_job(self):
         est = self._estimate(Estimate.STATUS_OPEN)
+        # A real, undecided hand line: this test is about the approval
+        # GUARD (does acceptance still land the job on `approved`?), not
+        # about checklist completeness. A zero-line estimate is vacuously
+        # "fully answered" and would auto-release straight past `approved`
+        # to `in_progress` (Task 5, answeredness + auto-release) — a real
+        # line keeps this test's scenario realistic and its assertion
+        # meaningful.
+        cat = AccountingCategory.objects.create(
+            name='Labor-ApprovalGuard', code='APR-LAB', is_active=True,
+        )
+        EstimateLineItem.objects.create(
+            estimate=est, line_number=1, description='Work',
+            qty=Decimal('1'), price=Decimal('100.00'), accounting_category=cat,
+        )
         EstimateService.update_status(est.pk, Estimate.STATUS_ACCEPTED)
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)

@@ -6,7 +6,7 @@ from datetime import timedelta
 from django.utils import timezone
 
 from tests.base import BaseTestCase
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.core.models import User
 from apps.api.tasks.serializers import TaskSerializer
 from apps.jobs.services import BoardService
@@ -16,7 +16,9 @@ class TaskActivitySerializerFieldsTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         self.u1 = User.objects.create_user(username='taf1', password='x')
         self.u2 = User.objects.create_user(username='taf2', password='x')
 
@@ -58,7 +60,9 @@ class BoardTaskActivityFieldsTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
         self.u1 = User.objects.create_user(username='btaf1', password='x')
 
     def test_board_serialize_task_includes_activity(self):

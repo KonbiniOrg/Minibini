@@ -1,6 +1,6 @@
 from rest_framework import serializers
-from apps.jobs.models import Job, Fee
-from apps.api.mixins import JobScopedCanManageMixin, InvoiceRefMixin
+from apps.jobs.models import Job
+from apps.api.mixins import JobScopedCanManageMixin
 
 
 class JobSummarySerializer(serializers.ModelSerializer):
@@ -21,46 +21,20 @@ class JobSearchSerializer(serializers.ModelSerializer):
                   'description', 'customer_po_number', 'contact_name']
 
 
-class FeeSerializer(InvoiceRefMixin, serializers.ModelSerializer):
-    """Read-only serializer for Fee atoms embedded in the job detail.
-
-    Exposes:
-      - ``invoice``: via InvoiceRefMixin — ``{'id', 'number'}`` or ``None``.
-      - ``claimed``: True iff a non-superseded Estimate on this job has an
-        EstimateLineItemSource pointing at this Fee.
-    """
-    invoice_source_type = 'fee'
-    invoice = serializers.SerializerMethodField()
-    claimed = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Fee
-        fields = [
-            'fee_id', 'task', 'description', 'quantity', 'unit_rate',
-            'accounting_category', 'sort_order',
-            'invoice', 'claimed',
-        ]
-        read_only_fields = fields
-
-    def get_claimed(self, obj):
-        """True iff a non-superseded estimate on this job has claimed this fee."""
-        claims = self.context.get('estimate_claims') or frozenset()
-        return ('fee', obj.pk) in claims
-
-
 class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     can_manage_job_path = 'self'
     contact_name = serializers.SerializerMethodField()
     project_manager_name = serializers.SerializerMethodField()
     tasks = serializers.SerializerMethodField()
     materials = serializers.SerializerMethodField()
-    fees = serializers.SerializerMethodField()
     latest_change_request = serializers.SerializerMethodField()
     has_estimates = serializers.SerializerMethodField()
+    has_accepted_estimate = serializers.SerializerMethodField()
     estimated_amount = serializers.SerializerMethodField()
     spent_amount = serializers.SerializerMethodField()
     invoiced_amount = serializers.SerializerMethodField()
     profit_amount = serializers.SerializerMethodField()
+    linked_po_variances = serializers.SerializerMethodField()
 
     class Meta:
         model = Job
@@ -71,9 +45,10 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'can_manage',
             'customer_po_number', 'description',
             'created_date', 'start_date', 'due_date', 'completed_date',
-            'tasks', 'materials', 'fees', 'latest_change_request',
-            'has_estimates',
+            'tasks', 'materials', 'latest_change_request',
+            'has_estimates', 'has_accepted_estimate',
             'estimated_amount', 'spent_amount', 'invoiced_amount', 'profit_amount',
+            'linked_po_variances',
         ]
         # on_hold/hold_reason are read-only — writes go through the hold/
         # release actions so the service guards always run.
@@ -93,6 +68,23 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         if view is not None and getattr(view, 'action', None) == 'list':
             return None
         return obj.estimate_set.exists()
+
+    def get_has_accepted_estimate(self, obj):
+        """Whether the job has an ACCEPTED estimate — distinct from
+        ``has_estimates`` (any estimate, any status). Drives the header
+        pill's approved -> in_progress option (`JobHeader.svelte`): the
+        backend only refuses a manual release when an accepted estimate
+        exists (JobService.update_job) — a job that never went through
+        acceptance (hand-approved directly, or carrying only a draft/dead
+        estimate) has no checklist to auto-release it, so manual release
+        stays legal and the pill must offer it. Detail-only, same
+        list-context skip as ``has_estimates`` (per-row exists() would be
+        an N+1)."""
+        view = self.context.get('view')
+        if view is not None and getattr(view, 'action', None) == 'list':
+            return None
+        from apps.estimates.models import Estimate
+        return obj.estimate_set.filter(status=Estimate.STATUS_ACCEPTED).exists()
 
     def _financials(self, obj):
         """Detail-only job financial rollups, computed once and memoized.
@@ -127,6 +119,15 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
 
     def get_profit_amount(self, obj):
         return self._amount(obj, 'profit')
+
+    def get_linked_po_variances(self, obj):
+        """Job-level linked-PO variance rollup (outsourced-work port,
+        Task 4) — see `apps.jobs.financials._linked_po_variances`. `None`
+        in list context, matching the other `_financials`-backed fields."""
+        fin = self._financials(obj)
+        if fin is None:
+            return None
+        return fin['linked_po_variances']
 
     def get_project_manager_name(self, obj):
         pm = obj.project_manager
@@ -193,7 +194,7 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         return cache[obj.pk]
 
     def _atom_context(self, obj):
-        """Shared context dict injected into atom serializers (Task/Material/Fee)."""
+        """Shared context dict injected into atom serializers (Task/Material)."""
         return {
             **self.context,
             'invoice_claims': self._invoice_claims(obj),
@@ -215,9 +216,3 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         if not hasattr(obj, '_prefetched_objects_cache') or 'materials' not in obj._prefetched_objects_cache:
             materials = materials.order_by('pk')
         return MaterialSerializer(materials, many=True, context=self._atom_context(obj)).data
-
-    def get_fees(self, obj):
-        fees = obj.fees.all()
-        if not hasattr(obj, '_prefetched_objects_cache') or 'fees' not in obj._prefetched_objects_cache:
-            fees = fees.order_by('sort_order')
-        return FeeSerializer(fees, many=True, context=self._atom_context(obj)).data

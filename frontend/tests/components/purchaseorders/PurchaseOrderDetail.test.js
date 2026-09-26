@@ -61,4 +61,52 @@ describe('PurchaseOrderDetail', () => {
     await fireEvent.click(getByRole('button', { name: 'Mark as Issued' }));
     expect(onIssue).toHaveBeenCalled();
   });
+
+  it('shows a task chip linking to the task detail page when a line is task-linked (fix 2a)', () => {
+    const withTask = po();
+    withTask.line_items[0].task = 9;
+    withTask.line_items[0].task_detail = {
+      task_id: 9, name: 'Mill part', job_id: 4, job_number: 'JOB-4',
+    };
+    const { getByRole, getByText } = render(PurchaseOrderDetail, {
+      props: { po: withTask, canManageFinancials: true },
+    });
+    const link = getByRole('link', { name: /Mill part/ });
+    expect(link).toHaveAttribute('href', '#/jobs/4/tasks/9');
+    expect(getByText('JOB-4')).toBeInTheDocument();
+  });
+
+  it('shows a dash in the Task column when a line has no task link', () => {
+    const { getAllByRole } = render(PurchaseOrderDetail, {
+      props: { po: po(), canManageFinancials: true },
+    });
+    // No task-detail links anywhere in the table.
+    const links = getAllByRole('link').filter((a) => a.className === 'task-chip');
+    expect(links).toHaveLength(0);
+  });
+
+  describe('edit row -- PO Job/Task consolidation (RM 2026-09-21)', () => {
+    it('offers no JobPicker on a task-linked line\'s edit row -- a static note instead', async () => {
+      const withTask = po();
+      withTask.line_items[0].task = 9;
+      withTask.line_items[0].task_detail = {
+        task_id: 9, name: 'Mill part', job_id: 4, job_number: 'JOB-4',
+      };
+      const { getAllByRole, queryByPlaceholderText, getByText } = render(PurchaseOrderDetail, {
+        props: { po: withTask, canManageFinancials: true },
+      });
+      await fireEvent.click(getAllByRole('button', { name: 'Edit' })[1]); // line 1's Edit
+      // No JobPicker (its SearchPicker search input) rendered in this row.
+      expect(queryByPlaceholderText('Search jobs…')).toBeNull();
+      expect(getByText(/Cost attributed to task/)).toBeInTheDocument();
+    });
+
+    it('still offers a JobPicker on an ordinary (non-task) line\'s edit row', async () => {
+      const { getAllByRole, getByPlaceholderText } = render(PurchaseOrderDetail, {
+        props: { po: po(), canManageFinancials: true },
+      });
+      await fireEvent.click(getAllByRole('button', { name: 'Edit' })[1]);
+      expect(getByPlaceholderText('Search jobs…')).toBeInTheDocument();
+    });
+  });
 });

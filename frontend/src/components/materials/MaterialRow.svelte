@@ -1,7 +1,7 @@
 <script>
   // THE material row — one shared fragment for every surface that lists
-  // materials (job task list task/subtask/loose rows, task detail page,
-  // parent-task subtask tree). Ported from TaskTree's triplicated blocks
+  // materials (job task list task/loose rows, task detail page). Ported
+  // from TaskTree's triplicated blocks
   // (2026-07-13). The FULL action set renders wherever a callback is wired
   // (the old task-view-page-only venue rule is gone); gating is by material
   // status, permissions, and the job's held/locked state only.
@@ -38,6 +38,16 @@
     onOrderMaterial = null,
     onMarkOnHand = null,
     onAttachExpense = null,
+    // Bundle-selection checkbox (Task 3) — off by default so every other
+    // consumer of this shared row renders unchanged.
+    bundleMode = false,
+    bundleAtom = null,
+    bundleChecked = false,
+    onToggleBundle = null,
+    // claimed_by_current chip text (Tasks-page CO lens): the estimate lens's
+    // wording is the default so every other surface renders unchanged.
+    bundleClaimedLabel = 'estimated',
+    bundleClaimedTitle = 'Already on the draft estimate',
   } = $props();
 
   function isMaterialPending(mat) {
@@ -82,6 +92,23 @@
     !readonly && !jobLocked && !ownerTerminal
     && isMaterialPending(material) && !isMaterialFinalized(material)
   );
+
+  // A claimed_by_other atom is claimed on one of two lenses: a change-order
+  // add line or another estimate — never both. CO wins the branch since
+  // it's the more specific claim (mirrors EstimateEditView's unselectableNote).
+  function bundleClaimNote(atom) {
+    if (atom.claiming_change_order_number) {
+      return `Claimed by change order ${atom.claiming_change_order_number}`;
+    }
+    return `Claimed by estimate ${atom.claiming_estimate_number || ''}`.trim();
+  }
+
+  // Same CO-wins-then-estimate branch as bundleClaimNote, just the short
+  // chip label instead of the full hover sentence — "Est"/"CO" mirror the
+  // table's own "Est Qty"/"Est Time" header shorthand.
+  function bundleClaimLabel(atom) {
+    return atom.claiming_change_order_number ? 'on CO' : 'on est';
+  }
 </script>
 
 {#snippet availBadge(mat)}
@@ -118,6 +145,19 @@
 {/snippet}
 
 <tr class="material-row" class:consumed={isMaterialFinalized(material)} class:released={isMaterialReleased(material)}>
+  {#if bundleMode}
+    <td class="bundle-cell">
+      {#if bundleAtom?.state === 'available'}
+        <input type="checkbox" checked={bundleChecked}
+               onchange={onToggleBundle}
+               aria-label={`Select ${material.description} for bundling`}>
+      {:else if bundleAtom?.state === 'claimed_by_current'}
+        <span class="bundle-claimed" title={bundleClaimedTitle}>{bundleClaimedLabel}</span>
+      {:else if bundleAtom?.state === 'claimed_by_other'}
+        <span class="bundle-claimed" title={bundleClaimNote(bundleAtom)}>{bundleClaimLabel(bundleAtom)}</span>
+      {/if}
+    </td>
+  {/if}
   {#if !readonly && !jobLocked}
     <td class="move-cell">{#if onMoveMaterial && isMaterialPending(material) && !isMaterialFinalized(material) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(material, selectedTaskId)}>Move</button>{/if}</td>
   {/if}
@@ -128,11 +168,17 @@
   {#if taskAligned && showAssignee}<td></td>{/if}
   {#if taskAligned}<td></td>{/if}
   {#if showStatus}<td>{@render matStatusChip(material)}{#if material.invoice} <a class="badge-invoiced" href={`#/invoices/${material.invoice.id}`} use:link title="Billed on this invoice">INVOICED</a>{/if}</td>{/if}
-  <td class="text-right">{material.quantity}</td>
+  <!-- taskAligned hosts (TaskTree) dropped their Units and Unit Cost
+       columns (RM, 2026-08-06): the unit rides inline beside the qty and
+       the cost-unconfirmed ⚠ moves to Sell Price. The materials-only
+       table (task detail page) keeps both columns. -->
+  <td class="text-right">{material.quantity}{taskAligned && material.units && material.units !== 'none' ? ` ${material.units}` : ''}</td>
   {#if taskAligned}<td class="text-right">-</td>{/if}
-  <td class="text-right">{material.units === 'none' ? '-' : material.units}</td>
-  <td class="text-right">{fmt(material.unit_cost)}{#if costUnconfirmed(material)}<span class="cost-warn" title="Cost unconfirmed — placeholder from estimate markup">⚠</span>{/if}</td>
-  <td class="text-right">{fmt(material.sell_price)}</td>
+  {#if !taskAligned}
+    <td class="text-right">{material.units === 'none' ? '-' : material.units}</td>
+    <td class="text-right">{fmt(material.unit_cost)}{#if costUnconfirmed(material)}<span class="cost-warn" title="Cost unconfirmed — placeholder from estimate markup">⚠</span>{/if}</td>
+  {/if}
+  <td class="text-right">{fmt(material.sell_price)}{#if taskAligned && costUnconfirmed(material)}<span class="cost-warn" title="Cost unconfirmed — placeholder from estimate markup">⚠</span>{/if}</td>
   <td class="text-right">{fmt(materialTotal(material))}</td>
   {#if actionable}
     <td class="actions-cell row-actions">
@@ -157,12 +203,14 @@
      strike the row through so it reads as a tombstone. */
   .material-row.released { color: #9ca3af; text-decoration: line-through; }
   .material-marker { color: #aaa; font-size: 8px; vertical-align: middle; margin-right: 4px; }
-  /* Nesting ladder: parent task 0 → its materials 28 → subtask names 40
-     (TaskRow) → subtask materials 60. */
+  /* Nesting ladder: task 0 → its materials 28. */
   .indent { padding-left: 28px; }
   .indent-2 { padding-left: 60px; }
   /* Headerless radio column — just wide enough for the radio button. */
   .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
+  /* Bundle-selection checkbox column (Task 3) — same footprint as move-cell. */
+  .bundle-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
+  .bundle-claimed { font-size: 11px; color: #888; font-style: italic; }
   .text-right { text-align: right; }
   td { padding: 6px 10px; vertical-align: top; }
 

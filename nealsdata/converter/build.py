@@ -83,25 +83,95 @@ def _revision_index(row):
     return P.revision_parts(ref)[1]
 
 
-def build_seed(c):
-    """Emit core.user, core.accountingcategory and jobs.ratescheme records
-    verbatim from the nealseed fixture.
+def _canon_unit_label(label):
+    """Seed hygiene (RM 2026-08-12): 'hours' in any case/whitespace collapses
+    to the canonical 'hour'. Plural drift here propagates into every task
+    money-block stamped from the scheme and silently defeats the SPA's
+    hour-unit single-field collapse, which keys on exactly 'hour'."""
+    if isinstance(label, str) and label.strip().lower() == 'hours':
+        return 'hour'
+    return label
 
-    The records are appended to c.fixture_data exactly as they appear in
-    nealseed (user records there are written without explicit pks; Django
-    assigns them on load). Indexes the seed data for downstream builders:
+
+# The converter's own RateScheme table (RM 2026-08-16, flat-fee Task 4):
+# schemes are SOURCED HERE, not copied from nealseed — the RM-managed seed
+# files never need touching to add or change a scheme/algorithm. The 8
+# legacy entries reproduce nealseed's records verbatim (pks and fields —
+# downstream builders key on scheme_by_name / scheme_fields_by_pk and task
+# money-blocks stamp from these); pk 10 adds the flat_fee scheme
+# (rate locked 0.00 — each ServiceItem carries its own amount).
+CONVERTER_SCHEMES = [
+    (1, {"name": "CNC routing", "description": "Charges for KOMO or MotionMaster cuts", "algorithm": "entered_qty", "rate": "22.00", "unit_label": "min", "modifiers": [{"key": "hats", "label": "tabs", "percent": 10}, {"key": "shirts", "label": "doublestick tape", "percent": 12}, {"key": "heavy_awkward_material", "label": "heavy awkward material", "percent": 10}, {"key": "requires_ppe", "label": "requires PPE", "percent": 15}, {"key": "deburring", "label": "deburring", "percent": 8}], "accounting_category": 3, "is_active": True}),
+    (2, {"name": "CAD", "description": "Charges for CAD drawing, 2d or 3d", "algorithm": "elapsed_time", "rate": "110.00", "unit_label": "hour", "modifiers": [], "accounting_category": 1, "is_active": True}),
+    (3, {"name": "Laser", "description": "charges for cutting on the Golden laser", "algorithm": "entered_qty", "rate": "10.00", "unit_label": "min", "modifiers": [{"key": "tinies_that_take_ages_to_clear", "label": "tinies that take ages to clear", "percent": 15}, {"key": "too_smelly_to_cut_during_regular_hours", "label": "too smelly to cut during regular hours", "percent": 19.6}], "accounting_category": 3, "is_active": True}),
+    (4, {"name": "Shop labor (v1)", "description": "Assembly, glueups, laminating, palletizing, hand cutting, trimming, applying finishes, etc", "algorithm": "elapsed_time", "rate": "75.00", "unit_label": "hour", "modifiers": [], "accounting_category": 3, "is_active": False}),
+    (5, {"name": "Design/Consultation", "description": "Rachel or Gerard putting their full brain on a customer's specific problem", "algorithm": "elapsed_time", "rate": "200.00", "unit_label": "hour", "modifiers": [], "accounting_category": 1, "is_active": True}),
+    (7, {"name": "Shop labor", "description": "Assembly, glueups, laminating, palletizing, hand cutting, trimming, applying finishes, etc", "algorithm": "elapsed_time", "rate": "85.00", "unit_label": "hour", "modifiers": [], "accounting_category": 3, "is_active": True}),
+    (8, {"name": "SUB", "description": "Subcontractor work, charged at however the sub charges plus an upcharge for us", "algorithm": "entered_qty", "rate": "0.00", "unit_label": "none", "modifiers": [{"key": "sourcing_fee", "label": "sourcing fee", "percent": 20}, {"key": "", "label": "", "percent": 0}], "accounting_category": 2, "is_active": True}),
+    (9, {"name": "knife cutting", "description": "", "algorithm": "elapsed_time", "rate": "16.00", "unit_label": "min", "modifiers": [{"key": "45_deg_cuts_that_run_2x", "label": "45 deg cuts that run 2x", "percent": 100}], "accounting_category": 3, "is_active": True}),
+    (10, {"name": "Flat fee", "algorithm": "flat_fee", "rate": "0.00", "unit_label": "ea", "modifiers": [], "accounting_category": 1, "is_active": True}),
+]
+
+
+
+# Extra AccountingCategories beyond nealseed's four (RM's dev-authored
+# catalog, captured 2026-08-18 — the converter emits these so a regen
+# never wipes them; nealseed itself stays untouched).
+CONVERTER_EXTRA_CATEGORIES = [
+    (5, {"code": "DEP", "name": "Deposit payments", "taxable": False, "default_description": "", "is_active": True, "is_deposit": True, "qbo_item_id": "2", "qbo_expense_account_id": "31"}),
+    (6, {"code": "UNC", "name": "Uncategorized Income", "taxable": True, "default_description": "", "is_active": True, "is_deposit": False, "qbo_item_id": "", "qbo_expense_account_id": "31"}),
+]
+
+# RM's ServiceItem catalog (captured from dev 2026-08-18): names +
+# scheme FKs + per-item config (modifier keys, or the flat-fee amount
+# entry). Emitted by build_seed after the schemes; preserving a new
+# item is a one-line addition here.
+CONVERTER_SERVICE_ITEMS = [
+    (1, {"template_name": "Detail construction for 2d or 3d models", "description": "Design how to construct an item given a 2d or 3d model - in the exhibit industry, \"detailing\"", "qbo_id": "4", "rate_scheme": 5, "default_active_modifiers": [], "is_active": True}),
+    (2, {"template_name": "Assemble using glue and staples", "description": "", "qbo_id": "2", "rate_scheme": 7, "default_active_modifiers": [], "is_active": True}),
+    (3, {"template_name": "Install counter, table, bench, chair, etc that are not attached to a wall", "description": "Installation of non-structural items, not hanging on a wall or otherwise attached to a building", "qbo_id": "7", "rate_scheme": 7, "default_active_modifiers": [], "is_active": True}),
+    (4, {"template_name": "Add LED lighting to sign", "description": "", "qbo_id": "8", "rate_scheme": 7, "default_active_modifiers": [], "is_active": True}),
+    (5, {"template_name": "CAD drawing", "description": "", "qbo_id": "1", "rate_scheme": 2, "default_active_modifiers": [], "is_active": True}),
+    (6, {"template_name": "Sanding and finishing", "description": "", "qbo_id": "", "rate_scheme": 7, "default_active_modifiers": [], "is_active": True}),
+    (7, {"template_name": "Site visit", "description": "", "qbo_id": "", "rate_scheme": 10, "default_active_modifiers": [{"amount": "200.00"}], "is_active": True}),
+    (8, {"template_name": "Delivery local", "description": "Within East Bay, Fremont to Berkeley (including Alameda)", "qbo_id": "", "rate_scheme": 10, "default_active_modifiers": [{"amount": "150.00"}], "is_active": True}),
+    (9, {"template_name": "Delivery medium", "description": "Delivery to SF & Peninsula, San Jose, Richmond, Marin County", "qbo_id": "", "rate_scheme": 10, "default_active_modifiers": [{"amount": "200.00"}], "is_active": True}),
+    (10, {"template_name": "Delivery extended", "description": "Delivery to Santa Rosa, Sacramento, Stockton, Monterey", "qbo_id": "", "rate_scheme": 10, "default_active_modifiers": [{"amount": "300.00"}], "is_active": True}),
+    (11, {"template_name": "CAM complex cuts", "description": "Where the CAM is more complicated than can be covered by the standard setup fee", "qbo_id": "", "rate_scheme": 5, "default_active_modifiers": [], "is_active": True}),
+    (12, {"template_name": "CNC cut simple parts", "description": "(add part numbers)", "qbo_id": "", "rate_scheme": 1, "default_active_modifiers": [], "is_active": True}),
+    (13, {"template_name": "CNC cut small or intricate parts", "description": "", "qbo_id": "", "rate_scheme": 1, "default_active_modifiers": ["hats", "shirts"], "is_active": True}),
+    (14, {"template_name": "CNC cut parts from aluminum, brass, bronze, silver or gold, or aluminum composites", "description": "", "qbo_id": "", "rate_scheme": 1, "default_active_modifiers": ["deburring"], "is_active": True}),
+    (15, {"template_name": "CNC cut parts from large or irreplaceable material such as solid wood slabs, large countertops, 1/2\" or thicker metal, existing tabletops, etc", "description": "", "qbo_id": "", "rate_scheme": 1, "default_active_modifiers": ["heavy_awkward_material"], "is_active": True}),
+    (16, {"template_name": "Laser cutting common materials such as plywood, acrylic, cardboard, heavy paper", "description": "", "qbo_id": "", "rate_scheme": 3, "default_active_modifiers": [], "is_active": True}),
+    (17, {"template_name": "Laser engraving on acrylic or rubber", "description": "", "qbo_id": "", "rate_scheme": 3, "default_active_modifiers": ["too_smelly_to_cut_during_regular_hours"], "is_active": True}),
+    (18, {"template_name": "knife cutting industrial felt with angled pattern cuts", "description": "", "qbo_id": "", "rate_scheme": 9, "default_active_modifiers": ["45_deg_cuts_that_run_2x"], "is_active": True}),
+    (19, {"template_name": "knife cutting felt, rubber, cardboard, leather, etc", "description": "", "qbo_id": "", "rate_scheme": 9, "default_active_modifiers": [], "is_active": True}),
+]
+
+def build_seed(c):
+    """Emit core.user and core.accountingcategory records verbatim from the
+    nealseed fixture, and jobs.ratescheme records from the converter's OWN
+    `CONVERTER_SCHEMES` table (RM 2026-08-16 — nealseed's ratescheme records,
+    if any remain there, are ignored: the RM-managed seed files are never the
+    scheme source, so new schemes/algorithms never require touching them).
+
+    Indexes the data for downstream builders:
       - c.ac_by_code / c.ac_svc_pk / c.ac_mat_pk
       - c.scheme_by_name
-    Also advances the jobs.ratescheme pk counter past the seeded schemes so
+      - c.scheme_fields_by_pk (full RateScheme fields, for task money-block
+        stamping — see _stamp_money_block)
+    Also advances the jobs.ratescheme pk counter past the emitted schemes so
     any derived (cloned) scheme gets a fresh pk.
     """
     from nealsdata.converter.loaders import load_seed_records
 
     records = load_seed_records(c.seed_path)
-    max_rs_pk = 0
     for rec in records:
         model = rec['model']
         fields = rec['fields']
+        if model == 'jobs.ratescheme':
+            # Ignored: schemes come from CONVERTER_SCHEMES below.
+            continue
         if model == 'core.user':
             # Seed users are written pk-less; assign explicit pks so Bleps/Shifts
             # (the first user FKs) and minted users reference them deterministically.
@@ -118,17 +188,46 @@ def build_seed(c):
         c.fixture_data.append(rec)
         if model == 'core.accountingcategory':
             c.ac_by_code[fields['code']] = rec.get('pk')
-        elif model == 'jobs.ratescheme':
-            c.scheme_by_name[fields['name']] = rec.get('pk')
-            c.scheme_algorithm_by_pk[rec.get('pk')] = fields.get('algorithm')
-            if isinstance(rec.get('pk'), int):
-                max_rs_pk = max(max_rs_pk, rec['pk'])
+
+    # RM's extra categories (DEP/UNC — deposit + fallback homes), emitted
+    # converter-side so a regen never wipes them.
+    for pk, table_fields in CONVERTER_EXTRA_CATEGORIES:
+        fields = dict(table_fields)
+        c.fixture_data.append(
+            {'model': 'core.accountingcategory', 'pk': pk, 'fields': fields})
+        c.ac_by_code[fields['code']] = pk
+
+    max_rs_pk = 0
+    for pk, table_fields in CONVERTER_SCHEMES:
+        fields = dict(table_fields)
+        fields['unit_label'] = _canon_unit_label(fields.get('unit_label'))
+        c.fixture_data.append(
+            {'model': 'jobs.ratescheme', 'pk': pk, 'fields': fields})
+        c.scheme_by_name[fields['name']] = pk
+        c.scheme_fields_by_pk[pk] = fields
+        if isinstance(pk, int):
+            max_rs_pk = max(max_rs_pk, pk)
 
     c.ac_svc_pk = c.ac_by_code.get('SVC')
     c.ac_mat_pk = c.ac_by_code.get('MTL')
     if max_rs_pk:
         c._pk_counters['jobs.ratescheme'] = max(
             c._pk_counters['jobs.ratescheme'], max_rs_pk)
+
+    # RM's ServiceItem catalog (CONVERTER_SERVICE_ITEMS): FKs point at the
+    # schemes emitted just above. created_date is auto_now_add on the model,
+    # which loaddata bypasses — a fixed date keeps output deterministic.
+    max_si_pk = 0
+    for pk, table_fields in CONVERTER_SERVICE_ITEMS:
+        fields = dict(table_fields)
+        fields.setdefault('created_date', '2026-01-01T00:00:00+00:00')
+        c.fixture_data.append(
+            {'model': 'estimates.serviceitem', 'pk': pk, 'fields': fields})
+        if isinstance(pk, int):
+            max_si_pk = max(max_si_pk, pk)
+    if max_si_pk:
+        c._pk_counters['estimates.serviceitem'] = max(
+            c._pk_counters.get('estimates.serviceitem', 0), max_si_pk)
 
 
 def build_configuration(c):
@@ -157,6 +256,20 @@ def build_configuration(c):
         # absent) and the SPA material forms. Points at MTL (the materials AC);
         # build_seed runs before this, so c.ac_mat_pk is set.
         ('default_material_accounting_category', str(c.ac_mat_pk)),
+        # RM's dev-authored settings (captured 2026-08-18) — the defaults,
+        # email account, and Business-tab keys the Settings page manages;
+        # emitted so a regen'd DB comes up configured, not blank.
+        ('default_rate_scheme',                  '7'),   # Shop labor
+        ('default_deposit_accounting_category',  str(c.ac_by_code.get('DEP'))),
+        ('fallback_accounting_category',         str(c.ac_by_code.get('UNC'))),
+        ('email_address',      'minibini.test@gmail.com'),
+        ('email_imap_server',  'imap.gmail.com'),
+        ('email_password',     'ttsg buza hxik ibit'),
+        ('email_smtp_host',    'smtp.gmail.com'),
+        ('email_smtp_port',    '587'),
+        ('business_email',     'minibini.test@gmail.com'),
+        ('our_public_url',     'minbini.me'),
+        ('our_domain',         'robot-six.com'),
         # Mirror apps.core.units.DEFAULT_UNITS so every emitted line-item /
         # material / deliverable row validates against the running app's
         # canonical list. ('Days' inputs convert to 'hour' × 8 at emit time;
@@ -204,16 +317,20 @@ def _unique_email(email, seen):
     """Return `email` if unused, else number the local part until free
     (test+info@… → test+info1@…, test+info2@…). Contact.email is DB-unique;
     distinct source contacts legitimately share a local part (info@a.com and
-    info@b.com both anonymize to test+info@robot-six.com)."""
-    if email not in seen:
-        seen.add(email)
+    info@b.com both anonymize to test+info@robot-six.com).
+
+    `seen` is keyed case-insensitively: the unique index sits on MySQL's
+    default `*_ci` collation, so test+Brian@ and test+brian@ are the same
+    key to the database even though they are distinct Python strings."""
+    if email.lower() not in seen:
+        seen.add(email.lower())
         return email
     local, _, domain = email.partition('@')
     n = 1
-    while f'{local}{n}@{domain}' in seen:
+    while f'{local}{n}@{domain}'.lower() in seen:
         n += 1
     numbered = f'{local}{n}@{domain}'
-    seen.add(numbered)
+    seen.add(numbered.lower())
     return numbered
 
 
@@ -942,7 +1059,13 @@ def build_estimates(c):
             est_pk = c.next_pk('estimates.estimate')
             c.add_fixture('estimates.estimate', est_pk, {
                 'job':             job_pk,
-                'estimate_number': f'{base}-{version}',
+                # Bare job number — NO version suffix (RM 2026-08-17): the
+                # app convention is estimate_number == job.job_number with
+                # `version` a separate field, and the SPA renders
+                # "{estimate_number}-{version}". The old f'{base}-{version}'
+                # emission double-suffixed every converted estimate
+                # ("07998-1-1") in the UI.
+                'estimate_number': base,
                 'version':         version,
                 'parent':          None,
                 'status':          est_status,
@@ -993,12 +1116,12 @@ def build_estimates(c):
                     'units':             units,
                     'description':       description,
                     'price':             f'{price:.2f}',
-                    # Every line needs an AC: source-backed lines (task/material/
-                    # fee) carry it on their atom, but bare discount/credit
-                    # ('lineitem') and deliverable lines never get a source, so
-                    # emit a classification-matched default here (matches the AC
-                    # the eventual atom would carry) — current code forbids a
-                    # null-AC line item.
+                    # Every line needs an AC: source-backed lines (task/
+                    # material) carry it on their atom, but plain fixed-charge
+                    # lines, bare discount/credit ('lineitem'), and deliverable
+                    # lines never get a source, so emit a classification-
+                    # matched default here (matches the AC the eventual atom
+                    # would carry) — current code forbids a null-AC line item.
                     'accounting_category': (
                         c.ac_mat_pk if classification == 'material'
                         else c.ac_svc_pk
@@ -1028,6 +1151,30 @@ def _scheme_pk(c, scheme_name):
             or c.scheme_by_name.get(_CHECKLIST_DEFAULT_SCHEME))
 
 
+def _stamp_money_block(c, scheme_pk, modifier_keys=None):
+    """Copy a seed RateScheme's money fields onto a jobs.task fixture dict
+    (task-owned money Phase 1). Mirrors Task.stamp_from_scheme /
+    apps.jobs.task_money_backfill.backfill_task_money exactly: qty_source
+    from scheme.algorithm, plus rate/unit_label/accounting_category
+    verbatim, source_scheme as provenance only (never read for money math),
+    and active_modifiers resolved from modifier_keys (a list of
+    scheme.modifiers 'key' strings) into full {key, label, percent}
+    snapshot dicts — modifier_keys=None (the default) activates none.
+    """
+    scheme = c.scheme_fields_by_pk[scheme_pk]
+    keys = modifier_keys or []
+    return {
+        'source_scheme':      scheme_pk,
+        'qty_source':          scheme['algorithm'],
+        'rate':                scheme['rate'],
+        'unit_label':          scheme['unit_label'],
+        'accounting_category': scheme['accounting_category'],
+        'active_modifiers':    [
+            dict(m) for m in (scheme.get('modifiers') or []) if m.get('key') in keys
+        ],
+    }
+
+
 def _match_seed_scheme(c, algorithm, rate):
     """Match a time/qty line's (algorithm, rate) to a seed RateScheme.
 
@@ -1036,7 +1183,7 @@ def _match_seed_scheme(c, algorithm, rate):
     otherwise (or when no seed scheme of that algorithm exists) the default Shop
     labor scheme stands in. active_modifiers is always an empty list.
 
-    Fixed charges no longer reach this function — they become jobs.Fee atoms
+    Fixed charges never reach this function — they stay plain document lines
     (see _line_billing); only 'elapsed_time' / 'entered_qty' lines are matched.
     """
     candidates = [
@@ -1059,18 +1206,20 @@ def _line_billing(c, li):
     """Decide how a task-classified estimate line should bill.
 
     Returns one of:
-      ('fee', None, None)              — a fixed charge → emit a jobs.Fee atom
+      ('plain', None, None)            — a fixed charge → the line stays a
+                                         plain document line (no atom, no
+                                         source row — better-fees spec §4)
       ('task', scheme_pk, modifiers)   — work → emit a Task with this RateScheme
 
     Keyword rule first (a 'cut'/'laser'/'cad' line is always work); otherwise the
-    inferred billing shape decides. A line with no time/quantity signal is a fee.
+    inferred billing shape decides. A line with no time/quantity signal is plain.
     """
     keyword_name = P.checklist_scheme_name(li['description'])
     if keyword_name != _CHECKLIST_DEFAULT_SCHEME:
         return 'task', _scheme_pk(c, keyword_name), []
     algorithm = P.infer_algorithm(li['item_type'], li['units'])
-    if algorithm == 'fee':
-        return 'fee', None, None
+    if algorithm == 'plain':
+        return 'plain', None, None
     scheme_pk, modifiers = _match_seed_scheme(c, algorithm, li['price'])
     return 'task', scheme_pk, modifiers
 
@@ -1178,7 +1327,6 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
     (_is_dropped_checklist_line) do not become Tasks.
     """
     sort_order = start_sort
-    last_toplevel_pk = None
     for item in items:
         # The 'Picked up/Delivered' marker drives Shipments, not Tasks.
         if _is_pickup_marker(item['text']):
@@ -1189,94 +1337,65 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
         sort_order += 1
         name = (item['text'] or 'Task')[:255] or 'Task'
         scheme_pk = _scheme_pk(c, P.checklist_scheme_name(name))
-        parent_pk = last_toplevel_pk if item['is_subtask'] else None
+        # Subtasks removed (better-fees spec §3): checklist sub-items emit
+        # as ordinary flat tasks in checklist order; parent_task is dormant
+        # and always None.
         task_pk = c.next_pk('jobs.task')
-        c.add_fixture('jobs.task', task_pk, {
+        fields = {
             'job':              job_pk,
-            'rate_scheme':      scheme_pk,
             'name':             name,
             'description':      item['text'] or '',
             'est_qty':          None,
             'est_worker_time':  None,
             'actual_qty':       None,
-            'active_modifiers': [],
             'status':           'complete' if item['completed'] else 'pending',
             'blocked_reason':   '',
             'worker_queue':     None,
             'assignee':         None,
-            'parent_task':      parent_pk,
+            'parent_task':      None,
             'sort_order':       sort_order,
-        })
-        if not item['is_subtask']:
-            last_toplevel_pk = task_pk
+        }
+        fields.update(_stamp_money_block(c, scheme_pk))
+        c.add_fixture('jobs.task', task_pk, fields)
         if base_ref not in c.cut_task and 'cut' in name.lower():
             c.cut_task[base_ref] = task_pk
     return sort_order
 
 
-def _emit_fee(c, base_ref, job_pk, li, sort_order, task_pk=None):
-    """Emit a jobs.fee atom for a fixed-charge estimate line, plus the
-    EstimateLineItemSource claiming it (source_type='fee'). Returns the fee pk.
-
-    quantity comes from the line qty (>0) or defaults to 1; unit_rate is the
-    line price; the fee carries the services AccountingCategory.
-
-    A non-positive price emits nothing (returns None): validate_data requires
-    Fee.unit_rate > 0, and a $0 fixed charge carries no billing information —
-    the estimate line itself is kept, just unclaimed.
-    """
-    if not li['price'] or li['price'] <= 0:
-        print(f"  fee skipped (non-positive price {li['price']}): "
-              f"{(li['description'] or '')[:60]!r}")
-        return None
-    qty = li['qty'] if (li['qty'] and li['qty'] > 0) else Decimal('1')
-    fee_pk = c.next_pk('jobs.fee')
-    c.add_fixture('jobs.fee', fee_pk, {
-        'job':                 job_pk,
-        'task':                task_pk,
-        'description':         (li['description'] or '')[:255],
-        'quantity':            f'{qty:.2f}',
-        'unit_rate':           f"{li['price']:.2f}",
-        'accounting_category': c.ac_svc_pk,
-        'sort_order':          sort_order,
-    })
-    _emit_estimate_line_item_source(c, li['line_item_pk'], 'fee', fee_pk)
-    return fee_pk
-
-
 def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
-    """Emit jobs.task / jobs.fee fixtures from estimate line items.
+    """Emit jobs.task fixtures from estimate line items.
 
     Used for the no-checklist fallback (task-classified lines) and for
-    material-keyword lines reclassified as labour. A line that bills as a fixed
-    charge becomes a jobs.Fee (claimed via an EstimateLineItemSource); every
-    other line becomes a Task. Returns the final per-job sort_order.
+    material-keyword lines reclassified as labour. A line that bills as a
+    fixed charge stays a plain document line — no atom, no source row
+    (better-fees spec §4; the line item itself, price included, was already
+    emitted by build_estimates); every other line becomes a Task. Returns the
+    final per-job sort_order.
     """
     sort_order = start_sort
     for li in task_lines:
         sort_order += 1
         kind, scheme_pk, active_modifiers = _line_billing(c, li)
-        if kind == 'fee':
-            _emit_fee(c, base_ref, job_pk, li, sort_order)
+        if kind == 'plain':
             continue
         name = (li['description'] or 'Task')[:255] or 'Task'
         task_pk = c.next_pk('jobs.task')
-        c.add_fixture('jobs.task', task_pk, {
+        fields = {
             'job':              job_pk,
-            'rate_scheme':      scheme_pk,
             'name':             name,
             'description':      li['description'] or '',
             'est_qty':          f"{li['qty']:.2f}",
             'est_worker_time':  None,
             'actual_qty':       None,
-            'active_modifiers': active_modifiers,
             'status':           'pending',
             'blocked_reason':   '',
             'worker_queue':     None,
             'assignee':         None,
             'parent_task':      None,
             'sort_order':       sort_order,
-        })
+        }
+        fields.update(_stamp_money_block(c, scheme_pk, active_modifiers))
+        c.add_fixture('jobs.task', task_pk, fields)
         if base_ref not in c.cut_task and 'cut' in name.lower():
             c.cut_task[base_ref] = task_pk
     return sort_order
@@ -1341,14 +1460,14 @@ def assign_est_quantities(c):
     - entered_qty: a piece count tied to the worker time (longer task → more
       pieces, 2–6 pieces/hour), unless a source line already set one.
 
-    Fixed charges are now jobs.Fee atoms (not Tasks), so no flat-fee case
-    remains here.
+    Fixed charges stay plain document lines (never Tasks), so no flat-fee
+    case exists here.
     """
     for f in c.fixture_data:
         if f['model'] != 'jobs.task':
             continue
         fields = f['fields']
-        algo = c.scheme_algorithm_by_pk.get(fields.get('rate_scheme'))
+        algo = fields.get('qty_source')
         if algo == 'elapsed_time':
             fields['est_qty'] = f'{_duration_hours(fields.get("est_worker_time")):.2f}'
         elif algo == 'entered_qty':
@@ -1361,7 +1480,7 @@ def assign_est_quantities(c):
 def _emit_estimate_line_item_source(c, li_pk, source_type, source_pk):
     """Emit an estimates.estimatelineitemsource row claiming a job atom.
 
-    source_type is one of 'task' / 'material' / 'fee'. Each atom can be claimed
+    source_type is one of 'task' / 'material'. Each atom can be claimed
     by at most one line item (model enforces unique_together on
     (source_type, source_pk)); the converter never double-claims an atom.
     """
@@ -1418,18 +1537,17 @@ def _build_deliverables(c, job_pk, deliverable_lines):
 
 
 def derive_atoms(c):
-    """Derive Task, Material, Fee, and Deliverable fixtures for each job.
+    """Derive Task, Material, and Deliverable fixtures for each job.
 
     Atoms now live directly on the Job for **every** status (draft included) —
     there is no plan layer. Per job:
 
     - **Tasks** come from the Kanban card's Checklist when it has any items
       (each line -> a Task; indented lines -> subtasks; [X] -> complete);
-      otherwise task-classified estimate line items become Tasks (or Fees, see
-      below). Checklist tasks keep their subtask hierarchy and [X]/[ ] status.
-    - **Fees**: a task-classified estimate line that bills as a fixed charge
-      (no time/quantity signal) becomes a jobs.Fee instead of a Task, claimed by
-      its source line via an EstimateLineItemSource (source_type='fee').
+      otherwise task-classified estimate line items become Tasks — except a
+      line that bills as a fixed charge (no time/quantity signal), which stays
+      a plain document line: no atom, no source row (better-fees spec §4).
+      Checklist tasks keep their subtask hierarchy and [X]/[ ] status.
     - **Materials** come from material-classified lines split by
       _material_line_kind: raw stock -> Material, labour/prep -> Task, finished
       goods -> Deliverable. Each line becomes exactly one of those.
@@ -1464,7 +1582,7 @@ def derive_atoms(c):
 
         checklist_items = P.parse_checklist(card.get('Checklist'))
 
-        # --- 1. Tasks/Fees: checklist (or fallback line items), plus labour.
+        # --- 1. Tasks: checklist (or fallback line items), plus labour. ----
         if checklist_items:
             sort_order = _build_checklist_tasks(
                 c, base_ref, job_pk, checklist_items)
@@ -1523,9 +1641,9 @@ def derive_atoms(c):
                 'po_line_item':        None,
             })
             # The Material IS this line's crystallized atom — record the
-            # claim exactly as _emit_fee does for fee lines. Without it,
-            # accepting a still-open estimate in-app re-crystallizes the
-            # bare line as a Fee, duplicating the material.
+            # claim. Without it the line looks unsourced, and accepting a
+            # still-open estimate in-app re-crystallizes it as a duplicate
+            # atom.
             _emit_estimate_line_item_source(
                 c, li['line_item_pk'], 'material', mat_pk)
 
@@ -1716,10 +1834,16 @@ def build_synthetic_estimate_sources(c):
     unique_together); extra Tasks group onto lines, surplus/adjustment lines
     stay sourceless.
 
-    Fee atoms are already claimed by their own source lines in derive_atoms
-    (source_type='fee'); this pass only places Tasks, and it skips Tasks already
-    claimed and estimate lines that already carry a source (so a line that owns
-    a Fee isn't double-sourced with a Task).
+    Material atoms are already claimed by their own source lines in
+    derive_atoms (source_type='material'); this pass only places Tasks, and it
+    skips Tasks already claimed and estimate lines that already carry a source
+    (so a line that owns a Material isn't double-sourced with a Task).
+
+    Runs after reconcile (statuses are final): only lines on non-superseded
+    estimates are candidates. In-app, revising moves every source row onto
+    the revision, so a superseded estimate never holds claims — a claim
+    stranded on an old revision would block its atom in the estimate/CO
+    wizard pools as "Claimed by estimate <superseded rev>".
     """
     claimed_tasks = {
         f['fields']['source_pk']
@@ -1741,12 +1865,22 @@ def build_synthetic_estimate_sources(c):
         f['pk']: f['fields']['job']
         for f in c.fixture_data if f['model'] == 'estimates.estimate'
     }
+    est_status = {
+        f['pk']: f['fields']['status']
+        for f in c.fixture_data if f['model'] == 'estimates.estimate'
+    }
     lines_by_job = {}
     for f in c.fixture_data:
         if f['model'] != 'estimates.estimatelineitem':
             continue
         if f['pk'] in sourced_lines:
-            continue  # already owns an atom (e.g. a Fee) — don't double-source
+            continue  # already owns an atom (e.g. a Material) — don't double-source
+        if est_status.get(f['fields']['estimate']) in ('superseded', 'rejected'):
+            # Claims live on the latest revision only (revise moves them),
+            # and a REJECTED estimate released its claims (in-app,
+            # ESTIMATE_DEAD_STATUSES). Expired estimates KEEP theirs
+            # (RM 2026-08-13 — reactivatable via unexpire).
+            continue
         job_pk = est_to_job.get(f['fields']['estimate'])
         if job_pk is not None:
             lines_by_job.setdefault(job_pk, []).append(f)
@@ -1762,20 +1896,160 @@ def build_synthetic_estimate_sources(c):
             _emit_estimate_line_item_source(c, li['pk'], 'task', t['pk'])
 
 
+def build_checklist_declines(c):
+    """Compat/consistency pass (ES Task 9, 2026-08-15): the app's
+    acceptance checklist (EstimateService.unanswered_lines) flags any
+    non-adjustment, non-deposit line on an ACCEPTED estimate that carries
+    no EstimateLineItemSource and isn't work_declined as still owing a
+    work decision, and JobService.maybe_auto_release blocks an APPROVED
+    job from walking to IN_PROGRESS while any exist. build_synthetic_estimate_sources
+    only sources as many lines as a job has unclaimed Tasks — surplus
+    lines stay sourceless — so a converted job already sitting at
+    approved-or-beyond would surface phantom checklist items the running
+    app never asked about (and never could have: draft/submitted/rejected
+    jobs can't hold an accepted estimate in the first place).
+
+    Mark every remaining sourceless, non-adjustment, non-deposit,
+    non-catalog-identity line on such an estimate work_declined=True — the
+    "no work behind this line, on purpose" answer — so regenerated data is
+    checklist-consistent without a data-repair pass. (No converter-emitted
+    EstimateLineItem ever carries a catalog identity — service_item/
+    inventory_item/is_material are only set at accept-time crystallization
+    in the running app — but the check mirrors EstimateService._set_work_declined's
+    (invoked via update_line_item's work_declined carve-out) exclusions for
+    safety.)
+
+    Runs after build_synthetic_estimate_sources (sourcing must be final)
+    and therefore after reconcile too (job/estimate statuses final).
+    """
+    # Statuses reachable only via/after the approved gate — see Job's
+    # VALID_TRANSITIONS (jobs/models.py): draft/submitted/rejected can
+    # never hold an accepted estimate that has passed this gate. (Pure-JSON
+    # pass — no Django import here, so status values are string literals
+    # mirroring Job's constants, same convention as build_invoice_agreement_refs.)
+    _APPROVED_OR_BEYOND = {
+        'approved', 'in_progress', 'work_complete', 'completed', 'cancelled',
+    }
+
+    job_status = {f['pk']: f['fields']['status']
+                  for f in c.fixture_data if f['model'] == 'jobs.job'}
+    est_job = {f['pk']: f['fields']['job']
+               for f in c.fixture_data if f['model'] == 'estimates.estimate'}
+    est_status = {f['pk']: f['fields']['status']
+                  for f in c.fixture_data if f['model'] == 'estimates.estimate'}
+    deposit_acs = {f['pk'] for f in c.fixture_data
+                   if f['model'] == 'core.accountingcategory'
+                   and f['fields'].get('is_deposit')}
+    sourced_lines = {
+        f['fields']['estimate_line_item']
+        for f in c.fixture_data
+        if f['model'] == 'estimates.estimatelineitemsource'
+    }
+
+    for f in c.fixture_data:
+        if f['model'] != 'estimates.estimatelineitem':
+            continue
+        fields = f['fields']
+        est_pk = fields['estimate']
+        if est_status.get(est_pk) != 'accepted':
+            continue
+        if job_status.get(est_job.get(est_pk)) not in _APPROVED_OR_BEYOND:
+            continue
+        if f['pk'] in sourced_lines:
+            continue
+        if fields.get('adjustment_service') is not None:
+            continue
+        if fields.get('accounting_category') in deposit_acs:
+            continue
+        if (fields.get('service_item') is not None
+                or fields.get('inventory_item') is not None
+                or fields.get('is_material')):
+            continue
+        fields['work_declined'] = True
+
+
+def build_invoice_agreement_refs(c):
+    """Emit agreement_estimate_line refs on converted invoice lines
+    (RM 2026-08-12): without them a converted open invoice claims no
+    agreement lines, so the app's one-live-invoice-per-agreement-line
+    invariant (remaining_agreement_lines) sees everything as unbilled and
+    Start Invoice re-seeds the FULL agreement — a visually identical twin.
+
+    Heuristic linkage, same spirit (and the same fuzzy-correspondence
+    caveat) as build_synthetic_estimate_sources: an invoice line matches
+    the SAME job's latest estimate's line by exact stripped description.
+    Adjustment estimate lines are never matched (they carry
+    adjustment_service; the app's seeding refs them separately and the
+    converter has no basis to). Runs after reconcile — refs are only
+    emitted when the latest estimate reconciled to accepted (the agreement
+    exists), and only for non-cancelled invoices (cancelled ones don't
+    claim). One live claim per estimate line: invoices iterate in pk order
+    and the first matching line wins, per job.
+    """
+    est_status = {f['pk']: f['fields']['status']
+                  for f in c.fixture_data if f['model'] == 'estimates.estimate'}
+
+    # base_ref -> {description: est_line_pk} for the latest ACCEPTED estimate.
+    desc_maps = {}
+    for base_ref, est_list in c.estimates.items():
+        if not est_list:
+            continue
+        latest = max(est_list, key=lambda e: e['version'])
+        if est_status.get(latest['est_pk']) != 'accepted':
+            continue
+        mapping = {}
+        for li in c.line_items.get(latest['est_pk'], []):
+            desc = (li['description'] or '').strip()
+            # First line wins on duplicate descriptions (deterministic).
+            if desc and desc not in mapping:
+                mapping[desc] = li['line_item_pk']
+        desc_maps[base_ref] = mapping
+
+    # invoice pk -> (base_ref, status); line fixtures grouped by invoice.
+    inv_meta = {f['pk']: f['fields'] for f in c.fixture_data
+                if f['model'] == 'invoicing.invoice'}
+    inv_base = {}
+    for base_ref, job_info in c.jobs.items():
+        job_pk = job_info['job_pk']
+        for pk, fields in inv_meta.items():
+            if fields['job'] == job_pk:
+                inv_base[pk] = base_ref
+
+    claimed = {}  # base_ref -> set of claimed est_line_pks
+    line_fixtures = [f for f in c.fixture_data
+                     if f['model'] == 'invoicing.invoicelineitem']
+    for f in sorted(line_fixtures, key=lambda f: (f['fields']['invoice'], f['pk'])):
+        inv_pk = f['fields']['invoice']
+        base_ref = inv_base.get(inv_pk)
+        if base_ref is None or base_ref not in desc_maps:
+            continue
+        if inv_meta[inv_pk].get('status') == 'cancelled':
+            continue
+        desc = (f['fields'].get('description') or '').strip()
+        est_line_pk = desc_maps[base_ref].get(desc)
+        if est_line_pk is None:
+            continue
+        taken = claimed.setdefault(base_ref, set())
+        if est_line_pk in taken:
+            continue  # one live invoice per agreement line
+        taken.add(est_line_pk)
+        f['fields']['agreement_estimate_line'] = est_line_pk
+
+
 def build_invoice_line_item_sources(c):
     """Emit invoicing.invoicelineitemsource rows linking InvoiceLineItems to
-    Tasks / Fees / Materials on the Job.
+    Tasks / Materials on the Job.
 
     Schema permits freeform invoice lines (no source); the wiring is purely
-    cosmetic — it makes Tasks/Fees/Materials show as 'billed' on a paid Job in
+    cosmetic — it makes Tasks/Materials show as 'billed' on a paid Job in
     the UI instead of orphaned. Heuristic, deterministic claim:
 
       - For each Invoice on each Job (invoice pk asc → invoice line_number asc)
       - Classify the line via P.classify_line_item.
       - If classification is 'task': claim the next unclaimed Task on the Job;
-        fall through to Fees, then Materials, if exhausted.
+        fall through to Materials if exhausted.
       - If classification is 'material': claim the next unclaimed Material;
-        fall through to Tasks, then Fees, if exhausted.
+        fall through to Tasks if exhausted.
       - 'lineitem' / 'skip' classifications never claim (discounts / comments
         are inherently freeform).
       - Leftover lines stay freeform.
@@ -1811,14 +2085,8 @@ def build_invoice_line_item_sources(c):
         if (f['model'] == 'inventory.material'
                 and f['fields'].get('consumption_state') == 'consumed'):
             materials_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
-    fees_by_job = {}
-    for f in c.fixture_data:
-        if f['model'] == 'jobs.fee':
-            fees_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
-
     claimed_tasks = set()
     claimed_materials = set()
-    claimed_fees = set()
 
     def _claim(pool, claimed):
         for pk in pool:
@@ -1831,7 +2099,6 @@ def build_invoice_line_item_sources(c):
     for job_pk in sorted(invoices_by_job):
         task_pool = sorted(tasks_by_job.get(job_pk, []))
         material_pool = sorted(materials_by_job.get(job_pk, []))
-        fee_pool = sorted(fees_by_job.get(job_pk, []))
         invs = sorted(invoices_by_job[job_pk], key=lambda f: f['pk'])
         for inv in invs:
             # Draft invoices are seeded empty in the app (the user picks
@@ -1849,9 +2116,6 @@ def build_invoice_line_item_sources(c):
                     src_pk = _claim(task_pool, claimed_tasks)
                     src_type = 'task'
                     if src_pk is None:
-                        src_pk = _claim(fee_pool, claimed_fees)
-                        src_type = 'fee'
-                    if src_pk is None:
                         src_pk = _claim(material_pool, claimed_materials)
                         src_type = 'material'
                 elif kind == 'material':
@@ -1860,9 +2124,6 @@ def build_invoice_line_item_sources(c):
                     if src_pk is None:
                         src_pk = _claim(task_pool, claimed_tasks)
                         src_type = 'task'
-                    if src_pk is None:
-                        src_pk = _claim(fee_pool, claimed_fees)
-                        src_type = 'fee'
                 else:
                     src_pk = None
                 if src_pk is None:
@@ -2197,7 +2458,7 @@ def build_bleps_and_shifts(c):
         # invent one with the thirds rule vs est_qty (fallback base 1). Set for
         # EVERY complete task — even an old finished one too old to get a blep
         # (the horizon skip below) — so nothing can invoice at zero.
-        if c.scheme_algorithm_by_pk.get(fields.get('rate_scheme')) == 'entered_qty':
+        if fields.get('qty_source') == 'entered_qty':
             base = (Decimal(fields['est_qty'])
                     if fields.get('est_qty') not in (None, '') else Decimal('1'))
             actual = (base * P.thirds_factor(counter)).quantize(Decimal('0.01'))

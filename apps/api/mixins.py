@@ -1,3 +1,4 @@
+from decimal import Decimal
 from apps.core.history import record_history
 from rest_framework import serializers, status
 from rest_framework.decorators import action
@@ -197,23 +198,44 @@ class LineItemMixin:
     line_item_parent_field = None
     line_item_service_class = None
 
+    def line_item_update_kwargs(self, request):
+        """Extra kwargs for the service's update_line_item, derived from the
+        PATCH request — same contract as line_item_delete_kwargs below."""
+        return {}
+
+    def line_item_delete_kwargs(self, request):
+        """Extra kwargs for the service's delete_line_item, derived from the
+        DELETE request. Default: none. A viewset overrides this to translate
+        surface-specific query params (e.g. the estimate's
+        ?delete_deliverables=true) — keeps the generic mixin signature-stable
+        for services that accept no extras."""
+        return {}
+
     @action(detail=True, methods=['get', 'post'], url_path='line-items', url_name='line-items')
     def line_items(self, request, pk=None):
         parent = self.get_object()
         if request.method == 'GET':
             items = self._get_line_items_qs(parent)
-            serializer = self.line_item_serializer_class(items, many=True)
+            serializer = self.line_item_serializer_class(
+                items, many=True, context=self.get_serializer_context())
             return Response(serializer.data)
 
         service = self.line_item_service_class
         data = request.data.copy()
         pli_id = data.get('inventory_item')
-        has_manual_fields = data.get('description') or data.get('price')
+        # `description` alone no longer forks a catalog pick onto the manual
+        # hand-line path (Add Line modal editable-description feature,
+        # 2026-09-20) — it's an optional override on the PLI path itself
+        # (see add_line_item_from_pli's `description` param). `price` still
+        # does: a caller supplying a price is authoring a hand line, not
+        # tweaking a catalog derivation.
+        has_manual_fields = data.get('price')
 
         try:
             if pli_id and not has_manual_fields:
                 qty = data.get('qty', 0)
-                item = service.add_line_item_from_pli(parent.pk, pli_id, qty)
+                item = service.add_line_item_from_pli(
+                    parent.pk, pli_id, qty, description=data.get('description'))
             else:
                 item = service.add_line_item(parent.pk, **data)
         except NotFoundError:
@@ -222,7 +244,8 @@ class LineItemMixin:
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = self.line_item_serializer_class(item)
+        serializer = self.line_item_serializer_class(
+            item, context=self.get_serializer_context())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['patch', 'delete'],
@@ -234,7 +257,8 @@ class LineItemMixin:
 
         if request.method == 'DELETE':
             try:
-                service.delete_line_item(item.pk)
+                service.delete_line_item(
+                    item.pk, **self.line_item_delete_kwargs(request))
             except NotFoundError:
                 return Response(
                     {'detail': 'Not found.'},
@@ -243,13 +267,15 @@ class LineItemMixin:
             return Response({'message': 'Line item deleted.'})
 
         try:
-            item = service.update_line_item(item.pk, **request.data)
+            item = service.update_line_item(
+                item.pk, **self.line_item_update_kwargs(request), **request.data)
         except NotFoundError:
             return Response(
                 {'detail': 'Not found.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        serializer = self.line_item_serializer_class(item)
+        serializer = self.line_item_serializer_class(
+            item, context=self.get_serializer_context())
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'],
@@ -271,7 +297,8 @@ class LineItemMixin:
                 status=status.HTTP_404_NOT_FOUND,
             )
         items = self._get_line_items_qs(parent)
-        serializer = self.line_item_serializer_class(items, many=True)
+        serializer = self.line_item_serializer_class(
+            items, many=True, context=self.get_serializer_context())
         return Response(serializer.data)
 
     def _get_line_items_qs(self, parent):
@@ -287,6 +314,25 @@ class LineItemMixin:
             qs = qs.select_related('adjustment_service')
         if 'adjustment_target_categories' in field_names:
             qs = qs.prefetch_related('adjustment_target_categories')
+        # derive_backing / agreement_ref (invoice lines; the CO surface's
+        # equivalent fields reuse the same names) read the agreement
+        # reference and accounting_category per row — avoid the N+1.
+        # agreement_co_line's own `change_order` is followed one hop
+        # further for the ref payload's co_number (_agreement_ref_payload).
+        related_field_paths = {
+            'agreement_estimate_line': 'agreement_estimate_line',
+            'agreement_co_line': 'agreement_co_line__change_order',
+            'accounting_category': 'accounting_category',
+        }
+        select_related_fields = [
+            path for name, path in related_field_paths.items()
+            if name in field_names
+        ]
+        if select_related_fields:
+            qs = qs.select_related(*select_related_fields)
+        # derive_backing / actuals_total iterate `sources` per row.
+        if 'sources' in field_names:
+            qs = qs.prefetch_related('sources')
         return qs
 
     def _get_line_item_or_404(self, parent, item_id):
@@ -321,27 +367,147 @@ class JobTaskMixin:
             return Response(serializer.data)
 
         from apps.jobs.services import TaskService
-        from apps.jobs.models import RateScheme
-        data = request.data
-        try:
-            task = TaskService.create_direct(
-                job,
-                name=data.get('name', ''),
-                rate_scheme_id=data.get('rate_scheme'),
-                active_modifiers=data.get('active_modifiers') or [],
-                est_qty=data.get('est_qty'),
-                est_worker_time=data.get('est_worker_time'),
-                actual_qty=data.get('actual_qty'),
-                description=data.get('description', ''),
-                parent_task_id=data.get('parent_task'),
-                assignee_id=data.get('assignee'),
+        from apps.jobs.models import RateScheme, SchemeInactiveError
+
+        # Mint-by-modal gesture (estimating-structure spec §2/§4): an
+        # optional claim_estimate_line param binds the just-created task to
+        # an existing estimate line as its source atom. Presence of the key
+        # gates on CanManageJobOrPM regardless of who may create the task
+        # itself — reuse its has_object_permission (same check the
+        # standard update/destroy path uses) so the two gates can't drift.
+        # This copy stays inline (mixins.py importing from jobs.views would
+        # be a layering violation); the same recipe is factored into
+        # apps.api.jobs.views._resolve_claim_line for add_from_template —
+        # keep the two in sync by hand if it changes.
+        #
+        # Runs BEFORE serializer validation (fail-closed, gate-first): a
+        # non-manager attaching claim_estimate_line to a request that's
+        # otherwise invalid (missing/bad fields) still gets 403, not 400 —
+        # uniform across both plan-work-gesture endpoints, including
+        # apps.api.jobs.views.add_from_template, whose _resolve_claim_line
+        # helper runs first for the same reason.
+        claim_line = None
+        if 'claim_estimate_line' in request.data:
+            from apps.api.permissions import CanManageJobOrPM
+            if not CanManageJobOrPM().has_object_permission(request, self, job):
+                return Response(
+                    {'detail': 'You do not have permission to plan work '
+                               'against an estimate line.'},
+                    status=status.HTTP_403_FORBIDDEN)
+            from apps.estimates.models import EstimateLineItem
+            try:
+                claim_line_pk = int(request.data.get('claim_estimate_line'))
+            except (TypeError, ValueError):
+                # Non-numeric input would otherwise 500 on the pk lookup
+                # below — same guard as apps.api.jobs.views._resolve_claim_line.
+                return Response(
+                    {'detail': 'claim_estimate_line must be a numeric id.'},
+                    status=status.HTTP_400_BAD_REQUEST)
+            claim_line = EstimateLineItem.objects.filter(
+                pk=claim_line_pk, estimate__job=job).first()
+            if claim_line is None:
+                return Response(
+                    {'detail': 'Estimate line not found on this job.'},
+                    status=status.HTTP_400_BAD_REQUEST)
+
+        # Gate money-field writes on what the client actually sent (Phase 3:
+        # accounting_category is optional on the serializer now, so a
+        # stamp-only POST naming only `rate_scheme` needs no pre-fill to
+        # pass validation — Task.stamp_from_scheme fills the task's real AC
+        # from the chosen preset server-side, after this validates).
+        raw_keys = set(request.data.keys())
+        serializer = self.task_serializer_class(
+            data=request.data,
+            context={**self.get_serializer_context(), 'job': job, 'raw_input_keys': raw_keys},
+        )
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        scheme = validated.get('rate_scheme')
+        assignee = validated.get('assignee')
+
+        # Mint flow per-unit interpretation (per-unit-lines spec §5/§6): on
+        # a per-unit claim line, the submitted est_qty/est_worker_time are
+        # PER-UNIT values — multiply by the claim line's qty before the
+        # atom is created (atoms are born with totals, never restamped
+        # after). `claim_line_per_unit` (True/False, first mint only) is
+        # this gesture's copy of apps.api.jobs.views._resolve_claim_line_
+        # per_unit — same layering reason as the claim_estimate_line inline
+        # copy above; keep the two recipes in sync by hand.
+        est_qty = validated.get('est_qty')
+        est_worker_time = validated.get('est_worker_time')
+        per_unit_qty_for_claim = None
+        per_unit_worker_time_for_claim = None
+        set_line_per_unit = None
+        if claim_line is not None:
+            raw = request.data.get('claim_line_per_unit')
+            if 'claim_line_per_unit' not in request.data:
+                claim_line_per_unit = None
+            elif isinstance(raw, bool):
+                claim_line_per_unit = raw
+            elif isinstance(raw, str):
+                claim_line_per_unit = raw.lower() in ('true', '1', 'yes')
+            else:
+                claim_line_per_unit = bool(raw)
+            set_line_per_unit = claim_line_per_unit
+            effective_per_unit = (
+                claim_line_per_unit if claim_line_per_unit is not None
+                else bool(claim_line.per_unit)
             )
+            if effective_per_unit:
+                per_unit_qty_for_claim = est_qty
+                per_unit_worker_time_for_claim = est_worker_time
+                if est_qty is not None:
+                    est_qty = (est_qty * claim_line.qty).quantize(Decimal('0.01'))
+                if est_worker_time is not None:
+                    est_worker_time = est_worker_time * float(claim_line.qty)
+
+        # Add-Task-time money overrides (2026-09-19): rate/unit_label/
+        # accounting_category are money-gated (TaskSerializer.MONEY_FIELDS)
+        # exactly like on PATCH — validate() above already rejected a
+        # non-money caller sending one of these. Forward a key ONLY when it
+        # was actually present in the raw request body (not merely in
+        # validated_data, which can carry a model-level default the client
+        # never sent) so create_direct's stamp-then-override ordering only
+        # overrides what the caller actually asked to override.
+        money_overrides = {
+            key: validated.get(key)
+            for key in ('rate', 'unit_label', 'accounting_category')
+            if key in raw_keys
+        }
+
+        from django.db import transaction
+        from apps.estimates.models import EstimateLineItemSource
+        from apps.estimates.mint import MintService
+        try:
+            with transaction.atomic():
+                task = TaskService.create_direct(
+                    job,
+                    name=validated.get('name', ''),
+                    rate_scheme_id=scheme.pk if scheme else None,
+                    active_modifiers=validated.get('active_modifiers') or [],
+                    est_qty=est_qty,
+                    est_worker_time=est_worker_time,
+                    actual_qty=validated.get('actual_qty'),
+                    description=validated.get('description', ''),
+                    assignee_id=assignee.pk if assignee else None,
+                    **money_overrides,
+                )
+                if claim_line is not None:
+                    MintService.claim_atom_for_line(
+                        claim_line, EstimateLineItemSource.SOURCE_TASK, task.pk,
+                        per_unit_qty=per_unit_qty_for_claim,
+                        per_unit_worker_time=per_unit_worker_time_for_claim,
+                        set_line_per_unit=set_line_per_unit,
+                    )
         except RateScheme.DoesNotExist:
             return Response(
                 {'rate_scheme': ['RateScheme not found.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        serializer = self.task_serializer_class(task)
+        except SchemeInactiveError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
+        serializer = self.task_serializer_class(
+            task, context=self.get_serializer_context())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get', 'patch', 'delete'],
@@ -351,7 +517,8 @@ class JobTaskMixin:
         task = self._get_task_or_404(job, task_pk)
 
         if request.method == 'GET':
-            serializer = self.task_serializer_class(task)
+            serializer = self.task_serializer_class(
+                task, context=self.get_serializer_context())
             return Response(serializer.data)
 
         if request.method == 'DELETE':
@@ -359,16 +526,27 @@ class JobTaskMixin:
             _TaskService.delete_task(task.pk)
             return Response({'message': 'Task deleted.'})
 
-        # Validate request data via the serializer, then delegate the actual
-        # write to TaskService.update_task so the on_hold guard and the C1
-        # editability matrix (manager/PM/assignee on in_progress/blocked)
-        # fire. TaskPermissionError is an authorization refusal → 403.
-        serializer = self.task_serializer_class(task, data=request.data, partial=True)
+        # Validate request data via the serializer (money-field writes are
+        # gated there — CanManageJobOrPM or can_manage_financials), then
+        # delegate the actual write to TaskService.update_task so the
+        # on_hold guard and the C1 editability matrix (manager/PM/assignee
+        # on in_progress/blocked) fire. TaskPermissionError is a *separate*
+        # authorization refusal (status-based, not money-field-based) → 403.
+        serializer = self.task_serializer_class(
+            task, data=request.data, partial=True,
+            context=self.get_serializer_context(),
+        )
         serializer.is_valid(raise_exception=True)
+        # `rate_scheme` is a create-only stamping trigger — update_task has
+        # no re-stamp mechanism, and blindly setattr-ing it onto the task
+        # would silently create a stray, unsaved-until-next-save attribute
+        # (Task has no such field). Never forward it to an edit.
+        update_fields = dict(serializer.validated_data)
+        update_fields.pop('rate_scheme', None)
         from apps.jobs.services import TaskService, TaskPermissionError
         try:
             task = TaskService.update_task(
-                task.pk, user=request.user, **serializer.validated_data)
+                task.pk, user=request.user, **update_fields)
         except TaskPermissionError as e:
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
         serializer = self.task_serializer_class(

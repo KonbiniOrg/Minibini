@@ -52,7 +52,9 @@ class MaterialServiceCreateOnJobTest(TestCase):
 
     def test_create_task_attached_invariant_enforced(self):
         other = Job.objects.create(job_number='JOB-MS-2', contact=self.contact)
-        t = Task.objects.create(job=other, name='t', rate_scheme=self.scheme)
+        t = Task(job=other, name='t')
+        t.stamp_from_scheme(self.scheme)
+        t.save()
         from django.core.exceptions import ValidationError
         with self.assertRaises(ValidationError):
             MaterialService.create_on_job(
@@ -61,7 +63,9 @@ class MaterialServiceCreateOnJobTest(TestCase):
             )
 
     def test_create_task_attached_inventoried_upserts_earmark(self):
-        t = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
+        t = Task(job=self.job, name='t')
+        t.stamp_from_scheme(self.scheme)
+        t.save()
         m = MaterialService.create_on_job(
             job=self.job, task=t, description='x', quantity=Decimal('2.00'),
             inventory_item=self.pli_inv,

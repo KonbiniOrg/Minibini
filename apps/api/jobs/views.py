@@ -1,4 +1,5 @@
 from decimal import Decimal, InvalidOperation
+from django.db import transaction
 from apps.core.history import record_history
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -7,16 +8,86 @@ from rest_framework.response import Response
 from django.db.models import Q, OuterRef, Subquery, Sum, DecimalField, Value
 from django.db.models import Prefetch
 from django.db.models.functions import Coalesce
-from apps.jobs.models import Job, Task, Fee
+from apps.jobs.models import Job, Task, SchemeInactiveError
 from apps.inventory.models import Material, Earmark
-from apps.jobs.services import JobService, TaskService, FeeService
-from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
-from apps.estimates.models import WorkTemplate, Estimate, ServiceItem
+from apps.jobs.services import JobService, TaskService
+from apps.core.services import NotFoundError, ServiceError
+from apps.estimates.models import WorkTemplate, Estimate, ServiceItem, EstimateLineItem, EstimateLineItemSource
+from apps.estimates.mint import MintService
 from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin, JobScopedPermissionMixin
 from apps.api.permissions import CanManageJobs, CanManageJobOrPM
 from apps.api.history.serializers import HistoryEntrySerializer
 from apps.api.tasks.serializers import TaskSerializer
 from .serializers import JobSerializer
+
+
+def _resolve_claim_line(request, job):
+    """Presence-gate + resolve the optional `claim_estimate_line` param used
+    by the mint-by-modal gesture (estimating-structure spec §2/§4). Used by
+    JobViewSet.add_from_template — the same param on JobTaskMixin.tasks
+    (apps/api/mixins.py) stays an inline copy there (mixins.py importing
+    from jobs.views is not clean); keep the two in sync by hand if the
+    recipe changes.
+
+    Gate is semantically CanManageJobOrPM().has_object_permission(request,
+    view, job) reproduced without a view instance — for JobViewSet
+    (job_object_path='self') has_object_permission reduces to exactly this
+    check.
+
+    Returns:
+      - None when the param is absent (no claim requested).
+      - the resolved EstimateLineItem when present and valid.
+      - an error Response (403 permission / 400 not found or non-numeric,
+        {'detail': ...} shape — claim_estimate_line is a programmatic
+        param with no form field to key errors under, never a user input)
+        otherwise — callers must return it immediately.
+    """
+    if 'claim_estimate_line' not in request.data:
+        return None
+    if not (request.user.has_perm('core.can_manage_jobs')
+            or JobService.user_can_manage(request.user, job)):
+        return Response(
+            {'detail': 'You do not have permission to plan work '
+                       'against an estimate line.'},
+            status=status.HTTP_403_FORBIDDEN)
+    raw = request.data.get('claim_estimate_line')
+    try:
+        line_pk = int(raw)
+    except (TypeError, ValueError):
+        # Non-numeric input would otherwise 500 on the pk lookup below.
+        return Response(
+            {'detail': 'claim_estimate_line must be a numeric id.'},
+            status=status.HTTP_400_BAD_REQUEST)
+    line = EstimateLineItem.objects.filter(pk=line_pk, estimate__job=job).first()
+    if line is None:
+        return Response(
+            {'detail': 'Estimate line not found on this job.'},
+            status=status.HTTP_400_BAD_REQUEST)
+    return line
+
+
+def _resolve_claim_line_per_unit(request):
+    """Tri-state (True/False/None) read of the optional `claim_line_per_unit`
+    param — the mint flow's first-mint one-unit-or-whole-line question
+    (per-unit-lines spec §5/§6). `None` means "not sent": the caller falls
+    back to the target line's already-established `per_unit` value (a
+    later mint simply omits the param, inheriting the first mint's
+    answer). True/False is honored by `MintService.claim_atom_for_line`
+    only when the line has no existing sources yet — a differing value on
+    a line that already has sources raises there (the ask-once rule).
+
+    Mirrored inline in `apps.api.mixins.JobTaskMixin.tasks` for the same
+    layering reason as `_resolve_claim_line`'s own docstring (mixins.py
+    importing from jobs.views would be a layering violation) — keep the
+    two copies in sync by hand if this recipe changes."""
+    if 'claim_line_per_unit' not in request.data:
+        return None
+    raw = request.data.get('claim_line_per_unit')
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        return raw.lower() in ('true', '1', 'yes')
+    return bool(raw)
 
 
 class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
@@ -26,7 +97,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             Prefetch(
                 'tasks',
                 queryset=Task.objects.select_related(
-                    'assignee', 'rate_scheme',
+                    'assignee', 'source_scheme', 'accounting_category',
                 ).prefetch_related('blep_set').order_by('sort_order'),
             ),
             Prefetch(
@@ -45,10 +116,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                         output_field=DecimalField(max_digits=10, decimal_places=2),
                     )
                 ),
-            ),
-            Prefetch(
-                'fees',
-                queryset=Fee.objects.order_by('sort_order'),
             ),
         ) \
         .all().order_by('-created_date')
@@ -201,9 +268,13 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         if blockers:
             return Response({'blockers': blockers})
         try:
-            # Walk approved → in_progress → work_complete if needed.
+            # Walk approved → in_progress → work_complete if needed. The
+            # in_progress hop here is a system-driven intermediate step of
+            # this composite action, not a manual release — same reasoning
+            # as JobService.maybe_complete_if_resolved's walk.
             if job.status == Job.STATUS_APPROVED:
-                job = JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
+                job = JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS,
+                                               system_transition=True)
             job = JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
         except NotFoundError:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -256,7 +327,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             )
         try:
             JobService.populate_from_template(job, template)
-        except SchemeSupersededError as e:
+        except SchemeInactiveError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         job.refresh_from_db()
         return Response(self.get_serializer(job).data)
@@ -302,6 +373,17 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         from apps.core.models import AccountingCategory
         from apps.api.inventory.serializers import MaterialSerializer
         job = self.get_object()
+
+        # Mint flow (per-unit-lines spec §5/§6): an optional
+        # claim_estimate_line binds the just-created material to an
+        # existing estimate line as its source atom, same recipe as
+        # add_from_template's claim (materials didn't support this claim
+        # param before Task 5).
+        claim_result = _resolve_claim_line(request, job)
+        if isinstance(claim_result, Response):
+            return claim_result
+        claim_line = claim_result
+
         data = request.data
         pli = None
         if data.get('inventory_item'):
@@ -312,122 +394,43 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         customer_supplied = data.get('customer_supplied')
         if isinstance(customer_supplied, str):
             customer_supplied = customer_supplied.lower() in ('true', '1', 'yes')
-        m = MaterialService.create_on_job(
-            job=job, task=None,
-            description=data.get('description', ''),
-            quantity=_Decimal(str(data.get('quantity', 0))),
-            units=data.get('units', 'none'),
-            unit_cost=_Decimal(str(data.get('unit_cost', 0))),
-            sell_price=_Decimal(str(data.get('sell_price', 0))),
-            inventory_item=pli,
-            accounting_category=ac,
-            customer_supplied=bool(customer_supplied),
-        )
-        return Response(MaterialSerializer(m).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['post'], url_path='fees', url_name='fees')
-    def create_fee(self, request, pk=None):
-        """Create a Fee atom on this job. Manager-or-PM gated (the viewset
-        default) — a fee is a billing decision, not worker self-service like
-        tasks/materials, so it is not in `authenticated_only_actions`."""
-        from apps.core.models import AccountingCategory
-        from .serializers import FeeSerializer
-        job = self.get_object()
-        data = request.data
-        ac = None
-        ac_id = data.get('accounting_category')
-        if ac_id:
-            try:
-                ac = AccountingCategory.objects.get(pk=ac_id)
-            except (AccountingCategory.DoesNotExist, ValueError, TypeError):
-                return Response(
-                    {'accounting_category': ['Accounting category not found.']},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-        task = None
-        task_id = data.get('task')
-        if task_id:
-            try:
-                task = Task.objects.get(pk=task_id, job=job)
-            except (Task.DoesNotExist, ValueError, TypeError):
-                return Response(
-                    {'task': ['Task not found on this job.']},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-        try:
-            fee = FeeService.create_on_job(
-                job,
+        # On a per-unit claim line, the submitted quantity is a PER-UNIT
+        # value — multiply by the claim line's qty before the atom is
+        # created (atoms are born with totals, never restamped after).
+        quantity = _Decimal(str(data.get('quantity', 0)))
+        per_unit_qty_for_claim = None
+        set_line_per_unit = None
+        if claim_line is not None:
+            claim_line_per_unit = _resolve_claim_line_per_unit(request)
+            set_line_per_unit = claim_line_per_unit
+            effective_per_unit = (
+                claim_line_per_unit if claim_line_per_unit is not None
+                else bool(claim_line.per_unit)
+            )
+            if effective_per_unit:
+                per_unit_qty_for_claim = quantity
+                quantity = (quantity * claim_line.qty).quantize(_Decimal('0.01'))
+
+        with transaction.atomic():
+            m = MaterialService.create_on_job(
+                job=job, task=None,
                 description=data.get('description', ''),
-                quantity=Decimal(str(data.get('quantity', '1'))),
-                unit_rate=Decimal(str(data.get('unit_rate', '0'))),
+                quantity=quantity,
+                units=data.get('units', 'none'),
+                unit_cost=_Decimal(str(data.get('unit_cost', 0))),
+                sell_price=_Decimal(str(data.get('sell_price', 0))),
+                inventory_item=pli,
                 accounting_category=ac,
-                task=task,
+                customer_supplied=bool(customer_supplied),
             )
-        except InvalidOperation:
-            return Response(
-                {'detail': 'quantity and unit_rate must be valid numbers.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        return Response(FeeSerializer(fee).data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=['patch', 'delete'],
-            url_path='fees/(?P<fee_pk>[0-9]+)', url_name='fee-detail')
-    def fee_detail(self, request, pk=None, fee_pk=None):
-        """PATCH (edit) or DELETE a Fee on this job. DELETE returns 200 + JSON
-        body per the project convention (never 204)."""
-        from apps.core.models import AccountingCategory
-        from .serializers import FeeSerializer
-        job = self.get_object()
-        try:
-            fee = Fee.objects.get(pk=fee_pk, job=job)
-        except Fee.DoesNotExist:
-            return Response({'detail': 'Fee not found on this job.'},
-                            status=status.HTTP_404_NOT_FOUND)
-
-        if request.method == 'DELETE':
-            FeeService.delete(fee.pk)
-            return Response({'message': 'Fee deleted.'}, status=status.HTTP_200_OK)
-
-        # PATCH — only the editable scalar fields plus AC/task relinks.
-        data = request.data
-        fields = {}
-        if 'description' in data:
-            fields['description'] = data['description'] or ''
-        try:
-            if 'quantity' in data:
-                fields['quantity'] = Decimal(str(data['quantity']))
-            if 'unit_rate' in data:
-                fields['unit_rate'] = Decimal(str(data['unit_rate']))
-        except InvalidOperation:
-            return Response(
-                {'detail': 'quantity and unit_rate must be valid numbers.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if 'sort_order' in data:
-            fields['sort_order'] = data['sort_order']
-        if 'accounting_category' in data:
-            ac_id = data['accounting_category']
-            try:
-                fields['accounting_category'] = AccountingCategory.objects.get(pk=ac_id)
-            except (AccountingCategory.DoesNotExist, ValueError, TypeError):
-                return Response(
-                    {'accounting_category': ['Accounting category not found.']},
-                    status=status.HTTP_400_BAD_REQUEST,
+            if claim_line is not None:
+                MintService.claim_atom_for_line(
+                    claim_line, EstimateLineItemSource.SOURCE_MATERIAL, m.pk,
+                    per_unit_qty=per_unit_qty_for_claim,
+                    set_line_per_unit=set_line_per_unit,
                 )
-        if 'task' in data:
-            task_id = data['task']
-            if task_id is None:
-                fields['task'] = None
-            else:
-                try:
-                    fields['task'] = Task.objects.get(pk=task_id, job=job)
-                except (Task.DoesNotExist, ValueError, TypeError):
-                    return Response(
-                        {'task': ['Task not found on this job.']},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-        fee = FeeService.update(fee.pk, **fields)
-        return Response(FeeSerializer(fee).data, status=status.HTTP_200_OK)
+        return Response(MaterialSerializer(m).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'], url_path='agreement', url_name='agreement')
     def agreement(self, request, pk=None):
@@ -471,12 +474,35 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
     @action(detail=True, methods=['post'], url_path='add-from-template')
     def add_from_template(self, request, pk=None):
         job = self.get_object()
+
+        claim_result = _resolve_claim_line(request, job)
+        if isinstance(claim_result, Response):
+            return claim_result
+        claim_line = claim_result
+
         service_item_id = request.data.get('service_item_id')
         est_qty_raw = request.data.get('est_qty')
         name = request.data.get('name') or None
         description = request.data.get('description')  # None means "not provided"
         active_modifiers = request.data.get('active_modifiers')  # None means use template default
         est_worker_time = request.data.get('est_worker_time') or None
+
+        # Task 12b: this action is IsAuthenticated-only (any worker may stamp
+        # a template onto the job), but `active_modifiers` overrides the
+        # template's price-affecting defaults — money-equivalent to Task 8's
+        # MONEY_FIELDS gate on direct task create/edit. Gate on the RAW key's
+        # presence (even `[]`), exactly like TaskSerializer.validate();
+        # reuse the same permission evaluation (CanManageJobOrPM or
+        # can_manage_financials) rather than reinventing it. Omitted key ->
+        # the template's default_active_modifiers ride the stamp, unchanged.
+        if 'active_modifiers' in request.data:
+            if not (request.user.has_perm('core.can_manage_financials')
+                    or JobService.user_can_manage(request.user, job)):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(
+                    'Only a manager, the project manager, or financials may '
+                    'set active_modifiers.'
+                )
 
         if not service_item_id:
             return Response(
@@ -497,15 +523,54 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 {'est_qty': ['Invalid decimal value.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        try:
-            task = template.generate_task(
-                job, est_qty,
-                name=name,
-                description=description,
-                active_modifiers=active_modifiers,
-                est_worker_time=est_worker_time,
+
+        # Mint flow per-unit interpretation (per-unit-lines spec §5/§6): on
+        # a per-unit claim line, the submitted est_qty/est_worker_time are
+        # PER-UNIT values — multiply by the claim line's qty before the
+        # atom is created (atoms are born with totals, never restamped
+        # after). The raw per-unit values go to MintService.claim_atom_
+        # for_line for the claim-row snapshot.
+        per_unit_qty_for_claim = None
+        per_unit_worker_time_for_claim = None
+        set_line_per_unit = None
+        if claim_line is not None:
+            claim_line_per_unit = _resolve_claim_line_per_unit(request)
+            set_line_per_unit = claim_line_per_unit
+            effective_per_unit = (
+                claim_line_per_unit if claim_line_per_unit is not None
+                else bool(claim_line.per_unit)
             )
-        except SchemeSupersededError as e:
+            if effective_per_unit:
+                per_unit_qty_for_claim = est_qty
+                est_qty = (est_qty * claim_line.qty).quantize(Decimal('0.01'))
+                if est_worker_time is not None:
+                    from django.utils.dateparse import parse_duration
+                    parsed = parse_duration(est_worker_time)
+                    if parsed is None:
+                        return Response(
+                            {'est_worker_time': ['Enter a valid duration.']},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    per_unit_worker_time_for_claim = parsed
+                    est_worker_time = parsed * float(claim_line.qty)
+
+        try:
+            with transaction.atomic():
+                task = template.generate_task(
+                    job, est_qty,
+                    name=name,
+                    description=description,
+                    active_modifiers=active_modifiers,
+                    est_worker_time=est_worker_time,
+                )
+                if claim_line is not None:
+                    MintService.claim_atom_for_line(
+                        claim_line, EstimateLineItemSource.SOURCE_TASK, task.pk,
+                        per_unit_qty=per_unit_qty_for_claim,
+                        per_unit_worker_time=per_unit_worker_time_for_claim,
+                        set_line_per_unit=set_line_per_unit,
+                    )
+        except SchemeInactiveError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         except ServiceError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)

@@ -28,11 +28,9 @@ class TaskComputeAmountTest(TestCase):
             rate=Decimal('5.00'), unit_label='piece',
             accounting_category=self.ac,
         )
-        task = Task.objects.create(
-            job=self.job, name='Polish',
-            rate_scheme=scheme, active_modifiers=[],
-            actual_qty=Decimal('12'),
-        )
+        task = Task(job=self.job, name='Polish', actual_qty=Decimal('12'))
+        task.stamp_from_scheme(scheme)
+        task.save()
         self.assertEqual(task.compute_amount(), Decimal('60.00'))
 
     def test_compute_amount_quantized_to_two_places(self):
@@ -43,11 +41,9 @@ class TaskComputeAmountTest(TestCase):
             rate=Decimal('10.07'), unit_label='piece',
             accounting_category=self.ac,
         )
-        task = Task.objects.create(
-            job=self.job, name='Polish',
-            rate_scheme=scheme, active_modifiers=[],
-            actual_qty=Decimal('1.03'),
-        )
+        task = Task(job=self.job, name='Polish', actual_qty=Decimal('1.03'))
+        task.stamp_from_scheme(scheme)
+        task.save()
         # 1.03 * 10.07 = 10.3721 -> 10.37
         result = task.compute_amount()
         self.assertEqual(result, Decimal('10.37'))
@@ -59,9 +55,9 @@ class TaskComputeAmountTest(TestCase):
             rate=Decimal('100.00'), unit_label='job',
             accounting_category=self.ac,
         )
-        task = Task.objects.create(
-            job=self.job, name='Setup', rate_scheme=scheme,
-        )
+        task = Task(job=self.job, name='Setup')
+        task.stamp_from_scheme(scheme)
+        task.save()
         self.assertEqual(task.effective_accounting_category, self.ac)
 
     def test_effective_rate_applies_modifiers(self):
@@ -71,8 +67,7 @@ class TaskComputeAmountTest(TestCase):
             modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 20}],
             accounting_category=self.ac,
         )
-        task = Task.objects.create(
-            job=self.job, name='Rushy',
-            rate_scheme=scheme, active_modifiers=['rush'],
-        )
+        task = Task(job=self.job, name='Rushy')
+        task.stamp_from_scheme(scheme, modifier_keys=['rush'])
+        task.save()
         self.assertEqual(task.effective_rate(), Decimal('60.00'))

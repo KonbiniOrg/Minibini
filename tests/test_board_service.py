@@ -3,7 +3,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 from tests.base import FixtureTestCase
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.contacts.models import Contact
 from apps.estimates.models import Estimate, EstimateLineItem
 from decimal import Decimal
@@ -179,20 +179,28 @@ class ApprovedSubStatusTest(FixtureTestCase):
 
     def test_work_ready_when_tasks_pending(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.in_progress_job, status='pending', rate_scheme_id=1)
+        t = Task(name='Task 1', job=self.in_progress_job, status='pending')
+        t.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        t.save()
         result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'work-ready')
 
     def test_in_progress_when_tasks_in_progress(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', rate_scheme_id=1)
+        t = Task(name='Task 1', job=self.in_progress_job, status='in_progress')
+        t.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        t.save()
         result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'in-progress')
 
     def test_blocked_takes_priority_over_in_progress(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', rate_scheme_id=1)
-        Task.objects.create(name='Task 2', job=self.in_progress_job, status='blocked', rate_scheme_id=1)
+        t1 = Task(name='Task 1', job=self.in_progress_job, status='in_progress')
+        t1.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        t1.save()
+        t2 = Task(name='Task 2', job=self.in_progress_job, status='blocked')
+        t2.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        t2.save()
         result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'blocked')
 
@@ -394,12 +402,16 @@ class BoardDataAssemblyTest(FixtureTestCase):
             job_number='JOB-APP-WRK', name='Job',
             status='in_progress', contact=self.contact,
         )
-        Task.objects.create(
+        assigned_task = Task(
             name='Assigned task', job=job,
-            assignee=self.worker, worker_queue=1, rate_scheme_id=1,
+            assignee=self.worker, worker_queue=1,
             est_worker_time=timedelta(hours=1),
         )
-        Task.objects.create(name='Unassigned task', job=job, rate_scheme_id=1)
+        assigned_task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        assigned_task.save()
+        unassigned_task = Task(name='Unassigned task', job=job)
+        unassigned_task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        unassigned_task.save()
         data = BoardService.get_board_data()
         self.assertEqual(len(data['approved']['workers']), 1)
         self.assertEqual(data['approved']['workers'][0]['user']['id'], self.worker.pk)
@@ -416,11 +428,13 @@ class BoardDataAssemblyTest(FixtureTestCase):
             job_number='JOB-APP-AV', name='Job',
             status='in_progress', contact=self.contact,
         )
-        Task.objects.create(
+        assigned_task = Task(
             name='Assigned task', job=job,
-            assignee=self.worker, worker_queue=1, rate_scheme_id=1,
+            assignee=self.worker, worker_queue=1,
             est_worker_time=timedelta(hours=1),
         )
+        assigned_task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        assigned_task.save()
         data = BoardService.get_board_data()
         available_ids = [w['id'] for w in data['approved']['available_workers']]
         self.assertNotIn(self.worker.pk, available_ids)
@@ -804,10 +818,11 @@ class UnpaidDataTest(FixtureTestCase):
             name='Hourly-bs', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50.00'), unit_label='hour', accounting_category=cat,
         )
-        task = Task.objects.create(
+        task = Task(
             job=job, name='Labor task', status='in_progress',
-            rate_scheme=scheme,
         )
+        task.stamp_from_scheme(scheme)
+        task.save()
         start = timezone.now() - timedelta(hours=2)
         Blep.objects.create(
             task=task, user=worker,
@@ -939,11 +954,14 @@ class WorkDrivenInProgressSetTest(FixtureTestCase):
         )
 
     def _assigned_task(self, job, status=Task.STATUS_PENDING):
-        return Task.objects.create(
-            name='Site visit', job=job, rate_scheme_id=1,
+        task = Task(
+            name='Site visit', job=job,
             assignee=self.worker, status=status,
             est_worker_time=timedelta(hours=1),
         )
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
+        return task
 
     def _set_ids(self):
         from apps.jobs.services import BoardService
@@ -978,10 +996,12 @@ class WorkDrivenInProgressSetTest(FixtureTestCase):
 
     def test_unassigned_pre_approval_task_does_not_enter(self):
         job = self._make_job()
-        Task.objects.create(
-            name='Unassigned', job=job, rate_scheme_id=1,
+        t = Task(
+            name='Unassigned', job=job,
             status=Task.STATUS_PENDING,
         )
+        t.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        t.save()
         self.assertNotIn(job.job_id, self._set_ids())
 
     def test_approved_job_with_assigned_task_excluded(self):

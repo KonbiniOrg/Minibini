@@ -37,7 +37,9 @@ class MergeServiceTest(TestCase):
         scheme = RateScheme.objects.create(
             name='S', algorithm=RateScheme.ENTERED_QTY, rate=1, unit_label='ea',
             accounting_category=self.cat)
-        task = Task.objects.create(job=self.job, name='t', rate_scheme=scheme)
+        task = Task(job=self.job, name='t')
+        task.stamp_from_scheme(scheme)
+        task.save()
         m = Material.objects.create(
             job=self.job, task=task, inventory_item=self.discard,
             description='x', quantity=Decimal('1'))

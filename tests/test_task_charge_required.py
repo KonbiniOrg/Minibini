@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from tests.base import BaseTestCase
+from apps.jobs.models import RateScheme
 
 
 class TaskCreationProducesChargeTest(BaseTestCase):
@@ -33,7 +34,7 @@ class TaskCreationProducesChargeTest(BaseTestCase):
     def test_create_from_template_sets_rate_scheme_on_task(self):
         from apps.jobs.services import TaskService
         task = TaskService.create_from_template(self.template, self.job)
-        self.assertEqual(task.rate_scheme, self.scheme)
+        self.assertEqual(task.source_scheme, self.scheme)
 
     def test_create_direct_without_scheme_raises(self):
         from apps.jobs.services import TaskService
@@ -45,34 +46,25 @@ class TaskCreationProducesChargeTest(BaseTestCase):
         task = TaskService.create_direct(
             self.job, name='ok', rate_scheme_id=self.scheme.pk,
         )
-        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(task.source_scheme_id, self.scheme.pk)
 
-    def test_template_with_superseded_scheme_raises(self):
+    def test_create_direct_with_inactive_scheme_raises_by_default(self):
+        from apps.jobs.models import SchemeInactiveError
         from apps.jobs.services import TaskService
-        from apps.core.services import SchemeSupersededError
-        # Supersede the scheme so the template now points at a superseded one
-        self.scheme.supersede(name='S-tcr v2')
-        with self.assertRaises(SchemeSupersededError):
-            TaskService.create_from_template(self.template, self.job)
-
-    def test_create_direct_with_superseded_scheme_raises_by_default(self):
-        from apps.jobs.services import TaskService
-        self.scheme.supersede(name='S-tcr v2')
-        self.scheme.refresh_from_db()
-        with self.assertRaises(ValidationError):
+        RateScheme.objects.filter(pk=self.scheme.pk).update(is_active=False)
+        with self.assertRaises(SchemeInactiveError):
             TaskService.create_direct(
                 self.job, name='x', rate_scheme_id=self.scheme.pk,
             )
 
-    def test_create_direct_allow_superseded_scheme_bypasses_check(self):
+    def test_create_direct_allow_inactive_scheme_bypasses_check(self):
         from apps.jobs.services import TaskService
-        self.scheme.supersede(name='S-tcr v2')
-        self.scheme.refresh_from_db()
+        RateScheme.objects.filter(pk=self.scheme.pk).update(is_active=False)
         task = TaskService.create_direct(
             self.job, name='clone', rate_scheme_id=self.scheme.pk,
-            allow_superseded_scheme=True,
+            allow_inactive_scheme=True,
         )
-        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(task.source_scheme_id, self.scheme.pk)
 
 
 class TaskCleanNoLongerRequiresChargeTest(BaseTestCase):
@@ -102,8 +94,11 @@ class TaskCleanNoLongerRequiresChargeTest(BaseTestCase):
         self.job = Job.objects.create(job_number='J-tcrc', contact=contact)
 
     def test_task_full_clean_succeeds_without_charge(self):
-        """B4 removed charge guard; B8 requires rate_scheme. Task with rate_scheme passes clean."""
+        """B4 removed charge guard; B8 requires rate_scheme. Task stamped from a
+        scheme passes clean."""
         from apps.jobs.models import Task
-        t = Task.objects.create(job=self.job, name='with scheme', rate_scheme=self.scheme)
+        t = Task(job=self.job, name='with scheme')
+        t.stamp_from_scheme(self.scheme)
+        t.save()
         # Should not raise — charge guard removed in B4, rate_scheme required (B8)
         t.full_clean()

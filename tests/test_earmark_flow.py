@@ -54,18 +54,20 @@ class EarmarkPreviewTest(TestCase):
             name='S-emk', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
-        self.task_a = Task.objects.create(
+        self.task_a = Task(
             job=self.job,
             name='Build cabinets',
             sort_order=1,
-            rate_scheme=self.scheme,
         )
-        self.task_b = Task.objects.create(
+        self.task_a.stamp_from_scheme(self.scheme)
+        self.task_a.save()
+        self.task_b = Task(
             job=self.job,
             name='Install trim',
             sort_order=2,
-            rate_scheme=self.scheme,
         )
+        self.task_b.stamp_from_scheme(self.scheme)
+        self.task_b.save()
 
     def test_preview_aggregates_by_item(self):
         """Preview aggregates material quantities by price list item across tasks."""

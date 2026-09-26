@@ -1,11 +1,24 @@
-from decimal import Decimal
+from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from apps.core.models import AbstractWorkContainer, TimeChangeRequest
 from apps.core.history import history
-from apps.core.timeutils import floor_to_minute
+from apps.core.services import ServiceError
+from apps.core.timeutils import floor_to_minute, timedelta_to_hours
 from apps.core.units import HOUR_UNIT
+
+
+class SchemeInactiveError(ServiceError):
+    """Raised when a task-creation path stamps from an inactive RateScheme
+    preset (``is_active=False``) without ``allow_inactive_scheme=True``.
+
+    Replaces the old supersession-based ``SchemeSupersededError`` — Task 4
+    retires ``RateScheme.replaced_by``/``supersede()`` in favor of a plain
+    ``is_active`` flag; this is the guard's new (and permanent) name.
+    """
+    pass
 
 
 # Palette used to auto-assign Job.accent_color. Order matters for tie-breaking
@@ -37,14 +50,23 @@ def _pick_least_used_accent_color():
 
 
 def copy_active_modifiers(value):
-    """Return a copy of an atom's active_modifiers list (modifier keys).
+    """Return a deep copy of an atom's active_modifiers snapshot list.
 
-    Legacy dicts ({'flat_fee_price': ...}) collapse to [] — fixed charges are
-    now the Fee atom, not a RateScheme algorithm.
+    Task-owned money (Phase 1): active_modifiers now holds
+    ``[{key, label, percent}]`` snapshot dicts stamped at task-creation time,
+    not scheme-relative modifier keys — so it deep-copies each dict rather
+    than aliasing the source list. Legacy shapes can't be resolved without a
+    scheme and collapse to ``[]``: a bare dict (the old
+    ``{'flat_fee_price': ...}`` shape — fixed charges are now the Fee atom,
+    not a RateScheme algorithm) and a list of bare modifier-key strings (the
+    pre-Phase-1 snapshot shape).
     """
     if isinstance(value, dict):
         return []
-    return list(value or [])
+    value = value or []
+    if any(not isinstance(m, dict) for m in value):
+        return []
+    return [dict(m) for m in value]
 
 
 @history(exclude=['job_id'])
@@ -226,8 +248,8 @@ class TaskBase(models.Model):
         max_digits=10, decimal_places=2,
         null=True, blank=True,
         help_text=(
-            "Estimated billable quantity in the rate scheme's units. "
-            "Optional on Task."
+            "Estimated billable quantity in the task's own units "
+            "(unit_label). Optional on Task."
         ),
     )
 
@@ -240,17 +262,20 @@ class TaskBase(models.Model):
     def copy_fields(self):
         """Canonical TaskBase field set for cloning to another container.
 
-        Excludes identity, status, document provenance, hierarchy, and
-        assignee — callers add those. ``service_item_id`` IS included: it is
-        catalog identity ("this task is an instance of this sellable
-        service"), not document provenance, and must survive cloning so the
-        QBO invoice push can resolve the clone's Item. Returns the rate
-        scheme as ``rate_scheme_id`` (not the object) so the dict splats
-        straight into ``TaskService.create_direct`` (which takes
-        ``rate_scheme_id``); Django's ``.objects.create()`` accepts the
-        ``_id`` form too, so the raw-create clone paths work as well.
-        ``active_modifiers`` is deep-copied here to keep raw-create callers
-        safe from shared-reference bugs.
+        Excludes identity, status, document provenance (``source_scheme`` —
+        task-owned-money Phase 1 made it a pure provenance pointer, never
+        read for money math), hierarchy, and assignee — callers add those.
+        ``service_item_id`` IS included: it is catalog identity ("this task
+        is an instance of this sellable service"), not document provenance,
+        and must survive cloning so the QBO invoice push can resolve the
+        clone's Item. The task-owned money fields (``qty_source``, ``rate``,
+        ``unit_label``, ``accounting_category_id``) are the task's own price
+        of record and are copied directly — they no longer route through a
+        RateScheme. Returned in ``_id``/plain-value form so the dict splats
+        straight into ``Task.objects.create()``-style callers; Django's
+        ``.objects.create()`` accepts the ``_id`` form too. ``active_modifiers``
+        is deep-copied here to keep raw-create callers safe from
+        shared-reference bugs.
         """
         return dict(
             name=self.name,
@@ -258,7 +283,10 @@ class TaskBase(models.Model):
             sort_order=self.sort_order,
             est_worker_time=self.est_worker_time,
             est_qty=self.est_qty,
-            rate_scheme_id=self.rate_scheme_id,
+            qty_source=self.qty_source,
+            rate=self.rate,
+            unit_label=self.unit_label,
+            accounting_category_id=self.accounting_category_id,
             service_item_id=self.service_item_id,
             active_modifiers=copy_active_modifiers(self.active_modifiers),
         )
@@ -293,6 +321,15 @@ class Task(TaskBase):
     }
 
     task_id = models.AutoField(primary_key=True)
+    # DORMANT since 2026-08 (better-fees spec §3,
+    # docs/plans/2026-08-06-better-fees.md): subtask behavior was removed
+    # from the UI and backend code, but the FIELD stays — this area is on
+    # its second redesign and RM wants the structural option open for a
+    # third. No code may read or write parent_task; existing rows were
+    # flattened to NULL by migration 0061 (the FK is on_delete=CASCADE, so
+    # a stale child pointer would let a task deletion silently cascade), and
+    # validate_data's check_no_parent_task flags any non-NULL value as a
+    # sign some path is still writing it.
     parent_task = models.ForeignKey(
         'self', on_delete=models.CASCADE, null=True, blank=True, related_name='subtasks'
     )
@@ -304,11 +341,31 @@ class Task(TaskBase):
         null=True, blank=True,
         help_text="Position in assignee's work queue on the board"
     )
-    # Billing fields (Phase B: rate_scheme is NOT NULL at the DB level).
-    rate_scheme = models.ForeignKey(
+    # source_scheme: provenance ONLY (task-owned-money Phase 1) — the preset
+    # this task was last stamped from. Never read for money math; the task's
+    # own qty_source/rate/unit_label/accounting_category fields below are the
+    # price of record. Nullable/SET_NULL so deleting a preset never blocks on
+    # its stamped tasks.
+    source_scheme = models.ForeignKey(
         'jobs.RateScheme',
-        on_delete=models.PROTECT,
-        related_name='task_set',
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='stamped_tasks',
+    )
+    # Task-owned money (task-owned-money Phase 1, Task 1): snapshot-at-stamp
+    # fields that will become the price of record. qty_source strings match
+    # RateScheme.ELAPSED_TIME / ENTERED_QTY so the data migration is a copy.
+    QTY_ELAPSED = 'elapsed_time'
+    QTY_ENTERED = 'entered_qty'
+    QTY_SOURCE_CHOICES = [(QTY_ELAPSED, 'Timeslips'), (QTY_ENTERED, 'Entered quantity')]
+
+    qty_source = models.CharField(
+        max_length=20, choices=QTY_SOURCE_CHOICES, default=QTY_ENTERED,
+    )
+    rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    unit_label = models.CharField(max_length=50, default='none')
+    accounting_category = models.ForeignKey(
+        'core.AccountingCategory',
+        on_delete=models.PROTECT, null=True, blank=True, related_name='+',
     )
     active_modifiers = models.JSONField(default=list, blank=True)
     actual_qty = models.DecimalField(
@@ -320,6 +377,15 @@ class Task(TaskBase):
         ),
     )
     # est_qty inherited from TaskBase (nullable on Task).
+    descoped_by = models.ForeignKey(
+        'estimates.ChangeOrder', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='+',
+        help_text=(
+            "Accepted change order whose remove struck the agreement line "
+            "this atom backed. Stamped at CO acceptance; drives the billing "
+            "pool's 'descoped' badge."
+        ),
+    )
 
     class Meta:
         db_table = 'tasks'
@@ -338,7 +404,11 @@ class Task(TaskBase):
         # / update_task), NOT here: auto-assign on start_work deliberately
         # claims a task for its first worker without demanding a duration
         # mid-clock-in, so assignee-without-est-time is a legal model state.
-        # charge guard removed in B4. rate_scheme is NOT NULL at DB level (B8).
+        # charge guard removed in B4. Task-owned money (Phase 1): the task
+        # owns its money fields (qty_source/rate/unit_label/
+        # accounting_category/active_modifiers) directly; source_scheme is
+        # nullable (SET_NULL on preset deletion) and provenance-only — no
+        # NOT-NULL invariant to enforce here anymore.
 
     def save(self, *args, **kwargs):
         from django.db import transaction
@@ -361,7 +431,71 @@ class Task(TaskBase):
 
     @property
     def effective_accounting_category(self):
-        return self.rate_scheme.accounting_category
+        return self.accounting_category
+
+    def stamp_from_scheme(self, scheme, modifier_keys=None):
+        """Copy a RateScheme preset's money fields onto this task (task-owned
+        money Phase 1). Every creation path calls this BEFORE the task's
+        first save, so the task gets its own permanent copy of the preset's
+        pricing — later edits to the preset (or its supersession/retirement)
+        never reprice an already-stamped task.
+
+        Sets: ``qty_source`` (from ``scheme.algorithm``), ``rate``,
+        ``unit_label``, ``accounting_category``, ``source_scheme`` (provenance
+        only — never read for money math, see the field's docstring), and
+        ``active_modifiers`` — resolved from ``modifier_keys`` (a list of
+        ``scheme.modifiers`` ``key`` strings, the same convention as
+        ``RateScheme.effective_rate``'s ``active_modifiers`` arg) into full
+        ``{key, label, percent}`` snapshot dicts. ``modifier_keys=None``
+        (the default) activates no modifiers — callers that want a
+        ServiceItem's predefined defaults pass
+        ``modifier_keys=service_item.default_active_modifiers`` explicitly.
+
+        Raises ``ValueError`` for percentage schemes: those are document-level
+        adjustments (rush/discount lines), not task-billing presets.
+
+        Pure delegation to ``RateScheme.resolve_stamp`` — the scheme owns
+        all interpretation of ``modifier_keys`` (a plain key-string list for
+        percent-style algorithms; an algorithm-owned config shape for others,
+        e.g. flat_fee's single ``{amount, label?}`` entry). This method just
+        assigns the resolved fields plus provenance.
+        """
+        resolved = scheme.resolve_stamp(modifier_keys)
+        self.qty_source = resolved['qty_source']
+        self.rate = resolved['rate']
+        self.unit_label = resolved['unit_label']
+        self.accounting_category = resolved['accounting_category']
+        self.active_modifiers = resolved['active_modifiers']
+        self.source_scheme = scheme
+
+    def effective_rate(self):
+        """Per-unit rate: own ``rate`` plus own ``active_modifiers``
+        surcharges (task-owned-money Phase 1 — no RateScheme lookup)."""
+        if self.rate is None:
+            return Decimal('0.00')
+        pct = Decimal('0')
+        for m in (self.active_modifiers or []):
+            # The real gate is TaskSerializer.validate_active_modifiers; this
+            # is belt-and-braces so one bad legacy/migrated row degrades the
+            # price instead of 500ing every list/detail read.
+            if not isinstance(m, dict):
+                continue
+            pct += Decimal(str(m.get('percent', 0)))
+        return (self.rate * (1 + pct / 100)).quantize(Decimal('0.01'))
+
+    def get_actual_qty(self):
+        """Resolve actual quantity from own qty_source (task-owned-money
+        Phase 1 — no RateScheme lookup)."""
+        if self.qty_source == self.QTY_ELAPSED:
+            total = sum(
+                (b.elapsed for b in self.blep_set.all() if b.elapsed is not None),
+                timedelta(),
+            )
+            # Quantize to 2 places: a raw seconds/3600 division is
+            # non-terminating (~28 digits) and overflows the line item qty
+            # field (max_digits=10) when carried into the invoice wizard.
+            return timedelta_to_hours(total).quantize(Decimal('0.01'))
+        return self.actual_qty or Decimal('0')
 
     def compute_amount(self, active_modifiers=None):
         """Uniform atom interface: total billable amount for this task.
@@ -370,26 +504,18 @@ class Task(TaskBase):
         Parameter is accepted to match the BillableAtom interface shared
         with Material.
         """
-        qty = self.rate_scheme.get_actual_qty(self)
-        charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
-        return charge.quantize(Decimal('0.01'))
+        return (self.get_actual_qty() * self.effective_rate()).quantize(Decimal('0.01'))
 
     def compute_estimate_amount(self, active_modifiers=None):
         """Estimate-side amount: bills est_qty, not actuals.
 
         The estimate wizard projects what the job is *expected* to cost, so it
-        uses est_qty via the rate scheme. (compute_amount() resolves qty from
-        actuals — bleps / actual_qty — which is what the *invoice* wizard wants.)
-        Ignores the active_modifiers argument (uses self.active_modifiers) to
-        match the BillableAtom interface.
+        uses est_qty. (compute_amount() resolves qty from actuals — bleps /
+        actual_qty — which is what the *invoice* wizard wants.) Ignores the
+        active_modifiers argument (uses self.active_modifiers) to match the
+        BillableAtom interface.
         """
-        charge = self.rate_scheme.compute_charge(
-            self.est_qty or Decimal('0'), self.active_modifiers,
-        )
-        return charge.quantize(Decimal('0.01'))
-
-    def effective_rate(self):
-        return self.rate_scheme.effective_rate(self.active_modifiers)
+        return ((self.est_qty or Decimal('0')) * self.effective_rate()).quantize(Decimal('0.01'))
 
 
 class Blep(models.Model):
@@ -436,11 +562,13 @@ class RateScheme(models.Model):
     ELAPSED_TIME = 'elapsed_time'
     ENTERED_QTY = 'entered_qty'
     PERCENTAGE = 'percentage'
+    FLAT_FEE = 'flat_fee'
 
     ALGORITHM_CHOICES = [
         (ELAPSED_TIME, 'Based on time worked'),
         (ENTERED_QTY, 'Worker enters quantity'),
         (PERCENTAGE, 'Percentage of other lines'),
+        (FLAT_FEE, 'Flat fee'),
     ]
 
     rate_scheme_id = models.AutoField(primary_key=True)
@@ -453,19 +581,15 @@ class RateScheme(models.Model):
     accounting_category = models.ForeignKey(
         'core.AccountingCategory', on_delete=models.PROTECT,
     )
-    replaced_by = models.ForeignKey(
-        'self', on_delete=models.PROTECT,
-        null=True, blank=True,
-        related_name='replaces',
-    )
-    replaced_at = models.DateTimeField(null=True, blank=True)
-
-    # Fields that, once any reference exists, may not be changed
-    # (replaced_by and replaced_at are the only allowed mutations).
-    FROZEN_FIELDS = (
-        'name', 'description', 'algorithm', 'rate', 'unit_label',
-        'modifiers', 'accounting_category',
-    )
+    # Retirement flag (task-owned-money Phase 1, Task 4) — replaces the old
+    # replaced_by/replaced_at supersession mechanism. RateSchemes are freely
+    # editable presets now: a Task stamps its own permanent copy of the
+    # preset's money fields at creation time (Task.stamp_from_scheme), so
+    # editing (or retiring, or deleting) a preset never reprices or orphans
+    # a task that already stamped from it. is_active is read only by the
+    # creation-time guard (SchemeInactiveError) — it hides the preset from
+    # *new* stampings, nothing else.
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         db_table = 'rate_schemes'
@@ -498,16 +622,16 @@ class RateScheme(models.Model):
                 'unit_label': 'Time-based schemes are billed in hours; '
                               f'unit must be "{HOUR_UNIT}".',
             })
-        if self.pk and self.is_referenced():
-            old = RateScheme.objects.get(pk=self.pk)
-            changed = [
-                f for f in self.FROZEN_FIELDS
-                if getattr(self, f) != getattr(old, f)
-            ]
-            if changed:
-                    raise ValidationError({
-                    f: 'Scheme is referenced; create a new version instead of editing.'
-                    for f in changed
+        if self.algorithm == self.FLAT_FEE:
+            if self.rate != 0:
+                raise ValidationError({
+                    'rate': 'Flat fee schemes carry no rate of their own — '
+                            'the amount lives on each Service Item.',
+                })
+            if self.modifiers:
+                raise ValidationError({
+                    'modifiers': 'Flat fee schemes carry no modifiers of their '
+                                 'own — the amount lives on each Service Item.',
                 })
 
     def save(self, *args, **kwargs):
@@ -522,9 +646,22 @@ class RateScheme(models.Model):
         """Compute the per-unit rate.
 
         For time/qty schemes, apply additive modifier surcharges.
+
+        Preset preview only — never called with a task (task-owned-money
+        Phase 1: Task.effective_rate() computes from the task's own
+        rate/active_modifiers instead). Retained for the RateSchemeManager
+        preview and the serializer detail view.
         """
         if self.algorithm == self.PERCENTAGE:
             raise ValueError('percentage services compute at the document layer, not per-unit')
+        if self.algorithm == self.FLAT_FEE:
+            # Reinterpretation rule: for flat_fee, `active_modifiers` is not
+            # a list of surcharge keys — it's the item's config entries (see
+            # resolve_stamp/validate_item_config). The single entry's amount
+            # IS the rate; nothing composes with it.
+            entries = active_modifiers or []
+            amount = entries[0].get('amount', 0) if entries else 0
+            return Decimal(str(amount)).quantize(Decimal('0.01'))
         modifier_percent = sum(
             m['percent'] for m in self.modifiers if m['key'] in (active_modifiers or [])
         )
@@ -537,11 +674,21 @@ class RateScheme(models.Model):
         return rate.quantize(Decimal('0.01'))
 
     def compute_charge(self, qty, active_modifiers=None):
-        """Compute total charge for the given quantity."""
+        """Compute total charge for the given quantity.
+
+        Preset preview only — never called with a task (task-owned-money
+        Phase 1: Task.compute_amount()/compute_estimate_amount() compute
+        from the task's own fields instead).
+        """
         return qty * self.effective_rate(active_modifiers)
 
     def get_actual_qty(self, task):
-        """Resolve actual quantity based on algorithm."""
+        """Resolve actual quantity based on algorithm.
+
+        Preset preview only — never called with a task (task-owned-money
+        Phase 1: Task.get_actual_qty() reads the task's own qty_source
+        instead).
+        """
         if self.algorithm == self.PERCENTAGE:
             raise ValueError('percentage services are document adjustments, not task billing')
         if self.algorithm == self.ELAPSED_TIME:
@@ -560,14 +707,116 @@ class RateScheme(models.Model):
         else:
             raise ValueError(f'unknown algorithm: {self.algorithm}')
 
+    def resolve_stamp(self, item_config=None):
+        """Resolve this scheme plus an item-level config into the money
+        fields a Task should stamp (task-owned-money interpretation layer).
+
+        ``item_config`` is the caller's ``modifier_keys`` argument to
+        ``Task.stamp_from_scheme`` — its shape is algorithm-owned:
+
+        - Percent-style algorithms (``elapsed_time``, ``entered_qty``): a
+          list of ``self.modifiers`` ``key`` strings to activate. Returns
+          today's values verbatim: ``qty_source`` = ``self.algorithm``,
+          ``rate`` = ``self.rate``, ``unit_label``/``accounting_category``
+          snapshotted from the scheme, ``active_modifiers`` resolved to
+          full ``{key, label, percent}`` dicts for the matched keys.
+        - ``flat_fee``: a list holding exactly one ``{amount, label?}``
+          dict (see ``validate_item_config``) — the fee amount lives on
+          the item (ServiceItem), not the scheme. Returns
+          ``qty_source`` = ``ENTERED_QTY`` (worker-entered-quantity
+          billing, so ``Task.get_actual_qty`` needs no new branch),
+          ``rate`` = the config's amount (quantized to cents),
+          ``active_modifiers`` = ``[]`` (nothing composes with a flat
+          fee). Missing/empty config pins ``rate`` at 0.00 — the
+          documented edge for a manual task stamped with no ServiceItem
+          amount source.
+
+        Raises ``ValueError`` for ``percentage`` schemes: those are
+        document-level adjustments, not task-billing presets.
+        """
+        if self.algorithm == self.PERCENTAGE:
+            raise ValueError(
+                'Percentage services are document adjustments and cannot '
+                'stamp a task.'
+            )
+        entries = item_config or []
+        if self.algorithm == self.FLAT_FEE:
+            amount = entries[0].get('amount', 0) if entries else 0
+            return {
+                'qty_source': self.ENTERED_QTY,
+                'rate': Decimal(str(amount)).quantize(Decimal('0.01')),
+                'unit_label': self.unit_label,
+                'accounting_category': self.accounting_category,
+                'active_modifiers': [],
+            }
+        return {
+            'qty_source': self.algorithm,
+            'rate': self.rate,
+            'unit_label': self.unit_label,
+            'accounting_category': self.accounting_category,
+            'active_modifiers': [
+                dict(m) for m in self.modifiers if m.get('key') in entries
+            ],
+        }
+
+    def validate_item_config(self, entries):
+        """Validate an item's config entries (e.g. ServiceItem's
+        ``default_active_modifiers``) against this scheme's algorithm-owned
+        contract. Raises ``ValidationError`` (dict-shape); returns ``None``
+        on success.
+
+        - Percent-style algorithms (including ``percentage``): entries must
+          be key-strings present in ``self.modifiers`` — today's implicit
+          contract (unknown keys were silently dropped by ``resolve_stamp``),
+          now explicit and enforced here.
+        - ``flat_fee``: entries must be exactly one dict
+          ``{amount: <positive>, label?: str}`` with no ``percent`` key —
+          no mixing a flat fee with a percentage modifier.
+        """
+        entries = entries or []
+        if self.algorithm == self.FLAT_FEE:
+            if len(entries) != 1 or not isinstance(entries[0], dict):
+                raise ValidationError({
+                    'default_active_modifiers':
+                        'Flat fee items need exactly one amount entry.',
+                })
+            entry = entries[0]
+            if 'percent' in entry:
+                raise ValidationError({
+                    'default_active_modifiers':
+                        'Flat fee items cannot mix in a percent modifier.',
+                })
+            amount = entry.get('amount')
+            try:
+                amount_dec = Decimal(str(amount)) if amount is not None else None
+            except InvalidOperation:
+                amount_dec = None
+            if amount_dec is None or amount_dec <= 0:
+                raise ValidationError({
+                    'default_active_modifiers':
+                        'Flat fee items need a positive amount.',
+                })
+            return
+        valid_keys = {m.get('key') for m in self.modifiers}
+        for key in entries:
+            if not isinstance(key, str) or key not in valid_keys:
+                raise ValidationError({
+                    'default_active_modifiers':
+                        f'"{key}" is not a modifier on this rate scheme.',
+                })
+
     def get_modifier_inputs(self):
         """Return modifiers list for UI rendering."""
         return list(self.modifiers)
 
     def is_referenced(self):
-        """True if any Task or ServiceItem points at this scheme."""
+        """True if any Task has stamped from this scheme, or any ServiceItem
+        points at it. Display only (outdated-schemes UI, reference counts) —
+        no longer gates edits or deletes (task-owned-money Phase 1, Task 4):
+        stamped tasks own a permanent copy of their money fields, and
+        ServiceItem's FK is still PROTECT at the DB level."""
         from apps.estimates.models import ServiceItem
-        if Task.objects.filter(rate_scheme=self).exists():
+        if self.stamped_tasks.exists():
             return True
         if ServiceItem.objects.filter(rate_scheme=self).exists():
             return True
@@ -577,102 +826,12 @@ class RateScheme(models.Model):
         """Return reference counts for the outdated-schemes UI."""
         from apps.estimates.models import ServiceItem
         return {
-            'task_count': Task.objects.filter(rate_scheme=self).count(),
+            'task_count': self.stamped_tasks.count(),
             'service_item_count': ServiceItem.objects.filter(rate_scheme=self).count(),
         }
 
-    def supersede(self, **overrides):
-        """Create a new RateScheme inheriting this one's fields, set replaced_by/at.
-
-        The old row is renamed in place to "<orig> (v{N})" where N is the count
-        of pre-existing predecessors + 1. The new row takes the original name
-        (or whatever the caller overrides). This preserves the DB-level unique
-        constraint on `name` without needing a partial-unique index.
-        """
-        from django.db import transaction
-        from django.utils import timezone
-
-        if self.replaced_by is not None:
-            raise ValueError('Cannot supersede an already-superseded scheme.')
-
-        # Count predecessors (the chain leading to self). Each scheme has at
-        # most one direct replacement, so the chain is linear.
-        version = 1
-        pred = self.replaces.first()
-        while pred is not None:
-            version += 1
-            pred = pred.replaces.first()
-        retired_name = f'{self.name} (v{version})'
-
-        defaults = {
-            'name': self.name,
-            'description': self.description,
-            'algorithm': self.algorithm,
-            'rate': self.rate,
-            'unit_label': self.unit_label,
-            'modifiers': list(self.modifiers),
-            'accounting_category': self.accounting_category,
-        }
-        defaults.update(overrides)
-
-        with transaction.atomic():
-            # Rename old first to free the unique name slot for the new row.
-            # update() bypasses full_clean(), which is what we want — `name`
-            # is in FROZEN_FIELDS, but renaming during supersede is the one
-            # exception, alongside replaced_by/replaced_at.
-            RateScheme.objects.filter(pk=self.pk).update(name=retired_name)
-            self.name = retired_name  # keep the in-memory instance in sync
-            new = RateScheme.objects.create(**defaults)
-            replaced_at = timezone.now()
-            RateScheme.objects.filter(pk=self.pk).update(
-                replaced_by=new, replaced_at=replaced_at,
-            )
-            self.replaced_by = new
-            self.replaced_at = replaced_at
-        return new
-
     def __str__(self):
         return self.name
-
-
-class Fee(models.Model):
-    """A fixed charge owned by the Job — the crystallized form of an accepted
-    hand-line. Frozen quantity × unit_rate; no actual lifecycle. Optionally
-    points at the Task that is the work behind it."""
-    fee_id = models.AutoField(primary_key=True)
-    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='fees')
-    task = models.OneToOneField('jobs.Task', on_delete=models.SET_NULL,
-                                null=True, blank=True, related_name='fee')
-    description = models.CharField(max_length=255, blank=True, default='')
-    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
-    unit_rate = models.DecimalField(max_digits=10, decimal_places=2)
-    accounting_category = models.ForeignKey('core.AccountingCategory', on_delete=models.PROTECT)
-    sort_order = models.PositiveIntegerField(default=0)
-
-    class Meta:
-        db_table = 'fees'
-
-    def compute_amount(self, active_modifiers=None):
-        return (self.quantity * self.unit_rate).quantize(Decimal('0.01'))
-
-    def delete(self, *args, **kwargs):
-        # No estimate/CO source row may outlive its atom.
-        from apps.estimates.claims import purge_source_rows_for_atom
-        pk = self.pk
-        result = super().delete(*args, **kwargs)
-        purge_source_rows_for_atom('fee', pk)
-        return result
-
-    @property
-    def effective_accounting_category(self):
-        return self.accounting_category
-
-    @property
-    def units(self):
-        return 'none'
-
-    def __str__(self):
-        return f'Fee {self.pk}: {self.description} ({self.quantity}×{self.unit_rate})'
 
 
 class BlepChangeRequest(TimeChangeRequest):

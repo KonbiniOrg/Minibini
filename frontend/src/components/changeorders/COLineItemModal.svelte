@@ -1,8 +1,22 @@
-<!-- Modal for adding/editing a Change Order line item.
-     action: 'add' | 'remove' | 'replace'
-     For remove/replace, the user picks a target estimate line item.
-     initialAction/initialTarget/initialDescription/initialQty/initialUnits/initialPrice
-     allow callers to pre-seed the form (e.g. opening "Change" on an estimate line). -->
+<!-- Gesture-driven Change Order line item modal (CO amend-in-place, Task 8).
+     No action/target selects — the calling gesture (COEditView) presets
+     everything via props. Three variants:
+       - 'edit-fields'    description/qty/units/price; PATCHes an existing
+                           CO line (lineItemId set). AC only when
+                           needsAccountingCategory (editing an 'add' line).
+       - 'replace-prefill' same fields as edit-fields, prefilled from the
+                           agreement line being replaced; POSTs
+                           {action:'replace', target_line_item, ...}
+                           (lineItemId unset, targetLineItem set).
+       - 'adjustment'      description + percent only — the server computes
+                           price against the amended-agreement basis
+                           (ChangeOrderService.recompute_adjustment_replaces).
+                           POSTs (create, targetLineItem set) or PATCHes
+                           (edit, lineItemId set) adjustment_percent, then
+                           shows the computed amount as a readback before
+                           closing (explicit "Done", never auto-closed).
+     create vs edit is derived from lineItemId (PATCH target) being set —
+     never a separate mode prop, matching "gestures preset everything". -->
 <script>
   import { api } from '../../lib/api.js';
   import { triageError } from '../../lib/errorTriage.js';
@@ -14,66 +28,61 @@
 
   let {
     open = false,
-    mode = 'create',   // 'create' | 'edit'
+    variant = 'edit-fields',   // 'edit-fields' | 'replace-prefill' | 'adjustment'
     coId = null,
-    item = null,       // existing CO line item when editing
-    estimateLines = [],  // EstimateLineItem list for target picking
-    categories = [],     // AccountingCategory list for the add-line AC select
-    // Pre-seed props (used when opening from an estimate row)
-    initialAction = null,        // 'add' | 'replace' | 'remove' — overrides default
-    initialTarget = null,        // target_line_item id (number) to pre-select
-    initialDescription = null,
-    initialQty = null,
-    initialUnits = null,
-    initialPrice = null,
+    lineItemId = null,         // set => PATCH this CO line (Edit gestures)
+    targetLineItem = null,     // set => POST a replace against this estimate line (Replace… gestures)
+    needsAccountingCategory = false,  // edit-fields on an 'add' line
+    initialDescription = '',
+    initialQty = '',
+    initialUnits = 'none',
+    initialPrice = '',
+    initialPercent = '',
+    initialAccountingCategory = '',
+    initialIsComment = false,
+    categories = [],
     onSaved = () => {},
     onClose = () => {},
   } = $props();
 
-  let action = $state('add');
-  let targetLineItem = $state('');
   let description = $state('');
   let qty = $state('');
   let units = $state('none');
   let price = $state('');
+  let percent = $state('');
   let accountingCategory = $state('');
   let isComment = $state(false);
   let busy = $state(false);
   let formError = $state('');
   let fieldErrs = $state({});
+  // Adjustment readback: the computed price the server returns after a
+  // save — shown before the modal closes, via an explicit "Done" (never
+  // auto-closed — saves stay explicit).
+  let savedAmount = $state(null);
 
-  // Whether description/qty/units/price fields are needed (not for plain 'remove')
-  let needsLineFields = $derived(action !== 'remove');
-  // A bare add line crystallizes into a Fee at acceptance, so it needs an AC
-  // before send; replace lines inherit from the atom they replace. A comment
-  // line never crystallizes, so it never needs one either.
-  let needsAccountingCategory = $derived(action === 'add' && !isComment);
+  let isEdit = $derived(lineItemId != null);
+  let title = $derived.by(() => {
+    if (variant === 'adjustment') return isEdit ? 'Edit Replacement Percentage' : 'Replace Adjustment';
+    if (variant === 'replace-prefill') return 'Replace Line';
+    return 'Edit Line';
+  });
+  // A comment line never needs an AC, regardless of what the calling gesture
+  // preset — comments never crystallize into a billable atom.
+  let requiresAC = $derived(needsAccountingCategory && !isComment);
 
   $effect(() => {
     if (open) {
-      if (mode === 'edit' && item) {
-        action = item.action || 'add';
-        targetLineItem = item.target_line_item ? String(item.target_line_item) : '';
-        description = item.description || '';
-        qty = item.qty ?? '';
-        units = item.units || 'none';
-        price = item.price ?? '';
-        // Raw number so Svelte 5's strict-=== select matching finds the option.
-        accountingCategory = item.accounting_category ?? '';
-        isComment = item.is_comment ?? false;
-      } else {
-        // Apply initial props if provided, otherwise use defaults
-        action = initialAction ?? 'add';
-        targetLineItem = initialTarget != null ? String(initialTarget) : '';
-        description = initialDescription ?? '';
-        qty = initialQty ?? '';
-        units = initialUnits ?? 'none';
-        price = initialPrice ?? '';
-        accountingCategory = '';
-        isComment = false;
-      }
+      description = initialDescription ?? '';
+      qty = initialQty ?? '';
+      units = initialUnits ?? 'none';
+      price = initialPrice ?? '';
+      percent = initialPercent ?? '';
+      // Raw value so Svelte 5's strict-=== select matching finds the option.
+      accountingCategory = initialAccountingCategory ?? '';
+      isComment = initialIsComment ?? false;
       formError = '';
       fieldErrs = {};
+      savedAmount = null;
     }
   });
 
@@ -81,38 +90,44 @@
     busy = true;
     formError = '';
     fieldErrs = {};
-    const payload = {
-      action,
-      target_line_item: (action === 'remove' || action === 'replace') && targetLineItem
-        ? Number(targetLineItem)
-        : null,
-    };
-    if (needsLineFields) {
-      payload.description = description;
+    const payload = { description };
+    if (variant === 'adjustment') {
+      if (percent !== '' && percent !== null && percent !== undefined) {
+        payload.adjustment_percent = percent;
+      }
+    } else {
       payload.is_comment = isComment;
       payload.qty = isComment ? '0' : (qty || '0');
       payload.units = isComment ? 'none' : units;
       payload.price = isComment ? '0' : (price || '0');
-    }
-    if (needsAccountingCategory) {
-      // Bare add lines need an AC to send (they crystallize into Fees);
-      // material lines get the config default server-side.
-      if (!accountingCategory && !item?.is_material) {
-        fieldErrs = { accounting_category: ['Accounting Category is required.'] };
-        busy = false;
-        return;
+      if (requiresAC) {
+        if (!accountingCategory) {
+          fieldErrs = { accounting_category: ['Accounting Category is required.'] };
+          busy = false;
+          return;
+        }
+        payload.accounting_category = Number(accountingCategory);
+      } else if (isComment) {
+        payload.accounting_category = null;
       }
-      payload.accounting_category = accountingCategory ? Number(accountingCategory) : null;
-    } else if (isComment && needsLineFields) {
-      payload.accounting_category = null;
+    }
+    if (!isEdit) {
+      payload.action = 'replace';
+      payload.target_line_item = targetLineItem;
     }
     try {
-      if (mode === 'edit' && item) {
-        await api.patch(`/api/change-orders/${coId}/line-items/${item.line_item_id}/`, payload);
+      let resp;
+      if (isEdit) {
+        resp = await api.patch(`/api/change-orders/${coId}/line-items/${lineItemId}/`, payload);
       } else {
-        await api.post(`/api/change-orders/${coId}/line-items/`, payload);
+        resp = await api.post(`/api/change-orders/${coId}/line-items/`, payload);
       }
-      onSaved();
+      if (variant === 'adjustment') {
+        // Show the amended-basis computed amount before closing.
+        savedAmount = resp?.price ?? null;
+      } else {
+        onSaved();
+      }
     } catch (e) {
       const t = triageError(e);
       if (t.overlay) {
@@ -125,47 +140,39 @@
       busy = false;
     }
   }
+
+  function finishAdjustment() {
+    savedAmount = null;
+    onSaved();
+  }
 </script>
 
-<Modal {open} onCancel={onClose} maxWidth="780px">
+<Modal {open} onCancel={onClose} maxWidth="620px">
+{#if variant === 'adjustment' && savedAmount !== null}
+  <h3>{title}</h3>
+  <p>This line now computes to <strong>${Number(savedAmount).toFixed(2)}</strong>.</p>
+  <div class="buttons">
+    <button type="button" onclick={finishAdjustment}>Done</button>
+  </div>
+{:else}
 <form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
-      <h3>{mode === 'edit' ? 'Edit Change Order Line' : 'Add Change Order Line'}</h3>
+      <h3>{title}</h3>
 
       <p>
-        <label><strong>Action *</strong><br>
-          <select bind:value={action}>
-            <option value="add">Add — new line item to be added</option>
-            <option value="remove">Remove — remove an existing estimate line</option>
-            <option value="replace">Replace — replace an existing estimate line</option>
-          </select>
+        <label><strong>Description</strong><br>
+          <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
         </label>
-        <FieldError errors={fieldErrs} field="action" />
+        <FieldError errors={fieldErrs} field="description" />
       </p>
 
-      {#if action === 'remove' || action === 'replace'}
+      {#if variant === 'adjustment'}
         <p>
-          <label><strong>Target estimate line *</strong><br>
-            <select bind:value={targetLineItem}>
-              <option value="">-- Select estimate line --</option>
-              {#each estimateLines as li}
-                <option value={String(li.line_item_id)}>
-                  #{li.line_number} — {li.description || '(no description)'} (${Number(li.price ?? 0).toFixed(2)} × {li.qty ?? 0} {li.units || ''})
-                </option>
-              {/each}
-            </select>
+          <label><strong>Percent</strong><br>
+            <input type="number" step="0.01" bind:value={percent}>
           </label>
-          <FieldError errors={fieldErrs} field="target_line_item" />
+          <FieldError errors={fieldErrs} field="adjustment_percent" />
         </p>
-      {/if}
-
-      {#if needsLineFields}
-        <p>
-          <label><strong>Description *</strong><br>
-            <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
-          </label>
-          <FieldError errors={fieldErrs} field="description" />
-        </p>
-
+      {:else}
         <p>
           <label>
             <input type="checkbox" bind:checked={isComment}>
@@ -195,12 +202,12 @@
             <FieldError errors={fieldErrs} field="price" />
           </p>
 
-          {#if needsAccountingCategory}
+          {#if requiresAC}
             <p>
-              <label><strong>Accounting Category{item?.is_material ? '' : ' *'}</strong><br>
+              <label><strong>Accounting Category *</strong><br>
                 <select bind:value={accountingCategory}>
                   <option value="">-- Select --</option>
-                  {#each categories as cat}
+                  {#each categories.filter((c) => !c.is_fallback) as cat}
                     <option value={cat.id}>{cat.code} - {cat.name}</option>
                   {/each}
                 </select>
@@ -217,6 +224,7 @@
       </div>
       <FormMessage error={formError} />
 </form>
+{/if}
 </Modal>
 
 

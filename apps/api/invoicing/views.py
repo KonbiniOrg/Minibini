@@ -84,6 +84,25 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             return InvoiceSummarySerializer
         return InvoiceSerializer
 
+    def get_serializer_context(self):
+        # Resolved once per request (memoized on the view instance) and
+        # handed down to every InvoiceLineItemSerializer row via context
+        # (nested `line_items` field inherits the root serializer's
+        # context automatically) — mirrors AccountingCategoryViewSet's
+        # is_fallback wiring (apps/api/templates_config/views.py,
+        # commit de071827). used_fallback_ac reads this key.
+        context = super().get_serializer_context()
+        context['fallback_category_id'] = self._fallback_category_id()
+        return context
+
+    def _fallback_category_id(self):
+        if not hasattr(self, '_cached_fallback_category_id'):
+            from apps.api.templates_config.serializers import (
+                _resolve_fallback_category_id,
+            )
+            self._cached_fallback_category_id = _resolve_fallback_category_id()
+        return self._cached_fallback_category_id
+
     def get_queryset(self):
         qs = super().get_queryset()
         job = self.request.query_params.get('job')
@@ -91,12 +110,14 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             qs = qs.filter(job_id=job)
 
         if not (self.action == 'list' and self._summary_mode()):
-            # Detail/list (non-summary) path: prefetch line items' sources and
-            # accounting_category so InvoiceSerializer.get_is_deposit (and the
-            # per-line is_deposit) don't N+1 across invoicelineitem_set.
+            # Detail/list (non-summary) path: prefetch line items' sources,
+            # accounting_category, and a CO ref's own change_order so
+            # InvoiceSerializer.get_is_deposit / the per-line agreement_ref's
+            # co_number don't N+1 across invoicelineitem_set.
             return qs.prefetch_related(
                 'invoicelineitem_set__sources',
                 'invoicelineitem_set__accounting_category',
+                'invoicelineitem_set__agreement_co_line__change_order',
             )
 
         # Summary (financials A/R) mode only: select_related to avoid N+1 from
@@ -157,7 +178,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
 
     def perform_create(self, serializer):
         job = serializer.validated_data.get('job')
-        serializer.instance = InvoiceWizardService.open_for_job(job)
+        seed = self.request.data.get('seed', True)
+        serializer.instance = InvoiceWizardService.open_for_job(job, seed=seed)
 
     def destroy(self, request, *args, **kwargs):
         invoice = self.get_object()
@@ -193,11 +215,13 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
                 invoice.pk,
                 request.data.get('service_item'),
                 request.data.get('qty'),
+                description=request.data.get('description'),
             )
         except NotFoundError as e:
             return Response({'detail': str(e)},
                             status=status.HTTP_404_NOT_FOUND)
-        serializer = InvoiceLineItemSerializer(line_item)
+        serializer = InvoiceLineItemSerializer(
+            line_item, context=self.get_serializer_context())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='line-items-from-atoms')
@@ -214,7 +238,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
                  'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
                 status=409,
             )
-        serializer = InvoiceLineItemSerializer(line_item)
+        serializer = InvoiceLineItemSerializer(
+            line_item, context=self.get_serializer_context())
         return Response(serializer.data, status=201)
 
     @action(
@@ -243,7 +268,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             )
 
         line_item.refresh_from_db()
-        serializer = InvoiceLineItemSerializer(line_item)
+        serializer = InvoiceLineItemSerializer(
+            line_item, context=self.get_serializer_context())
         return Response(serializer.data, status=200)
 
     @action(
@@ -272,7 +298,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         line_item.refresh_from_db()
         return Response({
             'line_item_deleted': False,
-            'line_item': InvoiceLineItemSerializer(line_item).data,
+            'line_item': InvoiceLineItemSerializer(
+                line_item, context=self.get_serializer_context()).data,
         })
 
     @action(detail=True, methods=['post'], url_path='apply-everything')
@@ -320,7 +347,10 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             adjustment_service_id=request.data['adjustment_service'],
             target_category_ids=request.data.get('target_category_ids') or [],
         )
-        return Response(InvoiceLineItemSerializer(line).data, status=status.HTTP_201_CREATED)
+        return Response(
+            InvoiceLineItemSerializer(line, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=['get'], url_path='agreement-adjustments')
     def agreement_adjustments(self, request, pk=None):
@@ -352,6 +382,29 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             for l in agreement['lines'] if l.get('is_adjustment')
         ]
         return Response({'adjustments': out})
+
+    @action(detail=True, methods=['get'], url_path='remaining-agreement-lines')
+    def remaining_agreement_lines(self, request, pk=None):
+        """List agreement lines not yet on any live invoice for this job —
+        feeds the restore picker."""
+        invoice = self.get_object()
+        lines = InvoiceService.remaining_agreement_lines(invoice.job)
+        return Response({'lines': [_serialize_agreement_line(l) for l in lines]})
+
+    @action(detail=True, methods=['post'], url_path='restore-line')
+    def restore_line(self, request, pk=None):
+        """Re-add a single agreement line to this draft. Body:
+        {estimate_line_id} or {co_line_id} (exactly one). Returns 201 with
+        the serialized new line item."""
+        invoice = self.get_object()
+        line = InvoiceService.restore_agreement_line(
+            invoice,
+            estimate_line_id=request.data.get('estimate_line_id'),
+            co_line_id=request.data.get('co_line_id'),
+        )
+        serializer = InvoiceLineItemSerializer(
+            line, context=self.get_serializer_context())
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'], url_path='send-defaults')
     def send_defaults(self, request, pk=None):
@@ -406,6 +459,16 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             'invoice_status': invoice.status,
             'qbo_id': invoice.qbo_id,
         })
+
+
+def _serialize_agreement_line(line):
+    """Convert Decimal values in a compose_agreement line dict to strings
+    for JSON — used by the remaining-agreement-lines restore-picker feed."""
+    from decimal import Decimal
+    return {
+        k: (str(v) if isinstance(v, Decimal) else v)
+        for k, v in line.items()
+    }
 
 
 def _serialize_pool(pool):

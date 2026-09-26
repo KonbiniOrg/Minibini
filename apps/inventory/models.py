@@ -297,6 +297,15 @@ class Material(MaterialBase):
         max_length=20, choices=COST_SOURCE_CHOICES, null=True, blank=True,
         help_text='Cost provenance; NULL means provisional (unpriced).',
     )
+    descoped_by = models.ForeignKey(
+        'estimates.ChangeOrder', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='+',
+        help_text=(
+            "Accepted change order whose remove struck the agreement line "
+            "this atom backed. Stamped at CO acceptance; drives the billing "
+            "pool's 'descoped' badge."
+        ),
+    )
 
     class Meta:
         db_table = 'materials'

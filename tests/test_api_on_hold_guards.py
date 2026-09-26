@@ -59,22 +59,27 @@ def _on_hold_job(contact):
 
 
 def _pending_task(job, scheme):
-    return Task.objects.create(
-        job=job, name='Guard Task', rate_scheme=scheme, status=Task.STATUS_PENDING,
-    )
+    task = Task(job=job, name='Guard Task', status=Task.STATUS_PENDING)
+    task.stamp_from_scheme(scheme)
+    task.save()
+    return task
 
 
 def _blocked_task(job, scheme):
-    return Task.objects.create(
-        job=job, name='Blocked Task', rate_scheme=scheme, status=Task.STATUS_BLOCKED,
-    )
+    task = Task(job=job, name='Blocked Task', status=Task.STATUS_BLOCKED)
+    task.stamp_from_scheme(scheme)
+    task.save()
+    return task
 
 
 def _in_progress_task(job, scheme):
-    return Task.objects.create(
-        job=job, name='In Progress Task', rate_scheme=scheme,
+    task = Task(
+        job=job, name='In Progress Task',
         status=Task.STATUS_IN_PROGRESS,
     )
+    task.stamp_from_scheme(scheme)
+    task.save()
+    return task
 
 
 def _material(job, task=None, ac=None, pli=None):
@@ -257,8 +262,12 @@ class TaskReorderOnHoldTest(OnHoldAPIGuardBase):
 
     def test_reorder_tasks_returns_400_when_job_on_hold(self):
         job = _on_hold_job(self.contact)
-        t1 = Task.objects.create(job=job, name='T1', rate_scheme=self.scheme, sort_order=1)
-        t2 = Task.objects.create(job=job, name='T2', rate_scheme=self.scheme, sort_order=2)
+        t1 = Task(job=job, name='T1', sort_order=1)
+        t1.stamp_from_scheme(self.scheme)
+        t1.save()
+        t2 = Task(job=job, name='T2', sort_order=2)
+        t2.stamp_from_scheme(self.scheme)
+        t2.save()
         url = f'/api/jobs/{job.pk}/reorder-tasks/'
         response = self.client.post(url, {'task_id': t1.pk, 'direction': 'down'}, format='json')
         self.assert_400_on_hold(response)

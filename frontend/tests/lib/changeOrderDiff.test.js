@@ -1,80 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import {
-  buildMergedRows,
-  lineDiffTotals,
-  buildDeliverableRows,
-} from '@/lib/changeOrderDiff.js';
+import { buildDeliverableRows } from '@/lib/changeOrderDiff.js';
 
 // Semantics pinned from the ChangeOrderDetailPage derivations these were
-// extracted from (2026-07-19). The backend's compose_change_order_diff is a
-// Python re-implementation of buildMergedRows — keep them in lockstep.
-
-const EST_LINES = [
-  { line_item_id: 1, line_number: 1, description: 'Frame', qty: 2, units: 'ea', price: '100.00' },
-  { line_item_id: 2, line_number: 2, description: 'Panel', qty: 4, units: 'ea', price: '50.00' },
-  { line_item_id: 3, line_number: 3, description: 'Finish', qty: 1, units: 'ea', price: '80.00' },
-];
-
-describe('buildMergedRows', () => {
-  it('returns unchanged rows for estimate lines with no CO items', () => {
-    const rows = buildMergedRows(EST_LINES, []);
-    expect(rows.map((r) => r.kind)).toEqual(['unchanged', 'unchanged', 'unchanged']);
-    expect(rows[0].total).toBe(200);
-    expect(rows[0].estLine).toBe(EST_LINES[0]);
-    expect(rows[0].coItem).toBeNull();
-  });
-
-  it('renders a replace as changed + struck original at the target position', () => {
-    const replace = {
-      line_item_id: 10, action: 'replace', target_line_item: 2,
-      description: 'Panel XL', qty: 4, units: 'ea', price: '60.00', line_number: 1,
-    };
-    const rows = buildMergedRows(EST_LINES, [replace]);
-    expect(rows.map((r) => r.kind)).toEqual(
-      ['unchanged', 'changed', 'changed-orig', 'unchanged']);
-    expect(rows[1].description).toBe('Panel XL');
-    expect(rows[1].coItem).toBe(replace);
-    expect(rows[2].description).toBe('Panel');
-    expect(rows[2].coItem).toBeNull();
-    // both rows keep the estimate line's display number
-    expect(rows[1].lineNumber).toBe(2);
-    expect(rows[2].lineNumber).toBe(2);
-  });
-
-  it('renders a remove as a struck row carrying the CO item for undo', () => {
-    const remove = { line_item_id: 11, action: 'remove', target_line_item: 1, line_number: 1 };
-    const rows = buildMergedRows(EST_LINES, [remove]);
-    expect(rows[0].kind).toBe('removed');
-    expect(rows[0].coItem).toBe(remove);
-    expect(rows[0].description).toBe('Frame');
-  });
-
-  it('appends added lines after all estimate lines, sorted by their own line_number', () => {
-    const adds = [
-      { line_item_id: 13, action: 'add', description: 'Rush', qty: 1, units: 'ea', price: '25.00', line_number: 2 },
-      { line_item_id: 12, action: 'add', description: 'Crating', qty: 1, units: 'ea', price: '40.00', line_number: 1 },
-    ];
-    const rows = buildMergedRows(EST_LINES, adds);
-    expect(rows.slice(3).map((r) => r.description)).toEqual(['Crating', 'Rush']);
-    expect(rows[3].kind).toBe('added');
-    expect(rows[3].estLine).toBeNull();
-  });
-});
-
-describe('lineDiffTotals', () => {
-  it('computes estimate, proposed, and diff totals from the merged rows', () => {
-    const replace = {
-      line_item_id: 10, action: 'replace', target_line_item: 2,
-      description: 'Panel XL', qty: 4, units: 'ea', price: '60.00', line_number: 1,
-    };
-    const add = { line_item_id: 12, action: 'add', description: 'Crating', qty: 1, units: 'ea', price: '40.00', line_number: 1 };
-    const rows = buildMergedRows(EST_LINES, [replace, add]);
-    const t = lineDiffTotals(EST_LINES, rows);
-    expect(t.estimateTotal).toBe(480);        // 200 + 200 + 80
-    expect(t.proposedTotal).toBe(560);        // 200 + 240 + 80 + 40
-    expect(t.diffTotal).toBe(80);
-  });
-});
+// extracted from (2026-07-19). buildMergedRows/lineDiffTotals (the line-item
+// diff) were retired 2026-08-09 when COEditView moved to the server-composed
+// amended agreement — this file now only covers the deliverables diff.
 
 describe('buildDeliverableRows', () => {
   const BASE = [

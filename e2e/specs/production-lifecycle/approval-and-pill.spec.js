@@ -61,15 +61,15 @@ test('§11 Approval & the status pill', async ({ page }) => {
     await expect(pill(page).locator('option:checked')).toHaveText('Approved');
   });
 
-  await test.step('Release to floor: one gesture → In Progress, displayed truthfully', async () => {
-    // On an approved job the pill names the act, not the resulting status.
-    await expect(pill(page).locator('option', { hasText: 'Release to floor' })).toHaveCount(1);
-    await pill(page).selectOption({ label: 'Release to floor' });
-    await expect.poll(async () => (await jobDetail(jobId)).status).toBe('in_progress');
-    // The pill DISPLAYS the real status — the selected-index regression
-    // showed the option at the clicked index ("Work Complete") instead.
-    await expect(pill(page)).toHaveValue('in_progress');
-    await expect(pill(page).locator('option:checked')).toHaveText('In Progress');
+  await test.step('Release to floor is retired: no manual approved→in_progress option', async () => {
+    // docs/plans/2026-08-15-estimating-structure.md "Auto-release replaces
+    // release to floor" — approved→in_progress is now system-driven only
+    // (checklist completion, timeslip-start); the pill no longer offers a
+    // manual gesture for it. Auto-release's own end-to-end journey is
+    // covered separately (structure-journey spec).
+    await expect(pill(page).locator('option', { hasText: 'Release to floor' })).toHaveCount(0);
+    await expect(pill(page).locator('option[value="in_progress"]')).toHaveCount(0);
+    await expect(pill(page)).toHaveValue('approved');
   });
   // §11's in-flight disable is a millisecond window — covered by the
   // JobHeader unit tests (frontend/tests/components/jobs/JobHeader.test.js),

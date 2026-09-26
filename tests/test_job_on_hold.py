@@ -4,7 +4,7 @@ from django.utils import timezone
 from tests.base import FixtureTestCase
 from apps.contacts.models import Contact
 from apps.core.models import User
-from apps.jobs.models import Blep, Job, Task
+from apps.jobs.models import Blep, Job, RateScheme, Task
 from apps.jobs.services import JobService
 
 
@@ -155,7 +155,9 @@ class JobHoldReleaseServiceTests(FixtureTestCase):
 
     def test_hold_rejected_with_open_blep(self):
         job = self._make_job(Job.STATUS_IN_PROGRESS)
-        task = Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        task = Task(name='T', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         user = User.objects.get(username='admin')
         Blep.objects.create(
             user=user, task=task, start_time=timezone.now(), end_time=None,

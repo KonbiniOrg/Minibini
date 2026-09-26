@@ -36,10 +36,12 @@ class LateMaterialConsumptionBase(TestCase):
             job_number='JOB-LM-1', contact=self.contact,
             status=Job.STATUS_IN_PROGRESS,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='started', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='started',
             status=Task.STATUS_IN_PROGRESS,
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         self.pli = InventoryItem.objects.create(
             code='LM-I', accounting_category=self.cat,
             qty_on_hand=Decimal('10'),
@@ -85,9 +87,11 @@ class CreateOnStartedTaskTest(LateMaterialConsumptionBase):
         self.assertEqual(self.pli.qty_on_hand, Decimal('10'))
 
     def test_material_added_to_pending_task_stays_pending(self):
-        pending_task = Task.objects.create(
-            job=self.job, name='not started', rate_scheme=self.scheme,
+        pending_task = Task(
+            job=self.job, name='not started',
         )
+        pending_task.stamp_from_scheme(self.scheme)
+        pending_task.save()
         m = MaterialService.create_on_job(
             job=self.job, task=pending_task, description='normal add',
             quantity=Decimal('2'), inventory_item=self.pli,
@@ -127,9 +131,11 @@ class AssignToStartedTaskTest(LateMaterialConsumptionBase):
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
     def test_reassign_to_pending_task_stays_pending(self):
-        pending_task = Task.objects.create(
-            job=self.job, name='not started 2', rate_scheme=self.scheme,
+        pending_task = Task(
+            job=self.job, name='not started 2',
         )
+        pending_task.stamp_from_scheme(self.scheme)
+        pending_task.save()
         m = MaterialService.create_on_job(
             job=self.job, description='loose 2',
             quantity=Decimal('2'), inventory_item=self.pli,

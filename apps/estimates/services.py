@@ -10,7 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from apps.estimates.models import (
-    Estimate, EstimateLineItem,
+    Estimate, EstimateLineItem, EstimateLineItemSource,
     WorkTemplate, ServiceItem, TemplateTaskAssociation,
     ChangeOrder,
 )
@@ -150,63 +150,42 @@ class EstimateService:
         return estimate
 
     @staticmethod
-    def _apply_material_ac_default(li):
-        """A material line (is_material=True) with no AC defaults to the
-        `default_material_accounting_category` Configuration value (a string
-        AccountingCategory pk). An explicitly-supplied AC is respected. Raises
-        if the marker is set, no AC was supplied, and no default is configured.
-        Fees (is_material=False) are untouched — they still hit the hand-line
-        AC-required rule downstream."""
-        if not li.is_material or li.accounting_category_id is not None:
+    def _derive_is_material(li, *, has_sources=False):
+        """Material-ness of a bare hand line DERIVES from its accounting
+        category (RM 2026-08-11): True exactly when the AC is the configured
+        `default_material_accounting_category`. The old client-sent
+        "Is this a material?" checkbox is retired — choosing the Materials AC
+        is the gesture — so any inbound is_material value is overwritten
+        here (serializers expose the field read-only). Non-bare lines
+        (inventory/service/adjustment descriptors, or atom-backed) are never
+        bare materials."""
+        if (has_sources or li.inventory_item_id is not None
+                or li.service_item_id is not None
+                or li.adjustment_service_id is not None):
+            li.is_material = False
             return
-        from apps.core.models import AccountingCategory, Configuration
+        from apps.core.models import Configuration
         cfg = Configuration.objects.filter(
             key='default_material_accounting_category',
         ).first()
         pk = (cfg.value or '').strip() if cfg else ''
-        if not pk:
-            raise ValidationError({'accounting_category': (
-                'This material line has no accounting category and no default is '
-                'configured. Set the default_material_accounting_category setting '
-                'or supply an accounting category.'
-            )})
-        try:
-            li.accounting_category = AccountingCategory.objects.get(pk=pk)
-        except (AccountingCategory.DoesNotExist, ValueError, TypeError):
-            raise ValidationError({'accounting_category': (
-                f'The configured default material accounting category ({pk!r}) '
-                'does not exist.'
-            )})
-
-    @staticmethod
-    def _assert_is_material_only_on_bare_line(li):
-        """`is_material` is meaningful only on a bare line. A line with an
-        inventory_item is already a (catalog) material; an adjustment line is
-        document-only — the marker must not conflict with either."""
-        if not li.is_material:
-            return
-        if li.inventory_item_id is not None:
-            raise ValidationError({'is_material': (
-                'A line with an inventory item is already a material; '
-                'the "is material" marker only applies to a bare line.'
-            )})
-        if li.adjustment_service_id is not None:
-            raise ValidationError({'is_material': (
-                'An adjustment line cannot be marked as a material.'
-            )})
+        li.is_material = bool(pk) and str(li.accounting_category_id) == pk
 
     @staticmethod
     def assert_all_hand_lines_have_ac(estimate):
         """Raise if any hand-line (no atom source, not a percentage adjustment)
         lacks an accounting category. Enforced at send-time (mark_open / email)
         so the AC-required rule is caught before the estimate goes out — not only
-        at acceptance. Atom-backed and adjustment lines are exempt (same predicate
-        as EstimateAcceptanceService.on_accept)."""
+        at acceptance. Atom-backed, adjustment, and comment lines are exempt
+        (same predicate as EstimateAcceptanceService.on_accept — comment lines
+        are informational-only and never carry a category)."""
         missing = []
         for li in estimate.estimatelineitem_set.all():
             if li.sources.exists():
                 continue
             if li.adjustment_service_id is not None:
+                continue
+            if li.is_comment:  # informational-only: no charge, no category
                 continue
             if li.accounting_category_id is None:
                 missing.append(li.description or f'line {li.line_number}')
@@ -321,8 +300,10 @@ class EstimateService:
                 price=li.price,
                 accounting_category=li.accounting_category,
                 adjustment_service_id=li.adjustment_service_id,
+                adjustment_percent=li.adjustment_percent,
                 service_item=li.service_item,
                 is_material=li.is_material,
+                per_unit=li.per_unit,
             )
             # Copy M2M adjustment target categories (empty set is fine — means "all lines")
             cats = li.adjustment_target_categories.all()
@@ -334,6 +315,12 @@ class EstimateService:
             for src in li.sources.all():
                 src.estimate_line_item = new_li
                 src.save()
+            # Re-point deliverable provenance the same way (RM 2026-08-12):
+            # a deliverable minted from this line follows the live agreement,
+            # so Make Deliverable stays suppressed on the revision's copy.
+            for d in li.deliverables.all():
+                d.source_line = new_li
+                d.save(update_fields=['source_line', 'updated_at'])
 
         # Supersede parent
         parent.status = Estimate.STATUS_SUPERSEDED
@@ -400,15 +387,25 @@ class EstimateService:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {estimate_pk} not found')
+        # work_declined is the acceptance-checklist mark — it answers a
+        # question that doesn't exist yet for a line that hasn't been
+        # created. Reject rather than silently strip: this model's field
+        # existing at all means a bare `EstimateLineItem(**kwargs)` would
+        # otherwise happily set it at creation time, on a draft estimate,
+        # bypassing both the accepted-only gate and the four refusals in
+        # _set_work_declined.
+        if 'work_declined' in kwargs:
+            raise ValidationError('work_declined cannot be set at line creation.')
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft estimates.')
         from apps.core.services import LineItemService
         kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
         li = EstimateLineItem(estimate=estimate, **kwargs)
-        # Material lines (is_material=True) get their AC from config if not supplied.
-        EstimateService._apply_material_ac_default(li)
         # A freshly-added line has no sources; if it isn't an adjustment or a
-        # comment (both document-only) it needs an AC.
+        # comment (both document-only) it needs an AC. (Merge note 2026-09-21:
+        # main's is_comment exemption adopted; main's _apply_material_ac_default
+        # call NOT adopted — this branch's AC->is_material derivation, RM
+        # 2026-08-11, replaced that flag->default-AC direction.)
         if li.adjustment_service_id is None and not li.is_comment and li.accounting_category_id is None:
             raise ValidationError(
                 {'accounting_category': (
@@ -416,14 +413,21 @@ class EstimateService:
                     '(lines with no atom source).'
                 )}
             )
-        EstimateService._assert_is_material_only_on_bare_line(li)
+        EstimateService._derive_is_material(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li
 
     @staticmethod
-    def add_line_item_from_pli(estimate_pk, pli_pk, qty):
-        """Add a line item from an InventoryItem to a draft estimate."""
+    def add_line_item_from_pli(estimate_pk, pli_pk, qty, description=None):
+        """Add a line item from an InventoryItem to a draft estimate.
+
+        `description`: optional caller override of the catalog-derived
+        description (Add Line modal editable-description feature,
+        2026-09-20 — mirrors the Task create-money-override pattern,
+        estimates-and-prices.md §3.6c). Present and non-blank (after
+        strip) wins; absent or blank/whitespace falls back to
+        `pli.description`, unchanged from today."""
         try:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
@@ -438,7 +442,7 @@ class EstimateService:
         li = EstimateLineItem(
             estimate=estimate,
             inventory_item=pli,
-            description=pli.description,
+            description=(description or '').strip() or pli.description,
             qty=qty,
             units=pli.units,
             price=pli.selling_price,
@@ -449,13 +453,18 @@ class EstimateService:
         return li
 
     @staticmethod
-    def add_line_item_from_service(estimate_pk, service_item_pk, qty):
+    def add_line_item_from_service(estimate_pk, service_item_pk, qty, description=None):
         """Add a deferred service line to a draft estimate.
 
         Mirrors add_line_item_from_pli: snapshots the priced values off the
         ServiceItem at instantiation (price/accounting_category/units/description)
         and keeps `service_item` on the line purely as the crystallization target.
-        Mints NO Task — the Task is created at acceptance (on_accept)."""
+        Mints NO Task — the Task is created at acceptance (on_accept).
+
+        `description`: optional caller override of the catalog-derived
+        description — see add_line_item_from_pli's docstring for the
+        contract (present+non-blank wins; else falls back to
+        `service_item.template_name`)."""
         try:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
@@ -471,7 +480,7 @@ class EstimateService:
         li = EstimateLineItem(
             estimate=estimate,
             service_item=service_item,
-            description=service_item.template_name,
+            description=(description or '').strip() or service_item.template_name,
             # str() first: a raw JSON float would expand to its binary value
             # and trip the 2-decimal-places validator.
             qty=_decimal_or_invalid(qty, 'qty'),
@@ -484,12 +493,33 @@ class EstimateService:
         return li
 
     @staticmethod
-    def update_line_item(line_item_id, **kwargs):
-        """Update an estimate line item — validates draft status."""
+    def update_line_item(line_item_id, *, update_linked_deliverables=False, **kwargs):
+        """Update an estimate line item — validates draft status.
+
+        `update_linked_deliverables`: the Make Deliverable edit dialog's
+        "update both" choice (RM 2026-08-12) — deliverables minted from this
+        line sync their description/qty_ordered/units to the line's new
+        values through DeliverableService.update (its editability +
+        shipped-frozen guards apply). Default False: the deliverable keeps
+        its own values (drift shows as the passive mismatch caption)."""
         try:
             li = EstimateLineItem.objects.get(pk=line_item_id)
         except EstimateLineItem.DoesNotExist:
             raise NotFoundError(f'EstimateLineItem {line_item_id} not found')
+
+        # work_declined is the acceptance-checklist "no work needed" mark —
+        # uniquely among line fields it is set-able on an ACCEPTED estimate
+        # (all other fields stay draft-only, handled below). A body mixing
+        # it with any other field is refused outright, on any estimate
+        # status, so the two update paths never blur together.
+        if 'work_declined' in kwargs:
+            if set(kwargs.keys()) != {'work_declined'}:
+                raise ValidationError(
+                    'work_declined must be updated on its own, not combined '
+                    'with other line-item fields.'
+                )
+            return EstimateService._set_work_declined(li, kwargs['work_declined'])
+
         if li.estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only modify line items on draft estimates.')
         from apps.core.services import LineItemService
@@ -501,8 +531,6 @@ class EstimateService:
         # lines are exempt.
         is_adjustment = li.adjustment_service_id is not None
         has_source = li.sources.exists()
-        # Material lines (is_material=True) get their AC from config if not supplied.
-        EstimateService._apply_material_ac_default(li)
         if not has_source and not is_adjustment and not li.is_comment and li.accounting_category_id is None:
             raise ValidationError(
                 {'accounting_category': (
@@ -510,10 +538,103 @@ class EstimateService:
                     '(lines with no atom source).'
                 )}
             )
-        EstimateService._assert_is_material_only_on_bare_line(li)
+        EstimateService._derive_is_material(li, has_sources=has_source)
+        li.full_clean()
+        with transaction.atomic():
+            LineItemService.save_line_item(li)
+            if update_linked_deliverables:
+                from apps.deliverables.services import DeliverableService
+                for d in list(li.deliverables.all()):
+                    DeliverableService.update(
+                        deliverable=d,
+                        description=li.description,
+                        qty_ordered=li.qty,
+                        units=li.units,
+                    )
+        return li
+
+    @staticmethod
+    @transaction.atomic
+    def _set_work_declined(li, value):
+        """The acceptance-checklist "no work needed" mark (design doc
+        2026-08-15 "estimating structure"): reversible, set-able ONLY while
+        the parent estimate is accepted — draft lines are still editable
+        via the normal update path above (so a work_declined PATCH there is
+        refused, not silently accepted as a plain field write), and open is
+        deliberately inert (decisions wait for the checklist). Refused for
+        any line that isn't a plain hand line: atom-backed (has sources),
+        an adjustment, a deposit line, or carrying a catalog identity
+        (service_item / inventory_item / is_material) — those crystallize
+        instead of being declined."""
+        if li.estimate.status != Estimate.STATUS_ACCEPTED:
+            raise ValidationError(
+                'work_declined can only be set on an accepted estimate.'
+            )
+        if li.sources.exists():
+            raise ValidationError(
+                'Cannot decline a line item that already has claimed work.'
+            )
+        if li.adjustment_service_id is not None:
+            raise ValidationError('Cannot decline an adjustment line item.')
+        if li.accounting_category_id and li.accounting_category.is_deposit:
+            raise ValidationError('Cannot decline a deposit line item.')
+        if li.service_item_id is not None or li.inventory_item_id is not None or li.is_material:
+            raise ValidationError(
+                'Cannot decline a line item with a catalog identity.'
+            )
+        from apps.core.services import LineItemService
+        li.work_declined = value
         li.full_clean()
         LineItemService.save_line_item(li)
+
+        from apps.jobs.services import JobService
+        JobService.maybe_auto_release(li.estimate.job)
         return li
+
+    @staticmethod
+    def unanswered_lines(estimate):
+        """Lines still owing a work decision on an ACCEPTED estimate:
+        non-adjustment, non-deposit lines with no sources and
+        work_declined=False. (Catalog-identity lines crystallize at accept
+        and therefore carry sources by the time this is consulted.)
+
+        Chain-aware (final-review fix, docs/plans/2026-08-15-estimating-
+        structure.md): a line's OWN EstimateLineItemSource rows aren't the
+        only way it can be answered. `ChangeOrderAcceptanceService.
+        _move_claims_to` DELETES a replace-target's source rows and
+        recreates them on the accepted CO's replace line (backing
+        inheritance) — so a replaced hand line loses the row that used to
+        make it "answered", and a replaced catalog line (service_item /
+        inventory_item, no separate declined/adjustment/deposit escape
+        hatch) loses the row that was its ONLY answered signal, silently
+        reappearing here as unanswered forever. A remove similarly retires
+        (or, for a document-only target, simply descopes) the line's work
+        without ever leaving a source row behind. In both cases the CO
+        decided the line's fate, so it counts answered regardless of
+        whether any claim rows actually moved. Unlike `_current_atoms`'s
+        replace-chain walk (which needs the *latest* accepted replace to
+        resolve today's atoms), this only needs to know an accepted
+        replace/remove ever targeted the line — existence, not recency."""
+        from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
+
+        answered_ids = EstimateLineItemSource.objects.filter(
+            estimate_line_item__estimate=estimate,
+        ).values('estimate_line_item_id')
+        chain_answered_ids = ChangeOrderLineItem.objects.filter(
+            target_line_item__estimate=estimate,
+            action__in=(ChangeOrderLineItem.ACTION_REPLACE, ChangeOrderLineItem.ACTION_REMOVE),
+            change_order__status=ChangeOrder.STATUS_ACCEPTED,
+        ).values('target_line_item_id')
+        return estimate.estimatelineitem_set.filter(
+            adjustment_service__isnull=True,
+            work_declined=False,
+        ).exclude(
+            accounting_category__is_deposit=True,
+        ).exclude(
+            pk__in=answered_ids,
+        ).exclude(
+            pk__in=chain_answered_ids,
+        )
 
     @staticmethod
     def reorder_line_items(estimate_pk, item_ids):
@@ -546,8 +667,14 @@ class EstimateService:
         return LineItemService.reorder_line_item(li, direction)
 
     @staticmethod
-    def delete_line_item(line_item_id):
-        """Delete an estimate line item and renumber — validates draft status."""
+    def delete_line_item(line_item_id, *, delete_linked_deliverables=False):
+        """Delete an estimate line item and renumber — validates draft status.
+
+        `delete_linked_deliverables`: the Make Deliverable dialog's "remove
+        both" choice (RM 2026-08-12) — deliverables minted from this line
+        (`source_line` FK) are deleted through DeliverableService (its
+        editability + shipped-frozen guards apply). Default False: the FK is
+        SET_NULL, so the deliverable survives unlinked."""
         from apps.core.services import LineItemService
         try:
             li = EstimateLineItem.objects.get(pk=line_item_id)
@@ -557,7 +684,12 @@ class EstimateService:
             raise ValidationError(
                 'Cannot modify line items on a non-draft estimate.'
             )
-        return LineItemService.delete_line_item_with_renumber(li)
+        with transaction.atomic():
+            if delete_linked_deliverables:
+                from apps.deliverables.services import DeliverableService
+                for d in list(li.deliverables.all()):
+                    DeliverableService.delete(deliverable=d)
+            return LineItemService.delete_line_item_with_renumber(li)
 
     @staticmethod
     def discard_draft(estimate):
@@ -601,6 +733,7 @@ class EstimateService:
             price=Decimal('0.00'),
             accounting_category=svc.accounting_category,
             adjustment_service=svc,
+            adjustment_percent=svc.rate,
         )
         line.save()
         if target_category_ids:
@@ -1052,6 +1185,9 @@ class EstimateWizardService(BaseWizardService):
     container_attr = 'estimate'
     source_fk = 'estimate_line_item'
     claim_conflict_exc = EstimateClaimConflict
+    # Per-unit-lines spec §2: estimate (and CO, which subclasses this
+    # service) supports per-unit bundling; the invoice wizard does not.
+    allows_per_unit = True
 
     @staticmethod
     def _resolve_atom(atom_ref):
@@ -1105,7 +1241,8 @@ class EstimateWizardService(BaseWizardService):
     def _atom_units(atom_instance):
         """Return the units label for an atom.
 
-        Task: from rate_scheme.unit_label (rate_scheme is NOT NULL on Task).
+        Task: from the task's own unit_label (task-owned-money Phase 1 —
+              no RateScheme lookup; defaults to 'none' if never stamped).
         Material: from the atom's own units field (which is populated from the
                   linked PLI at create time via _populate_from_pli, so PLI-linked
                   materials reflect the PLI's units; freeform materials carry
@@ -1114,15 +1251,102 @@ class EstimateWizardService(BaseWizardService):
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if isinstance(atom_instance, Task):
-            if atom_instance.rate_scheme_id:
-                return atom_instance.rate_scheme.unit_label
-            return 'none'
+            return atom_instance.unit_label or 'none'
         if isinstance(atom_instance, Material):
             return atom_instance.units or 'none'
         return 'none'
 
-    @staticmethod
-    def get_source_pool(estimate):
+    @classmethod
+    def _claim_state(cls, state, **overrides):
+        """A pool-entry claim-state dict: `state` plus every claim-identity
+        key defaulted to None, overridden by kwargs. Shared shape for
+        get_source_pool's default (available) entries and every claimed
+        entry, on both the estimate and CO wizards — one home for the key
+        set so a future claim-identity key (e.g. an invoice lens) only
+        needs adding here."""
+        base = {
+            'state': state,
+            'claiming_line_item_id': None,
+            'claiming_line_number': None,
+            'claiming_estimate_id': None,
+            'claiming_estimate_number': None,
+            'claiming_change_order_id': None,
+            'claiming_change_order_number': None,
+        }
+        base.update(overrides)
+        return base
+
+    @classmethod
+    def _pool_atoms(cls, job, claims, default_state):
+        """Shared atom walk for get_source_pool: every job Task (cancelled
+        excluded) + Material (released excluded), each looked up in
+        `claims` (keyed by (source_type, source_pk)) and falling back to
+        `default_state`. Shared verbatim by EstimateWizardService and
+        ChangeOrderWizardService — a CO composes future agreement exactly
+        like an estimate, so the walk and exclusion rules are identical;
+        only the claim lens differs (see each class's get_source_pool)."""
+        from apps.estimates.models import EstimateLineItemSource
+        from apps.jobs.models import Task
+        from apps.inventory.models import Material
+
+        atoms = []
+
+        # Cancelled tasks stay OUT of the pool: estimates/COs project
+        # PLANNED work (est_qty), and a cancelled task is not planned work.
+        # (The invoice pool is the opposite — recorded actuals on a
+        # cancelled task remain billable. Plan C3.)
+        # Ordered as the task area shows them (sort_order, pk-stable) — the
+        # pool must mirror the task list's order, not creation order (RM
+        # 2026-08-17; the invoice pool already does this).
+        for task in Task.objects.filter(job=job).exclude(
+            status=Task.STATUS_CANCELLED,
+        ).select_related(
+            'accounting_category',
+        ).order_by('sort_order', 'pk'):
+            key = (EstimateLineItemSource.SOURCE_TASK, task.pk)
+            state_info = claims.get(key, default_state)
+            eff_cat = task.effective_accounting_category
+            detail = cls._atom_detail(task)
+            atoms.append({
+                'type': 'task',
+                'id': task.pk,
+                'description': task.name,
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'amount': detail['amount'],
+                'units': detail['units'],
+                'worker_time': detail['worker_time'],
+                'category_id': eff_cat.pk if eff_cat else None,
+                **state_info,
+            })
+
+        # Released materials (descoped/returned — qty moved to released_qty)
+        # are job history, not quotable work; keep them out of the pool.
+        for mat in Material.objects.filter(job=job).exclude(
+            consumption_state=Material.CONSUMPTION_STATE_RELEASED,
+        ).select_related(
+            'accounting_category', 'inventory_item',
+        ).order_by('pk'):
+            key = (EstimateLineItemSource.SOURCE_MATERIAL, mat.pk)
+            state_info = claims.get(key, default_state)
+            detail = cls._atom_detail(mat)
+            atoms.append({
+                'type': 'material',
+                'id': mat.pk,
+                'description': mat.description,
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'amount': detail['amount'],
+                'units': detail['units'],
+                'worker_time': detail['worker_time'],
+                'category_id': mat.accounting_category_id,
+                **state_info,
+            })
+
+        return atoms
+
+    @classmethod
+    def get_source_pool(cls, estimate):
         """Walk the estimate's Job's atoms (Tasks + Materials) and return a flat
         pool with claim state (job-owns-atoms refactor).
 
@@ -1133,9 +1357,7 @@ class EstimateWizardService(BaseWizardService):
              'category_id': N or None, 'units': str}
         ]}
         """
-        from apps.estimates.models import EstimateLineItemSource
-        from apps.jobs.models import Task
-        from apps.inventory.models import Material
+        from apps.estimates.models import ChangeOrderLineItemSource, EstimateLineItemSource
 
         job = estimate.job
 
@@ -1152,81 +1374,47 @@ class EstimateWizardService(BaseWizardService):
             li = src.estimate_line_item
             est = li.estimate
             key = (src.source_type, src.source_pk)
+            # per-unit drift (Task 6): absent entirely on a non-per-unit
+            # claim row (_per_unit_drift_info returns None there).
+            per_unit_info = cls._per_unit_drift_info(src, li.qty) or {}
             if est.pk == current_estimate_pk:
-                claims[key] = {
-                    'state': 'claimed_by_current',
-                    'claiming_line_item_id': li.pk,
-                    'claiming_line_number': li.line_number,
-                    'claiming_estimate_id': None,
-                    'claiming_estimate_number': None,
-                }
+                claims[key] = cls._claim_state(
+                    'claimed_by_current',
+                    claiming_line_item_id=li.pk, claiming_line_number=li.line_number,
+                    **per_unit_info,
+                )
             else:
-                claims[key] = {
-                    'state': 'claimed_by_other',
-                    'claiming_line_item_id': None,
-                    'claiming_line_number': None,
-                    'claiming_estimate_id': est.pk,
-                    'claiming_estimate_number': est.estimate_number,
-                }
+                claims[key] = cls._claim_state(
+                    'claimed_by_other',
+                    claiming_estimate_id=est.pk, claiming_estimate_number=est.estimate_number,
+                    **per_unit_info,
+                )
 
-        default_state = {
-            'state': 'available',
-            'claiming_line_item_id': None,
-            'claiming_line_number': None,
-            'claiming_estimate_id': None,
-            'claiming_estimate_number': None,
-        }
+        # Cross-lens (Task 7): any atom claimed by one of the job's CO lines
+        # is off limits to a *different* estimate too — a CO add line is a
+        # promise in progress, same as another estimate's line. Never
+        # downgrades an atom already claimed_by_current on THIS estimate
+        # (that combination shouldn't occur, but current always wins).
+        co_sources = (
+            ChangeOrderLineItemSource.objects
+            .filter(change_order_line_item__change_order__job=job)
+            .select_related('change_order_line_item', 'change_order_line_item__change_order')
+        )
+        for src in co_sources:
+            key = (src.source_type, src.source_pk)
+            if claims.get(key, {}).get('state') == 'claimed_by_current':
+                continue
+            co_li = src.change_order_line_item
+            co = co_li.change_order
+            per_unit_info = cls._per_unit_drift_info(src, co_li.qty) or {}
+            claims[key] = cls._claim_state(
+                'claimed_by_other',
+                claiming_change_order_id=co.pk, claiming_change_order_number=co.change_order_number,
+                **per_unit_info,
+            )
 
-        atoms = []
-
-        # Cancelled tasks stay OUT of the estimate pool: estimates project
-        # PLANNED work (est_qty), and a cancelled task is not planned work.
-        # (The invoice pool is the opposite — recorded actuals on a
-        # cancelled task remain billable. Plan C3.)
-        for task in Task.objects.filter(job=job).exclude(
-            status=Task.STATUS_CANCELLED,
-        ).select_related(
-            'rate_scheme', 'rate_scheme__accounting_category',
-        ):
-            key = (EstimateLineItemSource.SOURCE_TASK, task.pk)
-            state_info = claims.get(key, default_state)
-            eff_cat = task.effective_accounting_category
-            detail = EstimateWizardService._atom_detail(task)
-            atoms.append({
-                'type': 'task',
-                'id': task.pk,
-                'description': task.name,
-                'qty': detail['qty'],
-                'rate': detail['rate'],
-                'amount': detail['amount'],
-                'units': detail['units'],
-                'category_id': eff_cat.pk if eff_cat else None,
-                **state_info,
-            })
-
-        # Released materials (descoped/returned — qty moved to released_qty)
-        # are job history, not quotable work; keep them out of the pool.
-        for mat in Material.objects.filter(job=job).exclude(
-            consumption_state=Material.CONSUMPTION_STATE_RELEASED,
-        ).select_related(
-            'accounting_category', 'inventory_item',
-        ):
-            key = (EstimateLineItemSource.SOURCE_MATERIAL, mat.pk)
-            state_info = claims.get(key, default_state)
-            detail = EstimateWizardService._atom_detail(mat)
-            atoms.append({
-                'type': 'material',
-                'id': mat.pk,
-                'description': mat.description,
-                'qty': detail['qty'],
-                'rate': detail['rate'],
-                'amount': detail['amount'],
-                'units': detail['units'],
-                'category_id': mat.accounting_category_id,
-                **state_info,
-            })
-
-        return {'atoms': atoms}
+        default_state = cls._claim_state('available')
+        return {'atoms': cls._pool_atoms(job, claims, default_state)}
 
     # ── BaseWizardService hooks ────────────────────────────────────────
     @classmethod
@@ -1277,10 +1465,165 @@ class EstimateWizardService(BaseWizardService):
 
     @classmethod
     def _task_qty_and_price(cls, task, total_price):
-        if task.rate_scheme_id and task.est_qty is not None:
+        if task.rate is not None and task.est_qty is not None:
             return task.est_qty, task.effective_rate()
         return Decimal('1'), total_price
 
     @classmethod
     def _task_actual_qty(cls, task):
         return task.est_qty
+
+
+class ChangeOrderClaimConflict(Exception):
+    """Raised when the CO wizard tries to claim an atom already claimed
+    elsewhere (the ChangeOrderLineItemSource-model IntegrityError case — see
+    EstimateClaimConflict; the pool's cross-lens check in get_source_pool is
+    the read-side counterpart that keeps the UI from offering the atom in
+    the first place)."""
+
+    def __init__(self, atom_ids):
+        self.atom_ids = atom_ids
+        super().__init__(f'Atoms already claimed: {atom_ids}')
+
+
+class ChangeOrderWizardService(EstimateWizardService):
+    """Orchestration layer for the CO wizard's authoring claims — add-atoms /
+    remove-atoms / line-items-from-atoms on a draft ChangeOrder.
+
+    Subclasses EstimateWizardService (not BaseWizardService directly) so the
+    CO's pool and billing amounts share estimate semantics: a CO composes
+    *future* agreement exactly like an estimate does (est_qty billing via
+    the inherited _atom_computed_amount override, cancelled tasks and
+    released materials excluded from the pool, _task_qty_and_price /
+    _task_actual_qty unchanged). Only the claim lens and the line-item shape
+    (action='add') differ from the estimate wizard.
+    """
+
+    container_attr = 'change_order'
+    source_fk = 'change_order_line_item'
+    claim_conflict_exc = ChangeOrderClaimConflict
+
+    # ── BaseWizardService hooks ────────────────────────────────────────
+    @classmethod
+    def _line_item_model(cls):
+        from apps.estimates.models import ChangeOrderLineItem
+        return ChangeOrderLineItem
+
+    @classmethod
+    def _source_model(cls):
+        from apps.estimates.models import ChangeOrderLineItemSource
+        return ChangeOrderLineItemSource
+
+    @classmethod
+    def _validate_draft(cls, container):
+        if container.status != ChangeOrder.STATUS_DRAFT:
+            raise ValidationError(
+                f'Cannot modify line items on change order in status "{container.status}".'
+            )
+
+    @classmethod
+    def _extra_line_kwargs(cls):
+        from apps.estimates.models import ChangeOrderLineItem
+        return {'action': ChangeOrderLineItem.ACTION_ADD}
+
+    # ── overrides ───────────────────────────────────────────────────────
+    @classmethod
+    def add_atoms_to_line_item(cls, line_item, atoms):
+        """Atoms attach to CO add lines only — a replace line inherits its
+        backing (the target's current claim rows) at acceptance
+        (ChangeOrderAcceptanceService._move_claims_to), it never accepts
+        authored atoms of its own."""
+        from apps.estimates.models import ChangeOrderLineItem
+        if line_item.action != ChangeOrderLineItem.ACTION_ADD:
+            raise ValidationError(
+                'Atoms attach to CO add lines only — a replacement inherits '
+                'its backing at acceptance.'
+            )
+        return super().add_atoms_to_line_item(line_item, atoms)
+
+    @classmethod
+    def get_source_pool(cls, co):
+        """Same atom walk as the estimate pool (cancelled tasks / released
+        materials excluded — a CO shares the estimate's future-agreement
+        semantics; the walk itself lives in the inherited
+        EstimateWizardService._pool_atoms), but the claim lookup unions
+        BOTH lenses:
+
+        - the job's EstimateLineItemSource rows — always someone else's (a
+          CO never itself holds one): claimed_by_other, "Claimed by
+          estimate EST-N". Covered work (already agreed, including on the
+          very estimate this CO amends) is not CO-addable.
+        - the job's ChangeOrderLineItemSource rows — claimed_by_current when
+          the claiming line is on THIS co, else claimed_by_other, "Claimed
+          by change order <number>".
+
+        Exception (RM 2026-08-10): atoms currently backing a line THIS CO
+        removes return to the pool — descoping frees the work, and
+        re-adding it to this CO restates it under new terms (acceptance
+        skips retiring atoms the same CO re-claims on an add line). The
+        freed set suppresses agreement-lens claims (the estimate's own, or
+        an accepted CO's inherited claim on the removed target) but never a
+        draft/open CO's claim — that's still a live conflict.
+        """
+        from apps.estimates.co_acceptance import ChangeOrderAcceptanceService
+        from apps.estimates.models import (
+            ChangeOrderLineItem, ChangeOrderLineItemSource, EstimateLineItemSource)
+
+        job = co.job
+        current_co_pk = co.pk
+        claims = {}
+
+        freed = set()
+        for remove_li in co.changeorderlineitem_set.filter(
+                action=ChangeOrderLineItem.ACTION_REMOVE):
+            for source_type, atom in ChangeOrderAcceptanceService._current_atoms(
+                    remove_li.target_line_item):
+                freed.add((source_type, atom.pk))
+
+        est_sources = (
+            EstimateLineItemSource.objects
+            .filter(estimate_line_item__estimate__job=job)
+            .select_related('estimate_line_item', 'estimate_line_item__estimate')
+        )
+        for src in est_sources:
+            li = src.estimate_line_item
+            est = li.estimate
+            key = (src.source_type, src.source_pk)
+            if key in freed:
+                continue
+            claims[key] = cls._claim_state(
+                'claimed_by_other',
+                claiming_estimate_id=est.pk, claiming_estimate_number=est.estimate_number,
+                **(cls._per_unit_drift_info(src, li.qty) or {}),
+            )
+
+        co_sources = (
+            ChangeOrderLineItemSource.objects
+            .filter(change_order_line_item__change_order__job=job)
+            .select_related('change_order_line_item', 'change_order_line_item__change_order')
+        )
+        for src in co_sources:
+            li = src.change_order_line_item
+            other_co = li.change_order
+            key = (src.source_type, src.source_pk)
+            per_unit_info = cls._per_unit_drift_info(src, li.qty) or {}
+            if other_co.pk == current_co_pk:
+                claims[key] = cls._claim_state(
+                    'claimed_by_current',
+                    claiming_line_item_id=li.pk, claiming_line_number=li.line_number,
+                    **per_unit_info,
+                )
+            else:
+                if key in freed and other_co.status == ChangeOrder.STATUS_ACCEPTED:
+                    # The accepted claim IS the agreement claim this CO's
+                    # remove supersedes (chain case) — freed, not a conflict.
+                    continue
+                claims[key] = cls._claim_state(
+                    'claimed_by_other',
+                    claiming_change_order_id=other_co.pk,
+                    claiming_change_order_number=other_co.change_order_number,
+                    **per_unit_info,
+                )
+
+        default_state = cls._claim_state('available')
+        return {'atoms': cls._pool_atoms(job, claims, default_state)}

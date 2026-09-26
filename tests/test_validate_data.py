@@ -1,16 +1,43 @@
 from decimal import Decimal
 from io import StringIO
 from django.test import TestCase
+from django.utils import timezone
 from django.core.management import call_command
-from apps.core.models import AccountingCategory
-from apps.jobs.models import RateScheme, Job, Task, Fee
-from apps.contacts.models import Contact
-from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource
+from apps.core.models import AccountingCategory, User
+from apps.jobs.models import RateScheme, Job, Task
+from apps.contacts.models import Business, Contact
+from apps.estimates.models import (
+    Estimate, EstimateLineItem, EstimateLineItemSource,
+    ChangeOrder, ChangeOrderLineItem, ChangeOrderLineItemSource,
+)
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.inventory.models import Material
+from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+from apps.purchasing.services import PurchaseOrderService
+
+
+def _task_scheme_fields(scheme):
+    """Copy a RateScheme preset's money fields onto Task-creation kwargs,
+    mirroring Task.stamp_from_scheme (task-owned-money Phase 1). Tests that
+    build a Task directly via Task.objects.create() use this instead of the
+    old Task.rate_scheme FK, which was renamed to the provenance-only
+    source_scheme plus the task's own qty_source/rate/unit_label/
+    accounting_category fields."""
+    return dict(
+        source_scheme=scheme,
+        qty_source=scheme.algorithm,
+        rate=scheme.rate,
+        unit_label=scheme.unit_label,
+        accounting_category=scheme.accounting_category,
+    )
 
 
 class ValidateDataRateSchemeTest(TestCase):
+    """Tests for check_rate_schemes() — algorithm, accounting_category,
+    negative-rate-only-for-percentage, elapsed_time hour-pin. RateScheme is
+    a freely-editable preset now (task-owned-money Phase 1, Task 4):
+    supersession/frozen-field assertions are gone, not moved here."""
+
     def setUp(self):
         self.ac = AccountingCategory.objects.create(name='Svc', code='SVC')
         self.contact = Contact.objects.create(first_name='Test', last_name='User')
@@ -20,43 +47,13 @@ class ValidateDataRateSchemeTest(TestCase):
         call_command('validate_data', stdout=out, stderr=out)
         return out.getvalue()
 
-    def _make_sp(self, name='Sp', rate=Decimal('10.00'), algorithm=None):
+    def _make_sp(self, name='Sp', rate=Decimal('10.00'), algorithm=None, unit_label='each'):
         if algorithm is None:
             algorithm = RateScheme.ENTERED_QTY
         return RateScheme.objects.create(
             name=name, algorithm=algorithm,
-            rate=rate, unit_label='each', accounting_category=self.ac,
+            rate=rate, unit_label=unit_label, accounting_category=self.ac,
         )
-
-    def _make_job(self, number='J-VDT-001'):
-        return Job.objects.create(
-            job_number=number, name='Test Job', contact=self.contact,
-        )
-
-    # ── active_modifiers dict-shape checks ───────────────────────
-
-    def test_flags_dict_active_modifiers_on_task(self):
-        sp = self._make_sp(name='Sp-task')
-        job = self._make_job('J-VDT-002')
-        # Bypass full_clean to force a dict into the JSONField
-        Task.objects.filter(pk=Task.objects.create(
-            name='Bad task', job=job, rate_scheme=sp,
-            active_modifiers=[],
-        ).pk).update(active_modifiers={'key': 'val'})
-        output = self._run()
-        self.assertIn('active_modifiers', output.lower())
-
-    def test_flags_dict_default_active_modifiers_on_service_item(self):
-        from apps.estimates.models import ServiceItem
-        sp = self._make_sp(name='Sp-tt')
-        tt = ServiceItem.objects.create(
-            template_name='Bad Template',
-            rate_scheme=sp,
-            default_active_modifiers=[],
-        )
-        ServiceItem.objects.filter(pk=tt.pk).update(default_active_modifiers={'key': 'val'})
-        output = self._run()
-        self.assertIn('default_active_modifiers', output.lower())
 
     # ── Negative rate / percentage checks ───────────────────────
 
@@ -83,108 +80,211 @@ class ValidateDataRateSchemeTest(TestCase):
         self.assertIn('bad-elapsed', output)
         self.assertIn('negative rate', output)
 
-    def test_valid_list_active_modifiers_not_flagged(self):
-        sp = self._make_sp(name='Sp-list')
-        job = self._make_job('J-VDT-004')
-        Task.objects.create(
-            name='Good task', job=job, rate_scheme=sp,
-            active_modifiers=['mod1'],
-        )
+    # ── elapsed_time hour-pin ─────────────────────────────────────
+
+    def test_elapsed_time_scheme_wrong_unit_label_is_flagged(self):
+        """clean() pins elapsed_time schemes to 'hour'; bypass it via
+        QuerySet.update() to simulate legacy/corrupt fixture data."""
+        scheme = self._make_sp(name='bad-unit', algorithm=RateScheme.ELAPSED_TIME, unit_label='hour')
+        RateScheme.objects.filter(pk=scheme.pk).update(unit_label='each')
         output = self._run()
-        self.assertNotIn('active_modifiers', output.lower())
+        self.assertIn('bad-unit', output)
+        self.assertIn('must have unit_label "hour"', output)
+
+    def test_elapsed_time_scheme_hour_unit_not_flagged(self):
+        self._make_sp(name='good-elapsed', algorithm=RateScheme.ELAPSED_TIME, unit_label='hour')
+        output = self._run()
+        self.assertNotIn('good-elapsed', output)
+
+    def test_entered_qty_scheme_non_hour_unit_not_flagged(self):
+        """The hour-pin only applies to elapsed_time; other algorithms are free."""
+        self._make_sp(name='good-entered', algorithm=RateScheme.ENTERED_QTY, unit_label='each')
+        output = self._run()
+        self.assertNotIn('good-entered', output)
 
 
-class ValidateDataFeeTest(TestCase):
-    """Tests for check_fees() — unit_rate, quantity, accounting_category, task-job match."""
+class ValidateDataTaskMoneyTest(TestCase):
+    """Tests for the check_tasks() task-owned-money checks (task-owned-money
+    Phase 1, Task 9): qty_source in choices, non-negative rate, required
+    accounting_category, and the active_modifiers {key, percent}-dict shape
+    (a Task's own snapshot, unlike ServiceItem.default_active_modifiers,
+    which stays a plain key-list)."""
 
     def setUp(self):
-        self.ac = AccountingCategory.objects.create(name='FeeSvc', code='FSVC')
-        self.contact = Contact.objects.create(first_name='Fee', last_name='Tester')
-        self.job = Job.objects.create(
-            job_number='J-VFEE-001', name='Fee Job', contact=self.contact,
-        )
+        self.ac = AccountingCategory.objects.create(name='Svc', code='SVC')
+        self.contact = Contact.objects.create(first_name='Test', last_name='User')
 
     def _run(self):
         out = StringIO()
         call_command('validate_data', stdout=out, stderr=out)
         return out.getvalue()
 
-    def _make_fee(self, **kwargs):
-        defaults = dict(
-            job=self.job,
-            description='Test Fee',
-            quantity=Decimal('1.00'),
-            unit_rate=Decimal('100.00'),
-            accounting_category=self.ac,
-        )
-        defaults.update(kwargs)
-        return Fee.objects.create(**defaults)
-
-    def _make_rate_scheme(self, name='RS-Fee'):
+    def _make_sp(self, name='Sp', rate=Decimal('10.00'), algorithm=None,
+                 unit_label='each', modifiers=None):
+        if algorithm is None:
+            algorithm = RateScheme.ENTERED_QTY
         return RateScheme.objects.create(
-            name=name, algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('10.00'), unit_label='each', accounting_category=self.ac,
+            name=name, algorithm=algorithm, rate=rate, unit_label=unit_label,
+            accounting_category=self.ac, modifiers=modifiers or [],
         )
 
-    # ── unit_rate ────────────────────────────────────────────────
-
-    def test_fee_unit_rate_zero_is_error(self):
-        self._make_fee(unit_rate=Decimal('0.00'))
-        output = self._run()
-        self.assertIn('unit_rate must be positive', output)
-
-    def test_fee_unit_rate_negative_is_error(self):
-        self._make_fee(unit_rate=Decimal('-5.00'))
-        output = self._run()
-        self.assertIn('unit_rate must be positive', output)
-
-    def test_fee_positive_unit_rate_not_flagged(self):
-        self._make_fee(unit_rate=Decimal('0.01'))
-        output = self._run()
-        self.assertNotIn('unit_rate must be positive', output)
-
-    # ── accounting_category ──────────────────────────────────────
-
-    # ── quantity ─────────────────────────────────────────────────
-
-    def test_fee_negative_quantity_is_error(self):
-        self._make_fee(quantity=Decimal('-1.00'))
-        output = self._run()
-        self.assertIn('negative quantity', output)
-
-    def test_fee_zero_quantity_not_flagged(self):
-        """quantity=0 is allowed (check is quantity < 0, not quantity <= 0)."""
-        self._make_fee(quantity=Decimal('0.00'))
-        output = self._run()
-        self.assertNotIn('negative quantity', output)
-
-    # ── task-job consistency ──────────────────────────────────────
-
-    def test_fee_task_on_wrong_job_is_error(self):
-        rs = self._make_rate_scheme()
-        job_b = Job.objects.create(
-            job_number='J-VFEE-002', name='Other Job', contact=self.contact,
+    def _make_job(self, number='J-VDT-001'):
+        return Job.objects.create(
+            job_number=number, name='Test Job', contact=self.contact,
         )
-        task_b = Task.objects.create(name='Task on B', job=job_b, rate_scheme=rs)
-        # fee.job = self.job (job_a), fee.task = task_b (on job_b) → mismatch
-        self._make_fee(task=task_b)
-        output = self._run()
-        self.assertIn('but Fee belongs to job', output)
 
-    def test_fee_task_on_same_job_not_flagged(self):
-        rs = self._make_rate_scheme(name='RS-SameJob')
-        task = Task.objects.create(name='Same-job Task', job=self.job, rate_scheme=rs)
-        self._make_fee(task=task)
-        output = self._run()
-        self.assertNotIn('but Fee belongs to job', output)
+    def _make_task(self, job, scheme, name='Task', modifier_keys=None):
+        """Build a Task via the real stamping path (Task.stamp_from_scheme)
+        so its money fields have the shape production code actually
+        produces."""
+        task = Task(name=name, job=job)
+        task.stamp_from_scheme(scheme, modifier_keys=modifier_keys)
+        task.save()
+        return task
 
-    def test_valid_fee_produces_no_errors(self):
-        self._make_fee()
+    # ── active_modifiers {key, percent}-dict shape ────────────────
+
+    def test_flags_dict_active_modifiers_on_task(self):
+        sp = self._make_sp(name='Sp-task')
+        job = self._make_job('J-VDT-002')
+        task = self._make_task(job, sp, name='Bad task')
+        # Bypass full_clean to force a dict into the JSONField
+        Task.objects.filter(pk=task.pk).update(active_modifiers={'key': 'val'})
         output = self._run()
-        self.assertNotIn('unit_rate must be positive', output)
-        self.assertNotIn('negative quantity', output)
+        self.assertIn('active_modifiers', output.lower())
+        self.assertIn('Bad task', output)
+
+    def test_flags_string_entry_in_active_modifiers(self):
+        sp = self._make_sp(name='Sp-str')
+        job = self._make_job('J-VDT-003')
+        task = self._make_task(job, sp, name='String-entry task')
+        Task.objects.filter(pk=task.pk).update(active_modifiers=['rush'])
+        output = self._run()
+        self.assertIn('is not', output)
+        self.assertIn('String-entry task', output)
+
+    def test_flags_bare_dict_missing_key_and_percent(self):
+        sp = self._make_sp(name='Sp-bare')
+        job = self._make_job('J-VDT-005')
+        task = self._make_task(job, sp, name='Bare-dict task')
+        Task.objects.filter(pk=task.pk).update(active_modifiers=[{'label': 'Rush'}])
+        output = self._run()
+        self.assertIn('missing key', output)
+        self.assertIn('percent must be numeric', output)
+        self.assertIn('Bare-dict task', output)
+
+    def test_valid_active_modifiers_dict_list_not_flagged(self):
+        sp = self._make_sp(
+            name='Sp-list',
+            modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 10}],
+        )
+        job = self._make_job('J-VDT-006')
+        self._make_task(job, sp, name='Good task', modifier_keys=['rush'])
+        output = self._run()
+        self.assertNotIn('active_modifiers', output.lower())
+
+    def test_empty_active_modifiers_not_flagged(self):
+        sp = self._make_sp(name='Sp-empty')
+        job = self._make_job('J-VDT-007')
+        self._make_task(job, sp, name='No-modifiers task')
+        output = self._run()
+        self.assertNotIn('active_modifiers', output.lower())
+
+    # ── ServiceItem.default_active_modifiers stays a key-list ─────
+
+    def test_flags_dict_default_active_modifiers_on_service_item(self):
+        from apps.estimates.models import ServiceItem
+        sp = self._make_sp(name='Sp-tt')
+        tt = ServiceItem.objects.create(
+            template_name='Bad Template',
+            rate_scheme=sp,
+            default_active_modifiers=[],
+        )
+        ServiceItem.objects.filter(pk=tt.pk).update(default_active_modifiers={'key': 'val'})
+        output = self._run()
+        self.assertIn('default_active_modifiers', output.lower())
+
+    def test_valid_list_default_active_modifiers_on_service_item_not_flagged(self):
+        from apps.estimates.models import ServiceItem
+        sp = self._make_sp(name='Sp-tt-good')
+        ServiceItem.objects.create(
+            template_name='Good Template',
+            rate_scheme=sp,
+            default_active_modifiers=['mod1'],
+        )
+        output = self._run()
+        self.assertNotIn('default_active_modifiers', output.lower())
+
+    # ── qty_source ──────────────────────────────────────────────
+
+    def test_invalid_qty_source_is_flagged(self):
+        sp = self._make_sp(name='Sp-qty')
+        job = self._make_job('J-VDT-008')
+        task = self._make_task(job, sp, name='Bad qty_source task')
+        Task.objects.filter(pk=task.pk).update(qty_source='bogus')
+        output = self._run()
+        self.assertIn('invalid qty_source', output)
+        self.assertIn('Bad qty_source task', output)
+
+    def test_valid_qty_source_not_flagged(self):
+        sp = self._make_sp(name='Sp-qty-ok', algorithm=RateScheme.ELAPSED_TIME, unit_label='hour')
+        job = self._make_job('J-VDT-009')
+        self._make_task(job, sp, name='Good qty_source task')
+        output = self._run()
+        self.assertNotIn('invalid qty_source', output)
+
+    # ── rate ────────────────────────────────────────────────────
+
+    def test_negative_rate_on_task_is_flagged(self):
+        sp = self._make_sp(name='Sp-rate')
+        job = self._make_job('J-VDT-010')
+        task = self._make_task(job, sp, name='Negative-rate task')
+        Task.objects.filter(pk=task.pk).update(rate=Decimal('-5.00'))
+        output = self._run()
+        self.assertIn('negative rate', output)
+        self.assertIn('Negative-rate task', output)
+
+    def test_positive_rate_on_task_not_flagged(self):
+        sp = self._make_sp(name='Sp-rate-ok')
+        job = self._make_job('J-VDT-011')
+        self._make_task(job, sp, name='Positive-rate task')
+        output = self._run()
+        self.assertNotIn('negative rate', output)
+
+    # ── accounting_category ────────────────────────────────────
+
+    def test_null_accounting_category_on_task_not_flagged(self):
+        """Phase 3: a task's accounting_category is legitimately nullable —
+        categorized later, at invoicing, via the fallback AC. No longer an
+        error condition."""
+        sp = self._make_sp(name='Sp-ac')
+        job = self._make_job('J-VDT-012')
+        task = self._make_task(job, sp, name='No-AC task')
+        Task.objects.filter(pk=task.pk).update(accounting_category=None)
+        output = self._run()
         self.assertNotIn('missing accounting_category', output)
-        self.assertNotIn('but Fee belongs to job', output)
+
+    def test_present_accounting_category_not_flagged(self):
+        sp = self._make_sp(name='Sp-ac-ok')
+        job = self._make_job('J-VDT-013')
+        self._make_task(job, sp, name='Has-AC task')
+        output = self._run()
+        self.assertNotIn('missing accounting_category', output)
+
+    # ── source_scheme: SET_NULL orphaning is legal, no check ──────
+
+    def test_deleted_source_scheme_is_not_flagged(self):
+        """Deleting a RateScheme SET_NULLs every Task.source_scheme that
+        stamped from it — provenance-only, so this must never be an error."""
+        sp = self._make_sp(name='Sp-deleteme')
+        job = self._make_job('J-VDT-014')
+        task = self._make_task(job, sp, name='Orphaned task')
+        sp.delete()
+        task.refresh_from_db()
+        self.assertIsNone(task.source_scheme_id)
+        output = self._run()
+        self.assertNotIn('source_scheme', output)
+        self.assertNotIn('Orphaned task', output)
 
 
 class ValidateDataSourceJobConsistencyTest(TestCase):
@@ -227,7 +327,7 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
     # ── EstimateLineItemSource cross-checks ──────────────────────
 
     def test_estimate_source_task_wrong_job_is_error(self):
-        task_b = Task.objects.create(name='Task B', job=self.job_b, rate_scheme=self.rs)
+        task_b = Task.objects.create(name='Task B', job=self.job_b, **_task_scheme_fields(self.rs))
         EstimateLineItemSource.objects.create(
             estimate_line_item=self.eli,
             source_type=EstimateLineItemSource.SOURCE_TASK,
@@ -250,20 +350,6 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
         self.assertIn('EstimateLineItemSource', output)
         self.assertIn('does not match estimate job_id', output)
 
-    def test_estimate_source_fee_wrong_job_is_error(self):
-        fee_b = Fee.objects.create(
-            job=self.job_b, description='Fee B',
-            unit_rate=Decimal('50.00'), accounting_category=self.ac,
-        )
-        EstimateLineItemSource.objects.create(
-            estimate_line_item=self.eli,
-            source_type=EstimateLineItemSource.SOURCE_FEE,
-            source_pk=fee_b.pk,
-        )
-        output = self._run()
-        self.assertIn('EstimateLineItemSource', output)
-        self.assertIn('does not match estimate job_id', output)
-
     def test_estimate_source_dangling_atom_is_error(self):
         """If the source_pk doesn't resolve to an atom, it should be flagged."""
         EstimateLineItemSource.objects.create(
@@ -276,7 +362,7 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
         self.assertIn('atom not found', output)
 
     def test_estimate_source_task_same_job_not_flagged(self):
-        task_a = Task.objects.create(name='Task A', job=self.job_a, rate_scheme=self.rs)
+        task_a = Task.objects.create(name='Task A', job=self.job_a, **_task_scheme_fields(self.rs))
         EstimateLineItemSource.objects.create(
             estimate_line_item=self.eli,
             source_type=EstimateLineItemSource.SOURCE_TASK,
@@ -289,7 +375,7 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
     # ── InvoiceLineItemSource cross-checks ───────────────────────
 
     def test_invoice_source_task_wrong_job_is_error(self):
-        task_b = Task.objects.create(name='Inv Task B', job=self.job_b, rate_scheme=self.rs)
+        task_b = Task.objects.create(name='Inv Task B', job=self.job_b, **_task_scheme_fields(self.rs))
         InvoiceLineItemSource.objects.create(
             invoice_line_item=self.ili,
             source_type=InvoiceLineItemSource.SOURCE_TASK,
@@ -312,20 +398,6 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
         self.assertIn('InvoiceLineItemSource', output)
         self.assertIn('does not match invoice job_id', output)
 
-    def test_invoice_source_fee_wrong_job_is_error(self):
-        fee_b = Fee.objects.create(
-            job=self.job_b, description='Inv Fee B',
-            unit_rate=Decimal('75.00'), accounting_category=self.ac,
-        )
-        InvoiceLineItemSource.objects.create(
-            invoice_line_item=self.ili,
-            source_type=InvoiceLineItemSource.SOURCE_FEE,
-            source_pk=fee_b.pk,
-        )
-        output = self._run()
-        self.assertIn('InvoiceLineItemSource', output)
-        self.assertIn('does not match invoice job_id', output)
-
     def test_invoice_source_dangling_atom_is_error(self):
         InvoiceLineItemSource.objects.create(
             invoice_line_item=self.ili,
@@ -337,7 +409,7 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
         self.assertIn('atom not found', output)
 
     def test_invoice_source_task_same_job_not_flagged(self):
-        task_a = Task.objects.create(name='Inv Task A', job=self.job_a, rate_scheme=self.rs)
+        task_a = Task.objects.create(name='Inv Task A', job=self.job_a, **_task_scheme_fields(self.rs))
         InvoiceLineItemSource.objects.create(
             invoice_line_item=self.ili,
             source_type=InvoiceLineItemSource.SOURCE_TASK,
@@ -351,8 +423,8 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
 class ValidateDataStateInvariantsTest(TestCase):
     """2026-07-12 tasks-refinements invariants: invoice-on-unapproved-job is
     an ERROR (was a warning), work_complete/completed jobs carry only final
-    work, subtasks are one level deep, and invoice sources only point at
-    terminal (billable) tasks."""
+    work, parent_task stays NULL (dormant field), and invoice sources only
+    point at terminal (billable) tasks."""
 
     def setUp(self):
         self.ac = AccountingCategory.objects.create(name='Inv', code='INVAR')
@@ -378,7 +450,7 @@ class ValidateDataStateInvariantsTest(TestCase):
 
     def _task(self, job, status=Task.STATUS_PENDING, parent=None, name='T'):
         task = Task.objects.create(
-            name=name, job=job, rate_scheme=self.rs, parent_task=parent,
+            name=name, job=job, parent_task=parent, **_task_scheme_fields(self.rs),
         )
         if status != Task.STATUS_PENDING:
             Task.objects.filter(pk=task.pk).update(status=status)
@@ -437,23 +509,23 @@ class ValidateDataStateInvariantsTest(TestCase):
         output = self._run()
         self.assertNotIn('pending material', output)
 
-    # ── one level of subtasks ────────────────────────────────────
+    # ── parent_task is dormant (better-fees spec §3) ─────────────
 
-    def test_grandchild_task_is_an_error(self):
+    def test_non_null_parent_task_is_an_error(self):
         job = self._job('J-VST-007')
-        parent = self._task(job, name='Parent')
-        child = self._task(job, parent=parent, name='Child')
-        self._task(job, parent=child, name='Grandchild')
-        output = self._run()
-        self.assertIn('[ERROR]', output)
-        self.assertIn('subtask of a subtask', output)
-
-    def test_one_level_subtask_not_flagged(self):
-        job = self._job('J-VST-008')
         parent = self._task(job, name='Parent')
         self._task(job, parent=parent, name='Child')
         output = self._run()
-        self.assertNotIn('subtask of a subtask', output)
+        self.assertIn('[ERROR]', output)
+        self.assertIn('parent_task', output)
+        self.assertIn('dormant', output)
+
+    def test_null_parent_task_not_flagged(self):
+        job = self._job('J-VST-008')
+        self._task(job, name='Flat one')
+        self._task(job, name='Flat two')
+        output = self._run()
+        self.assertNotIn('dormant', output)
 
     # ── invoice sources bill only terminal tasks ─────────────────
 
@@ -491,3 +563,453 @@ class ValidateDataStateInvariantsTest(TestCase):
             )
         output = self._run()
         self.assertNotIn('not billable', output)
+
+
+class ValidateDataAgreementLineInvoicesTest(TestCase):
+    """Tests for check_agreement_line_invoice_exclusivity() — each estimate
+    line and change-order line may be referenced by at most one live invoice.
+    A live invoice is every status except cancelled."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='Agreement', code='AGR')
+        self.contact = Contact.objects.create(first_name='Agr', last_name='Test')
+        self.job = Job.objects.create(
+            job_number='J-AGRLNE-001', name='Agreement Line Job', contact=self.contact,
+        )
+        # Estimate with a line item
+        self.estimate = Estimate.objects.create(
+            job=self.job,
+            estimate_number='EST-AGRLNE-001',
+            version=1,
+        )
+        self.estimate_line = EstimateLineItem.objects.create(estimate=self.estimate)
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def test_agreement_estimate_line_on_two_live_invoices_is_an_error(self):
+        """When the same estimate line is referenced by two open invoices,
+        that's an error. One invoice has invoice_number; one is a draft (None)."""
+        # Create first invoice as draft (no invoice_number — pre-QBO-push state)
+        inv1 = Invoice.objects.create(job=self.job)
+        ili1 = InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+
+        # Transition first invoice to open, then create second invoice with number
+        Invoice.objects.filter(pk=inv1.pk).update(status=Invoice.STATUS_OPEN)
+        inv2 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-002')
+        ili2 = InvoiceLineItem.objects.create(invoice=inv2, agreement_estimate_line=self.estimate_line)
+
+        output = self._run()
+        self.assertIn('[ERROR]', output)
+        self.assertIn('referenced by more than one live invoice', output)
+        # display_number should be used, so we'll see the job number for the draft
+        self.assertIn('J-AGRLNE-001', output)
+        self.assertIn('INV-AGRLNE-002', output)
+
+    def test_agreement_co_line_on_two_live_invoices_is_an_error(self):
+        """When the same change-order line is referenced by two open invoices,
+        that's an error."""
+        # Create a change order with a line item
+        co = ChangeOrder.objects.create(
+            job=self.job,
+            estimate=self.estimate,
+        )
+        co_line = ChangeOrderLineItem.objects.create(
+            change_order=co,
+            action=ChangeOrderLineItem.ACTION_ADD,
+        )
+
+        # Create first invoice (draft, no invoice_number)
+        inv1 = Invoice.objects.create(job=self.job)
+        ili1 = InvoiceLineItem.objects.create(invoice=inv1, agreement_co_line=co_line)
+
+        # Transition first invoice to open, then create second invoice
+        Invoice.objects.filter(pk=inv1.pk).update(status=Invoice.STATUS_OPEN)
+        inv2 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-CO-002')
+        ili2 = InvoiceLineItem.objects.create(invoice=inv2, agreement_co_line=co_line)
+
+        output = self._run()
+        self.assertIn('[ERROR]', output)
+        self.assertIn('referenced by more than one live invoice', output)
+        self.assertIn('J-AGRLNE-001', output)
+        self.assertIn('INV-AGRLNE-CO-002', output)
+
+    def test_reference_on_cancelled_invoice_not_flagged(self):
+        """A cancelled invoice's reference to an agreement line should not
+        trigger the one-per-live-invoice check."""
+        # Create first invoice as cancelled
+        inv1 = Invoice.objects.create(
+            job=self.job, invoice_number='INV-AGRLNE-003',
+            status=Invoice.STATUS_CANCELLED
+        )
+        ili1 = InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+
+        # Create a second, open invoice referencing the same estimate line
+        inv2 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-004')
+        ili2 = InvoiceLineItem.objects.create(invoice=inv2, agreement_estimate_line=self.estimate_line)
+
+        output = self._run()
+        # Should not error because inv1 is cancelled
+        self.assertNotIn('referenced by more than one live invoice', output)
+
+    def test_multiple_live_invoices_different_agreement_lines_not_flagged(self):
+        """Two live invoices referencing different estimate lines is OK."""
+        estimate_line_2 = EstimateLineItem.objects.create(estimate=self.estimate)
+
+        inv1 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-005')
+        ili1 = InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+
+        Invoice.objects.filter(pk=inv1.pk).update(status=Invoice.STATUS_OPEN)
+        inv2 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-006')
+        ili2 = InvoiceLineItem.objects.create(invoice=inv2, agreement_estimate_line=estimate_line_2)
+
+        output = self._run()
+        self.assertNotIn('referenced by more than one live invoice', output)
+
+    def test_single_live_invoice_with_reference_not_flagged(self):
+        """A single live invoice referencing an estimate line is OK."""
+        inv1 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-007')
+        ili1 = InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+
+        output = self._run()
+        self.assertNotIn('referenced by more than one live invoice', output)
+
+    def test_two_dup_refs_on_one_invoice_flagged_as_duplicate_not_multi_invoice(self):
+        """Two InvoiceLineItem rows on the SAME live invoice both referencing
+        the same agreement line is also invalid (duplicate references), but
+        must not be reported with the "more than one live invoice" message
+        — there's only one invoice involved, so a DISTINCT invoice count
+        (not a raw row count) must drive which message fires."""
+        inv1 = Invoice.objects.create(job=self.job, invoice_number='INV-AGRLNE-008')
+        InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+        InvoiceLineItem.objects.create(invoice=inv1, agreement_estimate_line=self.estimate_line)
+
+        output = self._run()
+        self.assertIn('[ERROR]', output)
+        self.assertNotIn('referenced by more than one live invoice', output)
+        self.assertIn('duplicate references', output)
+        self.assertIn('INV-AGRLNE-008', output)
+
+
+class ValidateDataLineItemCategoryTest(TestCase):
+    """Tests for check_estimate_line_categories(),
+    check_change_order_line_categories(), and check_invoice_line_categories()
+    (Phase 3 Task 8) — a hand/bare line requires an accounting_category
+    (mirroring EstimateService.assert_all_hand_lines_have_ac /
+    ChangeOrderService.assert_all_bare_add_lines_have_ac's real
+    enforcement); atom-backed and adjustment lines are exempt on the
+    estimate/CO side. Invoice lines are only checked once the invoice is
+    past the send-time gate (InvoiceEmailService._assert_all_lines_categorized)
+    — draft and dead (cancelled/superseded) invoices are exempt, with NO
+    adjustment-line carve-out post-gate."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='LiSvc', code='LISVC')
+        self.contact = Contact.objects.create(first_name='Li', last_name='Tester')
+        self.job = Job.objects.create(
+            job_number='J-VLC-001', name='Line Cat Job', contact=self.contact,
+        )
+        self.rs = RateScheme.objects.create(
+            name='RS-Li', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.00'), unit_label='each', accounting_category=self.ac,
+        )
+        self.adj_rs = RateScheme.objects.create(
+            name='Adj-Li', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%', accounting_category=self.ac,
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _estimate(self, number):
+        return Estimate.objects.create(job=self.job, estimate_number=number, version=1)
+
+    # ── EstimateLineItem ─────────────────────────────────────────
+
+    def test_bare_estimate_hand_line_no_ac_is_flagged(self):
+        estimate = self._estimate('EST-VLC-001')
+        li = EstimateLineItem.objects.create(estimate=estimate, description='Bare hand line')
+        output = self._run()
+        self.assertIn(f'EstimateLineItem {li.pk}', output)
+        self.assertIn('hand line', output)
+        self.assertIn('has no accounting_category', output)
+
+    def test_estimate_hand_line_with_ac_not_flagged(self):
+        estimate = self._estimate('EST-VLC-002')
+        li = EstimateLineItem.objects.create(
+            estimate=estimate, description='Has AC', accounting_category=self.ac,
+        )
+        output = self._run()
+        self.assertNotIn(f'EstimateLineItem {li.pk}', output)
+
+    def test_estimate_atom_backed_line_null_ac_not_flagged(self):
+        """Phase 3: a null-AC task atom legitimately collapses the line's
+        category to None — not a hand line, exempt."""
+        estimate = self._estimate('EST-VLC-003')
+        li = EstimateLineItem.objects.create(estimate=estimate, description='Atom-backed')
+        task = Task.objects.create(name='T', job=self.job, **_task_scheme_fields(self.rs))
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+        output = self._run()
+        self.assertNotIn(f'EstimateLineItem {li.pk}', output)
+
+    def test_estimate_adjustment_line_null_ac_not_flagged(self):
+        estimate = self._estimate('EST-VLC-004')
+        li = EstimateLineItem.objects.create(
+            estimate=estimate, description='Adjustment',
+            adjustment_service=self.adj_rs, adjustment_percent=Decimal('10.00'),
+        )
+        output = self._run()
+        self.assertNotIn(f'EstimateLineItem {li.pk}', output)
+
+    # ── ChangeOrderLineItem ──────────────────────────────────────
+
+    def _co(self, estimate, number):
+        return ChangeOrder.objects.create(
+            job=self.job, estimate=estimate, change_order_number=number,
+        )
+
+    def test_bare_co_add_line_no_ac_is_flagged(self):
+        estimate = self._estimate('EST-VLC-005')
+        co = self._co(estimate, 'CO-VLC-001')
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Bare add',
+        )
+        output = self._run()
+        self.assertIn(f'ChangeOrderLineItem {li.pk}', output)
+        self.assertIn('bare ADD line', output)
+
+    def test_co_add_line_with_ac_not_flagged(self):
+        estimate = self._estimate('EST-VLC-006')
+        co = self._co(estimate, 'CO-VLC-002')
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Has AC', accounting_category=self.ac,
+        )
+        output = self._run()
+        self.assertNotIn(f'ChangeOrderLineItem {li.pk}', output)
+
+    def test_co_add_line_atom_backed_null_ac_not_flagged(self):
+        estimate = self._estimate('EST-VLC-007')
+        co = self._co(estimate, 'CO-VLC-003')
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Atom-backed add',
+        )
+        task = Task.objects.create(name='CO T', job=self.job, **_task_scheme_fields(self.rs))
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=li,
+            source_type=ChangeOrderLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+        output = self._run()
+        self.assertNotIn(f'ChangeOrderLineItem {li.pk}', output)
+
+    def test_co_remove_line_null_ac_not_flagged(self):
+        """assert_all_bare_add_lines_have_ac only ever inspects action=ADD
+        lines — a remove line is out of scope for this check too."""
+        estimate = self._estimate('EST-VLC-008')
+        co = self._co(estimate, 'CO-VLC-004')
+        target = EstimateLineItem.objects.create(
+            estimate=estimate, description='Target', accounting_category=self.ac,
+        )
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_REMOVE,
+            target_line_item=target, description='Remove',
+        )
+        output = self._run()
+        self.assertNotIn(f'ChangeOrderLineItem {li.pk}', output)
+
+    # ── InvoiceLineItem ──────────────────────────────────────────
+
+    def test_draft_invoice_bare_line_null_ac_not_flagged(self):
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-001')
+        li = InvoiceLineItem.objects.create(invoice=invoice, description='Hand line')
+        output = self._run()
+        self.assertNotIn(f'InvoiceLineItem {li.pk}', output)
+
+    def test_cancelled_invoice_bare_line_null_ac_not_flagged(self):
+        """InvoiceService.cancel routes draft -> cancelled via Invoice.save(),
+        never through the send-time categorization gate."""
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-002')
+        li = InvoiceLineItem.objects.create(invoice=invoice, description='Hand line')
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_CANCELLED)
+        output = self._run()
+        self.assertNotIn(f'InvoiceLineItem {li.pk}', output)
+
+    def test_open_invoice_bare_line_null_ac_is_flagged(self):
+        """Open is only reachable via send_invoice, which asserts every
+        line is categorized first — a null survivor here is a gate bypass."""
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-003')
+        li = InvoiceLineItem.objects.create(invoice=invoice, description='Hand line')
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_OPEN)
+        output = self._run()
+        self.assertIn(f'InvoiceLineItem {li.pk}', output)
+        self.assertIn('past the send-time categorization gate', output)
+
+    def test_open_invoice_line_with_ac_not_flagged(self):
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-004')
+        li = InvoiceLineItem.objects.create(
+            invoice=invoice, description='Has AC', accounting_category=self.ac,
+        )
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_OPEN)
+        output = self._run()
+        self.assertNotIn(f'InvoiceLineItem {li.pk}', output)
+
+    def test_open_invoice_adjustment_line_null_ac_is_flagged(self):
+        """The send gate applies no adjustment exemption (unlike
+        InvoiceService._agreement_category_id's pre-send stamping
+        exemption) — post-gate, an adjustment line must be categorized
+        too, so this check applies no exemption either."""
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-005')
+        li = InvoiceLineItem.objects.create(
+            invoice=invoice, description='Adjustment',
+            adjustment_service=self.adj_rs, adjustment_percent=Decimal('10.00'),
+        )
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_OPEN)
+        output = self._run()
+        self.assertIn(f'InvoiceLineItem {li.pk}', output)
+
+    def test_paid_invoice_bare_line_null_ac_is_flagged(self):
+        """paid/partly-paid are only reachable from open (QBO polling), so
+        they inherit the same guarantee — checked too, not just open."""
+        invoice = Invoice.objects.create(job=self.job, invoice_number='INV-VLC-006')
+        li = InvoiceLineItem.objects.create(invoice=invoice, description='Hand line')
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_PAID)
+        output = self._run()
+        self.assertIn(f'InvoiceLineItem {li.pk}', output)
+
+
+class ValidateDataPOReconciliationTest(TestCase):
+    """Tests for the PO reconciliation belt-checks added to
+    check_purchase_orders() (outsourced-work port, Task 4; ported from
+    feature/fees 544a4449/21c39b73):
+
+    - invoice_only line carrying receiving data (qty_received/received_by/
+      received_date/qty_cancelled) = ERROR. invoice_only lines are excluded
+      from receiving flows entirely by PurchaseOrderReceivingService
+      (including cancel_line_item); any receiving data on one can only
+      arise via a bypass — e.g. fixture loading — planted directly here.
+    - final_price set on a line while the PO is not reconciled = WARN
+      (stale partial entry — final_price is normally only ever set inside
+      PurchaseOrderService.reconcile(), which always sets
+      PurchaseOrder.reconciled=True in the same transaction).
+
+    NOTE: fees' third check here (task link pointing at a subtask) is
+    dropped — subtasks don't exist on this branch, and check_tasks()
+    already flags any non-NULL Task.parent_task globally.
+    """
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(name='POVal', code='POVAL')
+        self.vendor_contact = Contact.objects.create(
+            first_name='PO', last_name='Vendor', email='po-val@test.com',
+        )
+        self.vendor = Business.objects.create(
+            business_name='PO Val Vendor Co', default_contact=self.vendor_contact,
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _issued_po(self):
+        return PurchaseOrder.objects.create(
+            business=self.vendor, status=PurchaseOrder.STATUS_ISSUED,
+        )
+
+    def _line(self, po, **kwargs):
+        defaults = dict(
+            purchase_order=po, accounting_category=self.cat,
+            qty=Decimal('1'), price=Decimal('10.00'),
+        )
+        defaults.update(kwargs)
+        return PurchaseOrderLineItem.objects.create(**defaults)
+
+    # ── invoice_only + receiving data ────────────────────────────
+
+    def test_invoice_only_line_with_qty_received_is_error(self):
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, qty_received=Decimal('1.00'))
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
+    def test_invoice_only_line_with_received_by_is_error(self):
+        user = User.objects.create_user(username='povalworker', password='x')
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, received_by=user)
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
+    def test_invoice_only_line_with_received_date_is_error(self):
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, received_date=timezone.now())
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
+    def test_invoice_only_line_with_qty_cancelled_is_error(self):
+        po = self._issued_po()
+        li = self._line(po, invoice_only=True, qty_cancelled=Decimal('1.00'))
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[ERROR]', line)
+        self.assertIn('invoice_only', line)
+
+    def test_invoice_only_line_without_receiving_data_not_flagged(self):
+        po = self._issued_po()
+        self._line(po, invoice_only=True)
+        output = self._run()
+        self.assertNotIn('invoice_only line has receiving data', output)
+
+    def test_ordinary_line_with_receiving_data_not_flagged(self):
+        po = self._issued_po()
+        self._line(po, invoice_only=False, qty_received=Decimal('1.00'))
+        output = self._run()
+        self.assertNotIn('invoice_only line has receiving data', output)
+
+    # ── final_price on an unreconciled PO ────────────────────────
+
+    def test_final_price_on_unreconciled_po_is_warned(self):
+        po = self._issued_po()
+        li = self._line(po, final_price=Decimal('12.00'))
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if f'line {li.line_number}' in l and str(po.po_number) in l)
+        self.assertIn('[WARN]', line)
+        self.assertIn('final_price', line)
+        self.assertIn('not reconciled', line)
+
+    def test_final_price_on_reconciled_po_not_flagged(self):
+        po = self._issued_po()
+        li = self._line(po, price=Decimal('10.00'))
+        PurchaseOrderService.reconcile(
+            po.pk, bill_total=Decimal('12.00'),
+            line_finals={li.pk: Decimal('12.00')},
+        )
+        output = self._run()
+        self.assertNotIn('final_price is set but PO is not reconciled', output)
+
+    def test_no_final_price_on_unreconciled_po_not_flagged(self):
+        po = self._issued_po()
+        self._line(po)
+        output = self._run()
+        self.assertNotIn('final_price is set but PO is not reconciled', output)

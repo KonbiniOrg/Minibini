@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
@@ -62,6 +62,31 @@ describe('LineItemModal', () => {
 
     expect(api.patch).toHaveBeenCalledWith('/api/estimates/7/line-items/3/', {
       description: 'New', is_comment: false, qty: 2, units: 'none', price: 4, accounting_category: 42,
+    });
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('edit mode opens an existing comment line in comment mode and re-saves without corrupting it (regression guard — this surface passes the full item through, unlike CO)', async () => {
+    const onSaved = vi.fn();
+    const item = {
+      line_item_id: 9, description: 'See attached spec sheet', qty: '0', units: 'none', price: '0',
+      accounting_category: null, is_comment: true,
+    };
+    const { getByLabelText, getByRole, queryByLabelText } = render(LineItemModal, {
+      props: {
+        open: true, mode: 'edit', apiBase: '/api/estimates/7', item,
+        onSaved, categories: SAMPLE_CATEGORIES,
+      },
+    });
+    expect(getByLabelText(/Comment line/)).toBeChecked();
+    expect(queryByLabelText(/Quantity/)).not.toBeInTheDocument();
+    expect(queryByLabelText(/Accounting Category/)).not.toBeInTheDocument();
+
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(api.patch).toHaveBeenCalledWith('/api/estimates/7/line-items/9/', {
+      description: 'See attached spec sheet', is_comment: true,
+      qty: '0', units: 'none', price: '0', accounting_category: null,
     });
     expect(onSaved).toHaveBeenCalled();
   });
@@ -153,6 +178,22 @@ describe('LineItemModal', () => {
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(await findByRole('alert')).toHaveTextContent('Estimate is not editable.');
+  });
+
+  it('omits an is_fallback category from the Accounting Category picker', async () => {
+    const categoriesWithFallback = [
+      ...SAMPLE_CATEGORIES,
+      { id: 13, code: 'FBK', name: 'Fallback', is_fallback: true },
+    ];
+    const { getByLabelText, queryByRole } = render(LineItemModal, {
+      props: {
+        open: true, mode: 'create', apiBase: '/api/estimates/7',
+        categories: categoriesWithFallback,
+      },
+    });
+    const select = getByLabelText(/Accounting Category/);
+    expect(within(select).getByRole('option', { name: 'LAB - Labor' })).toBeInTheDocument();
+    expect(within(select).queryByRole('option', { name: 'FBK - Fallback' })).not.toBeInTheDocument();
   });
 
   it('creates a comment line without requiring an accounting category', async () => {

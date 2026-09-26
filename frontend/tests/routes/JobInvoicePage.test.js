@@ -7,7 +7,7 @@ import { api } from '@/lib/api.js';
 import { getJobWs, rememberSection } from '@/stores/jobWorkspace.js';
 import JobInvoicePage from '@/routes/jobs/JobInvoicePage.svelte';
 
-const job = { job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress', contact: null, can_manage: true, tasks: [], materials: [], fees: [] };
+const job = { job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress', contact: null, can_manage: true, tasks: [], materials: [] };
 
 function inv(id, created, status = 'draft') {
   return {

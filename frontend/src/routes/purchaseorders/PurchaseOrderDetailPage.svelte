@@ -1,5 +1,6 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
   import { showError, showSuccess } from '../../stores/messages.js';
   import { orderPrefillQty } from '../../lib/materials.js';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
@@ -8,6 +9,8 @@
   import LineItemForm from '../../components/purchaseorders/LineItemForm.svelte';
   import ReceiveItemsForm from '../../components/purchaseorders/ReceiveItemsForm.svelte';
   import MaterialSeverDialog from '../../components/purchaseorders/MaterialSeverDialog.svelte';
+  import ReconciliationSection from '../../components/purchaseorders/ReconciliationSection.svelte';
+  import RatePromptDialog from '../../components/purchaseorders/RatePromptDialog.svelte';
   import HistoryPanel from '../../components/HistoryPanel.svelte';
 
   const { params = {} } = $props();
@@ -21,6 +24,18 @@
   let showReceiveForm = $state(false);
   let busy = $state(false);
   let severPrompt = $state(null); // { items, onSubmit } when showing
+  let reconcileFormError = $state('');
+  let reconcileFieldErrs = $state({});
+  let ratePrompts = $state(null); // rate_prompts array from the last reconcile response, or null
+  let ratePromptsMarkupApplied = $state(true); // markup_applied from that same response
+  // Reconcile's success toast used to fire in the same tick as opening the
+  // rate-prompt dialog, so the toast (no auto-dismiss, click-intercepting)
+  // sat on top of the modal. When a reconcile response carries prompts,
+  // the toast text is stashed here instead of shown immediately, and fired
+  // from the dialog's onClose below -- so it's shown either right away
+  // (no prompts) or right after the dialog is dismissed (prompts present),
+  // never underneath it.
+  let pendingReconcileSuccessMessage = $state(null);
 
   // Prefill state when navigating in with ?prefill_material / ?prefill_inventory_item
   // (+ optional ?default_job). The neutral `prefilledLine` is what LineItemForm
@@ -357,6 +372,43 @@
     }
   }
 
+  async function handleReconcile(payload) {
+    reconcileFormError = '';
+    reconcileFieldErrs = {};
+    busy = true;
+    // Capture BEFORE reload() — reload() replaces `po` with the just-saved
+    // (always-reconciled) state, so reading po.reconciled after it would
+    // always say "updated" even on the very first save.
+    const wasReconciled = po.reconciled;
+    try {
+      const data = await api.post(`/api/purchase-orders/${po.po_id}/reconcile/`, payload);
+      await reload();
+      const successMessage = wasReconciled ? 'Reconciliation updated.' : 'Purchase order reconciled.';
+      // rate_prompts are money-equivalent suggestions — the dialog itself
+      // PATCHes tasks through the same money-gated path, so only offer it
+      // to users who can actually act on it.
+      if (canManageFinancials && data.rate_prompts && data.rate_prompts.length) {
+        ratePrompts = data.rate_prompts;
+        ratePromptsMarkupApplied = data.markup_applied;
+        // Defer the toast until the dialog closes (see declaration above)
+        // instead of showing it now, on top of the dialog we're about to open.
+        pendingReconcileSuccessMessage = successMessage;
+      } else {
+        showSuccess(successMessage);
+      }
+    } catch (e) {
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
+      } else {
+        reconcileFormError = t.message;
+        reconcileFieldErrs = t.fields;
+      }
+    } finally {
+      busy = false;
+    }
+  }
+
   async function handleAddNote(text) {
     try {
       await api.post(`/api/purchase-orders/${params.id}/notes/`, { text });
@@ -404,6 +456,28 @@
     />
   {/if}
 
+  {#key `${po.po_id}:${po.reconciled_date ?? ''}`}
+    <!-- ReconciliationSection mount-seeds its editable state from `po`
+         once (by design — see the component's own comment). A successful
+         reconcile+reload must force a fresh mount so the section re-seeds
+         from the just-reloaded server state: freshly-appended invoice-only
+         lines pick up their real line_item_id (so a later Remove shows the
+         persisted-removal notice, and a later save updates them in place
+         instead of delete-recreating them). reconciled_date changes on
+         every save (always re-set to now()), so keying on it (plus po_id,
+         for navigating between two never-reconciled POs) reliably remounts
+         exactly when the server state actually moved. -->
+    <ReconciliationSection
+      {po}
+      {canManageFinancials}
+      {categories}
+      busy={busy}
+      errors={reconcileFieldErrs}
+      formError={reconcileFormError}
+      onReconcile={handleReconcile}
+    />
+  {/key}
+
   {#if canManageFinancials && po.status === 'draft'}
     <p>
       {#if showAddLineItem}
@@ -432,5 +506,19 @@
     items={severPrompt.items}
     onSubmit={severPrompt.onSubmit}
     onCancel={() => { severPrompt = null; }}
+  />
+{/if}
+
+{#if ratePrompts}
+  <RatePromptDialog
+    prompts={ratePrompts}
+    markupApplied={ratePromptsMarkupApplied}
+    onClose={() => {
+      ratePrompts = null;
+      if (pendingReconcileSuccessMessage) {
+        showSuccess(pendingReconcileSuccessMessage);
+        pendingReconcileSuccessMessage = null;
+      }
+    }}
   />
 {/if}

@@ -37,10 +37,12 @@ class GetSourcePoolTest(TestCase):
         )
 
         # Task atom with billing fields (no separate PlanCharge needed)
-        self.pt = Task.objects.create(
+        self.pt = Task(
             job=self.job, name='Setup',
-            rate_scheme=self.scheme, est_qty=Decimal('2'),
+            est_qty=Decimal('2'),
         )
+        self.pt.stamp_from_scheme(self.scheme)
+        self.pt.save()
 
         # Material atom (task-less)
         self.pm = Material.objects.create(
@@ -52,6 +54,23 @@ class GetSourcePoolTest(TestCase):
             job=self.job, estimate_number=self.job.job_number, version=1,
             status=Estimate.STATUS_DRAFT,
         )
+
+    def test_pool_tasks_follow_sort_order_not_pk(self):
+        # RM 2026-08-17: the estimate surface's pool must list tasks in the
+        # task area's order (sort_order), not creation/PK order. Create two
+        # more tasks, then invert their sort_order relative to creation.
+        t2 = Task(job=self.job, name='Zeta', est_qty=Decimal('1'))
+        t2.stamp_from_scheme(self.scheme)
+        t2.save()
+        t3 = Task(job=self.job, name='Alpha', est_qty=Decimal('1'))
+        t3.stamp_from_scheme(self.scheme)
+        t3.save()
+        for task, order in ((self.pt, 2), (t2, 3), (t3, 1)):
+            task.sort_order = order
+            task.save()
+        pool = EstimateWizardService.get_source_pool(self.estimate)
+        task_ids = [a['id'] for a in pool['atoms'] if a['type'] == 'task']
+        self.assertEqual(task_ids, [t3.pk, self.pt.pk, t2.pk])
 
     def test_pool_has_task_and_material_atoms(self):
         pool = EstimateWizardService.get_source_pool(self.estimate)
@@ -95,6 +114,64 @@ class GetSourcePoolTest(TestCase):
         self.assertEqual(states[('task', self.pt.pk)], 'claimed_by_current')
         self.assertEqual(states[('material', self.pm.pk)], 'available')
 
+    def test_co_claimed_atom_shows_as_claimed_by_other(self):
+        """Symmetric cross-lens fix (Task 7): an atom claimed by a job's
+        ChangeOrderLineItemSource row is off-limits to a *different*
+        estimate too — a CO add line is a promise in progress, same as
+        another estimate's line."""
+        from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, ChangeOrderLineItemSource
+        co_estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-CO-BASE', status=Estimate.STATUS_ACCEPTED,
+        )
+        co = ChangeOrder.objects.create(job=self.job, estimate=co_estimate)
+        co_li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='CO line', qty=Decimal('1'), price=Decimal('10.00'),
+            accounting_category=self.cat,
+        )
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=co_li,
+            source_type=ChangeOrderLineItemSource.SOURCE_MATERIAL,
+            source_pk=self.pm.pk,
+        )
+        pool = EstimateWizardService.get_source_pool(self.estimate)
+        entry = next(a for a in pool['atoms'] if a['type'] == 'material' and a['id'] == self.pm.pk)
+        self.assertEqual(entry['state'], 'claimed_by_other')
+        self.assertEqual(entry['claiming_change_order_number'], co.change_order_number)
+        self.assertIsNone(entry['claiming_estimate_number'])
+
+    def test_current_estimate_claim_wins_over_a_co_claim_on_the_same_atom(self):
+        """Defense-in-depth: if the estimate's own line already claims an
+        atom, a (should-be-impossible) CO-lens row on the same atom must not
+        downgrade it from claimed_by_current."""
+        from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, ChangeOrderLineItemSource
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, qty=Decimal('1'), units='each',
+            price=Decimal('200'), description='', accounting_category=self.cat,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=self.pt.pk,
+        )
+        co_estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-CO-BASE-2', status=Estimate.STATUS_ACCEPTED,
+        )
+        co = ChangeOrder.objects.create(job=self.job, estimate=co_estimate)
+        co_li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='CO line', qty=Decimal('1'), price=Decimal('10.00'),
+            accounting_category=self.cat,
+        )
+        ChangeOrderLineItemSource.objects.create(
+            change_order_line_item=co_li,
+            source_type=ChangeOrderLineItemSource.SOURCE_TASK,
+            source_pk=self.pt.pk,
+        )
+        pool = EstimateWizardService.get_source_pool(self.estimate)
+        entry = next(a for a in pool['atoms'] if a['type'] == 'task' and a['id'] == self.pt.pk)
+        self.assertEqual(entry['state'], 'claimed_by_current')
+
     def test_source_pool_includes_tasks_without_explicit_charge_creation(self):
         """Bug regression: Tasks should appear in the source pool even when
         no separate PlanCharge POST has fired — the billing fields are on the
@@ -104,10 +181,12 @@ class GetSourcePoolTest(TestCase):
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
-        pt = Task.objects.create(
+        pt = Task(
             job=self.job, name='Inline Task',
-            rate_scheme=scheme, est_qty=Decimal('3.0'),
+            est_qty=Decimal('3.0'),
         )
+        pt.stamp_from_scheme(scheme)
+        pt.save()
 
         pool = EstimateWizardService.get_source_pool(self.estimate)
 
@@ -134,10 +213,12 @@ class AddAtomsToNewLineItemTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt = Task.objects.create(
+        self.pt = Task(
             job=self.job, name='Setup',
-            rate_scheme=self.scheme, est_qty=Decimal('2'),
+            est_qty=Decimal('2'),
         )
+        self.pt.stamp_from_scheme(self.scheme)
+        self.pt.save()
         self.pm = Material.objects.create(
             job=self.job, description='steel', quantity=Decimal('3'),
             sell_price=Decimal('5'), accounting_category=self.cat2,
@@ -183,6 +264,32 @@ class AddAtomsToNewLineItemTest(TestCase):
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertIsNone(li.accounting_category)
 
+    def test_single_null_category_task_atom_line_is_null_and_serializes(self):
+        """Phase 3 Task 4: a task's own accounting_category can now be null
+        (cleared via PATCH — see TaskSerializer). A line composed from a
+        single such atom must land with a null accounting_category too
+        (_atom_category returns None, `categories = {None}` collapses to
+        `category = None`, same code path as today's mixed-category case —
+        no new branch needed), and neither the estimate-line serializer nor
+        `derive_estimate_backing` may crash rendering it — the estimate/CO
+        side must simply tolerate a null-AC line (Task 5 owns invoice-side
+        fallback stamping, out of scope here)."""
+        self.pt.accounting_category = None
+        self.pt.save()
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertIsNone(li.accounting_category)
+
+        from apps.api.estimates.serializers import (
+            EstimateLineItemSerializer, derive_estimate_backing,
+        )
+        data = EstimateLineItemSerializer(li).data
+        self.assertIsNone(data['accounting_category'])
+        # In-sync single-task-atom line -> 'planned_work', same
+        # classification a categorized task's line would get; nulling the
+        # AC doesn't change the backing classification.
+        self.assertEqual(derive_estimate_backing(li), 'planned_work')
+
     def test_double_claim_raises(self):
         atoms = [{'type': 'task', 'id': self.pt.pk}]
         EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
@@ -223,6 +330,137 @@ class AddAtomsToNewLineItemTest(TestCase):
             EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
 
 
+class AddAtomsToNewLineItemOverridesTest(TestCase):
+    """Task 8: bundle-modal authoring overrides applied over each derivation
+    shape (single-atom copy, multi-atom uniform bundle, multi-atom
+    fallback), partial merge, unknown-key rejection, and unchanged
+    claims/draft-gating."""
+
+    def setUp(self):
+        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
+        Configuration.objects.create(key='estimate_counter', value='0')
+        Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
+        self.cat = AccountingCategory.objects.create(name='Labor', code='LAB', is_active=True)
+        self.cat2 = AccountingCategory.objects.create(name='Materials', code='MAT', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.pt = Task(job=self.job, name='Setup', est_qty=Decimal('2'))
+        self.pt.stamp_from_scheme(self.scheme)
+        self.pt.save()
+        self.pt2 = Task(job=self.job, name='Cutting', est_qty=Decimal('1'))
+        self.pt2.stamp_from_scheme(self.scheme)
+        self.pt2.save()
+        self.pm = Material.objects.create(
+            job=self.job, description='steel', quantity=Decimal('3'),
+            sell_price=Decimal('5'), accounting_category=self.cat2,
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+
+    def test_overrides_apply_over_single_atom_derivation(self):
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, atoms,
+            overrides={'description': 'Custom desc', 'qty': Decimal('4'),
+                       'units': 'ea', 'price': Decimal('50.00')},
+        )
+        self.assertEqual(li.description, 'Custom desc')
+        self.assertEqual(li.qty, Decimal('4'))
+        self.assertEqual(li.units, 'ea')
+        self.assertEqual(li.price, Decimal('50.00'))
+        # Sources are unaffected by authoring overrides.
+        self.assertEqual(li.sources.count(), 1)
+
+    def test_overrides_apply_over_multi_atom_uniform_bundle(self):
+        # pt + pt2 share the same scheme -> uniform bundle summary
+        # (qty=3, price=100, units='hour') absent overrides.
+        atoms = [
+            {'type': 'task', 'id': self.pt.pk},
+            {'type': 'task', 'id': self.pt2.pk},
+        ]
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, atoms,
+            overrides={'qty': Decimal('1'), 'price': Decimal('300.00')},
+        )
+        self.assertEqual(li.qty, Decimal('1'))
+        self.assertEqual(li.price, Decimal('300.00'))
+        # units left at the derived value ('hour') since not overridden.
+        self.assertEqual(li.units, 'hour')
+        self.assertEqual(li.sources.count(), 2)
+
+    def test_overrides_apply_over_multi_atom_fallback(self):
+        # task + material -> fallback (units='none', qty=1, price=total).
+        atoms = [
+            {'type': 'task', 'id': self.pt.pk},
+            {'type': 'material', 'id': self.pm.pk},
+        ]
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, atoms,
+            overrides={'description': 'Bundle', 'qty': Decimal('2'),
+                       'units': 'set', 'price': Decimal('107.50')},
+        )
+        self.assertEqual(li.description, 'Bundle')
+        self.assertEqual(li.qty, Decimal('2'))
+        self.assertEqual(li.units, 'set')
+        self.assertEqual(li.price, Decimal('107.50'))
+
+    def test_partial_override_merges_onto_derivation(self):
+        # Only qty overridden; description/units/price keep the single-atom
+        # derived defaults.
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, atoms, overrides={'qty': Decimal('7')},
+        )
+        self.assertEqual(li.qty, Decimal('7'))
+        self.assertEqual(li.description, self.pt.name)
+        self.assertEqual(li.units, 'hour')
+        self.assertEqual(li.price, Decimal('100'))
+
+    def test_no_overrides_key_behaves_exactly_as_before(self):
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertEqual(li.qty, Decimal('2'))
+        self.assertEqual(li.price, Decimal('100'))
+
+    def test_unknown_override_key_raises_validation_error(self):
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateWizardService.add_atoms_to_new_line_item(
+                self.estimate, atoms, overrides={'bogus_field': 'x'},
+            )
+        self.assertIn('bogus_field', str(ctx.exception))
+        # And nothing was created.
+        self.assertEqual(EstimateLineItem.objects.filter(estimate=self.estimate).count(), 0)
+
+    def test_claim_conflict_still_raised_with_overrides(self):
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, atoms, overrides={'qty': Decimal('9')},
+        )
+        with self.assertRaises(EstimateClaimConflict):
+            EstimateWizardService.add_atoms_to_new_line_item(
+                self.estimate, atoms, overrides={'qty': Decimal('9')},
+            )
+
+    def test_draft_gating_still_enforced_with_overrides(self):
+        Estimate.objects.filter(pk=self.estimate.pk).update(status=Estimate.STATUS_OPEN)
+        self.estimate.refresh_from_db()
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
+        with self.assertRaises(ValidationError):
+            EstimateWizardService.add_atoms_to_new_line_item(
+                self.estimate, atoms, overrides={'qty': Decimal('9')},
+            )
+
+
 class AddAtomsToExistingLineItemTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
@@ -238,14 +476,18 @@ class AddAtomsToExistingLineItemTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt1 = Task.objects.create(
+        self.pt1 = Task(
             job=self.job, name='A',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
-        self.pt2 = Task.objects.create(
+        self.pt1.stamp_from_scheme(self.scheme)
+        self.pt1.save()
+        self.pt2 = Task(
             job=self.job, name='B',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
+        self.pt2.stamp_from_scheme(self.scheme)
+        self.pt2.save()
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number=self.job.job_number, version=1,
             status=Estimate.STATUS_DRAFT,
@@ -303,14 +545,18 @@ class RemoveAtomsFromLineItemTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt1 = Task.objects.create(
+        self.pt1 = Task(
             job=self.job, name='A',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
-        self.pt2 = Task.objects.create(
+        self.pt1.stamp_from_scheme(self.scheme)
+        self.pt1.save()
+        self.pt2 = Task(
             job=self.job, name='B',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
+        self.pt2.stamp_from_scheme(self.scheme)
+        self.pt2.save()
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number=self.job.job_number, version=1,
             status=Estimate.STATUS_DRAFT,
@@ -397,14 +643,18 @@ class RemoveAtomsFromLineItemTest(TestCase):
         """When all atoms are removed and the line item auto-deletes, the
         remaining siblings must be renumbered to close the gap."""
         # self.li is line 1 (from setUp). Add two more line items so we have 1, 2, 3.
-        pt3 = Task.objects.create(
+        pt3 = Task(
             job=self.job, name='C',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
-        pt4 = Task.objects.create(
+        pt3.stamp_from_scheme(self.scheme)
+        pt3.save()
+        pt4 = Task(
             job=self.job, name='D',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
+        pt4.stamp_from_scheme(self.scheme)
+        pt4.save()
         li2 = EstimateWizardService.add_atoms_to_new_line_item(
             self.estimate, [{'type': 'task', 'id': pt3.pk}],
         )
@@ -452,10 +702,12 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
             name='Hourly-d', algorithm='entered_qty', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.cat,
         )
-        self.pt = Task.objects.create(
+        self.pt = Task(
             job=self.job, name='Cut sign blank',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
+        self.pt.stamp_from_scheme(self.scheme)
+        self.pt.save()
         self.pm = Material.objects.create(
             job=self.job, description='3/4" plywood',
             quantity=Decimal('2'), unit_cost=Decimal('5'),

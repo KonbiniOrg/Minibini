@@ -18,10 +18,10 @@ import TaskDetailPage from '@/routes/jobs/TaskDetailPage.svelte';
 // gates its edit-task / assign affordances on task.can_manage alone (not the
 // global atom). These tests set the global atom to false (worker) to prove the
 // per-object flag is what drives the affordances.
-function mockApi(taskOverrides = {}) {
+function mockApi(taskOverrides = {}, categories = []) {
   const task = {
     task_id: 7, name: 'Mill', status: 'pending', job: { id: 3 },
-    assignee_name: null, est_qty: '2', effective_rate: '25', scheme_unit_label: 'hr',
+    assignee_name: null, est_qty: '2', effective_rate: '25', unit_label: 'hr',
     ...taskOverrides,
   };
   api.get.mockReset();
@@ -33,7 +33,7 @@ function mockApi(taskOverrides = {}) {
     }
     if (url.startsWith('/api/jobs/3/')) return Promise.resolve({ job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress' });
     if (url.startsWith('/api/bleps/')) return Promise.resolve([]);
-    if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
+    if (url.startsWith('/api/accounting-categories/')) return Promise.resolve(categories);
     if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
     if (url.startsWith('/api/contacts/')) return Promise.resolve({});
     return Promise.resolve([]);
@@ -48,6 +48,14 @@ beforeEach(() => {
 });
 
 describe('TaskDetailPage header', () => {
+  it('loads accounting categories from the unfiltered endpoint (no exclude_fallback param)', async () => {
+    mockApi({ status: 'in_progress' });
+    render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100');
+    });
+  });
+
   it('leads the title row with the task name and an activity pill', async () => {
     mockApi({ status: 'in_progress' });
     const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
@@ -58,18 +66,8 @@ describe('TaskDetailPage header', () => {
     expect(pill).toHaveTextContent('Ongoing');
   });
 
-  it('links to the parent task when this is a subtask', async () => {
-    mockApi({ parent_task: 4, parent_task_name: 'Build shelving unit' });
-    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    expect(getByText(/subtask of/)).toBeInTheDocument();
-    const parentLink = getByText('Build shelving unit');
-    expect(parentLink.tagName).toBe('A');
-    expect(parentLink.getAttribute('href')).toBe('/jobs/3/tasks/4');
-  });
-
-  it('shows no parent crumb on a top-level task', async () => {
-    mockApi({ parent_task: null, parent_task_name: null });
+  it('shows no parent crumb (tasks are one flat level)', async () => {
+    mockApi({});
     const { findByRole, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
     expect(queryByText(/subtask of/)).toBeNull();
@@ -147,9 +145,9 @@ describe('TaskDetailPage stat chips', () => {
     mockApi({
       status: 'in_progress', assignee_name: 'Dana',
       est_worker_time: '6:00:00', est_qty: '240',
-      scheme_name: 'CNC', scheme_algorithm: 'entered_qty',
-      scheme_unit_label: 'minute', actual_qty: '150',
-      effective_rate: '2.50', computed_charge: '375.00',
+      source_scheme_name: 'CNC', qty_source: 'entered_qty',
+      unit_label: 'minute', actual_qty: '150',
+      rate: '2.50', effective_rate: '2.50', computed_charge: '375.00',
     });
     const { findByRole, getByText, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
@@ -161,31 +159,53 @@ describe('TaskDetailPage stat chips', () => {
     expect(getByText(/240 minute/)).toBeInTheDocument();
     expect(getByText('Actual')).toBeInTheDocument();
     expect(getByText(/150 minute/)).toBeInTheDocument();
+    expect(getByText('Scheme')).toBeInTheDocument();
+    expect(getByText('CNC')).toBeInTheDocument();
     expect(getByText('Rate')).toBeInTheDocument();
     expect(getByText('$2.50/minute')).toBeInTheDocument();
     expect(getByText('Charge')).toBeInTheDocument();
     expect(getByText('$375.00')).toBeInTheDocument();
+    // Scheme is provenance, not itself a dollar amount — only Rate + Charge
+    // carry the .money class.
     expect(container.querySelectorAll('.stat-chip.money')).toHaveLength(2);
   });
 
-  it('suppresses the duplicate Est Qty chip when it restates the worker time (hour-unit scheme)', async () => {
+  it('shows the Scheme chip as a dash when the task has money but its source preset is gone', async () => {
+    // source_scheme is SET_NULL on preset delete — the task keeps its own
+    // stamped rate/unit_label (still the price of record), just loses the
+    // provenance name. Must render gracefully, not "null" or a crash.
+    mockApi({
+      status: 'pending', rate: '25', unit_label: 'hour', qty_source: 'elapsed_time',
+      source_scheme_name: null, effective_rate: '25',
+    });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const header = getByText('Scheme');
+    const chip = header.closest('.stat-chip');
+    expect(chip.querySelector('.stat-chip-body')).toHaveTextContent('—');
+  });
+
+  it('shows the Est Qty chip even when it restates the worker time (hour-unit scheme)', async () => {
+    // The old duplicate-suppression exception read as missing data (RM
+    // 2026-08-06) — hour-unit tasks show the chip like every other unit.
     mockApi({
       status: 'pending', est_worker_time: '2:00:00', est_qty: '2',
-      scheme_name: 'Milling', scheme_algorithm: 'elapsed_time',
-      scheme_unit_label: 'hour', effective_rate: '25',
+      source_scheme_name: 'Milling', qty_source: 'elapsed_time',
+      unit_label: 'hour', rate: '25', effective_rate: '25',
     });
-    const { findByRole, getByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
     expect(getByText('Est Time')).toBeInTheDocument();
     expect(getByText('2h 0m')).toBeInTheDocument();
-    expect(queryByText('Est Qty')).toBeNull();
+    expect(getByText('Est Qty')).toBeInTheDocument();
+    expect(getByText(/2 hour/)).toBeInTheDocument();
   });
 
   it('shows both Est Time and Est Qty chips for a legacy row where they diverge', async () => {
     mockApi({
       status: 'pending', est_worker_time: '2:00:00', est_qty: '3',
-      scheme_name: 'Milling', scheme_algorithm: 'elapsed_time',
-      scheme_unit_label: 'hour', effective_rate: '25',
+      source_scheme_name: 'Milling', qty_source: 'elapsed_time',
+      unit_label: 'hour', rate: '25', effective_rate: '25',
     });
     const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
@@ -194,10 +214,10 @@ describe('TaskDetailPage stat chips', () => {
     expect(getByText(/3 hour/)).toBeInTheDocument();
   });
 
-  it('the Actual chip shows the scheme unit label with no literal "hour" fallback', async () => {
+  it('the Actual chip shows the unit label with no literal "hour" fallback', async () => {
     mockApi({
-      status: 'in_progress', scheme_name: 'Milling', scheme_algorithm: 'elapsed_time',
-      scheme_unit_label: 'hour', actual_hours: '1.5', effective_rate: '25',
+      status: 'in_progress', source_scheme_name: 'Milling', qty_source: 'elapsed_time',
+      unit_label: 'hour', rate: '25', actual_hours: '1.5', effective_rate: '25',
     });
     const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
@@ -206,13 +226,40 @@ describe('TaskDetailPage stat chips', () => {
   });
 
   it('renders no money chips when the task has no rate scheme', async () => {
-    mockApi({ scheme_name: null, scheme_algorithm: null, effective_rate: null, scheme_unit_label: null, est_qty: null });
+    mockApi({ rate: null, qty_source: null, effective_rate: null, unit_label: null, source_scheme_name: null, est_qty: null });
     const { findByRole, queryByText, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
     expect(queryByText('Rate')).toBeNull();
     expect(queryByText('Charge')).toBeNull();
     expect(queryByText('Est Qty')).toBeNull();
+    expect(queryByText('Scheme')).toBeNull();
     expect(container.querySelectorAll('.stat-chip.money')).toHaveLength(0);
+  });
+
+  // Phase 3 Task 4: a task's own accounting_category can be null.
+  it('shows the accounting category name in a Category chip', async () => {
+    mockApi(
+      { accounting_category: 3 },
+      [{ id: 3, code: 'LAB', name: 'Labor' }, { id: 4, code: 'MAT', name: 'Materials' }],
+    );
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByText('Category')).toBeInTheDocument();
+    await waitFor(() => expect(getByText('LAB — Labor')).toBeInTheDocument());
+  });
+
+  it('renders a muted "uncategorized" Category chip, not blank, when the task has no accounting category', async () => {
+    mockApi(
+      { accounting_category: null },
+      [{ id: 3, code: 'LAB', name: 'Labor' }],
+    );
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const header = getByText('Category');
+    const chip = header.closest('.stat-chip');
+    const body = chip.querySelector('.stat-chip-body');
+    expect(body).toHaveTextContent('uncategorized');
+    expect(body.querySelector('.muted')).not.toBeNull();
   });
 
   it('opens the assign modal from the assignee name when can_manage', async () => {
@@ -278,16 +325,38 @@ describe('TaskDetailPage action band', () => {
   });
 });
 
+describe('TaskDetailPage linked purchase orders (fix 2b)', () => {
+  it('shows a Purchase Orders note linking to each PO when the task has linked PO lines', async () => {
+    mockApi({
+      linked_po_lines: [
+        { line_item_id: 1, po_id: 8, po_number: 'PO-0008', po_status: 'issued' },
+      ],
+    });
+    const { findByRole, getByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByRole('heading', { name: 'Purchase Orders' })).toBeInTheDocument();
+    const link = getByRole('link', { name: 'PO-0008' });
+    expect(link).toHaveAttribute('href', '#/purchase-orders/8');
+    expect(getByText('issued')).toBeInTheDocument();
+  });
+
+  it('hides the Purchase Orders section when the task has no linked PO lines', async () => {
+    mockApi({ linked_po_lines: [] });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('heading', { name: 'Purchase Orders' })).toBeNull();
+  });
+});
+
 describe('TaskDetailPage section order', () => {
-  it('runs Description → Subtasks → Materials → Work Sessions, with Add Entry available', async () => {
+  it('runs Description → Materials → Work Sessions, with Add Entry available', async () => {
     mockApi({ description: 'Cut the panels' });
     const { findByRole, getByText, getByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
     const headings = Array.from(container.querySelectorAll('h3')).map((h) => h.textContent);
     const idx = (t) => headings.findIndex((h) => h.includes(t));
     expect(idx('Description')).toBeGreaterThanOrEqual(0);
-    expect(idx('Description')).toBeLessThan(idx('Subtasks'));
-    expect(idx('Subtasks')).toBeLessThan(idx('Materials'));
+    expect(idx('Description')).toBeLessThan(idx('Materials'));
     expect(idx('Materials')).toBeLessThan(idx('Work Sessions'));
     expect(getByText('Cut the panels')).toBeInTheDocument();
     // Logging forgotten historical time stays possible from this page.
@@ -297,8 +366,8 @@ describe('TaskDetailPage section order', () => {
 
 describe('TaskDetailPage entered-qty add field', () => {
   const enteredQty = {
-    scheme_algorithm: 'entered_qty', scheme_name: 'Press',
-    scheme_unit_label: 'pcs', actual_qty: '9.00', status: 'in_progress',
+    qty_source: 'entered_qty', source_scheme_name: 'Press',
+    unit_label: 'pcs', actual_qty: '9.00', status: 'in_progress',
   };
 
   beforeEach(() => {
@@ -366,8 +435,8 @@ describe('TaskDetailPage prompt modals vs background refetch', () => {
     // blank the page ("Loading…") and remount TaskActions — that would
     // destroy any open prompt modal. Regression caught by driving the
     // real app; invariants documented in jobs-and-tasks §10.1a.
-    mockApi({ scheme_algorithm: 'entered_qty', scheme_name: 'Press',
-              scheme_unit_label: 'pcs', actual_qty: '9.00',
+    mockApi({ qty_source: 'entered_qty', source_scheme_name: 'Press',
+              unit_label: 'pcs', actual_qty: '9.00',
               status: 'in_progress' });
     api.post.mockReset();
     api.post.mockResolvedValue({ needs_actual_qty: true,
@@ -414,7 +483,7 @@ describe('TaskDetailPage does not refetch in a loop', () => {
 function mockApiWithJob(taskOverrides = {}, jobOverrides = {}, subtasks = []) {
   const task = {
     task_id: 7, name: 'Mill', status: 'pending', job: { id: 3 },
-    assignee_name: null, est_qty: '2', effective_rate: '25', scheme_unit_label: 'hr',
+    assignee_name: null, est_qty: '2', effective_rate: '25', unit_label: 'hr',
     ...taskOverrides,
   };
   api.get.mockReset();
@@ -451,38 +520,6 @@ describe('TaskDetailPage on-hold gating (B2)', () => {
   });
 });
 
-describe('TaskDetailPage subtask tree (A3/B3)', () => {
-  const subs = [
-    { task_id: 8, name: 'Sub A', status: 'pending', parent_task: 7 },
-    { task_id: 9, name: 'Sub B', status: 'pending', parent_task: 7 },
-  ];
-
-  it('offers no edit/del/cancel buttons on subtask rows', async () => {
-    mockApiWithJob({ can_manage: true }, {}, subs);
-    const { findByRole, findByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    await findByText('Sub A');
-    expect(queryByText('edit')).toBeNull();
-    expect(queryByText('del')).toBeNull();
-    expect(queryByText('cancel')).toBeNull();
-  });
-
-  it('reorders subtasks via arrows posting to the job reorder endpoint', async () => {
-    mockApiWithJob({ can_manage: true }, {}, subs);
-    api.post.mockReset();
-    api.post.mockResolvedValue({});
-    const { findByRole, findByText, queryAllByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    await findByText('Sub A');
-    const downArrows = queryAllByText('▼');
-    expect(downArrows.length).toBeGreaterThan(0);
-    await fireEvent.click(downArrows[0]);
-    expect(api.post).toHaveBeenCalledWith('/api/jobs/3/reorder-tasks/', {
-      task_id: 8, direction: 'down',
-    });
-  });
-});
-
 describe('TaskDetailPage can_edit gating (C1)', () => {
   it('hides Edit Task when can_edit is false', async () => {
     mockApiWithJob({ status: 'in_progress', can_manage: false, can_edit: false });
@@ -499,54 +536,12 @@ describe('TaskDetailPage can_edit gating (C1)', () => {
   });
 });
 
-describe('TaskDetailPage one-level subtask rule (B1)', () => {
-  it('hides Add Subtask on a subtask (one level only)', async () => {
-    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
-    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    expect(queryByRole('button', { name: /add subtask/i })).toBeNull();
-  });
-
-  it('offers Add Subtask on a top-level task', async () => {
-    mockApiWithJob({ parent_task: null });
-    const { findByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    expect(await findByRole('button', { name: /add subtask/i })).toBeInTheDocument();
-  });
-});
-
-describe('TaskDetailPage subtask section suppression (one-level rule)', () => {
-  it('shows no Subtasks section at all on a subtask', async () => {
-    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
-    const { findByRole, queryByRole, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    expect(queryByRole('heading', { name: /subtasks/i })).toBeNull();
-    expect(queryByText('No subtasks.')).toBeNull();
-  });
-
-  it('keeps the Subtasks section on a top-level task', async () => {
-    mockApiWithJob({ parent_task: null });
-    const { findByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    expect(await findByRole('heading', { name: /subtasks/i })).toBeInTheDocument();
-  });
-});
-
 describe('TaskDetailPage crumbs', () => {
   it('offers no task-list link — the job nav rail covers it', async () => {
     mockApiWithJob({ parent_task: null });
     const { findByRole, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findTitle(findByRole);
     expect(queryByText('task list')).toBeNull();
-  });
-
-  it('still links the parent from a subtask crumb', async () => {
-    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
-    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findTitle(findByRole);
-    const parentLink = getByText('Build shelving unit');
-    expect(parentLink.tagName).toBe('A');
-    expect(parentLink.getAttribute('href')).toBe('/jobs/3/tasks/4');
   });
 });
 
@@ -555,7 +550,7 @@ describe('TaskDetailPage materials use the shared task-list row (full action set
     const task = {
       task_id: 7, name: 'Mill', status: 'in_progress', job: { id: 3 },
       can_manage: true, assignee_name: null, est_qty: '2',
-      effective_rate: '25', scheme_unit_label: 'hr',
+      effective_rate: '25', unit_label: 'hr',
       ...taskOverrides,
     };
     api.get.mockReset();

@@ -62,33 +62,38 @@ def _in_progress_job(contact):
 
 def _pending_task(job, scheme):
     """Create a pending Task on the given job."""
-    return Task.objects.create(
+    task = Task(
         job=job,
         name='Test Task',
-        rate_scheme=scheme,
         status=Task.STATUS_PENDING,
     )
+    task.stamp_from_scheme(scheme)
+    task.save()
+    return task
 
 
 def _blocked_task(job, scheme):
     """Create a BLOCKED Task on the given job (in_progress → blocked transition)."""
-    task = Task.objects.create(
+    task = Task(
         job=job,
         name='Blocked Task',
-        rate_scheme=scheme,
         status=Task.STATUS_BLOCKED,
     )
+    task.stamp_from_scheme(scheme)
+    task.save()
     return task
 
 
 def _in_progress_task(job, scheme):
     """Create an IN_PROGRESS Task directly (no blep needed — direct DB state for guard tests)."""
-    return Task.objects.create(
+    task = Task(
         job=job,
         name='In Progress Task',
-        rate_scheme=scheme,
         status=Task.STATUS_IN_PROGRESS,
     )
+    task.stamp_from_scheme(scheme)
+    task.save()
+    return task
 
 
 def _material(job, task=None, ac=None):
@@ -286,16 +291,24 @@ class ReorderTasksOnHoldTest(OnHoldGuardBase):
 
     def test_reorder_tasks_blocked_on_on_hold_job(self):
         job = _on_hold_job(self.contact)
-        t1 = Task.objects.create(job=job, name='T1', rate_scheme=self.scheme, sort_order=1)
-        t2 = Task.objects.create(job=job, name='T2', rate_scheme=self.scheme, sort_order=2)
+        t1 = Task(job=job, name='T1', sort_order=1)
+        t1.stamp_from_scheme(self.scheme)
+        t1.save()
+        t2 = Task(job=job, name='T2', sort_order=2)
+        t2.stamp_from_scheme(self.scheme)
+        t2.save()
         with self.assertRaises(ValidationError) as ctx:
             TaskService.reorder_tasks(t1.pk, 'down')
         self.assertIn('on hold', str(ctx.exception).lower())
 
     def test_reorder_tasks_allowed_on_in_progress_job(self):
         job = _in_progress_job(self.contact)
-        t1 = Task.objects.create(job=job, name='T1', rate_scheme=self.scheme, sort_order=1)
-        t2 = Task.objects.create(job=job, name='T2', rate_scheme=self.scheme, sort_order=2)
+        t1 = Task(job=job, name='T1', sort_order=1)
+        t1.stamp_from_scheme(self.scheme)
+        t1.save()
+        t2 = Task(job=job, name='T2', sort_order=2)
+        t2.stamp_from_scheme(self.scheme)
+        t2.save()
         TaskService.reorder_tasks(t1.pk, 'down')
         t1.refresh_from_db()
         t2.refresh_from_db()

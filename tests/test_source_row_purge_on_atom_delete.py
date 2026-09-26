@@ -6,11 +6,11 @@ MaterialService.restock deleted the Material row — and the accepted estimate's
 EstimateLineItemSource kept pointing at the deleted pk, crashing
 EstimateLineItemSourceSerializer.get_description (unguarded resolve()).
 
-The invariant lives on the atom itself: Material.delete() / Fee.delete() /
-Task.delete() purge EstimateLineItemSource and ChangeOrderLineItemSource rows
-referencing the atom, so every deletion path (restock-to-zero, sever, fee
-delete, task delete, CO retirement) is covered. The serializer additionally
-tolerates a pre-existing dangling row (renders null) instead of 500ing.
+The invariant lives on the atom itself: Material.delete() / Task.delete()
+purge EstimateLineItemSource and ChangeOrderLineItemSource rows referencing
+the atom, so every deletion path (restock-to-zero, sever, task delete, CO
+retirement) is covered. The serializer additionally tolerates a pre-existing
+dangling row (renders null) instead of 500ing.
 """
 from decimal import Decimal
 
@@ -24,7 +24,7 @@ from apps.estimates.models import (
 )
 from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import MaterialService
-from apps.jobs.models import Fee, Job, RateScheme, Task
+from apps.jobs.models import Job, RateScheme, Task
 
 
 class AtomDeletePurgeBase(TestCase):
@@ -121,42 +121,6 @@ class MaterialDeletePurgesSourceRowsTest(AtomDeletePurgeBase):
             EstimateLineItemSource.objects.filter(pk=other_row.pk).exists())
 
 
-class FeeDeletePurgesSourceRowsTest(AtomDeletePurgeBase):
-
-    def test_delete_purges_estimate_source_row(self):
-        fee = Fee.objects.create(
-            job=self.job, description='fee', quantity=Decimal('1'),
-            unit_rate=Decimal('25.00'), accounting_category=self.cat,
-        )
-        self._claim(EstimateLineItemSource.SOURCE_FEE, fee.pk)
-        fee.delete()
-        self.assertFalse(self.line.sources.exists())
-
-    def test_delete_purges_invoice_source_row(self):
-        # FeeService.delete has no invoiced-guard, so the invoice lens must be
-        # purged too — same invariant, third table.
-        from apps.invoicing.models import (
-            Invoice, InvoiceLineItem, InvoiceLineItemSource,
-        )
-        fee = Fee.objects.create(
-            job=self.job, description='fee', quantity=Decimal('1'),
-            unit_rate=Decimal('25.00'), accounting_category=self.cat,
-        )
-        invoice = Invoice.objects.create(
-            job=self.job, invoice_number='INV-2026-0001')
-        inv_li = InvoiceLineItem.objects.create(
-            invoice=invoice, description='fee', qty=Decimal('1'),
-            price=Decimal('25.00'), accounting_category=self.cat,
-        )
-        InvoiceLineItemSource.objects.create(
-            invoice_line_item=inv_li,
-            source_type=InvoiceLineItemSource.SOURCE_FEE,
-            source_pk=fee.pk,
-        )
-        fee.delete()
-        self.assertFalse(inv_li.sources.exists())
-
-
 class TaskDeletePurgesSourceRowsTest(AtomDeletePurgeBase):
 
     def test_delete_purges_estimate_source_row(self):
@@ -164,10 +128,12 @@ class TaskDeletePurgesSourceRowsTest(AtomDeletePurgeBase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        task = Task.objects.create(
-            job=self.job, name='Cutting', rate_scheme=scheme,
+        task = Task(
+            job=self.job, name='Cutting',
             est_qty=Decimal('2'),
         )
+        task.stamp_from_scheme(scheme)
+        task.save()
         self._claim(EstimateLineItemSource.SOURCE_TASK, task.pk)
         task.delete()
         self.assertFalse(self.line.sources.exists())

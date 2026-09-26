@@ -130,33 +130,53 @@
     </span>
   {/if}
 {:else}
-  <input type="text" value={query} oninput={onInput} onfocus={onFocus}
-         onblur={onBlur} onkeydown={onKeydown} {disabled} {placeholder}
-         aria-autocomplete="list" aria-expanded={showResults}>
-  {#if showResults}
-    <ul class="sp-results" role="listbox" bind:this={listEl}>
-      {#if header}{@render header(close)}{/if}
-      {#if results.length}
-        {#each results as r, i}
-          <li role="option" aria-selected={i === highlighted}>
-            <button type="button" class:sp-highlighted={i === highlighted}
-                    onmousedown={() => pick(r)}>
-              {#if row}{@render row(r)}{:else}{rowLabel(r)}{/if}
-            </button>
-          </li>
-        {/each}
-        {#if total > results.length}
-          <li class="sp-more">showing {results.length} of {total} — keep typing to narrow</li>
+  <div class="sp-wrap">
+    <input type="text" value={query} oninput={onInput} onfocus={onFocus}
+           onblur={onBlur} onkeydown={onKeydown} {disabled} {placeholder}
+           aria-autocomplete="list" aria-expanded={showResults}>
+    {#if showResults}
+      <ul class="sp-results" role="listbox" bind:this={listEl}>
+        {#if header}{@render header(close)}{/if}
+        {#if results.length}
+          {#each results as r, i}
+            <li role="option" aria-selected={i === highlighted}>
+              <button type="button" class:sp-highlighted={i === highlighted}
+                      onmousedown={() => pick(r)}>
+                {#if row}{@render row(r)}{:else}{rowLabel(r)}{/if}
+              </button>
+            </li>
+          {/each}
+          {#if total > results.length}
+            <li class="sp-more">showing {results.length} of {total} — keep typing to narrow</li>
+          {/if}
+        {:else}
+          <li class="sp-empty">No matches.</li>
         {/if}
-      {:else}
-        <li class="sp-empty">No matches.</li>
-      {/if}
-    </ul>
-  {/if}
+      </ul>
+    {/if}
+  </div>
 {/if}
 
 <style>
-  .sp-results { position: absolute; background: white; border: 1px solid #ccc;
+  /* Root cause of "dropdown covers the input": .sp-results relies on
+     position:absolute with no explicit top/left, so its initial position
+     falls back to its CSS "static position" — where it would have landed
+     in normal flow. That static-position algorithm is defined relative to
+     the nearest POSITIONED ancestor, computed as if the box were still
+     in-flow — which is exactly right in a plain block parent (the <ul>
+     naturally sits below the preceding <input> sibling), but breaks the
+     moment the immediate parent is a flex or grid container (e.g.
+     TaskLinkPicker's `.task-link-picker { display: flex; flex-direction:
+     column }`): a flex/grid container positions an abspos child's static
+     position via alignment (align-items/justify-content), not simple
+     document order, so it can land at the container's start edge —
+     overlapping the input instead of sitting under it. Wrapping input +
+     dropdown in this always-block, always-positioned .sp-wrap gives the
+     dropdown its own private containing block with an explicit
+     `top: 100%`, so it renders directly below the input regardless of
+     what layout mode the surrounding consumer uses.  */
+  .sp-wrap { position: relative; display: inline-block; max-width: 100%; }
+  .sp-results { position: absolute; top: 100%; left: 0; background: white; border: 1px solid #ccc;
     max-height: 220px; overflow-y: auto; z-index: var(--z-dropdown); margin: 0;
     padding: 0; list-style: none; min-width: 16rem; }
   .sp-results li button { display: block; width: 100%; text-align: left;

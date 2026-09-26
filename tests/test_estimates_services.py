@@ -277,9 +277,11 @@ class EstimateServiceReviseTest(EstimatesTestBase):
         The atom claim count stays at 1 (no unique_together violation)."""
         from apps.estimates.models import EstimateLineItemSource
         from apps.jobs.models import Task
-        task = Task.objects.create(
-            job=self.job, name='Mill', rate_scheme=self.scheme, est_qty=Decimal('2'),
+        task = Task(
+            job=self.job, name='Mill', est_qty=Decimal('2'),
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         est = EstimateService.create_for_job(self.job.pk)
         li = EstimateLineItem.objects.create(
             estimate=est, description='Mill', line_number=1,
@@ -474,10 +476,12 @@ class EstimateServiceDiscardDraftTest(EstimatesTestBase):
         from apps.estimates.models import EstimateLineItemSource
         from apps.jobs.models import Task
         from apps.inventory.models import Material
-        task = Task.objects.create(
+        task = Task(
             job=self.job, name='T1',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         material = Material.objects.create(
             job=self.job, description='steel',
             quantity=Decimal('2'), sell_price=Decimal('5'),

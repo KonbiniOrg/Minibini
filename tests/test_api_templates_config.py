@@ -189,6 +189,93 @@ class ConfigurationAPITest(BaseTestCase):
                 key='default_material_accounting_category').value, '')
 
 
+class ServiceItemFlatFeeAPITest(BaseTestCase):
+    """Task 2: API create/update of a flat-fee ServiceItem validates via
+    RateScheme.validate_item_config (clean 400s, not 500s), and
+    display_rate exposes the real price for both algorithm families."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+        from apps.jobs.models import RateScheme
+        ac = AccountingCategory.objects.create(code='TMP-FF', name='TMP-FF')
+        self.flat = RateScheme.objects.create(
+            name='Setup Fee Scheme', algorithm=RateScheme.FLAT_FEE,
+            rate='0.00', unit_label='fee', modifiers=[],
+            accounting_category=ac,
+        )
+
+    def test_create_flat_fee_item_with_valid_amount_succeeds(self):
+        resp = self.client.post('/api/service-items/', {
+            'template_name': 'Setup Fee',
+            'rate_scheme': self.flat.pk,
+            'default_active_modifiers': [{'amount': '150.00', 'label': 'Setup'}],
+        }, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data['display_rate'], '150.00')
+
+    def test_create_flat_fee_item_without_amount_rejects_400(self):
+        resp = self.client.post('/api/service-items/', {
+            'template_name': 'Bad Setup Fee',
+            'rate_scheme': self.flat.pk,
+            'default_active_modifiers': [],
+        }, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('default_active_modifiers', resp.data)
+
+    def test_create_flat_fee_item_negative_amount_rejects_400(self):
+        resp = self.client.post('/api/service-items/', {
+            'template_name': 'Bad Setup Fee 2',
+            'rate_scheme': self.flat.pk,
+            'default_active_modifiers': [{'amount': '-5.00'}],
+        }, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('default_active_modifiers', resp.data)
+
+    def test_update_flat_fee_item_to_invalid_config_rejects_400(self):
+        from apps.estimates.models import ServiceItem
+        item = ServiceItem.objects.create(
+            template_name='Setup Fee 3', rate_scheme=self.flat,
+            default_active_modifiers=[{'amount': '150.00'}],
+        )
+        resp = self.client.patch(f'/api/service-items/{item.pk}/', {
+            'default_active_modifiers': [{'amount': '10.00', 'percent': 5}],
+        }, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('default_active_modifiers', resp.data)
+
+    def test_update_flat_fee_item_amount_only_reuses_existing_scheme(self):
+        # Partial update omitting rate_scheme: validation must still run
+        # against the item's *current* scheme, not skip validation.
+        from apps.estimates.models import ServiceItem
+        item = ServiceItem.objects.create(
+            template_name='Setup Fee 4', rate_scheme=self.flat,
+            default_active_modifiers=[{'amount': '150.00'}],
+        )
+        resp = self.client.patch(f'/api/service-items/{item.pk}/', {
+            'default_active_modifiers': [{'amount': '200.00', 'label': 'Bigger'}],
+        }, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['display_rate'], '200.00')
+
+    def test_display_rate_for_percent_style_item(self):
+        from apps.jobs.models import RateScheme
+        from apps.estimates.models import ServiceItem
+        ac = AccountingCategory.objects.create(code='TMP-FF-P', name='TMP-FF-P')
+        hourly = RateScheme.objects.create(
+            name='Hourly FF-P', algorithm=RateScheme.ELAPSED_TIME,
+            rate='45.00', unit_label='hour', accounting_category=ac,
+        )
+        item = ServiceItem.objects.create(
+            template_name='Assembly FF-P', rate_scheme=hourly,
+        )
+        resp = self.client.get(f'/api/service-items/{item.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['display_rate'], '45.00')
+
+
 class PercentageServiceServiceItemRejectionTest(BaseTestCase):
     """A RateScheme with algorithm=PERCENTAGE must be rejected when assigning
     to a ServiceItem — percentage services are document-level adjustments only."""

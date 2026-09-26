@@ -1,5 +1,5 @@
 """Tests for Task-related API endpoints under the new Job-centric model:
-Material CRUD, subtasks, terminal task guards.
+Material CRUD, terminal task guards.
 
 Reorder and add-from-template are tested in test_api_jobs.py against
 /api/jobs/{id}/reorder-tasks/ and /api/jobs/{id}/add-from-template/.
@@ -28,6 +28,18 @@ def _make_scheme(name_suffix=''):
     )
 
 
+def _stamp_task(job, scheme, name, **extra):
+    """Create+stamp a Task from a RateScheme preset (task-owned-money
+    Phase 1) — Task.objects.create(rate_scheme=...) no longer works since
+    Task has no such field; stamp_from_scheme copies the preset's money
+    fields on before first save."""
+    modifier_keys = extra.pop('modifier_keys', None)
+    task = Task(job=job, name=name, **extra)
+    task.stamp_from_scheme(scheme, modifier_keys=modifier_keys)
+    task.save()
+    return task
+
+
 class MaterialCRUDTest(TestCase):
     """Tests for Material CRUD nested under /api/tasks/{id}/materials/."""
 
@@ -43,11 +55,7 @@ class MaterialCRUDTest(TestCase):
             job_number='MAT-001', name='Material Job', contact=self.contact,
         )
         self.scheme = _make_scheme('mat')
-        self.task = Task.objects.create(
-            job=self.job,
-            name='Install countertop',
-            rate_scheme=self.scheme,
-        )
+        self.task = _stamp_task(self.job, self.scheme, 'Install countertop')
         self.category = AccountingCategory.objects.create(
             name='General', code='GEN',
         )
@@ -206,9 +214,7 @@ class MaterialCRUDTest(TestCase):
 
     def test_material_wrong_task(self):
         """Material on a different task should not be accessible."""
-        task2 = Task.objects.create(
-            job=self.job, name='Other task', rate_scheme=self.scheme,
-        )
+        task2 = _stamp_task(self.job, self.scheme, 'Other task')
         response = self.client.patch(
             f'/api/tasks/{task2.pk}/materials/{self.material.pk}/',
             {'description': 'wrong task'},
@@ -217,79 +223,8 @@ class MaterialCRUDTest(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
-class SubtaskCRUDTest(TestCase):
-    """Tests for subtask list/create nested under /api/tasks/{id}/subtasks/."""
-
-    def setUp(self):
-        self.client = APIClient()
-        self.user = User.objects.create_user(
-            username='subuser', password='testpass',
-        )
-        self.client.force_authenticate(user=self.user)
-
-        self.contact = Contact.objects.create(first_name='Sub', last_name='Test')
-        self.job = Job.objects.create(
-            job_number='SUB-001', name='Subtask Job', contact=self.contact,
-        )
-        self.scheme = _make_scheme('sub')
-        self.parent_task = Task.objects.create(
-            job=self.job,
-            name='Parent task',
-            rate_scheme=self.scheme,
-        )
-
-    def test_list_subtasks_empty(self):
-        response = self.client.get(f'/api/tasks/{self.parent_task.pk}/subtasks/')
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 0)
-
-    def test_list_subtasks(self):
-        Task.objects.create(
-            job=self.job,
-            parent_task=self.parent_task,
-            name='Child task',
-            rate_scheme=self.scheme,
-        )
-        response = self.client.get(f'/api/tasks/{self.parent_task.pk}/subtasks/')
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['name'], 'Child task')
-
-    def test_create_subtask(self):
-        response = self.client.post(
-            f'/api/tasks/{self.parent_task.pk}/subtasks/',
-            {'name': 'New subtask', 'est_qty': '3.00', 'rate_scheme': self.scheme.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['name'], 'New subtask')
-        # Verify parent_task and job are auto-set
-        child = Task.objects.get(pk=response.data['task_id'])
-        self.assertEqual(child.parent_task_id, self.parent_task.pk)
-        self.assertEqual(child.job_id, self.job.pk)
-
-    def test_create_subtask_any_authenticated_user(self):
-        worker = User.objects.create_user(username='subworker', password='testpass')
-        self.client.force_authenticate(user=worker)
-        response = self.client.post(
-            f'/api/tasks/{self.parent_task.pk}/subtasks/',
-            {'name': 'Worker subtask', 'est_qty': '1.00', 'rate_scheme': self.scheme.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 201)
-
-    def test_create_subtask_unauthenticated(self):
-        self.client.force_authenticate(user=None)
-        response = self.client.post(
-            f'/api/tasks/{self.parent_task.pk}/subtasks/',
-            {'name': 'Fail', 'est_qty': '1.00', 'rate_scheme': self.scheme.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 403)
-
-
 class TerminalTaskGuardTest(TestCase):
-    """Completed and cancelled tasks reject material/subtask mutations."""
+    """Completed and cancelled tasks reject material mutations."""
 
     def setUp(self):
         self.client = APIClient()
@@ -305,9 +240,7 @@ class TerminalTaskGuardTest(TestCase):
         )[0]
 
     def _make_task(self, task_status):
-        return Task.objects.create(
-            job=self.job, name='A task', status=task_status, rate_scheme=self.scheme,
-        )
+        return _stamp_task(self.job, self.scheme, 'A task', status=task_status)
 
     def test_cannot_add_material_to_complete_task(self):
         task = self._make_task(Task.STATUS_COMPLETE)
@@ -354,24 +287,10 @@ class TerminalTaskGuardTest(TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
-    def test_cannot_add_subtask_to_complete_task(self):
-        task = self._make_task(Task.STATUS_COMPLETE)
-        response = self.client.post(
-            f'/api/tasks/{task.pk}/subtasks/',
-            {'name': 'Nope', 'units': 'ea', 'rate': '10', 'est_qty': '1'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
     def test_can_list_materials_on_complete_task(self):
         """Reading is still allowed on terminal tasks."""
         task = self._make_task(Task.STATUS_COMPLETE)
         response = self.client.get(f'/api/tasks/{task.pk}/materials/')
-        self.assertEqual(response.status_code, 200)
-
-    def test_can_list_subtasks_on_complete_task(self):
-        task = self._make_task(Task.STATUS_COMPLETE)
-        response = self.client.get(f'/api/tasks/{task.pk}/subtasks/')
         self.assertEqual(response.status_code, 200)
 
     def test_can_add_material_to_in_progress_task(self):
@@ -410,8 +329,11 @@ class TaskSerializerFlattenTest(TestCase):
         )
 
     def test_task_serializer_flattens_billing_fields(self):
-        """Phase B: rate_scheme, active_modifiers, est_qty, est_worker_time,
-        actual_qty are top-level fields. 'charge' is no longer in the payload."""
+        """Task-owned money (Phase 1): qty_source/rate/unit_label/
+        accounting_category/active_modifiers/source_scheme, plus est_qty/
+        est_worker_time/actual_qty, are top-level fields. 'charge' is no
+        longer in the payload, and 'rate_scheme' (the write-only stamp
+        trigger) never appears in a GET response."""
         from decimal import Decimal
         from apps.jobs.models import RateScheme
 
@@ -420,27 +342,28 @@ class TaskSerializerFlattenTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hour',
             accounting_category=ac,
+            modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 10}],
         )
-        Task.objects.create(
-            job=self.job, name='Test',
-            rate_scheme=scheme, active_modifiers=['rush'],
-            est_qty=Decimal('5'),
+        _stamp_task(
+            self.job, scheme, 'Test',
+            est_qty=Decimal('5'), modifier_keys=['rush'],
         )
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
         payload = body['results'] if isinstance(body, dict) and 'results' in body else body
         row = next(t for t in payload if t['name'] == 'Test')
-        self.assertEqual(row['rate_scheme'], scheme.pk)
-        self.assertEqual(row['active_modifiers'], ['rush'])
+        self.assertNotIn('rate_scheme', row)
+        self.assertEqual(row['source_scheme'], scheme.pk)
+        self.assertEqual([m['key'] for m in row['active_modifiers']], ['rush'])
         self.assertEqual(row['est_qty'], '5.00')
         self.assertIsNone(row['actual_qty'])
         self.assertNotIn('charge', row)
 
     def test_post_task_accepts_flat_billing_fields(self):
-        """POST /api/jobs/<id>/tasks/ accepts rate_scheme, active_modifiers,
-        est_qty, est_worker_time, actual_qty as direct fields (not nested in
-        'actuals')."""
+        """POST /api/jobs/<id>/tasks/ accepts rate_scheme (a stamp trigger)
+        plus est_qty, est_worker_time, actual_qty as direct fields (not
+        nested in 'actuals')."""
         from decimal import Decimal
         from django.contrib.auth.models import Permission
         from apps.jobs.models import RateScheme
@@ -460,7 +383,6 @@ class TaskSerializerFlattenTest(TestCase):
             'name': 'Bench work',
             'description': 'Test',
             'rate_scheme': scheme.pk,
-            'active_modifiers': [],
             'est_qty': '5.00',
             'est_worker_time': 'PT5H',
         }
@@ -468,17 +390,17 @@ class TaskSerializerFlattenTest(TestCase):
             f'/api/jobs/{self.job.pk}/tasks/', payload,
             content_type='application/json',
         )
-        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.status_code, 201, resp.json())
         task = Task.objects.get(pk=resp.json()['task_id'])
-        self.assertEqual(task.rate_scheme_id, scheme.pk)
+        self.assertEqual(task.source_scheme_id, scheme.pk)
         self.assertEqual(task.est_qty, Decimal('5.00'))
         self.assertIsNotNone(task.est_worker_time)
         self.assertIsNone(task.actual_qty)
 
 
 class TaskListInvoiceFieldTest(TestCase):
-    """The task-list endpoints (/api/tasks/{id}/materials/ and /subtasks/) must
-    carry the per-atom `invoice` ref so the task-list page can show INVOICED."""
+    """The task-list endpoints (/api/tasks/{id}/materials/) must carry the
+    per-atom `invoice` ref so the task-list page can show INVOICED."""
 
     def setUp(self):
         from apps.core.models import Configuration, AppState
@@ -498,17 +420,11 @@ class TaskListInvoiceFieldTest(TestCase):
         )
         self.scheme = _make_scheme('tli')
         self.category = AccountingCategory.objects.create(name='G', code='GTLI')
-        self.task = Task.objects.create(
-            job=self.job, name='Parent', rate_scheme=self.scheme,
-        )
+        self.task = _stamp_task(self.job, self.scheme, 'Parent')
         self.material = Material.objects.create(
             job=self.job, task=self.task, description='Slab',
             quantity=2, unit_cost=Decimal('5.00'), sell_price=Decimal('10.00'),
             accounting_category=self.category,
-        )
-        self.subtask = Task.objects.create(
-            job=self.job, name='Child', rate_scheme=self.scheme,
-            parent_task=self.task,
         )
 
     def _invoice_atom(self, source_type, source_pk):
@@ -537,20 +453,6 @@ class TaskListInvoiceFieldTest(TestCase):
 
     def test_materials_endpoint_invoice_null_when_not_invoiced(self):
         resp = self.client.get(f'/api/tasks/{self.task.pk}/materials/')
-        self.assertEqual(resp.status_code, 200)
-        self.assertIsNone(resp.data[0]['invoice'])
-
-    def test_subtasks_endpoint_carries_invoice_ref(self):
-        from apps.invoicing.models import InvoiceLineItemSource
-        inv = self._invoice_atom(InvoiceLineItemSource.SOURCE_TASK, self.subtask.pk)
-        resp = self.client.get(f'/api/tasks/{self.task.pk}/subtasks/')
-        self.assertEqual(resp.status_code, 200)
-        row = resp.data[0]
-        self.assertIsNotNone(row['invoice'])
-        self.assertEqual(row['invoice']['id'], inv.pk)
-
-    def test_subtasks_endpoint_invoice_null_when_not_invoiced(self):
-        resp = self.client.get(f'/api/tasks/{self.task.pk}/subtasks/')
         self.assertEqual(resp.status_code, 200)
         self.assertIsNone(resp.data[0]['invoice'])
 
@@ -597,9 +499,7 @@ class TaskMaterialPoFieldsTest(TestCase):
         )
         self.scheme = _make_scheme('pof')
         self.category = AccountingCategory.objects.create(name='POF', code='POF')
-        self.task = Task.objects.create(
-            job=self.job, name='Install', rate_scheme=self.scheme,
-        )
+        self.task = _stamp_task(self.job, self.scheme, 'Install')
 
     def test_materials_endpoint_carries_po_fields_when_ordered(self):
         from apps.inventory.services import MaterialService

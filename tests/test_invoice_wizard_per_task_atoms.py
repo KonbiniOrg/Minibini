@@ -31,7 +31,9 @@ class WizardPerTaskAtomsTest(BaseTestCase):
         contact.business = biz
         contact.save()
         self.job = Job.objects.create(job_number='J-pta', contact=contact)
-        self.task = Task.objects.create(job=self.job, name='Build-pta', rate_scheme=self.scheme)
+        self.task = Task(job=self.job, name='Build-pta')
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         # 30 minutes of work = $30 (60/hr × 0.5)
         now = timezone.now()
         Blep.objects.create(
@@ -86,7 +88,7 @@ class WizardTaskAtomHelpersTest(WizardPerTaskAtomsTest):
 
 class WizardReadsTaskDirectlyTest(TestCase):
     """Phase B: wizard atom rendering uses task.compute_amount and
-    task.rate_scheme, not task.charge.*."""
+    task.source_scheme, not task.charge.*."""
 
     def setUp(self):
         from apps.core.models import AccountingCategory, Configuration
@@ -110,11 +112,12 @@ class WizardReadsTaskDirectlyTest(TestCase):
             rate=Decimal('5.00'), unit_label='piece',
             accounting_category=ac,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job, name='Polish',
-            rate_scheme=self.scheme, active_modifiers=[],
             est_qty=Decimal('12'), actual_qty=Decimal('12'),
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         self.invoice = Invoice.objects.create(
             job=self.job, status=Invoice.STATUS_DRAFT,
         )
@@ -132,6 +135,10 @@ class WizardReadsTaskDirectlyTest(TestCase):
         self.assertEqual(atom['type'], 'task')
         self.assertEqual(atom['id'], self.task.pk)
         self.assertEqual(atom['amount'], Decimal('60.00'))
-        self.assertIn('Polish', atom['description'])
-        self.assertIn('Hourly', atom['description'])  # scheme name in label
+        # description is just the task's own name now (task-owned-money
+        # Phase 1, apps/invoicing/services.py get_source_pool): source_scheme
+        # is provenance-only and is never read for display/money, so the
+        # scheme name ("Hourly") no longer appears here (was
+        # f'{task.name} ({task.rate_scheme.name})' pre-refactor).
+        self.assertEqual(atom['description'], 'Polish')
         self.assertIn('12', atom['sub_info'])  # qty source label

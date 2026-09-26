@@ -1,5 +1,6 @@
 from unittest.mock import patch, MagicMock, ANY
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -181,5 +182,27 @@ class PerLineInvoiceBuilderTest(TestCase):
         self._line(1, 'L', '1', '1.00', self.taxable_cat)
         qbo_inv = self._build()
         self.assertEqual(qbo_inv.CustomerRef.value, '77')
+
+    def test_null_ac_line_raises_clear_error_naming_line(self):
+        """Invoice authoring stamps a fallback AC onto every line (Phase 3
+        Task 5), so a null-AC line reaching the QBO push should be
+        unreachable in practice — but hand lines can still be created with
+        a null AC (the send gate is the primary catch). This is the
+        defensive layer: constructing the line directly with
+        objects.create bypasses authoring, and _build_qbo_invoice must
+        raise a clear ValidationError naming the offending line rather
+        than an AttributeError on `.taxable`."""
+        self._line(1, 'Uncategorized hand line', '1', '10.00', self.taxable_cat)
+        InvoiceLineItem.objects.create(
+            invoice=self.invoice, line_number=2,
+            description='No category here', qty=Decimal('1'),
+            price=Decimal('5.00'), accounting_category=None,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            self._build()
+        msg = str(ctx.exception)
+        self.assertIn('2', msg)
+        self.assertIn('No category here', msg)
+        self.assertIn('fallback_accounting_category', msg)
 
 

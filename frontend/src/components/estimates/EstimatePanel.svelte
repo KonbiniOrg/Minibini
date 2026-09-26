@@ -2,14 +2,12 @@
   import { link } from 'svelte-spa-router';
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
-  import AdjustmentModal from '../AdjustmentModal.svelte';
-  import LineItemTable from '../LineItemTable.svelte';
-  import LineItemModal from '../LineItemModal.svelte';
-  import PriceListPicker from '../PriceListPicker.svelte';
-  import EstimateAddLineForm from './EstimateAddLineForm.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import { buildEstimateDocItems } from '../../lib/estimateDocs.js';
-  import ReconcileMode from '../wizards/ReconcileMode.svelte';
+  import DocModeBar from '../docsurface/DocModeBar.svelte';
+  import DocCustomerView from '../docsurface/DocCustomerView.svelte';
+  import DocReorderView from '../docsurface/DocReorderView.svelte';
+  import EstimateEditView from './EstimateEditView.svelte';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
   import { user } from '../../stores/auth.js';
 
@@ -20,39 +18,8 @@
   let changeOrders = $state([]);
   let listLoaded = $state(false);
   let categories = $state([]);
-  let defaultMaterialCategoryId = $state(null);
   let docLoading = $state(true);
   let error = $state('');
-
-
-  let adjustmentModalOpen = $state(false);
-  let pickerOpen = $state(false);
-  let addChoice = $state(null);
-  let modalOpen = $state(false);
-  let modalMode = $state('edit');
-  let modalItem = $state(null);
-
-  function openEditItem(li) { modalItem = li; modalMode = 'edit'; modalOpen = true; }
-  function handleSaved() { modalOpen = false; modalItem = null; loadEstimate(); }
-
-  function handleChoose(choice) {
-    pickerOpen = false;
-    addChoice = choice;
-  }
-  function handleLineAdded() {
-    addChoice = null;
-    loadEstimate();
-  }
-
-  async function handleDeleteItem(li) {
-    // No confirm: draft-only line edit, re-addable via Show Tasks & Materials.
-    try {
-      await api.delete(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/`);
-      await loadEstimate();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not delete line item.'));
-    }
-  }
 
   // Per-object gate: atom-holder OR this job's project_manager (server-computed).
   const canManageJobs = $derived(estimate?.can_manage ?? false);
@@ -155,18 +122,48 @@
   let isSuperseded = $derived(estimate?.status === 'superseded');
   let isDraft = $derived(estimate?.status === 'draft');
   let canEdit = $derived(canManageJobs && isDraft);
+  // claims-by-construction (estimating-structure Task 7): mint-off-a-line /
+  // decline gestures are only offered once the estimate is accepted (the
+  // checklist that gates the job's auto-release to in_progress) — same
+  // canManageJobs gate as canEdit, different status.
+  let canMint = $derived(canManageJobs && estimate?.status === 'accepted');
 
-  // Reconcile (wizard) is a mode of this panel, not a separate route. Initial
-  // mode comes from the per-doc workspace memory, but is validated against the
-  // live doc: reconcile is only restorable while the estimate is still an
-  // editable draft (someone may have sent it since the mode was remembered).
-  let mode = $state('lines');
+  // Doc-shaped rows for the read-only Customer/Reorder kit views — ALL lines
+  // including adjustments, numbered as stored. `line_id` (not just
+  // line_number) is required: DocReorderView's onReorder callback needs the
+  // real line_item_id to build the reorder payload.
+  let docLines = $derived(
+    lineItems.map((li) => ({
+      line_id: li.line_item_id,
+      line_number: li.line_number,
+      description: li.description,
+      qty: li.qty,
+      units: li.units,
+      price: li.price,
+      amount: Number(li.qty || 0) * Number(li.price || 0),
+    }))
+  );
+
+  // The mode bar is a surface of this panel, not a separate route. Initial
+  // mode comes from the per-doc workspace memory; legacy remembered values
+  // ('lines' from the old two-mode panel, 'reconcile' from the old wizard
+  // toggle) normalize to 'edit' here at the read site — the store itself
+  // keeps whatever was written, unmigrated. Reorder is only restorable while
+  // the estimate is still an editable draft (someone may have sent it since
+  // the mode was remembered).
+  let mode = $state('edit');
   let modeInitializedFor = $state(null);
+  let modes = $derived(canEdit ? ['edit', 'customer', 'reorder'] : ['edit', 'customer']);
+  // Same surface either way; once the document can't be edited the mode is a
+  // read-only shop-facing view, so the label says what it now is (RM 2026-08-09).
+  let modeLabels = $derived(
+    { edit: canEdit ? 'Edit view' : 'Detail view', customer: 'Customer view', reorder: 'Reorder view' });
   $effect(() => {
     if (estimate && String(estimate.estimate_id) === String(estimateId)
         && modeInitializedFor !== String(estimateId)) {
-      const remembered = getJobWs(job?.job_id).modes[`est:${estimateId}`] ?? 'lines';
-      mode = (remembered === 'reconcile' && canEdit) ? 'reconcile' : 'lines';
+      const remembered = getJobWs(job?.job_id).modes[`est:${estimateId}`] ?? 'edit';
+      const normalized = (remembered === 'lines' || remembered === 'reconcile') ? 'edit' : remembered;
+      mode = (normalized === 'reorder' && !canEdit) ? 'edit' : normalized;
       modeInitializedFor = String(estimateId);
     }
   });
@@ -174,20 +171,54 @@
   function setMode(next) {
     mode = next;
     rememberMode(job?.job_id, `est:${estimateId}`, next);
-    // Returning to lines must show fresh data — reconcile mode may have mutated
-    // the estimate's line items.
-    if (next === 'lines') loadEstimate();
   }
 
-  async function loadEstimate() {
-    docLoading = true;
-    error = '';
+  // `silent`: post-gesture refreshes from EstimateEditView (add-atoms,
+  // create-a-line, remove, adjustments...) must NOT flip docLoading — that
+  // would swap the `{#if docLoading}` branch to "Loading…", destroying and
+  // remounting EstimateEditView on every single gesture and losing its local
+  // state (the just-opened edit modal, the in-progress atom selection). A
+  // silent failure doesn't blank the surface either — it reports through the
+  // global overlay and leaves the last-good doc on screen, same as any other
+  // form-less background refresh.
+  async function loadEstimate({ silent = false } = {}) {
+    if (!silent) {
+      docLoading = true;
+      error = '';
+    }
     try {
       estimate = await api.get(`/api/estimates/${estimateId}/`);
     } catch (e) {
-      error = e.message || 'Could not load estimate.';
+      if (silent) {
+        showError(errorMessage(e, 'Could not refresh the estimate.'));
+      } else {
+        error = e.message || 'Could not load estimate.';
+      }
     } finally {
-      docLoading = false;
+      if (!silent) docLoading = false;
+    }
+  }
+
+  // EstimateEditView is presentation + gestures only — every mutation it
+  // makes (edit/remove a line, adjustments) calls back here so the doc stays
+  // in sync. Silent: see loadEstimate's comment above — EstimateEditView
+  // awaits this to look up the fresh copy of a just-created line, so it must
+  // resolve without ever tearing the view down mid-gesture.
+  async function handleEditChanged() {
+    await loadEstimate({ silent: true });
+  }
+
+  // Make Deliverable (better-fees §6): mint a Deliverable from the line and
+  // silently refresh so the button suppresses itself via linked_deliverables.
+  async function handleMakeDeliverable(li) {
+    try {
+      await api.post(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/make-deliverable/`);
+      await loadEstimate({ silent: true });
+      // Refresh the host job so the context band's Deliverables panel shows
+      // the new row (its load effect keys on the job object identity).
+      onJobChange();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not make a deliverable from this line.'));
     }
   }
 
@@ -228,21 +259,11 @@
     }
   }
 
-  async function loadSettings() {
-    try {
-      const s = await api.get('/api/settings/');
-      const raw = s.default_material_accounting_category;
-      defaultMaterialCategoryId = raw != null ? Number(raw) : null;
-    } catch (_) {
-      defaultMaterialCategoryId = null;
-    }
-  }
 
   $effect(() => {
     if (estimateId) {
       loadEstimate();
       loadCategories();
-      loadSettings();
     }
   });
 
@@ -256,45 +277,27 @@
   function fmtDate(iso) {
     if (!iso) return '';
     const d = new Date(iso);
-    return d.toLocaleString();
+    return d.toLocaleDateString();
   }
 
-  async function handleReorder(itemIds) {
+  // Reorder mode: swap the doc-shaped line's line_item_id with its up/down
+  // neighbor and send the full order (same endpoint the old lines-view
+  // up/down arrows used).
+  async function handleReorderDoc(lineId, direction) {
+    const ids = lineItems.map((li) => li.line_item_id);
+    const idx = ids.indexOf(lineId);
+    if (idx === -1) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= ids.length) return;
+    [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
     try {
       await api.post(`/api/estimates/${estimate.estimate_id}/line-items/reorder/`, {
-        item_ids: itemIds,
+        item_ids: ids,
       });
       await loadEstimate();
     } catch (e) {
       showError(errorMessage(e, 'Could not reorder line items.'));
     }
-  }
-
-  function moveUp(index) {
-    if (index === 0) return;
-    const ids = lineItems.map(li => li.line_item_id);
-    [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
-    handleReorder(ids);
-  }
-
-  function moveDown(index) {
-    if (index >= lineItems.length - 1) return;
-    const ids = lineItems.map(li => li.line_item_id);
-    [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
-    handleReorder(ids);
-  }
-
-  function lineOutOfSync(li) {
-    // Only meaningful on a draft estimate — once sent/accepted/superseded the line
-    // can no longer be adjusted in the wizard, so flagging it would be misleading.
-    if (!isDraft) return false;
-    // Hand-entered lines have no sources; nothing to be out of sync with.
-    if (!li.sources || li.sources.length === 0) return false;
-    const sum = li.sources.reduce((s, src) => s + (parseFloat(src.computed_amount) || 0), 0);
-    const qty = parseFloat(li.qty) || 0;
-    if (qty <= 0) return false;
-    const expected = Math.round((sum / qty) * 100) / 100;
-    return Math.abs((parseFloat(li.price) || 0) - expected) > 0.001;
   }
 
   // Version subnav: estimate versions then this job's change orders, active on
@@ -337,7 +340,7 @@
   {:else if estimate}
   <div class="page-body">
   <div class="toolbar">
-    <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</span>
+    <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}-{estimate.version}</span>
     {#if canManageJobs && validNextStatuses.length > 0}
       <span class="status-select-wrapper">
         <!-- value-controlled like JobHeader's pill: selects keep their
@@ -384,111 +387,62 @@
         {creatingChangeOrder ? 'Creating…' : 'Create Change Order'}
       </button>
     {/if}
-    {#if canEdit}
-      {#if mode === 'reconcile'}
-        <button type="button" onclick={() => setMode('lines')}>Back to lines</button>
-      {:else}
-        <button type="button" onclick={() => setMode('reconcile')}>Reconcile</button>
-      {/if}
-    {/if}
+    <!-- Compact date chips (RM 2026-08-09): number/job/status live in the
+         header and surrounding context; the parent-revision link is covered
+         by the DocSubnav version pills. Dates only, right end of the title
+         row. -->
+    <div class="stat-chips doc-stat-chips" class:superseded={isSuperseded}>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Created</div>
+        <div class="stat-chip-body">{fmtDate(estimate.created_date)}</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Sent</div>
+        <div class="stat-chip-body"><span class:muted={!estimate.sent_date}>{estimate.sent_date ? fmtDate(estimate.sent_date) : '-'}</span></div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Expires</div>
+        <div class="stat-chip-body"><span class:muted={!estimate.expiration_date}>{estimate.expiration_date ? fmtDate(estimate.expiration_date) : '-'}</span></div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Closed</div>
+        <div class="stat-chip-body"><span class:muted={!estimate.closed_date}>{estimate.closed_date ? fmtDate(estimate.closed_date) : '-'}</span></div>
+      </div>
+    </div>
   </div>
-
-  <table class="data-table" class:superseded={isSuperseded}>
-    <tbody>
-      <tr><th>Field</th><th>Value</th></tr>
-      <tr><td>Estimate Number</td><td>{estimate.estimate_number}-{estimate.version}
-        {#if estimate.parent}
-          (<a href={`/estimates/${estimate.parent}`} use:link>Parent</a>)
-        {/if}
-      </td></tr>
-      <tr>
-        <td>Job</td>
-        <td>
-          {#if job}
-            <a href={`/jobs/${estimate.job}`} use:link>{job.job_number}{job.name ? `: ${job.name}` : ''}</a>
-          {:else}
-            <a href={`/jobs/${estimate.job}`} use:link>Job #{estimate.job}</a>
-          {/if}
-        </td>
-      </tr>
-      <tr><td>Status</td><td>{estimate.status}</td></tr>
-      <tr><td>Created Date</td><td>{fmtDate(estimate.created_date)}</td></tr>
-      <tr><td>Sent Date</td><td>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'Not sent yet'}</td></tr>
-      <tr><td>Expiration Date</td><td>{estimate.expiration_date ? fmtDate(estimate.expiration_date) : 'Not set'}</td></tr>
-      <tr><td>Closed Date</td><td>{estimate.closed_date ? fmtDate(estimate.closed_date) : 'Not closed yet'}</td></tr>
-    </tbody>
-  </table>
 
   {#if isSuperseded}
     <p><em>This estimate has been superseded and cannot be modified.</em></p>
   {/if}
 
-  {#if mode === 'reconcile'}
-    <ReconcileMode
-      docType="estimate"
-      docId={estimate.estimate_id}
-      onChanged={loadEstimate}
-      onExit={() => setMode('lines')}
+  <DocModeBar {mode} onMode={setMode} {modes} labels={modeLabels} />
+
+  {#if mode === 'edit'}
+    <EstimateEditView
+      {estimate}
+      {canEdit}
+      onChanged={handleEditChanged}
+      {lineItems}
+      {categories}
+      onMakeDeliverable={canEdit ? handleMakeDeliverable : null}
+      onDeliverablesChanged={onJobChange}
+      {canMint}
+      onWorkDecisionChanged={onJobChange}
+      jobStatus={job?.status}
     />
-  {:else}
-  <h3>Line Items</h3>
-  {#if canEdit}
-    <p>
-      <button type="button" onclick={() => { pickerOpen = true; }}>Add line</button>
-      <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
-      <button type="button" onclick={() => setMode('reconcile')}>Show Tasks &amp; Materials</button>
-    </p>
-  {/if}
-
-  {#snippet actionsSnippet(li, i)}
-    <button type="button" onclick={() => openEditItem(li)}>Edit</button>
-    <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
-    <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
-    <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
-    {#if lineOutOfSync(li)}
-      <span class="out-of-sync" title="The line no longer matches its atoms; adjust in Show Tasks &amp; Materials if needed.">⚠ out of sync with atoms</span>
-    {/if}
-  {/snippet}
-
-  <LineItemTable
-    {lineItems}
-    {categories}
-    showSource={true}
-    canEdit={canEdit}
-    actions={canEdit ? actionsSnippet : null}
-  />
-
-  <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />
-
-  <EstimateAddLineForm
-    open={addChoice != null}
-    choice={addChoice}
-    estimateId={estimate.estimate_id}
-    {categories}
-    {defaultMaterialCategoryId}
-    onSaved={handleLineAdded}
-    onClose={() => { addChoice = null; }}
-  />
-
-  <LineItemModal
-    open={modalOpen}
-    mode={modalMode}
-    apiBase={`/api/estimates/${estimate.estimate_id}`}
-    item={modalItem}
-    {categories}
-    showMaterialMarker={true}
-    {defaultMaterialCategoryId}
-    onSaved={handleSaved}
-    onClose={() => { modalOpen = false; }}
-  />
-
-  <AdjustmentModal
-    open={adjustmentModalOpen}
-    apiBase={`/api/estimates/${estimate.estimate_id}`}
-    {categories}
-    onSaved={() => { adjustmentModalOpen = false; loadEstimate(); }}
-    onClose={() => { adjustmentModalOpen = false; }}
-  />
+  {:else if mode === 'customer'}
+    <DocCustomerView
+      title={`Estimate ${estimate.estimate_number}-${estimate.version}`}
+      lines={docLines}
+      grandTotal={Number(estimate.total)}
+    />
+  {:else if mode === 'reorder'}
+    <DocReorderView
+      title={`Estimate ${estimate.estimate_number}-${estimate.version}`}
+      lines={docLines}
+      grandTotal={Number(estimate.total)}
+      onReorder={handleReorderDoc}
+    />
   {/if}
   </div>
   {/if}
@@ -514,7 +468,6 @@
 <style>
   .error { color: #a8071a; }
   .superseded { opacity: 0.6; }
-  .out-of-sync { color: #a55; font-size: 12px; font-weight: 600; margin-left: 6px; }
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
 

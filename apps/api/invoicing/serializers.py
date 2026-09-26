@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.core.units import UnitsField
+from apps.core.wizard import BaseWizardService
 
 
 # Net days for invoice due-date calculation. Hardcoded for now; revisit when
@@ -18,6 +19,110 @@ UNPAID_STATUSES = {
 }
 
 
+def _agreement_ref_payload(line):
+    """The `agreement_ref` field: null, or {kind, line_id, est_qty,
+    est_price, est_amount} sourced from the referenced agreement line's own
+    stored qty/price — never from the invoice line's current values.
+
+    Values are stringified explicitly: this dict is returned from a plain
+    SerializerMethodField, not routed through a DecimalField, so DRF's
+    JSONEncoder never gets a chance to apply its normal (settings-driven)
+    decimal-to-string coercion — its raw fallback for a bare Decimal is
+    always `float(obj)` (see rest_framework.utils.encoders.JSONEncoder).
+    An un-stringified payload silently ships floats: string/string
+    equality checks (e.g. the frontend's actuals==estimate "synced" chip)
+    never match, and PATCHing a float back as qty/price 400s against the
+    model field's DecimalValidator for the ~96% of prices that need more
+    than float's imprecise binary expansion. Same reasoning as
+    `_serialize_agreement_line` in apps/api/invoicing/views.py."""
+    ref = getattr(line, 'agreement_estimate_line', None)
+    kind = 'estimate'
+    if ref is None:
+        ref = getattr(line, 'agreement_co_line', None)
+        kind = 'change_order'
+    if ref is None:
+        return None
+    payload = {
+        'kind': kind,
+        'line_id': ref.pk,
+        'est_qty': str(ref.qty),
+        'est_price': str(ref.price),
+        'est_amount': str((ref.qty * ref.price).quantize(Decimal('0.01'))),
+    }
+    if kind == 'change_order':
+        # CO-line provenance for the "CO-N line M" reference text (spec
+        # §9.3) — null/absent for an estimate-origin ref. `ref.change_order`
+        # must already be select_related where lines are serialized in
+        # bulk (see InvoiceViewSet.get_queryset and LineItemMixin's
+        # _get_line_items_qs) or this N+1's across the whole invoice.
+        payload['co_number'] = ref.change_order.change_order_number
+        payload['co_line_number'] = ref.line_number
+    return payload
+
+
+def _resolve_sources(line):
+    """Resolve every source row on a line, skipping any dangling row (its
+    atom already deleted out from under the claim — legal pre-purge
+    state) rather than letting `resolve()` raise ObjectDoesNotExist. A
+    line whose sources are ALL dangling resolves to an empty list, so
+    callers treat it exactly as if the line had no sources at all; a
+    partially-dangling line yields only the resolvable instances."""
+    from django.core.exceptions import ObjectDoesNotExist
+    resolved = []
+    for src in line.sources.all():
+        try:
+            resolved.append(src.resolve())
+        except ObjectDoesNotExist:
+            continue
+    return resolved
+
+
+def derive_backing(line):
+    """Classify how a line's price is currently backed. Never stored —
+    recomputed on every read from the line's own state (the CO surface
+    reuses this for ChangeOrderLineItem/EstimateLineItem, so it is written
+    duck-typed rather than importing InvoiceLineItem specifics):
+
+    1. `is_deposit_line` -> 'deposit'; `is_deposit_deduction` -> 'deposit_credit'
+       (invoice-only properties; default False when the line type lacks them).
+    2. Has RESOLVABLE claimed source rows (via `_resolve_sources`, which
+       skips any dangling row — its atom already deleted, a legal
+       pre-purge state — rather than 500ing; a line whose sources are ALL
+       dangling is treated as having none; a partially-dangling line sums
+       only what still resolves) AND is in sync with them (the wizard's
+       own `price == round(sum(sources) / qty, 2)` rule) -> 'actuals'.
+    3. Has an agreement_ref AND qty/price still equal the ref's stored
+       qty/price -> 'estimate'.
+    4. Has an agreement_ref or resolvable sources, but matched neither
+       rule above (hand-edited since seeding, or a claimed-but-out-of-sync
+       line) -> 'edited'.
+    5. Otherwise (a plain hand line, including one whose sources are ALL
+       dangling and has no agreement_ref) -> None.
+    """
+    if getattr(line, 'is_deposit_line', False):
+        return 'deposit'
+    if getattr(line, 'is_deposit_deduction', False):
+        return 'deposit_credit'
+
+    resolved = _resolve_sources(line)
+    if resolved:
+        sum_value = sum(
+            (BaseWizardService._atom_computed_amount(i) for i in resolved),
+            Decimal('0.00'),
+        )
+        if BaseWizardService._is_in_sync(line, sum_value):
+            return 'actuals'
+
+    ref = getattr(line, 'agreement_line', None)
+    if ref is not None and line.qty == ref.qty and line.price == ref.price:
+        return 'estimate'
+
+    if ref is not None or resolved:
+        return 'edited'
+
+    return None
+
+
 class InvoiceLineItemSourceSerializer(serializers.Serializer):
     """Serializer for InvoiceLineItemSource that resolves the atom for display."""
     source_id = serializers.IntegerField(read_only=True)
@@ -25,10 +130,13 @@ class InvoiceLineItemSourceSerializer(serializers.Serializer):
     source_pk = serializers.IntegerField(read_only=True)
     description = serializers.SerializerMethodField()
     computed_amount = serializers.SerializerMethodField()
+    qty = serializers.SerializerMethodField()
+    units = serializers.SerializerMethodField()
+    rate = serializers.SerializerMethodField()
 
     def _resolve_or_none(self, obj):
-        # A dangling row (atom deleted out from under the claim — pre-purge
-        # data, or a race) must render as null, never 500 the list endpoint.
+        # A dangling row (atom deleted out from under the claim — a race)
+        # must render as null, never 500 the list endpoint.
         from django.core.exceptions import ObjectDoesNotExist
         try:
             return obj.resolve()
@@ -49,6 +157,39 @@ class InvoiceLineItemSourceSerializer(serializers.Serializer):
             return None
         return str(InvoiceWizardService._atom_computed_amount(instance))
 
+    def _atom_detail_or_none(self, obj):
+        """The {qty, rate, units, amount} breakdown for the nested atom row
+        — the same helper the source pool itself uses
+        (InvoiceWizardService._atom_detail: real task actual-qty ×
+        effective_rate, material quantity × sell_price). None for a
+        dangling source AND for a deposit-credit claim — that resolves to
+        another InvoiceLineItem, not a real work atom (get_actuals_total
+        skips it the same way), so a fabricated qty/rate would be
+        misleading rather than informative."""
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.invoicing.services import InvoiceWizardService
+        instance = self._resolve_or_none(obj)
+        if instance is None or isinstance(instance, InvoiceLineItem):
+            return None
+        return InvoiceWizardService._atom_detail(instance)
+
+    def get_qty(self, obj):
+        detail = self._atom_detail_or_none(obj)
+        return str(detail['qty']) if detail else None
+
+    def get_units(self, obj):
+        detail = self._atom_detail_or_none(obj)
+        return detail['units'] if detail else None
+
+    def get_rate(self, obj):
+        # BaseWizardService._atom_detail reads rate defensively (getattr on
+        # sell_price) and can yield None: render null, never the string
+        # 'None'.
+        detail = self._atom_detail_or_none(obj)
+        if detail is None or detail['rate'] is None:
+            return None
+        return str(detail['rate'])
+
 
 class InvoiceLineItemSerializer(serializers.ModelSerializer):
     accounting_category_name = serializers.SerializerMethodField()
@@ -56,6 +197,10 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
     sources = InvoiceLineItemSourceSerializer(many=True, read_only=True)
     adjustment_service_detail = serializers.SerializerMethodField()
     is_deposit = serializers.SerializerMethodField()
+    agreement_ref = serializers.SerializerMethodField()
+    backing = serializers.SerializerMethodField()
+    actuals_total = serializers.SerializerMethodField()
+    used_fallback_ac = serializers.SerializerMethodField()
 
     class Meta:
         model = InvoiceLineItem
@@ -66,6 +211,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
                         'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail',
             'sources', 'is_deposit',
+            'agreement_ref', 'backing', 'actuals_total', 'used_fallback_ac',
         ]
         read_only_fields = ['line_item_id']
 
@@ -76,6 +222,56 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
 
     def get_is_deposit(self, obj):
         return obj.is_deposit_line
+
+    def get_agreement_ref(self, obj):
+        return _agreement_ref_payload(obj)
+
+    def get_backing(self, obj):
+        return derive_backing(obj)
+
+    def get_actuals_total(self, obj):
+        """Sum of compute_amount() over claimed work atoms — null when the
+        line has no such sources. Independent of `backing`: an out-of-sync
+        ('edited') claimed line still reports its actuals total as the
+        est-vs-actual reference figure. A SOURCE_DEPOSIT claim resolves to
+        another InvoiceLineItem (no compute_amount — it isn't a work atom,
+        just a credit against a deposit charge) and is skipped, same as a
+        dangling/unresolvable source."""
+        total = Decimal('0.00')
+        found = False
+        for src in obj.sources.all():
+            from django.core.exceptions import ObjectDoesNotExist
+            try:
+                instance = src.resolve()
+            except ObjectDoesNotExist:
+                instance = None
+            if instance is None or not hasattr(instance, 'compute_amount'):
+                continue
+            found = True
+            total += BaseWizardService._atom_computed_amount(instance)
+        if not found:
+            return None
+        return str(total.quantize(Decimal('0.01')))
+
+    def get_used_fallback_ac(self, obj):
+        """True iff a fallback AC is configured AND this line's
+        accounting_category is that exact category (Phase 3 Task 5) —
+        one Configuration read per serialization pass, not per line.
+        Mirrors AccountingCategorySerializer.get_is_fallback
+        (apps/api/templates_config/serializers.py, commit de071827):
+        reads the fallback pk from `self.context['fallback_category_id']`
+        when the view populated it (InvoiceViewSet.get_serializer_context
+        / the direct-instantiation call sites that pass context
+        explicitly), falling back to a direct (still single-query, just
+        not request-memoized) lookup for any caller that doesn't."""
+        if 'fallback_category_id' in self.context:
+            fallback_id = self.context['fallback_category_id']
+        else:
+            from apps.api.templates_config.serializers import (
+                _resolve_fallback_category_id,
+            )
+            fallback_id = _resolve_fallback_category_id()
+        return fallback_id is not None and obj.accounting_category_id == fallback_id
 
     def get_adjustment_service_detail(self, obj):
         if obj.adjustment_service_id is None:

@@ -58,4 +58,52 @@ describe('InvoiceAddLineForm', () => {
     expect(api.post).toHaveBeenCalledWith('/api/invoices/42/line-items/',
       { inventory_item: 9, qty: '2' });
   });
+
+  it('service choice prefills description from template_name and omits it untouched', async () => {
+    const choice = { type: 'service',
+                     serviceItem: { template_id: 11, template_name: 'CNC' } };
+    const { getByLabelText, getByRole } = render(InvoiceAddLineForm, {
+      props: { open: true, choice, invoiceId: 42,
+               categories: cats, onSaved: vi.fn() } });
+    expect(getByLabelText(/description/i)).toHaveValue('CNC');
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    const [, payload] = api.post.mock.calls.at(-1);
+    expect('description' in payload).toBe(false);
+  });
+
+  it('service choice sends an edited description as an override', async () => {
+    const choice = { type: 'service',
+                     serviceItem: { template_id: 11, template_name: 'CNC' } };
+    const { getByLabelText, getByRole } = render(InvoiceAddLineForm, {
+      props: { open: true, choice, invoiceId: 42,
+               categories: cats, onSaved: vi.fn() } });
+    await fireEvent.input(getByLabelText(/description/i), { target: { value: 'CNC (edited)' } });
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/invoices/42/line-items-from-service/',
+      expect.objectContaining({ description: 'CNC (edited)' }));
+  });
+
+  it('inventory choice prefills description from the PLI and omits it untouched', async () => {
+    const choice = { type: 'inventory',
+                     inventoryItem: { inventory_item_id: 9, description: 'Widget' } };
+    const { getByLabelText, getByRole } = render(InvoiceAddLineForm, {
+      props: { open: true, choice, invoiceId: 42,
+               categories: cats, onSaved: vi.fn() } });
+    expect(getByLabelText(/description/i)).toHaveValue('Widget');
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    const [, payload] = api.post.mock.calls.at(-1);
+    expect('description' in payload).toBe(false);
+  });
+
+  it('inventory choice sends an edited description as an override', async () => {
+    const choice = { type: 'inventory',
+                     inventoryItem: { inventory_item_id: 9, description: 'Widget' } };
+    const { getByLabelText, getByRole } = render(InvoiceAddLineForm, {
+      props: { open: true, choice, invoiceId: 42,
+               categories: cats, onSaved: vi.fn() } });
+    await fireEvent.input(getByLabelText(/description/i), { target: { value: 'Widget, blue' } });
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/invoices/42/line-items/',
+      expect.objectContaining({ description: 'Widget, blue' }));
+  });
 });

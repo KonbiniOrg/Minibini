@@ -5,7 +5,7 @@ Supersedes the open CO, seeds a fresh draft carrying the deltas, leaves the job
 on_hold, records the customer comment, and snapshots the superseded proposal.
 """
 from decimal import Decimal
-from apps.core.models import JobHistory
+from apps.core.models import AccountingCategory, JobHistory
 
 from django.core.exceptions import ValidationError
 
@@ -13,9 +13,10 @@ from tests.base import FixtureTestCase
 from apps.deliverables.models import Deliverable, DeliverableSnapshot
 from apps.estimates.change_order_service import ChangeOrderService
 from apps.estimates.models import (
-    Estimate, ChangeOrder, ChangeOrderLineItem,
+    Estimate, ChangeOrder, ChangeOrderLineItem, ChangeOrderLineItemSource,
 )
-from apps.jobs.models import Job
+from apps.estimates.services import ChangeOrderWizardService
+from apps.jobs.models import Job, RateScheme, Task
 
 
 def _advance_job_to_on_hold(job):
@@ -107,3 +108,67 @@ class ChangeOrderRequestChangesTests(FixtureTestCase):
         self.assertTrue(entries.exists())
         self.assertFalse(entries.filter(object_type='change_order').exists())
         self.assertTrue(entries.filter(object_type='changeorder').exists())
+
+
+class ChangeOrderRequestChangesMovesClaimsTests(FixtureTestCase):
+    """request_changes supersedes an OPEN co carrying an authored (wizard)
+    claim — the atom must not strand on the now-dead superseded CO; its
+    source rows must move onto the corresponding line in the freshly
+    seeded draft."""
+
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-RCCLAIM-1', version=1,
+            status=Estimate.STATUS_ACCEPTED,
+        )
+        Deliverable.objects.create(
+            job=self.job, description='Thing', qty_ordered=Decimal('1'),
+            units='ea', sort_order=10,
+        )
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-RCCLAIM', name='Labor-RCClaim', taxable=False)
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-RCClaim', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.task = Task(job=self.job, name='Extra cut', est_qty=Decimal('2'))
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
+        _advance_job_to_on_hold(self.job)
+        self.co = ChangeOrderService.create(job_id=self.job.pk)
+        self.li = ChangeOrderWizardService.add_atoms_to_new_line_item(
+            self.co, [{'type': 'task', 'id': self.task.pk}])
+        ChangeOrderService.mark_open(self.co.pk)
+        self.co.refresh_from_db()
+
+    def _actor(self, reason='cheaper please'):
+        return {'contact_id': None, 'email': 'pat@acme.com', 'reason': reason}
+
+    def test_moves_authored_claims_to_new_draft(self):
+        new_co = ChangeOrderService.request_changes(self.co.pk, self._actor())
+
+        self.assertEqual(
+            ChangeOrderLineItemSource.objects.filter(
+                change_order_line_item__change_order=self.co).count(),
+            0,
+            "The superseded CO's lines must hold zero source rows.",
+        )
+
+        new_li = ChangeOrderLineItem.objects.get(change_order=new_co)
+        self.assertEqual(new_li.sources.count(), 1)
+        self.assertEqual(new_li.sources.first().source_pk, self.task.pk)
+
+    def test_pool_shows_atom_claimed_by_the_new_draft(self):
+        new_co = ChangeOrderService.request_changes(self.co.pk, self._actor())
+        new_li = ChangeOrderLineItem.objects.get(change_order=new_co)
+
+        pool = ChangeOrderWizardService.get_source_pool(new_co)
+        entry = next(
+            a for a in pool['atoms']
+            if a['type'] == 'task' and a['id'] == self.task.pk
+        )
+        self.assertEqual(entry['state'], 'claimed_by_current')
+        self.assertEqual(entry['claiming_line_item_id'], new_li.pk)

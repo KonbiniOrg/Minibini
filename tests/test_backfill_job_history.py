@@ -36,11 +36,13 @@ class BackfillJobHistoryTest(BaseTestCase):
 
     def test_task_creation_not_before_job_creation(self):
         """A backfilled Task 'created' entry must never predate the Job's."""
-        from apps.jobs.models import Job, Task
+        from apps.jobs.models import Job, Task, RateScheme
         job = Job.objects.first()
         task = Task.objects.filter(job=job).first()
         if task is None:
-            task = Task.objects.create(job=job, name='BF chronology task', rate_scheme_id=1)
+            task = Task(job=job, name='BF chronology task')
+            task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+            task.save()
         call_command('backfill_job_history', f'--job={job.pk}')
         job_created = JobHistory.objects.filter(
             object_type='job', object_id=job.pk,
@@ -75,11 +77,13 @@ class BackfillJobHistoryTest(BaseTestCase):
 
     def test_entries_are_at_least_a_minute_apart(self):
         """No two backfilled entries collide on the same timestamp."""
-        from apps.jobs.models import Job, Task
+        from apps.jobs.models import Job, Task, RateScheme
         job = Job.objects.first()
         # several tasks share one anchor date -> would collide without spacing
         for i in range(4):
-            Task.objects.create(job=job, name=f'BF spacing {i}', rate_scheme_id=1)
+            t = Task(job=job, name=f'BF spacing {i}')
+            t.stamp_from_scheme(RateScheme.objects.get(pk=1))
+            t.save()
         call_command('backfill_job_history', f'--job={job.pk}')
         times = list(
             JobHistory.objects.filter(changes___backfill=True)

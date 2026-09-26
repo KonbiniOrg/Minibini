@@ -72,7 +72,7 @@ job detail.</p>
 <h3>The main organizing concept</h3>
 
 <p>A <strong>Job owns its work</strong>. Everything billable on a job is
-one of three kinds of <em>atom</em>, all listed on the job's task-list
+one of two kinds of <em>atom</em>, all listed on the job's task-list
 page:</p>
 
 <ul>
@@ -85,9 +85,6 @@ page:</p>
   <li><strong>Material</strong> — a physical item, either picked from the
     <a href="/catalog" use:link>Materials catalog</a> (which reserves
     stock — see Materials below) or typed in freeform.</li>
-  <li><strong>Fee</strong> — a fixed charge,
-    <code>quantity × unit rate</code>. No timer, no stock; just a
-    price.</li>
 </ul>
 
 <p>Estimates and invoices are <em>documents built from those same
@@ -105,8 +102,8 @@ linked to the same work.</p>
     from a customer email on the <a href="/email" use:link>Email</a> page
     ("create job from email"). This also lets you create the contact and
     business if they're new. The job starts as a <strong>draft</strong>.</li>
-  <li><strong>Add the work.</strong> On the job, add tasks, materials,
-    and fees by hand, or pick from the
+  <li><strong>Add the work.</strong> On the job, add tasks and materials
+    by hand, or pick from the
     <a href="/catalog/service-items" use:link>Service Items</a> or
     <a href="/catalog" use:link>Materials</a> catalogs. Give each task an
     estimated quantity and an estimated worker time (used for planning
@@ -131,8 +128,9 @@ linked to the same work.</p>
     superseded, and the new one sent to the customer with an incremented
     version number.</li>
   <li><strong>Acceptance.</strong> When the estimate is accepted the job
-    becomes <strong>approved</strong>: hand-written lines crystallize
-    into real Fee and Material atoms, and stock is earmarked for the job.
+    becomes <strong>approved</strong>: hand-written service and material
+    lines crystallize into real Task and Material atoms (plain lines stay
+    document-only lines), and stock is earmarked for the job.
     A worker must review the job at this point and ensure the necessary
     materials and tasks are listed, and then release the job to the shop
     floor. Now it is <strong>in progress</strong>, and displayed in the
@@ -242,7 +240,7 @@ picked up when it's been picked up.</p>
 and progress billing are fine), open an invoice and build it exactly the
 way you built the estimate: its Reconcile view offers the job's billable
 atoms — completed tasks at their actual quantities, consumed materials,
-fees, loose expenses. Each atom can only ever be claimed by one invoice,
+and loose expenses. Each atom can only ever be claimed by one invoice,
 so double-billing is structurally impossible. The invoice is fully
 editable by the user so if you don't want to charge according to the
 actual work for whatever reason, you don't have to. And you can always

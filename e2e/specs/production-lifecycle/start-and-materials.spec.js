@@ -53,6 +53,7 @@ async function waitForEarlyMinute(page, latestSecond = 40) {
 }
 
 test('§1 Start Work — first clock-in promotes, consumes, advances', async ({ page }) => {
+  test.setTimeout(150_000); // Stop Work step waits past the one-minute floor
   const hit = findStartableTask(jobs, {
     jobStatus: 'approved', materials: 'in-stock', used,
   });
@@ -92,7 +93,7 @@ test('§1 Start Work — first clock-in promotes, consumes, advances', async ({ 
     // band offers only Cancel (the §5 undo, which would un-consume).
     await expect(bandButton(page, 'Stop')).toBeVisible({ timeout: 130_000 });
     await bandButton(page, 'Stop').click();
-    if (task.scheme_algorithm === 'entered_qty') {
+    if (task.qty_source === 'entered_qty') {
       // Counted task: the stop settles first (§3); empty = skip the count.
       await expect(page.getByRole('heading', { name: 'Quantity this session' })).toBeVisible();
       await page.getByRole('dialog').getByRole('button', { name: 'Add', exact: true }).click();

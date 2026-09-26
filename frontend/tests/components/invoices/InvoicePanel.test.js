@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
 vi.mock('@/lib/api.js', () => ({
@@ -19,7 +19,7 @@ import InvoicePanel from '@/components/invoices/InvoicePanel.svelte';
 
 const JOB = {
   job_id: 9, job_number: 'JOB-9', name: 'Job', contact: null, can_manage: true,
-  tasks: [], materials: [], fees: [],
+  tasks: [], materials: [],
 };
 const ADJ_SERVICE = { rate_scheme_id: 2, name: 'Late Fee', algorithm: 'percentage', rate: '5.00' };
 
@@ -72,6 +72,8 @@ function mockApi(invoice, { invoices = null, categories = [] } = {}) {
     }
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: categories });
     if (url.includes('rate-schemes')) return Promise.resolve({ results: [ADJ_SERVICE] });
+    if (url.includes('source-pool')) return Promise.resolve({ tasks: [] });
+    if (url.includes('agreement-adjustments')) return Promise.resolve({ adjustments: [] });
     return Promise.resolve({});
   });
 }
@@ -93,6 +95,18 @@ describe('InvoicePanel draft placeholder identity', () => {
       props: { job: JOB, invoiceId: 5 },
     });
     await findByText('Invoice: Draft — JOB-9');
+  });
+
+  it('loads accounting categories from the unfiltered endpoint (no exclude_fallback param)', async () => {
+    user.set({ permissions: [] });
+    const draft = makeInvoice({
+      invoice_number: null, display_number: 'Draft — JOB-9', status: 'draft',
+    });
+    mockApi(draft, { invoices: [draft] });
+    render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/api/accounting-categories/?page_size=100');
+    });
   });
 });
 
@@ -348,15 +362,38 @@ describe('InvoicePanel Add Deposit Invoice — state 1 (no draft)', () => {
     expect(await findByRole('heading', { name: /add deposit invoice/i })).toBeInTheDocument();
   });
 
-  it('offers Add Deposit Invoice next to "+ New invoice" on the version bar (non-empty state, no draft)', async () => {
+  it('relabels to "Add Progress Invoice" next to "+ New invoice" once a live invoice exists (spec §7.2)', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     const sent = makeInvoice({ invoice_id: 5, invoice_number: 'INV-5', display_number: 'INV-5', status: 'sent' });
+    mockApi(sent, { invoices: [sent], categories: DEP_CAT });
+    const { findByRole, queryByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 5 },
+    });
+    expect(await findByRole('button', { name: /new invoice/i })).toBeInTheDocument();
+    expect(await findByRole('button', { name: /^add progress invoice$/i })).toBeInTheDocument();
+    expect(queryByRole('button', { name: /^add deposit invoice$/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps "Add Deposit Invoice" when the job\'s only other invoice is cancelled (not live)', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const cancelled = makeInvoice({ invoice_id: 5, status: 'cancelled' });
+    mockApi(cancelled, { invoices: [cancelled], categories: DEP_CAT });
+    const { findByRole, queryByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 5 },
+    });
+    expect(await findByRole('button', { name: /^add deposit invoice$/i })).toBeInTheDocument();
+    expect(queryByRole('button', { name: /^add progress invoice$/i })).not.toBeInTheDocument();
+  });
+
+  it('clicking Add Progress Invoice opens the modal with the progress heading', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const sent = makeInvoice({ invoice_id: 5, status: 'sent' });
     mockApi(sent, { invoices: [sent], categories: DEP_CAT });
     const { findByRole } = render(InvoicePanel, {
       props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 5 },
     });
-    expect(await findByRole('button', { name: /new invoice/i })).toBeInTheDocument();
-    expect(await findByRole('button', { name: /^add deposit invoice$/i })).toBeInTheDocument();
+    await fireEvent.click(await findByRole('button', { name: /^add progress invoice$/i }));
+    expect(await findByRole('heading', { name: /add progress invoice/i })).toBeInTheDocument();
   });
 
   it('Create posts, navigates to the newly created draft, and refreshes the invoices list', async () => {
@@ -440,7 +477,19 @@ describe('InvoicePanel Add Deposit Invoice — state 2 (draft, zero lines)', () 
     expect(window.location.hash).toBe('#/jobs/9/invoice/5');
   });
 
-  it('Create while viewing a DIFFERENT doc navigates to the draft (as before)', async () => {
+  it('relabels to "Make this a progress invoice" when a live invoice exists besides the empty draft', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const sent = makeInvoice({ invoice_id: 9001, invoice_number: 'INV-9001', display_number: 'INV-9001', status: 'sent' });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
+    mockApi(draft, { invoices: [sent, draft], categories: DEP_CAT });
+    const { findByRole, queryByRole } = render(InvoicePanel, {
+      props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 5 },
+    });
+    expect(await findByRole('button', { name: /make this a progress invoice/i })).toBeInTheDocument();
+    expect(queryByRole('button', { name: /make this a deposit invoice/i })).not.toBeInTheDocument();
+  });
+
+  it('Create while viewing a DIFFERENT doc navigates to the draft (as before; progress variant here)', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     const sent = makeInvoice({ invoice_id: 9001, invoice_number: 'INV-9001', display_number: 'INV-9001', status: 'sent' });
     const draft = makeInvoice({ invoice_id: 5, status: 'draft', line_items: [] });
@@ -454,13 +503,13 @@ describe('InvoicePanel Add Deposit Invoice — state 2 (draft, zero lines)', () 
       props: { job: { ...JOB, status: 'in_progress', can_manage: true }, invoiceId: 9001 },
     });
 
-    await fireEvent.click(await findByRole('button', { name: /make this a deposit invoice/i }));
+    await fireEvent.click(await findByRole('button', { name: /make this a progress invoice/i }));
     await fireEvent.input(getByLabelText(/amount/i), { target: { value: '2500' } });
     await fireEvent.click(await findByRole('button', { name: /^create$/i }));
 
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith('/api/invoices/5/line-items/', {
-        deposit: true, description: 'Deposit on JOB-9', qty: '1', units: 'none', price: '2500',
+        deposit: true, description: 'Progress billing on JOB-9', qty: '1', units: 'none', price: '2500',
       });
     });
     await waitFor(() => expect(window.location.hash).toBe('#/jobs/9/invoice/5'));
@@ -531,6 +580,52 @@ describe('InvoicePanel send gate', () => {
     expect(await findByText(/assign an accounting category to every line before sending/i)).toBeInTheDocument();
   });
 
+  it('a comment line (category-free by design) does NOT block the Send link', async () => {
+    // Mirrors the backend gate exactly: _assert_all_lines_categorized
+    // filters is_comment=False, so a categorized real line + a comment
+    // line is sendable (comment-lines e2e backfill fix, 2026-09-22).
+    user.set({ permissions: ['can_manage_financials'] });
+    const inv = makeInvoice({
+      status: 'draft',
+      line_items: [
+        makeLine({ accounting_category: { id: 1, name: 'Labor' } }),
+        makeLine({
+          line_item_id: 2, line_number: 2,
+          description: 'See attached warranty terms',
+          is_comment: true, qty: 0, price: '0.00', accounting_category: null,
+        }),
+      ],
+    });
+    mockApi(inv);
+    const { findByRole, findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Line Items');
+    expect(await findByRole('link', { name: /send invoice/i })).toBeInTheDocument();
+    expect(queryByText(/assign an accounting category to every line before sending/i)).not.toBeInTheDocument();
+  });
+
+  it('an uncategorized REAL line still blocks even when a comment line is also present', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const inv = makeInvoice({
+      status: 'draft',
+      line_items: [
+        makeLine({ accounting_category: null }),
+        makeLine({
+          line_item_id: 2, line_number: 2,
+          description: 'See attached warranty terms',
+          is_comment: true, qty: 0, price: '0.00', accounting_category: null,
+        }),
+      ],
+    });
+    mockApi(inv);
+    const { findByText, queryByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Line Items');
+    expect(queryByRole('link', { name: /send invoice/i })).not.toBeInTheDocument();
+    const sendBtn = await findByText('Send Invoice');
+    expect(sendBtn.tagName).toBe('BUTTON');
+    expect(sendBtn).toBeDisabled();
+    expect(await findByText(/assign an accounting category to every line before sending/i)).toBeInTheDocument();
+  });
+
   it('the disabled Send button is a <button>, not an <a>', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     const inv = makeInvoice({
@@ -542,43 +637,6 @@ describe('InvoicePanel send gate', () => {
     const sendEl = await findByText('Send Invoice');
     expect(sendEl.tagName).toBe('BUTTON');
     expect(sendEl).toBeDisabled();
-  });
-});
-
-// ─── hasBillables / Show Billables link ──────────────────────────────────────
-
-describe('InvoicePanel Show Billables link', () => {
-  it('shows "Show Billables" when job has fees (but no tasks or materials)', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    mockApi(makeInvoice({ status: 'draft' }));
-    const job = { ...JOB, tasks: [], materials: [], fees: [{ id: 1, description: 'Setup Fee' }] };
-    const { findByText } = render(InvoicePanel, { props: { job, invoiceId: 5 } });
-    expect(await findByText('Show Billables')).toBeInTheDocument();
-  });
-
-  it('shows "Show Billables" when job has tasks', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    mockApi(makeInvoice({ status: 'draft' }));
-    const job = { ...JOB, tasks: [{ id: 1, name: 'Cut' }], materials: [], fees: [] };
-    const { findByText } = render(InvoicePanel, { props: { job, invoiceId: 5 } });
-    expect(await findByText('Show Billables')).toBeInTheDocument();
-  });
-
-  it('shows "Show Billables" when job has materials', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    mockApi(makeInvoice({ status: 'draft' }));
-    const job = { ...JOB, tasks: [], materials: [{ id: 2, description: 'Steel' }], fees: [] };
-    const { findByText } = render(InvoicePanel, { props: { job, invoiceId: 5 } });
-    expect(await findByText('Show Billables')).toBeInTheDocument();
-  });
-
-  it('does NOT show "Show Billables" when job has no tasks, materials, or fees', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    mockApi(makeInvoice({ status: 'draft' }));
-    const job = { ...JOB, tasks: [], materials: [], fees: [] };
-    const { findByText, queryByText } = render(InvoicePanel, { props: { job, invoiceId: 5 } });
-    await findByText('Line Items');
-    expect(queryByText('Show Billables')).not.toBeInTheDocument();
   });
 });
 
@@ -631,90 +689,137 @@ describe('InvoicePanel adjustment affordances', () => {
   });
 });
 
-// ─── Line-item actions ────────────────────────────────────────────────────────
+// ─── Mode bar ─────────────────────────────────────────────────────────────────
 
-describe('InvoicePanel reconcile mode', () => {
+describe('InvoicePanel mode bar', () => {
   beforeEach(() => { localStorage.clear(); });
 
-  function mockReconcile(invoice) {
-    api.get.mockReset();
-    api.get.mockImplementation((url) => {
-      if (url === `/api/invoices/${invoice.invoice_id}/`) return Promise.resolve({ ...invoice });
-      if (url === `/api/invoices/${invoice.invoice_id}/line-items/`) return Promise.resolve([]);
-      if (url === `/api/invoices/${invoice.invoice_id}/source-pool/`) return Promise.resolve({ tasks: [] });
-      if (url === `/api/invoices/${invoice.invoice_id}/agreement-adjustments/`) return Promise.resolve({ adjustments: [] });
-      if (url.startsWith('/api/invoices/?job=')) return Promise.resolve({ results: [invoice] });
-      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
-      return Promise.resolve({});
-    });
-  }
+  const LINE = {
+    line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
+    price: '5', accounting_category: null, sources: [], backing: null,
+  };
 
-  it('flips to reconcile mode and persists the choice per docId', async () => {
+  it('offers Edit / Customer / Reorder — no wizard-era wording', async () => {
     user.set({ permissions: ['can_manage_financials'] });
-    mockReconcile(makeInvoice({ invoice_id: 5, status: 'draft' }));
-    const { findByRole, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
-    expect(await findByText('Send all to Invoice')).toBeInTheDocument();
-    expect(getJobWs(9).modes['inv:5']).toBe('reconcile');
-    expect(await findByRole('button', { name: 'Back to lines' })).toBeInTheDocument();
-  });
-
-  it('restores reconcile mode on mount for a draft doc when remembered', async () => {
-    user.set({ permissions: ['can_manage_financials'] });
-    rememberMode(9, 'inv:5', 'reconcile');
-    mockReconcile(makeInvoice({ invoice_id: 5, status: 'draft' }));
+    mockApi(makeInvoice({ invoice_id: 5, status: 'draft', line_items: [LINE] }));
     const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    expect(await findByText('Send all to Invoice')).toBeInTheDocument();
+    await findByText('Line Items');
+    expect(await findByText('Edit view')).toBeInTheDocument();
+    expect(await findByText('Customer view')).toBeInTheDocument();
+    expect(await findByText('Reorder view')).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Show Billables|Reconcile|Send all to Invoice/);
   });
 
-  it('restores lines (not reconcile) for a SENT doc even when reconcile was remembered', async () => {
+  it('relabels Edit to Detail and drops Reorder when the invoice is not editable (sent)', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    mockApi(makeInvoice({ invoice_id: 5, status: 'open', line_items: [LINE] }));
+    const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Invoice: INV-5');
+    expect(await findByText('Detail view')).toBeInTheDocument();
+    expect(await findByText('Customer view')).toBeInTheDocument();
+    expect(queryByText('Edit view')).toBeNull();
+    expect(queryByText('Reorder view')).toBeNull();
+  });
+
+  it('switches between Edit / Customer / Reorder views in place and persists the choice per docId', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    mockApi(makeInvoice({ invoice_id: 5, status: 'draft', line_items: [LINE], total: '10.00' }));
+    const { container, findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Cut');
+
+    const modeBar = () => container.querySelector('.doc-mode-bar');
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Customer view' }));
+    expect(await findByText('Invoice INV-5')).toBeInTheDocument();
+    expect(queryByText('Add Line Item')).toBeNull();
+    expect(getJobWs(9).modes['inv:5']).toBe('customer');
+
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Reorder view' }));
+    expect(container.querySelectorAll('.doc-reorder-arrows').length).toBeGreaterThan(0);
+    expect(getJobWs(9).modes['inv:5']).toBe('reorder');
+
+    await fireEvent.click(within(modeBar()).getByRole('button', { name: 'Edit view' }));
+    expect(await findByText('Add Line Item')).toBeInTheDocument();
+    expect(getJobWs(9).modes['inv:5']).toBe('edit');
+  });
+
+  it('normalizes a remembered "reconcile" (old wizard toggle) to Edit mode', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     rememberMode(9, 'inv:5', 'reconcile');
-    mockReconcile(makeInvoice({ invoice_id: 5, status: 'open' }));
-    const { findByText, queryByText, queryByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    await findByText('Line Items');
-    expect(queryByText('Send all to Invoice')).toBeNull();
-    expect(queryByRole('button', { name: 'Reconcile' })).toBeNull();
-    expect(queryByRole('button', { name: 'Back to lines' })).toBeNull();
+    mockApi(makeInvoice({ invoice_id: 5, status: 'draft', line_items: [LINE] }));
+    const { container, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Add Line Item');
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Edit view' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('reloads the invoice when flipping back to lines', async () => {
+  it('normalizes a remembered "lines" (old two-mode panel) to Edit mode', async () => {
     user.set({ permissions: ['can_manage_financials'] });
-    mockReconcile(makeInvoice({ invoice_id: 5, status: 'draft' }));
-    const { findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
-    await findByRole('button', { name: 'Back to lines' });
-    const before = api.get.mock.calls.filter(([u]) => u === '/api/invoices/5/').length;
-    await fireEvent.click(await findByRole('button', { name: 'Back to lines' }));
-    expect(api.get.mock.calls.filter(([u]) => u === '/api/invoices/5/').length).toBeGreaterThan(before);
-    expect(getJobWs(9).modes['inv:5']).toBe('lines');
+    rememberMode(9, 'inv:5', 'lines');
+    mockApi(makeInvoice({ invoice_id: 5, status: 'draft', line_items: [LINE] }));
+    const { container, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Add Line Item');
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Edit view' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('does NOT restore from an ESTIMATE with the same numeric id (namespaced keys)', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    rememberMode(9, 'est:5', 'reorder');
+    mockApi(makeInvoice({ invoice_id: 5, status: 'draft', line_items: [LINE] }));
+    const { container, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Add Line Item');
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Edit view' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('falls back to Detail when "reorder" was remembered but the invoice is no longer editable', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    rememberMode(9, 'inv:5', 'reorder');
+    mockApi(makeInvoice({ invoice_id: 5, status: 'open', line_items: [LINE] }));
+    const { container, findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Cut');
+    expect(queryByText('Add Line Item')).toBeNull(); // not editable — the mode shows as Detail
+    const modeBar = container.querySelector('.doc-mode-bar');
+    expect(within(modeBar).getByRole('button', { name: 'Detail view' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modeBar).queryByRole('button', { name: 'Reorder view' })).toBeNull();
   });
 });
 
 describe('InvoicePanel line-item actions', () => {
-  it('Delete on a line calls the line-item delete endpoint', async () => {
+  it('"Remove from invoice" on a line calls the line-item delete endpoint', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     mockApi(makeInvoice({ status: 'draft', line_items: [
       { line_item_id: 42, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
-        price: '5', accounting_category: null, sources: [] },
+        price: '5', accounting_category: null, sources: [], backing: null },
     ] }));
-    api.delete.mockResolvedValue({ message: 'deleted' });
+    api.delete.mockResolvedValue({ message: 'Line item deleted.' });
     const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    const deleteBtn = await findByText('Delete');
-    await fireEvent.click(deleteBtn);
+    const removeBtn = await findByText('Remove from invoice');
+    await fireEvent.click(removeBtn);
     expect(api.delete).toHaveBeenCalledWith('/api/invoices/5/line-items/42/');
   });
 
-  it('hides Edit/Delete when canEditLineItems is false (not draft)', async () => {
+  it('hides Edit…/Remove when canEditLineItems is false (not draft)', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     mockApi(makeInvoice({ status: 'open', line_items: [
       { line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
-        price: '5', accounting_category: null, sources: [] },
+        price: '5', accounting_category: null, sources: [], backing: null },
     ] }));
     const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Cut');
-    expect(queryByText('Edit')).toBeNull();
-    expect(queryByText('Delete')).toBeNull();
+    expect(queryByText('Edit…')).toBeNull();
+    expect(queryByText('Remove from invoice')).toBeNull();
+  });
+
+  it('never renders the word "delete" anywhere in the edit view', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    mockApi(makeInvoice({ status: 'draft', line_items: [
+      { line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
+        price: '5', accounting_category: null, sources: [], backing: null },
+    ] }));
+    const { findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Cut');
+    expect(queryByText(/delete/i)).toBeNull();
   });
 });
 

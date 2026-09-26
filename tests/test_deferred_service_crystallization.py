@@ -100,6 +100,36 @@ class AddLineFromServiceTest(DeferredServiceBase):
                 self.estimate.pk, self.service_item.pk, 'lots',
             )
 
+    def test_description_override_is_used_verbatim(self):
+        # Add Line modal editable-description feature (2026-09-20): an
+        # explicit, non-blank description wins over the catalog derivation.
+        # Price/qty/AC are untouched by the override.
+        line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('2'),
+            description='Custom line text',
+        )
+        line.refresh_from_db()
+        self.assertEqual(line.description, 'Custom line text')
+        self.assertEqual(line.price, Decimal('40.00'))
+        self.assertEqual(line.qty, Decimal('2'))
+        self.assertEqual(line.accounting_category_id, self.cat.pk)
+
+    def test_no_description_derives_exactly_as_today(self):
+        # Regression pin: omitting description keeps today's derivation.
+        line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('1'),
+        )
+        line.refresh_from_db()
+        self.assertEqual(line.description, 'CAM coding')
+
+    def test_blank_whitespace_description_falls_back_to_derived(self):
+        line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('1'),
+            description='   ',
+        )
+        line.refresh_from_db()
+        self.assertEqual(line.description, 'CAM coding')
+
 
 class ServiceItemFieldTest(DeferredServiceBase):
     def test_line_can_carry_service_item_and_defaults_null(self):
@@ -117,33 +147,37 @@ class ServiceItemFieldTest(DeferredServiceBase):
         self.assertEqual(line.service_item_id, self.service_item.pk)
 
 
-from apps.core.services import SchemeSupersededError
+from apps.jobs.models import SchemeInactiveError
 
 
-class GenerateTaskSupersededBypassTest(DeferredServiceBase):
-    def _supersede(self):
-        # Point the scheme at a replacement so replaced_by_id is set.
-        new = RateScheme.objects.create(
-            name='Hourly v2', algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('45'), unit_label='hour', accounting_category=self.cat,
-        )
-        self.scheme.replaced_by = new
+class GenerateTaskInactiveSchemeTest(DeferredServiceBase):
+    """Task 3 moved the creation-time gate from RateScheme supersession
+    (``replaced_by``) to ``is_active``; Task 4 deletes supersession
+    entirely, so ``is_active`` is now the sole retirement signal.
+    """
+
+    def _retire(self):
+        # Direct assign+save (not .update()): editing/retiring a referenced
+        # scheme is freely allowed post-Task-4, and this also keeps
+        # self.service_item's cached rate_scheme FK in sync (same in-memory
+        # instance as self.scheme).
+        self.scheme.is_active = False
         self.scheme.save()
 
-    def test_superseded_scheme_aborts_by_default(self):
-        self._supersede()
-        with self.assertRaises(SchemeSupersededError):
+    def test_inactive_scheme_aborts_by_default(self):
+        self._retire()
+        with self.assertRaises(SchemeInactiveError):
             self.service_item.generate_task(self.job, est_qty=Decimal('1'))
 
-    def test_allow_superseded_scheme_bypasses_and_builds_task(self):
-        self._supersede()
+    def test_allow_inactive_scheme_bypasses_and_builds_task(self):
+        self._retire()
         task = self.service_item.generate_task(
             self.job, est_qty=Decimal('1'),
-            description='desc from line', allow_superseded_scheme=True,
+            description='desc from line', allow_inactive_scheme=True,
         )
         self.assertEqual(task.name, 'CAM coding')          # from template_name
         self.assertEqual(task.description, 'desc from line')
-        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(task.source_scheme_id, self.scheme.pk)
 
 
 from rest_framework.test import APIClient
@@ -184,6 +218,16 @@ class LineItemsFromServiceApiTest(DeferredServiceBase):
         )
         self.assertEqual(resp.status_code, 404)
 
+    def test_posts_with_description_override(self):
+        resp = self.client.post(
+            f'/api/estimates/{self.estimate.pk}/line-items-from-service/',
+            {'service_item': self.service_item.pk, 'qty': '3',
+             'description': 'Edited at add time'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data['description'], 'Edited at add time')
+        self.assertEqual(Decimal(resp.data['price']), Decimal('40.00'))
+
 
 from apps.api.estimates.serializers import EstimateLineItemSerializer
 
@@ -215,7 +259,7 @@ class OnAcceptCrystallizesServiceTest(DeferredServiceBase):
     # status; it is driven by signals in production but callable directly in tests.
 
     def test_service_line_becomes_a_task_and_source_links(self):
-        from apps.jobs.models import Task, Fee
+        from apps.jobs.models import Task
         line = EstimateService.add_line_item_from_service(
             self.estimate.pk, self.service_item.pk, Decimal('2'),
         )
@@ -228,11 +272,9 @@ class OnAcceptCrystallizesServiceTest(DeferredServiceBase):
         task = Task.objects.get(job=self.job)
         self.assertEqual(task.name, 'CAM coding')                  # ServiceItem name
         self.assertEqual(task.description, 'CAM coding for panel A')  # line description
-        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(task.source_scheme_id, self.scheme.pk)
         self.assertEqual(task.est_qty, Decimal('2'))
         self.assertEqual(result['tasks_created'], 1)
-        # It did NOT become a Fee.
-        self.assertFalse(Fee.objects.filter(job=self.job).exists())
         # Source-linked to the Task.
         src = EstimateLineItemSource.objects.get(estimate_line_item=line)
         self.assertEqual(src.source_type, EstimateLineItemSource.SOURCE_TASK)
@@ -252,19 +294,18 @@ class OnAcceptCrystallizesServiceTest(DeferredServiceBase):
         self.assertEqual(task.est_qty, Decimal('3'))
         self.assertEqual(task.est_worker_time, timedelta(hours=3))
 
-    def test_superseded_scheme_does_not_abort_acceptance(self):
+    def test_edited_scheme_does_not_abort_acceptance(self):
+        """Editing the preset after the line was added (freely allowed,
+        Task 4 — no frozen fields) does not touch the already-queued
+        acceptance; only is_active=False raises SchemeInactiveError."""
         from apps.jobs.models import Task
         line = EstimateService.add_line_item_from_service(
             self.estimate.pk, self.service_item.pk, Decimal('1'),
         )
-        new = RateScheme.objects.create(
-            name='Hourly v2', algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('45'), unit_label='hour', accounting_category=self.cat,
-        )
-        self.scheme.replaced_by = new
+        self.scheme.rate = Decimal('45')
         self.scheme.save()
 
-        # Does NOT raise SchemeSupersededError.
+        # Does NOT raise SchemeInactiveError.
         EstimateAcceptanceService.on_accept(self.estimate)
         self.assertTrue(Task.objects.filter(job=self.job).exists())
 
@@ -298,7 +339,13 @@ class ReviseEstimateCarriesDescriptorFieldsTest(DeferredServiceBase):
         self.service_line = EstimateService.add_line_item_from_service(
             self.estimate.pk, self.service_item.pk, Decimal('2'),
         )
-        # Add a bare is_material=True line (requires DRAFT; supply AC explicitly).
+        # Add a bare material line — is_material derives from choosing the
+        # configured Materials AC (RM 2026-08-11, checkbox retired).
+        from apps.core.models import Configuration
+        Configuration.objects.update_or_create(
+            key='default_material_accounting_category',
+            defaults={'value': str(self.cat.pk)},
+        )
         self.material_line = EstimateService.add_line_item(
             self.estimate.pk,
             description='Raw stock',
@@ -306,7 +353,6 @@ class ReviseEstimateCarriesDescriptorFieldsTest(DeferredServiceBase):
             price=Decimal('10'),
             units='ft',
             accounting_category=self.cat.pk,
-            is_material=True,
         )
         # revise_estimate requires a non-draft parent. Force OPEN bypassing
         # model validation (the estimate has no deliverable, but that guard is

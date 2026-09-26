@@ -81,9 +81,11 @@ class ChangeRequestAPITest(BaseTestCase):
         # A request whose new time no shift covers must still be ALLOWED
         # (warn-and-flag) — the worker can't widen the shift; the manager
         # reconciles it on review. This is the agreed warn-and-allow contract.
-        from apps.jobs.models import Job, Task, Blep
+        from apps.jobs.models import Job, Task, Blep, RateScheme
         job = Job.objects.first()
-        task = Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        task = Task(name='T', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         blep = Blep.objects.create(
             task=task, user=self.worker,
             start_time=self.now - timedelta(hours=3),
@@ -101,9 +103,11 @@ class ChangeRequestAPITest(BaseTestCase):
         self.assertEqual(r.data['status'], 'pending')
 
     def test_shift_request_conflict_surfaces_offending_blep(self):
-        from apps.jobs.models import Job, Task, Blep
+        from apps.jobs.models import Job, Task, Blep, RateScheme
         job = Job.objects.first()
-        task = Task.objects.create(name='Demo', job=job, rate_scheme_id=1)
+        task = Task(name='Demo', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         shift = Shift.objects.create(user=self.worker,
                                      start_time=self.now - timedelta(hours=5),
                                      end_time=self.now - timedelta(hours=1))
@@ -123,9 +127,11 @@ class ChangeRequestAPITest(BaseTestCase):
                             for c in row['conflicts']), row['conflicts'])
 
     def test_blep_request_conflict_surfaces_overlapping_shift(self):
-        from apps.jobs.models import Job, Task, Blep, BlepChangeRequest
+        from apps.jobs.models import Job, Task, Blep, BlepChangeRequest, RateScheme
         job = Job.objects.first()
-        task = Task.objects.create(name='Demo2', job=job, rate_scheme_id=1)
+        task = Task(name='Demo2', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
         shift = Shift.objects.create(user=self.worker,
                                      start_time=self.now - timedelta(hours=3),
                                      end_time=self.now - timedelta(hours=1))

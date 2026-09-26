@@ -43,10 +43,12 @@ class BlepStartSweepBase(TestCase):
             job_number='JOB-BSS-1', contact=self.contact,
             status=Job.STATUS_IN_PROGRESS,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='started', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='started',
             status=Task.STATUS_IN_PROGRESS,
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
         self.worker = User.objects.create_user(username='bss_worker', password='x')
         now = timezone.now()
         # OPEN shift (worker on the clock): a closed future-ending shift would

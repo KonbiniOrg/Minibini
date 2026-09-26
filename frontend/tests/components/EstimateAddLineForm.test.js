@@ -33,8 +33,66 @@ describe('EstimateAddLineForm', () => {
       { inventory_item: 22, qty: '10' });
   });
 
-  it('freeform fee posts manual payload with is_material false; description prefilled from typed', async () => {
-    const choice = { type: 'freeform', typed: 'Rush charge', isMaterial: false };
+  it('service choice prefills description from template_name and omits it untouched', async () => {
+    const choice = { type: 'service', serviceItem: { template_id: 11, template_name: 'CNC Routing' } };
+    const { getByLabelText, getByRole } = render(EstimateAddLineForm, {
+      props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('CNC Routing');
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    const [, payload] = api.post.mock.calls.at(-1);
+    expect('description' in payload).toBe(false);
+  });
+
+  it('service choice sends an edited description as an override', async () => {
+    const choice = { type: 'service', serviceItem: { template_id: 11, template_name: 'CNC Routing' } };
+    const { getByLabelText, getByRole } = render(EstimateAddLineForm, {
+      props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    await fireEvent.input(getByLabelText(/description/i), { target: { value: 'CNC Routing (rush)' } });
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/estimates/42/line-items-from-service/',
+      expect.objectContaining({ description: 'CNC Routing (rush)' }));
+  });
+
+  it('inventory choice prefills description from the PLI and omits it untouched', async () => {
+    const choice = { type: 'inventory', inventoryItem: { inventory_item_id: 22, code: 'BOLT-14', description: 'Steel bolt 1/4"' } };
+    const { getByLabelText, getByRole } = render(EstimateAddLineForm, {
+      props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('Steel bolt 1/4"');
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    const [, payload] = api.post.mock.calls.at(-1);
+    expect('description' in payload).toBe(false);
+  });
+
+  it('inventory choice sends an edited description as an override', async () => {
+    const choice = { type: 'inventory', inventoryItem: { inventory_item_id: 22, code: 'BOLT-14', description: 'Steel bolt 1/4"' } };
+    const { getByLabelText, getByRole } = render(EstimateAddLineForm, {
+      props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    await fireEvent.input(getByLabelText(/description/i), { target: { value: 'Steel bolt, zinc-plated' } });
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/estimates/42/line-items/',
+      expect.objectContaining({ description: 'Steel bolt, zinc-plated' }));
+  });
+
+  it('re-picking a different choice reseeds the description field', async () => {
+    const choice1 = { type: 'inventory', inventoryItem: { inventory_item_id: 22, code: 'BOLT-14', description: 'Steel bolt' } };
+    const { getByLabelText, rerender } = render(EstimateAddLineForm, {
+      props: { open: true, choice: choice1, estimateId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('Steel bolt');
+    await fireEvent.input(getByLabelText(/description/i), { target: { value: 'Custom edit' } });
+    const choice2 = { type: 'inventory', inventoryItem: { inventory_item_id: 23, code: 'NUT-14', description: 'Steel nut' } };
+    await rerender({ open: true, choice: choice2, estimateId: 42, categories: cats, onSaved: vi.fn() });
+    expect(getByLabelText(/description/i)).toHaveValue('Steel nut');
+  });
+
+  it('freeform line posts a manual payload without is_material; description prefilled from typed', async () => {
+    // RM 2026-08-11: material-ness derives server-side from the chosen AC —
+    // the form never sends is_material.
+    const choice = { type: 'freeform', typed: 'Rush charge' };
     const { getByLabelText, getByRole } = render(EstimateAddLineForm, {
       props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
     });
@@ -44,36 +102,9 @@ describe('EstimateAddLineForm', () => {
     await fireEvent.change(getByLabelText(/accounting category/i), { target: { value: '7' } });
     await fireEvent.click(getByRole('button', { name: /add/i }));
     expect(api.post).toHaveBeenCalledWith('/api/estimates/42/line-items/',
-      expect.objectContaining({ description: 'Rush charge', is_material: false, accounting_category: 7, price: '50' }));
-  });
-
-  it('freeform material prefills AC from the default and carries is_material true (no manual AC)', async () => {
-    const choice = { type: 'freeform', typed: 'plywood', isMaterial: true };
-    const { getByLabelText, getByRole } = render(EstimateAddLineForm, {
-      props: { open: true, choice, estimateId: 42, categories: cats,
-        defaultMaterialCategoryId: 7, onSaved: vi.fn() },
-    });
-    // AC is prefilled from the default — the user enters no AC.
-    expect(getByLabelText(/accounting category/i)).toHaveValue('7');
-    await fireEvent.input(getByLabelText(/quantity/i), { target: { value: '2' } });
-    await fireEvent.input(getByLabelText(/price/i), { target: { value: '30' } });
-    await fireEvent.click(getByRole('button', { name: /add/i }));
-    expect(api.post).toHaveBeenCalledWith('/api/estimates/42/line-items/',
-      expect.objectContaining({ is_material: true, accounting_category: 7 }));
-  });
-
-  it('freeform material does not block save when no default is configured (backend fills it)', async () => {
-    const choice = { type: 'freeform', typed: 'plywood', isMaterial: true };
-    const { getByLabelText, getByRole } = render(EstimateAddLineForm, {
-      props: { open: true, choice, estimateId: 42, categories: cats,
-        defaultMaterialCategoryId: null, onSaved: vi.fn() },
-    });
-    await fireEvent.input(getByLabelText(/quantity/i), { target: { value: '2' } });
-    await fireEvent.input(getByLabelText(/price/i), { target: { value: '30' } });
-    await fireEvent.click(getByRole('button', { name: /add/i }));
-    // Not blocked on AC — material defers to the backend default.
-    expect(api.post).toHaveBeenCalledWith('/api/estimates/42/line-items/',
-      expect.objectContaining({ is_material: true }));
+      expect.objectContaining({ description: 'Rush charge', accounting_category: 7, price: '50' }));
+    const [, payload] = api.post.mock.calls.at(-1);
+    expect('is_material' in payload).toBe(false);
   });
 
   it('comment choice posts is_comment without requiring an accounting category', async () => {
@@ -107,8 +138,8 @@ describe('EstimateAddLineForm', () => {
     expect(getByText('ea')).toBeInTheDocument();
   });
 
-  it('freeform fee blocks save with no accounting category (hand-line rule)', async () => {
-    const choice = { type: 'freeform', typed: 'x', isMaterial: false };
+  it('freeform line blocks save with no accounting category (hand-line rule, no material exemption)', async () => {
+    const choice = { type: 'freeform', typed: 'x' };
     const { getByLabelText, getByRole, findByText } = render(EstimateAddLineForm, {
       props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
     });

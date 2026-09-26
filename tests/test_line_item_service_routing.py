@@ -186,8 +186,13 @@ class EstimateLineItemStatusCheckTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
 
     def _make_estimate(self, status=Estimate.STATUS_DRAFT):
+        # Own job (not Job.objects.first()) — the fixture job already carries
+        # a draft estimate, and a job may only have one (Estimate.clean()).
         from apps.jobs.models import Job
-        job = Job.objects.first()
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(
+            first_name='L', last_name=f'I-{status}', email=f'li-{status}@test.com')
+        job = Job.objects.create(contact=contact, job_number=f'JOB-LI-{status}')
         est = Estimate.objects.create(
             job=job,
             estimate_number=f'EST-LI-TEST-{status}',

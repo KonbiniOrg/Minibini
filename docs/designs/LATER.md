@@ -21,29 +21,60 @@ proper issue.
 
 ## Job & estimate lifecycle (decisions)
 
+- **Warn when sending an estimate with no deliverables.** — _added
+  2026-09-16 (RM)_
+  If an estimate is about to be sent and the job has no Deliverables,
+  flag it for the user to fix before the send goes out (the customer-
+  facing document/portal shows the deliverables list, and sending
+  freezes a snapshot of it at supersession time — an empty list at send
+  is almost certainly an oversight). Likely home: the send flow on the
+  estimate page (`POST /api/estimates/{id}/send` confirm step).
+  _Done when:_ the send gesture surfaces a "no deliverables yet"
+  warning the user must acknowledge (not a hard block)._
+
+- **Entering a flat fee is not intuitive.** — _added 2026-08-16 (RM,
+  estimating-structure review)_
+  Two compounding gaps. (1) There is no "flat" RateScheme algorithm and
+  nothing explains the intended shapes: a one-off flat fee is a plain
+  hand line (qty 1 × price; the line carries the money, then
+  mint-or-decline at acceptance), and a repeatable one is a ServiceItem
+  over an `entered_qty` scheme at qty 1 — neither is discoverable; RM
+  went looking for a flat algorithm. (2) The scheme-vs-catalog split is
+  a walkable dead end: RM created RateScheme "Setup fee" ($110/ea,
+  entered_qty) expecting it in the catalog search — but schemes are
+  never searchable, only ServiceItems/inventory items are, and the
+  scheme-creation surface gives no hint that a Service Item must wrap a
+  scheme to make it pickable. Fix candidates: an "also create a Service
+  Item for this scheme" affordance (or prompt) at scheme creation; copy
+  on the scheme manager explaining the split; a flat-fee example in the
+  estimating docs/UI.
+  _Repeatable-fee half SHIPPED 2026-08-16_ (`flat_fee` algorithm,
+  item-side amounts, scheme-encapsulated interpretation, converter
+  internal scheme sourcing — spec `docs/plans/2026-08-16-flat-fee-schemes.md`,
+  implemented same day). Remaining: the scheme-surface discoverability
+  half — the scheme manager still gives no hint that a Service Item must
+  wrap a scheme to make it pickable (an "also create a Service Item?"
+  affordance or explanatory copy).
+  _Done when:_ the scheme-creation surface no longer walks a new user
+  into the pickability dead end._
+
 Status coupling, transitions, and what a job may do at each stage.
 
-- **Release-to-floor should require at least one Task — placement undecided.** — _added 2026-07-02_
-  A job with no Tasks shouldn't be releasable to the floor (`approved → in_progress`).
-  A first pass built this but it was **removed pending a design decision** — the code
-  (view-layer guard in `JobViewSet.perform_update`, a `hasTasks` disable on
-  `JobHeader.svelte`'s "Release to floor" button, and `tests/test_release_to_floor_guard.py`)
-  was reverted so it doesn't ship half-decided.
-  **Gating question (blocks any implementation):** *is a taskless, hand-billed, paid job a
-  supported flow?* This determines where the guard belongs — and it must be decided on
-  merits, not on test blast radius (see CLAUDE.md → Engineering Principles):
-    - **If NO** — `in_progress ⇒ has tasks` is a true invariant → enforce deep (in
-      `Job.clean()` or `JobService.update_job`). Then `maybe_complete_if_resolved` (which
-      today mechanically steps `approved → in_progress → work_complete → completed` because
-      `Job.VALID_TRANSITIONS` has no direct `approved → completed` edge) must be fixed so a
-      never-worked job doesn't fake-traverse `in_progress` — likely a direct terminal path.
-    - **If YES** — the completion cascade legitimately completes taskless jobs, so a hard
-      invariant would wrongly block it. Guard the *user action* at the view layer (as the
-      reverted pass did), justified by "release to floor is a deliberate user action distinct
-      from the cascade's status walk" — NOT by cascade-breakage/test convenience.
-  _Note:_ `mark_work_started` (blep-start) always reaches `in_progress` with the just-started
-  Task present, so it's unaffected either way. _Done when:_ the gating question is answered and
-  the guard is (re)placed accordingly, with the cascade fixed if the answer is "no".
+- **Sending an estimate with no deliverables should at least require a
+  confirm.** — _added 2026-08-11 (RM)_
+  RM: "if an estimate is to be sent and there are no deliverables
+  configured, at least make the user confirm this." Note the current
+  state before building: `EstimateService.mark_open` already HARD-blocks
+  a deliverable-less send (`'Cannot send estimate: job has no
+  deliverables.'`) — stricter than the ask. If RM has seen sends go out
+  without consciously configuring deliverables, the likely culprit is
+  converted dev jobs, whose seed carries a synthetic "Fake Deliverable"
+  row that satisfies the gate invisibly. Resolve the design first: (a)
+  keep the hard block but surface it better pre-send in the SPA, (b)
+  soften the block to an explicit confirm, or (c) both, plus treat
+  placeholder deliverables as "not configured".
+  _Done when:_ RM picks a direction and a deliverable-less (or
+  placeholder-only) send can't happen silently.
 
 - **Estimate-less draft jobs: allow direct →Approved, gate →Submitted on an estimate.** — _added 2026-07-19 (RM notes review)_
   Follow-up to the direct-approval gate (2026-07-19): `submitted` means
@@ -113,35 +144,184 @@ Status coupling, transitions, and what a job may do at each stage.
   _Done when:_ `ServiceItem.description` is removed (migration + code + fixtures) and specifics are
   sourced from the Task/line description everywhere.
 
+- **Estimate-first task creation is awkward — consider a tasks-from-estimate
+  view (invoice-view-shaped).** — _added 2026-08-12 (RM)_
+  When the estimate exists before the tasks, there's no surface that helps:
+  the task screen can't see the estimate's lines, so the planner re-types
+  work the estimate already describes. RM sketch: a view like the invoice
+  edit view where TASKS are created from the estimate line items — seeded
+  suggestions per line, freely modified/added to before committing — which
+  would also mint the estimate-line↔task link (claims) so actuals reconcile
+  later. Overlaps with acceptance crystallization (service lines already
+  become Tasks at accept) — the gap is hand/planned lines and pre-accept
+  planning; design needed before building.
+  _Design settled 2026-08-14, REDESIGNED 2026-08-15:_ the joint-surface
+  spec was built on `feature/planning-surface` and failed RM's hands-on
+  testing (freeform claim attachment produced overlapping/faithless
+  states). The surviving direction is the claims-by-construction model —
+  mint modal on frozen (open/accepted) hand lines + explicit decline +
+  acceptance checklist + auto-release — see
+  `docs/plans/2026-08-15-estimating-structure.md`.
+  _Done when:_ that spec ships and this entry's flow works in the browser.
+
+- **The full-view pale-yellow body background is a placeholder RM dislikes.** —
+  _added 2026-08-14 (RM, colorway mockup review)_
+  `body[data-view-mode="full"] { background-color: #fffde6 }` (app.css) was
+  only ever a placeholder ("it looks awful"). Replace when the full/lite
+  visual split gets its design pass — RM explicitly deferred thinking about
+  that split for now, so don't change it piecemeal.
+  _Done when:_ the full/lite pass picks real backgrounds and the yellow is gone.
+
+- **Single-atom "New line from selected" shouldn't need the modal.** —
+  _added 2026-08-14 (RM, estimate-confusion walkthrough)_
+  When one task/material is selected and made into a line, all the line's
+  data is already on the atom (description, qty, units, rate, AC) — skip
+  the modal and create the line directly; the user edits the line item
+  afterward if they want it different. The modal stays for multi-atom
+  merges (where qty/units/description genuinely need choosing).
+  _Done when:_ single-atom line creation is one click, no modal.
+
+- **Lost gesture: re-express a line's qty/units while retaining its total
+  (the old wizard could) — DELIVERED at bundle-time; edit-time still
+  open.** — _added 2026-08-12 (RM), narrowed 2026-08-15_
+  The retired two-column reconcile wizard let you rejigger a line's
+  quantity/price and keep the amount — e.g. a line merged from several
+  hour-based tasks (total $1,800 over 12 hours) re-expressed as "3 ea @
+  $600". The shape RM picked — a "keep total" toggle (editing qty
+  re-derives price = total ÷ qty, one-way) — shipped in `BundleModal`
+  (Task 8, estimating-structure spec): draft-time composition of a new
+  line from selected pool atoms now carries keep-total, ON by default.
+  **What's still missing**: `LineItemModal`'s field-edit on an
+  *already-created* line still treats qty and price as independent
+  inputs — re-expressing an existing backed line's qty/units without
+  losing its total still means hand arithmetic. Whether that gap gets
+  the same toggle (and whether it lands on the estimate/CO/invoice
+  modals alike, since they share the component) is undecided.
+  _Done when:_ an existing backed line can be re-expressed in new
+  qty/units with its total preserved via `LineItemModal`, without hand
+  arithmetic — or RM decides bundle-time coverage is sufficient and this
+  entry is dropped instead.
+
+- **BundleModal "keep total $xx" is confusing; the modal probably needs a
+  rework.** — _added 2026-09-16 (RM, browser review)_
+  The keep-total toggle's label/behavior isn't landing — RM finds "keep
+  total $xx" confusing in use, and suspects the whole bundle modal needs
+  restructuring rather than label tweaks. Compounding pressure: the
+  per-unit-lines design (`docs/plans/2026-09-16-per-unit-lines.md` §12)
+  wants to add per-unit + split-materials + a before/after stamp preview
+  to the same modal, notes keep-total and per-unit are mutually
+  exclusive, and flags that the two modes want opposite field-entry
+  orders (keep-total derives price from qty; per-unit needs qty first).
+  Rework the modal's structure once, alongside (or ahead of) the
+  per-unit implementation, instead of bolting on controls. Related:
+  the single-atom-skips-the-modal entry above shrinks the modal's job
+  to genuine multi-atom composition.
+  _Done when:_ the bundle modal is restructured so its coupling
+  behavior is self-explanatory (RM no longer trips on it) and the
+  per-unit additions have a coherent home._
+
+- **Taskless job may never auto-complete once fully invoiced/shipped.** —
+  _added 2026-08-15 (found while documenting auto-release)_
+  `JobService.maybe_complete_if_resolved` requires `Task.objects.filter(job=job).exists()`
+  before it will walk an `approved`/`in_progress` job to `completed`, even
+  once every invoice is paid/cancelled and every deliverable shipped — a
+  job with zero tasks always no-ops there. The estimating-structure spec
+  deliberately makes taskless jobs common (every hand line declined
+  releases the job with no tasks at all), so this pre-existing edge (a
+  taskless job could already reach `approved` before this spec, just
+  rarely) is now a designed, everyday flow. Not investigated further in
+  ES Task 11 (docs-only pass; no code changes taken). RM's design doc
+  flagged the same worry under "`maybe_complete_if_resolved` cascade."
+  _Done when:_ someone verifies (test or browser) whether a taskless,
+  fully-resolved job actually needs to reach `completed`, and either
+  drops the `tasks.exists()` requirement for that case or documents why
+  it's fine for such a job to sit at `in_progress`/`approved` forever.
+
+- **`send-all-atoms` estimate endpoint has no UI link — keep or kill?** —
+  _added 2026-09-19 (bundling-in-task-view Task 5)_
+  `POST /api/estimates/{id}/send-all-atoms/` (`apps/api/estimates/views.py:186-193`)
+  projects every available atom onto the estimate as one line each — the
+  old wizard's one-click "send all". It already had zero frontend/e2e
+  references before this task's estimate-page reduction, and the
+  bundling surface that replaces manual composition (the Tasks page's
+  pool + BundleModal) doesn't call it either, so it's now fully
+  UI-orphaned on both sides.
+  _Done when:_ RM decides whether to wire it into the new Tasks-page
+  bundling flow (e.g. a "send all remaining" bulk action alongside the
+  per-selection Bundle CTA) or delete it with its
+  `EstimateWizardService.send_all_atoms` backing method.
+
+- **Tasks-page estimate context: silent pool-failure degrade + no
+  Start-Estimate busy guard.** — _added 2026-09-20 (start-and-bundle
+  review, both Low)_
+  (1) After the try/catch split in `TasksPanel.loadEstimateContext`, a
+  source-pool fetch failure reached via any reload path other than
+  `handleStartEstimate` (post-bundle refresh, generic mutation reload)
+  degrades honestly but silently: `canBundle` stays true with an empty
+  pool — no checkboxes, disabled "Bundle 0 selected…" CTA — and no error
+  toast; only the start-and-bundle flow surfaces the error. Add a toast
+  for parity. (2) Pre-existing: `handleStartEstimate` has no busy guard —
+  a double-click can double-POST `/api/estimates/` (the second is
+  refused by the one-live-estimate serializer guard, so it's a stray
+  error overlay, not data damage).
+  _Done when:_ pool-failure reloads surface the same error message the
+  start-and-bundle path shows, and the Start Estimate button disables
+  while its POST is in flight.
+
 ## Change orders
 
 The CO surface and its estimate-parallel code.
 
-- **Converter fabricates estimate claims → false "struck from agreement" badges.** — _added 2026-07-20_
+- **Converter fabricates estimate claims → false "descoped by CO-N" badges.** — _added 2026-07-20, mechanism updated 2026-08-09_
   Root-caused on dev job 61: `build_synthetic_estimate_sources`
   (`nealsdata/converter/build.py` ~L1715) round-robins EVERY unclaimed task
   across a job's estimate lines so converted jobs project atoms in the Client
-  View — fabricating many-to-one `EstimateLineItemSource` rows. The struck-badge
-  derivation (`ChangeOrderService.struck_atom_keys`) read those rows faithfully
-  and badged tasks the removed line never really sold. The badge logic is
+  View — fabricating many-to-one `EstimateLineItemSource` rows. At the time
+  this was found, the struck-badge was a *derived* query
+  (`ChangeOrderService.struck_atom_keys`, since deleted); CO amend-in-place
+  (2026-08-09) replaced it with a stamp written once at CO acceptance
+  (`ChangeOrderAcceptanceService`'s REMOVE loop sets `Task`/
+  `Material.descoped_by`, read by the invoice pool as
+  `descoped_by_co_number` for the "descoped by CO-N" chip — see
+  `estimates-and-prices.md` §14.11) — but the underlying bug is identical:
+  acceptance still resolves the remove/replace target's *current* atom
+  through the same `EstimateLineItemSource`/`ChangeOrderLineItemSource`
+  chain the converter corrupts, so a fabricated multi-task claim still
+  stamps (or fails to stamp) the wrong task. The badge logic is
   correct; fix the converter (claim at most one plausible task per line, or drop
   the pass and accept sourceless converted lines). MUST run
   `tests.test_neals_builders`; `nealsmall.json` is RM-managed — never regenerate.
   Separately, RM hand-repairs the existing dev rows (job 61: source_ids 327,
   331, 335, 339 at minimum — Claude drafts the SQL, RM runs it).
+  **Progress 2026-08-10:** a second corruption mode fixed — the pass also
+  scattered claims onto *superseded* revisions' lines (in-app, revise moves
+  every source row to the latest revision, so superseded estimates hold zero
+  claims; dev job 29 had 12 stranded claims surfacing as "Claimed by estimate
+  07998-1/-2/-3" blocks in the CO pool). `build_synthetic_estimate_sources`
+  now skips superseded estimates' lines, with an invariant test
+  (`SyntheticEstimateSourcesTest`); builders suite green (128). The
+  many-to-one fabrication on the *live* estimate remains — this entry stays
+  open for that. Loaded dev DBs keep stranded rows until RM reseeds/repairs.
   _Done when:_ the converter emits no fabricated multi-task claims, builders
   suite green, and job 61's synthetic rows are repaired.
 
-- **`ChangeOrderLineItem.clean()` doesn't validate the target belongs to the CO's estimate.** — _added 2026-07-20_
+- **`ChangeOrderLineItem.clean()` doesn't validate the target belongs to the CO's estimate.** — _added 2026-07-20, corrected 2026-08-09_
   Found while clearing suspects on the badge investigation: nothing enforces
   `target_line_item.estimate_id == change_order.estimate_id`, so a CO line
   could target another estimate's line. Latent (no observed corruption); add
-  the validation. Also record as intended: REPLACE targets stay in the
-  struck-atom set (the old atom WAS struck; the successor is the new agreement).
-  _Done when:_ the clean() check exists with a test, and the replace semantics
-  note lives in estimates-and-prices §14.11.
+  the validation. (Superseded intent, 2026-08-09: this note originally said
+  "REPLACE targets stay in the struck-atom set" — CO amend-in-place settled
+  the opposite: a REPLACE **moves** the target's claim onto the CO line and
+  never stamps `descoped_by` at all; only a REMOVE target gets stamped. See
+  `estimates-and-prices.md` §14.11.)
+  _Done when:_ the clean() check exists with a test.
 
 - **Expose *estimate* claims somewhere after acceptance.** — _added 2026-07-20 (RM)_
+  _Partial 2026-08-10:_ the CO edit surface now nests each agreement
+  line's claimed atoms under it (read-only `AtomChildRow`s), so agreement
+  claims are inspectable whenever a draft CO is open. Other surfaces
+  (estimate panel post-acceptance, task detail, job overview) still don't
+  show them.
   `EstimateLineItemSource` (what the agreement SOLD per line) is invisible in
   the daily UI once the estimate is accepted and the estimate wizard is gone —
   which is why fabricated claims sat unnoticed until the struck badge read them.
@@ -179,16 +359,198 @@ The CO surface and its estimate-parallel code.
   Deliberately still duplicated: `estimate_pdf.html` vs `change_order_pdf.html`
   (shared CSS + header-info block) — PDF templates are self-contained by
   convention (no extends/include, per CLAUDE.md), so the Python-side helper is
-  the consolidation; touch the two templates in tandem. (A diff-logic note:
-  `compose_change_order_diff` is also a Python re-implementation of the
-  frontend merged-rows logic, which now lives in
-  `frontend/src/lib/changeOrderDiff.js`; keep them in lockstep until/unless
-  the shop view reads the server composer too.)
+  the consolidation; touch the two templates in tandem. (A diff-logic note,
+  updated 2026-08-09: the frontend merged-rows logic
+  [`buildMergedRows`/`lineDiffTotals` in `frontend/src/lib/changeOrderDiff.js`]
+  this used to be kept in lockstep with was **retired** when `COEditView`
+  moved the shop edit page onto the server-composed
+  `compose_amended_agreement` — see the unify item below; `changeOrderDiff.js`
+  now only holds `buildDeliverableRows`.)
   _Remaining done when:_ either the PDF-template convention changes (allowing a
   shared header include) or the template pair drifts enough to force a rethink.
 
+- **Unify `compose_change_order_diff` / the CO PDF / the customer portal onto
+  `compose_amended_agreement`.** — _added 2026-08-09 (CO amend-in-place Task
+  7/12)_ The shop edit page (`COEditView`) now reads the server-composed
+  `compose_amended_agreement(co)` (§14.6), but `compose_change_order_diff`
+  (`apps/estimates/agreement.py`) — the function backing the CO PDF
+  (`generate_change_order_pdf`) and the customer portal
+  (`build_change_order_payload`) — is a separate, older composer that still
+  baselines off the flat accepted estimate (`co.estimate`) rather than
+  `compose_amended_agreement`'s baseline-through-prior-accepted-COs walk.
+  Single-CO is the validated path for both composers today (see "Validate the
+  multi-change-order display" above); with ≥2 accepted COs the diff/PDF/portal
+  baseline can understate the true current agreement even though
+  crystallization itself resolves the replace chain correctly (§14.11). Fold
+  the PDF and portal onto `compose_amended_agreement`'s rows (or a shared
+  baseline helper) so all three CO-facing surfaces — shop edit, PDF, portal —
+  read one composer and can't drift.
+  _Done when:_ `compose_change_order_diff` is retired or reimplemented on top
+  of `compose_amended_agreement`, and the PDF/portal render correctly for a
+  ≥2-accepted-CO chain.
+
+- **No DB-level guard against a cross-lens claim race.** — _added 2026-08-09
+  (CO amend-in-place Task 7, reviewer-accepted scope)_ The estimate wizard's
+  pool correctly *displays* a CO-claimed atom as `claimed_by_other` and vice
+  versa (`EstimateWizardService`/`ChangeOrderWizardService.get_source_pool`
+  union both claim lenses), but the two claim tables
+  (`EstimateLineItemSource`, `ChangeOrderLineItemSource`) each enforce
+  whole-atom uniqueness only within themselves — there is no DB constraint
+  spanning both. A determined or racing pair of requests (one hitting the
+  estimate wizard, one the CO wizard, near-simultaneously) could still create
+  an estimate claim and a CO claim on the same atom; only the pool-level
+  display stops the ordinary UI from offering it. Accepted as scope for the
+  amend-in-place phase (no observed occurrence; the estimate is normally
+  terminal — `accepted`/superseded — by the time a CO exists, which narrows
+  the window in practice).
+  _Done when:_ a cross-table DB constraint (or an application-level lock
+  spanning both source models) closes the race, or the risk is judged not
+  worth one.
+
+- **`_assert_target_not_billed` isn't chain-aware.** — _added 2026-08-09 (CO
+  amend-in-place final review)_ `ChangeOrderService._assert_target_not_billed`
+  (the remove/replace guard) only checks `InvoiceLineItem.agreement_estimate_line`
+  — so a target line that a *prior accepted CO* already replaced (whose
+  invoice reference lives on `agreement_co_line`, not `agreement_estimate_line`)
+  isn't caught, and a second CO could remove/replace an already-billed line
+  out from under the invoice. `apps/estimates/agreement.py`'s `_billed_on`
+  (the CO edit page's display helper, feeding `compose_amended_agreement`)
+  already checks both branches correctly — only the write-side guard is
+  behind. Only reachable once a multi-CO chain exists, so single-CO testing
+  never exercises it.
+  _Done when:_ `_assert_target_not_billed` walks the same
+  estimate-line-or-prior-replace-CO-line chain `_billed_on` does.
+
+- **No guard against two lines in one CO targeting the same estimate
+  line.** — _added 2026-08-09 (CO amend-in-place final review)_ Nothing
+  stops `add_line_item`/`update_line_item` from creating two remove/replace
+  lines on the same draft CO with the same `target_line_item` — a raw-API-only
+  gap (the wizard/UI never offers it). `ChangeOrderAcceptanceService.on_accept`
+  applies both against the target's current atom(s) without checking for the
+  collision, which is undefined behavior rather than a clean rejection. Related:
+  `target_line_item` is also never validated to belong to `co.estimate` — see
+  the existing "`ChangeOrderLineItem.clean()` doesn't validate the target
+  belongs to the CO's estimate" entry above, still open; a one-line ownership
+  check for that entry and the duplicate-target check here are natural
+  companions to add in the same pass.
+  _Done when:_ `ChangeOrderLineItem.clean()` (or the service) rejects a
+  second draft-CO line targeting an estimate line already targeted by
+  another remove/replace line on the same CO, with a test.
+
+- **Per-row `_billed_on` query in `compose_amended_agreement` is an
+  N+1.** — _added 2026-08-09 (CO amend-in-place final review)_ The
+  `'agreement'`-row loop in `compose_amended_agreement` (`apps/estimates/agreement.py`)
+  calls `_billed_on(line)` once per surviving baseline row, each a fresh
+  `InvoiceLineItem` query — roughly one query per agreement line on the CO
+  edit page. Fine at today's line counts; candidate for a single
+  prefetch/batched lookup (keyed by estimate-line-id/co-line-id) if a job's
+  agreement grows large enough to notice.
+  _Done when:_ `compose_amended_agreement` resolves `billed_on` for every row
+  in O(1) queries instead of one per row (or the cost is judged not worth
+  batching at current scale).
+
+- **Split-pair per-unit siblings have no lifecycle link.** — _added
+  2026-09-17 (per-unit-lines Task 9)_
+  A split-materials bundle mints two `per_unit` sibling lines (a labor
+  line and a materials line, §12.1a-iii) with no structural link stored
+  between them — deliberately, per spec §5.3. But that also means
+  un-answering one sibling on the *original* estimate (declining it, or
+  deleting its claimed atom) orphans its stamped atom and strands the
+  other sibling with no signal at all: the only nudge that exists today
+  is the CO-replace sibling reminder (§14.9, Task 8), which fires
+  exclusively when a change order replaces a `per_unit` line — nothing
+  watches the original estimate's own decline/delete paths.
+  _Done when:_ revisited alongside the per-unit modal restructure phase
+  (spec §10, RM-gated) — either a lifecycle link is added or the gap is
+  explicitly re-ruled acceptable.
 
 ## Invoicing, expenses & payments
+
+- **Partially-backed agreement lines skip seeding entirely — per-unit
+  progress billing is the eventual real answer.** — _added 2026-09-21
+  (RM ruling "rule 2")_
+  `seed_from_agreement`/`restore_agreement_line` now refuse to seed a
+  bundled agreement line whose claimable atoms are only SOME (not zero,
+  not all) terminal — the line simply waits, unseeded, until its backing
+  is either fully done or the biller manually pulls the done atom(s) as
+  their own line (`invoicing-and-expenses.md` §"The three-way
+  completeness rule"). That's an honest interim: a bundle either bills
+  in full or waits. The real fix for a large bundle worked incrementally
+  (e.g. "10 of these, 6 done") is proper per-unit progress billing — "bill
+  K of N units" — landing at invoice time from the per-unit-lines work
+  (`docs/plans/2026-09-16-per-unit-lines.md`), not an all-or-nothing skip.
+  _Done when:_ per-unit-lines' invoice-side phase lets a partially-done
+  per-unit bundle bill its completed fraction directly, and this skip
+  rule is revisited for lines that qualify.
+
+- **InvoiceEditView's claimed rows still render disabled checkboxes.** —
+  _added 2026-09-21 (claim-chips review follow-up; RM: not ready to work
+  on invoicing yet)_
+  The Tasks-page bundling surface replaced `claimed_by_other` disabled
+  checkboxes with passive chips ("on est" / "on CO", claim note as hover
+  title; checkboxes only for available rows — RM 2026-09-20).
+  `InvoiceEditView.svelte`'s older pool/picklist pattern still shows the
+  disabled-checkbox style for claimed rows.
+  _Done when:_ the invoice surface adopts the same chip treatment (or RM
+  rules the surfaces may diverge) during the next invoicing pass.
+
+- **Converter invoices carry no agreement-line refs → re-seeding duplicates
+  them.** — _added 2026-08-12 (RM sighting, root-caused in session)_
+  `build_invoices` emits invoice lines with `agreement_estimate_line`/
+  `agreement_co_line` NULL (the skeleton-phase rail postdates the
+  converter's invoice builder), so on converted jobs a sent-but-unpaid
+  legacy invoice claims no agreement lines — Start Invoice then seeds the
+  FULL agreement again, visually identical to the open invoice (dev
+  evidence: job 29's invoice 22, open, 7 lines, 0 refs). The app invariant
+  (`remaining_agreement_lines` over `LIVE_INVOICE_STATUSES`) is correct;
+  the data predates it. Fix candidates: converter emits synthetic agreement
+  refs for its invoice lines (same spirit as `build_synthetic_estimate_
+  sources`, with the same fuzzy-correspondence caveat), and/or a dev-DB
+  repair pass (Claude drafts SQL, RM runs). `tests.test_neals_builders`
+  mandatory; nealseed/nealsmall untouched.
+  _Converter half DONE 2026-08-12_ (`build_invoice_agreement_refs`:
+  description-matched to the latest accepted estimate, one live invoice
+  per line, cancelled invoices skipped; builders 132 OK + fixture suite).
+  Remaining: RM reseeds dev (or a repair pass for the existing rows) —
+  loaded data stays ref-less until then.
+  _Done when:_ converted open invoices hold their agreement lines so a
+  second invoice only offers what's genuinely unbilled.
+
+- **"Unbilled work" pool shows descoped atoms — wording tension.** —
+  _added 2026-08-14 (RM, post-rename review)_
+  A "descoped by CO-2" atom renders in the invoice edit's pool. Showing
+  descoped-but-completed work there is by design (recorded actuals stay
+  billable after a CO removes the line), but under the new title
+  "Unbilled work" the row now reads as "work that should be billed",
+  which a descoped atom may deliberately not be. Decide presentation:
+  keep the badge as sufficient signal, sub-group descoped rows, or
+  retitle/annotate. Fold into the invoice-side design pass below.
+  _Done when:_ the descoped rows' billability reads unambiguously in
+  the pool.
+
+- **Invoice edit needs the estimate side, not just actuals — the
+  estimated-vs-actual composition problem.** — _added 2026-08-14 (RM)_
+  RM, reviewing the redesigned invoice surface: the confusion is about
+  "combining BOTH estimate and actual work, how to sort that cleanly. I
+  want to be able to see what was estimated, and what was actually done,
+  so I know how to invoice. And once the invoice lines have been
+  started, I need to know which parts of the estimate and actuals went
+  in them. RN we've only got the actuals." (The line table shows
+  backing/Use-estimate/Use-actuals per line, but the pool and the
+  per-line composition view are actuals-only.) RM: "I am not, tbh,
+  totally sure this is possible." Explicitly sequenced AFTER the
+  estimate/task planning-surface design pass — take this up as the
+  invoice-side twin of that discussion.
+  _Done when:_ a design session settles how the invoice surface shows
+  estimated vs actual per line and per pool row (or records why not).
+
+- **Bring back Delete Draft for estimates and invoices.** — _added
+  2026-08-12 (RM)_
+  The old surfaces had a discard-draft affordance; the three-mode redesign
+  lost it (the backend `discard_draft` services still exist for both
+  documents). Re-add the button on draft estimates + draft invoices —
+  irreversible, so it keeps a confirm.
+  _Done when:_ a draft estimate/invoice can be discarded from its page.
 
 Billing mechanics and money-record lifecycle.
 
@@ -290,6 +652,36 @@ Billing mechanics and money-record lifecycle.
 (The procurement-machinery items moved into the freeform-materials plan
 2026-07-04; the plan shipped 2026-07-05 and the still-open ones returned below.)
 
+- **PO reconciliation lines (maybe all PO lines) save without an explicit
+  Save.** — _added 2026-09-21 (RM browser sighting)_
+  RM observed line edits persisting automatically during the reconciliation
+  walkthrough, against the explicit-save doctrine (saves are never
+  blur-only/implicit). Trigger not yet identified — no `onblur` handlers
+  exist in `frontend/src/components/purchaseorders/`, so it's likely a
+  change/submit handler firing per row (candidates: the inline line-edit
+  row's save path on the PO detail, or the add-line flow persisting each
+  row on Add). Reproduce, identify the trigger, and route the mutation
+  through a deliberate Save/confirm.
+  _Done when:_ every PO line mutation (add, edit, reconciliation fields)
+  commits only on an explicit action, verified in the browser by RM.
+
+- **Rate prompt is per-line-naive for multi-line and qty-N tasks.** —
+  _added 2026-09-21 (multi-link analysis; fold into the service-PO process
+  design pass below)_
+  A task may legitimately carry several PO lines (freight/setup
+  invoice-only attribution — shipped behavior; staged orders; redos;
+  split vendors), but `compute_rate_prompts` emits one prompt per finaled
+  line: two lines on one task yield two contradictory suggestions and
+  last-accept-wins. Separately, `suggested = final × markup` writes a
+  line TOTAL into `Task.rate`, which is only dimensionally right for
+  qty-1 flat tasks — on a qty-N entered task (e.g. 10 cabinets at
+  $X/cabinet) the honest suggestion is `Σ finals × markup ÷ est_qty`.
+  Schema stays many-to-one (constraining it would break the shipped
+  attribution cases); the fix is prompt-level: group per task, sum the
+  reconcile's finals, present in the task's own denomination.
+  _Done when:_ one prompt per task, suggestion denominated per the task's
+  qty shape, decided/refined during the service-PO process pass.
+
 - **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14; returned 2026-07-05 from the freeform-materials plan (consciously punted)_
   An expense is single-mode (cost OR stock receipt). One trip buying both an
   inventoried shortfall and a special non-item finish silently drops one side.
@@ -383,6 +775,42 @@ Billing mechanics and money-record lifecycle.
   _Done when:_ merging is driven from the list rows with a searchable picker and an explicit
   before-commit preview of the outcome, no top-of-page dropdown hunting.
 
+- **PO "Change Job" button has no client-side permission gate, but its
+  write is server-gated.** — _added 2026-09-21 (noticed during
+  outsourced-work-port docs review)_
+  `PurchaseOrderDetail.svelte`'s post-issue/receive line Actions column
+  shows **Change Job** to any authenticated user whenever `canChangeJob(li)`
+  is true — no `canManageFinancials` check, unlike the sibling Cancel
+  Line/Reverse Receipt/Receive buttons which are genuinely open to anyone
+  (matching the server). But the underlying write
+  (`PATCH .../line-items/{id}/` with a bare `job` key, dispatched to
+  `change_line_job`) goes through `line_item_detail`, which is **not** in
+  `PurchaseOrderViewSet.get_permissions()`'s `IsAuthenticated`-only action
+  list — it falls to the default `CanManageFinancials` gate. A Viewer sees
+  a working-looking button that 403s on save. Pre-existing, not introduced
+  by the outsourced-work port; not fixed as part of that docs-only task.
+  _Done when:_ the button is hidden for non-Financials users (simplest
+  fix), or the server gate is deliberately relaxed to match — whichever
+  the team decides is the intended permission shape for this one action.
+
+- **Revisit the PO process for service POs.** — _added 2026-09-21 (RM,
+  PO Job/Task consolidation)_
+  Allowing task-linked (service) PO lines eliminated the standing
+  assumption that a PO line orders a Material object; the procurement
+  flow (Job field semantics, material auto-creation, lot minting,
+  receiving/consumption arithmetic) needs a clarifying design pass now
+  that lines can be pure cost attribution. _Done when:_ RM runs that
+  design pass and the PO docs state the two line kinds' lifecycles
+  explicitly.
+  _Addendum 2026-09-21 (RM walkthrough findings, deliberately deferred to
+  this same design pass):_
+  (1) Receiving and task actuals are disconnected — RM received 80 across
+  two task-linked lines but completed the task at 40, and nothing surfaces
+  the gap. RM's direction: "the receiving should be the completion of the
+  Task and it should fill in the actuals. Or something closer to that."
+  (2) When multiple lines back one task, which line's amount the
+  reconciliation display reflects is unclear.
+
 ## Time tracking (shifts & bleps)
 
 - **Time managers can't reach the shift request queue / payroll report.** — _added 2026-05-31_
@@ -437,6 +865,96 @@ Billing mechanics and money-record lifecycle.
   are frozen.
 
 ## Platform & conventions
+
+- **Contact.email uniqueness is collation-dependent; never case-folded.** —
+  _added 2026-09-24 (nealseed load failure)_
+  `Contact.email` is `unique=True` and `Contact.clean()` only strips
+  whitespace — it never lowercases. On MySQL the column's default `*_ci`
+  collation makes the unique index case-insensitive, so `Foo@x.com` and
+  `foo@x.com` collide at the DB; `ContactService.create_contact` checks
+  `email__iexact` up front (rich 409), but `update_contact` relies on
+  `full_clean()`'s exact-match uniqueness check, which only catches case
+  variants because the collation happens to be case-insensitive (SQLite /
+  a `*_bin` collation would let the pair coexist). Surfaced when the
+  converter's exact-string dedupe let `test+Brian@` / `test+brian@` through
+  and `loaddata` hit the index. Converter side fixed 2026-09-24
+  (`_unique_email` keys `seen` case-insensitively); the app side is the
+  open item.
+  _Done when:_ `Contact.clean()` normalises email case (or an explicit
+  `iexact` check guards `update_contact` too), with a test that passes on a
+  case-sensitive backend.
+
+- **"Atom" leaks into user-visible error copy in EstimateEditView.** — _added
+  2026-09-19 (bundling-in-task-view final review)_
+  `handleMutationError`/`removeAtomFromLine` in
+  `frontend/src/components/estimates/EstimateEditView.svelte` fall back to
+  strings like "Some of those atoms were claimed elsewhere…" and "Could not
+  remove this atom from the line." — "atom" is our internal modeling term
+  (billable atoms), not something a user should see. Predates the
+  bundling-in-task-view feature; not touched by it. User-visible copy should
+  say "tasks and materials" or "work" instead. Same two strings also live in
+  `frontend/src/components/changeorders/COEditView.svelte` (~175, ~188 —
+  flagged again by the 2026-09-20 CO line-item-first review).
+  _Done when:_ the strings are reworded in BOTH files (trivial, next time
+  either is touched).
+
+- **Global success overlay never auto-dismisses and blocks clicks underneath
+  it.** — _added 2026-09-19 (bundling-in-task-view final review)_
+  `stores/messages.js`'s `showSuccess` plus its overlay component stays up
+  until the user explicitly clicks "Dismiss message," and while up it
+  intercepts clicks on the page behind it. Every e2e spec that acts
+  immediately after a success-producing action has to click "Dismiss
+  message" first before it can proceed (first workaround:
+  `e2e/specs/task-view-bundling/start-estimate-offer.spec.js`), and real
+  users hit the same modal friction after routine successful actions. RM to
+  decide auto-dismiss timing vs. keeping the current sticky behavior.
+  _Done when:_ RM rules and the overlay either auto-dismisses or the
+  decision to keep it sticky is recorded.
+
+- **Rename the "Tasks" header to "Work".** — _added 2026-08-17 (RM)_
+  The job nav rail's section label (`JobNavRail.svelte` line ~15,
+  `label: 'Tasks'`) should read **Work** — matching the area's own
+  button vocabulary ("Add Work", "Mark Work Complete") and the fact the
+  surface holds tasks AND materials AND expenses. When picked up, sweep
+  the same rename question across sibling surfaces that say "Tasks" as a
+  heading (e2e selectors and docs/ui-flows references included); "task"
+  as the object name in row-level copy stays.
+  _Done when:_ the rail (and agreed siblings) say Work and nothing user-
+  facing contradicts it.
+
+- **Move "Add Expense" off the task-planning button row.** — _added
+  2026-08-17 (RM)_
+  On the job task list, "Add Expense" sits directly beside "Add Work" in
+  the toolbar (`TasksPanel.svelte` ~line 361) and reads like another
+  planning gesture — but an expense is a money actual, not planned work.
+  Relocate it so the toolbar reads as planning-only (candidates: near
+  the Expenses section of the task tree where loose expenses render, or
+  a visually-distinct secondary placement).
+  _Done when:_ RM picks a placement and adding an expense no longer
+  reads as a sibling of Add Work.
+
+- **Service Item edit should be a modal.** — _added 2026-08-17 (RM)_
+  `ServiceItemManager.svelte` still uses the old top-of-page inline
+  `<fieldset>` form (the `{#if editingId !== null}` block replaces the
+  list) — the same pattern the inventory merge entry flags. Sibling
+  managers already moved on: `RateSchemeManager` puts its form in the
+  `Modal` shell. Convert the create/edit form to a `Modal` like its
+  sibling.
+  _Done when:_ adding/editing a Service Item happens in a modal over the
+  list, matching RateSchemeManager.
+
+- **Modals' first field should have focus** - _added 2026_08_16_
+  It's an extra click to select the field you want to type in when a modal pops
+  up, and it's nearly always obvious which field needs entry.
+
+- **Settings category pickers truncate at 25 (StandardPagination default).** — _added 2026-08-12_
+  `DefaultMaterialCategorySetting`, `DefaultDepositCategorySetting`, and
+  `FallbackCategorySetting` all fetch `/api/accounting-categories/` without
+  `page_size`, taking `.results` — with >25 categories the picker silently
+  offers only the first page. Pre-existing pattern, flagged by the Phase 3
+  final review. Fix is a `?page_size=100` in the three components (or a
+  shared loader).
+  _Done when:_ the three settings pickers list every category.
 
 Cross-cutting UI/API conventions and shared components.
 
@@ -559,6 +1077,51 @@ Cross-cutting UI/API conventions and shared components.
   hunting the seed for an unclaimed one.
   _Done when:_ the spec's job is one it made, so full-suite ordering can't
   reach it.
+
+- **`contacts/import-skip-report.spec.js` is flaky (~50% locally).** — _added 2026-08-08_
+  A client render race in `ContactListPage`'s letter filter, unrelated to
+  QBO import itself and untouched by the skeleton-phase branch that
+  surfaced it (confirmed on the `feature/better-fees` full e2e suite,
+  Task 14). Reproduces both inside the full suite and standalone on a
+  fresh DB; not yet root-caused.
+  _Done when:_ the race is identified and fixed (or the spec is
+  rewritten to wait on the right condition instead of a fixed render
+  assumption), and the spec passes reliably solo and in the full suite.
+
+- **Batch-order flake: `invoice-seeding-and-send/struck-from-agreement-badge.spec.js` §4.** — _added 2026-08-11_
+  Fails reliably when the change-orders + invoice-skeleton +
+  invoice-seeding-and-send + deposits folders run as one batch (the
+  untouched control task unexpectedly appears in the invoice's
+  Uncovered-work pool), passes solo. Bisected via stash: reproduces on a
+  clean committed tree, so it pre-dates the 2026-08-11 QtyUnits work.
+  Same order-dependent-seed-hunt family as the entries below —
+  `findStruckShape` picks a seed job that a parallel worker's spec has
+  meanwhile claimed atoms on, so auto-seed can't claim the control line
+  and it lands in the pool.
+  _Done when:_ the shape-hunt builds its own job via the API (like
+  `change-orders/amend-in-place.spec.js` does) instead of hunting the
+  shared seed, and the batch passes.
+
+- **Two more intermittently-flaky e2e specs, catalogued 2026-08-08 (skeleton-phase final verification).**
+  `production-lifecycle/completion.spec.js` §6 (a timing flake around the
+  work-complete cascade) and `deposits/deposit-creation.spec.js` (a
+  `.deposit-pill` list-timing race; failed once in a full run, passes in
+  isolation and passed earlier full runs). Both pre-date and are
+  untouched by the `feature/better-fees` skeleton phase; evidence in that
+  phase's task reports. Same treatment as the contacts flake above.
+  _2026-08-09 (fee-removal Task 10):_ the cascade timing flake reproduced
+  once more in a full run. Separately, the file's OTHER §6 test
+  ("Completion settle-up") fails deterministically when the spec runs
+  SOLO on a fresh DB: its seed-hunt picks the PT-MIS216 job whose task
+  carries an out-of-stock material, so the (correct, pre-existing)
+  completion stock-gate blocks it — order-dependent candidate selection,
+  same family as the deposit-creation entry, not timing. Not caused by
+  the fee strip (the stripped seed differs from the old one only in
+  `jobs.fee` + fee source rows — verified row-for-row). Fix shape: the
+  hunt should also require the candidate task's materials to be
+  completable (in stock or absent), or build its own job.
+  _Done when:_ each spec waits on its real condition and passes reliably
+  solo and in the full suite.
 
 - **Convert the remaining local-state tab pages to per-tab routes.** — _added 2026-07-05 (RM, during the Catalog-area design)_
   The Catalog area set the pattern: real routes per tab (bookmarks, refresh, and
@@ -889,3 +1452,145 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the cleanup lands with bucket (a) re-authored, fresh
   `migrate` + full suite green from an empty DB, and the e2e seed still
   loads.
+
+
+- **Unstyled `<select>` elements read as "greyed out / disabled" on
+  Chrome-on-macOS (and likely other browser/OS combos).** — _added
+  2026-08-04_
+  The app has no `select` styling anywhere (`app.css` has none;
+  components render bare selects), so every dropdown gets the native
+  chrome — on Chrome/macOS that's a grey rounded button, which sits
+  next to white `<input>` fields and misreads as a permission-disabled
+  control. RM hit exactly this on the task edit modal (Rate Scheme /
+  Unit / Accounting Category selects beside the white Rate input) and
+  confirmed the controls were fully functional. Decision for now:
+  change nothing; *maybe* adopt an app-wide default select style (white
+  field look matching inputs — border/background/padding) later.
+  _Done when:_ either an app-wide `select` rule lands in `app.css`
+  (matching the input look, checked across the major pages), or the
+  team decides native chrome is acceptable and this entry is closed.
+
+
+- **Job overview Scope card links to the amended estimate instead of the
+  latest agreement doc.** — _added 2026-08-10 (RM)_
+  On a job with an ACCEPTED change order (no live CO), the Scope block's
+  frozen state links to the estimate
+  (`scopeFrozen` in `frontend/src/lib/jobOverview.js` — `href:
+  estimateHref(jobId, current)`) even though the accepted CO tab is now
+  the record of the current agreement (better-fees §11 #6: post-
+  acceptance the CO tab is the record; the estimate stays as-was with
+  the "amended" badge). It should link to the latest agreement document
+  — the most recently accepted CO when one exists, else the estimate.
+  Note the live-CO path already gets this right (`scopeActiveChangeOrder`
+  gives the warm CO the link); only the frozen/settled state lags.
+  _Done when:_ a job whose estimate is amended by an accepted CO has its
+  Scope card link land on the latest accepted CO's page (jobOverview
+  unit tests updated), falling back to the estimate when no CO exists.
+
+
+- **PO line items should show the inventory item's code.** — _added
+  2026-08-10 (RM)_
+  A purchase-order line for a catalog item gives the vendor/shop no
+  `InventoryItem.code` (the unique catalog code, inventory/models.py).
+  Note the link is indirect: `PurchaseOrderLineItem` has no
+  `inventory_item` FK — the route is the line's `linked_material`
+  property (`Material.po_line_item` reverse) → `Material.inventory_item`
+  → `.code`, so freeform/non-catalog lines simply have none. Surfaces:
+  the PO page's line table and probably the PO PDF
+  (`templates/purchasing/purchase_order_pdf.html`) where a code column
+  is arguably most valuable (it's what the vendor keys on).
+  _Done when:_ catalog-backed PO lines display the code on the PO page
+  (and PDF if RM wants it there), blank for freeform lines.
+
+- **`linked_po_variances` (job costing, outsourced-work port Task 4) is
+  API-only — no frontend display yet.** — _added 2026-09-21_
+  `compute_job_financials` now returns a `linked_po_variances` list
+  (per-PO ordered vs. `bill_total`, no proration, `multi_job` marker —
+  see `apps/jobs/financials.py::_linked_po_variances`) and it's exposed
+  on `JobSerializer` (`GET /api/jobs/{id}/`, detail context only). The
+  job-detail header (`JobHeader.svelte`) only has a fixed four-tile
+  strip (Estimate/Spent/Invoiced/Profit); a variable-length per-PO list
+  doesn't fit that slot, and building a new section for it felt out of
+  scope for a job-costing backend task — punted rather than bolted on
+  (ported from feature/fees, which logged the identical gap).
+  _Done when:_ someone designs and builds a display for this (e.g. a
+  small table/section on `JobDetail.svelte` near the header, shown only
+  when the list is non-empty), or the team decides API-only is fine
+  indefinitely and this entry is closed.
+
+- **`compute_rate_prompts` is an N+1 — one `is_invoiced` query per
+  qualifying line.** — _added 2026-09-21 (outsourced-work port Task 8
+  review)_
+  `PurchaseOrderService.compute_rate_prompts` (`apps/purchasing/services.py`)
+  loops over every PO line with a non-null `final_price` and a linked
+  task, calling `InvoiceClaimService.is_invoiced(SOURCE_TASK, task.pk)`
+  individually for each — one `.exists()` query per qualifying line
+  rather than one batched lookup. Only runs once per reconcile call and
+  a PO's line count is small in practice, so this isn't urgent, but it's
+  the same shape of gap other N+1 entries in this doc track.
+  Same shape, separate call site: `_linked_po_variances`
+  (`apps/jobs/financials.py`, job-detail's `linked_po_variances` field)
+  runs two discovery queries up front (fine — fixed cost regardless of PO
+  count), but then loops `PurchaseOrder.objects.filter(pk__in=po_ids)`
+  and for each PO re-queries `PurchaseOrderLineItem` (linked job ids via
+  `task__job`) and `Material` (linked job ids via `po_line_item`) to
+  compute `multi_job` — two more queries per linked PO. A job linked to
+  several POs pays 2 + 2N queries on every job-detail fetch.
+  _Done when:_ `compute_rate_prompts` resolves invoiced-ness for all
+  qualifying lines in one query (e.g. reusing `InvoiceClaimService`'s
+  batch `_map`/`claims_for_job`-style helper instead of per-row
+  `is_invoiced`), verified with `assertNumQueries` or similar; and
+  `_linked_po_variances` batches its per-PO `multi_job` lookups (e.g. one
+  `values_list('purchase_order_id', 'task__job_id')` /
+  `values_list('po_line_item__purchase_order_id', 'job_id')` pair grouped
+  in Python instead of a query per PO), also verified with
+  `assertNumQueries`.
+
+- **`ReconciliationSection`'s in-place update of a persisted invoice_only
+  line can't clear `accounting_category`/`task`.** — _added 2026-09-21
+  (outsourced-work port final review)_
+  `ReconciliationSection.svelte` builds each `appended_lines` entry by only
+  adding `accounting_category`/`task` keys when the row value is truthy
+  (`if (row.accounting_category) entry.accounting_category = ...`; same for
+  `task`), so clearing either field on an already-saved invoice_only row
+  (blanking the select / unlinking the task) omits the key from the PATCH
+  payload entirely rather than sending an explicit clear. The backend's
+  in-place update path only sets keys actually present in the payload, so
+  an omitted key leaves the old value untouched — the field silently fails
+  to clear. This is faithful to fees' original behavior (same
+  falsy-key-omission pattern), not a regression introduced by the port, but
+  it's a small dent in reconciliation's "complete, current statement of the
+  bill's invoice_only detail" contract (see `reconcile()`'s docstring).
+  _Done when:_ clearing either field on a saved invoice_only row round-trips
+  (e.g. the frontend always sends the key, using `null`/`''` to mean
+  "clear", and the backend in-place update path honors an explicit
+  null/empty distinctly from "not provided") — or RM rules the current
+  behavior is fine as-is.
+
+- **Comment lines lost their informational rendering in the docsurface
+  edit views; `unanswered_lines` counts them as owing a work decision.**
+  — _added 2026-09-22 (comment-lines e2e backfill; the InvoicePanel
+  send-gate half of the original finding was fixed the same day —
+  `allLinesHaveCategory` now exempts `is_comment`, Vitest + e2e covered)_
+  The comment-aware line table (`LineItemTable.svelte`: "Comment" badge,
+  dashed money cells, `!li.is_comment` guard on the needs-category marker)
+  is orphaned — zero importers — since the doc surfaces moved to
+  `EstimateEditView`/`InvoiceEditView`/`COEditView`. Two remaining
+  consequences, different weights:
+  - **UI-only cosmetics:** `EstimateEditView` and `InvoiceEditView` show
+    the amber "needs category" marker on comment rows
+    (`li.accounting_category == null` with no `is_comment` guard), and no
+    doc surface renders a comment row as informational (badge/dashes) —
+    it reads as an ordinary zero-money row. Misleading, but nothing is
+    blocked; the backend contracts are correct and e2e-covered in
+    `e2e/specs/comment-lines/`.
+  - **Backend predicate with real impact:**
+    `EstimateService.unanswered_lines` doesn't exempt `is_comment`, so
+    after acceptance a comment line counts as "needs a work decision" —
+    it delays `maybe_auto_release` (the job sits in `approved` instead of
+    starting) until someone clicks "No work needed" on the informational
+    row. Deferred (not fixed in the backfill) because a one-click
+    workaround exists, but this is behavior, not cosmetics.
+  _Done when:_ comment rows render informationally on the three edit
+  views + customer views, the needs-category marker exempts `is_comment`,
+  and `unanswered_lines` excludes comments.

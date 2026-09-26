@@ -219,6 +219,7 @@
         <th class="text-right">Price</th>
         <th class="text-right">Total</th>
         <th>Job</th>
+        <th>Task</th>
         {#if showReceived}
           <th class="text-right">Received</th>
           <th>Status</th>
@@ -241,7 +242,20 @@
             <td><UnitsSelect bind:value={editForm.units} /></td>
             <td><input type="number" bind:value={editForm.price} step="0.01" min="0" style="width:80px;text-align:right;"></td>
             <td class="text-right">${(Number(editForm.qty) * Number(editForm.price)).toFixed(2)}</td>
-            <td><JobPicker bind:value={editJobId} selectedItem={editJobRow} onSelect={(j) => { editJobRow = j; }} openOnly /></td>
+            <td>
+              {#if li.task_detail}
+                <small>Cost attributed to task — no job/material link</small>
+              {:else}
+                <JobPicker bind:value={editJobId} selectedItem={editJobRow} onSelect={(j) => { editJobRow = j; }} openOnly />
+              {/if}
+            </td>
+            <td>
+              {#if li.task_detail}
+                <a href="#/jobs/{li.task_detail.job_id}/tasks/{li.task_detail.task_id}">{li.task_detail.name}</a>
+              {:else}
+                —
+              {/if}
+            </td>
             <td>
               <button onclick={saveEdit}>Save</button>
               <button onclick={cancelEdit}>Cancel</button>
@@ -258,6 +272,18 @@
             <td>
               {#if li.effective_job_id}
                 <a href="#/jobs/{li.effective_job_id}">{li.effective_job_number}</a>
+              {:else}
+                —
+              {/if}
+            </td>
+            <td>
+              {#if li.task_detail}
+                <a class="task-chip"
+                   href="#/jobs/{li.task_detail.job_id}/tasks/{li.task_detail.task_id}"
+                   title="Cost attributed to this task">
+                  {li.task_detail.name}
+                </a>
+                <br><small>{li.task_detail.job_number}</small>
               {:else}
                 —
               {/if}
@@ -324,6 +350,7 @@
         <td colspan="5" class="text-right"><strong>Total</strong></td>
         <td class="text-right"><strong>${total.toFixed(2)}</strong></td>
         <td></td>
+        <td></td>
         {#if showReceived}
           <td></td><td></td>
         {/if}
@@ -358,6 +385,9 @@
      .status-{status} classes (app.css). */
   /* The action row is the shared .toolbar (app.css). */
   small { color: #666; }
+  /* Task-link chip (Fix 2a, RM browser-testing: the link was invisible on
+     the PO line — this makes it a visible, navigable chip). */
+  .task-chip { font-size: 13px; }
   .cancelled-row { opacity: 0.5; text-decoration: line-through; }
   .line-status {
     font-size: 11px; font-weight: 600; padding: 2px 8px;

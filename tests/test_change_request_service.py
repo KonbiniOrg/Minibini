@@ -4,7 +4,7 @@ from datetime import timedelta
 from tests.base import BaseTestCase
 from apps.core.models import User, Shift, ShiftChangeRequest
 from apps.core.services import TimeChangeRequestService
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 
 
 class ChangeRequestServiceTest(BaseTestCase):
@@ -19,7 +19,9 @@ class ChangeRequestServiceTest(BaseTestCase):
         # minute boundary to match the stored values.
         self.now = timezone.now().replace(second=0, microsecond=0)
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task(name='T', job=self.job)
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def test_approve_create_request_makes_shift(self):
         r = ShiftChangeRequest.objects.create(

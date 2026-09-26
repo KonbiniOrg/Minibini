@@ -1,21 +1,15 @@
 <script>
-  // THE task row — one shared fragment for top-level tasks and subtasks
-  // (extracted 2026-07-13 from TaskTree's duplicated task-row/subtask-row
-  // blocks, whose drift had already cost subtasks the waiting-on-materials
-  // badge). isSubtask carries the two deliberate differences: nested
-  // styling, and no +sub / reorder arrows (one-level rule; siblings
-  // reorder on their parent's detail page).
+  // THE task row — one shared fragment for every task (tasks are one flat
+  // level since the better-fees subtask removal, 2026-08).
   import TaskActivityIndicator from './TaskActivityIndicator.svelte';
   import {
     fmtMoney, fmtWorkerTime, taskTotalInfo, taskTotal, taskActual,
   } from '../../lib/taskTotals.js';
-  import { durationToHours } from '../../lib/format.js';
 
   let {
     task,
-    isSubtask = false,
-    // Position among rendered PEERS, for the reorder arrows' disabled state
-    // (the backend swap is peer-scoped to match).
+    // Position among the job's tasks, for the reorder arrows' disabled
+    // state (the backend swap is job-scoped to match).
     taskIdx = 0,
     taskCount = 1,
     readonly = false,
@@ -31,8 +25,17 @@
     onDeleteTask = null,
     onCancelTask = null,
     onAddMaterial = null,
-    onAddSubtask = null,
     onReorder = null,
+    // Bundle-selection checkbox (Task 3) — off by default so every other
+    // consumer of this shared row renders unchanged.
+    bundleMode = false,
+    bundleAtom = null,
+    bundleChecked = false,
+    onToggleBundle = null,
+    // claimed_by_current chip text (Tasks-page CO lens): the estimate lens's
+    // wording is the default so every other surface renders unchanged.
+    bundleClaimedLabel = 'estimated',
+    bundleClaimedTitle = 'Already on the draft estimate',
   } = $props();
 
   const TERMINAL = ['complete', 'cancelled'];
@@ -62,33 +65,61 @@
     && (task.materials || []).some(isMaterialAwaitingStock)
   );
 
-  // Same dedupe as TaskDetailPage's Est Qty chip: for an hour-unit scheme,
-  // est_qty restates est_worker_time (backend pair-fills them) — the Est
-  // Time column already shows the number, so drop the redundant one here.
-  // Inputs are minute-grained in practice; do not reuse this comparison for
-  // blep-derived elapsed values (those carry seconds and would double-round).
-  const estQtyIsDuplicate = $derived(
-    task.scheme_unit_label === 'hour'
-    && task.est_worker_time
-    && Number(task.est_qty) === durationToHours(task.est_worker_time)
-  );
+
+  // The standalone Units column is gone — the unit rides inline beside the
+  // qty values, like Est Time's "h" suffix. Hour-unit tasks show their Est
+  // Qty like every other unit, even though it restates Est Time
+  // (pair-filled) — the old duplicate-suppression exception read as missing
+  // data (RM 2026-08-06).
+  function withUnit(val) {
+    if (val == null) return '-';
+    return task.unit_label ? `${val} ${task.unit_label}` : `${val}`;
+  }
+
+  // A claimed_by_other atom is claimed on one of two lenses: a change-order
+  // add line or another estimate — never both. CO wins the branch since
+  // it's the more specific claim (mirrors EstimateEditView's unselectableNote).
+  function bundleClaimNote(atom) {
+    if (atom.claiming_change_order_number) {
+      return `Claimed by change order ${atom.claiming_change_order_number}`;
+    }
+    return `Claimed by estimate ${atom.claiming_estimate_number || ''}`.trim();
+  }
+
+  // Same CO-wins-then-estimate branch as bundleClaimNote, just the short
+  // chip label instead of the full hover sentence — "Est"/"CO" mirror the
+  // table's own "Est Qty"/"Est Time" header shorthand.
+  function bundleClaimLabel(atom) {
+    return atom.claiming_change_order_number ? 'on CO' : 'on est';
+  }
 </script>
 
-<tr class:task-row={!isSubtask} class:subtask-row={isSubtask}>
+<tr class="task-row">
+  {#if bundleMode}
+    <td class="bundle-cell">
+      {#if bundleAtom?.state === 'available'}
+        <input type="checkbox" checked={bundleChecked}
+               onchange={onToggleBundle}
+               aria-label={`Select ${task.name} for bundling`}>
+      {:else if bundleAtom?.state === 'claimed_by_current'}
+        <span class="bundle-claimed" title={bundleClaimedTitle}>{bundleClaimedLabel}</span>
+      {:else if bundleAtom?.state === 'claimed_by_other'}
+        <span class="bundle-claimed" title={bundleClaimNote(bundleAtom)}>{bundleClaimLabel(bundleAtom)}</span>
+      {/if}
+    </td>
+  {/if}
   {#if !readonly && !jobLocked}
     <td class="move-cell">{#if !isTerminal}<input type="radio" name="move-target" value={task.task_id} bind:group={selectedTaskId}>{/if}</td>
   {/if}
-  <td class={isSubtask ? 'indent' : ''}>
+  <td>
     <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
     {#if awaitingMaterials}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
   </td>
-  {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
+  {#if showAssignee}<td>{task.assignee_name || ''} {#if !readonly && !isTerminal && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
   <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
   {#if showStatus}<td>{#if task.invoice}<a class="badge-invoiced" href={`#/invoices/${task.invoice.id}`} title="Billed on this invoice">INVOICED</a>{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
-  <td class="text-right">{estQtyIsDuplicate ? '-' : (task.est_qty ?? '-')}</td>
-  <td class="text-right">{taskActual(task) ?? '-'}</td>
-  <td class="text-right">{task.scheme_unit_label || '-'}</td>
-  <td class="text-right">-</td>
+  <td class="text-right">{withUnit(task.est_qty)}</td>
+  <td class="text-right">{withUnit(taskActual(task))}</td>
   <td class="text-right">{fmtMoney(task.effective_rate)}</td>
   <td class="text-right" class:est-total={taskTotalInfo(task).isEstimate}>{fmtMoney(taskTotal(task))}</td>
   {#if !readonly && !jobLocked}
@@ -98,11 +129,10 @@
         {#if onDeleteTask && !jobOnHold && canDelete && !task.has_bleps}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
         {#if onCancelTask && !jobOnHold && canCancel}<button type="button" onclick={() => onCancelTask(task)}>cancel</button>{/if}
         {#if onAddMaterial && !jobOnHold}<button type="button" onclick={() => onAddMaterial(task)}>+mat</button>{/if}
-        {#if onAddSubtask && !jobOnHold && !isSubtask}<button type="button" onclick={() => onAddSubtask(task)}>+sub</button>{/if}
       {:else if onDeleteTask && !jobOnHold && canDelete && !task.has_bleps}
         <button type="button" onclick={() => onDeleteTask(task)}>del</button>
       {/if}
-      {#if canManage && onReorder && !isSubtask}
+      {#if canManage && onReorder}
         <button type="button" onclick={() => onReorder(task.task_id, 'up')} disabled={taskIdx === 0}>&#9650;</button>
         <button type="button" onclick={() => onReorder(task.task_id, 'down')} disabled={taskIdx === taskCount - 1}>&#9660;</button>
       {/if}
@@ -113,11 +143,12 @@
 </tr>
 
 <style>
-  /* Top-level rows ride the shared .data-table zebra stripe. */
-  .subtask-row { background: #f0f9ff; }
-  .indent { padding-left: 40px; }
+  /* Rows ride the shared .data-table zebra stripe. */
   /* Headerless radio column — just wide enough for the radio button. */
   .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
+  /* Bundle-selection checkbox column (Task 3) — same footprint as move-cell. */
+  .bundle-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
+  .bundle-claimed { font-size: 11px; color: #888; font-style: italic; }
   .text-right { text-align: right; }
   td { padding: 6px 10px; vertical-align: top; }
   .est-total { color: #888; }

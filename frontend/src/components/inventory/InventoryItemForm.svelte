@@ -107,7 +107,7 @@
   <p><label><strong>Accounting category *</strong></label><br>
     <select bind:value={accountingCategory} required>
       <option value="">-- select --</option>
-      {#each categories as c (c.id)}
+      {#each categories.filter((c) => !c.is_fallback) as c (c.id)}
         <option value={c.id}>{c.code} — {c.name}</option>
       {/each}
     </select>

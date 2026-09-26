@@ -21,7 +21,7 @@
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobShell from '../../components/jobs/JobShell.svelte';
-  import { formatDuration, durationToHours } from '../../lib/format.js';
+  import { formatDuration } from '../../lib/format.js';
 
   let { params = {} } = $props();
 
@@ -43,9 +43,6 @@
   let matModalMode = $state('create');
   let matModalMaterial = $state(null);
 
-  // Subtasks state
-  let subtasks = $state([]);
-  let subtaskModalOpen = $state(false);
   let assignModalOpen = $state(false);
   // The actual-qty surface is add-only: the running total displays
   // read-only and the input is a signed delta (negative = correction).
@@ -80,20 +77,6 @@
   // The add-qty widget takes new production entries; a blocked task takes none.
   const canAddQty = $derived(!taskIsTerminal && task?.status !== 'blocked');
 
-  // For an elapsed_time (hour-unit) scheme, est_qty and est_worker_time are
-  // the same underlying value (backend pair-fills them — Task 8) — showing
-  // both chips restates one number twice. Suppress the Est Qty chip only
-  // when it's a literal duplicate; a legacy row where they've diverged
-  // (pre-pair-fill data) still shows both, same as today. Inputs are
-  // minute-grained in practice (est_worker_time), so durationToHours is safe
-  // here — this comparison must NOT be reused for blep-derived elapsed
-  // values, which carry seconds and would double-round.
-  const estQtyIsDuplicate = $derived(
-    task?.scheme_unit_label === 'hour'
-    && task?.est_worker_time
-    && Number(task?.est_qty) === durationToHours(task.est_worker_time)
-  );
-
   // Same lock the job task list uses: terminal jobs freeze everything.
   const jobLocked = $derived(
     job != null && ['completed', 'cancelled', 'rejected'].includes(job.status)
@@ -102,7 +85,10 @@
   // Material rows here are the same shared fragment (MaterialRow) the job
   // task list renders, with the same full action set — gating is by
   // material status / permissions / job state, never by which page this is.
-  let selectedTaskId = $state(null);          // Move-target radio (subtask rows)
+  // No move-target radios render on this page (moving a material between
+  // tasks happens on the job task list), so Move stays hidden here and
+  // only detach passes through.
+  let selectedTaskId = $state(null);
   let attachExpenseMaterial = $state(null);
   let fulfillModals = $state(null);           // Order + Mark-received dialogs
 
@@ -232,28 +218,10 @@
     }
   }
 
-  async function loadSubtasks() {
-    try {
-      const rawSubs = await api.get(`/api/tasks/${params.taskId}/subtasks/`);
-      // Enrich each subtask with its materials
-      subtasks = await Promise.all(rawSubs.map(async (sub) => {
-        try {
-          const subMats = await api.get(`/api/tasks/${sub.task_id}/materials/`);
-          return { ...sub, materials: subMats };
-        } catch (e) {
-          return { ...sub, materials: [] };
-        }
-      }));
-    } catch (e) {
-      subtasks = [];
-    }
-  }
-
   async function refresh() {
     await loadTask();
     await loadBleps();
     await loadMaterials();
-    await loadSubtasks();
   }
 
   $effect(() => {
@@ -261,7 +229,6 @@
       loadTask();
       loadBleps();
       loadMaterials();
-      loadSubtasks();
       loadCategories();
       loadTemplates();
     }
@@ -278,14 +245,28 @@
     }
   });
 
-  // The Rate chip's tooltip carries the estimating detail (scheme name,
-  // active modifiers) that used to occupy its own table rows.
-  const rateTooltip = $derived.by(() => {
-    if (!task?.scheme_name) return '';
-    const mods = Array.isArray(task.active_modifiers) && task.active_modifiers.length > 0
-      ? ` · Modifiers: ${task.active_modifiers.join(', ')}`
-      : '';
-    return `Scheme: ${task.scheme_name}${mods}`;
+  // Task-owned money (Phase 1): the task carries its own money block
+  // (qty_source/rate/unit_label/accounting_category/active_modifiers) —
+  // source_scheme_name is provenance only (which preset it was stamped
+  // from), never itself read for money math. `active_modifiers` is now a
+  // list of {key, label, percent} snapshot dicts (not bare keys), so the
+  // tooltip reads each modifier's own label.
+  const modifiersTooltip = $derived.by(() => {
+    const mods = task?.active_modifiers;
+    if (!Array.isArray(mods) || mods.length === 0) return '';
+    const names = mods.map((m) => (m && (m.label || m.key)) || '').filter(Boolean);
+    return names.length > 0 ? `Modifiers: ${names.join(', ')}` : '';
+  });
+
+  // Phase 3: a task's own accounting_category can be null (categorized
+  // later, at invoicing, via the configured fallback AC) — name-lookup
+  // against the already-loaded (unfiltered) `categories` list, same
+  // convention as WorkItemForm's categoryLabel. null renders as a muted
+  // "uncategorized" rather than blank, so it reads as an intentional state.
+  const taskCategoryName = $derived.by(() => {
+    if (task?.accounting_category == null) return null;
+    const cat = categories.find((c) => c.id === task.accounting_category);
+    return cat ? `${cat.code} — ${cat.name}` : `#${task.accounting_category}`;
   });
 
   // Material modal handlers
@@ -307,69 +288,8 @@
     loadMaterials();
   }
 
-  // Subtask modal handlers
-  function openAddSubtask() {
-    subtaskModalOpen = true;
-  }
-
-  function handleSubtaskSaved() {
-    subtaskModalOpen = false;
-    loadSubtasks();
-  }
-
-  // Subtask tree callbacks
-  function handleSubtaskTaskClick(sub) {
-    if (task && task.job) {
-      window.location.hash = `/jobs/${task.job.id}/tasks/${sub.task_id}`;
-    }
-  }
-
-  function handleSubtaskEditMaterial(material, parentTask) {
-    matModalMaterial = material;
-    matModalMode = 'edit';
-    // Use the subtask's task_id for the material modal
-    matModalOpen = true;
-    // Override taskId to the subtask
-    subtaskMatTaskId = parentTask.task_id;
-  }
-
-  // Subtasks reorder among their siblings here — the job task list page
-  // deliberately offers no subtask reordering (B3). Same endpoint as
-  // top-level reorder; the backend scopes the swap to the peer group.
-  async function handleSubtaskReorder(taskId, direction) {
-    try {
-      await api.post(`/api/jobs/${task.job.id}/reorder-tasks/`, {
-        task_id: taskId,
-        direction,
-      });
-      await loadSubtasks();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not reorder.'));
-    }
-  }
-
-  // Track which task the material modal targets (for subtask materials)
-  let subtaskMatTaskId = $state(null);
-  const effectiveMatTaskId = $derived(subtaskMatTaskId || params.taskId);
-
-  // Reset subtaskMatTaskId when modal closes
   function handleMatModalClose() {
     matModalOpen = false;
-    subtaskMatTaskId = null;
-  }
-
-  function handleSubtaskAddMaterial(parentTask) {
-    matModalMaterial = null;
-    matModalMode = 'create';
-    subtaskMatTaskId = parentTask.task_id;
-    matModalOpen = true;
-  }
-
-  function handleMaterialSavedForSubtask() {
-    matModalOpen = false;
-    matModalMaterial = null;
-    subtaskMatTaskId = null;
-    loadSubtasks();
   }
 </script>
 
@@ -383,16 +303,10 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if task}
-  <JobShell {job} {contact} current="tasks" onJobChange={refresh}>
+  <JobShell {job} {contact} current="tasks" colorway="cw-tasks" onJobChange={refresh}>
   <!-- Task header: crumbs, pill + title left, stat chips right -->
   <div class="task-head">
-    <!-- No task-list crumb: the nav rail's Tasks link covers it. The only
-         crumb is the parent link on a subtask. -->
-    {#if task.job && task.parent_task}
-      <div class="crumbs">
-        subtask of <a href={`/jobs/${task.job.id}/tasks/${task.parent_task}`} use:link>{task.parent_task_name}</a>
-      </div>
-    {/if}
+    <!-- No task-list crumb: the nav rail's Tasks link covers it. -->
     <div class="title-row">
       <div class="title-cluster">
         {#if task.invoice}
@@ -420,20 +334,23 @@
             <div class="stat-chip-body">{formatDuration(task.est_worker_time)}</div>
           </div>
         {/if}
-        {#if task.scheme_name && task.est_qty && !estQtyIsDuplicate}
+        <!-- Hour-unit tasks show this chip too, even though it restates Est
+             Time (pair-filled) — a blank read as missing data (RM 2026-08-06;
+             the old duplicate-suppression exception is gone). -->
+        {#if task.rate != null && task.est_qty}
           <div class="stat-chip">
             <div class="stat-chip-header">Est Qty</div>
-            <div class="stat-chip-body">{task.est_qty} {task.scheme_unit_label}</div>
+            <div class="stat-chip-body">{task.est_qty} {task.unit_label}</div>
           </div>
         {/if}
-        {#if task.scheme_algorithm === 'entered_qty'}
+        {#if task.qty_source === 'entered_qty'}
           <div class="stat-chip">
             <div class="stat-chip-header">{addQtyAdded ? 'added ✓' : 'Actual'}</div>
             <div class="stat-chip-body">
-              {task.actual_qty ?? 0} {task.scheme_unit_label}
+              {task.actual_qty ?? 0} {task.unit_label}
               {#if canAddQty}
                 <label class="add-qty">
-                  <span class="sr-only">Add ({task.scheme_unit_label})</span>
+                  <span class="sr-only">Add ({task.unit_label})</span>
                   <input
                     type="number" step="any" placeholder="+ / −"
                     bind:value={addQtyInput}
@@ -445,19 +362,35 @@
               {/if}
             </div>
           </div>
-        {:else if task.scheme_algorithm === 'elapsed_time'}
+        {:else if task.qty_source === 'elapsed_time'}
           <div class="stat-chip">
             <div class="stat-chip-header">Actual</div>
-            <div class="stat-chip-body">{Number(task.actual_hours) || 0} {task.scheme_unit_label}</div>
+            <div class="stat-chip-body">{Number(task.actual_hours) || 0} {task.unit_label}</div>
           </div>
         {/if}
-        {#if task.scheme_name && task.effective_rate}
+        {#if task.rate != null}
+          <!-- Provenance only — never read for money math. The task owns its
+               own rate/unit_label/etc; this just names the preset it was
+               stamped from, or a dash when that preset is gone (SET_NULL on
+               delete) or was never known (legacy row). -->
+          <div class="stat-chip">
+            <div class="stat-chip-header">Scheme</div>
+            <div class="stat-chip-body" title={modifiersTooltip}>{task.source_scheme_name || '—'}</div>
+          </div>
+        {/if}
+        <div class="stat-chip">
+          <div class="stat-chip-header">Category</div>
+          <div class="stat-chip-body">
+            <span class:muted={!taskCategoryName}>{taskCategoryName || 'uncategorized'}</span>
+          </div>
+        </div>
+        {#if task.rate != null && task.effective_rate}
           <div class="stat-chip money">
             <div class="stat-chip-header">Rate</div>
-            <div class="stat-chip-body" title={rateTooltip}>${task.effective_rate}/{task.scheme_unit_label}</div>
+            <div class="stat-chip-body">${task.effective_rate}/{task.unit_label}</div>
           </div>
         {/if}
-        {#if task.scheme_name && task.computed_charge}
+        {#if task.rate != null && task.computed_charge}
           <div class="stat-chip money">
             <div class="stat-chip-header">Charge</div>
             <div class="stat-chip-body">${task.computed_charge}</div>
@@ -501,46 +434,8 @@
   <h3>Description</h3>
   <div class="description preserve-breaks"><LinkifiedText text={task.description || '-'} /></div>
 
-  <!-- Subtasks section — only on top-level tasks: one level of subtasks
-       (B1), so a subtask has no subtasks of its own and no section at all. -->
-  {#if !task.parent_task}
-    <h3>Subtasks</h3>
-    {#if subtasks.length > 0}
-      <!-- Deliberately passive rows (A3): no edit/del/cancel here — a
-           subtask's own detail page is its editing surface. Wired: material
-           add/edit and sibling reorder (B3). -->
-      <TaskTree
-        tasks={subtasks}
-        readonly={taskIsTerminal}
-        {jobLocked}
-        jobOnHold={job?.on_hold ?? false}
-        canManage={task?.can_manage}
-        showStatus={true}
-        showAssignee={true}
-        onTaskClick={handleSubtaskTaskClick}
-        onAddMaterial={handleSubtaskAddMaterial}
-        onEditMaterial={handleSubtaskEditMaterial}
-        onReorder={handleSubtaskReorder}
-        onConsumeMaterial={materialCallbacks.onConsumeMaterial}
-        onRestockMaterial={materialCallbacks.onRestockMaterial}
-        onDrawMoreMaterial={materialCallbacks.onDrawMoreMaterial}
-        onMoveMaterial={materialCallbacks.onMoveMaterial}
-        onOrderMaterial={materialCallbacks.onOrderMaterial}
-        onMarkOnHand={materialCallbacks.onMarkOnHand}
-        onAttachExpense={materialCallbacks.onAttachExpense}
-        bind:selectedTaskId
-      />
-    {:else}
-      <p>No subtasks.</p>
-    {/if}
-    {#if !taskIsTerminal && !job?.on_hold}
-      <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
-    {/if}
-  {/if}
-
   <!-- Materials section — the shared MaterialRow fragment, same status
-       vocabulary and full action set as the job task list (Move targets are
-       the subtask radios above; removal is the release action). -->
+       vocabulary and full action set as the job task list. -->
   <h3>Materials</h3>
   {#if materials.length > 0}
     <table class="materials-table">
@@ -577,13 +472,30 @@
     <p><button type="button" onclick={openAddMaterial}>Add Material</button></p>
   {/if}
 
+  <!-- Fix 2b (RM browser-testing): the reverse of the PO line's task chip
+       (PurchaseOrderDetail.svelte) — a task cost→sell attributed from a PO
+       line otherwise showed no trace of that link here. Only rendered when
+       at least one PO line attributes to this task (unlike Materials,
+       there's no "none" state worth stating). -->
+  {#if task.linked_po_lines?.length}
+    <h3>Purchase Orders</h3>
+    <ul class="po-links">
+      {#each task.linked_po_lines as pl (pl.line_item_id)}
+        <li>
+          <a href="#/purchase-orders/{pl.po_id}" use:link>{pl.po_number}</a>
+          <span class="status-badge status-{pl.po_status}">{pl.po_status.replace(/_/g, ' ')}</span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
   <MaterialModal
     open={matModalOpen}
     mode={matModalMode}
     material={matModalMaterial}
-    taskId={effectiveMatTaskId}
+    taskId={params.taskId}
     {categories}
-    onSaved={subtaskMatTaskId ? handleMaterialSavedForSubtask : handleMaterialSaved}
+    onSaved={handleMaterialSaved}
     onClose={handleMatModalClose}
   />
 
@@ -599,16 +511,6 @@
   />
 
   <WorkItemForm
-    open={subtaskModalOpen}
-    mode="manual"
-    context="subtask"
-    contextId={task?.task_id}
-    templates={[]}
-    onSaved={handleSubtaskSaved}
-    onClose={() => { subtaskModalOpen = false; }}
-  />
-
-  <WorkItemForm
     open={editTaskOpen}
     mode="manual"
     context="job"
@@ -616,6 +518,8 @@
     item={task}
     isEdit={true}
     {templates}
+    canManage={job?.can_manage}
+    {categories}
     onSaved={() => { editTaskOpen = false; refresh(); }}
     onClose={() => { editTaskOpen = false; }}
   />
@@ -684,6 +588,9 @@
 
   .description { font-size: 14px; line-height: 1.6; max-width: 900px; }
 
+  .po-links { list-style: none; margin: 0 0 8px; padding: 0; font-size: 14px; }
+  .po-links li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
@@ -691,7 +598,7 @@
   .materials-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 8px; }
   /* Headerless radio column — just wide enough for the radio button. */
   .move-col { width: 24px; }
-  .materials-table th { padding: 6px 10px; text-align: left; background: #fefce8; }
+  .materials-table th { padding: 6px 10px; text-align: left; background: var(--doc-soft); color: var(--doc-accent); }
   .materials-table td { padding: 6px 10px; }
   .text-right { text-align: right; }
   /* Row buttons use .row-actions, INVOICED uses .badge-invoiced (app.css). */

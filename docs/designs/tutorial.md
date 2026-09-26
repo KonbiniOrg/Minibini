@@ -25,8 +25,9 @@ Click any card to open the job detail.
 
 ## The main organizing concept
 
-A **Job owns its work**. Everything billable on a job is one of three
-kinds of *atom*, all listed on the job's task-list page:
+A **Job owns its work**. Everything billable on a job that's actual work
+performed is one of two kinds of *atom*, both listed on the job's
+task-list page:
 
 - **Task** — a metered unit of work, like "CNC cut 12 rectangles" or "draw
   3d model of chair". Every task is priced by a **rate scheme**, either
@@ -34,10 +35,16 @@ kinds of *atom*, all listed on the job's task-list page:
   machine-minutes).  Common tasks are kept in the Service Items catalog.
 - **Material** — a physical item, either picked from the Materials catalog
   (which reserves stock — see Materials below) or typed in freeform.
-- **Fee** — a fixed charge, `quantity × unit rate`. No timer, no stock;
-  just a price.
 
-Estimates and invoices are *documents built from those same atoms*. The
+Not everything you bill for is an atom, though. A flat, no-work charge —
+a rush fee, a delivery charge, a discount — is typed directly onto the
+estimate or invoice as a plain **hand line**: no timer, no stock, just a
+price. It never becomes a job atom; it lives on the document itself and
+carries forward from estimate to invoice by reference (see Acceptance,
+below).
+
+Estimates and invoices are *documents built from those same atoms plus any
+hand lines*. The
 estimate prices what you **expect** (a task's estimated quantity); the
 invoice bills what **actually happened** (logged time, entered counts,
 consumed materials). You don't maintain the estimate and the invoice
@@ -49,7 +56,7 @@ separately — they're both linked to the same work.
    header, or straight from a customer email on the Email page ("create
    job from email").  This also lets you create the contact and business
    if they're new. The job starts as a **draft**.
-2. **Add the work.** On the job, add tasks, materials, and fees by hand,
+2. **Add the work.** On the job, add tasks and materials by hand,
    or pick from the **Service Items** or **Materials** catalogs. Give
    each task an estimated quantity and an estimated worker time (used for
    planning work). Also list the job's **Deliverables** — the customer-facing
@@ -69,8 +76,12 @@ separately — they're both linked to the same work.
    estimate can be revised — the old estimate is kept and marked superseded,
    and the new one sent to the customer with an incremented version number.
 5. **Acceptance.** When the estimate is accepted the job becomes
-   **approved**: hand-written lines crystallize into real Fee and
-   Material atoms, and stock is earmarked for the job.  A worker must review
+   **approved**: lines built from Service Items or Materials crystallize
+   into real Task and Material atoms, and stock is earmarked for the job.
+   Plain hand lines (a rush fee, a discount) don't crystallize into
+   anything — they stay document lines and carry straight through onto
+   the eventual invoice, referencing the same estimate line they came
+   from.  A worker must review
    the job at this point and ensure the necessary materials and tasks are
    listed, and then release the job to the shop floor.  Now it is **in progress**,
    and displayed in the In Progress area of the Job Board.
@@ -156,7 +167,9 @@ From a job that's work-complete (or anywhere along the way — deposits
 and progress billing are fine), open an invoice and build it exactly the
 way you built the estimate: its Reconcile view offers the job's billable
 atoms — completed tasks at their actual quantities, consumed materials,
-fees, loose expenses.  Each atom can only ever be claimed by one
+loose expenses. (A fee-like flat charge isn't an atom; it comes along as
+a hand line carried over from the accepted estimate or CO, or you can
+type a new one straight on the invoice.)  Each atom can only ever be claimed by one
 invoice, so double-billing is structurally impossible.  The invoice is
 fully editable by the user so if you don't want to charge according to the
 actual work for whatever reason, you don't have to.  And you can always

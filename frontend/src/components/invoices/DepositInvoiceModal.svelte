@@ -3,8 +3,11 @@
   // picker's "Add Deposit" entry). Two-step create, reusing the exact
   // backend contract the rest of the deposit feature already uses (no
   // backend changes):
-  //   1. POST /api/invoices/ {job} — same call InvoicePanel's Start Invoice
-  //      makes. InvoiceWizardService.open_for_job is idempotent: if the job
+  //   1. POST /api/invoices/ {job, seed: false} — same call InvoicePanel's
+  //      Start Invoice makes, except seed: false: a fresh draft otherwise
+  //      auto-seeds from the job's agreement (better-fees skeleton phase),
+  //      but this modal wants an empty, deposit-only draft.
+  //      InvoiceWizardService.open_for_job is idempotent: if the job
   //      already has an open draft, it returns that draft instead of erroring
   //      (see docs/designs/invoicing-and-expenses.md), so this button is safe
   //      to offer even when a draft already exists.
@@ -23,7 +26,17 @@
     job,
     onCreated = () => {},
     onClose = () => {},
+    // 'deposit' | 'progress' — words only (spec §7.2 relabel): a progress
+    // billing IS a deposit taken mid-job, so both variants create the same
+    // unseeded draft + deposit-rail line; the title and the line's default
+    // description are what tell the customer the story.
+    variant = 'deposit',
   } = $props();
+
+  let title = $derived(variant === 'progress' ? 'Add Progress Invoice' : 'Add Deposit Invoice');
+  let lineDescription = $derived(variant === 'progress'
+    ? `Progress billing on ${job?.job_number}`
+    : `Deposit on ${job?.job_number}`);
 
   let amount = $state('');
   let busy = $state(false);
@@ -48,7 +61,7 @@
     busy = true;
     let invoiceId;
     try {
-      const inv = await api.post('/api/invoices/', { job: job.job_id });
+      const inv = await api.post('/api/invoices/', { job: job.job_id, seed: false });
       invoiceId = inv.invoice_id;
     } catch (e) {
       busy = false;
@@ -65,7 +78,7 @@
     try {
       await api.post(`/api/invoices/${invoiceId}/line-items/`, {
         deposit: true,
-        description: `Deposit on ${job.job_number}`,
+        description: lineDescription,
         qty: '1',
         units: 'none',
         price: amount,
@@ -93,9 +106,9 @@
   }
 </script>
 
-<Modal {open} onCancel={onClose} label="Add Deposit Invoice">
+<Modal {open} onCancel={onClose} label={title}>
 <form onsubmit={(e) => { e.preventDefault(); if (!busy) submit(); }}>
-  <h3>Add Deposit Invoice</h3>
+  <h3>{title}</h3>
   <p>
     <label>Amount<br>
       <!-- svelte-ignore a11y_autofocus -- intentional: sole input in a

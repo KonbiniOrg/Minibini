@@ -1,7 +1,100 @@
+from decimal import Decimal
 from rest_framework import serializers
 from apps.estimates.models import Estimate, EstimateLineItem
+from apps.estimates.services import EstimateWizardService
 from apps.core.units import UnitsField
 from apps.api.mixins import JobScopedCanManageMixin
+
+
+def _resolve_sources(line):
+    """Resolve every source row on a line, skipping any dangling row (its
+    atom already deleted out from under the claim — legal pre-purge state,
+    see estimates-and-prices.md §6.2) rather than letting `resolve()`
+    raise ObjectDoesNotExist. A line whose sources are ALL dangling
+    resolves to an empty list, so callers treat it exactly as if the line
+    had no sources at all; a partially-dangling line yields only the
+    resolvable instances. Used by both `derive_estimate_backing` and
+    `get_backing_total` so a line's sources are read from the DB once."""
+    from django.core.exceptions import ObjectDoesNotExist
+    resolved = []
+    for src in line.sources.all():
+        try:
+            resolved.append(src.resolve())
+        except ObjectDoesNotExist:
+            continue
+    return resolved
+
+
+def derive_estimate_backing(line):
+    """Classify how an estimate line's price is currently backed. Same
+    "derive on every read, never store" style as InvoiceLineItemSerializer's
+    module-level `derive_backing` (Task 5), reusing the wizard's own
+    in-sync rule (`BaseWizardService._is_in_sync`, fed the per_unit-aware
+    sum — `EstimateWizardService._line_sum`/`_sum_per_unit_sources` for a
+    per_unit line, else the same whole-line sum as `_sum_sources`) — but
+    the estimate enum is domain-specific: no deposit/agreement concepts,
+    and it splits catalog vs hand-authored vs sourced lines instead.
+
+    1. `adjustment_service_id` set -> 'adjustment'.
+    2. `service_item_id` or `inventory_item_id` set -> 'from_catalog'. A
+       bare `is_material=True` line with no `inventory_item` does NOT
+       count — it stays 'hand' until crystallization narrows it further.
+    3. Has RESOLVABLE claimed source rows (via `_resolve_sources`, which
+       skips any dangling row — its atom already deleted, a legal
+       pre-purge state — rather than 500ing; a line whose sources are
+       ALL dangling is treated as having none, falling through to rule 4;
+       a partially-dangling line sums/classifies only what still
+       resolves):
+       - not in sync with the source sum (price != round(sum/qty, 2)) ->
+         'edited_work' (any task among the sources) or 'edited_materials'
+         (materials only) — the chip keeps the underlying structure and
+         adds the tweak as a qualifier (RM 2026-08-17: the supporting
+         structure is more useful than whether it's been tweaked).
+       - in sync, any task among the sources -> 'planned_work'.
+       - in sync, materials only -> 'planned_materials'.
+    4. Otherwise (no adjustment, no catalog ref, no resolvable sources) ->
+       'hand'.
+
+    `backing` is designed for DRAFT authoring surfaces (the estimate
+    wizard's chip labels), not as a general-purpose lifecycle indicator.
+    Two consequences of rule 2 firing before rule 3 fall out of that scope
+    deliberately and are worth spelling out:
+
+    - Post-acceptance, a service-item or inventory-item line KEEPS
+      'from_catalog' even after `EstimateAcceptanceService.on_accept`
+      crystallizes it into a live Task/Material source on that same line
+      (see apps/estimates/acceptance.py) — rule 2 still fires first, so
+      'from_catalog' means "this line is a catalog descriptor" for the
+      line's whole life, not "not yet crystallized". This is intentional,
+      not a staleness bug.
+    """
+    if line.adjustment_service_id is not None:
+        return 'adjustment'
+
+    if line.service_item_id is not None or line.inventory_item_id is not None:
+        return 'from_catalog'
+
+    resolved = _resolve_sources(line)
+    if resolved:
+        # per_unit lines are judged against the per-unit Σ (no division by
+        # qty — `_line_sum` dispatches to `_sum_per_unit_sources`, itself
+        # dangling-tolerant). Whole-line lines keep the pre-resolved,
+        # dangling-tolerant sum computed above rather than re-querying via
+        # `_sum_sources` (which does not tolerate a dangling source row).
+        if line.per_unit:
+            sum_value = EstimateWizardService._line_sum(line)
+        else:
+            sum_value = sum(
+                (EstimateWizardService._atom_computed_amount(i) for i in resolved),
+                Decimal('0.00'),
+            )
+        from apps.jobs.models import Task
+        has_task = any(isinstance(i, Task) for i in resolved)
+        if not EstimateWizardService._is_in_sync(line, sum_value):
+            return 'edited_work' if has_task else 'edited_materials'
+        return 'planned_work' if has_task else 'planned_materials'
+
+    return 'hand'
 
 
 class EstimateLineItemSourceSerializer(serializers.Serializer):
@@ -11,10 +104,13 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
     source_pk = serializers.IntegerField(read_only=True)
     description = serializers.SerializerMethodField()
     computed_amount = serializers.SerializerMethodField()
+    qty = serializers.SerializerMethodField()
+    units = serializers.SerializerMethodField()
+    rate = serializers.SerializerMethodField()
 
     def _resolve_or_none(self, obj):
-        # A dangling row (atom deleted out from under the claim — pre-purge
-        # data, or a race) must render as null, never 500 the list endpoint.
+        # A dangling row (atom deleted out from under the claim — a race)
+        # must render as null, never 500 the list endpoint.
         from django.core.exceptions import ObjectDoesNotExist
         try:
             return obj.resolve()
@@ -28,19 +124,106 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return instance.name
-        return instance.description  # Material / Fee
+        return instance.description  # Material
 
     def get_computed_amount(self, obj):
-        from decimal import Decimal
         instance = self._resolve_or_none(obj)
         if instance is None:
             return None
         # Estimate line items project the ESTIMATE quote (est_qty), not actuals.
         # A Task bills actuals via compute_amount() — $0 until it's worked — so the
-        # estimate must use compute_estimate_amount() instead; Material / Fee have
-        # only compute_amount() (no est/actual split) and fall through.
+        # estimate must use compute_estimate_amount() instead; Material has
+        # only compute_amount() (no est/actual split) and falls through.
         amount_fn = getattr(instance, 'compute_estimate_amount', instance.compute_amount)
         return str(amount_fn().quantize(Decimal('0.01')))
+
+    # qty/units/rate values here are display-only, purely derived from the
+    # resolved instance, and feed a doc-surface's nested atom-row (never
+    # re-summed into the line's own total — that stays
+    # `computed_amount`/`backing_total`).
+    #
+    # The non-Task fallthroughs are written for Material; attributes are
+    # read defensively (getattr → null over 500), same philosophy as
+    # `_resolve_or_none` for dangling rows.
+    def get_qty(self, obj):
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
+        from apps.jobs.models import Task
+        if isinstance(instance, Task):
+            return str(instance.est_qty if instance.est_qty is not None else Decimal('0'))
+        return str(instance.quantity)  # Material
+
+    def get_units(self, obj):
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
+        from apps.jobs.models import Task
+        if isinstance(instance, Task):
+            return instance.unit_label or 'none'
+        # Material's units field, read defensively.
+        return getattr(instance, 'units', None) or 'none'
+
+    def get_rate(self, obj):
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
+        from apps.jobs.models import Task
+        if isinstance(instance, Task):
+            return str(instance.effective_rate())
+        # Material's sell_price, read defensively → null, not a 500.
+        sell_price = getattr(instance, 'sell_price', None)
+        return None if sell_price is None else str(sell_price)
+
+    def to_representation(self, instance):
+        """Per-unit drift keys (per-unit-lines spec Task 6): 'per_unit_qty',
+        'expected_total', 'drift', and (task claims that snapshotted one)
+        'expected_worker_time' plus its current-value counterpart
+        'worker_time' (Task 7 fix — see below) — added ONLY for a claim row
+        whose `per_unit_qty` is set (`EstimateWizardService.
+        _per_unit_drift_info` returns None otherwise). Deliberately NOT
+        SerializerMethodFields: the spec requires these keys to be ABSENT
+        (not False/null) on a non-per-unit claim, which a method field
+        can't express (it always emits its key).
+
+        The backing line is read off whichever FK this row actually
+        carries — `estimate_line_item` for an EstimateLineItemSource,
+        `change_order_line_item` for a ChangeOrderLineItemSource (this
+        serializer is shared by both, e.g. via
+        apps.api.change_orders.serializers._serialize_sources) — so a
+        claim moved onto an accepted CO replace line is judged against
+        THAT line's current qty, not the original target's.
+
+        'worker_time' (per-unit-lines spec Task 7 fix, RM 2026-09-17): the
+        task's LIVE `est_worker_time`, sitting next to 'expected_worker_time'
+        so a schedule-only drift (qty in sync, only the scheduled time
+        diverged) can be told apart from a qty drift by the frontend
+        DriftModal — without it, the modal had no current-value
+        counterpart to compare 'expected_worker_time' against. Same
+        absent-not-null convention as the other drift keys: omitted
+        whenever there's no 'expected_worker_time' to pair with (including
+        material claims, which never get one), and also omitted (not null)
+        on the rare case the resolved task's own `est_worker_time` is
+        itself None."""
+        from django.utils.duration import duration_string
+        from apps.estimates.services import EstimateWizardService
+
+        data = super().to_representation(instance)
+        line = (getattr(instance, 'estimate_line_item', None)
+                or getattr(instance, 'change_order_line_item', None))
+        info = (EstimateWizardService._per_unit_drift_info(instance, line.qty)
+                if line is not None else None)
+        if info is not None:
+            data['per_unit_qty'] = str(info['per_unit_qty'])
+            data['expected_total'] = str(info['expected_total'])
+            if 'expected_worker_time' in info:
+                data['expected_worker_time'] = duration_string(info['expected_worker_time'])
+                resolved = self._resolve_or_none(instance)
+                current_worker_time = getattr(resolved, 'est_worker_time', None) if resolved is not None else None
+                if current_worker_time is not None:
+                    data['worker_time'] = duration_string(current_worker_time)
+            data['drift'] = info['drift']
+        return data
 
 
 class EstimateLineItemSerializer(serializers.ModelSerializer):
@@ -48,6 +231,10 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
     sources = EstimateLineItemSourceSerializer(many=True, read_only=True)
     adjustment_service_detail = serializers.SerializerMethodField()
     service_item_detail = serializers.SerializerMethodField()
+    backing = serializers.SerializerMethodField()
+    backing_total = serializers.SerializerMethodField()
+    linked_deliverables = serializers.SerializerMethodField()
+    needs_work_decision = serializers.SerializerMethodField()
 
     class Meta:
         model = EstimateLineItem
@@ -57,9 +244,91 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'accounting_category',
             'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail', 'service_item_detail',
-            'sources',
+            'sources', 'backing', 'backing_total', 'linked_deliverables',
+            'work_declined', 'needs_work_decision', 'per_unit',
         ]
-        read_only_fields = ['line_item_id']
+        # is_material is server-derived from the accounting category
+        # (EstimateService._derive_is_material, RM 2026-08-11) — never
+        # client-writable. per_unit is read-only for now (per-unit-lines
+        # spec Task 2) — setting it is a Task 3+ (bundle-modal) concern.
+        read_only_fields = ['line_item_id', 'is_material', 'per_unit']
+
+    def get_linked_deliverables(self, obj):
+        # Deliverables minted from this line via Make Deliverable (the
+        # source_line provenance FK) — drives button suppression and the
+        # qty-mismatch caption in the estimate edit view.
+        return [
+            {
+                'id': d.pk,
+                'description': d.description,
+                'qty_ordered': str(d.qty_ordered),
+                'units': d.units,
+            }
+            for d in obj.deliverables.all()
+        ]
+
+    def get_needs_work_decision(self, obj):
+        """Single server-side source of truth for the checklist's mint/
+        decline affordances (kills the client-side predicate duplication —
+        docs/plans/2026-08-15-estimating-structure.md final-review fix):
+        True exactly when `EstimateService.unanswered_lines(obj.estimate)`
+        would include this line AND it carries no catalog identity — the
+        same defensive belt the old client-side predicate had (a
+        catalog-identity line always crystallizes its own source at
+        accept, so in practice it can never reach here with sources still
+        empty, but nothing enforces that at the type level).
+
+        Memoized per estimate (self._chain_answered_cache, keyed by
+        estimate_id) so a list of N lines on one estimate costs one extra
+        query for the CO-chain check, not N — same style as
+        JobSerializer._financials_cache."""
+        if (
+            obj.adjustment_service_id is not None
+            or (obj.accounting_category_id and obj.accounting_category.is_deposit)
+            or obj.service_item_id is not None
+            or obj.inventory_item_id is not None
+            or obj.is_material
+            or obj.work_declined
+        ):
+            return False
+        if obj.sources.exists():
+            return False
+        return obj.pk not in self._chain_answered_line_pks(obj.estimate_id)
+
+    def _chain_answered_line_pks(self, estimate_id):
+        cache = getattr(self, '_chain_answered_cache', None)
+        if cache is None:
+            cache = {}
+            self._chain_answered_cache = cache
+        if estimate_id not in cache:
+            from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
+            cache[estimate_id] = set(
+                ChangeOrderLineItem.objects.filter(
+                    target_line_item__estimate_id=estimate_id,
+                    action__in=(ChangeOrderLineItem.ACTION_REPLACE, ChangeOrderLineItem.ACTION_REMOVE),
+                    change_order__status=ChangeOrder.STATUS_ACCEPTED,
+                ).values_list('target_line_item_id', flat=True)
+            )
+        return cache[estimate_id]
+
+    def get_backing(self, obj):
+        return derive_estimate_backing(obj)
+
+    def get_backing_total(self, obj):
+        """Sum of source compute_estimate_amount()/compute_amount() — the
+        "work totals $X" reference figure; null when the line has no
+        resolvable sources (no source rows at all, OR every source row is
+        dangling — see `_resolve_sources`). Independent of `backing`: an
+        out-of-sync 'edited' sourced line still reports its total; a
+        partially-dangling line sums only the resolvable sources."""
+        resolved = _resolve_sources(obj)
+        if not resolved:
+            return None
+        total = sum(
+            (EstimateWizardService._atom_computed_amount(i) for i in resolved),
+            Decimal('0.00'),
+        )
+        return str(total.quantize(Decimal('0.01')))
 
     def get_adjustment_service_detail(self, obj):
         if obj.adjustment_service_id is None:

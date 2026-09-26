@@ -23,23 +23,25 @@ def recompute_adjustments(line_items):
 def compute_adjustment_amount(adjustment_line, sibling_lines):
     """Return the dollar amount for a percentage-adjustment line item.
 
-    amount = (service.rate / 100) * sum(total_amount of non-adjustment siblings
-    whose accounting_category is in the target-category set; empty target set
-    means ALL non-adjustment siblings).
+    amount = (adjustment_line.adjustment_percent / 100) * sum(total_amount of
+    non-adjustment siblings whose accounting_category is in the
+    target-category set; empty target set means ALL non-adjustment siblings).
 
     Result is quantized to the nearest cent (Decimal('0.01')).
 
     Args:
         adjustment_line: an EstimateLineItem (or InvoiceLineItem) whose
-            ``adjustment_service`` is set to a PERCENTAGE RateScheme.
+            ``adjustment_percent`` snapshots the rate it was created with.
+            ``adjustment_service`` (the originating RateScheme) is provenance
+            only — never read here, so editing the preset's rate after the
+            fact never moves an existing adjustment line.
         sibling_lines: iterable of line items on the same parent document,
             excluding ``adjustment_line`` itself.
 
     Returns:
         Decimal quantized to two decimal places.
     """
-    svc = adjustment_line.adjustment_service
-    percent = svc.rate
+    percent = adjustment_line.adjustment_percent
     target_ids = set(
         adjustment_line.adjustment_target_categories.values_list('pk', flat=True)
     )

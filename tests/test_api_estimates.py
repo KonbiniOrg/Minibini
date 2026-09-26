@@ -1,3 +1,4 @@
+from decimal import Decimal
 from unittest.mock import patch, MagicMock
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
@@ -129,7 +130,11 @@ class EstimateAPITest(BaseTestCase):
             self.assertEqual(response.status_code, 200)
 
     def test_discard_draft_returns_200_with_message(self):
-        job = Job.objects.first()
+        # Own job (not Job.objects.first()) — the fixture job already carries
+        # a draft estimate, and a job may only have one (Estimate.clean()).
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='D', last_name='One', email='discard1@test.com')
+        job = Job.objects.create(contact=contact, job_number='JOB-DISCARD-1')
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-DISCARD-001',
@@ -142,7 +147,10 @@ class EstimateAPITest(BaseTestCase):
         self.assertFalse(Estimate.objects.filter(pk=pk).exists())
 
     def test_discard_non_draft_returns_400(self):
-        job = Job.objects.first()
+        # Own job — see test_discard_draft_returns_200_with_message.
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='D', last_name='Two', email='discard2@test.com')
+        job = Job.objects.create(contact=contact, job_number='JOB-DISCARD-2')
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-DISCARD-002',
@@ -162,7 +170,11 @@ class EstimateSendTest(BaseTestCase):
         self.client = APIClient()
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
-        self.job = Job.objects.first()
+        # Own job (not Job.objects.first()) — the fixture job already carries
+        # a draft estimate, and a job may only have one (Estimate.clean()).
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='S', last_name='End', email='send@test.com')
+        self.job = Job.objects.create(contact=contact, job_number='JOB-SEND-1')
         self.estimate = Estimate.objects.create(
             job=self.job,
             estimate_number='EST-SEND-001',
@@ -308,7 +320,11 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
         self.labor = AccountingCategory.objects.get(pk=901)
-        self.job = Job.objects.first()
+        # Own job (not Job.objects.first()) — the fixture job already carries
+        # a draft estimate, and a job may only have one (Estimate.clean()).
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='A', last_name='Dj', email='adj@test.com')
+        self.job = Job.objects.create(contact=contact, job_number='JOB-ADJ-1')
         self.est = Estimate.objects.create(
             job=self.job,
             estimate_number='EST-ADJ-001',
@@ -363,6 +379,393 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
             content_type='application/json',
         )
         self.assertEqual(r2.status_code, 404)
+
+
+class EstimateLineBackingAPITest(BaseTestCase):
+    """derive_estimate_backing / backing_total on
+    GET /api/estimates/{id}/line-items/ (EstimateLineItemSerializer)."""
+
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.contacts.models import Contact
+        from apps.jobs.models import RateScheme
+
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-EBACK', name='Labor-EstBacking', taxable=False,
+        )
+        self.contact = Contact.objects.create(
+            first_name='Est', last_name='Backing',
+            email='estbacking@test.com', mobile_number='555-0400',
+        )
+        self.job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_DRAFT,
+            job_number='JOB-EBACK-0001',
+        )
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-EBack', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-EBACK-1', version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+
+    def _row(self, line_item):
+        resp = self.client.get(f'/api/estimates/{self.estimate.pk}/line-items/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        data = resp.data
+        items = data.get('results', data) if isinstance(data, dict) else data
+        return next(r for r in items if r['line_item_id'] == line_item.pk)
+
+    def _task(self, name, est_qty):
+        from decimal import Decimal
+        from apps.jobs.models import Task
+        task = Task(job=self.job, name=name, est_qty=Decimal(est_qty))
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        return task
+
+    def _material(self, description, quantity, sell_price):
+        from decimal import Decimal
+        from apps.inventory.models import Material
+        return Material.objects.create(
+            job=self.job, description=description,
+            quantity=Decimal(quantity), sell_price=Decimal(sell_price),
+            accounting_category=self.cat,
+        )
+
+    def test_backing_planned_work_on_task_sourced_line(self):
+        """A wizard line composed from a single task, still in sync ->
+        'planned_work'; backing_total mirrors compute_estimate_amount."""
+        from apps.estimates.services import EstimateWizardService
+
+        task = self._task('Build-EBack', est_qty='2')
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'task', 'id': task.pk}])
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'planned_work')
+        self.assertEqual(Decimal(row['backing_total']), Decimal('200.00'))
+
+    def test_backing_planned_materials_on_materials_only_line(self):
+        """A wizard line composed only from materials -> 'planned_materials'."""
+        from apps.estimates.services import EstimateWizardService
+
+        m1 = self._material('Steel', '2', '5.00')
+        m2 = self._material('Bolts', '3', '1.00')
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate,
+            [{'type': 'material', 'id': m1.pk}, {'type': 'material', 'id': m2.pk}])
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'planned_materials')
+        self.assertEqual(Decimal(row['backing_total']), Decimal('13.00'))
+
+    def test_backing_planned_work_on_mixed_task_and_material_line(self):
+        """A wizard line with a task AND a material among its sources ->
+        'planned_work' (any task among sources wins over materials-only)."""
+        from apps.estimates.services import EstimateWizardService
+
+        task = self._task('Build-Mix', est_qty='1')
+        material = self._material('Mix-Steel', '2', '5.00')
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate,
+            [{'type': 'task', 'id': task.pk}, {'type': 'material', 'id': material.pk}])
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'planned_work')
+
+    def test_backing_edited_when_sourced_line_out_of_sync(self):
+        """A sourced line whose stored price no longer matches the source
+        sum -> 'edited_materials' (kind-preserving, RM 2026-08-17;
+        materials-only here)."""
+        from apps.estimates.services import EstimateWizardService
+
+        m1 = self._material('Edited-Steel', '2', '5.00')
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'material', 'id': m1.pk}])
+        li.price = Decimal('999.00')
+        li.save()
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'edited_materials')
+
+    def test_backing_from_catalog_on_service_item_line(self):
+        """A line pointing at a ServiceItem (deferred service descriptor) ->
+        'from_catalog'."""
+        from apps.estimates.models import ServiceItem
+
+        si = ServiceItem.objects.create(
+            template_name='Catalog Service', rate_scheme=self.scheme,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, qty=Decimal('1'),
+            units='hour', description='Catalog service', price=Decimal('100.00'),
+            accounting_category=self.cat, service_item=si,
+        )
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'from_catalog')
+
+    def test_backing_stays_from_catalog_after_service_line_acceptance(self):
+        """Consequence (1) of the precedence order (see derive_estimate_backing's
+        docstring): a service-item line keeps 'from_catalog' even after
+        acceptance crystallizes it into a live Task source on that same line
+        — rule 2 (catalog ref) fires before the sources rules, for the
+        line's whole life, not just pre-crystallization."""
+        from apps.estimates.models import ServiceItem
+        from apps.estimates.services import EstimateService
+        from apps.estimates.acceptance import EstimateAcceptanceService
+
+        si = ServiceItem.objects.create(
+            template_name='Accept-Catalog Service', rate_scheme=self.scheme,
+        )
+        li = EstimateService.add_line_item_from_service(self.estimate.pk, si.pk, qty=2)
+
+        EstimateAcceptanceService.on_accept(self.estimate)
+        li.refresh_from_db()
+        self.assertTrue(li.sources.exists())  # now crystallized to a Task source
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'from_catalog')
+
+    def test_backing_from_catalog_on_inventory_item_line(self):
+        """A line pointing at a catalog InventoryItem -> 'from_catalog'."""
+        from apps.inventory.models import InventoryItem
+
+        item = InventoryItem.objects.create(
+            code='EBACK-ITEM', accounting_category=self.cat,
+            qty_on_hand=Decimal('10'),
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, qty=Decimal('1'),
+            units='each', description='Catalog item', price=Decimal('25.00'),
+            accounting_category=self.cat, inventory_item=item,
+        )
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'from_catalog')
+
+    def test_backing_hand_on_bare_material_line(self):
+        """A bare `is_material=True` line with no inventory_item is NOT
+        'from_catalog' — it stays 'hand' until crystallization narrows it
+        (spec clarification, task-6 brief)."""
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, qty=Decimal('1'),
+            units='each', description='Bare material', price=Decimal('12.00'),
+            accounting_category=self.cat, is_material=True,
+        )
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'hand')
+        self.assertIsNone(row['backing_total'])
+
+    def test_backing_adjustment_on_adjustment_line(self):
+        """An adjustment line (adjustment_service set) -> 'adjustment', even
+        though it carries no sources and no catalog reference."""
+        from apps.jobs.models import RateScheme
+
+        rush = RateScheme.objects.create(
+            name='Rush-EBack', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.cat,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, qty=Decimal('1'),
+            units='%', description='Rush', price=Decimal('10.00'),
+            accounting_category=self.cat, adjustment_service=rush,
+            adjustment_percent=Decimal('10.00'),
+        )
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'adjustment')
+        self.assertIsNone(row['backing_total'])
+
+    def test_backing_hand_and_null_total_on_plain_hand_line(self):
+        """A bare hand line — no sources, no catalog ref, not an adjustment
+        -> 'hand'; backing_total null."""
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, qty=Decimal('1'),
+            units='each', description='Misc', price=Decimal('20.00'),
+            accounting_category=self.cat,
+        )
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'hand')
+        self.assertIsNone(row['backing_total'])
+
+    def test_backing_falls_through_to_hand_when_all_sources_dangling(self):
+        """A line's sources ALL dangling (their atoms already deleted, a
+        legal pre-purge state) is treated as having no sources at all —
+        GET succeeds (200, not 500) and backing falls through to 'hand',
+        with a null backing_total and null per-row detail fields."""
+        from apps.estimates.services import EstimateWizardService
+        from apps.inventory.models import Material
+
+        m1 = self._material('Dangle-Steel', '2', '5.00')
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'material', 'id': m1.pk}])
+        self.assertEqual(li.sources.count(), 1)
+
+        # Simulate pre-purge dangling data: bulk-delete bypasses
+        # Material.delete()'s source-row purge (CLAUDE.md's own warning
+        # against QuerySet.delete() bypassing custom delete() — used here
+        # deliberately to reproduce the dangling state).
+        Material.objects.filter(pk=m1.pk).delete()
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'hand')
+        self.assertIsNone(row['backing_total'])
+        src_row = row['sources'][0]
+        self.assertIsNone(src_row['description'])
+        self.assertIsNone(src_row['computed_amount'])
+        self.assertIsNone(src_row['qty'])
+        self.assertIsNone(src_row['units'])
+        self.assertIsNone(src_row['rate'])
+
+    def test_backing_total_and_edited_when_sources_partially_dangling(self):
+        """A partially-dangling line sums/classifies only what still
+        resolves: with one of two material sources deleted, backing_total
+        reflects only the survivor and the now-stale stored price reads
+        as 'edited_materials' rather than crashing."""
+        from apps.estimates.services import EstimateWizardService
+        from apps.inventory.models import Material
+
+        m1 = self._material('Dangle-Steel-1', '2', '5.00')  # 10.00
+        m2 = self._material('Dangle-Bolts-1', '3', '1.00')  # 3.00
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate,
+            [{'type': 'material', 'id': m1.pk}, {'type': 'material', 'id': m2.pk}])
+        self.assertEqual(li.sources.count(), 2)
+
+        Material.objects.filter(pk=m2.pk).delete()
+
+        row = self._row(li)
+        self.assertEqual(row['backing'], 'edited_materials')
+        self.assertEqual(Decimal(row['backing_total']), Decimal('10.00'))
+
+
+class EstimateLineNeedsWorkDecisionAPITest(BaseTestCase):
+    """needs_work_decision on GET /api/estimates/{id}/line-items/
+    (EstimateLineItemSerializer) — the server-computed single source of
+    truth for the checklist's mint/decline affordances (final-review fix,
+    finding 1: kills the client-side predicate duplication that used to
+    live in EstimateEditView.svelte's needsWorkDecision(li))."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory
+        from apps.contacts.models import Contact
+        from apps.jobs.models import RateScheme
+
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-NWD', name='Labor-NeedsWorkDecision', taxable=False,
+        )
+        self.deposit_cat = AccountingCategory.objects.create(
+            code='DEP-NWD', name='Deposit-NeedsWorkDecision', taxable=False,
+            is_deposit=True,
+        )
+        self.contact = Contact.objects.create(
+            first_name='Nwd', last_name='Test',
+            email='nwd@test.com', mobile_number='555-0401',
+        )
+        self.job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_APPROVED,
+            job_number='JOB-NWD-0001',
+        )
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-NWD', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-NWD-1', version=1,
+            status=Estimate.STATUS_ACCEPTED,
+        )
+
+    def _row(self, line_item):
+        resp = self.client.get(f'/api/estimates/{self.estimate.pk}/line-items/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        data = resp.data
+        items = data.get('results', data) if isinstance(data, dict) else data
+        return next(r for r in items if r['line_item_id'] == line_item.pk)
+
+    def test_plain_unanswered_hand_line_needs_a_decision(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Plain hand line',
+            qty=Decimal('1'), price=Decimal('50.00'), accounting_category=self.cat,
+        )
+        self.assertTrue(self._row(li)['needs_work_decision'])
+
+    def test_sourced_line_does_not_need_a_decision(self):
+        from apps.jobs.models import Task
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Sourced line',
+            qty=Decimal('2'), price=Decimal('200.00'), accounting_category=self.cat,
+        )
+        task = Task(job=self.job, name='Build-NWD', est_qty=Decimal('2'))
+        task.stamp_from_scheme(self.scheme)
+        task.save()
+        from apps.estimates.models import EstimateLineItemSource
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li, source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+        self.assertFalse(self._row(li)['needs_work_decision'])
+
+    def test_declined_line_does_not_need_a_decision(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Declined line',
+            qty=Decimal('1'), price=Decimal('50.00'), accounting_category=self.cat,
+            work_declined=True,
+        )
+        self.assertFalse(self._row(li)['needs_work_decision'])
+
+    def test_deposit_line_does_not_need_a_decision(self):
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Deposit',
+            qty=Decimal('1'), price=Decimal('500.00'), accounting_category=self.deposit_cat,
+        )
+        self.assertFalse(self._row(li)['needs_work_decision'])
+
+    def test_adjustment_line_does_not_need_a_decision(self):
+        from apps.jobs.models import RateScheme
+        adj_scheme = RateScheme.objects.create(
+            name='Rush-NWD', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10'), unit_label='%', accounting_category=self.cat,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='Rush surcharge',
+            qty=Decimal('1'), price=Decimal('50.00'),
+            adjustment_service=adj_scheme, adjustment_percent=adj_scheme.rate,
+        )
+        self.assertFalse(self._row(li)['needs_work_decision'])
+
+    def test_catalog_identity_line_does_not_need_a_decision(self):
+        """Defensive belt: a bare-sourced catalog-identity line (shouldn't
+        normally happen post-accept — crystallization always leaves a
+        source — but the serializer must not depend on that)."""
+        from apps.estimates.models import ServiceItem
+        service_item = ServiceItem.objects.create(
+            template_name='NWD service', rate_scheme=self.scheme,
+        )
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1, description='NWD service',
+            qty=Decimal('1'), price=Decimal('100.00'), accounting_category=self.cat,
+            service_item=service_item,
+        )
+        self.assertFalse(self._row(li)['needs_work_decision'])
 
 
 class EstimateUnexpireAPITest(BaseTestCase):

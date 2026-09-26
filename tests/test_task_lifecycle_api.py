@@ -1,7 +1,7 @@
 from datetime import timedelta
 from django.utils import timezone
 from rest_framework.test import APIClient
-from apps.jobs.models import Task, Blep
+from apps.jobs.models import Task, Blep, RateScheme
 from tests.base import BaseTestCase
 
 
@@ -17,9 +17,11 @@ class TaskLifecycleAPITest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(
-            job=self.job, name="Test task", rate_scheme_id=1,
+        self.task = Task(
+            job=self.job, name="Test task",
         )
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def _create_user(self, username):
         from apps.core.models import User
@@ -39,9 +41,11 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_complete_entered_qty_task_without_value_signals_needs_qty(self):
         # rate_scheme 2 in the fixture is entered_qty
-        eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+        eq_task = Task(
+            job=self.job, name='CNC',
         )
+        eq_task.stamp_from_scheme(RateScheme.objects.get(pk=2))
+        eq_task.save()
         resp = self.client.post(f'/api/tasks/{eq_task.pk}/complete/')
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.data.get('needs_actual_qty'))
@@ -51,9 +55,11 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.assertNotEqual(eq_task.status, Task.STATUS_COMPLETE)
 
     def test_complete_entered_qty_task_with_add_qty_completes(self):
-        eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+        eq_task = Task(
+            job=self.job, name='CNC',
         )
+        eq_task.stamp_from_scheme(RateScheme.objects.get(pk=2))
+        eq_task.save()
         resp = self.client.post(
             f'/api/tasks/{eq_task.pk}/complete/',
             {'add_qty': '7'}, format='json',
@@ -69,9 +75,11 @@ class TaskLifecycleAPITest(BaseTestCase):
         """A task with qty on record still prompts (settle-up) and reports
         the accumulated total for the modal."""
         from decimal import Decimal
-        eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+        eq_task = Task(
+            job=self.job, name='CNC',
         )
+        eq_task.stamp_from_scheme(RateScheme.objects.get(pk=2))
+        eq_task.save()
         Task.objects.filter(pk=eq_task.pk).update(actual_qty=Decimal('9'))
         resp = self.client.post(f'/api/tasks/{eq_task.pk}/complete/')
         self.assertEqual(resp.status_code, 200)
@@ -82,9 +90,11 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_complete_add_qty_increments_running_total(self):
         from decimal import Decimal
-        eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+        eq_task = Task(
+            job=self.job, name='CNC',
         )
+        eq_task.stamp_from_scheme(RateScheme.objects.get(pk=2))
+        eq_task.save()
         Task.objects.filter(pk=eq_task.pk).update(actual_qty=Decimal('9'))
         resp = self.client.post(
             f'/api/tasks/{eq_task.pk}/complete/',
@@ -96,9 +106,11 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_complete_zero_add_qty_settles_positive_total(self):
         from decimal import Decimal
-        eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+        eq_task = Task(
+            job=self.job, name='CNC',
         )
+        eq_task.stamp_from_scheme(RateScheme.objects.get(pk=2))
+        eq_task.save()
         Task.objects.filter(pk=eq_task.pk).update(actual_qty=Decimal('3'))
         resp = self.client.post(
             f'/api/tasks/{eq_task.pk}/complete/',
@@ -108,9 +120,11 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.assertEqual(resp.data.get('status'), Task.STATUS_COMPLETE)
 
     def test_complete_invalid_add_qty_returns_400(self):
-        eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+        eq_task = Task(
+            job=self.job, name='CNC',
         )
+        eq_task.stamp_from_scheme(RateScheme.objects.get(pk=2))
+        eq_task.save()
         resp = self.client.post(
             f'/api/tasks/{eq_task.pk}/complete/',
             {'add_qty': 'garbage'}, format='json',
@@ -164,9 +178,11 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.assertIsNotNone(blep.end_time)
 
     def test_block_own_entered_qty_session_settles_first(self):
-        eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+        eq_task = Task(
+            job=self.job, name='CNC',
         )
+        eq_task.stamp_from_scheme(RateScheme.objects.get(pk=2))
+        eq_task.save()
         Task.objects.filter(pk=eq_task.pk).update(status=Task.STATUS_IN_PROGRESS)
         Blep.objects.create(
             task=eq_task, user=self.user,
@@ -217,9 +233,11 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_cancel_prompts_for_own_open_entered_qty_session(self):
         from decimal import Decimal
-        eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+        eq_task = Task(
+            job=self.job, name='CNC',
         )
+        eq_task.stamp_from_scheme(RateScheme.objects.get(pk=2))
+        eq_task.save()
         Task.objects.filter(pk=eq_task.pk).update(
             status=Task.STATUS_IN_PROGRESS, actual_qty=Decimal('9'))
         Blep.objects.create(
@@ -274,9 +292,11 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def _eq_task_with_open_blep(self, actual_qty=None, user=None):
         from decimal import Decimal
-        eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+        eq_task = Task(
+            job=self.job, name='CNC',
         )
+        eq_task.stamp_from_scheme(RateScheme.objects.get(pk=2))
+        eq_task.save()
         fields = {'status': Task.STATUS_IN_PROGRESS}
         if actual_qty is not None:
             fields['actual_qty'] = Decimal(actual_qty)
@@ -466,9 +486,11 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_start_work_prior_session_conflict_and_flag(self):
         from decimal import Decimal
-        eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+        eq_task = Task(
+            job=self.job, name='CNC',
         )
+        eq_task.stamp_from_scheme(RateScheme.objects.get(pk=2))
+        eq_task.save()
         Task.objects.filter(pk=eq_task.pk).update(
             status=Task.STATUS_IN_PROGRESS, actual_qty=Decimal('9'))
         Blep.objects.create(
@@ -512,9 +534,11 @@ class TaskSerializerStatusTest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(
-            job=self.job, name="Test task", rate_scheme_id=1,
+        self.task = Task(
+            job=self.job, name="Test task",
         )
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def test_task_list_includes_status(self):
         url = f'/api/jobs/{self.job.pk}/tasks/'

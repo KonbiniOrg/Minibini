@@ -24,7 +24,8 @@ Per-model field checks:
                    W  non-terminal: stray completed_date
   RateScheme       E  valid algorithm value
                    E  missing accounting_category
-                   E  replaced_by/replaced_at must be set together
+                   E  negative rate only allowed for percentage algorithm
+                   E  elapsed_time scheme must be pinned to the hour unit
   Estimate         E  valid status value
                    E  max one accepted estimate per job
                    E  max one draft estimate per job
@@ -33,11 +34,19 @@ Per-model field checks:
                    W  accepted/rejected/superseded/expired: missing closed_date
   Task             E  must belong to a Job
                    E  valid status value
+                   E  valid qty_source value
+                   E  negative rate
+                   E  active_modifiers must be a list of {key, percent} dicts
   Material         E  must have description or inventory_item
                    E  negative quantity
                    W  has PLI but empty description (--fix: auto-fill)
   LineItems        E  cannot have both task and inventory_item (mutual exclusivity)
   (all 4 types)    W  negative price
+  EstimateLI       E  hand line (no atom source, not adjustment) missing accounting_category
+  ChangeOrderLI    E  bare ADD line (no descriptor/atom source) missing accounting_category
+  InvoiceLI        E  non-draft/non-dead invoice's line missing accounting_category
+                      (Task accounting_category is nullable and NOT checked —
+                      Phase 3: a task may stay uncategorized until invoicing)
   PurchaseOrder    E  valid status value
                    E  contact must have a business
                    W  non-draft: missing issued_date
@@ -46,6 +55,8 @@ Per-model field checks:
                    E  contact must have a business
                    E  cannot link to draft PO
                    E  non-draft must have at least one line item
+                   E  invoice_only PO line has receiving data
+                   W  line final_price set but PO not reconciled (stale)
   Invoice          E  valid status value
   Deliverable      E  must belong to a Job; qty_ordered must be positive
                    W  missing units
@@ -78,9 +89,11 @@ Cross-model relationship checks:
   Invoice/Job      W  invoice on draft/submitted/rejected job
                    E  cancelled job's invoices must also be cancelled
 """
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.core.management.base import BaseCommand
-from django.db.models import Sum
+from django.db.models import Sum, Count
+
+from apps.core.units import HOUR_UNIT
 
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate
@@ -110,11 +123,13 @@ class Command(BaseCommand):
         self.check_jobs()
         self.check_rate_schemes()
         self.check_estimates()
-        self.check_fees()
         self.check_tasks()
         self.check_bleps_and_shifts()
         self.check_materials()
         self.check_line_items()
+        self.check_estimate_line_categories()
+        self.check_change_order_line_categories()
+        self.check_invoice_line_categories()
         self.check_purchase_orders()
         self.check_invoices()
         self.check_deliverables()
@@ -132,6 +147,7 @@ class Command(BaseCommand):
         self.check_job_work_complete_gate()
         self.check_estimate_source_job_consistency()
         self.check_invoice_source_job_consistency()
+        self.check_agreement_line_invoice_exclusivity()
 
         # Report
         self.stdout.write('')
@@ -310,32 +326,73 @@ class Command(BaseCommand):
         from apps.jobs.models import Task
         from apps.estimates.models import ServiceItem
         valid_task_statuses = {s[0] for s in Task.TASK_STATUS_CHOICES}
-        # Tasks now belong directly to a Job (post-WorkOrder-removal).
+        valid_qty_sources = {s[0] for s in Task.QTY_SOURCE_CHOICES}
+        # Tasks now belong directly to a Job (post-WorkOrder-removal) and own
+        # their money block (task-owned-money Phase 1): qty_source, rate,
+        # unit_label, accounting_category, active_modifiers are the task's
+        # own fields, not read through source_scheme (provenance only — a
+        # null source_scheme from SET_NULL preset deletion is legal, no
+        # check needed). A null accounting_category is ALSO legal (Phase 3):
+        # a task may go uncategorized until invoicing, where the configured
+        # fallback AC stamps the invoice line — no check needed here either.
         for t in Task.objects.select_related('job').all():
             if not t.job_id:
                 self.errors.append(f'Task {t.pk} ({t.name}): not attached to a Job')
             if t.status not in valid_task_statuses:
                 self.errors.append(f'Task {t.pk} ({t.name}): invalid status "{t.status}"')
-            if isinstance(t.active_modifiers, dict):
-                self.errors.append(
-                    f'Task {t.pk} ({t.name}): active_modifiers is a dict; must be a list of keys'
-                )
-        # One level of subtasks only (TaskService.create_direct enforces it;
-        # a grandchild is invisible in the SPA's two-level tree).
-        for t in Task.objects.filter(
-            parent_task__parent_task__isnull=False
-        ).select_related('parent_task'):
+            if t.qty_source not in valid_qty_sources:
+                self.errors.append(f'Task {t.pk} ({t.name}): invalid qty_source "{t.qty_source}"')
+            if t.rate is not None and t.rate < 0:
+                self.errors.append(f'Task {t.pk} ({t.name}): negative rate {t.rate}')
+            self._check_task_active_modifiers_shape(t)
+        # parent_task is DORMANT (better-fees spec §3; flattened by
+        # jobs/0061): the field survives in the schema but no code may
+        # write it — a non-NULL value means some path still does, and its
+        # on_delete=CASCADE makes stale pointers actively dangerous.
+        for t in Task.objects.filter(parent_task__isnull=False):
             self.errors.append(
-                f'Task {t.pk} ({t.name}): subtask of a subtask '
-                f'(parent {t.parent_task_id} already has a parent) — '
-                f'one level of subtasks only'
+                f'Task {t.pk} ({t.name}): parent_task={t.parent_task_id} is '
+                f'set — the field is dormant (subtasks removed, better-fees '
+                f'spec §3); some code path is still writing it'
             )
-        # ServiceItems: default_active_modifiers must be a list
+        # ServiceItems stamp Tasks at generate-time and still store plain
+        # modifier-key lists (not the {key, percent} snapshot shape Tasks
+        # use) — default_active_modifiers just needs to be a list.
         for tt in ServiceItem.objects.all():
             if isinstance(tt.default_active_modifiers, dict):
                 self.errors.append(
                     f'ServiceItem {tt.pk} ({tt.template_name}): '
                     f'default_active_modifiers is a dict; must be a list of keys'
+                )
+
+    def _check_task_active_modifiers_shape(self, t):
+        """A Task's active_modifiers is a snapshot list of {key, label,
+        percent} dicts (label optional) stamped at creation time — never a
+        dict, never bare/malformed entries."""
+        modifiers = t.active_modifiers
+        if not isinstance(modifiers, list):
+            self.errors.append(
+                f'Task {t.pk} ({t.name}): active_modifiers is a '
+                f'{type(modifiers).__name__}; must be a list of {{key, percent}} dicts'
+            )
+            return
+        for m in modifiers:
+            if not isinstance(m, dict):
+                self.errors.append(
+                    f'Task {t.pk} ({t.name}): active_modifiers entry {m!r} is not '
+                    f'a dict (expected {{key, percent}})'
+                )
+                continue
+            if not m.get('key'):
+                self.errors.append(
+                    f'Task {t.pk} ({t.name}): active_modifiers entry {m!r} missing key'
+                )
+            try:
+                Decimal(str(m.get('percent')))
+            except (InvalidOperation, TypeError, ValueError):
+                self.errors.append(
+                    f'Task {t.pk} ({t.name}): active_modifiers entry {m!r} '
+                    f'percent must be numeric'
                 )
 
     # ── Materials ─────────────────────────────────────────────
@@ -392,13 +449,134 @@ class Command(BaseCommand):
                 if li.price < 0:
                     self.warnings.append(f'{name} {li.pk}: negative price {li.price}')
 
+    # ── Line item accounting_category nullability (Phase 3) ────
+
+    def check_estimate_line_categories(self):
+        """A hand-authored estimate line (no atom source, not a percentage
+        adjustment) must carry an accounting_category —
+        EstimateService.add_line_item / update_line_item /
+        assert_all_hand_lines_have_ac (apps/estimates/services.py) all
+        enforce this at every mutation + at send-time (Decision 1). A
+        survivor with none is a save()/full_clean() bypass (fixture
+        loading, direct ORM create), not a legal state — ERROR.
+
+        Atom-backed lines (an EstimateLineItemSource exists) are exempt:
+        a null-AC Task atom legitimately collapses the line's category to
+        None (Phase 3 Task 4). Adjustment lines (`adjustment_service_id`
+        set) are exempt too: a percentage adjustment targets other lines'
+        categories, it never carries one of its own. Same predicate as
+        assert_all_hand_lines_have_ac."""
+        from apps.estimates.models import EstimateLineItem
+        for li in EstimateLineItem.objects.select_related('estimate').filter(
+            accounting_category_id__isnull=True,
+            adjustment_service_id__isnull=True,
+        ):
+            if li.sources.exists():
+                continue
+            self.errors.append(
+                f'EstimateLineItem {li.pk} (estimate {li.estimate.estimate_number}): '
+                f'hand line (no atom source, not an adjustment) has no accounting_category'
+            )
+
+    def check_change_order_line_categories(self):
+        """A bare ADD line on a change order (no service_item/inventory_item
+        descriptor, no atom source) must carry an accounting_category —
+        ChangeOrderService.assert_all_bare_add_lines_have_ac enforces this
+        at send-time. A survivor with none is a bypass, not a legal state
+        — ERROR. Remove/replace lines are out of scope (mirrors the real
+        gate: assert_all_bare_add_lines_have_ac only ever inspects
+        action=ADD lines — a non-adjustment REPLACE line's category is a
+        separate, pre-existing gap, not something Phase 3 introduced or
+        this check should invent). Descriptor-backed (service_item/
+        inventory_item) and atom-backed (sources exist) ADD lines are
+        exempt, same predicate as the real gate."""
+        from apps.estimates.models import ChangeOrderLineItem
+        for li in ChangeOrderLineItem.objects.select_related('change_order').filter(
+            action=ChangeOrderLineItem.ACTION_ADD,
+            service_item_id__isnull=True,
+            inventory_item_id__isnull=True,
+            accounting_category_id__isnull=True,
+        ):
+            if li.sources.exists():
+                continue
+            self.errors.append(
+                f'ChangeOrderLineItem {li.pk} '
+                f'(CO {li.change_order.change_order_number}): bare ADD line '
+                f'(no descriptor, no atom source) has no accounting_category'
+            )
+
+    def check_invoice_line_categories(self):
+        """An invoice line's accounting_category may be null only while its
+        invoice hasn't (yet, or ever) passed
+        InvoiceEmailService._assert_all_lines_categorized — the send-time
+        gate in apps/invoicing/services.py that requires EVERY line
+        (including adjustment lines; the gate applies no adjustment
+        exemption) to carry a category before send_invoice flips status
+        off draft.
+
+        So null is legal on:
+          - draft invoices (pre-send: a manual hand line from
+            InvoiceService.add_line_item is never required to carry an AC
+            at add-time — deferred to the send gate by design, see the
+            Phase 3 Task 5 report's "estimate/invoice hand-line
+            AC-requirement discrepancy" note. An agreement-seeded
+            adjustment line is NOT normally null: in production it always
+            carries the source estimate/CO adjustment's own real AC —
+            EstimateService.add_adjustment_line / the CO equivalent both
+            stamp `svc.accounting_category` off the (required,
+            non-nullable) PERCENTAGE RateScheme field, and
+            InvoiceService._agreement_category_id passes that value
+            through unmodified (never fallback-stamped, since an
+            adjustment targets *other* lines' categories, but never
+            stripped to null either — a final-review fix corrected an
+            earlier bug where the adjustment exemption discarded the real
+            AC). A null adjustment-line AC can therefore only arise from
+            legacy/hand-built data — e.g. a raw-ORM-created
+            EstimateLineItem/ChangeOrderLineItem adjustment row that
+            bypassed the real creation service — and, once seeded onto a
+            draft invoice, still blocks send exactly like any other
+            uncategorized line);
+          - cancelled/superseded invoices (InvoiceService.cancel routes a
+            draft invoice straight to cancelled via Invoice.save(), never
+            through the send gate — DEAD_INVOICE_STATUSES,
+            apps/invoicing/claims.py).
+
+        Every other status (open/partly-paid/paid/defaulted) is only
+        reachable by having passed the gate (send_invoice is the sole
+        draft-exit path; QBO polling only ever moves an already-open
+        invoice to partly-paid/paid), so a null AC surviving there is a
+        genuine gate-bypass / data corruption — ERROR. Deliberately NOT
+        scoped by adjustment vs. non-adjustment: post-gate, the gate
+        itself makes no such distinction, so neither does this check.
+
+        Task.accounting_category is separately nullable and NOT checked
+        here or anywhere in validate_data (Phase 3 Task 4) — a task may
+        stay uncategorized until invoicing, where the wizard stamps the
+        configured fallback."""
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.invoicing.claims import DEAD_INVOICE_STATUSES
+        exempt_statuses = (Invoice.STATUS_DRAFT,) + tuple(DEAD_INVOICE_STATUSES)
+        for li in InvoiceLineItem.objects.select_related('invoice').exclude(
+            invoice__status__in=exempt_statuses
+        ).filter(accounting_category_id__isnull=True):
+            self.errors.append(
+                f'InvoiceLineItem {li.pk}: no accounting_category but invoice '
+                f'{li.invoice.display_number} status is "{li.invoice.status}" '
+                f'(past the send-time categorization gate)'
+            )
+
     # ── Purchase Orders ───────────────────────────────────────
 
     def check_purchase_orders(self):
         from apps.purchasing.models import PurchaseOrder
         valid_statuses = {s[0] for s in PurchaseOrder.PO_STATUS_CHOICES}
 
-        for po in PurchaseOrder.objects.select_related('business', 'contact').all():
+        for po in (
+            PurchaseOrder.objects
+            .select_related('business', 'contact')
+            .prefetch_related('purchaseorderlineitem_set')
+            .all()
+        ):
             if po.status not in valid_statuses:
                 self.errors.append(f'PO {po.po_number}: invalid status "{po.status}"')
 
@@ -417,6 +595,40 @@ class Command(BaseCommand):
             # Cancelled POs should have cancel_date
             if po.status == PurchaseOrder.STATUS_CANCELLED and not po.cancel_date:
                 self.warnings.append(f'PO {po.po_number}: cancelled but no cancel_date')
+
+            # Reconciliation belt-checks (outsourced-work port, Task 4;
+            # ported from feature/fees): line items that bypassed
+            # save()/clean() (e.g. fixture loading), same purpose as the
+            # rest of this command. (fees' third check here — task link
+            # pointing at a subtask — is dropped: subtasks don't exist on
+            # this branch, and check_tasks() above already flags any
+            # non-NULL Task.parent_task globally.)
+            for li in po.purchaseorderlineitem_set.all():
+                # invoice_only lines are excluded from receiving flows
+                # entirely (PurchaseOrderReceivingService refuses to act on
+                # them, including cancel_line_item) — any receiving data on
+                # one is unreachable through normal use.
+                if li.invoice_only and (
+                    li.qty_received or li.received_by_id or li.received_date
+                    or li.qty_cancelled
+                ):
+                    self.errors.append(
+                        f'PO {po.po_number} line {li.line_number}: '
+                        'invoice_only line has receiving data (invoice_only '
+                        'lines are excluded from receiving flows)'
+                    )
+
+                # final_price is normally only ever written inside
+                # PurchaseOrderService.reconcile(), which always sets
+                # PurchaseOrder.reconciled=True in the same transaction — a
+                # final_price surviving on an unreconciled PO is a stale
+                # partial entry (or bypassed data).
+                if li.final_price is not None and not po.reconciled:
+                    self.warnings.append(
+                        f'PO {po.po_number} line {li.line_number}: '
+                        'final_price is set but PO is not reconciled '
+                        '(stale partial entry)'
+                    )
 
     # ── Invoices ──────────────────────────────────────────────
 
@@ -441,15 +653,14 @@ class Command(BaseCommand):
                 self.errors.append(
                     f'RateScheme {rs.pk} ({rs.name}): missing accounting_category'
                 )
-            # replaced_by and replaced_at are set together by supersede()
-            if bool(rs.replaced_by_id) != bool(rs.replaced_at):
-                self.errors.append(
-                    f'RateScheme {rs.pk} ({rs.name}): replaced_by and replaced_at '
-                    f'must both be set or both be null'
-                )
             if rs.algorithm != RateScheme.PERCENTAGE and rs.rate is not None and rs.rate < 0:
                 self.errors.append(
                     f'RateScheme {rs.pk} ({rs.name}): negative rate not allowed for {rs.algorithm}'
+                )
+            if rs.algorithm == RateScheme.ELAPSED_TIME and rs.unit_label != HOUR_UNIT:
+                self.errors.append(
+                    f'RateScheme {rs.pk} ({rs.name}): elapsed_time scheme must have '
+                    f'unit_label "{HOUR_UNIT}", got "{rs.unit_label}"'
                 )
 
     # ── Deliverables ──────────────────────────────────────────
@@ -731,35 +942,13 @@ class Command(BaseCommand):
                 f'quantity {m.quantity} on {m.job.status} job {m.job.job_number}'
             )
 
-    def check_fees(self):
-        """For each Fee, validate unit_rate > 0, quantity >= 0,
-        and (if task is set) task.job_id == fee.job_id.
-        (accounting_category is NOT NULL on the model; no need to check it here.)"""
-        from apps.jobs.models import Fee
-        for fee in Fee.objects.select_related('task', 'job').all():
-            if fee.unit_rate <= 0:
-                self.errors.append(
-                    f'Fee {fee.pk} ({fee.description!r}): unit_rate must be positive '
-                    f'(got {fee.unit_rate})'
-                )
-            if fee.quantity < 0:
-                self.errors.append(
-                    f'Fee {fee.pk} ({fee.description!r}): negative quantity {fee.quantity}'
-                )
-            if fee.task_id and fee.task.job_id != fee.job_id:
-                self.errors.append(
-                    f'Fee {fee.pk} ({fee.description!r}): task {fee.task_id} belongs to '
-                    f'job {fee.task.job_id} but Fee belongs to job {fee.job_id}'
-                )
-
     def check_estimate_source_job_consistency(self):
-        """For each EstimateLineItemSource (task/material/fee), the atom's job_id
+        """For each EstimateLineItemSource (task/material), the atom's job_id
         must match the owning estimate's job_id."""
         from apps.estimates.models import EstimateLineItemSource
         atom_source_types = {
             EstimateLineItemSource.SOURCE_TASK,
             EstimateLineItemSource.SOURCE_MATERIAL,
-            EstimateLineItemSource.SOURCE_FEE,
         }
         for source in EstimateLineItemSource.objects.select_related(
             'estimate_line_item__estimate__job'
@@ -782,13 +971,12 @@ class Command(BaseCommand):
                 )
 
     def check_invoice_source_job_consistency(self):
-        """For each InvoiceLineItemSource (task/material/fee), the atom's job_id
+        """For each InvoiceLineItemSource (task/material), the atom's job_id
         must match the owning invoice's job_id."""
         from apps.invoicing.models import InvoiceLineItemSource
         atom_source_types = {
             InvoiceLineItemSource.SOURCE_TASK,
             InvoiceLineItemSource.SOURCE_MATERIAL,
-            InvoiceLineItemSource.SOURCE_FEE,
         }
         for source in InvoiceLineItemSource.objects.select_related(
             'invoice_line_item__invoice__job'
@@ -821,4 +1009,57 @@ class Command(BaseCommand):
                     f'InvoiceLineItemSource {source.pk} (task:{source.source_pk}): '
                     f'task status "{atom.status}" is not billable '
                     f'(terminal statuses only)'
+                )
+
+    def check_agreement_line_invoice_exclusivity(self):
+        """Each estimate line and change-order line may be referenced by at
+        most one live invoice. A live invoice is every status except cancelled.
+        Uses DB-side aggregation to identify violations, then fetches details only
+        for violating IDs.
+
+        Two distinct violation shapes are possible and get distinct
+        messages: the agreement line is held by more than one DISTINCT live
+        invoice (the invariant this check exists for), or it has more than
+        one live InvoiceLineItem row all pointing at the same single
+        invoice (duplicate references — also invalid, but not "more than
+        one invoice" and would otherwise be misreported as such since a
+        raw row-count doesn't distinguish the two)."""
+        from apps.invoicing.models import InvoiceLineItem
+
+        self._check_agreement_line_field_exclusivity(
+            InvoiceLineItem, 'agreement_estimate_line_id', 'EstimateLineItem')
+        self._check_agreement_line_field_exclusivity(
+            InvoiceLineItem, 'agreement_co_line_id', 'ChangeOrderLineItem')
+
+    def _check_agreement_line_field_exclusivity(self, InvoiceLineItem, field, label):
+        # Aggregate at DB level: both a raw row count (n) and a distinct-
+        # invoice count (n_invoices) — two dup rows on ONE invoice must not
+        # be reported as "more than one live invoice".
+        violations = InvoiceLineItem.objects.exclude(
+            invoice__status=Invoice.STATUS_CANCELLED
+        ).exclude(
+            **{f'{field}__isnull': True}
+        ).values(field).annotate(
+            n=Count('pk'), n_invoices=Count('invoice', distinct=True),
+        ).filter(n__gt=1)
+
+        for v in violations:
+            line_id = v[field]
+            ilis = InvoiceLineItem.objects.exclude(
+                invoice__status=Invoice.STATUS_CANCELLED
+            ).filter(
+                **{field: line_id}
+            ).select_related('invoice')
+
+            display_numbers = sorted(set(ili.invoice.display_number for ili in ilis))
+            if v['n_invoices'] > 1:
+                self.errors.append(
+                    f'{label} {line_id}: referenced by more than one live invoice: '
+                    f'{", ".join(display_numbers)}'
+                )
+            else:
+                self.errors.append(
+                    f'{label} {line_id}: referenced by {v["n"]} line items on '
+                    f'the same live invoice {display_numbers[0]} (duplicate '
+                    f'references).'
                 )

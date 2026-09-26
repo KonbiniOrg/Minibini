@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from tests.base import BaseTestCase
 from apps.core.models import User, Shift
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import BlepService, TaskLifecycleService
 
 
@@ -34,7 +34,10 @@ class StartWorkJobStatusGuardTest(BaseTestCase):
         self.user = User.objects.get(username='admin')
 
     def _task(self, job):
-        return Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        task = Task(name='T', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
+        return task
 
     def test_start_work_allowed_on_draft_job(self):
         # Pre-approval work: a materialless task starts fine on a draft job.
@@ -108,7 +111,10 @@ class CreateHistoricalJobStatusGuardTest(BaseTestCase):
         )
 
     def _task(self, job):
-        return Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        task = Task(name='T', job=job)
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.save()
+        return task
 
     def _times(self):
         now = timezone.now()
@@ -202,7 +208,10 @@ class ActualQtyCancelledJobTest(BaseTestCase):
     def _task(self, job):
         from apps.jobs.models import RateScheme
         scheme = RateScheme.objects.first()
-        return Task.objects.create(name='T', job=job, rate_scheme=scheme)
+        task = Task(name='T', job=job)
+        task.stamp_from_scheme(scheme)
+        task.save()
+        return task
 
     def test_actual_qty_settable_on_cancelled_job(self):
         from decimal import Decimal

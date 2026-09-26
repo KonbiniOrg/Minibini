@@ -33,8 +33,10 @@ describe('COAddLineForm', () => {
       { action: 'add', inventory_item: 22, qty: '10' });
   });
 
-  it('freeform fee posts a manual add payload; description prefilled from typed', async () => {
-    const choice = { type: 'freeform', typed: 'Rush charge', isMaterial: false };
+  it('freeform line posts a manual add payload without is_material; description prefilled from typed', async () => {
+    // RM 2026-08-11: material-ness derives server-side from the chosen AC —
+    // the form never sends is_material.
+    const choice = { type: 'freeform', typed: 'Rush charge' };
     const { getByLabelText, getByRole } = render(COAddLineForm, {
       props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
     });
@@ -45,40 +47,15 @@ describe('COAddLineForm', () => {
     await fireEvent.click(getByRole('button', { name: /add/i }));
     expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items/',
       expect.objectContaining({
-        action: 'add', description: 'Rush charge', is_material: false,
+        action: 'add', description: 'Rush charge',
         accounting_category: 7, price: '50',
       }));
+    const [, payload] = api.post.mock.calls.at(-1);
+    expect('is_material' in payload).toBe(false);
   });
 
-  it('freeform material prefills AC from the default and carries is_material true', async () => {
-    const choice = { type: 'freeform', typed: 'plywood', isMaterial: true };
-    const { getByLabelText, getByRole } = render(COAddLineForm, {
-      props: { open: true, choice, coId: 42, categories: cats,
-        defaultMaterialCategoryId: 7, onSaved: vi.fn() },
-    });
-    expect(getByLabelText(/accounting category/i)).toHaveValue('7');
-    await fireEvent.input(getByLabelText(/quantity/i), { target: { value: '2' } });
-    await fireEvent.input(getByLabelText(/price/i), { target: { value: '30' } });
-    await fireEvent.click(getByRole('button', { name: /add/i }));
-    expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items/',
-      expect.objectContaining({ action: 'add', is_material: true, accounting_category: 7 }));
-  });
-
-  it('freeform material does not block save when no default is configured (backend fills it)', async () => {
-    const choice = { type: 'freeform', typed: 'plywood', isMaterial: true };
-    const { getByLabelText, getByRole } = render(COAddLineForm, {
-      props: { open: true, choice, coId: 42, categories: cats,
-        defaultMaterialCategoryId: null, onSaved: vi.fn() },
-    });
-    await fireEvent.input(getByLabelText(/quantity/i), { target: { value: '2' } });
-    await fireEvent.input(getByLabelText(/price/i), { target: { value: '30' } });
-    await fireEvent.click(getByRole('button', { name: /add/i }));
-    expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items/',
-      expect.objectContaining({ action: 'add', is_material: true }));
-  });
-
-  it('freeform fee blocks save with no accounting category (send-guard rule)', async () => {
-    const choice = { type: 'freeform', typed: 'x', isMaterial: false };
+  it('freeform line blocks save with no accounting category (no material exemption)', async () => {
+    const choice = { type: 'freeform', typed: 'x' };
     const { getByLabelText, getByRole, findByText } = render(COAddLineForm, {
       props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
     });
@@ -86,6 +63,50 @@ describe('COAddLineForm', () => {
     await fireEvent.click(getByRole('button', { name: /add/i }));
     expect(api.post).not.toHaveBeenCalled();
     expect(await findByText(/accounting category is required/i)).toBeInTheDocument();
+  });
+
+  it('service choice prefills description from template_name and omits it untouched', async () => {
+    const choice = { type: 'service', serviceItem: { template_id: 11, template_name: 'CNC Routing' } };
+    const { getByLabelText, getByRole } = render(COAddLineForm, {
+      props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('CNC Routing');
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    const [, payload] = api.post.mock.calls.at(-1);
+    expect('description' in payload).toBe(false);
+  });
+
+  it('service choice sends an edited description as an override', async () => {
+    const choice = { type: 'service', serviceItem: { template_id: 11, template_name: 'CNC Routing' } };
+    const { getByLabelText, getByRole } = render(COAddLineForm, {
+      props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    await fireEvent.input(getByLabelText(/description/i), { target: { value: 'CNC Routing (rush)' } });
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items-from-service/',
+      expect.objectContaining({ description: 'CNC Routing (rush)' }));
+  });
+
+  it('inventory choice prefills description from the PLI and omits it untouched', async () => {
+    const choice = { type: 'inventory', inventoryItem: { inventory_item_id: 22, code: 'BOLT-14', description: 'Steel bolt' } };
+    const { getByLabelText, getByRole } = render(COAddLineForm, {
+      props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('Steel bolt');
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    const [, payload] = api.post.mock.calls.at(-1);
+    expect('description' in payload).toBe(false);
+  });
+
+  it('inventory choice sends an edited description as an override', async () => {
+    const choice = { type: 'inventory', inventoryItem: { inventory_item_id: 22, code: 'BOLT-14', description: 'Steel bolt' } };
+    const { getByLabelText, getByRole } = render(COAddLineForm, {
+      props: { open: true, choice, coId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    await fireEvent.input(getByLabelText(/description/i), { target: { value: 'Steel bolt, zinc-plated' } });
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/change-orders/42/line-items/',
+      expect.objectContaining({ action: 'add', description: 'Steel bolt, zinc-plated' }));
   });
 
   it('comment choice posts action add + is_comment without requiring an accounting category', async () => {

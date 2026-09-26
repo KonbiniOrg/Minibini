@@ -1,0 +1,486 @@
+<script>
+  // The change order's "amended agreement" edit surface (CO amend-in-place,
+  // Task 8): one table showing the agreement as it will read if this CO is
+  // accepted — server-composed by compose_amended_agreement (Tasks 5-7) so
+  // the view, footer totals, and future seeding can never disagree.
+  // Presentation + gestures only — ChangeOrderPanel owns loading (co,
+  // amended) and refreshes both after `onChanged()`, same silent-refresh
+  // contract as EstimateEditView. Line-item-first (RM 2026-09-20): this
+  // page composes CO lines only via Add Line (catalog/service/freeform),
+  // replace/amend of existing estimate lines, adjustments, and remove-line
+  // descoping — there is no plan-first "Unquoted work" picklist/bundle
+  // gesture here any more (see docs/designs/estimates-and-prices.md). The
+  // atom child rows / remove-from-line / drift affordances below still
+  // render whatever claims a CO line already carries (today: sources
+  // crystallized/inherited at acceptance; per RM, a future Tasks-page
+  // bundling surface may attach draft-time claims again) — that machinery
+  // is untouched.
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
+  import { formatQtyUnits } from '../../lib/format.js';
+  import { fmtMoney } from '../../lib/taskTotals.js';
+  import COLineItemModal from './COLineItemModal.svelte';
+  import COAddLineForm from './COAddLineForm.svelte';
+  import PriceListPicker from '../PriceListPicker.svelte';
+  import LinkifiedText from '../LinkifiedText.svelte';
+  import BackingChip from '../docsurface/BackingChip.svelte';
+  import AtomChildRow from '../docsurface/AtomChildRow.svelte';
+  import AtomCaptionRow from '../docsurface/AtomCaptionRow.svelte';
+  import DriftModal from '../docsurface/DriftModal.svelte';
+  import QtyUnits from '../docsurface/QtyUnits.svelte';
+
+  // Atom rows carry description/qty/price/amount (4, no leading # column in
+  // this table — amended-agreement rows carry no stable line_number) + this
+  // many blank cells before the onRemove cell, so Remove lands under
+  // Actions, not Backing (which always sits between Amount and Actions).
+  const ATOM_ROW_COLSPAN_AFTER = 1;
+
+  let {
+    co,
+    canEdit,
+    onChanged = () => {},
+    amended = null,
+    categories = [],
+  } = $props();
+
+  const apiBase = $derived(`/api/change-orders/${co.change_order_id}`);
+  let rows = $derived(amended?.rows || []);
+
+  function rowKey(row, i) {
+    if (row.kind === 'agreement') return `a-${row.line.estimate_line_id ?? `i${i}`}`;
+    if (row.kind === 'removed') return `r-${row.co_line_id}`;
+    if (row.kind === 'replaced') return `p-${row.co_line_id}`;
+    return `d-${row.co_line_id}`; // 'added'
+  }
+
+  function fmtTotal(n) { return `$${Number(n ?? 0).toFixed(2)}`; }
+  function fmtDelta(n) {
+    const v = Number(n ?? 0);
+    if (v === 0) return fmtTotal(0);
+    return (v > 0 ? '+' : '-') + `$${Math.abs(v).toFixed(2)}`;
+  }
+
+  // ── Add line (unchanged flow: PriceListPicker → COAddLineForm) ───────────
+  let pickerOpen = $state(false);
+  let addChoice = $state(null);
+
+  function handleLineAdded() {
+    addChoice = null;
+    onChanged();
+  }
+
+  // ── COLineItemModal orchestration — gestures preset everything ──────────
+  let modalOpen = $state(false);
+  let modalVariant = $state('edit-fields');
+  let modalLineItemId = $state(null);
+  let modalTargetLineItem = $state(null);
+  let modalNeedsAC = $state(false);
+  let modalInitialDescription = $state('');
+  let modalInitialQty = $state('');
+  let modalInitialUnits = $state('none');
+  let modalInitialPrice = $state('');
+  let modalInitialPercent = $state('');
+  let modalInitialAC = $state('');
+  let modalInitialIsComment = $state(false);
+
+  function handleModalSaved() {
+    modalOpen = false;
+    onChanged();
+  }
+
+  /** Amended-agreement row dicts (compose_amended_agreement) don't carry
+      is_comment — the CO's own full line-item list (`co.line_items`, from
+      ChangeOrderLineItemSerializer) already has it authoritatively, so read
+      it from there rather than growing the agreement composition to
+      duplicate a field the parent CO object already provides. */
+  function coLineIsComment(coLineId) {
+    return (co.line_items || []).find((li) => li.line_item_id === coLineId)?.is_comment ?? false;
+  }
+
+  /** 'agreement' row → [Replace…]: adjustment lines open the percent variant,
+      everything else opens replace-prefill seeded from the current line.
+      Always a brand-new CO line, never an existing comment to restore. */
+  function openReplace(row) {
+    const line = row.line;
+    modalLineItemId = null;
+    modalTargetLineItem = line.estimate_line_id;
+    modalInitialDescription = line.description || '';
+    modalNeedsAC = false;
+    modalInitialIsComment = false;
+    if (line.is_adjustment) {
+      modalVariant = 'adjustment';
+      modalInitialPercent = line.percent ?? '';
+    } else {
+      modalVariant = 'replace-prefill';
+      modalInitialQty = line.qty ?? '';
+      modalInitialUnits = line.units || 'none';
+      modalInitialPrice = line.price ?? '';
+    }
+    modalOpen = true;
+  }
+
+  /** 'replaced' row → [Edit]: PATCH the existing CO replace line. */
+  function openEditReplaced(row) {
+    const line = row.line;
+    modalLineItemId = row.co_line_id;
+    modalTargetLineItem = null;
+    modalInitialDescription = line.description || '';
+    modalNeedsAC = false;
+    modalInitialIsComment = coLineIsComment(row.co_line_id);
+    if (line.is_adjustment) {
+      modalVariant = 'adjustment';
+      modalInitialPercent = line.percent ?? '';
+    } else {
+      modalVariant = 'edit-fields';
+      modalInitialQty = line.qty ?? '';
+      modalInitialUnits = line.units || 'none';
+      modalInitialPrice = line.price ?? '';
+    }
+    modalOpen = true;
+  }
+
+  /** 'added' row → [Edit]: PATCH the existing CO add line (needs an AC). */
+  function openEditAdded(row) {
+    const line = row.line;
+    modalLineItemId = row.co_line_id;
+    modalTargetLineItem = null;
+    modalVariant = 'edit-fields';
+    modalInitialDescription = line.description || '';
+    modalInitialQty = line.qty ?? '';
+    modalInitialUnits = line.units || 'none';
+    modalInitialPrice = line.price ?? '';
+    modalInitialAC = line.accounting_category_id ?? '';
+    modalInitialIsComment = coLineIsComment(row.co_line_id);
+    modalNeedsAC = true;
+    modalOpen = true;
+  }
+
+  // ── Remove via CO / Undo / Remove (never "delete" in user-facing text) ──
+  // Single-phase, no confirm() — every gesture here is undoable (re-add via
+  // Undo, or re-select the atoms again).
+  async function removeViaCO(row) {
+    try {
+      await api.post(`${apiBase}/line-items/`, {
+        action: 'remove', target_line_item: row.line.estimate_line_id,
+      });
+      onChanged();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not remove line via change order.'));
+    }
+  }
+
+  async function deleteCOLine(coLineId, fallback) {
+    try {
+      await api.delete(`${apiBase}/line-items/${coLineId}/`);
+      onChanged();
+    } catch (e) {
+      showError(errorMessage(e, fallback));
+    }
+  }
+
+  // A claim conflict on a per-line-item gesture (e.g. removing an atom from
+  // a line while something else touches the same claim) can't be resolved
+  // by retrying blind — refresh so the rows reflect reality, and say so,
+  // instead of the generic overlay (mirrors EstimateEditView's
+  // handleMutationError).
+  async function handleMutationError(e, fallback) {
+    if (e?.status === 409) {
+      await onChanged();
+      showError(errorMessage(e, 'Some of those atoms were claimed elsewhere in the meantime — refreshed.'));
+    } else {
+      showError(errorMessage(e, fallback));
+    }
+  }
+
+  async function removeAtomFromLine(coLineId, source) {
+    try {
+      await api.post(`${apiBase}/line-items/${coLineId}/remove-atoms/`, {
+        source_ids: [source.source_id],
+      });
+      onChanged();
+    } catch (e) {
+      await handleMutationError(e, 'Could not remove this atom from the line.');
+    }
+  }
+
+  function atomFromSource(source) {
+    return {
+      ...source,
+      kind: source.source_type,
+      description: source.description ?? '(removed)',
+      qty_display: formatQtyUnits(source.qty, source.units),
+      rate: source.rate,
+      amount: source.computed_amount,
+    };
+  }
+
+  // Drift badge / Revert (per-unit-lines spec §8): one shared DriftModal
+  // instance for the whole table — opened with the clicked atom + its
+  // backing line's current qty (the per-unit multiplier), never a mutation
+  // from the badge itself.
+  let driftModalOpen = $state(false);
+  let driftAtom = $state(null);
+  let driftLineQty = $state(null);
+
+  function openDriftModal(atom, lineQty) {
+    driftAtom = atom;
+    driftLineQty = lineQty;
+    driftModalOpen = true;
+  }
+  function handleDriftReverted() {
+    driftModalOpen = false;
+    driftAtom = null;
+    onChanged();
+  }
+
+</script>
+
+<h3>Line items</h3>
+
+{#if canEdit}
+  <p>
+    <button type="button" onclick={() => { pickerOpen = true; }}>Add line</button>
+  </p>
+{/if}
+
+<table class="data-table doc-edit-table co-edit-table">
+  <thead>
+    <tr>
+      <th>Description</th>
+      <th class="text-right">Qty</th>
+      <th class="text-right">Price</th>
+      <th class="text-right">Amount</th>
+      <th>Based on</th>
+      {#if canEdit}<th>Actions</th>{/if}
+    </tr>
+  </thead>
+  <tbody>
+    {#each rows as row, i (rowKey(row, i))}
+      {#if row.kind === 'agreement'}
+        <tr>
+          <td class="preserve-breaks">
+            <LinkifiedText text={row.line.description || 'No description'} />
+          </td>
+          <td class="text-right"><QtyUnits qty={row.line.qty} units={row.line.units} /></td>
+          <td class="text-right">{fmtMoney(row.line.price)}</td>
+          <td class="text-right">{fmtMoney(row.line.amount)}</td>
+          <td>
+            <BackingChip backing={row.backing} />
+            {#if row.backing?.startsWith('edited') && row.backing_total != null}
+              <br><small>work totals {fmtMoney(row.backing_total)}</small>
+            {/if}
+          </td>
+          {#if canEdit}
+            <td>
+              {#if row.line.estimate_line_id != null}
+                <button type="button" disabled={!!row.billed_on}
+                  title={row.billed_on ? `Billed on ${row.billed_on}` : undefined}
+                  onclick={() => removeViaCO(row)}>Remove via CO</button>
+                <button type="button" disabled={!!row.billed_on}
+                  title={row.billed_on ? `Billed on ${row.billed_on}` : undefined}
+                  onclick={() => openReplace(row)}>Replace&hellip;</button>
+                {#if row.billed_on}<br><small>billed on {row.billed_on}</small>{/if}
+                {#if row.adjustment_expected_amount != null}
+                  <br><small class="muted">recomputes to {fmtMoney(row.adjustment_expected_amount)} if replaced</small>
+                {/if}
+              {/if}
+            </td>
+          {/if}
+        </tr>
+        <AtomCaptionRow
+          sources={row.sources || []}
+          colspan={5 + (canEdit ? 1 : 0)}
+        />
+        {#each row.sources || [] as source (source.source_id)}
+          <AtomChildRow
+            atom={atomFromSource(source)}
+            colspanBefore={0}
+            colspanAfter={ATOM_ROW_COLSPAN_AFTER + (canEdit ? 1 : 0)}
+            onRemove={null}
+            onDrift={() => openDriftModal(atomFromSource(source), row.line.qty)}
+          />
+        {/each}
+      {:else if row.kind === 'removed'}
+        <tr class="co-struck-original">
+          <td class="preserve-breaks struck">{row.original.description}</td>
+          <td class="text-right struck"><QtyUnits qty={row.original.qty} units={row.original.units} /></td>
+          <td class="text-right struck">{fmtMoney(row.original.price)}</td>
+          <td class="text-right struck">({fmtMoney(row.original.amount)})</td>
+          <td></td>
+          {#if canEdit}
+            <td><button type="button" onclick={() => deleteCOLine(row.co_line_id, 'Could not undo removal.')}>Undo</button></td>
+          {/if}
+        </tr>
+      {:else if row.kind === 'replaced'}
+        <tr class="co-authored">
+          <td class="preserve-breaks">
+            <span class="co-badge">CO {row.co_index}</span>
+            <span class="co-desc"><LinkifiedText text={row.line.description || 'No description'} /></span>
+          </td>
+          <td class="text-right"><QtyUnits qty={row.line.qty} units={row.line.units} /></td>
+          <td class="text-right">{fmtMoney(row.line.price)}</td>
+          <td class="text-right">{fmtMoney(row.line.amount)}</td>
+          <td>
+            <BackingChip backing={row.backing} />
+            {#if row.backing?.startsWith('edited') && row.backing_total != null}
+              <br><small>work totals {fmtMoney(row.backing_total)}</small>
+            {/if}
+          </td>
+          {#if canEdit}
+            <td>
+              <button type="button" onclick={() => openEditReplaced(row)}>Edit</button>
+              <button type="button" onclick={() => deleteCOLine(row.co_line_id, 'Could not undo this change.')}>Undo</button>
+            </td>
+          {/if}
+        </tr>
+        <tr class="co-struck-original">
+          <td class="preserve-breaks struck">{row.original.description}</td>
+          <td class="text-right struck"><QtyUnits qty={row.original.qty} units={row.original.units} /></td>
+          <td class="text-right struck">{fmtMoney(row.original.price)}</td>
+          <td class="text-right struck">({fmtMoney(row.original.amount)})</td>
+          <td></td>
+          {#if canEdit}<td></td>{/if}
+        </tr>
+        <AtomCaptionRow
+          sources={row.sources || []}
+          colspan={5 + (canEdit ? 1 : 0)}
+        />
+        {#each row.sources || [] as source (source.source_id)}
+          <AtomChildRow
+            atom={atomFromSource(source)}
+            colspanBefore={0}
+            colspanAfter={ATOM_ROW_COLSPAN_AFTER + (canEdit ? 1 : 0)}
+            note={`inherited from line ${source.inherited_from_line}`}
+            onRemove={null}
+            onDrift={() => openDriftModal(atomFromSource(source), row.line.qty)}
+          />
+        {/each}
+        {#each row.sibling_per_unit_lines || [] as sibling (sibling.estimate_line_id)}
+          <tr class="co-sibling-reminder">
+            <td colspan={5 + (canEdit ? 1 : 0)}>
+              <small>Also qty {sibling.qty}: {sibling.description} — update it too?</small>
+            </td>
+          </tr>
+        {/each}
+      {:else}
+        <!-- 'added' -->
+        <tr class="co-authored">
+          <td class="preserve-breaks">
+            <span class="co-badge">CO {row.co_index}</span>
+            <span class="co-desc"><LinkifiedText text={row.line.description || 'No description'} /></span>
+          </td>
+          <td class="text-right"><QtyUnits qty={row.line.qty} units={row.line.units} /></td>
+          <td class="text-right">{fmtMoney(row.line.price)}</td>
+          <td class="text-right">{fmtMoney(row.line.amount)}</td>
+          <td>
+            <BackingChip backing={row.backing} />
+            {#if row.backing?.startsWith('edited') && row.backing_total != null}
+              <br><small>work totals {fmtMoney(row.backing_total)}</small>
+            {/if}
+          </td>
+          {#if canEdit}
+            <td>
+              <button type="button" onclick={() => openEditAdded(row)}>Edit</button>
+              <button type="button" onclick={() => deleteCOLine(row.co_line_id, 'Could not remove line item.')}>Remove</button>
+            </td>
+          {/if}
+        </tr>
+        <AtomCaptionRow
+          sources={row.sources || []}
+          colspan={5 + (canEdit ? 1 : 0)}
+        />
+        {#each row.sources || [] as source (source.source_id)}
+          <AtomChildRow
+            atom={atomFromSource(source)}
+            colspanBefore={0}
+            colspanAfter={ATOM_ROW_COLSPAN_AFTER + (canEdit ? 1 : 0)}
+            onRemove={canEdit ? () => removeAtomFromLine(row.co_line_id, source) : null}
+            onDrift={() => openDriftModal(atomFromSource(source), row.line.qty)}
+          />
+        {/each}
+      {/if}
+    {/each}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td colspan="3" class="text-right">Original</td>
+      <td class="text-right">{fmtTotal(amended?.original_total)}</td>
+      <td colspan={canEdit ? 2 : 1}></td>
+    </tr>
+    <tr>
+      <td colspan="3" class="text-right">This change order</td>
+      <td class="text-right">{fmtDelta(amended?.co_delta)}</td>
+      <td colspan={canEdit ? 2 : 1}></td>
+    </tr>
+    <tr>
+      <td colspan="3" class="text-right"><strong>Revised total</strong></td>
+      <td class="text-right"><strong>{fmtTotal(amended?.revised_total)}</strong></td>
+      <td colspan={canEdit ? 2 : 1}></td>
+    </tr>
+  </tfoot>
+</table>
+
+{#if canEdit && rows.length === 0}
+  <p class="empty-hint">Add lines from the catalog, or amend existing estimate lines.</p>
+{/if}
+
+<PriceListPicker open={pickerOpen} onChoose={(c) => { pickerOpen = false; addChoice = c; }} onclose={() => { pickerOpen = false; }} />
+
+<COAddLineForm
+  open={addChoice != null}
+  choice={addChoice}
+  coId={co.change_order_id}
+  {categories}
+  onSaved={handleLineAdded}
+  onClose={() => { addChoice = null; }}
+/>
+
+<COLineItemModal
+  open={modalOpen}
+  variant={modalVariant}
+  coId={co.change_order_id}
+  lineItemId={modalLineItemId}
+  targetLineItem={modalTargetLineItem}
+  needsAccountingCategory={modalNeedsAC}
+  initialDescription={modalInitialDescription}
+  initialQty={modalInitialQty}
+  initialUnits={modalInitialUnits}
+  initialPrice={modalInitialPrice}
+  initialPercent={modalInitialPercent}
+  initialAccountingCategory={modalInitialAC}
+  initialIsComment={modalInitialIsComment}
+  {categories}
+  onSaved={handleModalSaved}
+  onClose={() => { modalOpen = false; }}
+/>
+
+<DriftModal
+  open={driftModalOpen}
+  atom={driftAtom}
+  lineQty={driftLineQty}
+  {apiBase}
+  onReverted={handleDriftReverted}
+  onClose={() => { driftModalOpen = false; }}
+/>
+
+<style>
+  table { border-collapse: collapse; }
+  th, td { padding: 6px 10px; }
+
+  /* CO-authored (replace/add) rows get a light teal tint consistent with the
+     app's teal accent (data-table header band, backing chips). */
+  tr.co-authored { background: #f0fdfa; }
+  .co-badge {
+    display: inline-block; font-size: 11px; font-weight: 600; color: #0f766e;
+    background: #ccfbf1; border-radius: 3px; padding: 1px 5px; margin-right: 6px;
+  }
+
+  /* Struck original/removed rows — excluded from totals, shown for context. */
+  tr.co-struck-original td.struck { color: #9ca3af; text-decoration: line-through; }
+
+  .muted { color: #6b7280; }
+
+  tfoot td { padding: 8px 10px; border-top: 2px solid #e5e7eb; }
+
+  .empty-hint { color: #6b7280; }
+</style>

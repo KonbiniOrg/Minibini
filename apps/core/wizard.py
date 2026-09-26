@@ -11,7 +11,30 @@ Methods are classmethods so `cls` resolves the subclass's hooks/config.
 
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.db import transaction, IntegrityError
+
+
+def expected_per_unit_values(per_unit_qty, per_unit_worker_time, qty):
+    """The whole-job totals `BaseWizardService._stamp_atom_per_unit` would
+    stamp for a claim's `per_unit_qty` (+ optional `per_unit_worker_time`)
+    at `qty` units: `(expected_total, expected_worker_time)`.
+
+    `expected_total = (per_unit_qty * qty).quantize('0.01')` — Decimal qty
+    product, quantized to cents so representation noise never produces a
+    phantom mismatch. `expected_worker_time = per_unit_worker_time *
+    float(qty)` when `per_unit_worker_time` is not None, else None — a
+    duration multiplies against a float, never a Decimal.
+
+    Single home for this arithmetic: `_per_unit_drift_info` (drift
+    comparison), `restamp_atom` (Revert), and `restore_per_unit_claim`
+    (un-stamp on removal) all call this rather than each re-deriving the
+    same two formulas — keeps a future formula change a one-site edit."""
+    expected_total = (per_unit_qty * qty).quantize(Decimal('0.01'))
+    expected_worker_time = (
+        per_unit_worker_time * float(qty) if per_unit_worker_time is not None else None
+    )
+    return expected_total, expected_worker_time
 
 
 class BaseWizardService:
@@ -22,6 +45,11 @@ class BaseWizardService:
     source_fk = None
     # The claim-conflict exception class the subclass raises.
     claim_conflict_exc = None
+    # Whether this document supports per-unit bundling (per-unit-lines
+    # spec §2). False on the base — the invoice wizard never opts in, so it
+    # inherits this unchanged. EstimateWizardService flips it True and
+    # ChangeOrderWizardService inherits that.
+    allows_per_unit = False
 
     # ── subclass hooks (must be implemented) ───────────────────────────
     @classmethod
@@ -77,6 +105,29 @@ class BaseWizardService:
         """Override to reject atoms that aren't in a billable lifecycle state."""
         return None
 
+    @classmethod
+    def _resolve_line_category(cls, category):
+        """Hook: the accounting_category actually stamped onto a freshly
+        minted line item, given the derived `category` (None when the
+        atom(s) carry no category of their own, or a mixed-category
+        bundle collapsed to None by add_atoms_to_new_line_item).
+
+        Base/identity implementation — the estimate and change-order
+        wizards keep producing null-AC lines from null-AC atoms
+        unchanged. InvoiceWizardService overrides this to stamp the
+        configured fallback AccountingCategory (or raise) when category
+        is None, since an invoice line must always be categorized before
+        it can be sent."""
+        return category
+
+    @classmethod
+    def _extra_line_kwargs(cls):
+        """Extra kwargs to splat into the new line item's constructor,
+        beyond the shared description/qty/units/price/accounting_category —
+        e.g. the CO wizard's action='add' (a line minted from atoms is
+        always an add). Defaults to none for the estimate/invoice paths."""
+        return {}
+
     # ── shared atom helpers ────────────────────────────────────────────
     @classmethod
     def _atom_computed_amount(cls, atom_instance):
@@ -85,7 +136,8 @@ class BaseWizardService:
 
     @classmethod
     def _atom_category(cls, atom_instance):
-        """The accounting category of an atom (via rate scheme for tasks)."""
+        """The accounting category of an atom (the task's own field —
+        task-owned-money Phase 1; no RateScheme lookup)."""
         if isinstance(atom_instance, cls._task_model()):
             return atom_instance.effective_accounting_category
         if isinstance(atom_instance, cls._material_model()):
@@ -112,16 +164,29 @@ class BaseWizardService:
         """The qty / rate / units / amount breakdown for an atom — the
         `qty units × rate = amount` line shown in the source pool. For a
         task, qty * rate == amount exactly (compute_amount is qty *
-        effective_rate)."""
+        effective_rate).
+
+        The non-task branch is written for Material; sell_price is read
+        defensively — callers rendering a doc surface must show null
+        rather than 500.
+
+        `worker_time` (a task's current `est_worker_time`, always None for
+        a material) rides along so the bundle modal's one-unit preview
+        (per-unit-lines spec §5.2) can tell a task that already carries a
+        schedule commitment from one that doesn't, without a second
+        lookup."""
         amount = cls._atom_computed_amount(atom_instance)
         units = cls._atom_units(atom_instance)
         if isinstance(atom_instance, cls._task_model()):
             qty = cls._task_actual_qty(atom_instance)
             rate = atom_instance.effective_rate()  # already quantized to cents
+            worker_time = atom_instance.est_worker_time
         else:
             qty = atom_instance.quantity
-            rate = atom_instance.sell_price.quantize(Decimal('0.01'))
-        return {'qty': qty, 'rate': rate, 'units': units, 'amount': amount}
+            sell_price = getattr(atom_instance, 'sell_price', None)
+            rate = None if sell_price is None else sell_price.quantize(Decimal('0.01'))
+            worker_time = None
+        return {'qty': qty, 'rate': rate, 'units': units, 'amount': amount, 'worker_time': worker_time}
 
     # ── line-item sync helpers ─────────────────────────────────────────
     @classmethod
@@ -133,6 +198,68 @@ class BaseWizardService:
         return total
 
     @classmethod
+    def _sum_per_unit_sources(cls, line_item, sources=None):
+        """Σ over resolvable source rows of `per_unit_qty × atom-rate`,
+        EACH ROW quantized to the cent before summing — the per-unit-lines
+        spec §2/§3 reading: NO division by qty (a per_unit line's claimed
+        atoms already describe ONE unit, not the whole-job total). atom-rate
+        is `task.effective_rate()` for a task claim, `sell_price` (quantized
+        to cents) for a material claim. Per-row quantization (not
+        quantize-the-final-total) matches the BundleModal's price-seed math
+        and `_sum_sources` (which sums already-per-atom-quantized amounts) —
+        multiple rows landing on a half-cent would otherwise round
+        differently the two ways and birth a line one cent 'out of sync'. A
+        row is skipped when its own `per_unit_qty` is unset (not yet
+        snapshotted) or its atom is dangling (already deleted out from under
+        the claim — mirrors `_resolve_sources`' dangling tolerance) rather
+        than either raising or contributing a bogus amount.
+
+        `sources`: optional explicit iterable of raw source rows, for a
+        caller whose per-unit claims don't live on `line_item.sources`
+        itself — e.g. a draft/open replace ChangeOrderLineItem, whose
+        claims still sit on the target EstimateLineItem pre-acceptance
+        (see `_sources_for_replace` in apps/api/change_orders/serializers.py).
+        Defaults to `line_item.sources.all()`."""
+        from django.core.exceptions import ObjectDoesNotExist
+        total = Decimal('0.00')
+        task_model = cls._task_model()
+        if sources is None:
+            sources = line_item.sources.all()
+        for src in sources:
+            if src.per_unit_qty is None:
+                continue
+            try:
+                instance = src.resolve()
+            except ObjectDoesNotExist:
+                continue
+            if isinstance(instance, task_model):
+                rate = instance.effective_rate()
+            else:
+                sell_price = getattr(instance, 'sell_price', None)
+                if sell_price is None:
+                    continue
+                rate = sell_price.quantize(Decimal('0.01'))
+            # Quantize EACH row to the cent before summing — matching
+            # BundleModal's price-seed math and _sum_sources (which sums
+            # already-per-atom-quantized amounts) — never sum raw products
+            # and quantize only the total. Multiple rows landing on a
+            # half-cent otherwise round differently the two ways and can
+            # birth a line one cent 'out of sync'.
+            total += (src.per_unit_qty * rate).quantize(Decimal('0.01'))
+        return total
+
+    @classmethod
+    def _line_sum(cls, line_item):
+        """Dispatcher for the sum fed into `_is_in_sync`: the per-unit sum
+        when the line is `per_unit`, else the whole-line source sum
+        (today's rule, unchanged). `getattr` (not a direct attribute read)
+        keeps InvoiceLineItem — which carries no `per_unit` field — safely
+        on the base `_sum_sources` path."""
+        if getattr(line_item, 'per_unit', False):
+            return cls._sum_per_unit_sources(line_item)
+        return cls._sum_sources(line_item)
+
+    @classmethod
     def _expected_per_unit(cls, sum_value, qty):
         """The per-unit price the wizard would compute: round(sum/qty, 2)."""
         if not qty:
@@ -141,53 +268,93 @@ class BaseWizardService:
 
     @classmethod
     def _is_in_sync(cls, line_item, sum_value):
-        """In sync iff price == round(sum / qty, 2). Rounding-safe."""
+        """In sync iff price matches `sum_value`.
+
+        A `per_unit` line's claimed atoms already describe ONE unit of
+        qty (per-unit-lines spec §2), so its price is compared directly
+        against the (quantized) sum — NO division by qty. A whole-line
+        (per_unit=False) line keeps today's rule unchanged:
+        price == round(sum / qty, 2), rounding-safe, false for qty=0."""
+        if getattr(line_item, 'per_unit', False):
+            return line_item.price == sum_value.quantize(Decimal('0.01'))
         if not line_item.qty:
             return False
         return line_item.price == cls._expected_per_unit(sum_value, line_item.qty)
 
     @classmethod
-    def _uniform_scheme_bundle(cls, instances):
-        """If every atom is a task sharing one RateScheme and identical
-        `active_modifiers`, return `(units, qty, price)` summarizing the
-        bundle — units from the scheme, qty = summed actual quantities,
-        price = the common effective rate. Otherwise None, and the caller
-        falls back to qty=1 / units='none'."""
+    def _uniform_money_bundle(cls, instances):
+        """If every atom is a task sharing identical `(rate, unit_label,
+        active_modifiers)`, return `(units, qty, price)` summarizing the
+        bundle — units/price from the shared task money fields, qty =
+        summed actual quantities. Otherwise None, and the caller falls
+        back to qty=1 / units='none'.
+
+        Uniformity is judged on the tasks' own money fields, not on
+        `source_scheme` provenance — two tasks stamped from different
+        presets (or one stamped and one hand-edited) still bundle if their
+        current rate/unit/modifiers agree (task-owned-money Phase 1).
+
+        Mirrored client-side (approximately — the source-pool atom shape
+        exposes effective_rate + unit_label but not the raw stamped
+        `rate`/`active_modifiers` this method compares) by BundleModal's
+        `deriveMultiAtomSeed`
+        (frontend/src/components/docsurface/BundleModal.svelte) to seed
+        the bundle modal's qty/units/price fields for a uniform multi-atom
+        selection. If this method's uniformity rule changes, check that
+        seed function too."""
         task_model = cls._task_model()
         if not instances or not all(isinstance(i, task_model) for i in instances):
             return None
-        if any(i.rate_scheme_id is None for i in instances):
+        if any(i.rate is None for i in instances):
             return None
-        if len({i.rate_scheme_id for i in instances}) != 1:
+        if len({i.rate for i in instances}) != 1:
+            return None
+        if len({i.unit_label for i in instances}) != 1:
             return None
         modifier_sets = {
-            tuple(sorted(i.active_modifiers or [])) for i in instances
+            tuple(sorted(
+                (m['key'], Decimal(str(m['percent'])))
+                for m in (i.active_modifiers or [])
+            ))
+            for i in instances
         }
         if len(modifier_sets) != 1:
             return None
-        scheme = instances[0].rate_scheme
-        modifiers = instances[0].active_modifiers or []
+        unit_label = instances[0].unit_label
         actual_qtys = [cls._task_actual_qty(t) for t in instances]
         if any(q is None for q in actual_qtys):
             return None
         qty = sum(actual_qtys, Decimal('0'))
-        price = scheme.effective_rate(modifiers)  # already quantized to cents
-        return scheme.unit_label, qty, price
+        price = instances[0].effective_rate()  # already quantized to cents
+        return unit_label, qty, price
 
     @classmethod
     def _resync_in_sync_line_item(cls, line_item):
         """After a source-set change on an in-sync line item, re-derive its
-        units/qty/price. If the sources form a uniform same-scheme task
-        bundle, summarize; otherwise keep qty and recompute the per-unit
-        price. Saves the line item via LineItemService.save_line_item."""
+        price (whole-line: units/qty/price). Saves via
+        LineItemService.save_line_item.
+
+        A `per_unit` line's price is recomputed straight from `_line_sum`
+        (the per-unit Σ, no division) with qty/units left untouched — a
+        per-unit line's price doesn't depend on qty, so the whole-line
+        uniform-money-bundle resummarization (which folds multiple same-
+        scheme tasks' actual quantities into qty) doesn't apply.
+
+        A whole-line (per_unit=False) line keeps today's rule unchanged:
+        if the sources form a uniform-money task bundle, summarize
+        (units/qty/price); otherwise keep qty and recompute price =
+        round(sum/qty, 2)."""
         from apps.core.services import LineItemService
-        instances = [src.resolve() for src in line_item.sources.all()]
-        summary = cls._uniform_scheme_bundle(instances)
-        if summary is not None:
-            line_item.units, line_item.qty, line_item.price = summary
+        if getattr(line_item, 'per_unit', False):
+            line_item.price = cls._line_sum(line_item).quantize(Decimal('0.01'))
         else:
-            new_sum = cls._sum_sources(line_item)
-            line_item.price = cls._expected_per_unit(new_sum, line_item.qty)
+            instances = [src.resolve() for src in line_item.sources.all()]
+            summary = cls._uniform_money_bundle(instances)
+            if summary is not None:
+                line_item.units, line_item.qty, line_item.price = summary
+            else:
+                new_sum = cls._line_sum(line_item)
+                line_item.price = cls._expected_per_unit(new_sum, line_item.qty)
         LineItemService.save_line_item(line_item)
 
     # ── claim-conflict helper ──────────────────────────────────────────
@@ -204,23 +371,338 @@ class BaseWizardService:
         return cls.claim_conflict_exc(atom_ids=conflicts)
 
     @classmethod
-    def _create_source(cls, line_item, instance):
+    def _create_source(cls, line_item, instance, **extra):
         cls._source_model().objects.create(
             **{cls.source_fk: line_item},
             source_type=cls._atom_source_type(instance),
             source_pk=instance.pk,
+            **extra,
         )
+
+    # ── per-unit bundling (per-unit-lines spec §2) ─────────────────────
+    @classmethod
+    def _stamp_atom_per_unit(cls, instance, atom_ref, qty):
+        """Snapshot `instance`'s CURRENT per-unit values, then stamp the
+        atom itself to the whole-job total for `qty` units and `.save()`
+        it directly (never `QuerySet.update()`) — atoms always store
+        totals; only the claim row remembers the per-unit agreement
+        (spec §2).
+
+        For a task atom, an atom-supplied `'per_unit_worker_time'`
+        (ISO-8601 duration string — the modal's input for a task lacking
+        an `est_worker_time`) SETS the task's `est_worker_time` first, so
+        both the snapshot and the stamp see it.
+
+        Returns `(per_unit_qty, per_unit_worker_time)` for the caller to
+        snapshot onto the new source row (`per_unit_worker_time` is
+        always None for a material atom).
+
+        Deliberately bypasses `hours_pair_fill` — that helper only runs
+        in TaskService/api paths; both task fields are set explicitly
+        here so no pair-fill is wanted.
+        """
+        task_model = cls._task_model()
+        material_model = cls._material_model()
+        if isinstance(instance, task_model):
+            worker_time_input = atom_ref.get('per_unit_worker_time')
+            if worker_time_input is not None:
+                from django.utils.dateparse import parse_duration
+                parsed = parse_duration(worker_time_input)
+                if parsed is None:
+                    raise ValidationError(
+                        {'per_unit_worker_time': ['Enter a valid duration.']})
+                instance.est_worker_time = parsed
+            per_unit_qty = instance.est_qty
+            if per_unit_qty is None:
+                # A task's est_qty is legally None (unquantified) — silently
+                # stamping that through would snapshot per_unit_qty=NULL on
+                # the claim row, permanently invisible to
+                # _sum_per_unit_sources/drift/Revert (the mint path already
+                # refuses this same shape via claim_atom_for_line's "A
+                # per-unit quantity is required for this line."). Plain-
+                # sentence, user-facing text — never say "atom".
+                raise ValidationError(
+                    f'"{instance.name}" has no estimated quantity — enter '
+                    'one before bundling it per-unit.'
+                )
+            per_unit_worker_time = instance.est_worker_time
+            instance.est_qty = (
+                (per_unit_qty * qty).quantize(Decimal('0.01'))
+                if per_unit_qty is not None else None
+            )
+            instance.est_worker_time = (
+                per_unit_worker_time * float(qty)
+                if per_unit_worker_time is not None else None
+            )
+            instance.save()
+            return per_unit_qty, per_unit_worker_time
+        if isinstance(instance, material_model):
+            per_unit_qty = instance.quantity
+            instance.quantity = (per_unit_qty * qty).quantize(Decimal('0.01'))
+            instance.save()
+            return per_unit_qty, None
+        raise ValidationError('Per-unit lines only support task and material atoms.')
+
+    # ── per-unit drift + restamp (per-unit-lines spec Task 6) ──────────
+    @classmethod
+    def _per_unit_drift_info(cls, source_row, line_qty):
+        """Drift/expected info for one claim row, given the qty of whichever
+        line CURRENTLY backs it (the CO's own qty once a replace line is
+        accepted and the claim moves onto it — see
+        apps.estimates.co_acceptance.ChangeOrderAcceptanceService._move_claims_to).
+
+        Returns `None` when the row isn't a per-unit claim
+        (`per_unit_qty` unset) — callers must then omit every drift key
+        entirely, never set them False/None (spec: "absent, not False, on
+        non-per-unit claims").
+
+        Otherwise returns `{'per_unit_qty', 'expected_total', 'drift': bool}`,
+        plus `'expected_worker_time'` for a task row whose
+        `per_unit_worker_time` is set. `expected_total` is quantized to
+        cents before comparison so Decimal representation noise never
+        produces phantom drift; `expected_worker_time` uses the same
+        `per_unit_worker_time * float(line_qty)` formula `_stamp_atom_per_unit`
+        stamped with originally, so a never-touched claim always compares
+        equal.
+
+        A dangling atom (deleted out from under the claim) can't be
+        compared — drift reports False rather than raising, the same
+        dangling-tolerant convention as `_resolve_sources`/
+        `_sum_per_unit_sources`."""
+        if source_row.per_unit_qty is None:
+            return None
+        from django.core.exceptions import ObjectDoesNotExist
+
+        per_unit_qty = source_row.per_unit_qty
+        expected_total, expected_worker_time = expected_per_unit_values(
+            per_unit_qty, source_row.per_unit_worker_time, line_qty)
+        info = {'per_unit_qty': per_unit_qty, 'expected_total': expected_total}
+
+        try:
+            instance = source_row.resolve()
+        except ObjectDoesNotExist:
+            info['drift'] = False
+            return info
+
+        if isinstance(instance, cls._task_model()):
+            drift = instance.est_qty != expected_total
+            if expected_worker_time is not None:
+                info['expected_worker_time'] = expected_worker_time
+                if instance.est_worker_time != expected_worker_time:
+                    drift = True
+            info['drift'] = drift
+        else:
+            info['drift'] = instance.quantity != expected_total
+        return info
+
+    @classmethod
+    def restamp_atom(cls, container, source_id):
+        """Revert (restamp) one per-unit claim's atom back to the
+        agreement's expectation (per-unit-lines spec Task 6 — the Revert
+        affordance behind a drift badge): sets a task's `est_qty` (+
+        `est_worker_time` when `per_unit_worker_time` was snapshotted) or a
+        material's `quantity` to `per_unit_qty (× per_unit_worker_time) ×
+        the backing line's CURRENT qty`, via direct field-set + `.save()`
+        per instance — never `QuerySet.update()`.
+
+        Guards (plain-sentence ValidationError, matching this module's
+        mint-adjacent style — apps/estimates/mint.py):
+        - `source_id` must resolve to a source row belonging to THIS
+          container's own document (estimate/CO) — never another job's.
+        - the row must actually be a per-unit claim (`per_unit_qty` set) —
+          restamping a whole-line claim is meaningless, it was never given
+          a per-unit snapshot to restamp to.
+        - the claimed atom must still resolve (not already deleted out
+          from under the claim).
+
+        Returns the restamped atom instance."""
+        from django.core.exceptions import ObjectDoesNotExist
+
+        source_model = cls._source_model()
+        try:
+            coerced_id = int(source_id)
+        except (TypeError, ValueError):
+            raise ValidationError('A valid claim id is required.')
+
+        lookup = {'source_id': coerced_id, f'{cls.source_fk}__{cls.container_attr}': container}
+        source_row = source_model.objects.filter(**lookup).first()
+        if source_row is None:
+            raise ValidationError('That claim was not found on this document.')
+        if source_row.per_unit_qty is None:
+            raise ValidationError('That claim is not a per-unit claim.')
+
+        line = getattr(source_row, cls.source_fk)
+        try:
+            instance = source_row.resolve()
+        except ObjectDoesNotExist:
+            raise ValidationError('The claimed atom no longer exists.')
+
+        expected_total, expected_worker_time = expected_per_unit_values(
+            source_row.per_unit_qty, source_row.per_unit_worker_time, line.qty)
+        if isinstance(instance, cls._task_model()):
+            instance.est_qty = expected_total
+            if expected_worker_time is not None:
+                instance.est_worker_time = expected_worker_time
+            instance.save()
+        else:
+            instance.quantity = expected_total
+            instance.save()
+        return instance
+
+    # ── per-unit split-materials (per-unit-lines spec §5.3 / Task 8) ────
+    @classmethod
+    def _build_per_unit_line(cls, container, pairs, *, description, qty, units, price):
+        """Create ONE `per_unit=True` line item on `container` from `pairs`
+        (a list of already-resolved `(atom_instance, atom_ref)` tuples),
+        stamping each atom to the whole-job total for `qty` and snapshotting
+        its claim row (`_stamp_atom_per_unit` + `_create_source`) — the same
+        per-atom work `add_atoms_to_new_line_item`'s single-line per_unit
+        path does, factored out so the split-materials path can run it
+        twice (labor line, materials line) inside one `transaction.atomic()`.
+        The accounting category is derived from `pairs`' own atoms only
+        (never the full mixed selection), matching a normal single-kind
+        bundle. Caller wraps in `transaction.atomic()`/catches
+        `IntegrityError` — this raises neither itself."""
+        from apps.core.services import LineItemService
+        categories = {cls._atom_category(inst) for inst, _ in pairs}
+        category = categories.pop() if len(categories) == 1 else None
+        line = cls._line_item_model()(
+            **{cls.container_attr: container},
+            description=description, qty=qty, units=units, price=price,
+            accounting_category=cls._resolve_line_category(category),
+            **cls._extra_line_kwargs(),
+            per_unit=True,
+        )
+        LineItemService.save_line_item(line)
+        for instance, atom_ref in pairs:
+            pu_qty, pu_worker_time = cls._stamp_atom_per_unit(instance, atom_ref, qty)
+            cls._create_source(
+                line, instance,
+                per_unit_qty=pu_qty, per_unit_worker_time=pu_worker_time,
+            )
+        return line
 
     # ── public: line items from atoms ──────────────────────────────────
     @classmethod
-    def add_atoms_to_new_line_item(cls, container, atoms):
+    def add_atoms_to_new_line_item(cls, container, atoms, *, overrides=None,
+                                    per_unit=False, split_materials=False):
         """Create a new line item on `container` with the given atoms as
-        sources. `atoms` is a list of {'type': str, 'id': N} dicts."""
+        sources. `atoms` is a list of {'type': str, 'id': N} dicts; a task
+        atom may also carry `'per_unit_worker_time'` (ISO-8601 duration
+        string, per-unit calls only — the modal's input for a task lacking
+        an `est_worker_time`).
+
+        overrides: optional {'description','qty','units','price'} applied
+        over the derived defaults before save (bundle-modal authoring). A
+        provided qty/price pair wins; partial overrides merge onto the
+        derivation. Claims/atomicity unchanged.
+
+        per_unit: when True, requires `overrides['qty']` > 0 (that qty is
+        the per-unit multiplier) and requires `cls.allows_per_unit`
+        (estimate/CO wizards only — the invoice wizard never opts in).
+        Each atom is snapshotted to its claim row and stamped to the
+        whole-job total for that qty (see `_stamp_atom_per_unit`); the new
+        line is saved with `per_unit=True`. Price/qty/units/description
+        still come from `overrides` (WYSIWYG — the modal always sends all
+        four) regardless of per_unit.
+
+        split_materials: only valid with `per_unit=True` (plain-sentence
+        ValidationError otherwise); requires the selection to contain at
+        least one task AND at least one material (same otherwise). When
+        True, atomically mints TWO per-unit lines instead of one — a labor
+        line claiming only the task atoms (overrides' description/qty/
+        units/price apply to it exactly as the single-line per_unit path)
+        and a materials line claiming only the material atoms
+        (description = overrides['description'] + ' — materials', same
+        qty/units as the labor line, price = Σ the material atoms' CURRENT
+        — i.e. pre-stamp, per-unit — computed amounts). Returns the labor
+        line, with the materials line attached as `.materials_line_item`
+        (a transient attribute, not a model field) for the caller to
+        surface. No structural link is stored between the two lines (spec
+        §5.3/§9 — the CO sibling reminder is the net)."""
         cls._validate_draft(container)
+
+        if per_unit and not cls.allows_per_unit:
+            raise ValidationError('This document does not support per-unit lines.')
+
+        if split_materials and not per_unit:
+            raise ValidationError(
+                'Splitting materials onto their own line requires per-unit lines.'
+            )
+
+        if overrides:
+            unknown = set(overrides) - {'description', 'qty', 'units', 'price'}
+            if unknown:
+                raise ValidationError(
+                    f"Unknown override field(s): {', '.join(sorted(unknown))}."
+                )
+
+        if per_unit:
+            # The modal always sends all four fields WYSIWYG (per_unit or
+            # not) — enforce that server-side too, field-shaped, rather
+            # than deriving a partial per-unit line from defaults.
+            missing = {}
+            if not overrides or overrides.get('description') in (None, ''):
+                missing['description'] = ['A description is required for per-unit lines.']
+            if not overrides or overrides.get('units') in (None, ''):
+                missing['units'] = ['Units are required for per-unit lines.']
+            if not overrides or overrides.get('price') in (None, ''):
+                missing['price'] = ['A price is required for per-unit lines.']
+            qty_override = overrides.get('qty') if overrides else None
+            if not qty_override or qty_override <= 0:
+                missing['qty'] = ['A quantity is required for per-unit lines.']
+            if missing:
+                raise ValidationError(missing)
 
         instances = [cls._resolve_atom(a) for a in atoms]
         for inst in instances:
             cls._assert_atom_billable(inst)
+
+        if split_materials:
+            task_model = cls._task_model()
+            material_model = cls._material_model()
+            task_pairs = [
+                (inst, ref) for inst, ref in zip(instances, atoms)
+                if isinstance(inst, task_model)
+            ]
+            material_pairs = [
+                (inst, ref) for inst, ref in zip(instances, atoms)
+                if isinstance(inst, material_model)
+            ]
+            if not task_pairs or not material_pairs:
+                raise ValidationError(
+                    'Splitting materials onto their own line requires at '
+                    'least one task and one material.'
+                )
+            # The materials line's price is the Σ of the material atoms'
+            # CURRENT computed amounts — read BEFORE _build_per_unit_line
+            # stamps them to whole-job totals, so this sum is exactly the
+            # per-unit reading (spec §4's per-unit-amount formula, quantity
+            # not yet multiplied by qty).
+            materials_price = sum(
+                (cls._atom_computed_amount(inst) for inst, _ in material_pairs),
+                Decimal('0.00'),
+            ).quantize(Decimal('0.01'))
+
+            try:
+                with transaction.atomic():
+                    labor_line = cls._build_per_unit_line(
+                        container, task_pairs,
+                        description=overrides['description'], qty=overrides['qty'],
+                        units=overrides['units'], price=overrides['price'],
+                    )
+                    materials_line = cls._build_per_unit_line(
+                        container, material_pairs,
+                        description=f"{overrides['description']} — materials",
+                        qty=overrides['qty'], units=overrides['units'],
+                        price=materials_price,
+                    )
+            except IntegrityError:
+                raise cls._claim_conflict(atoms)
+
+            labor_line.materials_line_item = materials_line
+            return labor_line
+
         total_price = sum(
             (cls._atom_computed_amount(i) for i in instances),
             Decimal('0.00'),
@@ -229,7 +711,7 @@ class BaseWizardService:
         category = categories.pop() if len(categories) == 1 else None
 
         # Single atom: copy over description/units/qty/price from the atom.
-        # Multi-atom: summarize a uniform same-scheme task bundle, else fall
+        # Multi-atom: summarize a uniform-money task bundle, else fall
         # back to blank description, units='none', qty=1, price=total.
         if len(instances) == 1:
             description = cls._atom_description(instances[0])
@@ -237,13 +719,23 @@ class BaseWizardService:
             qty, price = cls._atom_qty_and_price(instances[0], total_price)
         else:
             description = ''
-            summary = cls._uniform_scheme_bundle(instances)
+            summary = cls._uniform_money_bundle(instances)
             if summary is not None:
                 units, qty, price = summary
             else:
                 units = 'none'
                 qty = Decimal('1')
                 price = total_price
+
+        if overrides:
+            if 'description' in overrides:
+                description = overrides['description']
+            if 'qty' in overrides:
+                qty = overrides['qty']
+            if 'units' in overrides:
+                units = overrides['units']
+            if 'price' in overrides:
+                price = overrides['price']
 
         from apps.core.services import LineItemService
         try:
@@ -254,11 +746,22 @@ class BaseWizardService:
                     qty=qty,
                     units=units,
                     price=price,
-                    accounting_category=category,
+                    accounting_category=cls._resolve_line_category(category),
+                    **cls._extra_line_kwargs(),
+                    **({'per_unit': True} if per_unit else {}),
                 )
                 LineItemService.save_line_item(line_item)
-                for instance in instances:
-                    cls._create_source(line_item, instance)
+                for instance, atom_ref in zip(instances, atoms):
+                    if per_unit:
+                        pu_qty, pu_worker_time = cls._stamp_atom_per_unit(
+                            instance, atom_ref, qty)
+                        cls._create_source(
+                            line_item, instance,
+                            per_unit_qty=pu_qty,
+                            per_unit_worker_time=pu_worker_time,
+                        )
+                    else:
+                        cls._create_source(line_item, instance)
         except IntegrityError:
             raise cls._claim_conflict(atoms)
 
@@ -267,10 +770,23 @@ class BaseWizardService:
     @classmethod
     def add_atoms_to_line_item(cls, line_item, atoms):
         """Append N atoms as sources to an existing line item. Re-derives an
-        in-sync line item; preserves an overridden price."""
+        in-sync line item; preserves an overridden price.
+
+        Rejects appending to a `per_unit` line (task 3/4 plan-gap ruling):
+        an appended claim gets no `per_unit_qty` snapshot (only
+        `add_atoms_to_new_line_item`'s per_unit path stamps one), so it
+        would silently contribute $0 to `_sum_per_unit_sources`. Append
+        semantics for a per-unit line are deferred to the modal-restructure
+        phase (spec §10)."""
         cls._validate_draft(getattr(line_item, cls.container_attr))
 
-        old_sum = cls._sum_sources(line_item)
+        if getattr(line_item, 'per_unit', False):
+            raise ValidationError(
+                'Tasks and materials cannot be added to a per-unit line yet. '
+                'Remove the line and bundle again.'
+            )
+
+        old_sum = cls._line_sum(line_item)
         was_in_sync = cls._is_in_sync(line_item, old_sum)
         instances = [cls._resolve_atom(a) for a in atoms]
         for inst in instances:
@@ -308,10 +824,18 @@ class BaseWizardService:
         container = getattr(line_item, cls.container_attr)
         cls._validate_draft(container)
 
-        old_sum = cls._sum_sources(line_item)
+        old_sum = cls._line_sum(line_item)
         was_in_sync = cls._is_in_sync(line_item, old_sum)
 
         with transaction.atomic():
+            # Un-stamp on removal: restore each removed claim's atom to its
+            # per-unit snapshot BEFORE the claim rows are deleted — the
+            # symmetric inverse of _stamp_atom_per_unit. getattr dispatcher
+            # (same convention as `_line_sum`) keeps InvoiceLineItem — no
+            # `per_unit` attr — off this path entirely.
+            if getattr(line_item, 'per_unit', False):
+                for source_row in line_item.sources.filter(source_id__in=source_ids):
+                    restore_per_unit_claim(line_item, source_row)
             line_item.sources.filter(source_id__in=source_ids).delete()
             remaining = line_item.sources.count()
 
@@ -330,3 +854,71 @@ class BaseWizardService:
                 LineItemService.get_line_items_for_container(container, type(line_item))
             )
         return {'line_item_deleted': False}
+
+
+# ── un-stamp on removal (per-unit-lines: restore claim on delete) ────────
+#
+# Module-level (not `BaseWizardService` classmethods): the atom models a
+# per-unit claim can point at (Task/Material) don't vary by container, so
+# `LineItemService.delete_line_item_with_renumber` (apps/core/services.py —
+# generic across every container type: Estimate/ChangeOrder/Invoice/PO line
+# items) can call `restore_per_unit_claims` for its whole-line-delete
+# pre-pass without needing a wizard subclass's `cls` context. Both modules
+# live in apps.core, so importing this one from services.py (locally, at
+# call time) introduces no cycle.
+
+def restore_per_unit_claim(line, source_row):
+    """Restore one per-unit claim's atom toward its snapshot BEFORE the
+    claim row is deleted — the symmetric inverse of
+    `BaseWizardService._stamp_atom_per_unit`. Field-independent: a task's
+    `est_qty` and `est_worker_time` are each restored only when that field
+    currently sits at EXACTLY the value `_stamp_atom_per_unit` would have
+    stamped for `line`'s CURRENT qty (same expected-value arithmetic as
+    `_per_unit_drift_info` — Decimal qty product quantized to cents,
+    `per_unit_worker_time * float(qty)` for the duration, never a
+    Decimal-on-timedelta multiply). A drifted (hand-edited) field is left
+    exactly as-is — never clobbers a deliberate edit. No-op when the claim
+    isn't a per-unit claim (`per_unit_qty` unset) or its atom is already
+    gone (dangling — same tolerance as `_resolve_sources`/
+    `_per_unit_drift_info`). Saves via `.save()` per instance (never
+    `QuerySet.update()`), inside the caller's transaction."""
+    if source_row.per_unit_qty is None:
+        return
+    from django.core.exceptions import ObjectDoesNotExist
+    from apps.jobs.models import Task
+    try:
+        instance = source_row.resolve()
+    except ObjectDoesNotExist:
+        return
+
+    per_unit_qty = source_row.per_unit_qty
+    expected_total, expected_worker_time = expected_per_unit_values(
+        per_unit_qty, source_row.per_unit_worker_time, line.qty)
+
+    if isinstance(instance, Task):
+        changed = False
+        if instance.est_qty == expected_total:
+            instance.est_qty = per_unit_qty
+            changed = True
+        if expected_worker_time is not None:
+            if instance.est_worker_time == expected_worker_time:
+                instance.est_worker_time = source_row.per_unit_worker_time
+                changed = True
+        if changed:
+            instance.save()
+    else:
+        if instance.quantity == expected_total:
+            instance.quantity = per_unit_qty
+            instance.save()
+
+
+def restore_per_unit_claims(line):
+    """Restore every claimed atom on `line` toward its per-unit snapshot —
+    the whole-line-delete pre-pass
+    (`LineItemService.delete_line_item_with_renumber`). Caller is
+    responsible for the `getattr(line_item, 'per_unit', False)` guard
+    (InvoiceLineItem/PurchaseOrderLineItem carry no `per_unit` attr and
+    must never reach here) — this function itself just walks every source
+    row on `line`."""
+    for source_row in line.sources.all():
+        restore_per_unit_claim(line, source_row)

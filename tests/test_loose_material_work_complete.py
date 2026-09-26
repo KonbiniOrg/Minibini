@@ -120,7 +120,9 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             job=self.job, task=None, description='blocking mat',
             quantity=Decimal('2'), inventory_item=self.pli,
         )
-        t = Task.objects.create(job=self.job, name='only task', rate_scheme=self.scheme)
+        t = Task(job=self.job, name='only task')
+        t.stamp_from_scheme(self.scheme)
+        t.save()
         # Drive task completion the same way production does. The scheme is
         # entered_qty, so a quantity must be supplied to complete the task.
         TaskLifecycleService.complete_task(t.pk, add_qty=Decimal('1'))

@@ -9,7 +9,7 @@ import JobTaskListPage from '@/routes/jobs/JobTaskListPage.svelte';
 
 const job = {
   job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress',
-  contact: null, materials: [], tasks: [], fees: [], can_manage: false,
+  contact: null, materials: [], tasks: [], can_manage: false,
 };
 
 beforeEach(() => {

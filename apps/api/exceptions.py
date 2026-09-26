@@ -8,8 +8,7 @@ responses):
 
 Views should NOT catch a service DjangoValidationError just to re-render it
 as JSON — raising it (or not catching it) lands here and renders a 400 in
-the contract shape. Catch it only to change the status code or add payload
-(e.g. the rate-scheme 409 with supersede_url).
+the contract shape. Catch it only to change the status code or add payload.
 """
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models.deletion import ProtectedError

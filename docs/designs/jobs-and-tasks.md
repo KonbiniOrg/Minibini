@@ -1,17 +1,17 @@
 # Jobs, Tasks, and Work Atoms
 
 Reference for the work-execution and fulfillment side of Minibini: how
-Jobs, Tasks, Bleps, the Fee atom, Templates, Deliverables, and Shipments
+Jobs, Tasks, Bleps, Templates, Deliverables, and Shipments
 fit together. For service-layer mechanics, mixin catalog, permission
 atoms, history capture, and DELETE conventions, see
-`docs/designs/architecture-and-conventions.md`. For RateScheme / billing
-identity / estimate wizard / supersession, see
+`docs/designs/architecture-and-conventions.md`. For RateScheme presets /
+task-owned money and stamping / estimate wizard, see
 `docs/designs/estimates-and-prices.md`. For Material and
 TemplateMaterialAssociation, see
 `docs/designs/materials-inventory-and-purchasing.md`.
 
-> **Job-owns-atoms model.** The Job owns its work atoms — **Task**,
-> **Material**, **Fee** — directly, created at any status (including
+> **Job-owns-atoms model.** The Job owns its work atoms — **Task** and
+> **Material** — directly, created at any status (including
 > `draft`). The former **planning layer** (`EstWorksheet`, `PlanTask`,
 > `PlanMaterial`, the worksheet API, worksheet→job carry-over) has been
 > **removed**. Sections that described worksheets are kept as tombstones
@@ -23,9 +23,8 @@ TemplateMaterialAssociation, see
 A Job is the central work-tracking entity. Each Job aggregates its work
 **atoms** directly plus its customer-facing documents:
 
-- 0+ **Tasks** (metered units of execution; `rate_scheme`, `est_qty`, `actual_qty`)
+- 0+ **Tasks** (metered units of execution; own `qty_source`/`rate`/`unit_label`/`accounting_category` money block stamped from a RateScheme preset, `est_qty`, `actual_qty`)
 - 0+ **Materials** (inventory-backed or freeform; optionally linked to a Task)
-- 0+ **Fees** (fixed charges: `quantity × unit_rate`; optionally linked to a Task)
 - 0+ Estimates (customer-facing quotes — lens over the atoms)
 - 0+ Invoices, Purchase Orders
 
@@ -33,18 +32,28 @@ Tasks are the only work-execution container the system has. The former
 `WorkOrder` model is gone; `Task.job` is a direct FK. Bleps (time
 entries) hang off Tasks.
 
-All three atom types are created **directly on the Job** at any status
-via `POST /api/jobs/{id}/tasks/`, `/materials/`, `/fees/`. There is no
-separate planning container.
+There is no pure-money atom on the Job. A plain hand-authored document
+line (an `EstimateLineItem`/`ChangeOrderLineItem` with no `service_item`,
+no `inventory_item`, and `is_material=False`) never crystallizes into a
+job atom on accept — it stays a document-only line forever, and reaches
+an invoice later via **agreement-line references**
+(`InvoiceLineItem.agreement_estimate_line`/`agreement_co_line`, see
+`invoicing-and-expenses.md`), not via a job-owned atom. **Fee retired
+2026-08-09** — the `jobs.Fee` model (the former fixed-charge atom) was
+deleted; see §4.7 for the retirement note.
+
+Both atom types are created **directly on the Job** at any status via
+`POST /api/jobs/{id}/tasks/`, `/materials/`. There is no separate
+planning container.
 
 ```
                          Job
                           │
-        ┌─────────┬───────┼────────┬──────────────┐
-        ▼         ▼       ▼        ▼              ▼
-      Tasks   Materials  Fees   Estimates     Invoices
-        │      (opt FK   (opt FK   (lens)      POs
-        ▼      to Task)  to Task)
+        ┌─────────┬───────┼──────────────┐
+        ▼         ▼       ▼              ▼
+      Tasks   Materials  Estimates     Invoices
+        │      (opt FK    (lens)         POs
+        ▼      to Task)
       Bleps
 ```
 
@@ -62,7 +71,6 @@ The Job's atoms are reverse relations from the child side:
 |---|---|---|
 | `Task` | `Task.job` (`related_name='tasks'`) | — (hierarchy via `parent_task`) |
 | `Material` | `Material.job` | `Material.task` |
-| `Fee` | `Fee.job` (`related_name='fees'`) | `Fee.task` (OneToOne) |
 
 `populate_from_template` generates Tasks via
 `WorkTemplate.generate_tasks_for_job`, then Materials via
@@ -191,14 +199,14 @@ instant and lossless:
   `job.on_hold` explicitly, ahead of its status allow-list (the
   allow-lists describe pipeline position, and a held job keeps its true
   status underneath, so omission can't cover it).
-- **Task, material, and fee mutations** are blocked by
+- **Task and material mutations** are blocked by
   `_assert_job_not_on_hold` in `JobService` (create/edit/delete tasks,
   change assignment, complete/block/unblock/cancel, edit materials).
   The SPA **suppresses the affordances** rather than letting them 400
   (B2, 2026-07-12): `TaskTree` hides edit/del/cancel/+mat/+sub/assign,
   `TasksPanel` hides Add Work and the work-complete button
   (`canMarkWorkComplete(job)` reads the flag), and `TaskDetailPage`
-  hides its action band, Edit Task, Add Subtask, and Add Material while
+  hides its action band, Edit Task, and Add Material while
   held. The hold rule stated precisely: **plan edits freeze;
   procurement reality stays** — Order, Attach expense, Mark
   on-hand/received (and Add Expense) remain available on a held job.
@@ -227,7 +235,7 @@ from all active users (`/api/auth/users/`).
 
 **It grants access, scoped to that one job.** The PM gets
 `can_manage_jobs`-equivalent rights over this job and its contained objects
-(tasks, materials, fees, estimates, change orders, deliverables, and
+(tasks, materials, estimates, change orders, deliverables, and
 their line items) without holding the global atom — via the
 `CanManageJobOrPM` permission class and the per-object `can_manage` flag the
 SPA gates on. It has **no status side effects** and grants **nothing** on
@@ -282,11 +290,40 @@ tasks.
 
 ### 3.3 Auto-advance on work activity
 
-**To `in_progress`:** when work starts on an `approved` Job — a Blep is
-opened (`start_work` or `create_historical`) or a Task is completed —
-`JobService.mark_work_started(job)` advances it `approved → in_progress`.
-It is a no-op for any other status (pre-`approved` jobs are left alone;
-the state machine forbids a direct DRAFT/SUBMITTED jump).
+**To `in_progress`:** two independent triggers share this edge, and
+either alone is sufficient:
+
+- **Work starting** — when work starts on an `approved` Job (a Blep is
+  opened via `start_work`/`create_historical`, or a Task completes),
+  `JobService.mark_work_started(job)` advances it `approved →
+  in_progress`. No-op for any other status (pre-`approved` jobs are left
+  alone; the state machine forbids a direct DRAFT/SUBMITTED jump).
+- **Auto-release (replaces the old manual "release to floor" pill,
+  estimating-structure spec, 2026-08-15)** — `JobService.
+  maybe_auto_release(job)` advances an `approved`, non-`on_hold` Job the
+  same way once every hand line on its accepted Estimate that owes a
+  work decision has one: `EstimateService.unanswered_lines(estimate)`
+  empty (every line either mint-claimed, declined via `work_declined`,
+  or crystallized to a catalog atom already). Fires from three points —
+  right after acceptance crystallization (`EstimateAcceptanceService.
+  on_accept`, so an **all-catalog estimate releases to the floor
+  automatically at acceptance** — nothing left to answer), after a mint
+  claim (`MintService.claim_atom_for_line`), and after a `work_declined`
+  flip (`EstimateService._set_work_declined`) — never as a background
+  sweep, so nothing re-checks a job's checklist state on its own; see
+  `data-constraints.md` §1.8 "Answeredness invariant". `on_hold` wins
+  unconditionally: a held job's checklist completing does not release
+  it — it stays parked at its true status until explicitly released
+  (`JobService.release_job`), which does not itself re-check the
+  checklist. A job whose every hand line was declined releases with
+  **no tasks at all** — taskless hand-billed jobs are a deliberately
+  supported flow, not an edge case to guard against.
+  `PATCH /api/jobs/{id}/` can no longer drive `approved → in_progress`
+  directly — `JobService.update_job` raises unless the caller passes
+  `system_transition=True` (the same guard shape as the direct-approval
+  gate above); the status pill (§9.1) no longer offers the transition.
+  See `estimates-and-prices.md` §9a and `users-and-permissions.md`
+  "Manual `approved → in_progress` is retired".
 
 **To `work_complete`:** when a Task transitions to `complete` or
 `cancelled`, `TaskLifecycleService._check_job_work_complete`
@@ -355,10 +392,9 @@ status (including `draft`). Ways to populate it:
 | Path | Trigger | Service | Notes |
 |---|---|---|---|
 | From WorkTemplate | `POST /api/jobs/{id}/populate-from-template` | `JobService.populate_from_template` | Generates Tasks + Materials from a `WorkTemplate`; creates earmarks |
-| Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `ServiceItem.generate_task` | One Task from a `ServiceItem`; available to any authenticated user (workers can self-serve) |
-| Direct task creation | `POST /api/jobs/{id}/tasks/` | `TaskService.create_direct` | One Task at a time; freeform (requires `rate_scheme_id`) |
-| Direct material creation | `POST /api/jobs/{id}/materials/` | `MaterialService.create_on_job` | One Material; inventory-backed or freeform |
-| Direct fee creation | `POST /api/jobs/{id}/fees/` | `FeeService.create_on_job` | One Fee (fixed charge); also the crystallization target on estimate acceptance (see `estimates-and-prices.md` §9) |
+| Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `ServiceItem.generate_task` | One Task from a `ServiceItem`; endpoint is `IsAuthenticated`-only (workers can self-serve) — but a request that includes the `active_modifiers` key (even `[]`, overriding the template's own defaults) requires `CanManageJobOrPM` or `can_manage_financials`, same money-field gate as direct create (users-and-permissions.md). Also accepts an optional `claim_estimate_line` key (mint-by-modal, estimating-structure spec) binding the new Task to an accepted estimate's line at creation — presence-gated on `CanManageJobOrPM`, checked before serializer validation; see `estimates-and-prices.md` §9a and `users-and-permissions.md`. Alongside `claim_estimate_line`, an optional `claim_line_per_unit` (bool, first-mint only — per-unit-lines spec §5/§6) sets the claimed line's one-unit-or-whole-line interpretation; when the line is (or is being set) per-unit, `est_qty`/`est_worker_time` are read as PER-UNIT values and multiplied by the claim line's qty before the Task is created — see `estimates-and-prices.md` §9a.1. |
+| Direct task creation | `POST /api/jobs/{id}/tasks/` | `TaskService.create_direct` | One Task at a time; freeform (requires `rate_scheme_id`, the stamping trigger); money fields (`rate`/`unit_label`/`qty_source`/`accounting_category`/`active_modifiers`) require the same gate. `rate`/`unit_label`/`accounting_category` PRESENT in the request are Add-Task-time OVERRIDES (2026-09-19) that replace the corresponding stamped field after `stamp_from_scheme` runs — the stamp is still the default for any key left out; `source_scheme` provenance is unaffected — see `estimates-and-prices.md` §3.6c. Also accepts the same optional `claim_estimate_line` and `claim_line_per_unit` keys, identically gated and interpreted — see `estimates-and-prices.md` §9a.1. |
+| Direct material creation | `POST /api/jobs/{id}/materials/` | `MaterialService.create_on_job` | One Material; inventory-backed or freeform. As of per-unit-lines Task 5, also accepts the mint-by-modal `claim_estimate_line` (and `claim_line_per_unit`) keys, identically gated — `quantity` is read as a PER-UNIT value and multiplied by the claim line's qty when the line is per-unit; see `estimates-and-prices.md` §9a.1. |
 
 The `populate_from_template` path does not store a back-reference to the
 source template on the Job. The template's role ends once its child Tasks
@@ -415,9 +451,15 @@ returns `{job_id}` at HTTP 201. Permission: `CanManageJobs`.
   `Task`s and `Material`s.
 - **Tasks** are copied with billing fields intact but execution state
   fully reset: `status=pending`, no bleps, no assignee, `actual_qty=None`,
-  `worker_queue=None`, `blocked_reason=''`. Carried: `name`, `description`,
-  `sort_order`, `est_worker_time`, `est_qty`, `rate_scheme`,
-  `active_modifiers` (via `copy_active_modifiers`).
+  `worker_queue=None`, `blocked_reason=''`. Carried via `Task.copy_fields()`:
+  `name`, `description`, `sort_order`, `est_worker_time`, `est_qty`,
+  the task's own money block (`qty_source`, `rate`, `unit_label`,
+  `accounting_category`) copied directly (no RateScheme re-lookup),
+  `active_modifiers` (deep-copied via `copy_active_modifiers`), and
+  `service_item_id` (catalog identity, not provenance — survives cloning
+  so a QBO push can resolve the clone's Item). **Not** carried:
+  `source_scheme` — provenance is deliberately not cloned; the copy has
+  no stamping event of its own.
 - **Materials** carry `description`, `quantity`, `units`, `unit_cost`,
   `sell_price`, `inventory_item`, `accounting_category`, and their task
   attachment (task-less materials stay loose). Inventory state is fully
@@ -434,9 +476,8 @@ auto-creates an `audit` field-diff entry per hop. The `approved`
 transition sets `start_date` (per §3.2), mirroring the
 estimate-acceptance precedent in `apps/estimates/signals.py`.
 
-- Tasks and Materials land directly on the new Job. Subtask hierarchy
-  (`parent_task`) is preserved via a two-pass remap so parent Tasks are
-  created before their children.
+- Tasks and Materials land directly on the new Job (a single flat pass —
+  tasks are one level, better-fees spec §3).
 - Earmarks are created via `InventoryService.create_earmarks_for_job`.
 - No estimate is created. Deliverables remain editable (no estimate →
   editable per `DeliverableService.is_editable`) until they anchor on a
@@ -446,7 +487,7 @@ estimate-acceptance precedent in `apps/estimates/signals.py`.
 
 The new Job stays at `draft`, with the source's `Task`s and `Material`s
 copied directly onto it (same `_copy_work_to_job` core as the approved
-path, including subtask hierarchy). No worksheet and no earmarks are
+path). No worksheet and no earmarks are
 created — the job sits in `draft` ready for re-estimation. The user then
 runs the normal Start Estimate → send → accept flow; the estimate
 projects the new Job's atoms (`estimates-and-prices.md` §7).
@@ -459,16 +500,16 @@ history entries, and bleps are never carried over to the new Job.
 ## 4. Task
 
 `Task` is defined at `apps/jobs/models.py`. Tasks belong to a Job
-via `Task.job = FK('jobs.Job', related_name='tasks')`. Hierarchy is via
-`parent_task` (self-FK; subtasks emerge during work, not planning) and is
-capped at **one level**: a subtask can never itself have subtasks —
-`TaskService.create_direct` rejects a parent that has a parent (and a
-parent from a different job), and the subtask detail page hides its Add
-Subtask affordance. Both creation surfaces (`POST /api/tasks/{id}/subtasks/`
-and the job-nested create with `parent_task`) route through
-`create_direct`, so the on-hold, superseded-scheme, depth, and assignee
-guards — and `mark_work_reopened` — apply identically; pinned by
-`tests/test_subtask_service_guards.py`.
+via `Task.job = FK('jobs.Job', related_name='tasks')`. **Tasks are one
+flat level** (better-fees spec §3, 2026-08): the former subtask hierarchy
+was removed from UI and backend code — sequencing or reference between
+tasks is prose in descriptions plus reordering. The `parent_task` self-FK
+survives in the schema but is **dormant**: no code reads or writes it,
+existing rows were flattened by `jobs/0061`, and `validate_data` errors on
+any non-NULL value (`data-constraints.md` §Task). Creation goes through
+`TaskService.create_direct` (`POST /api/jobs/{id}/tasks/`), so the
+on-hold, inactive-scheme, and assignee guards — and `mark_work_reopened`
+— can't be bypassed.
 
 `Task` IS decorated with `@history(exclude=['task_id', 'worker_queue'])`,
 and every lifecycle transition is history-visible: block / unblock /
@@ -489,8 +530,7 @@ Task work is worker-driven, so most task writes are open to **any
 authenticated user** — with a per-status editability matrix (the C1
 redesign, 2026-07-12):
 
-- **Add** a task (`POST /api/jobs/{id}/tasks/`, the subtasks endpoint) —
-  `IsAuthenticated`.
+- **Add** a task (`POST /api/jobs/{id}/tasks/`) — `IsAuthenticated`.
 - **Edit** (`PATCH /api/jobs/{id}/tasks/{task_pk}/`) — enforced in
   `TaskService.update_task`, surfaced as the serializer's computed
   `can_edit` flag:
@@ -583,31 +623,49 @@ independent of `sort_order` (which is the position within the Job's
 task list). Set by drag-and-drop on the board; nulled when assignee
 clears.
 
-### 4.4 Billing fields
+### 4.4 Billing fields — task-owned money
 
-`Task` carries billing identity directly via the `TaskBase` abstract:
+**Task-owned money (Phase 1).** `Task` carries its own permanent money
+block directly, not a live FK to `RateScheme`. A `RateScheme` preset is
+copied onto the task exactly once, at creation, by
+`Task.stamp_from_scheme(scheme, modifier_keys=None)` — from then on the
+task's own fields are the price of record; editing, retiring, or
+deleting the source preset never reprices or orphans the task. Full
+stamping/retirement mechanics: `estimates-and-prices.md` §3.
 
 | Field | Description |
 |---|---|
-| `rate_scheme` | FK to `RateScheme` (PROTECT). Required at the DB level on Task. Algorithms: `elapsed_time` / `entered_qty` / `percentage` (no `flat_fee` — fixed charges are the `Fee` atom, §4.7). |
+| `qty_source` | CharField, choices `'elapsed_time'` (`Task.QTY_ELAPSED`) / `'entered_qty'` (`Task.QTY_ENTERED`); default `entered_qty`. Copied from `scheme.algorithm` at stamp time — never `'percentage'` (percentage schemes can't stamp a task) and never `flat_fee` (that algorithm was removed from `RateScheme` — see `estimates-and-prices.md` §2; a pure fixed charge is now just a plain hand-line that stays document-only, §4.7). |
+| `rate` | Decimal(10,2), nullable. Copied from `scheme.rate` at stamp time. |
+| `unit_label` | CharField(50), default `'none'`. Copied from `scheme.unit_label`. |
+| `accounting_category` | FK → `AccountingCategory` (PROTECT), nullable at the DB level and, as of Phase 3, on the API serializer too (`required=False, allow_null=True`). Copied from `scheme.accounting_category` at stamp time (creation), but editable afterward — a manager/PM/financials caller may PATCH it back to null (categorized later, at invoicing, via the configured fallback AC — `estimates-and-prices.md` §10, `quickbooks-integration.md`). `Task.effective_accounting_category` returns it directly. |
+| `active_modifiers` | JSON list of `{key, label, percent}` **snapshot** dicts — resolved from `modifier_keys` against the scheme's `modifiers` at stamp time; always a list of dicts, never scheme-relative keys or a bare dict (`copy_active_modifiers()`, `apps/jobs/models.py`) |
+| `source_scheme` | FK → `RateScheme` (`SET_NULL`, `related_name='stamped_tasks'`). **Provenance only** — which preset this task was stamped from; never read by any compute path. Excluded from `copy_fields()` (job duplication doesn't carry provenance). Read-only-by-rejection on CREATE (`validate_source_scheme` 400s it there — create keeps the `rate_scheme` server-stamp trigger); client-writable on **UPDATE** via the edit-task Rate Scheme dropdown's client-side restamp (RM browser-testing note 5, `estimates-and-prices.md` §3.6a) — joined `MONEY_FIELDS` (`data-constraints.md` §1.11), so an update still requires `CanManageJobOrPM`/`can_manage_financials`. |
 | `service_item` | Nullable FK to `ServiceItem` (SET_NULL), added 2026-07-21. **Catalog identity**, not document provenance: stamped by `ServiceItem.generate_task` (every path — template population, estimate/CO acceptance crystallization) and `TaskService.create_from_template`; included in `copy_fields()` so clones keep it. Lets the QBO invoice push resolve a task-sourced line to its mirrored QBO Item (quickbooks-integration.md). Hand-created tasks have none. |
-| `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`); always a list, never a dict |
-| `est_qty` | Estimated billable quantity in the rate scheme's units. Nullable on Task. Drives `compute_estimate_amount` (the estimate lens). |
+| `est_qty` | Estimated billable quantity in the task's own `unit_label`. Nullable on Task. Drives `compute_estimate_amount` (the estimate lens). |
 | `est_worker_time` | DurationField — estimated worker time for scheduling. Required once the Task is **explicitly assigned**: assigned work must be schedulable. Enforced on the assign gestures (`TaskService.assign` / `create_direct`-with-assignee / `update_task`-setting-assignee), **not** `Task.clean()` — auto-assign on start (`start_work` / `create_historical` claiming an unassigned task for its first worker) deliberately skips it, so assignee-without-est-time is a legal model state the schedule must tolerate. |
-| `actual_qty` | Running total of worker-entered increments for `ENTERED_QTY` schemes (every write is an add via `add_actual_qty` — signed, locked, floored at zero; settled at completion via `complete_task(add_qty=...)`); null for `ELAPSED_TIME` (derived from bleps). Drives `compute_amount` (the invoice lens). Entry surfaces + prompt flows: estimates-and-prices.md §4.2. |
+| `actual_qty` | Running total of worker-entered increments for `qty_source='entered_qty'` tasks (every write is an add via `add_actual_qty` — signed, locked, floored at zero; settled at completion via `complete_task(add_qty=...)`); null for `qty_source='elapsed_time'` (derived from bleps). Drives `compute_amount` (the invoice lens). Entry surfaces + prompt flows: estimates-and-prices.md §4.2. |
+| `descoped_by` | FK → `estimates.ChangeOrder` (`SET_NULL`, `related_name='+'`), nullable, added 2026-08-09 (CO amend-in-place). Stamped by `ChangeOrderAcceptanceService`'s REMOVE loop the moment an accepted CO's `remove`/`replace` line targets the estimate line that used to claim this task — set **before** `_retire` runs, so it lands even on a complete/cancelled task `_retire` otherwise leaves alone. **Never** set on a REPLACE target — replace *moves* the claim onto the CO line instead of descoping the atom (`estimates-and-prices.md` §14.11), so a replaced task keeps `descoped_by = None`. Provenance only — the invoice wizard pool reads it (`descoped_by_co_number`) to badge a still-live, no-longer-agreed atom; nothing computes off it. Backfilled for pre-2026-08-09 accepted COs by `apps/estimates/migrations/0048_backfill_descoped_by.py`. |
 
-`Task.compute_amount()` resolves the actual quantity per scheme algorithm
-and applies modifiers (the **invoice** view); `Task.compute_estimate_amount()`
-bills `est_qty` instead (the **estimate** view). `Task.effective_rate()`
-returns the modifier-adjusted rate. The full rules — scheme algorithms,
-modifier arithmetic, supersession, `is_referenced()` checks, the
-documents-as-lenses model — live in the estimates-and-prices doc.
+`Task.compute_amount()` resolves the actual quantity per the task's own
+`qty_source` and applies its own `active_modifiers` (the **invoice**
+view) — no `RateScheme` lookup; `Task.compute_estimate_amount()` bills
+`est_qty` instead (the **estimate** view). `Task.effective_rate()`
+returns the task's own `rate` plus its own `active_modifiers`
+surcharges. The full rules — algorithms, modifier snapshot shape,
+`is_active` retirement, the documents-as-lenses model — live in the
+estimates-and-prices doc.
 
 ### 4.5 Lifecycle service
 
 `TaskLifecycleService` (`apps/jobs/services.py`) is the only
 sanctioned path to transition a Task. All methods wrap in
 `transaction.atomic()` and use `select_for_update()` on the Task row.
+Every settle-up / prior-session gate below keys off the task's own
+`qty_source` field (`task.qty_source == Task.QTY_ENTERED`) — not a
+`RateScheme` lookup — since task-owned-money Phase 1 (§4.4). "ENTERED_QTY
+task" / "ELAPSED_TIME task" below is prose shorthand for that comparison,
+matching the service's own code comments.
 
 | Method | Inputs | Behavior |
 |---|---|---|
@@ -644,6 +702,30 @@ completion gets a new sibling task.)
   "Cannot edit a {status} task. Its work and billing are settled;
   corrections belong on the invoice."
   ```
+
+- **One narrow, financials-only exception (RM ruling 2026-09-21, tightened
+  same day)**: a `rate`-ONLY write is permitted on a terminal task
+  (complete or cancelled) when the task is not claimed by any invoice,
+  has at least one linked `PurchaseOrderLineItem`, **and** the acting
+  user holds `can_manage_financials` (checked in `update_task` itself,
+  via the same `user` param the in_progress/blocked assignee check
+  already uses — an internal caller that omits `user` never qualifies).
+  For vendor-borne (outsourced) work the economics settle at the vendor
+  bill, not at task completion — the realistic ordering is receive →
+  complete task → bill arrives → reconcile → accept the reprice
+  (`PurchaseOrderService.compute_rate_prompts`'s Accept gesture, see
+  `materials-inventory-and-purchasing.md` §10a). Cancelled is included
+  because a cancelled task's recorded actuals stay billable (below), so
+  it carries the same reprice claim as a completed one. **This exception's
+  WHO gate is narrower than the ordinary money-write gate**: the normal
+  MONEY_FIELDS rule for `rate` is manager atom OR the job's PM OR
+  financials, but this one exception is financials-only — a job's PM or a
+  plain `can_manage_jobs` holder can write `rate` on this same task while
+  it's still open, but gets the ordinary terminal-freeze rejection once
+  it's terminal, because repricing settled work is treated as a
+  reconciliation act (a financials event), not an ordinary task edit.
+  Every other field on a terminal task, and every field on any
+  invoice-claimed task, stays frozen.
 
 - **No new Bleps**: `BlepService.create_historical` (and `start_work`)
   reject new time entries against a complete task:
@@ -703,38 +785,41 @@ session closes via the shared resolve (sub-minimum ⇒ cancel with undo).
 Callers passing no `user` can't claim a session as their own, so any
 open Blep refuses (internal-caller semantics unchanged).
 
-### 4.7 Fee — the fixed-charge atom
+### 4.7 Fee — retired
 
-`Fee` (`apps/jobs/models.py`, `db_table='fees'`) is the Job's third
-billable atom: a **fixed charge** — `quantity × unit_rate` — that is a
-pure pricing decision, not a record of work. It has no lifecycle, no
-bleps, and no actuals; it is **always billable**.
+**Fee retired 2026-08-09** — the `jobs.Fee` model (`db_table='fees'`,
+the Job's former fixed-charge atom: `quantity × unit_rate`, no lifecycle,
+always billable) was deleted, along with `FeeService` and the
+`POST/PATCH/DELETE /api/jobs/{id}/fees/` endpoints (migrations
+`apps/estimates/migrations/0046_alter_changeorderlineitem_is_material_and_more.py`,
+`apps/invoicing/migrations/0025_alter_invoicelineitemsource_source_type.py`,
+`apps/jobs/migrations/0062_delete_fee.py`).
 
-| Field | Type | Notes |
-|---|---|---|
-| `fee_id` | AutoField PK | |
-| `job` | FK → Job (CASCADE, `related_name='fees'`) | |
-| `task` | OneToOne → Task (SET_NULL, nullable) | optional link to the work behind the charge |
-| `description` | CharField(255), blank | |
-| `quantity` | Decimal(10,2), default `1.00` | |
-| `unit_rate` | Decimal(10,2) | **required** |
-| `accounting_category` | FK → AccountingCategory (PROTECT) | **required, NOT NULL** |
-| `sort_order` | PositiveInteger, default 0 | |
+There is no replacement atom. A plain hand-authored line (an
+`EstimateLineItem`/`ChangeOrderLineItem` with no `service_item`, no
+`inventory_item`, `is_material=False`) no longer crystallizes into
+anything on estimate/CO acceptance — the acceptance discriminator
+(`apps/estimates/acceptance.py`, `apps/estimates/co_acceptance.py`) is:
+`service_item` set → **Task**; `inventory_item` set → **Material**;
+bare `is_material=True` → **Material**; otherwise → nothing crystallizes,
+the line just stays a document-only line. Tasks and Materials are the
+only two Job-owned atoms now (§1, §2).
 
-`Fee.compute_amount() → (quantity × unit_rate).quantize('0.01')`;
-`effective_accounting_category` returns its own `accounting_category`;
-`units` is `'none'`. Writes go through `FeeService`
-(`apps/jobs/services.py`) — `create_on_job` / `update` / `delete`, all
-respecting the on-hold guard — and the API at
-`POST /api/jobs/{id}/fees/` (+ `PATCH`/`DELETE` at
-`/api/jobs/{id}/fees/{fee_pk}/`).
+A plain hand-line still reaches an invoice, but via **agreement-line
+references** rather than a job atom + claim: `InvoiceLineItem` carries
+`agreement_estimate_line`/`agreement_co_line` FKs back to the originating
+document line, and the `compose_agreement` / `seed_from_agreement` /
+`restore_agreement_line` machinery in `apps/invoicing/services.py`
+projects those lines onto the invoice. See
+`invoicing-and-expenses.md` for the invoice-side mechanics and
+`estimates-and-prices.md` §9 for acceptance.
 
-A Fee is created two ways: directly by the user (the task-list page's "Add
-Fee", §9.5), or by **estimate acceptance**, which crystallizes each
-hand-authored estimate line (a line with no atom source) into a Fee on
-the job and links it back via a `fee` source row (see
-`estimates-and-prices.md` §9). The `Fee` replaces the old `flat_fee`
-RateScheme algorithm.
+The task-list page's old "Add Fee" affordance is gone too — the
+task-list "Add Work" picker now offers only **Add Task** / **Add
+Material** (§9.5); a plain money-only line can still be added on an
+Estimate/ChangeOrder document itself (any freeform line whose AC is
+not the configured Materials AC — the "Is this a material?" checkbox
+is retired, RM 2026-08-11), it just never becomes a job atom.
 
 ## 5. Blep (time tracking)
 
@@ -965,10 +1050,11 @@ and `can_manage_time` rules.
 >
 > What replaced each piece:
 >
-> - **Planning data** → the Job's own `Task` / `Material` / `Fee` atoms,
+> - **Planning data** → the Job's own `Task` / `Material` atoms,
 >   authored directly on the Job at any status (including `draft`). There
 >   is no separate planning container and no `PlanTask`/`PlanMaterial`
->   mirror.
+>   mirror. (A third atom, `Fee`, existed briefly for fixed charges and
+>   was itself retired 2026-08-09 — see §4.7.)
 > - **`PlanTask` vs `Task` split** → gone. `Task` (and the `TaskBase`
 >   abstract) is the single work-and-billing model; hierarchy
 >   (`parent_task`) lives only on the Job side, as before.
@@ -978,9 +1064,10 @@ and `can_manage_time` rules.
 >   line-item recompute on sync, claim state — live in
 >   `docs/designs/estimates-and-prices.md` §§6–8.
 > - **Carry-over on accept** → `EstimateAcceptanceService.on_accept`
->   crystallizes hand-lines into `Fee` atoms and earmarks the job; the
->   work was already on the Job, so nothing is copied
->   (`estimates-and-prices.md` §9).
+>   crystallizes `service_item`/`inventory_item`/`is_material` hand-lines
+>   into `Task`/`Material` atoms and earmarks the job (plain hand-lines
+>   with none of those stay document-only, §4.7); the work was already on
+>   the Job, so nothing is copied (`estimates-and-prices.md` §9).
 
 ## 7. Templates
 
@@ -1011,17 +1098,24 @@ Task, or Material.
 ### 7.2 generate_task
 
 `ServiceItem.generate_task(container, est_qty, ...)`
-(`apps/estimates/models.py`) creates a `Task` on a `Job`. The container
-must be a `Job` — it raises `ValueError` for anything else (the
-worksheet/PlanTask branch was removed).
+(`apps/estimates/models.py`) creates a `Task` on a `Job`, stamping the
+template's `rate_scheme` onto it via `Task.stamp_from_scheme` (§4.4)
+before first save. The container must be a `Job` — it raises
+`ValueError` for anything else (the worksheet/PlanTask branch was
+removed).
 
-It refuses to fire if the template's `rate_scheme` has been superseded
-(raises `SchemeSupersededError`, which the API translates to HTTP 409).
-See estimates-and-prices for the supersession story.
+It refuses to fire if the template's `rate_scheme` is **inactive**
+(`is_active=False`) — raises `SchemeInactiveError`, which the API
+translates to HTTP 409 — unless the caller passes
+`allow_inactive_scheme=True` (used by acceptance-time crystallization,
+which must be able to replay a hand-line whose scheme was retired after
+authoring). See `estimates-and-prices.md` §3 for the stamping/retirement
+story.
 
-Optional overrides: `name`, `description`, `active_modifiers`,
-`est_worker_time`, `assignee`, `sort_order`. Falls back to the
-template's defaults when not provided.
+Optional overrides: `name`, `description`, `active_modifiers` (a list of
+modifier keys resolved into snapshot dicts at stamp time, falling back
+to `default_active_modifiers`), `est_worker_time`, `assignee`,
+`sort_order`. Falls back to the template's defaults when not provided.
 
 ### 7.3 Job-level generation
 
@@ -1142,12 +1236,9 @@ list). Tasks within a column are sorted by `worker_queue`. Drag-and-drop assigns
 - `POST /api/tasks/reorder/` — bulk update worker_queue from a list
 
 (Job-task-list reordering — `POST /api/jobs/{id}/reorder-tasks/` — is a
-different axis: it swaps `sort_order` within the task's **peer group**
-(top-level tasks among top-level tasks; subtasks among their siblings —
-the group falls out of `task.parent_task`). The job task list page
-offers arrows on top-level rows only; sibling reordering lives on the
-parent task's detail page, both hitting this same endpoint. B3,
-2026-07-12; pinned by `tests/test_task_reorder_peer_scope.py`.)
+different axis: it swaps `sort_order` within the job's flat task list
+(tasks are one level — better-fees spec §3). Pinned by
+`tests/test_task_reorder_peer_scope.py`.)
 
 ### 8.5 Card composition
 
@@ -1201,14 +1292,18 @@ Top-down, via `JobShell`:
    and the **status pill**, an interactive `<select>` for users whose
    `can_manage` flag is set. The pill is a **trigger pill**: besides
    real transitions it carries non-status trigger options (values
-   prefixed `__`) — "Release to floor" is the label on the
-   approved→in_progress transition, "Hold…" opens the hold-reason
-   modal (a `Modal.svelte` dialog; picking the option changes nothing
-   by itself and the pill snaps back until the modal confirms), and on
-   a held job "Release hold" posts the release. **A held job's pill
-   shows only `HOLD`** (striped amber; the true status is deliberately
-   hidden) with the hold reason inline beside it, truncated with the
-   full text on hover.
+   prefixed `__`) — "Hold…" opens the hold-reason modal (a
+   `Modal.svelte` dialog; picking the option changes nothing by itself
+   and the pill snaps back until the modal confirms), and on a held job
+   "Release hold" posts the release. **A held job's pill shows only
+   `HOLD`** (striped amber; the true status is deliberately hidden)
+   with the hold reason inline beside it, truncated with the full text
+   on hover. The pill no longer offers `approved → in_progress` at all
+   (retired "Release to floor" trigger, estimating-structure spec,
+   2026-08-15 — `VALID_TRANSITIONS['approved']` in `JobHeader.svelte`
+   dropped the `in_progress` entry): release now happens only via
+   auto-release (§3.3) once the accepted estimate's checklist is fully
+   answered.
 2. **`JobContextBand`** (§9.6) — the same collapsible description /
    deliverables / email strip every job page gets, defaulting expanded.
    The overview does **not** get a bespoke midband; this is its only
@@ -1392,12 +1487,13 @@ is the only place the `.summary-block`/`.stat-spread` markup lives.
 
 `JobHeader` shows four figures: **Estimate | Spent | Invoiced | Profit**. They
 are the single source of truth in `apps/jobs/financials.py`
-(`compute_job_financials(job)` → `{estimated, spent, invoiced, profit}`, all
-Decimal, quantized to cents), surfaced as detail-only serializer fields
-`estimated_amount` / `spent_amount` / `invoiced_amount` / `profit_amount` on
-`JobSerializer`. Like `latest_change_request`, they are computed once per detail
-render (memoized) and returned as `null` in list context, so the board list
-payload stays cheap; the header falls back to `$—` when a value is `null`.
+(`compute_job_financials(job)` → `{estimated, spent, invoiced, profit,
+linked_po_variances}`, the first four Decimal quantized to cents), surfaced as
+detail-only serializer fields `estimated_amount` / `spent_amount` /
+`invoiced_amount` / `profit_amount` / `linked_po_variances` on `JobSerializer`.
+Like `latest_change_request`, they are computed once per detail render
+(memoized) and returned as `null` in list context, so the board list payload
+stays cheap; the header falls back to `$—` when a value is `null`.
 
 - **Estimate** — `compose_agreement(job).grand_total` when the job was ever
   approved (keyed off the immutable `Job.start_date`; see data-constraints §1.8);
@@ -1433,6 +1529,17 @@ above describes, just not summed with labor). This is the job
 overview's Spend block's only data source (§9.1a) — the overview never
 re-derives the split.
 
+**`linked_po_variances`** (outsourced-work port Task 4, `_linked_po_variances`
+in the same module) is a list — not a number — of every PurchaseOrder with at
+least one line linked to this job (via `PurchaseOrderLineItem.task` on one of
+the job's tasks, or a `Material` this job owns referencing the PO line item),
+reported at PO granularity: `{po_id, po_number, status, reconciled,
+ordered_total, bill_total, variance, multi_job}`, money fields quantized to
+cents (`bill_total`/`variance` `None` pre-reconciliation). No proration — a PO
+whose lines also serve another job appears with its whole ordered/bill numbers
+on every job it touches, flagged `multi_job=True`. API-only for now; see
+`docs/designs/LATER.md` for the deferred job-page display.
+
 **Deferred — Billable.** A fifth figure (value of work earned, at selling price,
 optionally plus estimate for not-yet-actualed lines) is intentionally not built;
 its definition is unsettled. When chosen it slots into `compute_job_financials`
@@ -1467,18 +1574,20 @@ It is available regardless of estimate state, so pre-approval / released
 effort is authored and shown there too. For managers it carries two
 affordances:
 
-- **"Add Work"** — single button that opens `PriceListPicker` (the unified
-  picker, see `estimates-and-prices.md` §6.4). The picker's `onChoose` result
-  routes to:
+- **"Add Work"** — single button that opens `PriceListPicker` in its
+  `taskSurface` mode (the unified picker, see `estimates-and-prices.md`
+  §6.4), which offers only **Add Task** / **Add Material** buttons — no
+  plain money-only line, since the Job has no atom for one (§4.7). The
+  picker's `onChoose` result routes to:
   - `{type: 'service'}` → `WorkItemForm` pre-seeded for that `ServiceItem`
     → `POST /api/jobs/{id}/add-from-template/` (creates a `Task` immediately)
+  - `{type: 'freeform-task'}` → `WorkItemForm` in manual mode (user picks
+    the `RateScheme`) → `POST /api/jobs/{id}/tasks/`
   - `{type: 'inventory'}` → `MaterialModal` with `presetPli` + `presetDescription`
     → `POST /api/jobs/{id}/materials/`
-  - `{type: 'freeform', isMaterial: true}` → `MaterialModal` with
-    `presetDescription` + `defaultMaterialCategoryId`
+  - `{isMaterial: true}` (typed freeform, no catalog match) → `MaterialModal`
+    with `presetDescription` + `defaultMaterialCategoryId`
     → `POST /api/jobs/{id}/materials/`
-  - `{type: 'freeform', isMaterial: false}` → `FeeModal` with `presetDescription`
-    → `POST /api/jobs/{id}/fees/`
 - **"Add Expense"** — opens `ExpenseModal`; open to any authenticated user.
 
 **`WorkItemForm`'s est_qty / est_worker_time input.** The form keys off
@@ -1499,15 +1608,12 @@ mount and passed to `MaterialModal` so freeform material lines default to the
 shop's configured material category.
 
 **Row fragments.** `TaskTree` renders no task or material row markup of
-its own: task rows (top-level AND subtask — `isSubtask` carries the
-nested styling and the deliberate no-+sub/no-arrows omissions) come from
-the shared `components/tasks/TaskRow.svelte`, material rows from
+its own: task rows come from the shared
+`components/tasks/TaskRow.svelte`, material rows from
 `components/materials/MaterialRow.svelte`, and the row math/formatting
 both share with the grand-total footer lives in `lib/taskTotals.js` —
-so a row's total and the table's sum cannot diverge, and a subtask row
-is pixel-identical wherever it renders (the old duplicated subtask block
-had already dropped the waiting-on-materials badge). TaskTree itself
-keeps only the fee/expense rows, section headers, and the footer.
+so a row's total and the table's sum cannot diverge. TaskTree itself
+keeps only the expense rows, section headers, and the footer.
 
 **Per-material status & actions.** Each material row carries a derived
 status chip — **Needs pricing / Needed / Ordered — PO-NNNN / Awaiting
@@ -1516,7 +1622,7 @@ customer / On Hand / Consumed / Released** (`materialStatus`,
 `cost_source === 'estimated'`. Rows render through the shared
 `MaterialRow.svelte` fragment, and the **full per-material action set is
 available on every surface that lists materials** (this page, the task
-detail page, the parent-task subtask tree) — the old
+detail page) — the old
 actions-on-this-page-only venue rule was retired 2026-07-13; gating is by
 material status / permissions / job state only. The job overview still
 shows no material rows at all — its Materials block is an aggregate
@@ -1524,11 +1630,220 @@ Coverage stat only (§9.1a). Full vocabulary, action table, and the shared
 fragment/flow components: `materials-inventory-and-purchasing.md` §16.
 
 **Start Estimate** (creates a draft estimate directly — `POST /api/estimates/`
-with `{job}`) and, while the job is held (`on_hold` flag), **Create Change
-Order** live on `EstimatePanel.svelte` (the Estimates section page,
-`#/jobs/:jobId/estimate` — §9.6, `estimates-and-prices.md` §11.4), not on
-the overview. (These replaced the deleted Worksheet detail page; the old
-Plan/Client-View toggle is gone.)
+with `{job}`) is offered in **two** places since the bundling-in-task-view
+migration (Task 5, 2026-09-19): `EstimatePanel.svelte` (the Estimates
+section page, `#/jobs/:jobId/estimate` — §9.6, `estimates-and-prices.md`
+§11.4) still shows its own "no estimate yet" offer, and this Tasks page
+now offers the same action from its own toolbar when there's work to
+bundle but nowhere to bundle it yet — see §9.5a below. **Create Change
+Order** (minting the draft itself) remains on `EstimatePanel.svelte` only
+— unlike an estimate, a change order is always explicitly generated by a
+user, so the Tasks page never auto-creates one (RM 2026-09-20; it offers
+only a passive hint link once a job is held with no draft CO yet, §9.5a).
+Once a draft CO exists, **bundling work into it** happens on this Tasks
+page too — the Tasks-page CO lens, §9.5a state D. (These replaced the
+deleted Worksheet detail page; the old Plan/Client-View toggle is gone.)
+
+### 9.5a Bundling surface (bundling-in-task-view, 2026-09-19; state-B
+selection upgrade, 2026-09-20; Tasks-page CO lens + hint state, 2026-09-20)
+
+**Composing estimate line items from job atoms happens on this page, not
+the estimate document** (`TasksPanel.svelte`,
+`frontend/src/components/tasks/`; the estimate page is document-only —
+`estimates-and-prices.md` §12.1). The same is true of a change order's
+lines once a held job has a draft CO — see state D below; the CO page
+(`estimates-and-prices.md` §14.4b) is document-only there too. On mount
+(and after every reload) `TasksPanel` resolves the job's estimate context
+in one pass (`loadEstimateContext`): it fetches `GET /api/estimates/?job={id}`
+and picks the single non-superseded row (the job can have at most one —
+`Estimate.clean()`, `data-constraints.md` — "Only one draft estimate per
+job"; `.find()` is exact, not heuristic), then, only when that estimate is
+a `draft`, fetches its `GET /api/estimates/{id}/source-pool/`. A pool-fetch
+failure does not null out an already-found `liveEstimate` — the draft is
+still real even if its pool didn't load — so this can't bounce a
+just-created draft back to the "no estimate" offer. A sibling pass,
+`loadCOContext`, does the same for change orders (state D below). That
+resolution drives five mutually exclusive states (estimate lens A-C,
+change-order lens D, and the held-with-no-draft-CO hint):
+
+1. **A draft estimate exists (`canBundle`)** — bundling affordances render:
+   row checkboxes on every task/material row, a toolbar CTA, and a context
+   line pointing at the draft. `canBundle` additionally requires
+   `job.can_manage`, the job not locked (`completed`/`cancelled`/`rejected`),
+   and the job not `on_hold`.
+2. **No live estimate yet, and the job is still pre-estimate
+   (`canOfferEstimate`)** — selection is already available (see the
+   fallback rule below) and the toolbar shows one dynamic button:
+   - **0 selected** — plain **"Start Estimate"**, never disabled. Click →
+     `handleStartEstimate` → `POST /api/estimates/{job}`, re-resolves
+     context in place (no navigation), success overlay.
+   - **N > 0 selected** — **"Start Estimate & Bundle N into a line…"**.
+     One click: create the draft, re-resolve context (which also prunes
+     the carried-over selection against the *real* pool that now exists —
+     see below), then open `BundleModal` seeded with whatever survived,
+     with no separate "estimate started" toast (the label already said a
+     draft would be created). Cancelling that modal leaves the draft in
+     place — the page is simply state A now, selection intact, so the
+     ordinary bundle CTA re-opens it. If the draft is created but its pool
+     fails to load (or nothing survives pruning), an error overlay says so
+     and the page still lands in state A with no modal — never a
+     spinner.
+
+   Gated on `job.can_manage`, job not locked, and `job.status` in
+   `['draft', 'submitted']` (mirrors `EstimatePanel`'s own gate,
+   `estimates-and-prices.md` §11.4).
+3. **Otherwise (a live but non-draft estimate — `open`/`accepted`/etc. —
+   or no manage permission, or the job is locked/held/past both gates)**
+   — no bundling affordance and no Start Estimate offer; the page is
+   read/act-on-tasks only, exactly as before this migration.
+4. **The job has a draft change order (`canBundleCO`, state D — the
+   Tasks-page CO lens, RM 2026-09-20)** — bundling affordances render
+   exactly like state A, but target the CO: row checkboxes, a toolbar CTA,
+   and a context line. Resolved from `loadCOContext`'s
+   `GET /api/change-orders/?job={id}` list, picking the one `draft` row
+   (`ChangeOrder.clean()`'s one-draft-CO-per-job invariant,
+   `data-constraints.md`, guarantees at most one). Structurally exclusive
+   with states A-C: a draft estimate exists only pre-acceptance, a draft
+   CO only exists post-acceptance while the job is held, so the two
+   bundling targets can never coexist. Gated on `job.can_manage` and the
+   job not locked (no explicit `on_hold` check needed — a draft CO implies
+   the job is held, since acceptance is what clears the hold and a CO
+   stops being a draft before or at acceptance). Its pool comes from
+   `GET /api/change-orders/{coId}/source-pool/` — note that an atom
+   claimed by the job's own **accepted estimate** reads
+   `claimed_by_other` here (correct: it's already in the agreement), while
+   an atom claimed by one of *this* draft CO's own lines reads
+   `claimed_by_current`.
+5. **Hint state: the job is held with an accepted estimate but no draft CO
+   yet** — a passive line, never a button: "Job is on hold — **start a
+   change order** to cover this work," where the bold text is an `<a>`
+   link to the job's Estimates section (`#/jobs/{id}/estimate`) — the
+   accepted estimate's page still hosts the one explicit "Create Change
+   Order" affordance (§9.5, `EstimatePanel.svelte`). No selection
+   checkboxes render in this state — there is no bundling target yet.
+   Gated the same as state D (`job.can_manage`, not locked) plus
+   `job.on_hold` and an accepted `liveEstimate`, and only once
+   `loadCOContext` has resolved (avoids a one-frame flash before the CO
+   list is known). The governing principle (RM 2026-09-20), stated
+   verbatim since it generalizes beyond this one page: **"unlike an
+   estimate, a change order is always explicitly generated by a user —
+   the Tasks page never auto-creates one."**
+
+**State-B selectability has no pool to check against.** Before any
+estimate exists there is nothing to fetch `source-pool` from (it's
+estimate-scoped), so `TasksPanel` synthesizes a fallback map instead of
+`poolByKey`: a task is selectable unless `cancelled`, a material unless
+`released`, and every eligible row gets a plain `{state:'available'}`
+entry keyed the same `"task:{id}"`/`"material:{id}"` way — nothing is ever
+`claimed_by_current`/`claimed_by_other` in state B, since a claim can only
+exist once a live estimate or change order has actually claimed the atom,
+and there is none yet. `TaskRow`/`MaterialRow` need no changes: they
+already render a plain `available` atom as a live checkbox regardless of
+whether it came from a real pool or the fallback. The real pool takes over
+the instant a draft exists (`draftEstimate ? poolByKey : fallbackPoolByKey`),
+and `loadEstimateContext`'s own selection-pruning step always reads the
+real `poolByKey` — never the fallback — so a state-B selection carried
+into the one-click create-and-bundle flow above gets validated against the
+freshly created draft's actual pool, not against stale client-side
+guesses. In practice every eligible state-B selection survives, since a
+brand-new draft's pool has no claims on it yet.
+
+**Row checkboxes and indicators (`TaskRow.svelte`, `MaterialRow.svelte`,
+threaded through `TaskTree.svelte`'s `bundleMode`/`poolByKey`/
+`bundleSelected`/`onToggleBundle`/`bundleClaimedLabel`/`bundleClaimedTitle`
+props).** While `canBundle`, `canOfferEstimate`, **or** `canBundleCO`,
+`TaskTree` renders a leading, headerless checkbox column (`.bundle-cell`,
+same footprint as the move-radio column) driven by each atom's claim state
+— the real source-pool's in state A, the client-derived fallback's in
+state B, the CO's own source-pool in state D — keyed `"task:{id}"` /
+`"material:{id}"` against whichever `poolByKey` is in effect:
+
+   - **`available`** — a live checkbox (`bundleChecked` bound to the
+     panel's `selected` array; `onToggleBundle` flips membership).
+   - **`claimed_by_current`** — already on the draft: a muted chip, no
+     checkbox (nothing to select). The chip's text/title are host-provided
+     (`bundleClaimedLabel`/`bundleClaimedTitle`, defaulting to
+     **"estimated"** / "Already on the draft estimate" so every other
+     `TaskTree` consumer renders byte-identical); the Tasks-page CO lens
+     (state D) passes **"on change order"** / "Already on the draft
+     change order" instead.
+   - **`claimed_by_other`** — claimed by a different estimate or by a
+     change order on this job: no checkbox at all — a greyed-out/disabled
+     checkbox read as "broken" (RM 2026-09-20; "the only actual checkboxes
+     available are for available atoms"). Instead a passive chip
+     (`.bundle-claimed`, same class as the `claimed_by_current` chip)
+     reading **"on CO"** or **"on est"**, with a `title` tooltip naming the
+     claimant — "Claimed by change order {number}" or "Claimed by estimate
+     {number}" (`bundleClaimNote`, CO branch checked first since it's the
+     more specific claim — mirrors `EstimateEditView`'s own
+     unselectable-pool-row note, `estimates-and-prices.md` §12.1;
+     `bundleClaimLabel` picks the short chip text off the same branch). In
+     state D specifically, an atom claimed by the job's own accepted
+     estimate also reads `claimed_by_other` here — correct, it's part of
+     the agreement the CO amends, not available to re-bundle.
+   - An atom absent from the pool (e.g. a cancelled task — the estimate
+     pool excludes those, `estimates-and-prices.md` §8.1) renders no
+     checkbox and no chip: `bundleAtom` is `null` and none of the three
+     branches match. In state B the fallback map plays the same role — a
+     cancelled task or released material simply gets no entry, so it also
+     renders no checkbox and no chip; `claimed_by_current`/
+     `claimed_by_other` never occur in state B (see above).
+
+A task/material row not covered by any selectable state (`canBundle`,
+`canOfferEstimate`, nor `canBundleCO` — i.e. state C or the hint state)
+renders the same as always — `bundleMode` defaults to `false` for every
+other consumer of `TaskTree`, so this is additive.
+
+**Toolbar CTA.** While `canBundle` **or** `canBundleCO`, the toolbar shows
+**"Bundle N selected into a line…"**, disabled while `selected` is empty,
+opening the shared `BundleModal` (`docsurface/BundleModal.svelte`,
+`estimates-and-prices.md` §12.1a) seeded with the ticked atoms
+(`bundleAtoms`, filtered off whichever pool is active — the same shape
+every `BundleModal` host uses) and `apiBase` pointed at the draft estimate
+or (state D) the draft CO (`bundleApiBase`). `BundleModal` owns its own
+POST to `.../line-items-from-atoms/`; `TasksPanel` only reacts to its two
+callbacks — identical wiring for either target.
+
+**Context line.** While a draft estimate exists, a line beneath the
+toolbar reads "Bundling into estimate {number} (draft) —
+[view](#/jobs/{id}/estimate)" — a plain navigation link into the
+document-only estimate page, for reviewing what has already been
+bundled. While a draft CO exists (state D) the line instead reads
+"Bundling into change order {number} (draft) —
+[view](#/jobs/{id}/change-order/{coId})", linking to the CO's own
+document page. While the job is held with an accepted estimate and no
+draft CO (the hint state), the line instead reads "Job is on hold —
+**start a change order** to cover this work," with the bold text linking
+to `#/jobs/{id}/estimate` — never a create button (§9.5's explicit-
+generation principle).
+
+**Post-bundle refresh (`handleBundleCreated` / `refreshAfterBundle`,
+`TasksPanel.svelte`).** On a successful bundle: the checkbox
+selection clears, then the job (`onJobChange` → the parent refetches and
+hands back a new `job` prop, which this panel's tasks/materials are
+derived from), the estimate context, and the CO context all refetch in
+parallel (`loadEstimateContext` + `loadCOContext` — only whichever pool
+is actually live has anything to refresh, but both always run), and a
+success overlay reads "Line added to estimate {number} (draft)." or, in
+state D, "Line added to change order {number} (draft)." The job refetch
+matters even though the atoms already existed: a
+**per-unit** bundle (`estimates-and-prices.md` §9b) writes the raw,
+un-multiplied `per_unit_qty`/`per_unit_worker_time` snapshot onto the new
+**claim row** (`EstimateLineItemSource`), not the task, and separately
+sets the claimed **task's own** `est_qty`/`est_worker_time` to that raw
+value × the line's `qty` — the whole-job total (`_stamp_atom_per_unit`,
+`apps/core/wizard.py`). That total is what changes the task row's
+displayed total and (if a duration was entered) its schedule
+commitment — the refetch is what makes those restamped values show up on
+this page without a manual reload. A **409 claim conflict** (another window claimed one of the
+selected atoms between pool load and submit) instead closes the modal,
+clears the selection, refetches the same way, and shows "Some of the
+selected work was claimed elsewhere in the meantime — refreshed."
+(`handleBundleConflict`, identical message for either target) — the same
+refresh-and-say-so idiom documented generally in
+`architecture-and-conventions.md` §5.5b, and used concretely by the
+estimate page's own remaining atom-claim mutation (`estimates-and-prices.md`
+§12.1's `remove-atoms` 409 handling).
 
 ### 9.6 The job workspace shell (section pages)
 
@@ -1579,14 +1894,17 @@ it doesn't — every version is directly viewable at its own URL.
 **Change orders joined the panel pattern 2026-07-19**: the old 1100-line
 `ChangeOrderDetailPage.svelte` route was extracted into
 `ChangeOrderPanel.svelte` hosted by `routes/jobs/JobChangeOrderPage.svelte`
-(thin glue: job load + `JobShell`), with the two diff grids as components
-(`CODeliverablesSection.svelte` — owns the inline drafting forms;
-`COLineItemsSection.svelte` — a dumb renderer, actions as callbacks) over
-pure unit-tested derivations in `lib/changeOrderDiff.js`
-(`buildMergedRows` / `lineDiffTotals` / `buildDeliverableRows` — the
-backend's `compose_change_order_diff` mirrors `buildMergedRows`; keep in
-lockstep). The retired `/change-orders/:id` URL still redirects via
-`ChangeOrderRedirect.svelte`.
+(thin glue: job load + `JobShell`), with the deliverables grid as its own
+component (`CODeliverablesSection.svelte` — owns the inline drafting
+forms, over `lib/changeOrderDiff.js`'s unit-tested `buildDeliverableRows`).
+The line-item surface moved off a client-derived diff to the
+server-composed amended agreement 2026-08-09 (CO amend-in-place):
+`COEditView.svelte` renders `GET .../amended-agreement/`
+(`compose_amended_agreement`, `estimates-and-prices.md` §14.6, §14.9)
+directly instead of re-deriving a diff from the CO's line items — the
+old `COLineItemsSection.svelte` and the diff builders it read
+(`buildMergedRows` / `lineDiffTotals`) were retired. The retired
+`/change-orders/:id` URL still redirects via `ChangeOrderRedirect.svelte`.
 
 **Per-job persisted position** (`stores/jobWorkspace.js`) is what the
 "last-remembered document" / "restore where I left off" behavior above
@@ -1708,22 +2026,27 @@ Worker = any authenticated user. Manager = user with `can_manage_jobs`.
 Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
 
 1. **JobHeader** (shared, unchanged).
-2. **Task header strip** (`.task-head`) — a crumbs line shown only on a
-   subtask (*subtask of &lt;parent&gt;*, linked via the serializer's
-   `parent_task_name`); no job-overview or task-list crumbs — the nav
-   rail's Overview and Tasks links cover those. Then the title row: the **activity pill**
+2. **Task header strip** (`.task-head`) — no crumbs (tasks are one flat
+   level; the nav rail's Overview and Tasks links cover navigation).
+   Then the title row: the **activity pill**
    (`TaskActivityIndicator` with `pill` — INVOICED badge replaces it
    when `task.invoice` is set) to the **left** of the `<h1>` task name,
    with the **stat-chip strip** right-aligned. Chips (shared
    `.stat-chips` family, app.css): Assignee (name or muted
    "Unassigned"; the name itself opens `AssignModal` when
-   `can_manage`), Est Time (`est_worker_time`), Est Qty, Actual, and
+   `can_manage`), Est Time (`est_worker_time`), Est Qty, Actual, Category
+   (Phase 3, 2026-08 — resolves `task.accounting_category` against the
+   already-loaded `categories` list by name; a null AC renders a muted
+   "uncategorized" via the same `.stat-chip-body .muted` styling the
+   Assignee chip's "Unassigned" state uses, never a blank chip — this
+   page previously showed no AC information at all), and
    the money pair Rate + Charge (green-tinted headers; only when the
-   task has a rate scheme). The Est Qty chip is suppressed when the
-   scheme's unit is `'hour'` and `est_qty` equals `est_worker_time` in
-   hours — a hand-edited mismatch still shows both, but the normal
-   pair-filled case (§9.5) would otherwise restate the same number
-   twice; `TaskRow`'s Est Qty column does the same dedupe (shows `-`).
+   task has a rate scheme). The Est Qty chip shows for hour-unit tasks
+   too, even though the normal pair-filled case (§9.5) restates Est
+   Time's number — the old duplicate-suppression exception (chip hidden,
+   `TaskRow` column showing `-`) read as missing data and was removed
+   2026-08-06; `TaskRow`'s Est Qty column likewise always shows the
+   value, with the unit inline (e.g. `2 hour`).
    On ENTERED_QTY tasks the Actual chip
    embeds the signed **+/− Add** input (add-only; Enter or Add commits,
    never blur; hidden when terminal **or blocked**; success briefly
@@ -1736,22 +2059,15 @@ Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
    controls here, the yellow band owns stop/cancel while a session
    runs) plus **Edit Task** as a `quiet` peer button (hidden when
    terminal).
-4. Sections: **Description → Subtasks → Materials → Work Sessions**
-   (BlepList, whose **Add Entry** button stays — it is the only way to
-   log forgotten historical time from this page). The **Materials
-   section renders the shared `MaterialRow` fragment with the full
-   action set** (chips, tombstones, Order/receipt dialogs, Move — the
-   subtask rows' radios are the move targets; removal is the release
-   action, not a raw delete). The subtask tree is deliberately
-   **passive for task ops** (A3: `TaskTree` renders a button only when
-   its callback is wired — never a dead no-op button): no
-   edit/del/cancel on subtask rows here — a subtask's own detail page
-   is its editing surface. Wired: the full material action set, and the
-   sibling **reorder arrows** (B3 — subtasks reorder here, not on the
-   job task list; same `reorder-tasks` endpoint, peer-scoped
-   server-side). A subtask's detail page renders **no Subtasks section
-   at all** (one-level rule, §4 — no header, no empty-state, no Add
-   Subtask).
+4. Sections: **Description → Materials → Work Sessions** (BlepList,
+   whose **Add Entry** button stays — it is the only way to log
+   forgotten historical time from this page). The **Materials section
+   renders the shared `MaterialRow` fragment with the full action set**
+   (chips, tombstones, Order/receipt dialogs; removal is the release
+   action, not a raw delete). No move-target radios render on this page,
+   so **Move stays hidden here** (moving a material between tasks
+   happens on the job task list, whose task rows carry the radios) —
+   detach still passes through.
 
 The old toolbar row, details table, and Charge table are gone. The
 table below still governs which controls *exist*.
@@ -1851,7 +2167,8 @@ general cross-client repolling mechanism is deferred (see Unfinished Work).
 >
 > - **Authoring the Job's work atoms** → the **task-list page** (§9.5), not
 >   the overview. The single **"Add Work"** picker (`PriceListPicker`) routes to
->   `WorkItemForm` (Task), `MaterialModal` (Material), or `FeeModal` (Fee).
+>   `WorkItemForm` (Task) or `MaterialModal` (Material) — the Job has no
+>   third, money-only atom (`FeeModal` is gone with `Fee`, §4.7).
 > - **`InventoryItemPicker.svelte`** (type-ahead `InventoryItem` picker,
 >   built on `SearchPicker`) survives — reused by `MaterialModal` and the
 >   PO line-item form.
@@ -1873,6 +2190,15 @@ see §12.2 and §12.9).
   consumed materials). One Job has 0+ Deliverables. Listed on the Job
   detail page (always visible, sub-header column) and on every customer-
   facing packing list.
+  Carries an optional `source_line` provenance FK (SET_NULL →
+  `EstimateLineItem`, added 2026-08-12, migration deliverables/0003) set
+  by the estimate edit view's **Make Deliverable** button
+  (`DeliverableService.create_from_estimate_line` — copies
+  description/qty/units; refuses a second make on the same line).
+  Provenance only: no sync, no compute path. `revise_estimate` re-points
+  it to the revision's copied line; deleting the line offers deleting
+  the deliverable too (three-way dialog) or unlinks it. See
+  `estimates-and-prices.md` §12 for the surface.
 - **Shipment**: a single fulfillment event for a Job. Holds 1+
   `ShipmentItem` rows that each reference one Deliverable + a qty.
   Multiple Shipments per Job support phased delivery / backorders.
@@ -2152,7 +2478,7 @@ with the worksheet layer):
 | Signal | Sender | Receiver | Effect |
 |---|---|---|---|
 | `estimate_status_changed_for_job` | `Estimate.save()` | `update_job_status` | Walks the Job through the right status (draft → submitted → approved on send/accept; **open → rejected** drives the Job to `rejected`); creates a `HistoryEntry` action row attributed to the `system` user; refuses to downgrade or to touch completed/cancelled jobs |
-| `estimate_accepted` | `Estimate.save()` (when transitioning to accepted) | acceptance receiver | Calls `EstimateAcceptanceService.on_accept(estimate)` — crystallizes each hand-line into a `Fee` on the Job and earmarks the job's inventoried materials (`estimates-and-prices.md` §9) |
+| `estimate_accepted` | `Estimate.save()` (when transitioning to accepted) | acceptance receiver | Calls `EstimateAcceptanceService.on_accept(estimate)` — crystallizes each `service_item`/`inventory_item`/`is_material` hand-line into a `Task`/`Material` on the Job (plain hand-lines stay document-only, §4.7) and earmarks the job's inventoried materials (`estimates-and-prices.md` §9) |
 
 `Estimate.save()` (`apps/estimates/models.py`) is what fires these.
 The receivers do not currently mark estimates superseded automatically —

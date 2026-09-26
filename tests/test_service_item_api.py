@@ -116,7 +116,12 @@ class RateSchemeAPITest(TestCase):
         self.assertEqual(resp.json()['name'], 'Hourly Labor')
 
 
-class RateSchemeEditBlockTest(BaseTestCase):
+class RateSchemeReferencedEditTest(BaseTestCase):
+    """Task 4 (task-owned-money Phase 1): presets are freely editable — a
+    stamped Task already owns a permanent copy of the money fields, so
+    editing (or PUTting) a referenced preset via the API succeeds instead of
+    the old 409-with-supersede_url response. Task 7 removes that shaping
+    from the view entirely."""
     fixtures = []
 
     def setUp(self):
@@ -148,22 +153,21 @@ class RateSchemeEditBlockTest(BaseTestCase):
             name='S-eb', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
-        Task.objects.create(job=job, name='t', rate_scheme=s)
+        Task.objects.create(job=job, name='t', source_scheme=s)
         return s
 
-    def test_patch_referenced_scheme_returns_409(self):
+    def test_patch_referenced_scheme_succeeds(self):
         s = self._make_referenced_scheme()
         resp = self.client.patch(
             f'/api/rate-schemes/{s.pk}/',
             {'rate': '99'}, content_type='application/json',
         )
-        self.assertEqual(resp.status_code, 409)
-        body = resp.json()
-        self.assertIn('supersede_url', body)
-        self.assertIn('reference_counts', body)
-        self.assertEqual(body['reference_counts']['task_count'], 1)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()['rate'], '99.00')
+        s.refresh_from_db()
+        self.assertEqual(s.rate, Decimal('99.00'))
 
-    def test_put_referenced_scheme_returns_409(self):
+    def test_put_referenced_scheme_succeeds(self):
         # Verify the same behavior on PUT (full update), not just PATCH.
         from apps.core.models import AccountingCategory
         s = self._make_referenced_scheme()
@@ -178,7 +182,8 @@ class RateSchemeEditBlockTest(BaseTestCase):
             },
             content_type='application/json',
         )
-        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()['name'], 'S-eb-changed')
 
     def test_patch_unreferenced_scheme_succeeds(self):
         from apps.core.models import AccountingCategory
@@ -195,74 +200,9 @@ class RateSchemeEditBlockTest(BaseTestCase):
         self.assertEqual(resp.status_code, 200)
 
 
-class RateSchemeSupersedeEndpointTest(BaseTestCase):
-    fixtures = []
-
-    def setUp(self):
-        super().setUp()
-        from apps.core.models import User, AccountingCategory
-        from django.contrib.auth.models import Permission
-        self.user = User.objects.create_user('admin-sup', 'admin-sup@x.test', 'pw')
-        perm = Permission.objects.get(codename='can_manage_config')
-        self.user.user_permissions.add(perm)
-        self.client.force_login(self.user)
-        self.ac = AccountingCategory.objects.create(code='Y-sup', name='Y-sup')
-
-    def test_supersede_creates_new_and_links_old(self):
-        from apps.jobs.models import RateScheme
-        old = RateScheme.objects.create(
-            name='O-sup', algorithm='entered_qty', rate=Decimal('5'),
-            unit_label='ea', accounting_category=self.ac,
-        )
-        resp = self.client.post(
-            f'/api/rate-schemes/{old.pk}/supersede/',
-            {
-                'name': 'O-sup v2', 'rate': '7', 'algorithm': 'entered_qty',
-                'unit_label': 'ea', 'accounting_category': self.ac.pk,
-                'modifiers': [], 'description': '',
-            },
-            content_type='application/json',
-        )
-        self.assertEqual(resp.status_code, 201)
-        new_id = resp.json()['rate_scheme_id']
-        old.refresh_from_db()
-        self.assertEqual(old.replaced_by_id, new_id)
-        self.assertIsNotNone(old.replaced_at)
-
-    def test_supersede_requires_can_manage_config(self):
-        from apps.core.models import User
-        from apps.jobs.models import RateScheme
-        plain = User.objects.create_user('plain-sup', 'plain-sup@x.test', 'pw')
-        self.client.force_login(plain)
-        old = RateScheme.objects.create(
-            name='O-sup-perm', algorithm='entered_qty', rate=Decimal('5'),
-            unit_label='ea', accounting_category=self.ac,
-        )
-        resp = self.client.post(f'/api/rate-schemes/{old.pk}/supersede/', {})
-        self.assertEqual(resp.status_code, 403)
-
-    def test_supersede_already_superseded_returns_409(self):
-        from apps.jobs.models import RateScheme
-        old = RateScheme.objects.create(
-            name='O-sup-twice', algorithm='entered_qty', rate=Decimal('5'),
-            unit_label='ea', accounting_category=self.ac,
-        )
-        # First supersede via the model method
-        old.supersede(name='O-sup-twice v2')
-        # Second supersede via API should be rejected
-        resp = self.client.post(
-            f'/api/rate-schemes/{old.pk}/supersede/',
-            {
-                'name': 'O-sup-twice v3', 'rate': '9', 'algorithm': 'entered_qty',
-                'unit_label': 'ea', 'accounting_category': self.ac.pk,
-                'modifiers': [], 'description': '',
-            },
-            content_type='application/json',
-        )
-        self.assertEqual(resp.status_code, 409)
-
-
-class RateSchemeListFilterTest(BaseTestCase):
+class RateSchemeIncludeInactiveFilterTest(BaseTestCase):
+    """GET /api/rate-schemes/?include_inactive=true — the retirement-era
+    replacement for the old include_superseded/only_superseded filters."""
     fixtures = []
 
     def setUp(self):
@@ -276,38 +216,28 @@ class RateSchemeListFilterTest(BaseTestCase):
             name='A-lf', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
-        self.old = RateScheme.objects.create(
+        self.retired = RateScheme.objects.create(
             name='O-lf', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
-        self.new = self.old.supersede(name='N-lf')
+        self.retired.is_active = False
+        self.retired.save()
 
-    def test_default_list_excludes_superseded(self):
+    def test_default_list_excludes_inactive(self):
         resp = self.client.get('/api/rate-schemes/')
         body = resp.json()
         items = body.get('results', body)
         ids = [r['rate_scheme_id'] for r in items]
         self.assertIn(self.active.pk, ids)
-        self.assertIn(self.new.pk, ids)
-        self.assertNotIn(self.old.pk, ids)
+        self.assertNotIn(self.retired.pk, ids)
 
-    def test_include_superseded_returns_all(self):
-        resp = self.client.get('/api/rate-schemes/?include_superseded=true')
+    def test_include_inactive_returns_all(self):
+        resp = self.client.get('/api/rate-schemes/?include_inactive=true')
         body = resp.json()
         items = body.get('results', body)
         ids = [r['rate_scheme_id'] for r in items]
-        self.assertIn(self.old.pk, ids)
         self.assertIn(self.active.pk, ids)
-        self.assertIn(self.new.pk, ids)
-
-    def test_only_superseded_returns_just_old(self):
-        resp = self.client.get('/api/rate-schemes/?only_superseded=true')
-        body = resp.json()
-        items = body.get('results', body)
-        ids = [r['rate_scheme_id'] for r in items]
-        self.assertIn(self.old.pk, ids)
-        self.assertNotIn(self.active.pk, ids)
-        self.assertNotIn(self.new.pk, ids)
+        self.assertIn(self.retired.pk, ids)
 
 
 class RateSchemeSerializerExtraFieldsTest(BaseTestCase):
@@ -325,13 +255,14 @@ class RateSchemeSerializerExtraFieldsTest(BaseTestCase):
             unit_label='ea', accounting_category=self.ac,
         )
 
-    def test_serializer_includes_replaced_fields_and_counts(self):
+    def test_serializer_exposes_is_active_and_counts_no_supersession_fields(self):
         resp = self.client.get(f'/api/rate-schemes/{self.s.pk}/')
         body = resp.json()
-        self.assertIn('replaced_by', body)
-        self.assertIn('replaced_at', body)
-        self.assertIn('superseded', body)
-        self.assertFalse(body['superseded'])
+        self.assertIn('is_active', body)
+        self.assertTrue(body['is_active'])
+        self.assertNotIn('replaced_by', body)
+        self.assertNotIn('replaced_at', body)
+        self.assertNotIn('superseded', body)
         self.assertIn('reference_counts', body)
         self.assertEqual(body['reference_counts']['task_count'], 0)
         self.assertEqual(body['reference_counts']['service_item_count'], 0)
@@ -373,80 +304,10 @@ class RateSchemeSerializerElapsedUnitTest(TestCase):
         self.assertEqual(ser.validated_data['unit_label'], 'hour')
 
 
-class RateSchemeSupersedeSameNameTest(BaseTestCase):
-    """
-    The SPA always sends a `name` (it's a pre-populated form field).
-    When the user leaves it untouched, the payload's name equals the
-    old scheme's name — which used to collide on the unique constraint.
-    The model rename-old-first algorithm now handles this; verify it
-    end-to-end via the API.
-    """
-    fixtures = []
-
-    def setUp(self):
-        super().setUp()
-        from apps.core.models import User, AccountingCategory
-        from django.contrib.auth.models import Permission
-        self.user = User.objects.create_user('admin-same', 'admin-same@x.test', 'pw')
-        perm = Permission.objects.get(codename='can_manage_config')
-        self.user.user_permissions.add(perm)
-        self.client.force_login(self.user)
-        self.ac = AccountingCategory.objects.create(code='SN', name='SN')
-
-    def test_supersede_with_same_name_as_old_succeeds(self):
-        from apps.jobs.models import RateScheme
-        old = RateScheme.objects.create(
-            name='SN-Hourly', algorithm='entered_qty', rate=Decimal('5'),
-            unit_label='ea', accounting_category=self.ac,
-        )
-        resp = self.client.post(
-            f'/api/rate-schemes/{old.pk}/supersede/',
-            {
-                'name': 'SN-Hourly',  # unchanged from old
-                'rate': '7', 'algorithm': 'entered_qty',
-                'unit_label': 'ea', 'accounting_category': self.ac.pk,
-                'modifiers': [], 'description': '',
-            },
-            content_type='application/json',
-        )
-        self.assertEqual(resp.status_code, 201)
-        body = resp.json()
-        self.assertEqual(body['name'], 'SN-Hourly')
-        old.refresh_from_db()
-        self.assertEqual(old.name, 'SN-Hourly (v1)')
-        # Both rows still in the DB, names unique.
-        self.assertEqual(
-            RateScheme.objects.filter(name='SN-Hourly').count(), 1,
-        )
-        self.assertEqual(
-            RateScheme.objects.filter(name='SN-Hourly (v1)').count(), 1,
-        )
-
-    def test_supersede_with_changed_name_still_renames_old(self):
-        """Old row gets (v1) regardless of whether the new name was changed."""
-        from apps.jobs.models import RateScheme
-        old = RateScheme.objects.create(
-            name='SN-Setup', algorithm='entered_qty', rate=Decimal('5'),
-            unit_label='ea', accounting_category=self.ac,
-        )
-        resp = self.client.post(
-            f'/api/rate-schemes/{old.pk}/supersede/',
-            {
-                'name': 'SN-Setup Premium',
-                'rate': '8', 'algorithm': 'entered_qty',
-                'unit_label': 'ea', 'accounting_category': self.ac.pk,
-                'modifiers': [], 'description': '',
-            },
-            content_type='application/json',
-        )
-        self.assertEqual(resp.status_code, 201)
-        self.assertEqual(resp.json()['name'], 'SN-Setup Premium')
-        old.refresh_from_db()
-        self.assertEqual(old.name, 'SN-Setup (v1)')
-
-
 class RateSchemeTaskApplicableFilterTest(TestCase):
-    """GET /api/rate-schemes/?task_applicable=true must exclude percentage services."""
+    """GET /api/rate-schemes/?task_applicable=true must exclude percentage
+    services AND inactive presets — a task-creation picker should never
+    offer either."""
 
     def setUp(self):
         from apps.core.models import AccountingCategory
@@ -456,7 +317,7 @@ class RateSchemeTaskApplicableFilterTest(TestCase):
         )
         self.client.force_login(self.user)
         self.ac = AccountingCategory.objects.create(code='TAF', name='TAF')
-        RateScheme.objects.create(
+        self.hourly = RateScheme.objects.create(
             name='Hourly TAF', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('45.00'), unit_label='hour', accounting_category=self.ac,
         )
@@ -464,6 +325,12 @@ class RateSchemeTaskApplicableFilterTest(TestCase):
             name='Rush TAF', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('15'), unit_label='%', accounting_category=self.ac,
         )
+        self.retired = RateScheme.objects.create(
+            name='Retired TAF', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('30'), unit_label='ea', accounting_category=self.ac,
+        )
+        self.retired.is_active = False
+        self.retired.save()
 
     def test_task_applicable_filter_excludes_percentage(self):
         resp = self.client.get('/api/rate-schemes/?task_applicable=true')
@@ -472,6 +339,27 @@ class RateSchemeTaskApplicableFilterTest(TestCase):
         items = body.get('results', body)
         algos = {r['algorithm'] for r in items}
         self.assertNotIn('percentage', algos)
+
+    def test_task_applicable_filter_excludes_inactive(self):
+        resp = self.client.get('/api/rate-schemes/?task_applicable=true')
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        items = body.get('results', body)
+        ids = [r['rate_scheme_id'] for r in items]
+        self.assertIn(self.hourly.pk, ids)
+        self.assertNotIn(self.retired.pk, ids)
+
+    def test_task_applicable_filter_includes_inactive_when_combined_with_include_inactive(self):
+        # task_applicable's own is_active=True filter wins regardless —
+        # a task-creation picker must never offer an inactive preset even
+        # if the caller also asked to include inactive schemes.
+        resp = self.client.get(
+            '/api/rate-schemes/?task_applicable=true&include_inactive=true')
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        items = body.get('results', body)
+        ids = [r['rate_scheme_id'] for r in items]
+        self.assertNotIn(self.retired.pk, ids)
 
 
 class RateSchemeSearchFilterTest(TestCase):

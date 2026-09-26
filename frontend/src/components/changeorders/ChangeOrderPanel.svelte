@@ -2,23 +2,24 @@
   // Change-order panel: the CO document surface hosted by the job workspace
   // (routes/jobs/JobChangeOrderPage → JobShell → this), the same shape as
   // EstimatePanel / InvoicePanel. Owns CO-scoped loading, the toolbar +
-  // status actions, and the add-line/edit modals; the two diff grids are
-  // CODeliverablesSection / COLineItemsSection over lib/changeOrderDiff
-  // derivations. Extracted from the old ChangeOrderDetailPage route
-  // (2026-07-19).
+  // status actions; the two edit surfaces are CODeliverablesSection (over
+  // lib/changeOrderDiff's buildDeliverableRows) and COEditView (over the
+  // server-composed amended-agreement — Tasks 5-8). Extracted from the old
+  // ChangeOrderDetailPage route (2026-07-19); COEditView replaced the old
+  // flat line-item diff table (COLineItemsSection) 2026-08-09.
   import { link } from 'svelte-spa-router';
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
-  import COAddLineForm from './COAddLineForm.svelte';
-  import COLineItemModal from './COLineItemModal.svelte';
   import CODeliverablesSection from './CODeliverablesSection.svelte';
-  import COLineItemsSection from './COLineItemsSection.svelte';
+  import COEditView from './COEditView.svelte';
+  import COCustomerView from './COCustomerView.svelte';
+  import DocModeBar from '../docsurface/DocModeBar.svelte';
+  import Modal from '../Modal.svelte';
+  import DocReorderView from '../docsurface/DocReorderView.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import { buildEstimateDocItems, changeOrderDisplayStatus } from '../../lib/estimateDocs.js';
-  import {
-    buildMergedRows, lineDiffTotals, buildDeliverableRows,
-  } from '../../lib/changeOrderDiff.js';
-  import PriceListPicker from '../PriceListPicker.svelte';
+  import { buildDeliverableRows } from '../../lib/changeOrderDiff.js';
+  import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
 
   let {
     job,
@@ -27,32 +28,17 @@
   } = $props();
 
   let co = $state(null);
-  let estimateLines = $state([]);  // lines from the accepted estimate for target picking
+  let amended = $state(null);      // amended-agreement payload (rows + totals)
   let estimatesForNav = $state([]); // all estimate versions for this job (version subnav)
   let siblingCOs = $state([]);     // all COs for this job (used for display-status relabelling)
+  let categories = $state([]);
   let loading = $state(true);
   let error = $state('');
 
   // Deliverables diff state
   let liveDeliverables = $state([]);
   let delivBaseline = $state([]);
-
-  let modalOpen = $state(false);
-  let modalMode = $state('create');
-  let modalItem = $state(null);
-  // Add-line flow: PriceListPicker → COAddLineForm (service / inventory / freeform)
-  let pickerOpen = $state(false);
-  let addLineChoice = $state(null);
-  let addLineFormOpen = $state(false);
-  let categories = $state([]);
-  let defaultMaterialCategoryId = $state(null);
-  // Pre-seed props for the modal
-  let modalInitialAction = $state(null);
-  let modalInitialTarget = $state(null);
-  let modalInitialDescription = $state(null);
-  let modalInitialQty = $state(null);
-  let modalInitialUnits = $state(null);
-  let modalInitialPrice = $state(null);
+  let deliverablesDiff = $state([]); // server-composed kind rows (Customer mode)
 
   let actionBusy = $state(false);
 
@@ -65,34 +51,108 @@
   let isDraft = $derived(co?.status === 'draft');
   let isOpen = $derived(co?.status === 'open');
   let isTerminal = $derived(['accepted', 'rejected'].includes(co?.status));
+  let canEdit = $derived(canManageJobs && isDraft);
 
-  // Diff derivations — pure functions in lib/changeOrderDiff.js (unit-tested;
-  // the backend's compose_change_order_diff mirrors buildMergedRows).
-  let mergedRows = $derived(buildMergedRows(estimateLines, co?.line_items));
-  let totals = $derived(lineDiffTotals(estimateLines, mergedRows));
   let delivMergedRows = $derived(buildDeliverableRows(liveDeliverables, delivBaseline));
 
-  async function loadCO() {
-    loading = true;
-    error = '';
+  // The mode bar is a surface of this panel, not a separate route — same
+  // shape as EstimatePanel's mode wiring. Reorder is only restorable while
+  // the CO is still an editable draft (someone may have sent it since the
+  // mode was remembered).
+  let mode = $state('edit');
+  let modeInitializedFor = $state(null);
+  let modes = $derived(canEdit ? ['edit', 'customer', 'reorder'] : ['edit', 'customer']);
+  // Read-only documents relabel the mode: same surface, but it's now the
+  // shop-facing Detail view, not an editor (RM 2026-08-09).
+  let modeLabels = $derived(
+    { edit: canEdit ? 'Edit view' : 'Detail view', customer: 'Customer view', reorder: 'Reorder view' });
+  $effect(() => {
+    if (co && String(co.change_order_id) === String(coId)
+        && modeInitializedFor !== String(coId)) {
+      const remembered = getJobWs(job?.job_id).modes[`co:${coId}`] ?? 'edit';
+      mode = (remembered === 'reorder' && !canEdit) ? 'edit' : remembered;
+      modeInitializedFor = String(coId);
+    }
+  });
+
+  function setMode(next) {
+    mode = next;
+    rememberMode(job?.job_id, `co:${coId}`, next);
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleDateString();
+  }
+
+  // Reorder mode operates over the CO's OWN add+replace rows only (labeled
+  // "CO {co_index} — {description}"), taken from the amended-agreement
+  // payload so the display order/label match the edit view exactly.
+  let reorderLines = $derived(
+    (amended?.rows || [])
+      .filter((r) => r.kind === 'added' || r.kind === 'replaced')
+      .slice()
+      .sort((a, b) => (a.co_index ?? 0) - (b.co_index ?? 0))
+      .map((r) => ({
+        line_id: r.co_line_id,
+        line_number: r.co_index,
+        description: `CO ${r.co_index} — ${r.line.description || 'No description'}`,
+        qty: r.line.qty,
+        units: r.line.units,
+        price: r.line.price,
+        amount: Number(r.line.amount || 0),
+      }))
+  );
+  let reorderGrandTotal = $derived(
+    reorderLines.reduce((sum, l) => sum + Number(l.amount || 0), 0)
+  );
+
+  // The CO's own remove-line ids, in their existing line_number order — the
+  // reorder endpoint renumbers every listed line from 1, so these must ride
+  // along at the end of every reorder POST or they'd collide with the
+  // renumbered add/replace lines.
+  let removeLineIds = $derived(
+    (co?.line_items || [])
+      .filter((li) => li.action === 'remove')
+      .slice()
+      .sort((a, b) => (a.line_number ?? 0) - (b.line_number ?? 0))
+      .map((li) => li.line_item_id)
+  );
+
+  async function handleReorderDoc(lineId, direction) {
+    const ids = reorderLines.map((l) => l.line_id);
+    const idx = ids.indexOf(lineId);
+    if (idx === -1) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= ids.length) return;
+    [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+    try {
+      await api.post(`/api/change-orders/${co.change_order_id}/line-items/reorder/`, {
+        item_ids: [...ids, ...removeLineIds],
+      });
+      await loadCO();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not reorder line items.'));
+    }
+  }
+
+  // `silent`: post-gesture refreshes from COEditView (add-atoms, create-a-line,
+  // remove, replace, adjustments...) must NOT flip `loading` — that would
+  // swap the `{#if loading}` branch to "Loading…", destroying and
+  // remounting COEditView on every single gesture and losing its local
+  // state (the just-opened edit modal, the in-progress atom selection). A
+  // silent failure doesn't blank the surface either — it reports through the
+  // global overlay and leaves the last-good doc on screen (mirrors
+  // EstimatePanel's loadEstimate).
+  async function loadCO({ silent = false } = {}) {
+    if (!silent) {
+      loading = true;
+      error = '';
+    }
     try {
       co = await api.get(`/api/change-orders/${coId}/`);
       if (co?.job) {
-        // Load estimate lines for target picking (from accepted estimates)
-        try {
-          const estResp = await api.get(`/api/estimates/?job=${co.job}`);
-          const estList = estResp?.results || estResp || [];
-          estimatesForNav = estList;
-          // Use accepted or the most recent non-superseded estimate for target picking
-          const accepted = estList.find(e => e.status === 'accepted');
-          const source = accepted || estList.findLast(e => e.status !== 'superseded') || estList[estList.length - 1];
-          if (source?.estimate_id) {
-            const est = await api.get(`/api/estimates/${source.estimate_id}/`);
-            estimateLines = (est.line_items || []).slice().sort((a, b) => a.line_number - b.line_number);
-          }
-        } catch (_) {
-          estimateLines = [];
-        }
         // Load all COs for the job (for display-status relabelling)
         try {
           const cosResp = await api.get(`/api/change-orders/?job=${co.job}`);
@@ -100,23 +160,46 @@
         } catch (_) {
           siblingCOs = [];
         }
-        // Load live deliverables + baseline snapshot
+        // Load live deliverables + baseline snapshot + server-composed diff
+        // (the diff drives Customer mode; same rows as the portal/PDF).
         try {
-          const [liveDel, baselineResp] = await Promise.all([
+          const [liveDel, baselineResp, diffResp] = await Promise.all([
             api.get(`/api/jobs/${co.job}/deliverables/`),
             api.get(`/api/change-orders/${coId}/deliverables-baseline/`),
+            api.get(`/api/change-orders/${coId}/deliverables-diff/`),
           ]);
           liveDeliverables = liveDel || [];
           delivBaseline = baselineResp?.baseline || [];
+          deliverablesDiff = diffResp?.rows || [];
         } catch (_) {
           liveDeliverables = [];
           delivBaseline = [];
+          deliverablesDiff = [];
+        }
+        // Amended agreement — COEditView's own data.
+        try {
+          amended = await api.get(`/api/change-orders/${coId}/amended-agreement/`);
+        } catch (_) {
+          amended = null;
         }
       }
     } catch (e) {
-      error = e.message || 'Could not load change order.';
+      if (silent) {
+        showError(errorMessage(e, 'Could not refresh the change order.'));
+      } else {
+        error = e.message || 'Could not load change order.';
+      }
     } finally {
-      loading = false;
+      if (!silent) loading = false;
+    }
+  }
+
+  async function loadEstimatesForNav() {
+    try {
+      const estResp = await api.get(`/api/estimates/?job=${job.job_id}`);
+      estimatesForNav = estResp?.results || estResp || [];
+    } catch (_) {
+      estimatesForNav = [];
     }
   }
 
@@ -129,15 +212,6 @@
     }
   }
 
-  async function loadSettings() {
-    try {
-      const s = await api.get('/api/settings/');
-      const raw = s.default_material_accounting_category;
-      defaultMaterialCategoryId = raw != null ? Number(raw) : null;
-    } catch (_) {
-      defaultMaterialCategoryId = null;
-    }
-  }
 
   $effect(() => {
     if (coId) {
@@ -145,11 +219,24 @@
     }
   });
 
-  // Categories/settings don't depend on the CO identity — load once.
+  // Nav list / categories / settings don't depend on the CO identity — load
+  // once per job.
   $effect(() => {
+    if (job?.job_id) {
+      loadEstimatesForNav();
+    }
     loadCategories();
-    loadSettings();
   });
+
+  // COEditView is presentation + gestures only — every mutation it makes
+  // (add/remove atoms, add/edit/remove/replace a line, undo...) calls back
+  // here so the amended agreement and the uncovered-work pool stay in sync.
+  // Silent: see loadCO's comment above — COEditView awaits this to look up
+  // the fresh copy of a just-created line, so it must resolve without ever
+  // tearing the view down mid-gesture.
+  async function handleEditChanged() {
+    await loadCO({ silent: true });
+  }
 
   // --------------------------------------------------------------------------
 
@@ -183,11 +270,26 @@
     }
   }
 
-  async function seedNew() {
-    // No confirm: the new draft CO is trivially discardable.
+  // Start-new choice (RM 2026-08-12): a terminal CO with lines offers
+  // seeding the new draft from them (adds/removes/replaces incl. adjustment
+  // amendments) or starting empty. A line-less CO skips the dialog — the
+  // two paths are identical there.
+  let startNewDialogOpen = $state(false);
+
+  function seedNew() {
+    if ((co.line_items || []).length > 0) {
+      startNewDialogOpen = true;
+      return;
+    }
+    startNew({ empty: true });
+  }
+
+  async function startNew({ empty }) {
+    startNewDialogOpen = false;
     actionBusy = true;
     try {
-      const newCo = await api.post(`/api/change-orders/${co.change_order_id}/seed-new/`);
+      const newCo = await api.post(
+        `/api/change-orders/${co.change_order_id}/seed-new/`, { empty });
       window.location.hash = `/jobs/${co.job}/change-order/${newCo.change_order_id}`;
     } catch (e) {
       showError(errorMessage(e, 'Could not create new change order.'));
@@ -199,93 +301,6 @@
   function handleSaveButton() {
     saveLabel = 'Saved ✓';
     setTimeout(() => { saveLabel = 'Save'; }, 1500);
-  }
-
-  // --------------------------------------------------------------------------
-  // Diff-editor actions (the section is a dumb renderer; API calls live here)
-  // --------------------------------------------------------------------------
-
-  /** Unchanged estimate line → [Change]: open modal pre-set to 'replace' with prefill */
-  function openChangeEstimateLine(estLine) {
-    modalMode = 'create';
-    modalItem = null;
-    modalInitialAction = 'replace';
-    modalInitialTarget = estLine.line_item_id;
-    modalInitialDescription = estLine.description;
-    modalInitialQty = estLine.qty ?? '';
-    modalInitialUnits = estLine.units ?? 'none';
-    modalInitialPrice = estLine.price ?? '';
-    modalOpen = true;
-  }
-
-  /** Unchanged estimate line → [Delete]: POST a 'remove' CO line item, no modal */
-  async function removeEstimateLine(estLine) {
-    try {
-      await api.post(`/api/change-orders/${co.change_order_id}/line-items/`, {
-        action: 'remove',
-        target_line_item: estLine.line_item_id,
-      });
-      await loadCO();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not remove estimate line.'));
-    }
-  }
-
-  /** Changed row (replace CO line) → [Edit]: open modal to PATCH the existing CO line */
-  function openEditCOLine(coItem) {
-    modalMode = 'edit';
-    modalItem = coItem;
-    modalInitialAction = null;
-    modalInitialTarget = null;
-    modalInitialDescription = null;
-    modalInitialQty = null;
-    modalInitialUnits = null;
-    modalInitialPrice = null;
-    modalOpen = true;
-  }
-
-  /** Changed or removed row → [Undo]: DELETE the CO line item (reverts to unchanged) */
-  async function undoCOLine(coItem) {
-    try {
-      await api.delete(`/api/change-orders/${co.change_order_id}/line-items/${coItem.line_item_id}/`);
-      await loadCO();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not undo change.'));
-    }
-  }
-
-  /** Added row → [Delete]: DELETE the CO line item */
-  async function deleteAddedLine(coItem) {
-    try {
-      await api.delete(`/api/change-orders/${co.change_order_id}/line-items/${coItem.line_item_id}/`);
-      await loadCO();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not delete line item.'));
-    }
-  }
-
-  /** [+ New line] button → unified picker (service / inventory / freeform),
-      same entry point as the estimate panel's Add Line. */
-  function openAddItem() {
-    pickerOpen = true;
-  }
-
-  function handleAddLineChoice(choice) {
-    pickerOpen = false;
-    addLineChoice = choice;
-    addLineFormOpen = true;
-  }
-
-  function handleAddLineSaved() {
-    addLineFormOpen = false;
-    addLineChoice = null;
-    loadCO();
-  }
-
-  function handleSaved() {
-    modalOpen = false;
-    modalItem = null;
-    loadCO();
   }
 
   // --------------------------------------------------------------------------
@@ -347,65 +362,84 @@
         </button>
       {/if}
     {/if}
+    <!-- Compact date chips (mirrors EstimatePanel): number/job/status live in
+         the header and surrounding context; the parent-revision link is
+         covered by the DocSubnav version pills. Dates only, right end of the
+         title row. -->
+    <div class="stat-chips doc-stat-chips">
+      <div class="stat-chip">
+        <div class="stat-chip-header">Created</div>
+        <div class="stat-chip-body">{fmtDate(co.created_date)}</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Sent</div>
+        <div class="stat-chip-body"><span class:muted={!co.sent_date}>{co.sent_date ? fmtDate(co.sent_date) : '-'}</span></div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Expires</div>
+        <div class="stat-chip-body"><span class:muted={!co.expiration_date}>{co.expiration_date ? fmtDate(co.expiration_date) : '-'}</span></div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-header">Closed</div>
+        <div class="stat-chip-body"><span class:muted={!co.closed_date}>{co.closed_date ? fmtDate(co.closed_date) : '-'}</span></div>
+      </div>
+    </div>
   </div>
 
-  <CODeliverablesSection
-    jobId={co.job}
-    rows={delivMergedRows}
-    canEdit={canManageJobs && isDraft}
-    onReload={loadCO}
-  />
+  <DocModeBar {mode} onMode={setMode} {modes} labels={modeLabels} />
 
-  <COLineItemsSection
-    rows={mergedRows}
-    {estimateLines}
-    {totals}
-    canEdit={canManageJobs && isDraft}
-    onAddItem={openAddItem}
-    onChangeLine={openChangeEstimateLine}
-    onRemoveLine={removeEstimateLine}
-    onEditLine={openEditCOLine}
-    onUndoLine={undoCOLine}
-    onDeleteLine={deleteAddedLine}
-  />
+  {#if mode === 'edit'}
+    <CODeliverablesSection
+      jobId={co.job}
+      rows={delivMergedRows}
+      canEdit={canEdit}
+      onReload={loadCO}
+    />
 
-  <COLineItemModal
-    open={modalOpen}
-    mode={modalMode}
-    coId={co.change_order_id}
-    item={modalItem}
-    {estimateLines}
-    {categories}
-    initialAction={modalInitialAction}
-    initialTarget={modalInitialTarget}
-    initialDescription={modalInitialDescription}
-    initialQty={modalInitialQty}
-    initialUnits={modalInitialUnits}
-    initialPrice={modalInitialPrice}
-    onSaved={handleSaved}
-    onClose={() => { modalOpen = false; }}
-  />
-
-  <PriceListPicker
-    open={pickerOpen}
-    onChoose={handleAddLineChoice}
-    onclose={() => { pickerOpen = false; }}
-  />
-
-  <COAddLineForm
-    open={addLineFormOpen}
-    choice={addLineChoice}
-    coId={co.change_order_id}
-    {categories}
-    {defaultMaterialCategoryId}
-    onSaved={handleAddLineSaved}
-    onClose={() => { addLineFormOpen = false; addLineChoice = null; }}
-  />
+    <COEditView
+      {co}
+      {canEdit}
+      onChanged={handleEditChanged}
+      {amended}
+      {categories}
+    />
+  {:else if mode === 'customer'}
+    <COCustomerView
+      title={`Change Order ${co.change_order_number || `CO #${co.change_order_id}`}`}
+      rows={amended?.rows || []}
+      deliverables={deliverablesDiff}
+      originalTotal={amended?.original_total}
+      coDelta={amended?.co_delta}
+      revisedTotal={amended?.revised_total}
+    />
+  {:else if mode === 'reorder'}
+    <DocReorderView
+      title={`Change Order ${co.change_order_number || `CO #${co.change_order_id}`}`}
+      lines={reorderLines}
+      grandTotal={reorderGrandTotal}
+      onReorder={handleReorderDoc}
+    />
+  {/if}
   </div>
 {/if}
 
+<Modal open={startNewDialogOpen} onCancel={() => { startNewDialogOpen = false; }} label="Start new change order">
+  <h3>Start new change order</h3>
+  <p>
+    Start it from this change order's lines and adjustments, or start empty?
+  </p>
+  <div class="start-new-buttons">
+    <button type="button" disabled={actionBusy}
+      onclick={() => startNew({ empty: false })}>Start from this change order</button>
+    <button type="button" disabled={actionBusy}
+      onclick={() => startNew({ empty: true })}>Start empty</button>
+    <button type="button" onclick={() => { startNewDialogOpen = false; }}>Cancel</button>
+  </div>
+</Modal>
+
 <style>
   .error { color: #a8071a; padding: 16px; }
+  .start-new-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
   /* .toolbar / .page-title come from app.css. */
 

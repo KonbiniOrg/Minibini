@@ -39,10 +39,13 @@ class CompleteTaskMaterialGuardTest(TestCase):
         )
 
     def _task(self, status=Task.STATUS_PENDING):
-        return Task.objects.create(
-            job=self.job, name='t', rate_scheme=self.scheme, status=status,
+        t = Task(
+            job=self.job, name='t', status=status,
             actual_qty=Decimal('1'),
         )
+        t.stamp_from_scheme(self.scheme)
+        t.save()
+        return t
 
     def _pending_material(self, task):
         m = Material(

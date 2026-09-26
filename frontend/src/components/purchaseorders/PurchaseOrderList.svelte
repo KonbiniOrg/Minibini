@@ -24,6 +24,7 @@
         <th>Created</th>
         <th>Requested</th>
         <th class="text-right">Total</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -43,6 +44,11 @@
           <td>{formatDate(po.created_date)}</td>
           <td>{formatDate(po.requested_date)}</td>
           <td class="text-right">${totalAmount(po.line_items).toFixed(2)}</td>
+          <td>
+            {#if po.awaiting_reconciliation}
+              <span class="awaiting-badge">Awaiting Reconciliation</span>
+            {/if}
+          </td>
         </tr>
       {/each}
     </tbody>
@@ -51,4 +57,9 @@
 
 <style>
   .text-right { text-align: right; }
+  .awaiting-badge {
+    font-size: 11px; font-weight: 600; padding: 2px 8px;
+    border-radius: 8px; white-space: nowrap;
+    background: #fef3c7; color: #92400e;
+  }
 </style>

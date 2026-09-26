@@ -45,11 +45,13 @@ class TaskEditPermissionTestBase(TestCase):
         )
 
     def _task(self, status=Task.STATUS_PENDING, assignee=None):
-        task = Task.objects.create(
-            job=self.job, name=f'Task {status}', rate_scheme=self.scheme,
+        task = Task(
+            job=self.job, name=f'Task {status}',
             assignee=assignee,
             est_worker_time=timedelta(hours=1) if assignee else None,
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         if status != Task.STATUS_PENDING:
             Task.objects.filter(pk=task.pk).update(status=status)
             task.refresh_from_db()

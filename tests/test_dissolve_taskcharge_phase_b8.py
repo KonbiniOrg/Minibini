@@ -1,13 +1,17 @@
-"""B8: Task.rate_scheme is NOT NULL at the DB level.
+"""B8 (historical): originally verified Task.rate_scheme was NOT NULL at the
+DB level (migration 0035_phase_b_tighten_task_rate_scheme). Task-owned-money
+Phase 1 removed that FK-required invariant entirely: Task's provenance FK
+(now source_scheme) is nullable/SET_NULL and pricing lives on the task's own
+qty_source/rate/unit_label/accounting_category fields — so the NOT-NULL
+class that used to live here (TaskRateSchemeNotNullTest) was deleted rather
+than repaired; it tested a constraint that no longer exists by design.
 
-These tests verify the tightening introduced in migration
-0035_phase_b_tighten_task_rate_scheme:
+What's left:
 
-1. Creating a Task without rate_scheme raises IntegrityError (DB constraint).
-2. The Task.rate_scheme related_name is 'task_set', so
-   RateScheme.task_set.exists() works as the reverse manager.
-3. Task.clean() still validates status transitions and nothing else
-   (no charge guard, no rate_scheme validation — that's now DB-level).
+1. The RateScheme reverse manager (related_name is now 'stamped_tasks', not
+   'task_set') and RateScheme.is_referenced().
+2. Task.clean() still validates status transitions and nothing else
+   (no charge guard, no rate_scheme validation).
 """
 from decimal import Decimal
 
@@ -39,46 +43,27 @@ def _make_job(suffix='b8'):
     return Job.objects.create(job_number=f'J-{suffix}', contact=contact)
 
 
-class TaskRateSchemeNotNullTest(TestCase):
-    """rate_scheme must be set; the DB column is NOT NULL."""
-
-    def setUp(self):
-        self.scheme = _make_scheme()
-        self.job = _make_job()
-
-    def test_task_with_rate_scheme_saves_ok(self):
-        """Happy path: Task with rate_scheme creates successfully."""
-        task = Task.objects.create(
-            job=self.job, name='Valid task', rate_scheme=self.scheme,
-        )
-        task.refresh_from_db()
-        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
-
-    def test_task_without_rate_scheme_raises_validation_error(self):
-        """Task.rate_scheme is NOT NULL — omitting it raises ValidationError."""
-        from django.core.exceptions import ValidationError
-        # Task.save() calls full_clean(), which surfaces the NOT NULL
-        # constraint as a ValidationError before the DB is ever hit.
-        t = Task(job=self.job, name='No scheme', sort_order=1)
-        with self.assertRaises(ValidationError) as cm:
-            t.save()
-        self.assertIn('rate_scheme', cm.exception.message_dict)
-
-
 class RateSchemeReverseManagerTest(TestCase):
-    """Task.rate_scheme related_name is 'task_set' — reverse manager works."""
+    """RateScheme.stamped_tasks (source_scheme's related_name) reverse
+    manager works."""
 
     def setUp(self):
         self.scheme = _make_scheme('S-b8-rev')
         self.other = _make_scheme('S-b8-other')
         self.job = _make_job('b8-rev')
 
-    def test_task_set_reverse_manager_returns_linked_tasks(self):
-        t1 = Task.objects.create(job=self.job, name='T1', rate_scheme=self.scheme)
-        t2 = Task.objects.create(job=self.job, name='T2', rate_scheme=self.scheme)
-        Task.objects.create(job=self.job, name='T3', rate_scheme=self.other)
+    def _stamped(self, name, scheme):
+        t = Task(job=self.job, name=name)
+        t.stamp_from_scheme(scheme)
+        t.save()
+        return t
 
-        linked = list(self.scheme.task_set.values_list('pk', flat=True))
+    def test_stamped_tasks_reverse_manager_returns_linked_tasks(self):
+        t1 = self._stamped('T1', self.scheme)
+        t2 = self._stamped('T2', self.scheme)
+        self._stamped('T3', self.other)
+
+        linked = list(self.scheme.stamped_tasks.values_list('pk', flat=True))
         self.assertIn(t1.pk, linked)
         self.assertIn(t2.pk, linked)
         self.assertEqual(len(linked), 2)
@@ -86,7 +71,7 @@ class RateSchemeReverseManagerTest(TestCase):
     def test_is_referenced_detects_task_via_reverse_manager(self):
         """RateScheme.is_referenced() returns True when a Task uses it."""
         self.assertFalse(self.scheme.is_referenced())
-        Task.objects.create(job=self.job, name='Ref task', rate_scheme=self.scheme)
+        self._stamped('Ref task', self.scheme)
         self.assertTrue(self.scheme.is_referenced())
 
     def test_unreferenced_scheme_is_not_referenced(self):
@@ -100,9 +85,9 @@ class TaskCleanStatusTransitionTest(TestCase):
     def setUp(self):
         self.scheme = _make_scheme('S-b8-clean')
         self.job = _make_job('b8-clean')
-        self.task = Task.objects.create(
-            job=self.job, name='Clean task', rate_scheme=self.scheme,
-        )
+        self.task = Task(job=self.job, name='Clean task')
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
     def test_valid_status_transition_passes_clean(self):
         self.task.status = Task.STATUS_IN_PROGRESS

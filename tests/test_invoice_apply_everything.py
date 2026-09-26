@@ -51,10 +51,12 @@ class ApplyEverythingServiceTest(TestCase):
             rate=Decimal('100.00'), unit_label='ea',
             accounting_category=self.cat,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job, name='Task A', status=Task.STATUS_COMPLETE,
-            rate_scheme=self.rs, sort_order=1,
+            sort_order=1,
         )
+        self.task.stamp_from_scheme(self.rs)
+        self.task.save()
 
         # A consumed material attached to the task
         self.mat = Material.objects.create(
@@ -109,10 +111,12 @@ class ApplyEverythingServiceTest(TestCase):
     def test_seed_all_atoms_skips_not_billable_atoms(self):
         """An incomplete task and unconsumed material are skipped (not_billable)."""
         # Add an incomplete task
-        Task.objects.create(
+        t = Task(
             job=self.job, name='Incomplete Task', status=Task.STATUS_PENDING,
-            rate_scheme=self.rs, sort_order=2,
+            sort_order=2,
         )
+        t.stamp_from_scheme(self.rs)
+        t.save()
         # Add an unconsumed material (pending = not yet consumed)
         Material.objects.create(
             job=self.job, task=self.task,
@@ -179,10 +183,12 @@ class ApplyEverythingAPITest(TestCase):
             rate=Decimal('200.00'), unit_label='ea',
             accounting_category=self.cat,
         )
-        self.task = Task.objects.create(
+        self.task = Task(
             job=self.job, name='Task B', status=Task.STATUS_COMPLETE,
-            rate_scheme=self.rs, sort_order=1,
+            sort_order=1,
         )
+        self.task.stamp_from_scheme(self.rs)
+        self.task.save()
         self.mat = Material.objects.create(
             job=self.job, task=self.task,
             description='Bolt', quantity=Decimal('5'),
@@ -263,10 +269,12 @@ class ApplyEverythingAPITest(TestCase):
     def test_apply_everything_skips_not_billable_atoms(self):
         """Incomplete task and unconsumed material are not billed."""
         # Add non-billable atoms
-        Task.objects.create(
+        t = Task(
             job=self.job, name='Pending Task', status=Task.STATUS_PENDING,
-            rate_scheme=self.rs, sort_order=2,
+            sort_order=2,
         )
+        t.stamp_from_scheme(self.rs)
+        t.save()
         Material.objects.create(
             job=self.job, task=self.task,
             description='Uncons Bolt', quantity=Decimal('1'),

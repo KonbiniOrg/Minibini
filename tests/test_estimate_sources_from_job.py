@@ -35,12 +35,16 @@ class EstimateSourcesFromJobTest(TestCase):
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         # Two Tasks directly on the Job (the new model: Job owns atoms).
-        self.task_a = Task.objects.create(
-            job=self.job, name='Setup', rate_scheme=self.scheme, est_qty=Decimal('2'),
+        self.task_a = Task(
+            job=self.job, name='Setup', est_qty=Decimal('2'),
         )
-        self.task_b = Task.objects.create(
-            job=self.job, name='Teardown', rate_scheme=self.scheme, est_qty=Decimal('3'),
+        self.task_a.stamp_from_scheme(self.scheme)
+        self.task_a.save()
+        self.task_b = Task(
+            job=self.job, name='Teardown', est_qty=Decimal('3'),
         )
+        self.task_b.stamp_from_scheme(self.scheme)
+        self.task_b.save()
         # One Material directly on the Job (task-less).
         self.material = Material.objects.create(
             job=self.job, description='steel', quantity=Decimal('4'),
@@ -117,10 +121,12 @@ class TaskComputeEstimateAmountTest(TestCase):
             name='Per-unit', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('100'), unit_label='unit', accounting_category=self.cat,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Machining', rate_scheme=self.scheme,
+        self.task = Task(
+            job=self.job, name='Machining',
             est_qty=Decimal('2'), actual_qty=Decimal('5'),
         )
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
 
     def test_estimate_amount_uses_est_qty(self):
         self.assertEqual(self.task.compute_estimate_amount(), Decimal('200.00'))

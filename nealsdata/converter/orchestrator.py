@@ -55,7 +55,7 @@ class NealsDataConverter:
         self.discarded_cards = []
         self.line_items = {}
         self.estimates = {}
-        self.scheme_algorithm_by_pk = {}  # ratescheme pk -> algorithm (for actuals)
+        self.scheme_fields_by_pk = {}   # ratescheme pk -> fields dict (task money-block stamping)
         self.user_by_username = {}      # username -> pk (build_seed assigns user pks)
         self.rotation_user_pks = []     # ordered blep-rotation pool (excludes system)
         self._mint_template = None      # a seed worker's fields, cloned when minting
@@ -141,10 +141,19 @@ class NealsDataConverter:
         # statuses and consumption states (only settled work links to an
         # invoice — the app's billability line).
         build.build_invoice_line_item_sources(self)
+        # After reconcile (estimate statuses final): converted invoice lines
+        # claim their agreement lines so the one-live-invoice-per-line
+        # invariant holds on converted jobs (RM 2026-08-12).
+        build.build_invoice_agreement_refs(self)
         # Test-data synthesis (late, after atoms/bleps/purchasing are settled):
         # round-robin assign each job's unclaimed Tasks as synthetic sources of
         # its estimate lines so the Client View projects atoms.
         build.build_synthetic_estimate_sources(self)
+        # After synthetic sourcing (sourcing final): mark any hand line still
+        # sourceless on an accepted estimate of an approved-or-beyond job as
+        # declined, so no phantom checklist item surfaces on converted data
+        # (ES Task 9, mirrors EstimateService.unanswered_lines).
+        build.build_checklist_declines(self)
         build.build_history(self)     # last: emit a created entry per tracked object
         self._write_json()
         if self.verbose:

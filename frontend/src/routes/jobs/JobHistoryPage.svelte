@@ -22,7 +22,7 @@
 
 {#if error}<p class="error">{error}</p>
 {:else if job}
-  <JobShell {job} {contact} current="history" onJobChange={loadJob}>
+  <JobShell {job} {contact} current="history" colorway="cw-neutral" onJobChange={loadJob}>
     <JobHistorySection {job} onJobChange={loadJob} />
   </JobShell>
 {:else}<p>Loading…</p>{/if}

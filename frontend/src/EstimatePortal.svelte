@@ -40,7 +40,7 @@
     <thead><tr><th>Description</th><th>Qty</th><th>Units</th><th>Price</th><th>Amount</th></tr></thead>
     <tbody>
       {#each data.line_items as li}
-        <tr><td>{li.description}</td><td>{li.qty ?? ''}</td><td>{li.units}</td>
+        <tr><td class="preserve-breaks">{li.description}</td><td>{li.qty ?? ''}</td><td>{li.units}</td>
           <td>${li.price}</td><td>${li.amount}</td></tr>
       {/each}
     </tbody>

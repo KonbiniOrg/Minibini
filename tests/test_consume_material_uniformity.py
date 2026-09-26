@@ -24,11 +24,15 @@ class ConsumeMaterialUniformityTest(TestCase):
             job_number='JOB-CU-1', contact=self.contact,
             status=Job.STATUS_IN_PROGRESS,
         )
-        self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
-        self.started_task = Task.objects.create(
-            job=self.job, name='started', rate_scheme=self.scheme,
+        self.task = Task(job=self.job, name='t')
+        self.task.stamp_from_scheme(self.scheme)
+        self.task.save()
+        self.started_task = Task(
+            job=self.job, name='started',
             status=Task.STATUS_IN_PROGRESS,
         )
+        self.started_task.stamp_from_scheme(self.scheme)
+        self.started_task.save()
         self.pli = InventoryItem.objects.create(
             code='CU-I', accounting_category=self.cat,
             qty_on_hand=Decimal('20'),

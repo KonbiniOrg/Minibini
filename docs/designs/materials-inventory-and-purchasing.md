@@ -9,15 +9,17 @@ were retired to QBO 2026-07-23 — see §13.
 > **Job-owns-atoms model.** A `Material` is created **directly on the
 > Job** (via the Work surface or a job-attributed PO line); the former
 > worksheet-side `PlanMaterial` and worksheet→job carry-over are
-> **removed**. `Material` is a billable **atom** (alongside `Task` and
-> `Fee`) that the estimate and invoice lenses claim.
+> **removed**. `Material` is a billable **atom** (alongside `Task`) that
+> the estimate and invoice lenses claim. (The `Fee` atom was removed
+> 2026-08 — a fixed charge is now a plain hand line on the estimate/
+> invoice document, not a job atom.)
 
 Sibling docs:
 
 - `docs/designs/architecture-and-conventions.md` — service-layer pattern,
   `LineItemMixin`, `LineItemService.delete_line_item_with_renumber`,
   delete-confirm pattern.
-- `docs/designs/jobs-and-tasks.md` — `Job`, `Task`, `Fee`,
+- `docs/designs/jobs-and-tasks.md` — `Job`, `Task`,
   `WorkTemplate`, populate-from-template path, the Work surface.
 - `docs/designs/estimates-and-prices.md` — `RateScheme`, billable atoms
   (Materials are atoms), AccountingCategory pass-through.
@@ -229,6 +231,7 @@ Concrete job-side material that participates in QOH/earmark flows.
 | `released_qty` | `Decimal(10,2)` default 0 | Quantity restocked/released back out of the plan (was `restocked_qty`, renamed 2026-07-03). Invariant: `quantity + released_qty` = originally planned — the expense-void reversal relies on it |
 | `po_line_item` | FK SET_NULL `related_name='+'` | Optional PO line attribution |
 | `cost_source` | `CharField(20)` choices, **null**able | Provenance enum — see below. `NULL` = provisional (no lot yet); non-null = established. `is_customer_supplied` is `cost_source == 'customer_supplied'` |
+| `descoped_by` | FK → `estimates.ChangeOrder` (`SET_NULL`, `related_name='+'`), nullable, added 2026-08-09 (CO amend-in-place) | Stamped by `ChangeOrderAcceptanceService`'s REMOVE loop when an accepted CO's `remove`/`replace` line targets the estimate line that used to claim this material — set **before** `_retire` runs, so a consumed/invoiced/PO-linked material left alone by `_retire` still gets stamped. **Never** set on a REPLACE target — replace moves the claim onto the CO line instead (`estimates-and-prices.md` §14.11), leaving `descoped_by = None`. Provenance only, read by the invoice wizard pool (`descoped_by_co_number`) for the "descoped by CO-N" chip. Backfilled by `apps/estimates/migrations/0048_backfill_descoped_by.py`. |
 
 #### Provisional vs established (the core state)
 
@@ -784,19 +787,38 @@ then `InventoryService.create_earmarks_for_job(job)`.
 | `issued_date` | datetime nullable | Set on transition to `issued` |
 | `received_date` | datetime nullable | Set on transition to `received_in_full` |
 | `cancel_date` | datetime nullable | Set on transition to `cancelled` |
+| `bill_total` | `Decimal(10,2)` nullable | Reconciliation-owned (§10a) — the vendor bill's total, entered once by hand from QBO. `None` = not yet reconciled |
+| `vendor_invoice_ref` | `CharField(100)` blank-default | Reconciliation-owned (§10a) |
+| `reconciled` | `BooleanField` default `False` | Reconciliation-owned (§10a); **not** part of the status machine below — see §10a for why |
+| `reconciled_date` | datetime nullable | Set (and reset) on every `reconcile()` call, including re-reconcile |
 
 Date fields are protected after first save by `PurchaseOrder.clean()`.
+The four reconciliation fields above are the one exception: they are
+**not** write-once — `PurchaseOrderService.reconcile()` (§10a) overwrites
+them freely on every call, including re-reconcile.
 
-**Derived total** (computed at query time; never stored):
+**Derived total / reconciliation properties** (computed at query time;
+never stored):
 
 | Property | Type | Notes |
 |---|---|---|
-| `po_total` | Decimal | Sum of all `PurchaseOrderLineItem.total_amount` |
+| `po_total` | Decimal | Sum of `total_amount` over **every** line item, including `invoice_only` ones (§10a) — unchanged by the reconciliation port |
+| `ordered_total` | Decimal | §10a — sum of `qty × price` over lines where `not invoice_only`; the basis `variance` compares `bill_total` against |
+| `variance` | Decimal or `None` | §10a — `bill_total − ordered_total`; `None` while `bill_total` is unset (nothing to vary against yet) |
+| `is_awaiting_reconciliation` | bool | §10a — `status == received_in_full and not reconciled` |
 
-`PurchaseOrderSerializer` exposes it. (`billed_total` / `is_fully_billed`
+`PurchaseOrderSerializer` exposes `po_total`, `awaiting_reconciliation`
+and `variance` (both `SerializerMethodField`s — `variance` quantized to
+cents as a string, `None` passed through as `null`), plus `bill_total`,
+`vendor_invoice_ref`, `reconciled`, `reconciled_date` — all four
+**read-only** on the serializer, writable only via the `reconcile`
+action (§10a), never a bare `PATCH`. (`billed_total` / `is_fully_billed`
 and the serializer's `bills` field were removed with the bill retirement,
 2026-07-23 — see §13. There is deliberately **no** "billed" state or flag
-on the PO: invoice-vs-PO reconciliation is bookkeeper work done in QBO.)
+on the PO tied to Bills/QBO invoice-matching: invoice-vs-PO reconciliation
+of the *vendor's actual bill* stays bookkeeper work done in QBO — §10a's
+`bill_total`/`variance` capture only the **delta Minibini needs to know
+about**, not a bill ledger.)
 
 ### Status machine
 
@@ -833,12 +855,14 @@ not deletion, is the path for issued POs).
 | Field | Type | Notes |
 |---|---|---|
 | `purchase_order` | FK CASCADE | |
-| `task` | FK PROTECT nullable | Reserved for a future "service PO" feature; not currently used by any flow |
+| `task` | FK PROTECT nullable | Cost→sell attribution (outsourced-work port) — links this line's cost to the task it's outsourcing. Optional; **mutually exclusive, per line, with the line's own Material/job procurement below** (PO Job/Task consolidation, RM 2026-09-21 — see §10a). `PurchaseOrderLineItem.clean()` requires **job-bearing** (`task.job_id is not None`); see §10a for why this branch drops fees' additional top-level-only check |
 | `qty_received` | `Decimal(10,2)` default 0 | Cumulative correct items accepted |
 | `received_by` | FK User SET_NULL | Last receiver |
 | `received_date` | datetime nullable | Last receipt timestamp |
 | `receipt_note` | text | For problem cases |
 | `qty_cancelled` | `Decimal(10,2)` default 0 | Outstanding cancelled quantity |
+| `final_price` | `Decimal(10,2)` nullable | §10a — reconciliation-owned; `None` = "as ordered". Read-only on the line serializer, writable only through `reconcile()` |
+| `invoice_only` | `BooleanField` default `False` | §10a — a line appended during reconciliation that was never ordered/received (freight, tax, etc.); excluded from every receiving flow. Read-only on the line serializer |
 
 `linked_material` property:
 
@@ -862,6 +886,9 @@ architecture-and-conventions.md §4.
 
 `PurchaseOrderReceivingService._update_po_status(po)`:
 
+- `invoice_only` lines (§10a) are **excluded entirely** from this
+  computation — they were never ordered from the vendor, so they never
+  count toward "received in full" or anything else here.
 - An item is **settled** (no outstanding items to receive) when
   `qty_received + qty_cancelled >= qty`
 - An item is **active** when `qty_received + qty_cancelled < qty`
@@ -900,6 +927,8 @@ the `Configuration` keys `po_number_sequence` / `po_counter`.
 | `delete_line_item(line_item_id)` | Draft-only delete via `LineItemService.delete_line_item_with_renumber` |
 | `cancel_po(pk, sever_decisions=None)` | Cancel issued PO; per-line sever decisions required for pending linked Materials |
 | `delete_po(pk, sever_decisions=None)` | Delete draft PO; per-line sever decisions required for pending linked Materials |
+| `reconcile(po_id, bill_total=None, vendor_invoice_ref='', line_finals=None, appended_lines=None)` | §10a — record the vendor bill's delta; wholesale-replace semantics |
+| `compute_rate_prompts(po)` | §10a — read-only; returns `(prompts, markup_applied)` for the task-rate prompt |
 
 `update_line_item` is gated to draft POs only. Line job changes go
 through `change_line_job` regardless of PO status (allowed on draft,
@@ -951,6 +980,285 @@ every line.
 
 Non-inventoried PLI lines and PLI-less lines: no QOH change on
 receipt; receipt is recorded as bookkeeping only.
+
+`invoice_only` lines (§10a) are rejected by both receiving entry points:
+`receive_items` raises `ValidationError('Line item #{n} is invoice-only
+and excluded from receiving.')` if one is included in the request;
+`receive_all` silently filters them out (`invoice_only=False`) rather
+than erroring, since "receive everything outstanding" should never trip
+over a line that was never ordered. `cancel_line_item` also refuses an
+`invoice_only` line ("it was never ordered/received — it cannot be
+cancelled").
+
+---
+
+## 10a. PO reconciliation (outsourced-work port)
+
+Vendor bills are entered **once, in QBO**, by whoever does payables —
+Minibini never resurrects a Bill model or pushes a PO to QBO (§13
+stays fully in force). Reconciliation captures only the **delta**: what
+the bill says vs. what the PO ordered, at **PO granularity** (never
+prorated across lines), plus an optional per-line `final_price` that
+can prompt a task's selling rate to move. See `docs/ui-flows/Purchasing.md`
+for the full click-by-click flow and `docs/designs/data-constraints.md`
+§1.17 for the field/validation reference.
+
+### Task-link (cost→sell attribution) — §9's `task` field
+
+Set at line create time (`POST .../line-items/...`, via
+`PurchaseOrderService.add_line_item` / `add_line_item_from_pli`) or
+through `reconcile()`'s `appended_lines` (below). **Mutually exclusive,
+per line, with that line's job/Material procurement** (PO Job/Task
+consolidation, RM 2026-09-21) — a line either attributes cost to a task
+(pure attribution: no Material is ever created, `inventory_item` stays
+null) or procures a material for a job (§11's claim-or-create / lot-
+minting flow, unchanged). Never both on the same line — different lines
+on the same PO still attribute independently to different jobs/tasks.
+
+- **Server guard, before any material machinery runs**:
+  `PurchaseOrderService._reject_task_with_procurement` rejects `task`
+  supplied together with `job` or `material_id`, field-shaped —
+  `{'task': ['A line can attribute cost to a task or procure a material
+  for a job, not both.']}`. Runs in both `add_line_item` and
+  `add_line_item_from_pli`, ahead of `_resolve_material_for_line`. Before
+  this consolidation, `LineItemForm.svelte` had two independent Job
+  pickers (one driving Material procurement, one feeding
+  `TaskLinkPicker`'s own cascade) — filling both crashed at save: the
+  job-side minted a LOT and repointed `inventory_item` on a task-carrying
+  line, tripping the deep invariant below with a confusing message about
+  an inventory item the user never chose. The guard makes that path
+  unreachable with a clear message instead.
+- **`PurchaseOrderLineItem.clean()`** (`apps/purchasing/models.py`) stays
+  the deeper enforcement point (also exercised by every write inside
+  `reconcile()`'s `appended_lines` handling, since those go through
+  `full_clean()`/`save()` too):
+  - **Job-bearing** — `task.job_id` must not be `None`. Error: *"Linked
+    task must belong to a job."*
+  - **No top-level-only check.** The source design this was ported from
+    (`feature/fees`) additionally rejected a subtask link ("link the
+    parent task instead"). That check is deliberately **not** ported
+    here: `Task.parent_task` is dormant on this branch — no code may
+    read or write it — so subtasks don't exist as a linkable state to
+    guard against; `TaskLinkPicker.svelte` correspondingly offers every
+    task a job has, no client-side filtering.
+  - **Mutually exclusive with `inventory_item`** — this is a
+    **pre-existing** `BaseLineItem.clean()` rule (predates this port;
+    also applies to the retired `BillLineItem`), not something new here:
+    a line cannot carry both a `task` and an `inventory_item` at once
+    (*"LineItem cannot have both task and inventory_item"*). Only
+    reachable via `add_line_item_from_pli` when a caller explicitly picks
+    both an inventory item and a task with no job/material_id — the
+    server guard above doesn't cover this combination (the caller chose
+    both deliberately, so the message is the correct, sensible one
+    already). `LineItemForm.svelte`'s From-Inventory mode and Task Link
+    aren't meant to be combined; a task-outsourcing line from that form
+    is always the manual/freeform flavor.
+- **One Job picker on `LineItemForm.svelte`** feeds both purposes (§15):
+  picking a job reveals the Task Link picker cascading from it. Picking a
+  task sends `task` and withholds `job`/`material_id` from the payload
+  entirely — the task implies its job. Picking a job with no task is
+  exactly today's material-procurement flow, unchanged.
+
+### `reconcile()` — allowed states, semantics
+
+`PurchaseOrderService.reconcile(po_id, bill_total=None,
+vendor_invoice_ref='', line_finals=None, appended_lines=None)`:
+
+- **Allowed once the PO is past `draft`** — any of `issued`,
+  `partly_received`, `received_in_full`, or even `cancelled`. Only
+  `draft` is rejected: *"Cannot reconcile a purchase order before it
+  has been issued."* Reconciliation is **not** gated on the
+  awaiting-reconciliation nudge (below) — you can reconcile early
+  (bill arrived before the goods) or reconcile a cancelled PO (partial
+  shipment still got billed).
+- **Re-reconcile is editable, not a lifecycle lock.** A second call
+  overwrites the PO-level fields and always (re)sets
+  `reconciled=True`, `reconciled_date=now()` — this is bookkeeping,
+  not a one-way transition.
+- **`line_finals` (`{line_item_id: Decimal}`) is REPLACE, not merge.**
+  Every ordered (`not invoice_only`) line on the PO not present as a
+  key in this call's `line_finals` has its `final_price` reverted to
+  `None` ("as ordered") — including a line that had a final price from
+  a *prior* reconcile call. Every call resends the complete current
+  picture; there is no incremental "just update this one line" mode.
+  `invoice_only` lines are untouched by this sweep (they have their own
+  channel, below).
+- **`appended_lines` is an append-only-mirror, not merge-only-additive.**
+  Each entry may carry `line_item_id` (updates that existing
+  `invoice_only` line) or omit it (creates a new one, forced
+  `invoice_only=True`). Any existing `invoice_only` line on the PO
+  whose id isn't present in this call's `appended_lines` is **deleted**
+  (via `LineItemService.delete_line_item_with_renumber`, never a raw
+  `.delete()` — CLAUDE.md's line-item-delete rule). Same "resend the
+  complete picture" contract as `line_finals`. Each entry is whitelisted
+  to `description`/`qty`/`units`/`price`/`accounting_category`/`task`
+  (plus the optional `line_item_id` target) — `invoice_only` itself is
+  always server-set, so a caller-supplied `invoice_only` key 400s like
+  any other unknown field, and receiving-state fields (`qty_received`,
+  `line_number`, ...) can't be smuggled in through this call site
+  either.
+- **Validation is all-or-nothing, before any write.** A `line_finals`
+  key that isn't one of this PO's line items, or an `appended_lines`
+  entry's `line_item_id` that isn't an existing `invoice_only` line on
+  this PO, fails the whole call (`ValidationError({'line_finals': [...]})`
+  / `{'appended_lines': [...]}`) before the `transaction.atomic()` block
+  opens — nothing partial is written.
+- Every line write inside `reconcile()` goes through `full_clean()`/
+  `save()`, so `appended_lines` entries that set a `task` are subject
+  to the same job-bearing validation as any other line-task link
+  (above).
+
+### `ordered_total` / `variance`
+
+`PurchaseOrder.ordered_total` sums `qty × price` over lines where
+`not invoice_only` (§9). `PurchaseOrder.variance` is `bill_total −
+ordered_total`, `None` while `bill_total` is unset. **Display only, no
+proration** — a multi-job PO's variance is reported whole against every
+job it touches (mirrored at job-costing granularity by
+`apps/jobs/financials.py::_linked_po_variances`, below).
+
+### Awaiting-reconciliation nudge
+
+`PurchaseOrder.is_awaiting_reconciliation` / the
+`PurchaseOrderQuerySet.awaiting_reconciliation()` manager method:
+`status == received_in_full and not reconciled`. **Purchasing-side
+only** — independent of whether any linked task has been completed or
+invoiced. Surfaced via `GET /api/purchase-orders/?awaiting_reconciliation=true`
+(`1`/`yes` also accepted, case-insensitive) and the PO list's amber
+"Awaiting Reconciliation" badge (`PurchaseOrderList.svelte`) + a
+"Awaiting reconciliation only" filter checkbox
+(`PurchaseOrderListPage.svelte`).
+
+### The task-rate prompt
+
+`PurchaseOrderService.compute_rate_prompts(po)` — a **pure read**, never
+called except by the `reconcile` API action right after a successful
+reconcile, and never mutates a task itself:
+
+- **Qualifying lines**: `final_price` is non-null AND `task` is set AND
+  that task has **not yet been invoiced**
+  (`InvoiceClaimService.is_invoiced(SOURCE_TASK, task.pk)` — the same
+  claim-tracking `invoicing-and-expenses.md` uses elsewhere). A line
+  missing any of the three is silently skipped — no error, no prompt.
+  **`final_price` must also differ from the line's ordered `price`**
+  (RM browser sighting 2026-09-21) — a clean final that happens to equal
+  the ordered price is skipped too, same as a null final. Both fields
+  share the same `Decimal(10, 2)` shape, so the comparison is a plain
+  `==`, no quantize/rounding gap. Without this, typing the ordered price
+  back into a line's Final Price (to "undo" an earlier different final)
+  still counted as an explicit final and kept re-prompting forever —
+  only an empty field meant "as ordered" at the model level, but in
+  substance a final equal to the order *is* "as ordered".
+- **Suggested rate**: reads `Configuration['default_material_markup_percent']`
+  (the codebase's one generic cost→sell markup config — §2's
+  `MaterialService.establish_reverse_markup`/lot-mint pricing reuses
+  the same key). If set: `suggested = (final_price × (1 +
+  markup_percent/100)).quantize(0.01)`, `markup_applied=True`. If the
+  config is missing/unparseable: `suggested = final_price` (bare, no
+  markup) and `markup_applied=False` — the caller (frontend dialog)
+  isn't told to lie about where the number came from.
+- **`current_rate` is `task.effective_rate()`** (modifiers-aware), not
+  the raw stored `rate` — the rate-prompt's own divergence from its
+  `feature/fees` source, which used the bare field. Each prompt also
+  carries `has_active_modifiers` (bool) so the dialog can note
+  "modifiers apply on top of the accepted rate" without implying
+  accepting the suggestion removes them.
+- Returns `(prompts: [{'task_id', 'task_name', 'current_rate',
+  'suggested_rate', 'has_active_modifiers'}], markup_applied: bool)`.
+- **Accept** (frontend `RatePromptDialog.svelte`) issues an ordinary
+  `PATCH /api/jobs/{job_id}/tasks/{task_id}/ {rate: suggested_rate}` —
+  the *existing* money-gated task-update path (`TaskSerializer.MONEY_FIELDS`,
+  `jobs-and-tasks.md`). There is no dedicated "accept" endpoint.
+- **A terminal task's Accept PATCH is permitted, narrowly, and
+  financials-only** (RM ruling 2026-09-21, resolving the earlier honest
+  gap tracked in `docs/designs/LATER.md`; tightened to financials-only
+  the same day). `JobService.update_task`'s terminal freeze ("Its work
+  and billing are settled; corrections belong on the invoice.") gets one
+  exception: a `rate`-ONLY write on a task whose status is COMPLETE **or**
+  CANCELLED is allowed when the task is not yet claimed by a live invoice,
+  has at least one linked `PurchaseOrderLineItem`, **and** the caller
+  holds `can_manage_financials` (checked in `update_task` itself, not the
+  ordinary MONEY_FIELDS gate — see below). Every other field on a
+  terminal task, and every field on any task claimed by an invoice, stays
+  frozen; ordinary (non-PO-linked) terminal tasks are entirely unchanged.
+  Rationale, three parts:
+  - For vendor-borne (outsourced) work, the economics settle at the
+    vendor bill, not at task completion — the realistic ordering is
+    receive → complete task → bill arrives → reconcile → accept the
+    reprice, which is exactly `RatePromptDialog.svelte`'s Accept PATCH.
+  - Cancelled is included, not just complete: a cancelled task's
+    recorded actuals stay billable (`invoicing-and-expenses.md` — the
+    billability line is "terminal, not complete"), so a cancelled
+    outsourced task the vendor partially performed and billed carries
+    the same legitimate reprice claim as a completed one.
+  - **Financials-only, not the ordinary money gate.** The normal
+    MONEY_FIELDS gate for `rate` is manager atom OR the job's PM OR
+    financials (`jobs-and-tasks.md`) — but repricing *settled* work is a
+    reconciliation act (the vendor bill is a financials event), so this
+    one exception narrows to `can_manage_financials` only. A job's PM or
+    a plain `can_manage_jobs` holder can write `rate` on this same task
+    while it's still open, but gets the ordinary terminal-freeze
+    rejection once it's terminal — ordinary price adjustments discovered
+    at billing time belong on the invoice document, not a rewrite of the
+    task's own rate.
+  This changes WHEN a rate write is allowed (and, for this one exception,
+  narrows WHO). `compute_rate_prompts` itself needed no terminal-status
+  skip: a prompt only exists when the line already carries a
+  `final_price`, i.e. the vendor actually billed it, on either a
+  complete or cancelled task alike.
+- **Decline** is purely local frontend state (`rowState[task_id] =
+  {status: 'declined'}`) — no API call at all, nothing to reverse.
+  Every reconcile call recomputes `rate_prompts` fresh from current
+  data; nothing about a prior decline is persisted or remembered.
+- **Never silent, never automatic.** Reconciling by itself never
+  changes a task's rate — a human must click Accept, and the dialog is
+  only ever rendered for a `can_manage_financials` user
+  (`canManageFinancials` client-side gate in
+  `PurchaseOrderDetailPage.svelte`). For a TERMINAL task this now matches
+  the server exactly (financials-only, per the ruling above); for a
+  still-open task the client gate is narrower than the server would
+  technically allow (a job's PM-only user, no `can_manage_financials`,
+  could PATCH that task's rate directly from its own detail page via the
+  ordinary MONEY_FIELDS gate) — the PO detail page has no per-task
+  job/PM context to evaluate client-side, so the dialog simply never
+  renders for a PM-only user regardless of the linked task's status. Not
+  a hard block on the open-task case, just a narrower client-side offer
+  than the server would technically allow there.
+
+### No hard blocks — task completion is still the only billability gate
+
+Reconciliation state (or its absence) never gates invoicing. A task
+whose linked PO line hasn't been reconciled — or hasn't even been
+received — invoices exactly like any other completed task; late
+variance is recorded margin, not a block. See
+`invoicing-and-expenses.md`'s no-hard-block note for the fuller
+statement of this rule.
+
+### API surface
+
+`POST /api/purchase-orders/{id}/reconcile/` — `CanManageFinancials`
+(the default gate on this viewset; not one of the `IsAuthenticated`-only
+actions). Body: `bill_total`, `vendor_invoice_ref`, `line_finals`
+(object keyed by line-item id, coerced to int — a malformed shape 400s
+field-shaped: `{'line_finals': ['Must be an object keyed by line item
+id.']}`), `appended_lines` (list). Response: the updated
+`PurchaseOrderSerializer` payload **plus** `rate_prompts` and
+`markup_applied` (both computed fresh by `compute_rate_prompts`, never
+persisted).
+
+### Job costing rollup
+
+`apps/jobs/financials.py::_linked_po_variances(job)` (called from
+`compute_job_financials`, key `linked_po_variances`) finds every PO with
+at least one line linked to the job — either via
+`PurchaseOrderLineItem.task__job` or via a `Material` this job owns that
+references the PO line item — and reports each at **PO granularity**:
+`{'po_id', 'po_number', 'status', 'reconciled', 'ordered_total',
+'bill_total', 'variance', 'multi_job'}`, money quantized to cents,
+`multi_job=True` when the PO also touches a different job through
+another line/Material. No proration, same rule as `variance` above.
+**API-only today, no frontend display** yet — tracked in
+`docs/designs/LATER.md`.
 
 ---
 
@@ -1150,7 +1458,11 @@ page's Send button navigates to this route instead.
 Konbini no longer manages vendor invoices. Bills are entered, tracked, and
 paid **in QuickBooks Online only**; konbini keeps the purchasing side it is
 good at — POs, receiving, stock intake — plus one breadcrumb: vendor-invoice
-emails link to the PO (§11).
+emails link to the PO (§11). PO reconciliation (§10a, outsourced-work port)
+does **not** reopen this door — it records only the delta between what
+was ordered and what the vendor billed (a total, a reference, optional
+per-line finals), never a bill ledger, never a push to QBO. See
+`quickbooks-integration.md`'s "Bills stay in QBO" note.
 
 **Schema retained, everything else gone.** `Bill`, `BillLineItem`, and
 `BillPayment` still exist in `apps/purchasing/models.py` as **RETIRED
@@ -1211,24 +1523,48 @@ Routes (`#/`-prefixed hash routes):
 | `#/purchase-orders/:id` | `routes/purchaseorders/PurchaseOrderDetailPage.svelte` → `PurchaseOrderDetail.svelte` |
 | `#/purchase-orders/:id/edit` | `PurchaseOrderFormPage.svelte` (edit mode, draft only) |
 
-The PO detail page (`PurchaseOrderDetail.svelte`) shows `po_total` sourced from `PurchaseOrderSerializer`. (The billed section, the Create Bill link, and the PO list's Bill column were removed with the bill retirement, 2026-07-23 — §13.) Its email panel shows linked vendor emails, including inbound vendor invoices linked via the email→PO flow (§11).
+The PO detail page (`PurchaseOrderDetail.svelte`) shows `po_total` sourced from `PurchaseOrderSerializer`. (The billed section, the Create Bill link, and the PO list's Bill column were removed with the bill retirement, 2026-07-23 — §13.) Its email panel shows linked vendor emails, including inbound vendor invoices linked via the email→PO flow (§11). `PurchaseOrderDetailPage.svelte` (the route wrapper) also renders `ReconciliationSection.svelte` (§10a) below the line items on any non-draft PO, and `RatePromptDialog.svelte` (§10a) whenever a reconcile response carries `rate_prompts` and the current user is `canManageFinancials`.
 
 Components in `frontend/src/components/purchaseorders/`:
 
-- `PurchaseOrderList.svelte` — list + status filter
+- `PurchaseOrderList.svelte` — list + status filter; per-row amber
+  "Awaiting Reconciliation" badge (§10a) when `po.awaiting_reconciliation`
 - `PurchaseOrderForm.svelte` — header form (business, contact, requested
   date)
 - `PurchaseOrderDetail.svelte` — header, line items table, status
   actions, history; per-line "Change Job" action; consolidated sever
   modal on cancel-PO / cancel-line / delete-PO / line-job-change
-- `LineItemForm.svelte` — line entry; includes `JobPicker` (typeahead
-  against active jobs, built on `SearchPicker`) and `InventoryItemPicker`
-  (server-side `?search=`, also built on `SearchPicker`)
+- `LineItemForm.svelte` — line entry; ONE `JobPicker` (typeahead against
+  active jobs, built on `SearchPicker`) feeds both material procurement
+  and, once a job is picked, a `TaskLinkPicker.svelte` (§10a) cascading
+  from it — picking a task shows a "Cost will be attributed to this
+  task — no material is created" hint and the payload sends `task`
+  without `job`/`material_id` (PO Job/Task consolidation, RM 2026-09-21).
+  Also includes `InventoryItemPicker` (server-side `?search=`, also built
+  on `SearchPicker`) for From-Inventory mode.
+  `TaskLinkPicker.svelte` (`frontend/src/components/TaskLinkPicker.svelte`)
+  takes an optional `job` prop: passed (even `null`) →  **controlled**,
+  the caller's job drives the cascade and the picker's own internal
+  `JobPicker` is hidden (`LineItemForm`'s usage); omitted → **uncontrolled**,
+  the component owns its own cascading `JobPicker`
+  (`ReconciliationSection.svelte`'s appended-line rows use this — those
+  lines never submit a `job` field at all, so the job there is transient,
+  narrowing-only UI state)
 - `MaterialSeverDialog.svelte` — keep/delete decisions for affected
   Materials. Reused by all sever paths
 - `ReceiveItemsForm.svelte` — line-by-line receipt entry
 - `SendPODialog.svelte` — pre-populated email form ("Issue & Send" or
   "Resend")
+- `ReconciliationSection.svelte` (§10a) — bill total, vendor ref,
+  per-line final-price inputs, invoice-only append/remove (with a
+  removed-but-persisted-line notice + Re-add before save), variance
+  display. Financials-only form; a read-only `<dl>` summary for everyone
+  else once reconciled. Mount-seeds from the PO and submits the complete
+  current picture every save (mirrors `reconcile()`'s wholesale-replace
+  contract, §10a)
+- `RatePromptDialog.svelte` (§10a) — the post-reconcile task-rate prompt;
+  rendered by `PurchaseOrderDetailPage.svelte` only when
+  `canManageFinancials` and the reconcile response carried `rate_prompts`
 
 The PO form supports two arrival query params:
 
@@ -1268,9 +1604,9 @@ cleared when a PO/expense supplies a real cost.
 Material rows render through ONE shared fragment —
 `components/materials/MaterialRow.svelte` (extracted 2026-07-13 from
 `TaskTree`'s triplicated blocks) — on every surface that lists materials:
-the job task list's task/subtask/loose rows (`TaskTree` inside
-`TasksPanel`), the task detail page's Materials section, and the parent
-task's subtask tree. The **full action set** (Set pricing / Order dialog /
+the job task list's task/loose rows (`TaskTree` inside `TasksPanel`) and
+the task detail page's Materials section. The **full action set** (Set
+pricing / Order dialog /
 Attach expense / Mark on-hand / Mark received / mark used / restock–release
 / draw more / edit / Move–detach / PO link) is available on ALL of those
 surfaces — the old "actions live on the task view page only" venue rule
@@ -1433,6 +1769,10 @@ implementation, two placements. See `estimates-and-prices.md` §6.4 and
   `accounting_category` selection. The model field is required (PROTECT,
   no `null=True` after migration `0024`), but the form does not yet
   enforce it pre-submit. Worth a separate investigation.
-- **`PurchaseOrderLineItem.task` reserved for future "service PO"
-  feature.** Field exists on the model, untouched by current flows.
 - **`accounting_category` required on `PurchaseOrderLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.
+- **`linked_po_variances` (job costing, §10a) is API-only — no frontend
+  display yet.** See `docs/designs/LATER.md` for the full entry.
+- **PO reconciliation has no phase-2 pull-matcher.** A human types
+  `bill_total`/`vendor_invoice_ref`/`final_price` by hand today; a future
+  pass could pull the vendor bill from QBO and pre-fill/match instead —
+  see `quickbooks-integration.md`'s "Bills stay in QBO" note.

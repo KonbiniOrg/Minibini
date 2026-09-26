@@ -1,7 +1,10 @@
+from decimal import Decimal, InvalidOperation
+
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from apps.api.mixins import JobScopedCanManageMixin, InvoiceRefMixin
-from apps.jobs.models import Task
+from apps.jobs.models import RateScheme, Task
 from apps.inventory.models import Material
 from apps.core.models import AccountingCategory
 from apps.core.units import UnitsField
@@ -112,16 +115,84 @@ class MaterialWriteSerializer(serializers.ModelSerializer):
 
 
 class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.ModelSerializer):
-    """Serializer for tasks nested under /api/jobs/{id}/tasks/."""
+    """Serializer for tasks nested under /api/jobs/{id}/tasks/.
+
+    Task-owned money (Phase 1): the task owns its own money block
+    (``qty_source``/``rate``/``unit_label``/``accounting_category``/
+    ``active_modifiers``) — ``rate_scheme`` is a write-only CREATE-time
+    trigger (a RateScheme preset id) that stamps those fields onto the
+    task via ``Task.stamp_from_scheme``; it is never itself persisted.
+    ``source_scheme`` is the resulting provenance pointer — read-only,
+    never client-settable directly.
+
+    Writing any of ``MONEY_FIELDS`` requires ``CanManageJobOrPM`` (the
+    can_manage_jobs atom or the task's job's project_manager) or the
+    can_manage_financials atom; everyone else gets stamp-only creation
+    (``rate_scheme`` alone) and non-money edits — see ``validate()``.
+
+    RM browser-testing note 5 (client-side restamp): ``source_scheme`` is
+    now also client-settable, but UPDATE ONLY — create keeps its
+    ``rate_scheme`` server-stamp contract untouched (``validate_source_scheme``
+    rejects it when ``self.instance is None``). On update, the SPA's
+    edit-task dropdown lets a manager/PM/financials caller re-pick which
+    preset a task is stamped from; the client computes the restamp
+    (rate/unit_label/accounting_category/active_modifiers, all already
+    independently editable MONEY_FIELDS) from the newly-picked scheme's
+    already-fetched list data and sends the whole money block in the SAME
+    PATCH. The server does NOT re-derive those fields from the new
+    ``source_scheme`` — it just records the provenance pointer, validated
+    with the same rules as create's ``rate_scheme`` (must exist, active,
+    non-percentage). A client write where the money fields don't actually
+    match the new scheme's current data is not rejected — it shows up as
+    drift on the task, which is the provenance pointer doing its job as an
+    audit trail, not a bug for this serializer to guard against.
+    """
     can_manage_job_path = 'job'
     invoice_source_type = 'task'
+
+    # Money fields requiring CanManageJobOrPM / can_manage_financials to
+    # WRITE (read is open to everyone, same as the rest of the task).
+    MONEY_FIELDS = {
+        'rate', 'unit_label', 'qty_source', 'accounting_category',
+        'active_modifiers', 'source_scheme',
+    }
+
     assignee_name = serializers.SerializerMethodField()
-    parent_task_name = serializers.CharField(
-        source='parent_task.name', read_only=True, default=None)
     actual_hours = serializers.SerializerMethodField()
-    scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
-    scheme_algorithm = serializers.CharField(source='rate_scheme.algorithm', read_only=True, default=None)
-    scheme_unit_label = serializers.CharField(source='rate_scheme.unit_label', read_only=True, default=None)
+    # Write-only CREATE trigger — a RateScheme preset id. Stamps qty_source/
+    # rate/unit_label/accounting_category/active_modifiers/source_scheme
+    # onto the task server-side (apps.api.mixins.JobTaskMixin.tasks);
+    # never itself a model field.
+    rate_scheme = serializers.PrimaryKeyRelatedField(
+        queryset=RateScheme.objects.all(), write_only=True,
+        required=False, allow_null=True,
+    )
+    # Nullable on the model AND, as of Phase 3, on the API: a task may
+    # legitimately carry no accounting category (categorized later, at
+    # invoicing — Task 5 stamps the configured fallback AC onto any invoice
+    # line still uncategorized when authored). CREATE still gets a real AC
+    # in the overwhelming common case via the stamp path (rate_scheme pick
+    # -> Task.stamp_from_scheme copies the preset's own accounting_category
+    # onto the task) — that path is unchanged by this relaxation. UPDATE can
+    # now explicitly clear it (PATCH accounting_category=null), which is how
+    # a task actually ends up with a null AC in practice, since create
+    # always goes through the stamp.
+    accounting_category = serializers.PrimaryKeyRelatedField(
+        queryset=AccountingCategory.objects.all(), required=False, allow_null=True,
+    )
+    # Provenance pointer. CREATE: set exclusively via stamp_from_scheme
+    # (triggered by `rate_scheme`) — never client-settable on create, see
+    # validate_source_scheme. UPDATE (RM browser-testing note 5): a
+    # manager/PM/financials caller MAY set this directly, to re-pick which
+    # preset the task is stamped from — the client-side restamp described
+    # in the class docstring. required=False: an edit PATCH that doesn't
+    # touch the scheme just omits the key, same as any other MONEY_FIELDS
+    # entry.
+    source_scheme = serializers.PrimaryKeyRelatedField(
+        queryset=RateScheme.objects.all(), required=False,
+    )
+    source_scheme_name = serializers.CharField(
+        source='source_scheme.name', read_only=True, default=None)
     effective_rate = serializers.SerializerMethodField()
     computed_charge = serializers.SerializerMethodField()
     has_active_blep = serializers.SerializerMethodField()
@@ -130,33 +201,170 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     invoice = serializers.SerializerMethodField()
     claimed = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
+    # RM browser-testing note 6: `can_manage` (JobScopedCanManageMixin) is
+    # the can_manage_jobs-atom-or-PM test — it does NOT include
+    # can_manage_financials, so it under-covers who may actually write
+    # MONEY_FIELDS (see `_can_write_money` above, which the SPA's edit-task
+    # money-field gating must match exactly: a financials-only caller can
+    # write money server-side but `can_manage` alone would report False).
+    # This field reuses `_can_write_money()` directly so the SAME test
+    # drives both the server's write-gate and the UI's enable/grey signal.
+    can_write_money = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
         fields = [
             'task_id', 'name', 'description', 'sort_order', 'status',
             'blocked_reason',
-            'parent_task', 'parent_task_name', 'assignee', 'assignee_name',
+            'assignee', 'assignee_name',
             'worker_queue',
-            'rate_scheme', 'active_modifiers',
+            'rate_scheme',
+            'qty_source', 'rate', 'unit_label', 'accounting_category',
+            'active_modifiers',
+            'source_scheme', 'source_scheme_name',
             'est_qty', 'est_worker_time', 'actual_qty',
-            'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
             'effective_rate', 'computed_charge',
             'actual_hours',
             'has_active_blep', 'active_worker_count', 'has_bleps',
-            'can_manage', 'can_edit',
+            'can_manage', 'can_write_money', 'can_edit',
             'invoice',
             'claimed',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
     def validate_rate_scheme(self, value):
-        from apps.jobs.models import RateScheme
         if value and value.algorithm == RateScheme.PERCENTAGE:
             raise serializers.ValidationError(
                 'Percentage services are document adjustments and cannot bill a task.'
             )
         return value
+
+    def validate_rate(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError('Rate cannot be negative.')
+        return value
+
+    def validate_source_scheme(self, value):
+        """UPDATE only (RM browser-testing note 5) — mirrors
+        validate_rate_scheme's percentage rejection plus an explicit
+        is_active check. Create-time's equivalent lives in
+        TaskService.create_direct (SchemeInactiveError, with an
+        allow_inactive_scheme escape hatch reserved for worksheet
+        carry-over); there is no such escape hatch here — a restamp is
+        always a deliberate pick of a CURRENTLY-offered target (the SPA's
+        edit-mode dropdown only lists active, non-percentage,
+        task-applicable schemes as selectable targets in the first
+        place), so an inactive/percentage value here always means a
+        malformed or stale client request, never a legitimate carry-over."""
+        if self.instance is None:
+            raise serializers.ValidationError(
+                'source_scheme cannot be set on create — use rate_scheme.'
+            )
+        if not value.is_active:
+            raise serializers.ValidationError('Selected RateScheme is inactive.')
+        if value.algorithm == RateScheme.PERCENTAGE:
+            raise serializers.ValidationError(
+                'Percentage services are document adjustments and cannot bill a task.'
+            )
+        return value
+
+    def validate_active_modifiers(self, value):
+        """The contract is asymmetric by design (task-owned-money Phase 1):
+        on CREATE (no instance yet) ``active_modifiers`` is a list of
+        modifier KEY STRINGS — resolved into snapshot dicts server-side by
+        ``Task.stamp_from_scheme``. On UPDATE (instance exists) it's the
+        full ``{key, label, percent}`` snapshot list itself, applied
+        directly via ``setattr`` in ``TaskService.update_task`` — there's no
+        re-stamp step to resolve bare keys against. Without this check, a
+        manager PATCHing key-strings (the create shape) persists a
+        malformed row and ``Task.effective_rate()`` blows up on every
+        later read of that task."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError('Must be a list.')
+        if self.instance is None:
+            for item in value:
+                if not isinstance(item, str):
+                    raise serializers.ValidationError(
+                        'On create, active_modifiers must be a list of '
+                        'modifier key strings.'
+                    )
+            return value
+        for item in value:
+            if not isinstance(item, dict):
+                raise serializers.ValidationError(
+                    'On update, active_modifiers must be a list of '
+                    '{key, percent} snapshot dicts.'
+                )
+            key = item.get('key')
+            if not isinstance(key, str) or not key:
+                raise serializers.ValidationError(
+                    'Each active_modifiers entry needs a string "key".'
+                )
+            label = item.get('label')
+            if label is not None and not isinstance(label, str):
+                raise serializers.ValidationError(
+                    'active_modifiers "label" must be a string.'
+                )
+            percent = item.get('percent')
+            # bool is a subclass of int (isinstance(True, int) is True), so
+            # mirror validate_data's Decimal(str(...)) idiom instead of an
+            # isinstance numeric check — str(True) == 'True', which Decimal
+            # rejects, so bool is correctly excluded without a special case.
+            try:
+                Decimal(str(percent))
+            except (InvalidOperation, TypeError, ValueError):
+                raise serializers.ValidationError(
+                    'active_modifiers "percent" must be numeric.'
+                )
+        return value
+
+    def _resolve_job(self):
+        """The task's job — from the instance on update, or the view-supplied
+        `job` context key on create (there's no instance yet)."""
+        if self.instance is not None:
+            return self.instance.job
+        return self.context.get('job')
+
+    def _can_write_money(self, job=None):
+        """`job=None` (the validate() write path) resolves via
+        `_resolve_job()`, which reads `self.instance` — correct there since
+        a PATCH/POST always serializes a single instance. `get_can_write_money`
+        (a read-path SerializerMethodField, possibly rendering a LIST of
+        tasks through one shared child serializer) must NOT rely on
+        `self.instance` — DRF's ListSerializer never sets it per-row — so it
+        passes the row's own `job` explicitly instead, same pattern as
+        `JobScopedCanManageMixin.get_can_manage`."""
+        request = self.context.get('request')
+        user = getattr(request, 'user', None) if request else None
+        if not user or not user.is_authenticated:
+            return False
+        if user.has_perm('core.can_manage_financials'):
+            return True
+        from apps.jobs.services import JobService
+        return JobService.user_can_manage(
+            user, job if job is not None else self._resolve_job())
+
+    def validate(self, attrs):
+        # Gate on the RAW keys the client actually sent — not
+        # `validated_data` — so a stamp-only creation (no `accounting_category`
+        # key at all; Task.stamp_from_scheme fills it server-side after
+        # validation) never trips the money-field gate just because the
+        # field is present in `attrs`. `raw_input_keys` (view-supplied
+        # context) reflects the original request body; fall back to
+        # initial_data for callers that don't provide it.
+        raw_keys = self.context.get('raw_input_keys')
+        if raw_keys is None:
+            raw_keys = set(getattr(self, 'initial_data', {}) or {})
+        money_keys = self.MONEY_FIELDS & set(raw_keys)
+        if money_keys and not self._can_write_money():
+            raise PermissionDenied(
+                'Only a manager, the project manager, or financials may set '
+                + ', '.join(sorted(money_keys)) + '.'
+            )
+        return attrs
+
+    def get_can_write_money(self, obj):
+        return self._can_write_money(job=obj.job)
 
     def get_assignee_name(self, obj):
         if obj.assignee:
@@ -223,9 +431,12 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
 class TaskDetailSerializer(TaskSerializer):
     job = serializers.SerializerMethodField()
     blep_minimum_minutes = serializers.SerializerMethodField()
+    linked_po_lines = serializers.SerializerMethodField()
 
     class Meta(TaskSerializer.Meta):
-        fields = TaskSerializer.Meta.fields + ['job', 'blep_minimum_minutes']
+        fields = TaskSerializer.Meta.fields + [
+            'job', 'blep_minimum_minutes', 'linked_po_lines',
+        ]
 
     def get_job(self, obj):
         job = obj.job
@@ -239,3 +450,24 @@ class TaskDetailSerializer(TaskSerializer):
     def get_blep_minimum_minutes(self, obj):
         from apps.jobs.services import blep_minimum_minutes
         return blep_minimum_minutes()
+
+    def get_linked_po_lines(self, obj):
+        """Fix 2b (RM browser-testing): the reverse of `task_detail` on
+        POLineItemSerializer — a task's own detail page shows which PO(s)
+        cost→sell attribute to it. Detail-only (TaskDetailSerializer, not
+        the base TaskSerializer used in job task lists), so no per-row
+        N+1 risk in list contexts."""
+        from apps.purchasing.models import PurchaseOrderLineItem
+        lines = (PurchaseOrderLineItem.objects
+                 .filter(task=obj)
+                 .select_related('purchase_order')
+                 .order_by('purchase_order_id', 'line_number'))
+        return [
+            {
+                'line_item_id': li.pk,
+                'po_id': li.purchase_order_id,
+                'po_number': li.purchase_order.po_number,
+                'po_status': li.purchase_order.status,
+            }
+            for li in lines
+        ]

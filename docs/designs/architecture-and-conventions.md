@@ -61,7 +61,7 @@ end (e.g. `InvoiceService.copy_from_estimate`).
 - No serializers cross the service boundary. Viewsets extract
   `serializer.validated_data` and pass plain kwargs.
 - Services raise domain exceptions (`ServiceError`, `NotFoundError`,
-  `SchemeSupersededError`). Views translate those into HTTP responses
+  `SchemeInactiveError`). Views translate those into HTTP responses
   or Django messages.
 
 The estimate and invoice wizards share their line-items-from-atoms logic
@@ -70,7 +70,7 @@ through `BaseWizardService` (`apps/core/wizard.py`):
 supplying a small config block (line-item/source models, atom types)
 plus model hooks for the few genuine divergences.
 
-**Exception hierarchy** (`apps/core/services.py`):
+**Exception hierarchy.** Base classes in `apps/core/services.py`:
 
 ```python
 class ServiceError(Exception):
@@ -78,9 +78,16 @@ class ServiceError(Exception):
 
 class NotFoundError(ServiceError):
     """Raised when a requested object does not exist."""
+```
 
-class SchemeSupersededError(ServiceError):
-    """Raised when a template referencing a superseded RateScheme is used."""
+App-specific `ServiceError` subclasses live next to the domain they
+guard. Example — `apps/jobs/models.py`:
+
+```python
+class SchemeInactiveError(ServiceError):
+    """Raised when a task-creation path stamps from an inactive (retired)
+    RateScheme preset without allow_inactive_scheme=True. Replaces the old
+    supersession-based SchemeSupersededError (task-owned-money Phase 1)."""
 ```
 
 A typical create:
@@ -124,8 +131,10 @@ effects. Two different conventions coexist:
   handled inside `apps/jobs/services.py`.
 - `apps/estimates/signals.py` — two receivers
   (`estimate_status_changed_for_job`, `estimate_accepted`) that mutate jobs
-  (and, on accept, crystallize hand-lines into Fees) when an estimate
-  status changes. The job-status receiver routes its changes through
+  (and, on accept, crystallize typed hand-lines into atoms — `service_item`
+  → `Task`, `inventory_item` / `is_material` → `Material`; a plain hand-line
+  with neither stays document-only and crystallizes nothing) when an
+  estimate status changes. The job-status receiver routes its changes through
   `JobService.update_job` rather than mutating the Job directly. (The former
   `estimate_status_changed_for_worksheet` receiver was removed with the
   planning layer.)
@@ -178,7 +187,7 @@ apps/api/
 The `WorkOrder` model has been removed; Tasks live directly on `Job`. The
 planning layer (`EstWorksheet` / `PlanTask` / the `worksheets/` and
 `plan_tasks/` API apps) has also been removed — the Job owns its work atoms
-(`Task` / `Material` / `Fee`) directly. See
+(`Task` / `Material`) directly. See
 `docs/designs/jobs-and-tasks.md` for the job-owns-atoms shape.
 
 **Shared change-request viewset.** `apps/api/shifts/views.py` defines a
@@ -294,7 +303,7 @@ All in `apps/api/mixins.py`.
 |---|---|---|
 | `StatusTransitionMixin` | Every document viewset | Auto-registers `@action` POST endpoints from a `status_actions` dict, with optional `requires_reason` validation and HistoryEntry attachment. |
 | `LineItemMixin` | EstimateViewSet, InvoiceViewSet, PurchaseOrderViewSet | Adds `line-items/`, `line-items/{id}/`, `line-items/reorder/` actions; delegates all writes to `line_item_service_class`. Its own `try`/`except` blocks catch only `NotFoundError` → 404; a service `ValidationError` is **not** caught here (2026-07-25 fix — it used to be re-rendered as `{'detail': str(e)}`, which stringified dict-keyed field errors into garbled text) and instead propagates to the central handler (§3.9), which renders both the plain-sentence and field-keyed shapes correctly. |
-| `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. (The Job's `materials/` and `fees/` actions live on `JobViewSet` directly.) |
+| `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. (The Job's `materials/` action lives on `JobViewSet` directly. There is no `fees/` action — the `Fee` model was deleted; a plain hand-line no longer crystallizes into a job atom on estimate/CO acceptance, see §2.3 above.) |
 | `JSONDestroyMixin` | JobViewSet, InventoryItemViewSet, WorkTemplateViewSet, ServiceItemViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
 | `ConfirmDeleteMixin` | ContactViewSet, BusinessViewSet, ReimbursementViewSet | Two-phase delete; first DELETE returns `{'confirm_required': True, 'impact': {…}}`, DELETE with `?confirm=true` runs the delete. Subclasses implement `get_deletion_impact(obj)` and `perform_confirmed_destroy(obj)`. |
 | `JobScopedPermissionMixin` | JobViewSet, EstimateViewSet, ChangeOrderViewSet, DeliverableViewSet, TaskViewSet | Resolves a viewset's target Job for `CanManageJobOrPM` via `get_object_job(obj)` / `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'estimate.job'`), `job_create_field` (create-body key naming the parent Job), and `job_url_kwarg` (job-nested URL kwarg). |
@@ -365,6 +374,46 @@ Bleps); the manager/PM-only job actions fall through to
 `CanManageJobOrPM` (see `apps/api/jobs/views.py`). On `TaskViewSet`, the
 flat `cancel` action requires `CanManageJobOrPM` while the other
 lifecycle actions stay `IsAuthenticated`.
+
+**Field-level gating: the MONEY_FIELDS presence pattern.** Some
+endpoints are open at the DRF permission-class level but gate a *subset
+of fields* inside the serializer instead — the write is only rejected
+if the client actually tries to touch money. `TaskSerializer`
+(`apps/api/tasks/serializers.py`) is the exemplar (task-owned-money
+Phase 1, Task 8): `MONEY_FIELDS = {'rate', 'unit_label', 'qty_source',
+'accounting_category', 'active_modifiers'}`. `validate()` checks the
+**raw keys the client actually sent** (`raw_input_keys` — the original
+request body, not `validated_data`) against `MONEY_FIELDS`; if the
+intersection is non-empty, it re-checks
+`can_manage_financials` or `JobService.user_can_manage(user, job)` and
+raises DRF `PermissionDenied` if neither holds. **Presence, not value,
+triggers the gate** — a worker POSTing `active_modifiers: []` still
+403s, because the key itself signals an attempt to override the
+template's price-affecting defaults. `POST /api/jobs/{id}/add-from-template/`
+(`apps/api/jobs/views.py`) reuses the identical rule by hand for its one
+gated field (`active_modifiers`) rather than duplicating the
+serializer's permission evaluation — same atoms, same "key present in
+the raw payload" trigger. This pattern is reserved for gating a field
+subset on an otherwise-open endpoint; a whole-resource gate belongs on
+`get_permissions()` (above), not inside `validate()`.
+
+**Per-request memoized context, not per-row lookups.** When a
+serializer field needs the same expensive-ish read (a `Configuration`
+lookup, a settings query) for every row in a list response, resolve it
+once in `get_serializer_context()` and cache it on the view instance
+(e.g. `self._cached_fallback_category_id`), never inside the
+`SerializerMethodField` itself. `AccountingCategorySerializer.is_fallback`
+and `InvoiceLineItemSerializer.used_fallback_ac` (Phase 3, 2026-08 — both
+read the `fallback_accounting_category` Configuration key,
+`data-constraints.md` §1.1) are the exemplar pair: `get_serializer_context()`
+overrides on `AccountingCategoryViewSet` and `InvoiceViewSet` compute the
+id once per request; nested child serializers (e.g. an `Invoice`'s
+`line_items`) inherit the root's context automatically (DRF reads
+`self.root._context`), and the handful of `@action` methods that
+instantiate a line-item serializer directly pass
+`context=self.get_serializer_context()` explicitly for the same
+memoization. See `invoicing-and-expenses.md` §"Fallback accounting
+category stamping" for the full mechanism.
 
 ### 3.6 DELETE responses are 200 with JSON
 
@@ -448,11 +497,11 @@ stubs — they are live in `apps/api/shifts/views.py` (work-shifts feature).
 
 | Shape | Meaning | Example |
 |---|---|---|
-| `{'detail': '<sentence>'}` | Operation error — a guard, state-machine refusal, permission problem, missing record | `{'detail': 'Scheme is referenced; create a new version instead of editing.'}` |
+| `{'detail': '<sentence>'}` | Operation error — a guard, state-machine refusal, permission problem, missing record | `{'detail': 'Template "Hourly Labor" references an inactive RateScheme.'}` |
 | `{'<field>': ['msg', ...]}` | Field validation error (DRF serializer shape); cross-field problems use the `non_field_errors` key | `{'unit_label': ['"parsec" is not a configured unit.']}` |
 
 Status codes carry the semantics: 400 validation/guard, 403 permission,
-404 missing, 409 conflict (referenced/superseded/two-phase collisions).
+404 missing, 409 conflict (inactive-preset/PROTECT/two-phase collisions).
 `{'message': ...}` is **success-only** (the DELETE-returns-200 convention,
 §3.6) and never appears in an error body. The `'error'` key is retired —
 never emit it.
@@ -472,13 +521,13 @@ any *uncaught* exception into the contract:
 **View rule: don't catch what you don't reshape.** A service
 `ValidationError` that should be a plain 400 needs *no* try/except — let it
 propagate to the handler. Catch it only to change the status code or add
-payload (e.g. the rate-scheme referenced 409 with `supersede_url` +
-`reference_counts`, or the wizard claim-conflict 409s carrying
-`code: 'atoms_already_claimed'` + `atom_ids`). When a client needs to
-branch on *which* conflict occurred, add a machine-readable `code` key
-beside the human `detail` — never make `detail` itself a token. In any
-kept catch, `raise` variants you don't handle rather than hand-rendering
-them:
+payload (e.g. `SchemeInactiveError` caught and reshaped to a 409
+`{'detail': ...}` on the task-create endpoints, or the wizard
+claim-conflict 409s carrying `code: 'atoms_already_claimed'` +
+`atom_ids`). When a client needs to branch on *which* conflict occurred,
+add a machine-readable `code` key beside the human `detail` — never make
+`detail` itself a token. In any kept catch, `raise` variants you don't
+handle rather than hand-rendering them:
 
 ```python
 try:
@@ -548,6 +597,23 @@ Each service class must provide: `add_line_item`, `add_line_item_from_pli`,
 `update_line_item`, `delete_line_item`, `reorder_line_items`. Each
 enforces its own status guard (typically draft only); the mixin doesn't
 know what statuses are editable.
+
+**One field can break the "draft only" rule — by design, not by
+accident.** `EstimateLineItem.work_declined` (the acceptance-checklist
+"no work needed" mark, estimating-structure spec) is the one line field
+set-able on a **non-draft** (`accepted`) estimate; every other field on
+every line-item type stays draft-only. `EstimateService.update_line_item`
+carves this out at the top: a PATCH body whose only key is
+`work_declined` routes to `EstimateService._set_work_declined` (accepted
+estimates only; refuses on atom-backed/adjustment/deposit/catalog-identity
+lines) before the normal draft-status check ever runs; a body mixing
+`work_declined` with any other key is rejected outright on any status, so
+the two update paths can't blur into one PATCH. See
+`estimates-and-prices.md` §6.1/§9a and `data-constraints.md` §1.13. This
+is the pattern to follow for any future line field that legitimately
+needs to be writable outside the normal editable-status window: gate on
+the raw key set at the top of the service method, before the status
+guard, not by widening the guard itself.
 
 `BaseLineItem.save()` has a `_populate_from_pli` safety net that fills
 in description/units/price/category from a linked `InventoryItem` if
@@ -761,10 +827,17 @@ the 2026-07-08 workspace-restructure design):
    candidate when the time comes: **estimate|invoice** (RM compares
    these daily today via two browser windows); also plausible:
    invoice|shipments, tasks|POs.
-3. **Reconciliation surface** — shell + one *composite* panel with an
-   internal two-column layout and owned cross-column state
-   (`ReconcileMode`). The wizard composed itself; it is never a pane in
-   a combo, and it needs full width.
+3. **Reconciliation surface** *(retired 2026-08)* — shell + one
+   *composite* panel with an internal two-column layout and owned
+   cross-column state (`ReconcileMode`). The wizard composed itself; it
+   was never a pane in a combo, and needed full width. Folded into the
+   **Section page** kind: the estimate/invoice edit surface is now one
+   ordinary panel (`EstimateEditView`/`InvoiceEditView`, single-column,
+   the docsurface kit's Edit mode — §5.5b) switched in place alongside
+   read-only Customer/Reorder projections by `DocModeBar`, not a
+   separate composite layout. Kept here as a record of a page-kind that
+   existed and was retired, in case a future surface reaches for the
+   same shape again.
 
 **Detailed pages** (the skip-list for generic sweeps — keep current as
 passes complete):
@@ -824,6 +897,121 @@ page-specific names or references:
   a block — a nested link or button makes the markup invalid and forces
   a stretched-link overlay instead (which also kills text selection in
   the card). Keep controls outside the family.
+
+### 5.5b The `docsurface` kit — shared document-editing surface (2026-08)
+
+`frontend/src/components/docsurface/` holds a ten-component kit
+shared by the estimate, invoice, **and change-order** editing surfaces
+(the CO panel grew the same mode bar 2026-08-09 — see
+`docs/plans/2026-08-06-better-fees.md` §9.3). It replaced the old
+two-column `ReconcileMode` wizard presentation (§5.5a's job-page
+taxonomy, above) in the 2026-08-08 "skeleton phase": estimates and
+invoices both moved from a two-mode ("lines"/"reconcile") panel to a
+**three-mode** surface — **Edit / Customer / Reorder** — flipped in
+place at one URL. Once a document leaves draft (or the viewer lacks
+manage rights) the surface is read-only: Reorder drops out and the
+Edit mode relabels to **Detail** (same component, `canEdit=false`;
+RM 2026-08-09) — the bar reads Detail / Customer. Design authority:
+`docs/plans/2026-08-06-better-fees.md` §9 and its wireframe artifact;
+build-to-the-artifact was the standing instruction for this work.
+Consumer detail: `estimates-and-prices.md` §12 (estimate) and §14.9a
+(change order — its Customer mode uses `COCustomerView`, a
+delta-document sibling to `DocCustomerView` rather than a direct
+consumer of it), the invoice side in `invoicing-and-expenses.md`
+(Agreement-line references and seeding, Backing model).
+
+**The ten components:**
+
+| Component | Role |
+|---|---|
+| `DocModeBar.svelte` | The view-mode switcher — one `<button aria-pressed>` per mode; `{ mode, onMode, modes, labels }`. Labels carry the " view" suffix ("Edit view" / "Customer view" / "Reorder view", "Detail view" read-only) — the old standalone "Views" band label was dropped 2026-08-14. |
+| `BackingChip.svelte` | Renders a document line's derived `backing` enum as a labeled pill; `{ backing, syncedWithEstimate }`. Estimate and invoice ship different enum value sets through the same component. |
+| `AtomChildRow.svelte` | One indented `<tr class="doc-atom-row">` nested under a line for each of its claimed source atoms; `{ atom, colspanBefore, colspanAfter, onRemove, note }`. |
+| `AtomCaptionRow.svelte` | The caption row above a line's atom child rows — "based on 2 tasks:" — tying the "Based on" chip and the grey rows together as one fact; `{ sources, colspanBefore, colspan }`. Renders nothing for a sourceless line. Added 2026-08-14 (vocab pass). |
+| `UncoveredWorkSection.svelte` | The checkbox-selectable pool of not-yet-billed job atoms below the line-items table; `{ title, subtitle, rows, selected (bindable), directLabel, onDirect, emptyText }`. Titled **"Unquoted work"** on estimates/COs and **"Unbilled work"** on invoices (2026-08-14 vocab pass — "uncovered" read as *revealed*, not *not-yet-covered*; the component keeps its internal name). Each row optionally carries a `chip` (`{label, cls}`) for provenance markers (invoiced-elsewhere, cancelled, struck-from-agreement — invoice side; see `invoicing-and-expenses.md`). |
+| `NewLineFromSelectedRow.svelte` | The dashed placeholder `<tr class="doc-newline">` footer row offering "＋ New line from selected"; `{ visible, nextNumber, onCreate }`. Optional `buttonLabel` prop (default `"Create line"`) lets a consumer relabel the button — the estimate/CO surfaces pass `"Bundle into line…"` since their `onCreate` opens `BundleModal` rather than posting directly (see below). |
+| `BundleModal.svelte` | The estimate/CO **draft-time bundle-into-line authoring modal** (Task 8, 2026-08-15) — what "＋ New line from selected"/"Bundle into line…" opens on those two surfaces instead of posting straight through. Self-contained like `AdjustmentModal`/`LineItemModal`: owns its own `POST .../line-items-from-atoms/` with `{atoms, overrides}`, not a callback the parent runs; hands a 409 claim conflict back via `onConflict`. Carries the **keep-the-total** gesture (qty↔price coupling, ON by default) and always sends all four override fields (WYSIWYG — the modal's displayed values are the authored truth, never the backend's own derivation). The invoice surface does not use it — `NewLineFromSelectedRow` keeps its default label and one-click `onCreate` → direct POST → `LineItemModal` edit landing there, unchanged. See `estimates-and-prices.md` §12.1a. |
+| `QtyUnits.svelte` | Qty-cell content for document line items: qty and units inline, wrapping naturally when the column is squeezed (RM 2026-08-11 — never a forced second line); units `'none'`/empty omitted, missing qty renders `-`. Used by every doc line table (edit + customer, all three doc types); the single seam for styling qty cells later. `lib/format.js formatQtyUnits` remains the plain-string variant for the atom child/pool rows. |
+| `DocCustomerView.svelte` | The collapsed, read-only Customer-mode projection — `#`/description/qty/price/amount + a grand-total row, zero interactive elements; `{ title, lines, grandTotal }` (lines carry `qty`/`units`, rendered via `QtyUnits`). |
+| `DocReorderView.svelte` | Composes `DocCustomerView` with an added arrows column (`{ onReorder(lineId, 'up'|'down') }`) — **identical rows to Customer mode plus arrows**, so reordering never carries sub-line ambiguity. |
+
+Every prop is content/config — no component branches on `docType` or
+otherwise assumes "estimate" vs. "invoice." Surface-specific logic
+(agreement `backing` derivation, deposit credits, `→ Deliverable`) lives
+in the consuming view (`EstimateEditView.svelte`,
+`InvoiceEditView.svelte`), not the kit.
+
+**Shared `app.css` classes** (one block, added once — "Document-surface
+kit" comment header): `.backing-chip` (+ `.actuals`/`.planned`/
+`.catalog`/`.deposit`/`.synced`/`.edited` modifiers), `.doc-atom-row`,
+`.doc-offdoc` (a struck/removed row — hatched background, dashed
+border), `.doc-newline` (+ `.cta`), `.doc-mode-bar` (+ button chrome and
+the `[aria-pressed="true"]` active state), `.doc-unselectable-row` (a
+dimmed, non-selectable pool row), and `tr.grand` (the shared
+grand-total footer row `DocCustomerView`/`DocReorderView` render). Per
+§5.5a's rule of the road: these are promoted, shared classes — never
+copy one into a component's local `<style>` block.
+
+**The three-mode flip-in-place pattern.** `mode` is local `$state` on
+the hosting panel (`EstimatePanel`/`InvoicePanel`/`ChangeOrderPanel`),
+persisted per document via `stores/jobWorkspace.js`'s
+`rememberMode`/`getJobWs` (keyed `est:{id}`/`inv:{id}`/`co:{id}`, not by
+section). The store itself never
+migrates old values — normalization happens at the read site: a
+remembered `'lines'`/`'reconcile'` (the pre-2026-08 panel/wizard values)
+folds to `'edit'`, and a remembered `'reorder'` additionally falls back
+to `'edit'` if the document is no longer editable. Switching modes is
+never a navigation, never a remount, and never a modal — modals are
+reserved for the per-line **Edit** form (§"Modals" in
+`frontend/README.md`).
+
+**The A3 no-dead-buttons rule.** A kit component renders an action only
+when its callback prop is actually supplied — never a disabled/greyed
+button standing in for "not wired yet." `AtomChildRow`'s Remove button
+and `UncoveredWorkSection`'s per-row direct-add button both follow this;
+so does `EstimateEditView`'s `onMakeDeliverable`-gated "→ Deliverable"
+action (dark today — no caller wires it yet, reserved for a later
+phase's make-a-deliverable endpoint). This is also why "Remove" (never
+"Delete" — the word does not appear on a document surface) always
+renders when editable rather than being conditionally hidden by state:
+an action's availability is a prop, not a runtime guess.
+
+**Object-first selection.** Checkboxes live on the uncovered-work pool
+rows, not on line items. While any row is ticked, the table's dashed
+`NewLineFromSelectedRow` footer appears. What happens next is
+surface-specific: on the **invoice** edit view (unchanged since the kit
+shipped) creating the line is a direct one-click POST that derives
+starting values from the selection and opens the new line's `LineItemModal`
+edit landing immediately. On the **estimate and CO** edit views (Task 8,
+2026-08-15) the same footer instead opens `BundleModal` — a bounded
+authoring step (keep-the-total qty↔price coupling, always-explicit
+overrides) rather than a create-then-edit two-step; see
+`estimates-and-prices.md` §12.1a. Neither surface offers "Add selected
+here" (attaching a pool selection onto an *existing* line) any more — it
+was removed from the estimate and CO edit views (estimating-structure
+spec, 2026-08-15): composing atoms into a line happens only through the
+new-line gesture above. An unticked row keeps its own direct "bill this
+alone"/"Add as its own line" action instead, on every surface.
+
+**Two idioms every kit consumer follows** (see `EstimateEditView.svelte`
+/ `InvoiceEditView.svelte` for the reference implementation; documented
+in `frontend/README.md` too):
+
+- **Silent refresh.** The hosting panel's loader takes a `{silent:
+  true}` option (`loadEstimate({silent: true})` /
+  `loadInvoice({silent: true})`) that updates the document's `$state`
+  without flipping the page's `docLoading` flag. A kit-consuming edit
+  view calls back (`onChanged`) after every gesture; a non-silent
+  refresh would swap the `{#if docLoading}` branch to a loading state,
+  unmounting the edit view and losing its local state (an open Edit
+  modal, the current pool selection) on every single mutation.
+- **409-refresh.** A claim conflict (another session claimed an atom
+  between the pool load and the POST) can't be resolved by blindly
+  retrying. `handleMutationError(e, fallback)` in both edit views
+  branches on `e.status === 409`: clear the local selection, `await`
+  the silent refresh, and show a specific "…refreshed" message via the
+  global overlay — never the generic error text — so the pool/lines the
+  user acts on next reflect reality.
 
 ### 5.6 Preserving line breaks in free-text fields
 
@@ -1700,11 +1888,18 @@ Concrete items, smallest first:
   mistakes. Concern is shared across the subclasses since it lives
   on `BaseLineItem`.
 
-- **`accounting_category` required on the line-item subclasses
-  (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`).**
-  Currently nullable (inherited from
-  `BaseLineItem`); a null AC falls back to silently tax-exempt at QBO
-  push time. Should become NOT NULL after existing rows are backfilled.
-  One project-wide migration across the subclasses — the change
-  lives in `apps/core/models.py` (`BaseLineItem`) plus a backfill step
-  per subclass.
+- **`accounting_category` required on `EstimateLineItem` /
+  `InvoiceLineItem` — RESOLVED, opposite direction (Phase 3 nullable-AC
+  plan, 2026-08).** The "make it NOT NULL, backfill, one project-wide
+  migration" idea this TODO used to track was superseded: the field
+  stays nullable by design on both subclasses. A hand line without a
+  descriptor legitimately carries no category until a human assigns one
+  (Estimate: required at add-time per Decision 1; Invoice: deferred to
+  the send gate); an atom-derived line whose atom is itself uncategorized
+  resolves at invoice-authoring time via the configured
+  `fallback_accounting_category` rather than a NOT NULL constraint —
+  see `invoicing-and-expenses.md` §"Fallback accounting category
+  stamping" and `data-constraints.md` §1.1. **`PurchaseOrderLineItem`
+  is out of scope of Phase 3** and this TODO's original NOT NULL/backfill
+  shape may still be a live intention there — see
+  `materials-inventory-and-purchasing.md`.

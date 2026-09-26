@@ -11,6 +11,8 @@ Rules:
 - Rejecting/expiring a CO snapshots the proposal and leaves the job held.
 """
 
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from apps.core.history import record_history
 from django.db import transaction
@@ -88,44 +90,25 @@ class ChangeOrderService:
         return est
 
     @staticmethod
-    def struck_atom_keys(job):
-        """Keys ('task'|'material'|'fee', pk) of atoms an ACCEPTED change
-        order's remove/replace struck from the agreement. Derived, never
-        stored — the chain crystallization walked persists: accepted CO line
-        → target estimate line → its EstimateLineItemSource claim rows →
-        atom. An atom in this set that is still live in the pool is exactly
-        the "struck from agreement, work remains" case (crystallization
-        deliberately skips consumed/complete/expense-bound/PO-linked/invoiced
-        atoms — physical or billed reality is not unwound by a document).
-        Consumers: the invoice wizard pool's 'struck from agreement' badge;
-        any future SCOPE reconciliation surface (see estimates-and-prices
-        §14.11 decision record). Later accepted COs replacing the same
-        estimate line add nothing new — targets always point at estimate
-        lines, so the union over accepted COs is already chain-complete."""
-        from apps.estimates.models import EstimateLineItemSource
-        target_line_ids = ChangeOrderLineItem.objects.filter(
-            change_order__job=job,
-            change_order__status=ChangeOrder.STATUS_ACCEPTED,
-            action__in=(ChangeOrderLineItem.ACTION_REMOVE,
-                        ChangeOrderLineItem.ACTION_REPLACE),
-            target_line_item__isnull=False,
-        ).values_list('target_line_item', flat=True)
-        return set(
-            EstimateLineItemSource.objects.filter(
-                estimate_line_item__in=list(target_line_ids),
-            ).values_list('source_type', 'source_pk')
-        )
-
-    @staticmethod
     def assert_all_bare_add_lines_have_ac(co):
-        """A bare add line (no service/inventory descriptor) crystallizes into
-        a Fee or a provisional Material at acceptance, and both need an
-        accounting category — catch it at send so acceptance, after the
-        customer has said yes, can never fail on it. The CO parallel of
+        """A bare add line (no service/inventory descriptor) needs an
+        accounting category to travel on documents — the category rides the
+        line onto the agreement and its invoice copy, so a category-less line
+        would surface as an unclassifiable charge downstream. Catch it at
+        send, before the customer has said yes. The CO parallel of
         EstimateService.assert_all_hand_lines_have_ac; shared by
         ChangeOrder.clean()'s draft-exit guard (the invariant home) and
         ChangeOrderEmailService._validate_send (the pre-email copy, so the
-        refusal lands before the customer is mailed a dead draft link)."""
+        refusal lands before the customer is mailed a dead draft link).
+
+        `sources__isnull=True` exempts an authored-claimed add line (Task
+        7): a line the wizard built from job atoms already carries an
+        accounting category from the atom when the atoms share one, but
+        even when it doesn't (mixed-category multi-atom bundle), it isn't a
+        bare hand line — it has real backing, unlike a plain typed-in line
+        with no descriptor and no category. Mirrors
+        EstimateService.assert_all_hand_lines_have_ac, which exempts sourced
+        lines the same way."""
         from apps.estimates.models import ChangeOrderLineItem
         missing = [
             li.description or f'line {li.line_number}'
@@ -135,6 +118,11 @@ class ChangeOrderService:
                 service_item__isnull=True,
                 inventory_item__isnull=True,
                 accounting_category__isnull=True,
+                sources__isnull=True,
+                # Comment lines are informational-only: no charge, no
+                # category — same exemption as the estimate gate and the
+                # invoice pre-send gate.
+                is_comment=False,
             )
         ]
         if missing:
@@ -218,8 +206,9 @@ class ChangeOrderService:
 
         - Accepted: clear the job's hold (status preserved); write system
           HistoryEntry; crystallize the CO's deltas onto the Job's atoms
-          (add → new Task/Material/Fee; remove/replace → retire the target's
-          atom, with the replacement crystallized from the CO line).
+          (typed add → new Task/Material, plain add stays document-only;
+          remove/replace → retire the target's atom, with the replacement
+          crystallized from the CO line).
         - Rejected / Expired: snapshot the proposal (Trigger 2); leave the
           job held.
         """
@@ -323,17 +312,56 @@ class ChangeOrderService:
         DeliverableService.snapshot_document(change_order=co)
         co.status = ChangeOrder.STATUS_SUPERSEDED
         co.save()  # sets closed_date
-        # 3. Seed a fresh draft CO carrying the same deltas for the shop.
-        return ChangeOrderService.seed_new(co.pk)
+        # 3. Seed a fresh draft CO carrying the same deltas for the shop,
+        #    moving the superseded CO's authored/inherited claims onto their
+        #    corresponding copies — otherwise those atoms strand on the now-
+        #    dead superseded CO forever (SUPERSEDED deliberately isn't in
+        #    DEAD_DOCUMENT_STATUSES, so no release fires for it).
+        return ChangeOrderService.seed_new(co.pk, move_claims=True)
 
     @staticmethod
     @transaction.atomic
-    def seed_new(pk):
+    def seed_new(pk, move_claims=False, empty=False):
         """Create a new draft CO by copying all line items from an existing (terminal) CO.
 
+        ``empty``: skip the line copy entirely (RM 2026-08-12 — the "Start
+        empty" half of the start-new choice dialog); the new draft keeps
+        the parent/estimate lineage but starts with zero lines.
+
         The source CO retains its status. The new CO gets parent=source.
-        Line items are copied directly (no renumbering).
+        Line items are copied directly (no renumbering); each copy carries
+        its adjustment triple (adjustment_service / adjustment_percent /
+        adjustment_target_categories) when the source line has one, so a
+        seeded copy of an adjustment-replace line stays a real adjustment
+        amendment instead of silently reverting to a plain replace. Prices
+        are recomputed once, after every line is copied
+        (recompute_adjustment_replaces), against the *new* CO's own amended
+        basis.
+
+        A copy of a legacy ACTION_REPLACE line still carrying a
+        crystallization descriptor (service_item / inventory_item /
+        is_material — predates the clean() rule forbidding them on replace
+        lines) is normalized to a bare replace: the descriptor is stripped
+        (description/qty/units/price/accounting_category are kept) so every
+        copy this method makes passes full_clean().
+
+        ``move_claims``: when True, each source line's
+        ChangeOrderLineItemSource rows move onto its corresponding copy
+        (delete-then-create — same pattern as
+        ChangeOrderAcceptanceService._move_claims_to, required because the
+        source model's uniqueness is on (source_type, source_pk), so the old
+        row must go before the new one can be created). Only
+        ``request_changes`` (supersede-then-reseed) passes True. A
+        standalone call on a terminal CO — the "seed a new draft from this
+        one" API action — must NOT move claims: a rejected/expired CO
+        already released its claims (DEAD_DOCUMENT_STATUSES), and an
+        ACCEPTED CO's claims are the agreement record (compose_agreement
+        reads them; ChangeOrderAcceptanceService._current_atoms walks them)
+        and must stay exactly where they are — its copies correctly arrive
+        claimless.
         """
+        from apps.estimates.models import ChangeOrderLineItemSource
+
         try:
             src = ChangeOrder.objects.get(pk=pk)
         except ChangeOrder.DoesNotExist:
@@ -345,8 +373,11 @@ class ChangeOrderService:
             parent=src,
         )
 
-        for li in ChangeOrderLineItem.objects.filter(change_order=src):
-            ChangeOrderLineItem.objects.create(
+        source_lines = ([] if empty
+                        else ChangeOrderLineItem.objects.filter(change_order=src))
+        for li in source_lines:
+            is_replace = li.action == ChangeOrderLineItem.ACTION_REPLACE
+            new_li = ChangeOrderLineItem(
                 change_order=new_co,
                 action=li.action,
                 target_line_item=li.target_line_item,
@@ -355,12 +386,34 @@ class ChangeOrderService:
                 units=li.units,
                 price=li.price,
                 line_number=li.line_number,
-                inventory_item=li.inventory_item,
-                service_item=li.service_item,
-                is_material=li.is_material,
+                # Legacy normalization: a replace line never carries a
+                # crystallization descriptor going forward (clean() forbids
+                # it) — strip these on copy instead of propagating a
+                # pre-rule violation into the new draft.
+                inventory_item=None if is_replace else li.inventory_item,
+                service_item=None if is_replace else li.service_item,
+                is_material=False if is_replace else li.is_material,
                 accounting_category=li.accounting_category,
+                adjustment_service=li.adjustment_service,
+                adjustment_percent=li.adjustment_percent,
             )
+            new_li.full_clean()
+            new_li.save()
+            if li.adjustment_service_id is not None:
+                # M2M needs a saved row — set after save().
+                new_li.adjustment_target_categories.set(
+                    li.adjustment_target_categories.all())
 
+            if move_claims:
+                for row in list(li.sources.all()):
+                    source_type, source_pk = row.source_type, row.source_pk
+                    row.delete()  # delete before create: unique on (source_type, source_pk)
+                    ChangeOrderLineItemSource.objects.create(
+                        change_order_line_item=new_li,
+                        source_type=source_type, source_pk=source_pk,
+                    )
+
+        ChangeOrderService.recompute_adjustment_replaces(new_co)
         return new_co
 
     @staticmethod
@@ -385,46 +438,229 @@ class ChangeOrderService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _assert_is_material_only_on_bare_line(li):
-        """`is_material` is meaningful only on a bare line — a line with an
-        inventory_item or service_item already knows its crystallization type.
-        Mirrors EstimateService._assert_is_material_only_on_bare_line."""
-        if not li.is_material:
-            return
-        if li.inventory_item_id is not None:
-            raise ValidationError({'is_material': (
-                'A line with an inventory item is already a material; '
-                'the "is material" marker only applies to a bare line.'
-            )})
-        if li.service_item_id is not None:
-            raise ValidationError({'is_material': (
-                'A service line cannot be marked as a material.'
-            )})
+    def _assert_target_not_billed(target_line_item):
+        """Block remove/replace against an agreement (estimate) line that a
+        live (non-cancelled) invoice line already references — amending or
+        removing the CO's target out from under an invoice that already
+        billed it would silently desync the two documents. Mirrors the
+        "live" definition InvoiceService.remaining_agreement_lines /
+        _assert_agreement_line_unclaimed use (every invoice status except
+        cancelled — see LIVE_INVOICE_STATUSES in apps/invoicing/services.py)."""
+        from apps.invoicing.models import Invoice, InvoiceLineItem
+        ref = (InvoiceLineItem.objects
+               .filter(agreement_estimate_line=target_line_item)
+               .exclude(invoice__status=Invoice.STATUS_CANCELLED)
+               .select_related('invoice')
+               .first())
+        if ref is not None:
+            raise ValidationError({'target_line_item': [
+                f'Billed on {ref.invoice.display_number} — remove it from '
+                f'that invoice before amending this line.']})
 
     @staticmethod
+    def _derive_is_material(li, *, has_sources=False):
+        """CO wrapper over EstimateService._derive_is_material (RM
+        2026-08-11: material-ness derives from the AC, checkbox retired).
+        Only an ADD line can be a bare material — remove/replace lines
+        forbid the marker at the model level (clean()), so they are always
+        forced False regardless of their (inherited) AC."""
+        from apps.estimates.services import EstimateService
+        if li.action != ChangeOrderLineItem.ACTION_ADD:
+            li.is_material = False
+            return
+        EstimateService._derive_is_material(li, has_sources=has_sources)
+
+    @staticmethod
+    def _apply_adjustment_replace_shape(li):
+        """Enforce the adjustment-replace shape on a REPLACE line whose
+        target is itself an adjustment (estimate) line — amend-in-place of a
+        percentage adjustment (e.g. lowering a 10% rush fee to 5%).
+
+        Copies `adjustment_service` and `adjustment_target_categories` from
+        the target, pins `qty=1`, `units=target.units`,
+        `accounting_category=target.accounting_category`, defaults
+        `description` to the target's when blank, and defaults
+        `adjustment_percent` to the target's when not yet set — a
+        percent-less replace is a description-only edit (Task 6 brief).
+
+        Idempotent (safe to call on every add/update), so it applies the
+        same invariant whether this is the line's creation or a later edit
+        — including a *retarget*: if a previously-adjustment replace line
+        is repointed at a plain (non-adjustment) target, the stale
+        adjustment triple (adjustment_service/adjustment_percent/target
+        categories) is cleared so the line becomes a valid plain replace
+        instead of tripping ChangeOrderLineItem.clean()'s adjustment-fields
+        guard. A true no-op for any line that isn't and never was a
+        replace-of-adjustment (plain add/remove/replace lines never carry
+        adjustment fields, so there's nothing to clear).
+
+        `price` is deliberately left untouched — recompute_adjustment_replaces
+        (called at the end of every mutating service method) computes it
+        against the amended agreement basis, the single place that math
+        lives.
+
+        Returns the target's `adjustment_target_categories` queryset to
+        `.set()` on `li` once `li` has a pk (M2M needs a saved row); `[]` to
+        clear a stale M2M on a retarget-away; or None if there's no M2M
+        change to make.
+        """
+        if li.action != ChangeOrderLineItem.ACTION_REPLACE or not li.target_line_item_id:
+            return None
+        target = li.target_line_item
+
+        if target.adjustment_service_id is None:
+            had_adjustment_fields = (
+                li.adjustment_service_id is not None or li.adjustment_percent is not None
+            )
+            if not had_adjustment_fields:
+                return None
+            li.adjustment_service_id = None
+            li.adjustment_percent = None
+            return []
+
+        li.adjustment_service_id = target.adjustment_service_id
+        if li.adjustment_percent is None:
+            li.adjustment_percent = target.adjustment_percent
+        li.qty = Decimal('1')
+        li.units = target.units
+        li.accounting_category_id = target.accounting_category_id
+        if not li.description:
+            li.description = target.description
+        return target.adjustment_target_categories.all()
+
+    @staticmethod
+    def recompute_adjustment_replaces(co):
+        """Recompute price for every CO line that amends an adjustment line
+        in place (adjustment_service_id set), against the AMENDED agreement
+        basis — compose_amended_agreement(co)'s surviving non-adjustment
+        rows (target-category set; empty = all), quantized to cents.
+
+        Reuses apps.estimates.agreement.adjustment_expected_amount — the
+        same math compose_amended_agreement uses for its own
+        "stale adjustment" hint — so the two can never disagree. No
+        recursion: adjustments never stack, and the composed row for each
+        adjustment-replace line itself carries is_adjustment=True, so it's
+        automatically excluded from every basis (including its own).
+
+        Saves only when the computed price actually changes. Call at the
+        end of add_line_item, update_line_item, delete_line_item, and
+        reorder_line_items (reorder for completeness/cheapness — a pure
+        reorder never changes any amount, but it's a one-line safety net),
+        all in the same transaction as the triggering mutation — and by
+        Task 7's atom mutations.
+
+        Returns the set of ChangeOrderLineItem pks whose price was actually
+        changed (and saved) — callers holding an in-memory instance of one
+        of those lines (e.g. add_line_item/update_line_item's own `li`) use
+        it to decide whether a `refresh_from_db()` is needed, rather than
+        paying that round-trip unconditionally on every mutation.
+        """
+        from apps.estimates.agreement import (
+            adjustment_expected_amount, compose_amended_agreement,
+        )
+
+        adjustment_lines = list(
+            ChangeOrderLineItem.objects.filter(
+                change_order=co,
+                action=ChangeOrderLineItem.ACTION_REPLACE,
+                adjustment_service__isnull=False,
+            )
+        )
+        if not adjustment_lines:
+            return set()
+
+        composed = compose_amended_agreement(co)
+        amended_lines = [row['line'] for row in composed['rows'] if row['kind'] != 'removed']
+        by_co_line_id = {
+            line['co_line_id']: line for line in amended_lines
+            if line['co_line_id'] is not None
+        }
+
+        changed = set()
+        for li in adjustment_lines:
+            line_dict = by_co_line_id.get(li.pk)
+            if line_dict is None:
+                continue  # target already gone upstream — nothing to price against
+            new_price = adjustment_expected_amount(line_dict, amended_lines)
+            if li.price != new_price:
+                li.price = new_price
+                li.save()
+                changed.add(li.pk)
+        return changed
+
+    @staticmethod
+    @transaction.atomic
     def add_line_item(co_pk, **kwargs):
         """Add a manual line item to a draft change order."""
         try:
             co = ChangeOrder.objects.get(pk=co_pk)
         except ChangeOrder.DoesNotExist:
             raise NotFoundError(f'ChangeOrder {co_pk} not found')
+        # work_declined is an EstimateLineItem-only field (the acceptance
+        # checklist's mark); ChangeOrderLineItem has no such column, so
+        # forwarding it into the constructor below would TypeError into a
+        # raw 500. Reject it explicitly instead, in the same contract shape
+        # as every other creation-time refusal here.
+        if 'work_declined' in kwargs:
+            raise ValidationError(
+                'work_declined is not a valid field for change order line items.'
+            )
         if co.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft change orders.')
         from apps.core.services import LineItemService
         from apps.estimates.services import EstimateService
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
         li = ChangeOrderLineItem(change_order=co, **kwargs)
-        # Material lines (is_material=True) get their AC from config if not
-        # supplied — same default the estimate side applies at authoring.
-        EstimateService._apply_material_ac_default(li)
-        ChangeOrderService._assert_is_material_only_on_bare_line(li)
+        # A replace line authored without an AC inherits its target's
+        # (2026-08-12): the replacement is the same commercial line under new
+        # terms, and an AC-less replacement would otherwise become a null-AC
+        # agreement line at acceptance, demanding the fallback on every
+        # later invoice seed. An explicitly supplied AC still wins.
+        if (li.action == ChangeOrderLineItem.ACTION_REPLACE
+                and li.accounting_category_id is None
+                and li.target_line_item_id is not None):
+            li.accounting_category_id = li.target_line_item.accounting_category_id
+        # A replace line's per_unit reading always mirrors its target's
+        # (never client-settable — see the serializer's read_only_fields):
+        # a replacement targeting a per_unit line IS itself per_unit
+        # (derive_co_line_backing's per-unit branch depends on this). Scoped
+        # to action="replace" only — an add/remove line's per_unit is set
+        # (or left False) by its own creation path (e.g. the bundle wizard's
+        # add_atoms_to_new_line_item), never derived from a target here.
+        if li.action == ChangeOrderLineItem.ACTION_REPLACE:
+            li.per_unit = bool(
+                li.target_line_item_id is not None and li.target_line_item.per_unit
+            )
+        target_categories = ChangeOrderService._apply_adjustment_replace_shape(li)
+        ChangeOrderService._derive_is_material(li)
         li.full_clean()
+        if (li.action in (ChangeOrderLineItem.ACTION_REMOVE, ChangeOrderLineItem.ACTION_REPLACE)
+                and li.target_line_item_id):
+            ChangeOrderService._assert_target_not_billed(li.target_line_item)
         li.save()
+        if target_categories is not None:
+            li.adjustment_target_categories.set(target_categories)
+        changed = ChangeOrderService.recompute_adjustment_replaces(co)
+        if li.pk in changed:
+            # recompute_adjustment_replaces saves through a freshly-queried
+            # instance, not this one — refresh so a caller (e.g. the API
+            # response) sees the amended-basis price, not the pre-recompute
+            # one. Guarded so a CO with no adjustment-replace lines (the
+            # common case) never pays this extra round-trip.
+            li.refresh_from_db()
         return li
 
     @staticmethod
-    def add_line_item_from_pli(co_pk, pli_pk, qty):
-        """Add a line item from a InventoryItem to a draft change order."""
+    @transaction.atomic
+    def add_line_item_from_pli(co_pk, pli_pk, qty, description=None):
+        """Add a line item from a InventoryItem to a draft change order.
+
+        `description`: optional caller override of the catalog-derived
+        description (Add Line modal editable-description feature,
+        2026-09-20 — mirrors the Task create-money-override pattern,
+        estimates-and-prices.md §3.6c, and EstimateService's twin).
+        Present and non-blank (after strip) wins; absent or
+        blank/whitespace falls back to `pli.description`, unchanged."""
         from apps.inventory.models import InventoryItem
         try:
             co = ChangeOrder.objects.get(pk=co_pk)
@@ -441,12 +677,13 @@ class ChangeOrderService:
             change_order=co,
             action=ChangeOrderLineItem.ACTION_ADD,
             inventory_item=pli,
-            description=pli.description,
+            description=(description or '').strip() or pli.description,
             qty=qty,
             units=pli.units,
             price=pli.selling_price,
             accounting_category=pli.accounting_category,
         )
+        ChangeOrderService.recompute_adjustment_replaces(co)
         return li
 
     @staticmethod
@@ -460,13 +697,19 @@ class ChangeOrderService:
         return co
 
     @staticmethod
-    def add_line_item_from_service(co_pk, service_item_pk, qty):
+    @transaction.atomic
+    def add_line_item_from_service(co_pk, service_item_pk, qty, description=None):
         """Add a deferred service line to a draft change order.
 
         Mirrors EstimateService.add_line_item_from_service: snapshots the priced
         values off the ServiceItem at instantiation and keeps `service_item` on
         the line purely as the crystallization target. Mints NO Task — the Task
-        is created at CO acceptance (ChangeOrderAcceptanceService.on_accept)."""
+        is created at CO acceptance (ChangeOrderAcceptanceService.on_accept).
+
+        `description`: optional caller override of the catalog-derived
+        description — see add_line_item_from_pli's docstring for the
+        contract (present+non-blank wins; else falls back to
+        `service_item.template_name`)."""
         from apps.estimates.models import ServiceItem
         try:
             co = ChangeOrder.objects.get(pk=co_pk)
@@ -484,7 +727,7 @@ class ChangeOrderService:
             change_order=co,
             action=ChangeOrderLineItem.ACTION_ADD,
             service_item=service_item,
-            description=service_item.template_name,
+            description=(description or '').strip() or service_item.template_name,
             # str() first: a raw JSON float would expand to its binary value
             # and trip the 2-decimal-places validator.
             qty=_decimal_or_invalid(qty, 'qty'),
@@ -494,9 +737,11 @@ class ChangeOrderService:
         )
         li.full_clean()
         li.save()
+        ChangeOrderService.recompute_adjustment_replaces(co)
         return li
 
     @staticmethod
+    @transaction.atomic
     def update_line_item(line_item_id, **kwargs):
         """Update a change order line item — validates draft status."""
         try:
@@ -510,13 +755,35 @@ class ChangeOrderService:
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
         for field, value in kwargs.items():
             setattr(li, field, value)
-        EstimateService._apply_material_ac_default(li)
-        ChangeOrderService._assert_is_material_only_on_bare_line(li)
+        # Re-derive per_unit off the (possibly just-changed) target — see
+        # add_line_item's identical rule, same action="replace" scoping (an
+        # add/remove line's per_unit is never touched here, so a bundled
+        # per-unit add line surviving a later manual PATCH keeps its flag).
+        # Runs on every replace-line update (not just a target_line_item
+        # change) so it's a no-op when nothing relevant moved, and
+        # self-heals if it ever drifted.
+        if li.action == ChangeOrderLineItem.ACTION_REPLACE:
+            li.per_unit = bool(
+                li.target_line_item_id is not None and li.target_line_item.per_unit
+            )
+        target_categories = ChangeOrderService._apply_adjustment_replace_shape(li)
+        ChangeOrderService._derive_is_material(li, has_sources=li.sources.exists())
         li.full_clean()
+        if (li.action in (ChangeOrderLineItem.ACTION_REMOVE, ChangeOrderLineItem.ACTION_REPLACE)
+                and li.target_line_item_id):
+            ChangeOrderService._assert_target_not_billed(li.target_line_item)
         li.save()
+        if target_categories is not None:
+            li.adjustment_target_categories.set(target_categories)
+        changed = ChangeOrderService.recompute_adjustment_replaces(li.change_order)
+        if li.pk in changed:
+            # See add_line_item's comment: refresh so the caller sees the
+            # amended-basis price, not the pre-recompute one.
+            li.refresh_from_db()
         return li
 
     @staticmethod
+    @transaction.atomic
     def reorder_line_items(co_pk, item_ids):
         """Reorder change order line items by position list — validates draft status."""
         try:
@@ -531,8 +798,10 @@ class ChangeOrderService:
                 ChangeOrderLineItem.objects.filter(
                     pk=item_id, change_order=co,
                 ).update(line_number=position)
+        ChangeOrderService.recompute_adjustment_replaces(co)
 
     @staticmethod
+    @transaction.atomic
     def delete_line_item(line_item_id):
         """Delete a change order line item and renumber — validates draft status."""
         from apps.core.services import LineItemService
@@ -542,4 +811,7 @@ class ChangeOrderService:
             raise NotFoundError(f'ChangeOrderLineItem {line_item_id} not found')
         if li.change_order.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Cannot modify line items on a non-draft change order.')
-        return LineItemService.delete_line_item_with_renumber(li)
+        co = li.change_order
+        result = LineItemService.delete_line_item_with_renumber(li)
+        ChangeOrderService.recompute_adjustment_replaces(co)
+        return result

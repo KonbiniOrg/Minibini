@@ -117,6 +117,20 @@ class Estimate(models.Model):
             if existing_accepted.exists():
                 raise ValidationError(f'Job {self.job.job_number} already has an accepted estimate')
 
+        # Only one draft estimate per job (RM 2026-09-19): the draft is the
+        # only composable document, and the Tasks-page bundling flow resolves
+        # "the job's draft" as a singleton. Draft-vs-draft only — during
+        # revise_estimate a non-draft parent legally coexists with the new
+        # draft child until the parent is superseded moments later.
+        if self.status == Estimate.STATUS_DRAFT:
+            existing_draft = Estimate.objects.filter(
+                job=self.job,
+                status=Estimate.STATUS_DRAFT
+            ).exclude(pk=self.pk if self.pk else None)
+
+            if existing_draft.exists():
+                raise ValidationError(f'Job {self.job.job_number} already has a draft estimate')
+
     def save(self, *args, **kwargs):
         """Override save to detect status changes, set dates, and send signals if needed."""
         from apps.core.models import Configuration
@@ -172,9 +186,9 @@ class Estimate(models.Model):
             # save() so every writer is covered (portal decline, expiry
             # sweep, status actions, admin).
             from apps.estimates.claims import (
-                DEAD_DOCUMENT_STATUSES, release_estimate_claims,
+                ESTIMATE_DEAD_STATUSES, release_estimate_claims,
             )
-            if self.status in DEAD_DOCUMENT_STATUSES:
+            if self.status in ESTIMATE_DEAD_STATUSES:
                 release_estimate_claims(self)
             self._maybe_update_job_status(old_status)
 
@@ -324,6 +338,24 @@ class ChangeOrder(models.Model):
                     # run pre-email by ChangeOrderEmailService._validate_send.
                     ChangeOrderService.assert_all_bare_add_lines_have_ac(self)
 
+        # Only one draft change order per job (mirrors Estimate.clean()'s
+        # one-draft-estimate invariant, RM 2026-09-19/2026-09-20): the Tasks-
+        # page CO lens resolves "the job's draft CO" as a singleton. Draft-
+        # vs-draft only, self-excluded — request_changes's seed_new(
+        # move_claims=True) supersedes the source CO (status flips to
+        # SUPERSEDED and is saved) BEFORE seeding the new draft, so by the
+        # time the new draft CO is created the source is no longer draft;
+        # this never trips that transient. See
+        # ChangeOrderService.request_changes/seed_new for the order.
+        if self.status == self.STATUS_DRAFT:
+            existing_draft = ChangeOrder.objects.filter(
+                job=self.job,
+                status=self.STATUS_DRAFT,
+            ).exclude(pk=self.pk if self.pk else None)
+
+            if existing_draft.exists():
+                raise ValidationError(f'Job {self.job.job_number} already has a draft change order')
+
     def save(self, *args, **kwargs):
         from apps.core.models import Configuration
         from datetime import timedelta
@@ -355,9 +387,9 @@ class ChangeOrder(models.Model):
         # A dead CO releases its atom claims, same rule as Estimate above.
         if old_status and old_status != self.status:
             from apps.estimates.claims import (
-                DEAD_DOCUMENT_STATUSES, release_change_order_claims,
+                CO_DEAD_STATUSES, release_change_order_claims,
             )
-            if self.status in DEAD_DOCUMENT_STATUSES:
+            if self.status in CO_DEAD_STATUSES:
                 release_change_order_claims(self)
 
     def __str__(self):
@@ -487,6 +519,13 @@ class ServiceItem(models.Model):
 
     def clean(self):
         super().clean()
+        # Delegate config validation to the scheme — it owns the
+        # algorithm-specific shape of default_active_modifiers (percent-style
+        # key list vs. flat_fee's single amount entry). Guard the FK: an
+        # unsaved/incomplete instance (rate_scheme not yet set) must fail via
+        # the ordinary required-field error, not an AttributeError here.
+        if self.rate_scheme_id is not None:
+            self.rate_scheme.validate_item_config(self.default_active_modifiers)
 
     @property
     def effective_accounting_category(self):
@@ -496,32 +535,35 @@ class ServiceItem(models.Model):
                        assignee=None, sort_order=None,
                        name=None, description=None,
                        active_modifiers=None, est_worker_time=None,
-                       allow_superseded_scheme=False):
+                       allow_inactive_scheme=False):
         """Generate a Task on a Job from this template with specified quantity.
+
+        Stamps the template's RateScheme onto the Task (task-owned money
+        Phase 1) via ``Task.stamp_from_scheme`` before first save.
 
         Optional overrides:
           name            – if truthy, replaces template_name; empty string falls back to template default.
           description     – if not None, replaces template description (empty string is kept as-is).
-          active_modifiers – list of modifier keys; falls back to template defaults when None.
+          active_modifiers – list of modifier keys; falls back to
+                              ``self.default_active_modifiers`` when None.
           est_worker_time – ISO 8601 duration string or None.
-          allow_superseded_scheme – if True, bypasses SchemeSupersededError so acceptance can
-                                    crystallize a line whose scheme was superseded after the estimate
-                                    was created. Default False preserves current behavior.
+          allow_inactive_scheme – if True, bypasses SchemeInactiveError so acceptance can
+                                  crystallize a line whose scheme was deactivated after the estimate
+                                  was created. Default False preserves current behavior.
         """
-        from apps.jobs.models import Job, Task, copy_active_modifiers
-        from apps.core.services import SchemeSupersededError
+        from apps.jobs.models import Job, Task, SchemeInactiveError
         from django.db import transaction
 
-        if (self.rate_scheme_id and self.rate_scheme.replaced_by_id is not None
-                and not allow_superseded_scheme):
-            raise SchemeSupersededError(
-                f'Template "{self.template_name}" references a superseded '
+        scheme = self.rate_scheme
+        if not scheme.is_active and not allow_inactive_scheme:
+            raise SchemeInactiveError(
+                f'Template "{self.template_name}" references an inactive '
                 f'RateScheme. Update the template before adding tasks from it.'
             )
 
         resolved_name = name if name else self.template_name
         resolved_description = description if description is not None else self.description
-        resolved_modifiers = copy_active_modifiers(
+        resolved_modifier_keys = (
             active_modifiers if active_modifiers is not None
             else self.default_active_modifiers
         )
@@ -530,23 +572,23 @@ class ServiceItem(models.Model):
             raise ValueError(
                 'generate_task only supports a Job container (job-owns-atoms refactor).'
             )
-        if est_worker_time is None and est_qty is not None and self.rate_scheme_id:
+        if est_worker_time is None and est_qty is not None:
             from apps.jobs.services import hours_pair_fill
             est_qty, est_worker_time = hours_pair_fill(
-                self.rate_scheme, est_qty, None)
+                scheme.unit_label, est_qty, None)
         with transaction.atomic():
-            task = Task.objects.create(
+            task = Task(
                 job=container,
                 name=resolved_name,
                 description=resolved_description,
                 assignee=assignee,
                 sort_order=sort_order,
                 service_item=self,
-                rate_scheme=self.rate_scheme,
-                active_modifiers=resolved_modifiers,
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
             )
+            task.stamp_from_scheme(scheme, modifier_keys=resolved_modifier_keys)
+            task.save()
             from apps.jobs.services import JobService
             JobService.mark_work_reopened(container)
         return task
@@ -556,10 +598,22 @@ class EstimateLineItem(BaseLineItem):
     """Line item for estimates - inherits shared functionality from BaseLineItem."""
 
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
+    # adjustment_service: provenance ONLY (task-owned-money Phase 1, Task 5) —
+    # which preset this adjustment line was created from. Still what SELECTS a
+    # line as an adjustment (adjustment_service_id is not None is identity, not
+    # computation) but never read for math; adjustment_percent below is the
+    # price of record.
     adjustment_service = models.ForeignKey(
         'jobs.RateScheme', on_delete=models.PROTECT,
         null=True, blank=True, related_name='+',
         help_text='Set when this line is a percentage adjustment (rush/discount).',
+    )
+    adjustment_percent = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True,
+        help_text=(
+            "Snapshot of adjustment_service's rate at creation time. "
+            "compute_adjustment_amount reads this field, never the live scheme."
+        ),
     )
     adjustment_target_categories = models.ManyToManyField(
         'core.AccountingCategory', blank=True, related_name='+',
@@ -570,7 +624,7 @@ class EstimateLineItem(BaseLineItem):
         help_text=(
             'Marks a bare (no inventory_item, non-adjustment) freeform line as a '
             'material: at acceptance it crystallizes into a provisional Material '
-            '(sell price only, no lot) instead of a Fee.'
+            '(sell price only, no lot); non-material bare lines stay document-only.'
         ),
     )
     service_item = models.ForeignKey(
@@ -579,6 +633,24 @@ class EstimateLineItem(BaseLineItem):
         on_delete=models.PROTECT,
         related_name='+',
         help_text='Deferred service descriptor: crystallizes to a Task at acceptance.',
+    )
+    work_declined = models.BooleanField(
+        default=False,
+        help_text=(
+            'The "no work needed" answer on the acceptance checklist: a job '
+            'manager marks a plain hand line (no sources, not an adjustment, '
+            'not a deposit line, no catalog identity) as declined instead of '
+            'minting a task from it. Set-able only while the estimate is '
+            'accepted; reversible (false = unanswered again).'
+        ),
+    )
+    per_unit = models.BooleanField(
+        default=False,
+        help_text=(
+            'This line\'s claimed atoms describe ONE unit of qty (per-unit-lines '
+            'spec §2), not the whole-job total. Atoms themselves always store '
+            'whole-job totals; the per-unit snapshot lives on claim source rows.'
+        ),
     )
 
     class Meta:
@@ -595,18 +667,16 @@ class EstimateLineItem(BaseLineItem):
 
 
 class EstimateLineItemSource(models.Model):
-    """Polymorphic join between an EstimateLineItem and its source atom (Task, Material, or Fee).
+    """Polymorphic join between an EstimateLineItem and its source atom (Task or Material).
 
     The unique_together on (source_type, source_pk) enforces whole-atom claim at the
     database level: an atom can be referenced by at most one estimate line item.
     """
     SOURCE_TASK = 'task'
     SOURCE_MATERIAL = 'material'
-    SOURCE_FEE = 'fee'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_TASK, 'Task'),
         (SOURCE_MATERIAL, 'Material'),
-        (SOURCE_FEE, 'Fee'),
     ]
 
     source_id = models.AutoField(primary_key=True)
@@ -617,6 +687,14 @@ class EstimateLineItemSource(models.Model):
     )
     source_type = models.CharField(max_length=20, choices=SOURCE_TYPE_CHOICES)
     source_pk = models.PositiveIntegerField()
+    # Per-unit agreement snapshot (per-unit-lines spec §2/§3): populated only
+    # for claims on per_unit lines; atoms themselves always store totals.
+    per_unit_qty = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+    )
+    # Per-unit agreement snapshot (per-unit-lines spec §2/§3): populated only
+    # for claims on per_unit lines; atoms themselves always store totals.
+    per_unit_worker_time = models.DurationField(null=True, blank=True)
 
     class Meta:
         db_table = 'estimate_line_item_sources'
@@ -630,9 +708,6 @@ class EstimateLineItemSource(models.Model):
         if self.source_type == self.SOURCE_MATERIAL:
             from apps.inventory.models import Material
             return Material.objects.get(pk=self.source_pk)
-        if self.source_type == self.SOURCE_FEE:
-            from apps.jobs.models import Fee
-            return Fee.objects.get(pk=self.source_pk)
         raise ValueError(f'Unknown source_type: {self.source_type}')
 
     def __str__(self):
@@ -670,8 +745,8 @@ class ChangeOrderLineItem(BaseLineItem):
         help_text=(
             'Marks a bare (no inventory_item) freeform line as a material: at '
             'CO acceptance it crystallizes into a provisional Material '
-            '(sell price only, no lot) instead of a Fee. Mirrors '
-            'EstimateLineItem.is_material.'
+            '(sell price only, no lot); non-material bare lines stay '
+            'document-only. Mirrors EstimateLineItem.is_material.'
         ),
     )
     service_item = models.ForeignKey(
@@ -680,6 +755,34 @@ class ChangeOrderLineItem(BaseLineItem):
         on_delete=models.PROTECT,
         related_name='+',
         help_text='Deferred service descriptor: crystallizes to a Task at CO acceptance.',
+    )
+    # adjustment_service/adjustment_percent/adjustment_target_categories:
+    # mirror EstimateLineItem's adjustment triple exactly (task-owned-money
+    # Phase 1, Task 5 shape). Valid ONLY on a replace line whose target is
+    # itself an adjustment line — replace is commercial-only, and an
+    # adjustment's rate/target-categories are its entire commercial content.
+    adjustment_service = models.ForeignKey(
+        'jobs.RateScheme', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='+',
+        help_text='Set when this line is a percentage adjustment (rush/discount).',
+    )
+    adjustment_percent = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True,
+        help_text=(
+            "Snapshot of adjustment_service's rate at creation time. "
+            "compute_adjustment_amount reads this field, never the live scheme."
+        ),
+    )
+    adjustment_target_categories = models.ManyToManyField(
+        'core.AccountingCategory', blank=True, related_name='+',
+        help_text='Categories the adjustment applies to; empty = all non-adjustment lines.',
+    )
+    per_unit = models.BooleanField(
+        default=False,
+        help_text=(
+            'This line\'s claimed atoms describe ONE unit of qty (per-unit-lines '
+            'spec §2), not the whole-job total. Mirrors EstimateLineItem.per_unit.'
+        ),
     )
 
     class Meta:
@@ -712,6 +815,35 @@ class ChangeOrderLineItem(BaseLineItem):
                 raise ValidationError(
                     'action="remove" cannot carry a service item or material marker.'
                 )
+        if self.action == self.ACTION_REPLACE:
+            # replace amends the commercial line only (amend-in-place):
+            # changing the WORK behind an agreement line goes through
+            # remove + add, never a descriptor riding a replace.
+            if (
+                self.service_item_id is not None
+                or self.inventory_item_id is not None
+                or self.is_material
+            ):
+                raise ValidationError(
+                    'action="replace" amends the commercial line only — it '
+                    'cannot carry a service item, inventory item, or material '
+                    'marker. Use remove + add to change the work.'
+                )
+        has_adjustment_fields = (
+            self.adjustment_service_id is not None
+            or self.adjustment_percent is not None
+        )
+        if has_adjustment_fields:
+            target_is_adjustment = (
+                self.action == self.ACTION_REPLACE
+                and self.target_line_item_id
+                and self.target_line_item.adjustment_service_id is not None
+            )
+            if not target_is_adjustment:
+                raise ValidationError(
+                    'adjustment_service/adjustment_percent are only valid on '
+                    'a replace line whose target is itself an adjustment line.'
+                )
 
     def __str__(self):
         return f'CO Line Item {self.pk}: {self.action} — {self.description[:50]}'
@@ -721,20 +853,17 @@ class ChangeOrderLineItemSource(models.Model):
     """Polymorphic join between a ChangeOrderLineItem and the atom it crystallized.
 
     The CO analog of EstimateLineItemSource: created at CO acceptance for each
-    add/replace line, pointing at the Task/Material/Fee the line produced. It is
-    both the provenance record (compose_agreement traces crystallized CO fees so
-    the invoice claims them once) and the idempotency marker (a line with a
+    add/replace line, pointing at the Task/Material the line produced. It is
+    both the provenance record and the idempotency marker (a line with a
     source row is already crystallized and is skipped on re-run). The
     unique_together on (source_type, source_pk) enforces whole-atom claim at the
     database level within the CO lens.
     """
     SOURCE_TASK = 'task'
     SOURCE_MATERIAL = 'material'
-    SOURCE_FEE = 'fee'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_TASK, 'Task'),
         (SOURCE_MATERIAL, 'Material'),
-        (SOURCE_FEE, 'Fee'),
     ]
 
     source_id = models.AutoField(primary_key=True)
@@ -745,6 +874,14 @@ class ChangeOrderLineItemSource(models.Model):
     )
     source_type = models.CharField(max_length=20, choices=SOURCE_TYPE_CHOICES)
     source_pk = models.PositiveIntegerField()
+    # Per-unit agreement snapshot (per-unit-lines spec §2/§3): populated only
+    # for claims on per_unit lines; atoms themselves always store totals.
+    per_unit_qty = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+    )
+    # Per-unit agreement snapshot (per-unit-lines spec §2/§3): populated only
+    # for claims on per_unit lines; atoms themselves always store totals.
+    per_unit_worker_time = models.DurationField(null=True, blank=True)
 
     class Meta:
         db_table = 'co_li_sources'
@@ -758,9 +895,6 @@ class ChangeOrderLineItemSource(models.Model):
         if self.source_type == self.SOURCE_MATERIAL:
             from apps.inventory.models import Material
             return Material.objects.get(pk=self.source_pk)
-        if self.source_type == self.SOURCE_FEE:
-            from apps.jobs.models import Fee
-            return Fee.objects.get(pk=self.source_pk)
         raise ValueError(f'Unknown source_type: {self.source_type}')
 
     def __str__(self):

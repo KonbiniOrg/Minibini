@@ -44,9 +44,11 @@ class WorkCompleteBlockersTest(TestCase):
         )
 
     def _task(self, name, status=Task.STATUS_PENDING):
-        task = Task.objects.create(
-            job=self.job, name=name, rate_scheme=self.scheme,
+        task = Task(
+            job=self.job, name=name,
         )
+        task.stamp_from_scheme(self.scheme)
+        task.save()
         if status != Task.STATUS_PENDING:
             Task.objects.filter(pk=task.pk).update(status=status)
             task.refresh_from_db()
@@ -129,7 +131,9 @@ class WorkCompleteBlockersTest(TestCase):
         for status in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             job.status = status
             job.save()
-        Task.objects.create(job=job, name='Open', rate_scheme=self.scheme)
+        t = Task(job=job, name='Open')
+        t.stamp_from_scheme(self.scheme)
+        t.save()
         response = self.client.post(f'/api/jobs/{job.pk}/work-complete/')
         self.assertIsNotNone(response.data.get('blockers'))
         job.refresh_from_db()

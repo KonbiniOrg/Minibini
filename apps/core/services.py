@@ -58,11 +58,6 @@ class NotFoundError(ServiceError):
     pass
 
 
-class SchemeSupersededError(ServiceError):
-    """Raised when a template referencing a superseded RateScheme is used."""
-    pass
-
-
 class NumberGenerationService:
     """
     Service for generating sequential document numbers using Configuration key-value pairs.
@@ -994,6 +989,19 @@ class LineItemService:
         deleted_line_number = line_item.line_number
         parent_field_name = line_item.get_parent_field_name()
 
+        # Un-stamp on removal (per-unit-lines spec): a per_unit line's
+        # claimed atoms were stamped up to whole-job totals with the raw
+        # one-unit values snapshotted on each claim row
+        # (BaseWizardService._stamp_atom_per_unit). Deleting the line
+        # cascades those claim rows away with no other chance to read the
+        # snapshot first, so restore each undrifted field before the
+        # cascade fires. `getattr` (not a direct attribute read) is the
+        # guard: InvoiceLineItem/PurchaseOrderLineItem carry no `per_unit`
+        # field at all and must never reach `.sources`/the restore helper.
+        if getattr(line_item, 'per_unit', False) and line_item.sources.exists():
+            from apps.core.wizard import restore_per_unit_claims
+            restore_per_unit_claims(line_item)
+
         # Delete the line item
         line_item.delete()
 
@@ -1094,6 +1102,7 @@ class LineItemService:
             'Estimate': 'estimate',
             'Invoice': 'invoice',
             'PurchaseOrder': 'purchase_order',
+            'ChangeOrder': 'change_order',
         }
 
         parent_field_name = field_name_map.get(container_type)
@@ -1213,13 +1222,22 @@ class ConfigurationService:
 
     @staticmethod
     def update_rate_scheme(scheme, **fields):
-        """Update an unreferenced scheme. Referenced schemes are frozen —
-        every edit path is refused; new pricing means a new version
-        (supersede)."""
-        if scheme.is_referenced():
-            raise ValidationError(
-                'Scheme is referenced; create a new version instead of '
-                'editing.', code='referenced')
+        """Presets are freely editable (task-owned-money Phase 1, Task 4) —
+        a stamped Task owns a permanent copy of its money fields, so editing
+        a referenced preset never reprices anything already stamped from
+        it. No frozen fields, no referenced-freeze refusal.
+
+        `is_active` is a normal field here too (PATCH can flip it directly,
+        not just via retire()/reactivate()) — so the default-scheme guard
+        has to be checked here as well as in retire_rate_scheme, or a plain
+        PATCH {"is_active": false} would silently deactivate the scheme
+        `default_rate_scheme` points at (Task 7 review finding; the guard
+        itself is the RM browser-testing fix that replaced the old
+        clear-on-retire behavior)."""
+        was_active = scheme.is_active
+        is_active_after = fields.get('is_active', was_active)
+        if was_active and not is_active_after:
+            ConfigurationService._raise_if_default_rate_scheme(scheme.pk)
         for field, value in fields.items():
             setattr(scheme, field, value)
         scheme.full_clean()
@@ -1228,20 +1246,68 @@ class ConfigurationService:
 
     @staticmethod
     def delete_rate_scheme(scheme):
-        if scheme.is_referenced():
-            raise ValidationError(
-                'Scheme is referenced; create a new version instead of '
-                'deleting.', code='referenced')
+        """Deleting a scheme with stamped tasks is allowed — Task.source_scheme
+        is SET_NULL, and the task's own money fields are unaffected. A scheme
+        still referenced by a ServiceItem can't be deleted: ServiceItem.rate_scheme
+        is PROTECT at the DB level, so that raises ProtectedError uncaught.
+
+        A scheme that's the current `default_rate_scheme` can't be deleted
+        either — same guard as retire (§ below)."""
+        ConfigurationService._raise_if_default_rate_scheme(scheme.pk)
         scheme.delete()
 
+    DEFAULT_RATE_SCHEME_GUARD_MESSAGE = (
+        'This Rate Scheme is the default for new tasks — change the '
+        'default first.'
+    )
+
     @staticmethod
-    def supersede_rate_scheme(scheme, **overrides):
-        """Thin wrapper so the viewset never writes models directly; the
-        chain logic lives on RateScheme.supersede."""
-        if scheme.replaced_by_id is not None:
-            raise ValidationError('Scheme is already superseded.',
-                                  code='superseded')
-        return scheme.supersede(**overrides)
+    def _raise_if_default_rate_scheme(pk):
+        """Shared by retire_rate_scheme, delete_rate_scheme, and
+        update_rate_scheme's active->inactive transition: reject the
+        operation outright when the target is the current
+        `default_rate_scheme` Configuration key, rather than silently
+        clearing the key out from under the setting (RM browser-testing
+        finding — retiring the default gave no signal that it was the
+        default, and left the picker pointing at nothing). The caller must
+        change the default first."""
+        default = Configuration.objects.filter(key='default_rate_scheme').first()
+        if default is not None and default.value == str(pk):
+            raise ValidationError(
+                ConfigurationService.DEFAULT_RATE_SCHEME_GUARD_MESSAGE,
+                code='is_default')
+
+    @staticmethod
+    def retire_rate_scheme(pk):
+        """Flip is_active off. Retiring only hides the preset from *new*
+        task-creation paths (SchemeInactiveError) — stamped tasks and their
+        money fields are untouched.
+
+        Rejected outright if this scheme is the current `default_rate_scheme`
+        Configuration key (the Settings-page default preset for task
+        creation) — the caller must change the default first rather than
+        have it silently cleared."""
+        from apps.jobs.models import RateScheme
+        try:
+            scheme = RateScheme.objects.get(pk=pk)
+        except RateScheme.DoesNotExist:
+            raise NotFoundError(f'RateScheme {pk} not found')
+        ConfigurationService._raise_if_default_rate_scheme(pk)
+        scheme.is_active = False
+        scheme.save()
+        return scheme
+
+    @staticmethod
+    def reactivate_rate_scheme(pk):
+        """Flip is_active back on."""
+        from apps.jobs.models import RateScheme
+        try:
+            scheme = RateScheme.objects.get(pk=pk)
+        except RateScheme.DoesNotExist:
+            raise NotFoundError(f'RateScheme {pk} not found')
+        scheme.is_active = True
+        scheme.save()
+        return scheme
 
 
 def _outbound_from_email():

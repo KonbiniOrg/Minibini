@@ -5,7 +5,7 @@ and the task-detail page. See docs/plans/2026-05-24-blep-handling-changes.md §2
 from rest_framework.test import APIClient
 
 from tests.base import BaseTestCase
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.core.models import User
 from apps.jobs.services import TaskLifecycleService
 
@@ -20,7 +20,9 @@ class BlepMinMinutesPayloadTest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(job=self.job, name='T', rate_scheme_id=1)
+        self.task = Task(job=self.job, name='T')
+        self.task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        self.task.save()
 
     def test_current_blep_includes_min_minutes(self):
         TaskLifecycleService.start_work(self.task.pk, self.user)

@@ -3,6 +3,7 @@
   import InventoryItemPicker from '../InventoryItemPicker.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
   import JobPicker from '../JobPicker.svelte';
+  import TaskLinkPicker from '../TaskLinkPicker.svelte';
 
   const {
     categories = [],
@@ -19,6 +20,16 @@
   let jobId = $state(defaultJob?.job_id ?? null);
   // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let jobRow = $state(defaultJob ?? null);
+
+  // Cost→sell task attribution (outsourced-work port, spec §7 rule 1),
+  // cascading from the ONE Job picker above (PO Job/Task consolidation,
+  // RM 2026-09-21 — this form used to have a second, independent Job
+  // picker feeding TaskLinkPicker's own cascade, which let a caller fill
+  // BOTH and crash at save; see docs/designs/materials-inventory-and-
+  // purchasing.md §10a). A task pick means "pure cost attribution" — the
+  // task implies its job, so `job` is withheld from the payload and no
+  // Material is ever created for this line.
+  let taskId = $state(null);
 
   let form = $state({
     description: '',
@@ -89,11 +100,15 @@
       }
     }
 
-    if (jobId) {
-      data.job = jobId;
-    }
-    if (materialId) {
-      data.material_id = materialId;
+    // Task picked -> pure cost-attribution line: send `task`, withhold
+    // `job`/`material_id` entirely (the task implies its job; no Material
+    // is ever created for this line). Job picked, no task -> exactly
+    // today's material-procurement payload, unchanged.
+    if (taskId) {
+      data.task = taskId;
+    } else {
+      if (jobId) data.job = jobId;
+      if (materialId) data.material_id = materialId;
     }
 
     onSubmit(data);
@@ -155,7 +170,7 @@
           <label for="accounting_category"><strong>Category</strong></label><br>
           <select id="accounting_category" bind:value={form.accounting_category}>
             <option value="">-- None --</option>
-            {#each categories as cat}
+            {#each categories.filter((c) => !c.is_fallback) as cat}
               <option value={cat.id}>{cat.name}</option>
             {/each}
           </select>
@@ -167,6 +182,16 @@
       <label><strong>Job (optional)</strong></label><br>
       <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} openOnly />
     </p>
+
+    {#if jobId}
+      <p>
+        <label><strong>Task Link (optional)</strong></label><br>
+        <TaskLinkPicker bind:value={taskId} job={jobId} />
+        {#if taskId}
+          <br><small>Cost will be attributed to this task — no material is created.</small>
+        {/if}
+      </p>
+    {/if}
 
     <p>
       <button type="submit">Add</button>

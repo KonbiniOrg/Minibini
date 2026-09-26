@@ -14,8 +14,6 @@
     apiBase = '',             // e.g. '/api/estimates/123' or '/api/invoices/123'
     item = null,              // line item being edited (edit mode)
     categories = [],
-    showMaterialMarker = false,        // estimate surface only
-    defaultMaterialCategoryId = null,  // AC pk from default_material_accounting_category
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -28,7 +26,6 @@
   let units = $state('none');
   let price = $state('');
   let accountingCategory = $state('');
-  let isMaterial = $state(false);
   let isComment = $state(false);
   let busy = $state(false);
   let formError = $state('');
@@ -44,7 +41,6 @@
         units = item.units || 'none';
         price = item.price ?? '';
         accountingCategory = item.accounting_category ?? '';
-        isMaterial = item.is_material ?? false;
         isComment = item.is_comment ?? false;
       } else {
         description = '';
@@ -52,11 +48,11 @@
         units = 'none';
         price = '';
         accountingCategory = '';
-        isMaterial = false;
         isComment = false;
       }
       formError = '';
       fieldErrs = {};
+      deliverableChoiceOpen = false;
     }
   });
 
@@ -71,15 +67,28 @@
     }
   }
 
-  function onMaterialToggle(event) {
-    // onchange fires before bind:checked updates isMaterial; read the DOM state directly.
-    // Keep the value as a number so Svelte's option-value comparison (===) matches cat.id.
-    if (event.target.checked && !accountingCategory && defaultMaterialCategoryId != null) {
-      accountingCategory = defaultMaterialCategoryId;
-    }
+  // Make Deliverable edit dialog (RM 2026-08-12): when an edited line has a
+  // deliverable made from it AND the edit touches what the deliverable
+  // mirrors (description/qty/units — never price), Save first asks whether
+  // the deliverable should update too. The choice rides the PATCH as
+  // ?update_deliverables=true; onSaved receives {deliverablesUpdated} so the
+  // estimate surface can refresh the job-context band.
+  let deliverableChoiceOpen = $state(false);
+
+  function deliverableRelevantChange() {
+    if (mode !== 'edit' || !item) return false;
+    if (!(item.linked_deliverables || []).length) return false;
+    return description !== (item.description ?? '')
+      || Number(qty || 0) !== Number(item.qty || 0)
+      || (units || 'none') !== (item.units || 'none');
   }
 
-  async function save() {
+  async function save({ updateDeliverables = null } = {}) {
+    if (updateDeliverables === null && deliverableRelevantChange()) {
+      deliverableChoiceOpen = true;
+      return;
+    }
+    deliverableChoiceOpen = false;
     busy = true;
     formError = '';
     fieldErrs = {};
@@ -95,10 +104,11 @@
           qty: qty || '1',
         });
       } else {
-        const isMaterialLine = showMaterialMarker && isMaterial;
-        // Accounting category is required for fees; materials default server-side;
-        // comment lines never touch the accounting side at all.
-        if (!accountingCategory && !isMaterialLine && !isComment) {
+        // Every hand line requires an AC — choosing the Materials AC is what
+        // makes it a material (is_material derives server-side, RM 2026-08-11;
+        // the old "Is this a material?" checkbox is retired). A comment line
+        // never touches the accounting side at all.
+        if (!accountingCategory && !isComment) {
           fieldErrs = { accounting_category: ['Accounting Category is required.'] };
           busy = false;
           return;
@@ -111,16 +121,14 @@
           price: isComment ? '0' : (price || '0'),
           accounting_category: isComment ? null : (accountingCategory ? Number(accountingCategory) : null),
         };
-        if (showMaterialMarker) {
-          payload.is_material = isComment ? false : isMaterial;
-        }
         if (mode === 'edit' && item) {
-          await api.patch(`${apiBase}/line-items/${item.line_item_id}/`, payload);
+          const suffix = updateDeliverables ? '?update_deliverables=true' : '';
+          await api.patch(`${apiBase}/line-items/${item.line_item_id}/${suffix}`, payload);
         } else {
           await api.post(`${apiBase}/line-items/`, payload);
         }
       }
-      onSaved();
+      onSaved({ deliverablesUpdated: updateDeliverables === true });
     } catch (e) {
       const t = triageError(e);
       if (t.overlay) {
@@ -199,26 +207,39 @@
             <label><strong>Accounting Category *</strong><br>
               <select bind:value={accountingCategory}>
                 <option value="">-- Select --</option>
-                {#each categories as cat}
+                {#each categories.filter((c) => !c.is_fallback) as cat}
                   <option value={cat.id}>{cat.code} - {cat.name}</option>
                 {/each}
               </select>
             </label>
             <FieldError errors={fieldErrs} field="accounting_category" />
           </p>
-          {#if showMaterialMarker}
-            <p>
-              <label>
-                <input type="checkbox" bind:checked={isMaterial} onchange={onMaterialToggle}>
-                Is this a material?
-              </label>
-              <FieldError errors={fieldErrs} field="is_material" />
-            </p>
-          {/if}
         {/if}
       {/if}
 
-      <div class="buttons">
+      {#if deliverableChoiceOpen}
+        <div class="deliverable-choice">
+          <p>
+            A deliverable was made from this line
+            ("{((item?.linked_deliverables || [])[0] || {}).description}").
+            Update it to match these changes?
+          </p>
+          <div class="buttons">
+            <button type="button" disabled={busy}
+              onclick={() => save({ updateDeliverables: true })}>
+              Save and update deliverable
+            </button>
+            <button type="button" disabled={busy}
+              onclick={() => save({ updateDeliverables: false })}>
+              Save, keep deliverable as is
+            </button>
+            <button type="button" disabled={busy}
+              onclick={() => { deliverableChoiceOpen = false; }}>Back</button>
+          </div>
+        </div>
+      {/if}
+
+      <div class="buttons" hidden={deliverableChoiceOpen}>
         <button type="submit" disabled={busy}>Save</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>

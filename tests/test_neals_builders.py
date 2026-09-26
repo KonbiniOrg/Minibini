@@ -97,6 +97,71 @@ class BaseBuildersTest(unittest.TestCase):
                  'm', 'lb', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft']
         self.assertEqual(value, canon)
 
+    def test_service_items_and_extra_categories_come_from_internal_tables(self):
+        """RM 2026-08-18: the converter preserves RM's dev-authored catalog —
+        ServiceItems and the extra (DEP/UNC) AccountingCategories are emitted
+        from converter-internal tables so a regen never wipes them."""
+        build.build_seed(self.c)
+        items = {f['pk']: f['fields'] for f in self._models('estimates.serviceitem')}
+        table = {pk: fields for pk, fields in build.CONVERTER_SERVICE_ITEMS}
+        self.assertEqual(set(items), set(table))
+        for pk, fields in table.items():
+            for k, v in fields.items():
+                self.assertEqual(items[pk][k], v, f'serviceitem {pk} field {k}')
+            self.assertIn('created_date', items[pk])
+            # Every item's scheme FK resolves to an emitted scheme.
+            self.assertIn(fields['rate_scheme'], self.c.scheme_fields_by_pk)
+        # Flat-fee items carry a one-entry amount config (the scheme owns the
+        # interpretation; this pins the emitted shape).
+        flat_pks = {pk for pk, f in build.CONVERTER_SCHEMES
+                    if f['algorithm'] == 'flat_fee'}
+        for pk, fields in table.items():
+            if fields['rate_scheme'] in flat_pks:
+                cfg = fields['default_active_modifiers']
+                self.assertEqual(len(cfg), 1)
+                self.assertIn('amount', cfg[0])
+        # Extra categories emitted with their codes indexed.
+        acs = {f['pk']: f['fields'] for f in self._models('core.accountingcategory')}
+        for pk, fields in build.CONVERTER_EXTRA_CATEGORIES:
+            self.assertEqual(acs[pk]['code'], fields['code'])
+            self.assertEqual(self.c.ac_by_code[fields['code']], pk)
+        self.assertTrue(acs[5]['is_deposit'])
+
+    def test_configuration_carries_rm_settings(self):
+        """The defaults/email/Business-tab keys RM tunes in dev are emitted so
+        a regen'd DB comes up configured (RM 2026-08-18)."""
+        build.build_seed(self.c)
+        build.build_configuration(self.c)
+        config = {f['pk']: f['fields']['value']
+                  for f in self._models('core.configuration')}
+        self.assertEqual(config['default_rate_scheme'], '7')
+        self.assertEqual(config['default_deposit_accounting_category'], '5')
+        self.assertEqual(config['fallback_accounting_category'], '6')
+        for key in ('email_address', 'email_imap_server', 'email_password',
+                    'email_smtp_host', 'email_smtp_port',
+                    'business_email', 'our_public_url', 'our_domain'):
+            self.assertTrue(config.get(key), f'missing config key {key}')
+
+    def test_schemes_come_from_the_internal_table_not_nealseed(self):
+        """RM 2026-08-16 (flat-fee Task 4): the converter sources its
+        RateSchemes from build.CONVERTER_SCHEMES — nealseed's ratescheme
+        records are ignored, so a new algorithm never requires touching the
+        RM-managed seed files. The 8 legacy schemes keep their pks/fields;
+        one flat_fee scheme is added."""
+        build.build_seed(self.c)
+        emitted = {f['pk']: f['fields'] for f in self._models('jobs.ratescheme')}
+        table = {pk: dict(fields) for pk, fields in build.CONVERTER_SCHEMES}
+        self.assertEqual(emitted, table)
+        # The internal table includes exactly one flat_fee scheme.
+        flat = [f for f in emitted.values() if f['algorithm'] == 'flat_fee']
+        self.assertEqual(len(flat), 1)
+        self.assertEqual(flat[0]['rate'], '0.00')
+        self.assertEqual(flat[0]['modifiers'], [])
+        # Legacy names survive with their original pks (downstream builders
+        # key on scheme_by_name / scheme_fields_by_pk).
+        self.assertEqual(self.c.scheme_by_name.get('Shop labor'), 7)
+        self.assertEqual(self.c.scheme_by_name.get('CNC routing'), 1)
+
     def test_ratescheme_unit_labels_within_canon(self):
         # Every emitted RateScheme.unit_label must be a value in the
         # converter's units_list. DEFAULT_UNITS uses singular 'hour', and the
@@ -127,6 +192,20 @@ class BaseBuildersTest(unittest.TestCase):
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
+class CanonUnitLabelTest(unittest.TestCase):
+    """RM 2026-08-12: seed rate-scheme unit labels self-heal 'hours' -> 'hour'
+    (plural drift breaks the SPA's hour-unit single-field collapse)."""
+
+    def test_hours_drops_the_s(self):
+        self.assertEqual(build._canon_unit_label('hours'), 'hour')
+        self.assertEqual(build._canon_unit_label('Hours'), 'hour')
+        self.assertEqual(build._canon_unit_label(' HOURS '), 'hour')
+
+    def test_everything_else_passes_through(self):
+        for label in ('hour', 'min', 'ea', 'none', 'sq ft', '', None):
+            self.assertEqual(build._canon_unit_label(label), label)
+
+
 class UniqueEmailTest(unittest.TestCase):
     def test_first_occurrence_keeps_the_original(self):
         seen = set()
@@ -145,6 +224,25 @@ class UniqueEmailTest(unittest.TestCase):
         seen = {'test+info@robot-six.com', 'test+info1@robot-six.com'}
         self.assertEqual(build._unique_email('test+info@robot-six.com', seen),
                          'test+info2@robot-six.com')
+
+    def test_collisions_are_case_insensitive(self):
+        # MySQL's default *_ci collation makes Contact.email's unique index
+        # case-insensitive, so test+Brian@ and test+brian@ collide on load.
+        seen = set()
+        self.assertEqual(build._unique_email('test+Brian@robot-six.com', seen),
+                         'test+Brian@robot-six.com')
+        self.assertEqual(build._unique_email('test+brian@robot-six.com', seen),
+                         'test+brian1@robot-six.com')
+        self.assertEqual(build._unique_email('TEST+BRIAN@robot-six.com', seen),
+                         'TEST+BRIAN2@robot-six.com')
+
+    def test_numbering_skips_case_variants_already_taken(self):
+        # The registry holds lowercased keys (only _unique_email writes it).
+        seen = set()
+        build._unique_email('test+brian@robot-six.com', seen)
+        build._unique_email('test+Brian@robot-six.com', seen)   # -> Brian1
+        self.assertEqual(build._unique_email('test+BRIAN@robot-six.com', seen),
+                         'test+BRIAN2@robot-six.com')
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
@@ -412,17 +510,18 @@ class EstimateBuilderTest(unittest.TestCase):
         self.assertEqual(len(tokens), len(set(tokens)),
                          'public_token must be unique across estimates')
 
-    def test_estimate_number_derives_from_job_number_and_version(self):
-        # The canonical form is "{job_number}-{version}". Job number ==
-        # FreeAgent base ref, version is the per-chain index.
+    def test_estimate_number_is_the_bare_job_number(self):
+        # App convention (RM 2026-08-17): estimate_number == job_number with
+        # NO version suffix — `version` is its own field and the SPA renders
+        # "{estimate_number}-{version}". (The old "{base}-{version}" emission
+        # double-suffixed converted estimates in the UI: "07998-1-1".)
         build.build_estimates(self.c)
         for base_ref, est_list in self.c.estimates.items():
             for entry in est_list:
                 est = next(f for f in self._models('estimates.estimate')
                            if f['pk'] == entry['est_pk'])
-                self.assertEqual(
-                    est['fields']['estimate_number'],
-                    f'{base_ref}-{entry["version"]}')
+                self.assertEqual(est['fields']['estimate_number'], base_ref)
+                self.assertEqual(est['fields']['version'], entry['version'])
 
     def test_comment_lines_excluded_and_estimates_link_to_jobs(self):
         build.build_estimates(self.c)
@@ -457,9 +556,18 @@ class AtomDerivationTest(unittest.TestCase):
         build.derive_atoms(self.c)
         self.assertGreater(len(self._models('jobs.ratescheme')), 0)
         self.assertGreater(len(self._models('jobs.task')), 0)
-        rs_pks = {f['pk'] for f in self._models('jobs.ratescheme')}
+        schemes_by_pk = {f['pk']: f['fields'] for f in self._models('jobs.ratescheme')}
         for t in self._models('jobs.task'):
-            self.assertIn(t['fields']['rate_scheme'], rs_pks)
+            fields = t['fields']
+            self.assertIn(fields['source_scheme'], schemes_by_pk)
+            # Task-owned money (task-owned-money Phase 1): the task carries its
+            # own permanent copy of the resolved scheme's money fields, mirroring
+            # Task.stamp_from_scheme / task_money_backfill.backfill_task_money.
+            scheme = schemes_by_pk[fields['source_scheme']]
+            self.assertEqual(fields['qty_source'], scheme['algorithm'])
+            self.assertEqual(fields['rate'], scheme['rate'])
+            self.assertEqual(fields['unit_label'], scheme['unit_label'])
+            self.assertEqual(fields['accounting_category'], scheme['accounting_category'])
 
     def test_atoms_emit_canon_units_only(self):
         # Materials and Deliverables must use canonical units (no 'each' /
@@ -484,30 +592,84 @@ class AtomDerivationTest(unittest.TestCase):
             self.assertNotIn('flat_fee_price', mods if isinstance(mods, dict) else {},
                              f"task {t['pk']} active_modifiers must not contain flat_fee_price")
 
-    def test_flat_fee_tasks_use_per_price_rate_scheme(self):
-        # After Phase 1 reframe: flat-fee tasks point to a per-price RateScheme
-        # (rate = the fee amount) and carry an empty list active_modifiers.
-        # No shared zero-rate 'Flat Fee' scheme should be emitted.
+    def test_flat_fee_tasks_carry_their_own_rate(self):
+        # REWRITTEN 2026-08-16 (flat-fee redesign): the old "Phase 1 reframe"
+        # contract (per-price flat_fee schemes, no shared catch-all) is
+        # superseded — the new design is ONE shared zero-rate flat_fee scheme
+        # whose ServiceItems carry item-side amounts, resolved into Task.rate
+        # at stamp time. The converter emits exactly that shared scheme; any
+        # flat-fee TASK still carries its own nonzero rate (money on the
+        # task, never on the scheme) and empty list active_modifiers.
         build.derive_atoms(self.c)
         ff_schemes = [f for f in self._models('jobs.ratescheme')
                       if f['fields'].get('algorithm') == 'flat_fee']
-        # No zero-rate shared catch-all scheme.
-        for f in ff_schemes:
-            self.assertNotEqual(
-                f['fields']['rate'], '0.00',
-                f"flat_fee RateScheme pk={f['pk']} has rate=0.00 (shared catch-all should not be emitted)")
-        # Every flat-fee task: rate on RateScheme, empty list modifiers.
+        self.assertEqual(len(ff_schemes), 1)
+        self.assertEqual(ff_schemes[0]['fields']['rate'], '0.00')
+        self.assertEqual(ff_schemes[0]['fields']['modifiers'], [])
         ff_pks = {f['pk'] for f in ff_schemes}
         for t in self._models('jobs.task'):
-            sp = t['fields']['rate_scheme']
+            sp = t['fields']['source_scheme']
             mods = t['fields']['active_modifiers']
             self.assertIsInstance(mods, list,
                                   f"task {t['pk']} active_modifiers should be list")
             if sp in ff_pks:
-                # The price must be on the RateScheme.rate, not in modifiers.
-                rate_str = next(f['fields']['rate'] for f in ff_schemes if f['pk'] == sp)
-                self.assertNotEqual(rate_str, '0.00',
-                                    f"task {t['pk']} points to a flat_fee scheme with zero rate")
+                self.assertNotEqual(
+                    t['fields']['rate'], '0.00',
+                    f"task {t['pk']} stamped from the flat_fee scheme must "
+                    f"carry its own nonzero rate (item-side amount)")
+                self.assertEqual(mods, [])
+
+    def test_fixed_charge_lines_stay_plain_no_atom_no_source(self):
+        # better-fees spec §4 (Fee model deleted): a task-classified line with
+        # no time/quantity signal is 'plain' — the estimate line item keeps its
+        # price, but NO atom and NO source row crystallize from it. The
+        # jobs.Fee model string must not appear in output at all, and no
+        # source row may carry source_type='fee'.
+        build.derive_atoms(self.c)
+        self.assertEqual(
+            [f for f in self.c.fixture_data if f['model'] == 'jobs.fee'], [])
+        self.assertEqual(
+            [s for s in self._models('estimates.estimatelineitemsource')
+             if s['fields']['source_type'] == 'fee'], [])
+        # Find the plain-classified task lines on each job's latest estimate
+        # (the lines _build_line_item_tasks saw) and pin: line emitted with
+        # its price, unclaimed by any source, and no Task made from it.
+        line_by_pk = {f['pk']: f
+                      for f in self._models('estimates.estimatelineitem')}
+        sourced = {s['fields']['estimate_line_item']
+                   for s in self._models('estimates.estimatelineitemsource')}
+        tasks_by_job = {}
+        for t in self._models('jobs.task'):
+            tasks_by_job.setdefault(
+                t['fields']['job'], set()).add(t['fields']['name'])
+        plain_lines = []  # (li, job_pk, fallback_path_ran)
+        for base_ref, job_info in self.c.jobs.items():
+            est_list = self.c.estimates.get(base_ref, [])
+            if not est_list:
+                continue
+            latest = max(est_list, key=lambda e: e['version'])
+            has_checklist = bool(
+                P.parse_checklist(job_info['card'].get('Checklist')))
+            for li in self.c.line_items.get(latest['est_pk'], []):
+                if li['classification'] != 'task':
+                    continue
+                kind, _, _ = build._line_billing(self.c, li)
+                if kind == 'plain':
+                    plain_lines.append(
+                        (li, job_info['job_pk'], not has_checklist))
+        self.assertGreater(len(plain_lines), 0,
+                           'dataset slice has no plain fixed-charge lines')
+        for li, job_pk, fallback_ran in plain_lines:
+            fixture = line_by_pk[li['line_item_pk']]
+            self.assertEqual(fixture['fields']['price'], f"{li['price']:.2f}",
+                             'plain line must keep its price')
+            self.assertNotIn(li['line_item_pk'], sourced,
+                             'plain line must not be claimed by any atom')
+            if fallback_ran:
+                name = (li['description'] or 'Task')[:255] or 'Task'
+                self.assertNotIn(
+                    name, tasks_by_job.get(job_pk, set()),
+                    'plain line must not crystallize into a Task')
 
     def test_assign_worker_times_random_per_task_in_range(self):
         # Every task/plantask gets an invented per-task estimate in [0.5, 4.0]h
@@ -556,9 +718,9 @@ class AtomDerivationTest(unittest.TestCase):
     def test_every_derived_material_is_claimed_by_its_source_line(self):
         # A Material derived from a material-classified estimate line is that
         # line's crystallized atom — the converter must record the claim
-        # (EstimateLineItemSource, source_type='material'), exactly as it does
-        # for fees. Without it, accepting a still-open estimate in-app
-        # re-crystallizes the line as a bare Fee → duplicate atoms (job 08008).
+        # (EstimateLineItemSource, source_type='material'). Without it the
+        # line looks unsourced, and accepting a still-open estimate in-app
+        # re-crystallizes it → duplicate atoms (job 08008).
         build.derive_atoms(self.c)
         materials = self._models('inventory.material')
         self.assertGreater(len(materials), 0)
@@ -673,6 +835,75 @@ class InvoiceBuilderTest(unittest.TestCase):
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class InvoiceAgreementRefsTest(unittest.TestCase):
+    """RM 2026-08-12: converted invoice lines carry agreement_estimate_line
+    refs (description-matched to the job's latest ACCEPTED estimate) so
+    the one-live-invoice-per-agreement-line invariant holds on converted
+    jobs — without them, Start Invoice re-seeds the full agreement next to
+    an open legacy invoice."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=20)
+        cls.c.loader.load()
+        cls.c.csv_cards = cls.c.csv_loader.load()
+        cls.c.spine = cls.c.select_spine()
+        build.build_seed(cls.c)
+        build.build_contacts_and_businesses(cls.c)
+        build.build_jobs(cls.c)
+        build.build_estimates(cls.c)
+        build.derive_atoms(cls.c)
+        build.build_invoices(cls.c)
+        reconcile.reconcile(cls.c)
+        build.build_invoice_agreement_refs(cls.c)
+
+    def _m(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_refs_point_at_the_same_jobs_latest_accepted_estimate(self):
+        est_by_pk = {f['pk']: f['fields'] for f in self._m('estimates.estimate')}
+        est_line_by_pk = {f['pk']: f['fields']
+                          for f in self._m('estimates.estimatelineitem')}
+        inv_by_pk = {f['pk']: f['fields'] for f in self._m('invoicing.invoice')}
+        latest_by_job = {}
+        for pk, fields in est_by_pk.items():
+            cur = latest_by_job.get(fields['job'])
+            if cur is None or fields['version'] > est_by_pk[cur]['version']:
+                latest_by_job[fields['job']] = pk
+
+        refs = 0
+        for f in self._m('invoicing.invoicelineitem'):
+            ref = f['fields'].get('agreement_estimate_line')
+            if ref is None:
+                continue
+            refs += 1
+            inv = inv_by_pk[f['fields']['invoice']]
+            est_line = est_line_by_pk[ref]
+            est = est_by_pk[est_line['estimate']]
+            self.assertEqual(est['job'], inv['job'],
+                             f"line {f['pk']} refs another job's estimate line")
+            self.assertEqual(est_line['estimate'], latest_by_job[inv['job']])
+            self.assertEqual(est['status'], 'accepted')
+            self.assertNotEqual(inv.get('status'), 'cancelled')
+            self.assertIsNone(est_line.get('adjustment_service'))
+        # Sanity: the heuristic actually fires on the real dataset.
+        self.assertGreater(refs, 0)
+
+    def test_one_live_invoice_per_agreement_line(self):
+        seen = {}
+        for f in self._m('invoicing.invoicelineitem'):
+            ref = f['fields'].get('agreement_estimate_line')
+            if ref is None:
+                continue
+            inv_pk = f['fields']['invoice']
+            self.assertNotIn(
+                ref, seen,
+                f'estimate line {ref} referenced by invoices {seen.get(ref)} and {inv_pk}')
+            seen[ref] = inv_pk
+
+
 class ReconcileTest(unittest.TestCase):
     def setUp(self):
         self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=20)
@@ -738,6 +969,48 @@ class ReconcileTest(unittest.TestCase):
         valid = ('pending', 'in_progress', 'blocked', 'complete', 'cancelled')
         for t in self._models('jobs.task'):
             self.assertIn(t['fields']['status'], valid)
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class SyntheticEstimateSourcesTest(unittest.TestCase):
+    def setUp(self):
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=20)
+        self.c.loader.load()
+        self.c.csv_cards = self.c.csv_loader.load()
+        self.c.spine = self.c.select_spine()
+        build.build_seed(self.c)
+        build.build_contacts_and_businesses(self.c)
+        build.build_jobs(self.c)
+        build.build_estimates(self.c)
+        build.derive_atoms(self.c)
+        build.build_invoices(self.c)
+        reconcile.reconcile(self.c)
+        build.build_synthetic_estimate_sources(self.c)
+
+    def _models(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_no_source_claims_a_line_on_a_superseded_estimate(self):
+        # In-app invariant: revising an estimate MOVES every source row onto
+        # the revision's copied lines, so a superseded estimate keeps its line
+        # items as a frozen snapshot but holds zero claims. The synthetic pass
+        # must respect that — a claim stranded on an old revision surfaces in
+        # the estimate/CO wizard pools as a bogus "Claimed by estimate
+        # <superseded rev>" blocked row.
+        est_status = {f['pk']: f['fields']['status']
+                      for f in self._models('estimates.estimate')}
+        line_estimate = {f['pk']: f['fields']['estimate']
+                         for f in self._models('estimates.estimatelineitem')}
+        for s in self._models('estimates.estimatelineitemsource'):
+            est_pk = line_estimate[s['fields']['estimate_line_item']]
+            self.assertNotIn(
+                est_status[est_pk], ('superseded', 'rejected'),
+                f"source {s['pk']} claims {s['fields']['source_type']} "
+                f"{s['fields']['source_pk']} on a line of "
+                f"{est_status[est_pk]} estimate {est_pk} — superseded moved "
+                f"its claims to the revision; rejected released them. "
+                f"(Expired estimates legitimately KEEP claims, RM 2026-08-13.)")
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
@@ -1380,7 +1653,8 @@ class ConvertEndToEndTest(unittest.TestCase):
         c = NealsDataConverter(XLSX, CSV, output_path=path, limit=40)
         c.convert()
         with open(path) as f:
-            data = json.load(f)
+            raw = f.read()
+        data = json.loads(raw)
         self.assertIsInstance(data, list)
         self.assertGreater(len(data), 0)
         models = {row['model'] for row in data}
@@ -1390,6 +1664,11 @@ class ConvertEndToEndTest(unittest.TestCase):
         self.assertIn('jobs.blep', models)
         self.assertIn('core.shift', models)
         self.assertNotIn('jobs.workorder', models)
+        # Fee model deleted (better-fees spec §4): the literal model string
+        # and the fee source_type must never appear anywhere in output —
+        # loaddata would crash on jobs.fee rows.
+        self.assertNotIn('"jobs.fee"', raw)
+        self.assertNotIn('"source_type": "fee"', raw)
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
@@ -1496,6 +1775,47 @@ class ConvertedStateInvariantsTest(unittest.TestCase):
         ]
         self.assertEqual(offenders, [],
                          f'invoices on pre-approval jobs: {offenders}')
+
+    def test_no_unanswered_lines_on_accepted_estimates_of_approved_plus_jobs(self):
+        # Task 5's answeredness rule (EstimateService.unanswered_lines): on
+        # an ACCEPTED estimate, a line is UNANSWERED iff non-adjustment,
+        # non-deposit, carries no EstimateLineItemSource, and
+        # work_declined=False. A converted job sitting at approved-or-beyond
+        # must never surface a phantom checklist item — build_checklist_declines
+        # (ES Task 9) marks every such line work_declined=True during
+        # conversion so JobService.maybe_auto_release's invariant holds
+        # without a data-repair pass.
+        approved_or_beyond = {'approved', 'in_progress', 'work_complete',
+                              'completed', 'cancelled'}
+        deposit_acs = {f['pk'] for f in self.data
+                       if f['model'] == 'core.accountingcategory'
+                       and f['fields'].get('is_deposit')}
+        sourced = {f['fields']['estimate_line_item'] for f in self.data
+                  if f['model'] == 'estimates.estimatelineitemsource'}
+        estimates = {f['pk']: f['fields'] for f in self.data
+                    if f['model'] == 'estimates.estimate'}
+        offenders = []
+        for f in self.data:
+            if f['model'] != 'estimates.estimatelineitem':
+                continue
+            fields = f['fields']
+            est = estimates.get(fields['estimate'])
+            if est is None or est.get('status') != 'accepted':
+                continue
+            if self.jobs.get(est['job'], {}).get('status') not in approved_or_beyond:
+                continue
+            if fields.get('adjustment_service') is not None:
+                continue
+            if fields.get('accounting_category') in deposit_acs:
+                continue
+            if f['pk'] in sourced:
+                continue
+            if fields.get('work_declined'):
+                continue
+            offenders.append((f['pk'], fields['estimate']))
+        self.assertEqual(
+            offenders, [],
+            f'unanswered lines on accepted estimates of approved+ jobs: {offenders}')
 
     def test_earmarks_covered_by_qty_on_hand(self):
         items = {f['pk']: f['fields'] for f in self.data
@@ -1689,12 +2009,16 @@ class BlepShiftSynthesisTest(unittest.TestCase):
     """Bleps + Shifts for complete tasks: window placement, enclosure, no
     per-user overlap, entered_qty actuals. Synthetic state for control."""
 
+    # scheme pk -> algorithm, for _add_task's qty_source (task-owned money:
+    # build_bleps_and_shifts now reads the task's own qty_source directly,
+    # not a rate_scheme indirection).
+    _SCHEME_ALGO = {10: 'elapsed_time', 11: 'entered_qty'}
+
     def _converter(self):
         c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
         # Two seed-style users in the rotation pool.
         c.user_by_username = {'u1': 1, 'u2': 2}
         c.rotation_user_pks = [1, 2]
-        c.scheme_algorithm_by_pk = {10: 'elapsed_time', 11: 'entered_qty'}
         c._pk_counters['core.user'] = 2
         return c
 
@@ -1712,7 +2036,10 @@ class BlepShiftSynthesisTest(unittest.TestCase):
     def _add_task(self, c, pk, job, status='complete', scheme=10,
                   ewt='02:00:00', est_qty=None, sort_order=1):
         c.add_fixture('jobs.task', pk, {
-            'job': job, 'rate_scheme': scheme, 'name': f't{pk}', 'description': '',
+            'job': job, 'source_scheme': scheme,
+            'qty_source': self._SCHEME_ALGO[scheme], 'rate': None,
+            'unit_label': 'none', 'accounting_category': None,
+            'name': f't{pk}', 'description': '',
             'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
             'active_modifiers': [], 'status': status, 'blocked_reason': '',
             'worker_queue': None, 'assignee': None, 'parent_task': None,
@@ -1833,14 +2160,21 @@ class BlepShiftSynthesisTest(unittest.TestCase):
 class EstQuantityHeuristicTest(unittest.TestCase):
     """assign_est_quantities fills est_qty on real Tasks by scheme algorithm."""
 
+    # scheme pk -> algorithm, for _add_task's qty_source. 'flat_fee' isn't a
+    # real Task.qty_source choice (fixed charges stay plain document lines,
+    # never Tasks) — kept as a value assign_est_quantities' branches don't
+    # match, to exercise the "leaves est_qty untouched" fallthrough.
+    _SCHEME_ALGO = {1: 'elapsed_time', 2: 'entered_qty', 3: 'flat_fee'}
+
     def _converter(self):
-        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
-        c.scheme_algorithm_by_pk = {1: 'elapsed_time', 2: 'entered_qty', 3: 'flat_fee'}
-        return c
+        return NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
 
     def _add_task(self, c, pk, scheme, ewt='02:30:00', est_qty=None):
         c.add_fixture('jobs.task', pk, {
-            'job': 1, 'rate_scheme': scheme, 'name': 't', 'description': '',
+            'job': 1, 'source_scheme': scheme,
+            'qty_source': self._SCHEME_ALGO[scheme], 'rate': None,
+            'unit_label': 'none', 'accounting_category': None,
+            'name': 't', 'description': '',
             'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
             'active_modifiers': [], 'status': 'complete', 'blocked_reason': '',
             'worker_queue': None, 'assignee': None, 'parent_task': None,
@@ -1863,9 +2197,9 @@ class EstQuantityHeuristicTest(unittest.TestCase):
         self.assertEqual(self._qty(c, 10), '1.00')
 
     def test_non_work_algorithm_leaves_est_qty_untouched(self):
-        # Fixed charges are now jobs.Fee atoms (no est_qty), not Tasks, so
-        # assign_est_quantities only fills elapsed_time / entered_qty Tasks and
-        # leaves any other scheme's est_qty exactly as the source set it.
+        # Fixed charges stay plain document lines (no est_qty), never Tasks,
+        # so assign_est_quantities only fills elapsed_time / entered_qty Tasks
+        # and leaves any other scheme's est_qty exactly as the source set it.
         c = self._converter()
         self._add_task(c, 10, 3, est_qty=None)
         self._add_task(c, 11, 3, est_qty='3.00')
@@ -2180,9 +2514,9 @@ class PurchasingBuilderTest(unittest.TestCase):
                for r in self._m('core.configuration')}
         self.assertEqual(cfg.get('default_material_markup_percent'), '20')
         # The default material AC must be emitted and point at a real
-        # AccountingCategory — EstimateService._apply_material_ac_default RAISES
-        # if this key is absent, so a regen without it breaks freeform-material
-        # creation in the running app.
+        # AccountingCategory — EstimateService._derive_is_material matches a
+        # hand line's AC against this key (RM 2026-08-11), so a regen without
+        # it means no freeform line can ever be a material in the running app.
         ac_pk = cfg.get('default_material_accounting_category')
         self.assertIsNotNone(ac_pk)
         self.assertNotEqual(ac_pk, 'None')
