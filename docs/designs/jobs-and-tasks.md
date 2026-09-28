@@ -1227,7 +1227,10 @@ list). Tasks within a column are sorted by `worker_queue`. Drag-and-drop assigns
   supplied) returns `{needs_worker_time: true}` instead of assigning, so
   the UI can prompt: the board drag-and-drop pops an interrupting duration
   modal (`WorkerTimePromptModal`), and the Assign modal shows a required
-  duration field. Unassigning never requires a duration. A task whose
+  duration field. The board modal shows the task's name and estimated
+  quantity (`est_qty` + `unit_label`, via `formatQtyUnits`) above the
+  duration input for reference; the board task dict carries both fields
+  for this (`BoardService._serialize_task`). Unassigning never requires a duration. A task whose
   rate scheme is an hour-unit scheme already carries `est_worker_time` by
   the time it reaches assign — crystallized from `est_qty` via
   `ServiceItem.generate_task` (estimate/CO acceptance, add-from-template)
