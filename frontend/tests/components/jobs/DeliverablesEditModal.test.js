@@ -21,6 +21,22 @@ beforeEach(() => {
 });
 
 describe('DeliverablesEditModal', () => {
+  it('shows a notice under the heading when one is passed', async () => {
+    const { findByDisplayValue, getByText } = render(DeliverablesEditModal, {
+      props: { jobId: 5, onClose: vi.fn(), notice: 'Deliverables are required before this estimate can be sent.' },
+    });
+    await findByDisplayValue('Widget');
+    expect(getByText('Deliverables are required before this estimate can be sent.')).toBeInTheDocument();
+  });
+
+  it('shows no notice by default', async () => {
+    const { findByDisplayValue, queryByText } = render(DeliverablesEditModal, {
+      props: { jobId: 5, onClose: vi.fn() },
+    });
+    await findByDisplayValue('Widget');
+    expect(queryByText(/required/)).toBeNull();
+  });
+
   it('loads existing rows', async () => {
     const { findByDisplayValue } = render(DeliverablesEditModal, { props: { jobId: 5, onClose: vi.fn() } });
     expect(await findByDisplayValue('Widget')).toBeInTheDocument();

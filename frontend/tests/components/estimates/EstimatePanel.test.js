@@ -39,13 +39,17 @@ function makeEstimate(overrides = {}) {
   };
 }
 
-function mockApi(estimate, { versions = null, changeOrders = [] } = {}) {
+// `deliverables` is a live ref ({ list }) so a test can mutate it mid-flow
+// (the panel re-fetches after the deliverables modal saves).
+function mockApi(estimate, { versions = null, changeOrders = [], deliverables = { list: [{ id: 1 }] } } = {}) {
   const versionList = versions ?? (estimate ? [estimate] : []);
   api.get.mockReset();
   api.get.mockImplementation((url) => {
     if (estimate && url === `/api/estimates/${estimate.estimate_id}/`) {
       return Promise.resolve({ ...estimate });
     }
+    if (url.endsWith('/deliverables/')) return Promise.resolve([...deliverables.list]);
+    if (url === '/api/settings/units/') return Promise.resolve([]);
     if (url.startsWith('/api/estimates/?job=')) {
       return Promise.resolve({ results: versionList });
     }
@@ -298,6 +302,71 @@ describe('EstimatePanel empty state', () => {
     const btn = await findByRole('button', { name: /start estimate/i });
     await fireEvent.click(btn);
     expect(api.post).toHaveBeenCalledWith('/api/estimates/', { job: 9 });
+  });
+});
+
+describe('EstimatePanel Send Email deliverables gate', () => {
+  beforeEach(() => {
+    window.location.hash = '';
+    user.set({ permissions: [] });
+  });
+
+  it('Send Email is a navigation link when the job has deliverables', async () => {
+    const est = makeEstimate({ status: 'draft' });
+    mockApi(est, { deliverables: { list: [{ id: 1 }] } });
+    const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const a = await findByRole('link', { name: 'Send Email' });
+    expect(a).toHaveAttribute('href', '#/estimates/7/send');
+    expect(queryByRole('button', { name: 'Send Email' })).toBeNull();
+  });
+
+  it('Send Email opens the deliverables modal with the required notice when the job has none', async () => {
+    const est = makeEstimate({ status: 'draft' });
+    mockApi(est, { deliverables: { list: [] } });
+    const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const btn = await findByRole('button', { name: 'Send Email' });
+    expect(queryByRole('link', { name: 'Send Email' })).toBeNull();
+    await fireEvent.click(btn);
+    const dialog = within(await findByRole('dialog'));
+    expect(dialog.getByRole('heading', { name: 'Edit deliverables' })).toBeInTheDocument();
+    expect(dialog.getByText('Deliverables are required before this estimate can be sent.')).toBeInTheDocument();
+    expect(window.location.hash).toBe('');
+  });
+
+  it('navigates to the send page once the modal saves at least one deliverable', async () => {
+    const est = makeEstimate({ status: 'draft' });
+    const deliverables = { list: [] };
+    mockApi(est, { deliverables });
+    api.post.mockResolvedValue({ id: 2 });
+    const onJobChange = vi.fn();
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7, onJobChange } });
+    await fireEvent.click(await findByRole('button', { name: 'Send Email' }));
+    const dialog = within(await findByRole('dialog'));
+    await dialog.findByRole('button', { name: '+ Add row' });
+    await fireEvent.click(dialog.getByRole('button', { name: '+ Add row' }));
+    deliverables.list = [{ id: 2 }]; // what the server holds after the save
+    await fireEvent.click(dialog.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/estimates/7/send'));
+    expect(onJobChange).toHaveBeenCalled();
+  });
+
+  it('stays on the estimate when the modal is cancelled', async () => {
+    const est = makeEstimate({ status: 'draft' });
+    mockApi(est, { deliverables: { list: [] } });
+    const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await fireEvent.click(await findByRole('button', { name: 'Send Email' }));
+    const dialog = within(await findByRole('dialog'));
+    await fireEvent.click(await dialog.findByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(queryByRole('dialog')).toBeNull());
+    expect(window.location.hash).toBe('');
+    expect(await findByRole('button', { name: 'Send Email' })).toBeInTheDocument();
+  });
+
+  it('Resend Email on an open estimate stays a link regardless of deliverables', async () => {
+    const est = makeEstimate({ status: 'open' });
+    mockApi(est, { deliverables: { list: [] } });
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    expect(await findByRole('link', { name: 'Resend Email' })).toBeInTheDocument();
   });
 });
 

@@ -3,7 +3,10 @@
   import Modal from '../Modal.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
 
-  let { jobId, onClose } = $props();
+  // `notice`: optional one-line message shown under the heading. The
+  // estimate panel passes "deliverables are required" when Send Email is
+  // clicked on a job with none; the job overview's Edit link passes nothing.
+  let { jobId, onClose, notice = '' } = $props();
 
   let rows = $state([]);
   let loading = $state(true);
@@ -120,6 +123,7 @@
   onCancel={cancel} maxWidth="80vw" label="Edit deliverables">
 <form onsubmit={(e) => { e.preventDefault(); if (!saving && dirty) save(); }}>
   <h3>Edit deliverables</h3>
+    {#if notice}<p class="notice">{notice}</p>{/if}
     {#if loading}
       <p>Loading...</p>
     {:else}
@@ -154,5 +158,6 @@
 
 <style>
   .err { color: #c00; }
+  .notice { color: #92400e; background: #fef3c7; padding: 6px 10px; border-radius: 3px; }
   table { width: 100%; border-collapse: collapse; }
 </style>

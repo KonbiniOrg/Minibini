@@ -2164,7 +2164,7 @@ linked there):
 
 | Status | Button | Handler |
 |---|---|---|
-| `draft` | "Send Email" (navigation link) | navigates to `#/estimates/{id}/send` — the send-form page that calls `EstimateEmailService.send_estimate` on submit |
+| `draft` | "Send Email" (navigation link) | navigates to `#/estimates/{id}/send` — the send-form page that calls `EstimateEmailService.send_estimate` on submit. **Deliverables gate** (2026-09-28): the panel fetches the job's deliverables; when there are none, this renders as a same-labelled `<button>` that opens `DeliverablesEditModal` with the notice "Deliverables are required before this estimate can be sent." (pre-empting the server's `mark_open` refusal, `jobs-and-tasks.md` §12.3). Save with ≥1 row → the panel navigates on to the send page; Cancel or an empty save stays put. The modal itself never navigates — opened from the band's own Edit link it shows no notice and just closes. |
 | `open` | "Resend Email" (navigation link) | navigates to `#/estimates/{id}/send` |
 | `open`, no CO yet, job on hold | "Create Change Order" | `POST /api/change-orders/` `{job}` → navigates to the new CO's page |
 | `open` | "Revise Estimate" | `POST /api/estimates/{id}/revise/` → opens new draft revision |

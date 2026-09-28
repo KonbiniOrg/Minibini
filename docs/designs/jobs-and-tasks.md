@@ -2263,6 +2263,14 @@ and the per-document snapshot model in `data-constraints.md`).
 zero Deliverables. The customer cannot receive an estimate that doesn't
 say what they're buying.
 
+**SPA pre-empt** (2026-09-28): `EstimatePanel` checks the job's
+deliverables up front, so a draft's "Send Email" on a job with none opens
+`DeliverablesEditModal` (with its optional `notice` prop set to
+"Deliverables are required before this estimate can be sent.") instead of
+navigating to the send form; a save that leaves ≥1 row continues to the
+send page. The server guard stays the invariant — the modal is a courtesy,
+not the enforcement. See `estimates-and-prices.md` §11.2.
+
 This is the single cross-app modification this feature made; see also
 `data-constraints.md` §2.12.
 

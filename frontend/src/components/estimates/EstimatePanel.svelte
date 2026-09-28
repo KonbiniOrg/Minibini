@@ -3,6 +3,7 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
   import DocSubnav from '../jobs/DocSubnav.svelte';
+  import DeliverablesEditModal from '../jobs/DeliverablesEditModal.svelte';
   import { buildEstimateDocItems } from '../../lib/estimateDocs.js';
   import DocModeBar from '../docsurface/DocModeBar.svelte';
   import DocCustomerView from '../docsurface/DocCustomerView.svelte';
@@ -214,11 +215,42 @@
     try {
       await api.post(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/make-deliverable/`);
       await loadEstimate({ silent: true });
+      loadDeliverables();
       // Refresh the host job so the context band's Deliverables panel shows
       // the new row (its load effect keys on the job object identity).
       onJobChange();
     } catch (e) {
       showError(errorMessage(e, 'Could not make a deliverable from this line.'));
+    }
+  }
+
+  // Send Email gate. The server refuses to open an estimate on a job with
+  // no deliverables (EstimateService.mark_open, jobs-and-tasks.md §12.3),
+  // so rather than let the user fill in the email form and then hit that
+  // error, a draft's Send Email becomes a button that opens the
+  // deliverables editor with a notice. null = not loaded yet (treated as
+  // "has some": the link renders and the server still guards).
+  let deliverables = $state(null);
+  let deliverablesModalOpen = $state(false);
+  const needsDeliverables = $derived(deliverables !== null && deliverables.length === 0);
+
+  async function loadDeliverables() {
+    try {
+      deliverables = await api.get(`/api/jobs/${jobId}/deliverables/`);
+    } catch (_) {
+      deliverables = null;
+    }
+  }
+
+  async function handleDeliverablesModalClose(changed) {
+    deliverablesModalOpen = false;
+    if (!changed) return;
+    await loadDeliverables();
+    onJobChange();
+    // The user was on their way to send; carry on once the job has a
+    // deliverable. Cancel (or an empty save) stays here.
+    if (!needsDeliverables) {
+      window.location.hash = `/estimates/${estimate.estimate_id}/send`;
     }
   }
 
@@ -271,6 +303,7 @@
     if (jobId) {
       loadVersions();
       loadChangeOrders();
+      loadDeliverables();
     }
   });
 
@@ -361,7 +394,11 @@
       <span class="status-badge status-{estimate.status}">{estimate.is_amended ? 'amended' : estimate.status}</span>
     {/if}
     {#if canManageJobs && estimate.status === 'draft'}
-      <a class="action-link" href="#/estimates/{estimate.estimate_id}/send">Send Email</a>
+      {#if needsDeliverables}
+        <button type="button" class="action-link" onclick={() => { deliverablesModalOpen = true; }}>Send Email</button>
+      {:else}
+        <a class="action-link" href="#/estimates/{estimate.estimate_id}/send">Send Email</a>
+      {/if}
     {/if}
     {#if canManageJobs && estimate.status === 'open'}
       <a class="action-link" href="#/estimates/{estimate.estimate_id}/send">Resend Email</a>
@@ -463,6 +500,14 @@
       <p>No estimates yet.</p>
     {/if}
   </div>
+{/if}
+
+{#if deliverablesModalOpen && estimate}
+  <DeliverablesEditModal
+    jobId={estimate.job}
+    notice="Deliverables are required before this estimate can be sent."
+    onClose={handleDeliverablesModalClose}
+  />
 {/if}
 
 <style>
