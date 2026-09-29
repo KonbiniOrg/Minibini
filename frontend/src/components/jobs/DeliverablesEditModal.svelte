@@ -2,6 +2,7 @@
   import { api } from '../../lib/api.js';
   import Modal from '../Modal.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
+  import { notifyDeliverablesChanged } from '../../stores/deliverables.js';
 
   // `notice`: optional one-line message shown under the heading. The
   // estimate panel passes "deliverables are required" when Send Email is
@@ -102,6 +103,7 @@
       if (ordered_ids.length > 0) {
         await api.post(`/api/jobs/${jobId}/deliverables/reorder/`, { ordered_ids });
       }
+      notifyDeliverablesChanged();
       onClose(true);
     } catch (err) {
       errorMsg = err.message || 'Save failed.';

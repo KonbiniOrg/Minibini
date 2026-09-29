@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, within, waitFor } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -13,6 +14,7 @@ vi.mock('svelte-spa-router', () => ({
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import { getJobWs, rememberMode } from '@/stores/jobWorkspace.js';
+import { deliverablesVersion, notifyDeliverablesChanged } from '@/stores/deliverables.js';
 import EstimatePanel from '@/components/estimates/EstimatePanel.svelte';
 
 const JOB = { job_id: 9, job_number: 'JOB-9', name: 'Job', contact: null, can_manage: true };
@@ -311,13 +313,17 @@ describe('EstimatePanel Send Email deliverables gate', () => {
     user.set({ permissions: [] });
   });
 
-  it('Send Email is a navigation link when the job has deliverables', async () => {
+  // Send affordances are BUTTONS in every state (RM 2026-09-29: the email
+  // step becomes a modal later, so no link ever navigates to the send page).
+  it('Send Email is a button that navigates to the send page when the job has deliverables', async () => {
     const est = makeEstimate({ status: 'draft' });
     mockApi(est, { deliverables: { list: [{ id: 1 }] } });
     const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    const a = await findByRole('link', { name: 'Send Email' });
-    expect(a).toHaveAttribute('href', '#/estimates/7/send');
-    expect(queryByRole('button', { name: 'Send Email' })).toBeNull();
+    const btn = await findByRole('button', { name: 'Send Email' });
+    expect(queryByRole('link', { name: 'Send Email' })).toBeNull();
+    await fireEvent.click(btn);
+    expect(window.location.hash).toBe('#/estimates/7/send');
+    expect(queryByRole('dialog')).toBeNull();
   });
 
   it('Send Email opens the deliverables modal with the required notice when the job has none', async () => {
@@ -362,11 +368,50 @@ describe('EstimatePanel Send Email deliverables gate', () => {
     expect(await findByRole('button', { name: 'Send Email' })).toBeInTheDocument();
   });
 
-  it('Resend Email on an open estimate stays a link regardless of deliverables', async () => {
+  it('Resend Email on an open estimate is a button that navigates regardless of deliverables', async () => {
     const est = makeEstimate({ status: 'open' });
     mockApi(est, { deliverables: { list: [] } });
+    const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await fireEvent.click(await findByRole('button', { name: 'Resend Email' }));
+    expect(window.location.hash).toBe('#/estimates/7/send');
+    expect(queryByRole('dialog')).toBeNull();
+  });
+
+  it('the gate re-fetches when the deliverables store is bumped (last deliverable deleted elsewhere)', async () => {
+    const est = makeEstimate({ status: 'draft' });
+    const deliverables = { list: [{ id: 1 }] };
+    mockApi(est, { deliverables });
     const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
-    expect(await findByRole('link', { name: 'Resend Email' })).toBeInTheDocument();
+    await findByRole('button', { name: 'Send Email' });
+    deliverables.list = []; // the band's modal deleted the last row
+    notifyDeliverablesChanged();
+    // With none left, Send Email now opens the modal instead of navigating.
+    // Each retry resets the hash: until the refetch lands, a click still
+    // navigates; once it has, the click opens the modal and the hash stays.
+    await waitFor(async () => {
+      window.location.hash = '';
+      await fireEvent.click(await findByRole('button', { name: 'Send Email' }));
+      expect(window.location.hash).toBe('');
+    });
+    expect(await findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('Make Deliverable bumps the deliverables store', async () => {
+    const est = makeEstimate({
+      status: 'draft',
+      line_items: [{
+        line_item_id: 2, line_number: 1, description: 'Hand entry', qty: '1', units: 'ea',
+        price: '10.00', accounting_category: 3, is_material: false, inventory_item: null,
+        service_item: null, service_item_detail: null, adjustment_service: null,
+        adjustment_service_detail: null, linked_deliverables: [],
+      }],
+    });
+    mockApi(est, { deliverables: { list: [] } });
+    api.post.mockResolvedValue({});
+    const before = get(deliverablesVersion);
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await fireEvent.click(await findByRole('button', { name: 'Make Deliverable' }));
+    await waitFor(() => expect(get(deliverablesVersion)).toBe(before + 1));
   });
 });
 

@@ -301,6 +301,11 @@ class ChangeOrderEditabilityTests(FixtureTestCase):
 
     def _make_open_co(self):
         co = ChangeOrder.objects.create(job=self.job, estimate=self.est)
+        # A CO can't leave draft while the job has no deliverables
+        # (ChangeOrderService.assert_job_has_deliverables).
+        Deliverable.objects.get_or_create(
+            job=self.job, description='Guard deliverable',
+            defaults={'qty_ordered': Decimal('1'), 'units': 'ea', 'sort_order': 10})
         ChangeOrderLineItem.objects.create(
             change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Added scope', qty=1, price=100, line_number=1,

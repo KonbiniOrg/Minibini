@@ -4,6 +4,7 @@ import { render } from '@testing-library/svelte';
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
 
 import { api } from '@/lib/api.js';
+import { notifyDeliverablesChanged } from '@/stores/deliverables.js';
 import DeliverablesSection from '@/components/jobs/DeliverablesSection.svelte';
 
 function mockApi({ items = [], editable = false } = {}) {
@@ -67,5 +68,14 @@ describe('DeliverablesSection', () => {
     await rerender({ ...props, job: { job_id: 5 } });
     await findByText('Table');
     expect(api.get.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  it('re-fetches when the deliverables store is bumped (a sibling component mutated the list)', async () => {
+    mockApi({ items: [{ id: 1, description: 'Chairs', qty_ordered: '3.00', units: 'ea' }] });
+    const { findByText } = render(DeliverablesSection, { props: { jobId: 5 } });
+    await findByText('Chairs');
+    mockApi({ items: [] });
+    notifyDeliverablesChanged();
+    expect(await findByText(/No deliverables yet/)).toBeInTheDocument();
   });
 });

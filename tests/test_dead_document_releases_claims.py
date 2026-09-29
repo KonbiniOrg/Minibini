@@ -17,6 +17,7 @@ Which statuses release, and why:
                         onto the new revision rather than copying them.
 """
 from decimal import Decimal
+from apps.deliverables.models import Deliverable
 
 from django.test import TestCase
 
@@ -178,6 +179,11 @@ class ChangeOrderReleasesClaimsTest(DeadDocumentBase):
         from apps.estimates.models import ChangeOrderLineItem
         accepted = self._estimate_claiming_task(
             number='EST-A', status=Estimate.STATUS_ACCEPTED)
+        # A CO can't leave draft while the job has no deliverables
+        # (ChangeOrderService.assert_job_has_deliverables).
+        Deliverable.objects.create(
+            job=self.job, description='Guard deliverable',
+            qty_ordered=Decimal('1'), units='ea', sort_order=10)
         co = ChangeOrder.objects.create(
             job=self.job, estimate=accepted, status=ChangeOrder.STATUS_DRAFT)
         li = ChangeOrderLineItem.objects.create(

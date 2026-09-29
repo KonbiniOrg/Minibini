@@ -2440,6 +2440,12 @@ an Estimate from `draft` to `open`.
 that was previously `open`) Estimate must have a Job with at least one
 Deliverable. A `draft` Estimate may exist without Deliverables.
 
+**Change orders (2026-09-29):** the same constraint holds on a
+ChangeOrder's draft exit. `ChangeOrderService.assert_job_has_deliverables`
+runs in `ChangeOrder.clean()` (after the empty-CO content gate) and in
+`ChangeOrderEmailService._validate_send`; removing deliverables is a valid
+diff, but the Job must still hold ≥ 1 when the CO goes `open`.
+
 ---
 
 ### 2.13 Shipment pick-up → picked_up_date set

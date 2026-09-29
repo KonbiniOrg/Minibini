@@ -13,6 +13,7 @@
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
+  import { notifyDeliverablesChanged } from '../../stores/deliverables.js';
 
   let {
     jobId,            // deliverables are job-nested: /api/jobs/{jobId}/deliverables/
@@ -70,6 +71,7 @@
         units: editUnits,
       });
       editId = null;
+      notifyDeliverablesChanged();
       await onReload();
     } catch (e) {
       const t = triageError(e);
@@ -83,6 +85,7 @@
   async function deleteDeliverable(liveId) {
     try {
       await api.delete(`/api/jobs/${jobId}/deliverables/${liveId}/`);
+      notifyDeliverablesChanged();
       await onReload();
     } catch (e) {
       showError(errorMessage(e, 'Could not delete deliverable.'));
@@ -97,6 +100,7 @@
         qty_ordered: snap.qty_ordered,
         units: snap.units,
       });
+      notifyDeliverablesChanged();
       await onReload();
     } catch (e) {
       showError(errorMessage(e, 'Could not undo change.'));
@@ -111,6 +115,7 @@
         qty_ordered: snap.qty_ordered,
         units: snap.units,
       });
+      notifyDeliverablesChanged();
       await onReload();
     } catch (e) {
       showError(errorMessage(e, 'Could not restore deliverable.'));
@@ -147,6 +152,7 @@
         units: newUnits,
       });
       newOpen = false;
+      notifyDeliverablesChanged();
       await onReload();
     } catch (e) {
       const t = triageError(e);

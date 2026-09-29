@@ -2263,13 +2263,25 @@ and the per-document snapshot model in `data-constraints.md`).
 zero Deliverables. The customer cannot receive an estimate that doesn't
 say what they're buying.
 
-**SPA pre-empt** (2026-09-28): `EstimatePanel` checks the job's
-deliverables up front, so a draft's "Send Email" on a job with none opens
-`DeliverablesEditModal` (with its optional `notice` prop set to
-"Deliverables are required before this estimate can be sent.") instead of
-navigating to the send form; a save that leaves ≥1 row continues to the
-send page. The server guard stays the invariant — the modal is a courtesy,
-not the enforcement. See `estimates-and-prices.md` §11.2.
+**Change orders too** (2026-09-29): `ChangeOrderService.
+assert_job_has_deliverables` runs in `ChangeOrder.clean()`'s draft-exit
+guard (after `has_sendable_changes`) and in `ChangeOrderEmailService.
+_validate_send`. Removing deliverables is a legitimate CO diff, but a CO
+cannot leave the Job with none — "Cannot send change order: job has no
+deliverables." See `data-constraints.md` §2.12.
+
+**SPA pre-empt** (2026-09-28/29): `EstimatePanel` and `ChangeOrderPanel`
+each fetch the job's deliverables up front, so "Send Email" / "Send to
+customer" on a job with none opens `DeliverablesEditModal` (its optional
+`notice` prop: "Deliverables are required before this estimate / change
+order can be sent.") instead of the send form; a save that leaves ≥1 row
+continues to the send page, Cancel stays put. The gate stays current
+through `stores/deliverables.js` (architecture-and-conventions.md §5.3):
+deleting the last row anywhere — the band's modal, the CO section, a
+line removal — re-arms it without a reload. Send affordances are
+`<button>`s in every state (RM 2026-09-29: the email step becomes a
+modal later). The server guard stays the invariant — the modal is a
+courtesy, not the enforcement. See `estimates-and-prices.md` §11.2.
 
 This is the single cross-app modification this feature made; see also
 `data-constraints.md` §2.12.

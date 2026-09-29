@@ -722,6 +722,15 @@ the same `/api` proxy covers its requests.
   `ShiftBand` header strip (Clock In / Clock Out; the `CurrentBlepBand`
   slides in beneath it while a session runs — both in `App.svelte`'s
   sticky `.app-bands` wrapper).
+- `deliverables.js` — `deliverablesVersion` + `notifyDeliverablesChanged()`
+  (2026-09-29). The version-store pattern (same shape as `blepActivity.js`
+  / `shift.js`): every SPA mutation of a job's deliverables bumps it
+  (`DeliverablesEditModal` save, `CODeliverablesSection` add/edit/delete/
+  undo, Make Deliverable on an estimate line, removing a line together
+  with its deliverable), and every view holding a copy refetches
+  (`EstimatePanel` / `ChangeOrderPanel` send gates, the context band's
+  `DeliverablesSection`, the CO panel's live list). Same-client only; the
+  server guards remain the backstop for other clients' edits.
 
 ### 5.4 Routing
 

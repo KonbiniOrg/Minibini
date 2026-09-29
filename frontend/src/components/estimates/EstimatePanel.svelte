@@ -1,6 +1,8 @@
 <script>
   import { link } from 'svelte-spa-router';
+  import { untrack } from 'svelte';
   import { api, errorMessage } from '../../lib/api.js';
+  import { deliverablesVersion, notifyDeliverablesChanged } from '../../stores/deliverables.js';
   import { showError } from '../../stores/messages.js';
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import DeliverablesEditModal from '../jobs/DeliverablesEditModal.svelte';
@@ -215,13 +217,19 @@
     try {
       await api.post(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/make-deliverable/`);
       await loadEstimate({ silent: true });
-      loadDeliverables();
-      // Refresh the host job so the context band's Deliverables panel shows
-      // the new row (its load effect keys on the job object identity).
-      onJobChange();
+      handleDeliverablesChanged();
     } catch (e) {
       showError(errorMessage(e, 'Could not make a deliverable from this line.'));
     }
+  }
+
+  // Any gesture here that changes the JOB's deliverables (Make Deliverable,
+  // removing a line together with its deliverable, the line edit dialog
+  // updating a linked row): bump the shared store so every copy of the list
+  // refetches (this panel's send gate included), and refresh the host job.
+  function handleDeliverablesChanged() {
+    notifyDeliverablesChanged();
+    onJobChange();
   }
 
   // Send Email gate. The server refuses to open an estimate on a job with
@@ -242,6 +250,31 @@
     }
   }
 
+  // Refetch when any other view mutates the list (e.g. the context band's
+  // modal deleting the last row), so the gate never lags the server.
+  let lastDeliverablesVersion = $state(0);
+  $effect(() => {
+    const v = $deliverablesVersion;
+    if (v !== lastDeliverablesVersion) {
+      lastDeliverablesVersion = v;
+      if (jobId) untrack(() => loadDeliverables());
+    }
+  });
+
+  // Send affordances are buttons in every state (RM 2026-09-29): the email
+  // step is slated to become a modal, so nothing here is a navigation link.
+  function goToSend() {
+    window.location.hash = `/estimates/${estimate.estimate_id}/send`;
+  }
+
+  function handleSendEmail() {
+    if (needsDeliverables) {
+      deliverablesModalOpen = true;
+    } else {
+      goToSend();
+    }
+  }
+
   async function handleDeliverablesModalClose(changed) {
     deliverablesModalOpen = false;
     if (!changed) return;
@@ -249,9 +282,7 @@
     onJobChange();
     // The user was on their way to send; carry on once the job has a
     // deliverable. Cancel (or an empty save) stays here.
-    if (!needsDeliverables) {
-      window.location.hash = `/estimates/${estimate.estimate_id}/send`;
-    }
+    if (!needsDeliverables) goToSend();
   }
 
   // Value-keyed: the glue (JobEstimatePage) assigns a new `job` object on
@@ -394,14 +425,10 @@
       <span class="status-badge status-{estimate.status}">{estimate.is_amended ? 'amended' : estimate.status}</span>
     {/if}
     {#if canManageJobs && estimate.status === 'draft'}
-      {#if needsDeliverables}
-        <button type="button" class="action-link" onclick={() => { deliverablesModalOpen = true; }}>Send Email</button>
-      {:else}
-        <a class="action-link" href="#/estimates/{estimate.estimate_id}/send">Send Email</a>
-      {/if}
+      <button type="button" class="action-link" onclick={handleSendEmail}>Send Email</button>
     {/if}
     {#if canManageJobs && estimate.status === 'open'}
-      <a class="action-link" href="#/estimates/{estimate.estimate_id}/send">Resend Email</a>
+      <button type="button" class="action-link" onclick={goToSend}>Resend Email</button>
     {/if}
     {#if canManageJobs && estimate.status === 'open'}
       <button type="button" onclick={handleRevise} disabled={revising}>
@@ -462,7 +489,7 @@
       {lineItems}
       {categories}
       onMakeDeliverable={canEdit ? handleMakeDeliverable : null}
-      onDeliverablesChanged={onJobChange}
+      onDeliverablesChanged={handleDeliverablesChanged}
       {canMint}
       onWorkDecisionChanged={onJobChange}
       jobStatus={job?.status}

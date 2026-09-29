@@ -86,6 +86,22 @@ class ChangeOrderSendAPITest(FixtureTestCase):
         self.assertEqual(self.co.status, ChangeOrder.STATUS_OPEN)
         self.assertEqual(len(mail.outbox), 1)
 
+    def test_no_deliverables_refused_before_email(self):
+        # Removing the job's last deliverable IS a diff (sendable on the
+        # content gate) but the CO must still refuse pre-email: the agreed
+        # scope would deliver nothing. Mirrors the estimate's mark_open guard.
+        Deliverable.objects.filter(job=self.job).delete()
+        mail.outbox = []
+        self.client.force_authenticate(user=self.manager)
+        r = self.client.post(
+            f'/api/change-orders/{self.co.change_order_id}/send/',
+            {'to': 'pat@acme.com', 'subject': 'CO', 'body': 'link'})
+        self.assertEqual(r.status_code, 400, getattr(r, 'data', None))
+        self.assertIn('no deliverables', str(getattr(r, 'data', '')))
+        self.assertEqual(len(mail.outbox), 0)
+        self.co.refresh_from_db()
+        self.assertEqual(self.co.status, ChangeOrder.STATUS_DRAFT)
+
     def test_send_requires_permission(self):
         self.client.force_authenticate(user=self.plain)
         r = self.client.post(

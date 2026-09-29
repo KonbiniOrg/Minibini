@@ -1,5 +1,7 @@
 <script>
+  import { untrack } from 'svelte';
   import { api } from '../../lib/api.js';
+  import { deliverablesVersion } from '../../stores/deliverables.js';
   import DeliverablesEditModal from './DeliverablesEditModal.svelte';
 
   // `job`: the host page's job object. Purely a refresh signal — every
@@ -30,6 +32,18 @@
   $effect(() => {
     job; // dependency: reload when the host refreshes the job
     if (jobId) load();
+  });
+
+  // Sibling components (the CO deliverables section, Make Deliverable on an
+  // estimate line, the send gates' modal) mutate the same list without
+  // going through the host's job refresh — refetch when the store bumps.
+  let lastDeliverablesVersion = $state(0);
+  $effect(() => {
+    const v = $deliverablesVersion;
+    if (v !== lastDeliverablesVersion) {
+      lastDeliverablesVersion = v;
+      if (jobId) untrack(() => load());
+    }
   });
 
   function openEdit() {
