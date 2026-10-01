@@ -10,6 +10,8 @@ services:
       - DATABASE_PASSWORD=Ru5UPhae
       - DATABASE_HOST=mysql
       - MINIBINI_VERSION=${VERSION}
+      # frontend/vite.config.js reads this for the /api proxy target.
+      - VITE_API_TARGET=http://minibini-django:9000
     build:
       context: .
       dockerfile: Dockerfile.vite
