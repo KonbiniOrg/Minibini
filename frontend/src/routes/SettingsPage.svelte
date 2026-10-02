@@ -7,6 +7,7 @@
   import EmailAccountSettings from '../components/settings/EmailAccountSettings.svelte';
   import ScheduleSettings from '../components/settings/ScheduleSettings.svelte';
   import EmailTemplates from '../components/settings/EmailTemplates.svelte';
+  import DocumentPdfSettings from '../components/settings/DocumentPdfSettings.svelte';
   import BusinessSettings from '../components/settings/BusinessSettings.svelte';
   import GeneralSettings from '../components/settings/GeneralSettings.svelte';
   import MaterialMarkupSetting from '../components/settings/MaterialMarkupSetting.svelte';
@@ -67,6 +68,7 @@
   <button class:active={tab === 'pricing'} onclick={() => tab = 'pricing'}>Pricing</button>
   <button class:active={tab === 'schedule'} onclick={() => tab = 'schedule'}>Schedule</button>
   <button class:active={tab === 'email'} onclick={() => tab = 'email'}>Email</button>
+  <button class:active={tab === 'documents'} onclick={() => tab = 'documents'}>Documents</button>
   <button class:active={tab === 'business'} onclick={() => tab = 'business'}>Business</button>
 </nav>
 
@@ -139,6 +141,8 @@
   <EmailAccountSettings />
 
   <EmailTemplates />
+{:else if tab === 'documents'}
+  <DocumentPdfSettings />
 {:else if tab === 'business'}
   <BusinessSettings />
 {/if}

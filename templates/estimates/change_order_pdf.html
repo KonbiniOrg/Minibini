@@ -22,12 +22,13 @@
         tr.removed td, tr.was td { color: #888; text-decoration: line-through; }
         tr.was .change-col { font-style: italic; }
         .intro { color: #444; }
-    </style>
+{% include 'pdf/_branding_styles.html' %}    </style>
 </head>
 <body>
-    <h1>Change Order</h1>
+{% include 'pdf/_letterhead.html' %}    <h1>Change Order</h1>
     <h2>{{ co.change_order_number }}</h2>
 
+    {% if branding.text.below_header %}<div class="doc-text">{{ branding.text.below_header }}</div>{% endif %}
     <div class="header-info">
         {% if business_name %}
         <p><strong>Customer:</strong> {{ business_name }}</p>
@@ -47,6 +48,7 @@
         {% endif %}
     </div>
 
+    {% if branding.text.above_lines %}<div class="doc-text">{{ branding.text.above_lines }}</div>{% endif %}
     <p class="intro">The following changes are proposed to the agreement above.</p>
 
     {% if deliverable_rows %}
@@ -124,5 +126,7 @@
             </tr>
         </tbody>
     </table>
+
+    {% if branding.text.below_totals %}<div class="doc-text">{{ branding.text.below_totals }}</div>{% endif %}
 </body>
 </html>

@@ -1025,9 +1025,9 @@ defined once per stack so both share the same mechanism:
 
 - `frontend/src/css/app.css` — SPA (global, reaches every component;
   not subject to the §5.5 scoping gotcha).
-- `templates/purchasing/purchase_order_pdf.html` — standalone PDF
-  template with its own `<style>`, so it carries its own copy (the
-  other three document PDF templates do likewise).
+- `templates/purchasing/purchase_order_pdf.html` — PDF template with
+  its own `<style>`, so it carries its own copy (the other two document
+  PDF templates do likewise).
 
 `pre-wrap` is preferred over swapping `\n` for `<br>` via `{@html}`:
 the text stays auto-escaped (no XSS), long lines still wrap, and it's
@@ -1713,6 +1713,66 @@ don't currently serve unauthenticated customers — they're stub-
 shaped so user-authored boilerplate has a sensible placeholder. The
 real customer-facing public URL feature is a deferred follow-up;
 the stub resolution flips to signed tokens when that work lands.
+
+### 7.15 Document PDF branding
+
+The three locally rendered document PDFs (estimate, change order,
+purchase order) are customizable from **Settings → Documents**
+(`components/settings/DocumentPdfSettings.svelte`). Invoices are out of
+scope: the invoice send attaches QBO's rendered PDF, whose look is set
+in QuickBooks.
+
+Customization is **structured, not free-form**: the templates own the
+layout and the user fills fixed slots. There is no user-editable
+HTML/CSS (a user-authored Django template would be a server-side
+template-injection surface, and a typo would break every send).
+
+`apps/core/pdf_branding.py` is the whole backend:
+
+- **Shared letterhead** — `pdf_logo`, `pdf_logo_position`
+  (`left` | `center` | `right`, the only layout choice), and
+  `pdf_company_name` / `_address` / `_phone` / `_email`. Blank parts are
+  not printed; with nothing set the letterhead is omitted entirely.
+- **Per-document text** — four fixed slots per document kind
+  (`estimate`, `change_order`, `po`), keyed
+  `<kind>_pdf_text_<slot>`: `below_header` (under the title, above the
+  customer/vendor block), `above_lines`, `below_totals`, and
+  `page_footer` (a CSS running element repeated on every page). Empty
+  slots print nothing.
+- **Placeholders** — slot text goes through `render_pdf_text`, a
+  `{name}` substitution that **never raises**: unknown names and
+  stray/unbalanced braces print as typed. (It is deliberately not
+  `render_email_template`, whose `str.format_map` raises on an
+  unbalanced brace.) Values: `contact_fname`, `contact_lname`,
+  `contact_business`, `document_number`, plus `job_number` / `job_name`
+  / `object_url` on estimate and change order, and the per-document
+  aliases `estimate_number`, `change_order_number`, `po_number`,
+  `vendor_name`. There is no `{my_user_name}` — the generators have no
+  sending user. The footer additionally takes `{page}` /
+  `{page_count}`, rendered as spans filled from the CSS page counters.
+- **Logo storage** — the logo is a base64 `data:` URI in the
+  `pdf_logo` Configuration row, not a file under `MEDIA_ROOT`: the
+  Django container has no persistent volume, so a file would not
+  survive a redeploy, and a data URI is also what WeasyPrint consumes
+  directly. `PdfBrandingService.set_logo` accepts PNG/JPEG only (no
+  SVG — it can carry external references), 1 MB max, verified with
+  Pillow.
+
+Each `pdf.py` exposes `render_<doc>_html(obj)` (the HTML string, which
+is what the tests assert on) and `generate_<doc>_pdf(obj)` (bytes), both
+going through `render_document_html(template, kind, context, values)`,
+which merges the `branding` context in. The shared markup lives in two
+partials every document template includes —
+`templates/pdf/_branding_styles.html` and `templates/pdf/_letterhead.html`
+— while each template inlines its own three in-flow slots.
+
+Endpoints (all `can_manage_config`):
+
+| Endpoint | Purpose |
+|---|---|
+| `PATCH /api/settings/` | The letterhead and text keys, like any other Configuration key. `pdf_logo_position` is validated; writing `pdf_logo` here is rejected. |
+| `GET` / `POST` / `DELETE /api/settings/pdf-logo/` | Read (`{'logo': '<data URI or empty>'}`), upload (multipart `logo`), remove. `GET /api/settings/` omits the `pdf_logo` blob. |
+| `GET /api/settings/pdf-preview/?document=<kind>` | A sample PDF (`application/pdf`, not JSON) rendered through the real template with the **saved** branding. Built by `preview_*_pdf()` in each `pdf.py` from in-memory sample objects — no real document is read. |
 
 ---
 

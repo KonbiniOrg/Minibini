@@ -109,7 +109,15 @@ both estimates and change orders; if unset, notifications are silently skipped),
 `units_list`, `qbo_payment_accounts`. Optional outbound-document templates
 (each falls back to a hard-coded default if unset): `estimate_email_subject_template`
 / `estimate_email_body_template`, `change_order_email_subject_template` /
-`change_order_email_body_template`. **Taxation is handled by QuickBooks** —
+`change_order_email_body_template`. Optional document-PDF branding (all default
+to empty / not printed; see `architecture-and-conventions.md` §7.15): `pdf_logo`
+(base64 `data:` URI, PNG/JPEG, ≤ 1 MB — written only via
+`/api/settings/pdf-logo/`, never via the settings PATCH), `pdf_logo_position`
+(`left` | `center` | `right`, default `left`), `pdf_company_name`,
+`pdf_company_address`, `pdf_company_phone`, `pdf_company_email`, and the text
+slots `<kind>_pdf_text_<slot>` for kind ∈ {`estimate`, `change_order`, `po`} ×
+slot ∈ {`below_header`, `above_lines`, `below_totals`, `page_footer`}.
+**Taxation is handled by QuickBooks** —
 there are no app-side tax keys (`default_tax_rate` / `org_tax_multiplier` were
 removed).
 

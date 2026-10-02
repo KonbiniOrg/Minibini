@@ -10,7 +10,12 @@ from apps.estimates.services import WorkTemplateService
 from django.core.mail import get_connection
 from imap_tools import MailBox
 
+from django.http import HttpResponse
+
 from apps.core.models import Configuration, AccountingCategory
+from apps.core.pdf_branding import (
+    LOGO_KEY, LOGO_POSITION_KEY, LOGO_POSITIONS, PdfBrandingService,
+)
 from apps.core.services import ConfigurationService
 from apps.core.units import HOUR_UNIT
 from apps.jobs.models import RateScheme
@@ -236,15 +241,30 @@ def _validate_schedule_keys(data):
     return errors or None
 
 
+def _settings_payload():
+    """Every Configuration row as {key: value}, minus the PDF logo blob —
+    it is large and has its own endpoint (`pdf_logo_view`)."""
+    configs = Configuration.objects.exclude(key=LOGO_KEY)
+    return {c.key: c.value for c in configs}
+
+
 @api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated, CanManageConfig])
 def settings_view(request):
     if request.method == 'GET':
-        configs = Configuration.objects.all()
-        data = {c.key: c.value for c in configs}
-        return Response(data)
+        return Response(_settings_payload())
 
     # PATCH — update settings
+    if LOGO_KEY in request.data:
+        return Response(
+            {LOGO_KEY: ['Upload the logo through the logo upload instead.']},
+            status=400)
+    if (LOGO_POSITION_KEY in request.data
+            and request.data[LOGO_POSITION_KEY] not in LOGO_POSITIONS):
+        return Response(
+            {LOGO_POSITION_KEY: [
+                'Must be one of: ' + ', '.join(LOGO_POSITIONS) + '.']},
+            status=400)
     schedule_errors = _validate_schedule_keys(request.data)
     if schedule_errors:
         return Response(schedule_errors, status=400)
@@ -350,9 +370,44 @@ def settings_view(request):
             ConfigurationService.set(key, json.dumps(value))
         else:
             ConfigurationService.set(key, str(value))
-    configs = Configuration.objects.all()
-    data = {c.key: c.value for c in configs}
-    return Response(data)
+    return Response(_settings_payload())
+
+
+@api_view(['GET', 'POST', 'DELETE'])
+@permission_classes([IsAuthenticated, CanManageConfig])
+def pdf_logo_view(request):
+    """The logo printed on the document PDFs, as a data URI ('' when unset).
+    POST takes a multipart `logo` file (PNG/JPEG, 1 MB max)."""
+    if request.method == 'POST':
+        return Response(
+            {'logo': PdfBrandingService.set_logo(request.FILES.get('logo'))})
+    if request.method == 'DELETE':
+        PdfBrandingService.clear_logo()
+        return Response({'message': 'Logo removed.'})
+    return Response({'logo': PdfBrandingService.get_logo()})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, CanManageConfig])
+def pdf_preview_view(request):
+    """A sample PDF for one document kind, rendered with the saved branding
+    (`?document=estimate|change_order|po`). Opened in a browser tab."""
+    from apps.estimates.pdf import preview_estimate_pdf, preview_change_order_pdf
+    from apps.purchasing.pdf import preview_purchase_order_pdf
+
+    previews = {
+        'estimate': preview_estimate_pdf,
+        'change_order': preview_change_order_pdf,
+        'po': preview_purchase_order_pdf,
+    }
+    kind = request.query_params.get('document', '')
+    if kind not in previews:
+        return Response(
+            {'detail': 'Unknown document. Use estimate, change_order, or po.'},
+            status=400)
+    response = HttpResponse(previews[kind](), content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="{kind}-preview.pdf"'
+    return response
 
 
 @api_view(['GET', 'PATCH'])
