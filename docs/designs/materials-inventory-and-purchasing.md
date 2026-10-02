@@ -1411,7 +1411,10 @@ reconciliation) happens in QBO.
 `apps/purchasing/pdf.py` — `generate_purchase_order_pdf(po)`. Renders
 `templates/purchasing/purchase_order_pdf.html` to PDF via WeasyPrint.
 PDF contains PO number, vendor info, requested date, line items table
-(description, qty, units, price, line total), grand total.
+(description, qty, units, price, line total), grand total, plus the
+shared letterhead and the PO's own text slots from Settings → Documents
+(`architecture-and-conventions.md` §7.15). The Date line shows
+`issued_date`, falling back to `created_date` for an unissued PO.
 
 `PurchaseOrderEmailService.send_po(po, to, subject, body, cc=None,
 bcc=None, extra_attachments=None, user=None)`:

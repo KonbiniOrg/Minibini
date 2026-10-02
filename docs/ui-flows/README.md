@@ -44,6 +44,7 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 | Deletion & retirement | cross-cutting | Deletion-and-Retirement.md | — |
 | Production lifecycle (job status × inventory × time) | spans job detail, task list/detail, catalog | Production-Lifecycle.md | — |
 | Settings — Accounting Categories delete guard | `/settings` (Accounting tab) | Settings.md (§1 only) | `settings/` |
+| Settings — Document PDF branding | `/settings` (Documents tab) | Settings.md (§2) | `settings/` (document-pdfs) |
 | Purchase orders | `/purchase-orders/*` | Purchasing.md | `purchasing/` |
 
 ### No flow doc yet (the gap list)

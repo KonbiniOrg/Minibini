@@ -1,0 +1,15 @@
+        .letterhead { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+        .letterhead.logo-right { flex-direction: row-reverse; }
+        .letterhead.logo-center { display: block; text-align: center; }
+        .letterhead .logo { max-height: 80px; max-width: 240px; }
+        .letterhead .company { text-align: right; }
+        .letterhead .company:first-child { text-align: left; }
+        .letterhead.logo-right .company { text-align: left; }
+        .letterhead.logo-center .company { text-align: center; margin-top: 8px; }
+        .letterhead .company p { margin: 2px 0; }
+        .letterhead .company-name { font-size: 14px; font-weight: bold; }
+        .doc-text { margin: 14px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .page-footer { position: running(page-footer); font-size: 10px; color: #555; text-align: center; white-space: pre-wrap; }
+        .page-number::before { content: counter(page); }
+        .page-count::before { content: counter(pages); }
+        @page { @bottom-center { content: element(page-footer); width: 100%; } }

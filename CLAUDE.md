@@ -88,7 +88,7 @@ Minibini/
 ```
 
 **Key Patterns:**
-- The Svelte SPA + REST API is the only UI. The deprecated Django HTML view layer (`apps/*/views.py` + `templates/*.html`) has been fully removed; the only server-rendered templates left are the three PDF templates (see Template/PDF section below)
+- The Svelte SPA + REST API is the only UI. The deprecated Django HTML view layer (`apps/*/views.py` + `templates/*.html`) has been fully removed; the only server-rendered templates left are the three PDF templates and their shared partials (see Template/PDF section below)
 - API views: DRF ModelViewSets with reusable mixins (`StatusTransitionMixin`, `LineItemMixin`, `JobTaskMixin`) — see `docs/designs/architecture-and-conventions.md`
 - Service classes in `apps/*/services.py` contain business logic — viewsets are thin wrappers
 - Job status side effects live in `apps/jobs/services.py` (`apps/jobs/signals.py` is empty). Estimate-driven cross-model side effects live in `apps/estimates/signals.py`
@@ -172,7 +172,7 @@ Django serves only two URL prefixes now: `/admin/` (Django admin) and `/api/` (t
 - `/api/expenses/`, `/api/reimbursements/`
 - `/api/jobs/{id}/deliverables/`, `/api/shipments/` (Shipments are flat; Deliverables are job-nested)
 - `/api/users/` (admin), `/api/qbo/` (OAuth + accounts + payment-accounts)
-- `/api/emails/`, `/api/search/`, `/api/schedule/`, `/api/settings/`, `/api/home/`
+- `/api/emails/`, `/api/search/`, `/api/schedule/`, `/api/settings/` (incl. `pdf-logo/`, `pdf-preview/`), `/api/home/`
 
 Per-viewset action endpoints (status transitions, line items, wizard, etc.) live in the topic docs.
 
@@ -254,7 +254,7 @@ The only server-rendered Django templates left live in `templates/` and are rend
 | `templates/estimates/change_order_pdf.html` | `apps/estimates/pdf.py` | `POST /api/change-orders/{id}/send` |
 | `templates/purchasing/purchase_order_pdf.html` | `apps/purchasing/pdf.py` | `POST /api/purchase-orders/{id}/send` |
 
-These are self-contained (no `{% extends %}`/`{% include %}`). The invoice send attaches QBO's rendered PDF instead of a local one (the old `job_statement.html` was deleted 2026-07-23). Email subject/body templates are NOT files — they live in `Configuration` rows and render via `apps/core/email_templates.py`.
+Each carries its own base CSS and body; the only includes are the two shared branding partials in `templates/pdf/` (`_branding_styles.html`, `_letterhead.html`). Logo, company block, and per-document boilerplate text are user-configured in Settings → Documents and supplied by `apps/core/pdf_branding.py` (`docs/designs/architecture-and-conventions.md` §7.15) — add new customizable content there as a named slot, never as user-editable HTML. The invoice send attaches QBO's rendered PDF instead of a local one (the old `job_statement.html` was deleted 2026-07-23). Email subject/body templates are NOT files — they live in `Configuration` rows and render via `apps/core/email_templates.py`.
 
 ## Code Conventions
 

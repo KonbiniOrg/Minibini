@@ -357,17 +357,19 @@ The CO surface and its estimate-parallel code.
   through the shared `components/PortalDocument.svelte` shell; and both PDF
   generators use `_pdf_party_context(job)` (`apps/estimates/pdf.py`).
   Deliberately still duplicated: `estimate_pdf.html` vs `change_order_pdf.html`
-  (shared CSS + header-info block) — PDF templates are self-contained by
-  convention (no extends/include, per CLAUDE.md), so the Python-side helper is
-  the consolidation; touch the two templates in tandem. (A diff-logic note,
+  (base CSS + header-info block). The no-include convention was relaxed
+  2026-10-02 for the branding partials (`templates/pdf/_letterhead.html`,
+  `_branding_styles.html` — architecture §7.15), but the base CSS and
+  header-info block were left per-template; touch the two templates in tandem. (A diff-logic note,
   updated 2026-08-09: the frontend merged-rows logic
   [`buildMergedRows`/`lineDiffTotals` in `frontend/src/lib/changeOrderDiff.js`]
   this used to be kept in lockstep with was **retired** when `COEditView`
   moved the shop edit page onto the server-composed
   `compose_amended_agreement` — see the unify item below; `changeOrderDiff.js`
   now only holds `buildDeliverableRows`.)
-  _Remaining done when:_ either the PDF-template convention changes (allowing a
-  shared header include) or the template pair drifts enough to force a rethink.
+  _Remaining done when:_ the base CSS / header-info block also move into shared
+  `templates/pdf/` partials, or the template pair drifts enough to force a
+  rethink.
 
 - **Unify `compose_change_order_diff` / the CO PDF / the customer portal onto
   `compose_amended_agreement`.** — _added 2026-08-09 (CO amend-in-place Task

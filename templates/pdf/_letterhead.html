@@ -1,0 +1,12 @@
+{% if branding.page_footer %}<div class="page-footer">{{ branding.page_footer }}</div>{% endif %}
+{% if branding.has_letterhead %}
+<div class="letterhead logo-{{ branding.logo_position }}">
+    {% if branding.logo %}<img class="logo" src="{{ branding.logo }}" alt="">{% endif %}
+    <div class="company">
+        {% if branding.company_name %}<p class="company-name">{{ branding.company_name }}</p>{% endif %}
+        {% if branding.company_address %}<p class="preserve-breaks">{{ branding.company_address }}</p>{% endif %}
+        {% if branding.company_phone %}<p>{{ branding.company_phone }}</p>{% endif %}
+        {% if branding.company_email %}<p>{{ branding.company_email }}</p>{% endif %}
+    </div>
+</div>
+{% endif %}
