@@ -133,6 +133,19 @@ class ChangeOrderService:
             )
 
     @staticmethod
+    def assert_job_has_deliverables(co):
+        """Draft-exit guard, the CO sibling of EstimateService.mark_open's
+        deliverables check (jobs-and-tasks.md §12.3): a CO may remove
+        deliverables (a legitimate diff), but it cannot leave the Job with
+        none — the agreed scope would deliver nothing. Shared by
+        ChangeOrder.clean() (the invariant home) and
+        ChangeOrderEmailService._validate_send (pre-email copy)."""
+        from apps.deliverables.models import Deliverable
+        if not Deliverable.objects.filter(job_id=co.job_id).exists():
+            raise ValidationError(
+                'Cannot send change order: job has no deliverables.')
+
+    @staticmethod
     def has_sendable_changes(co):
         """The send / mark-open content gate: a CO is sendable when it carries
         line-item changes OR a deliverables diff against its baseline. A

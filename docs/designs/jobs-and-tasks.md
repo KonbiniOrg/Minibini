@@ -1227,7 +1227,10 @@ list). Tasks within a column are sorted by `worker_queue`. Drag-and-drop assigns
   supplied) returns `{needs_worker_time: true}` instead of assigning, so
   the UI can prompt: the board drag-and-drop pops an interrupting duration
   modal (`WorkerTimePromptModal`), and the Assign modal shows a required
-  duration field. Unassigning never requires a duration. A task whose
+  duration field. The board modal shows the task's name and estimated
+  quantity (`est_qty` + `unit_label`, via `formatQtyUnits`) above the
+  duration input for reference; the board task dict carries both fields
+  for this (`BoardService._serialize_task`). Unassigning never requires a duration. A task whose
   rate scheme is an hour-unit scheme already carries `est_worker_time` by
   the time it reaches assign — crystallized from `est_qty` via
   `ServiceItem.generate_task` (estimate/CO acceptance, add-from-template)
@@ -2259,6 +2262,26 @@ and the per-document snapshot model in `data-constraints.md`).
 `EstimateService.mark_open` rejects with `ValidationError` if the Job has
 zero Deliverables. The customer cannot receive an estimate that doesn't
 say what they're buying.
+
+**Change orders too** (2026-09-29): `ChangeOrderService.
+assert_job_has_deliverables` runs in `ChangeOrder.clean()`'s draft-exit
+guard (after `has_sendable_changes`) and in `ChangeOrderEmailService.
+_validate_send`. Removing deliverables is a legitimate CO diff, but a CO
+cannot leave the Job with none — "Cannot send change order: job has no
+deliverables." See `data-constraints.md` §2.12.
+
+**SPA pre-empt** (2026-09-28/29): `EstimatePanel` and `ChangeOrderPanel`
+each fetch the job's deliverables up front, so "Send Email" / "Send to
+customer" on a job with none opens `DeliverablesEditModal` (its optional
+`notice` prop: "Deliverables are required before this estimate / change
+order can be sent.") instead of the send form; a save that leaves ≥1 row
+continues to the send page, Cancel stays put. The gate stays current
+through `stores/deliverables.js` (architecture-and-conventions.md §5.3):
+deleting the last row anywhere — the band's modal, the CO section, a
+line removal — re-arms it without a reload. Send affordances are
+`<button>`s in every state (RM 2026-09-29: the email step becomes a
+modal later). The server guard stays the invariant — the modal is a
+courtesy, not the enforcement. See `estimates-and-prices.md` §11.2.
 
 This is the single cross-app modification this feature made; see also
 `data-constraints.md` §2.12.

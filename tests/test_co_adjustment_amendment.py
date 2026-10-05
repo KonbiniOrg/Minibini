@@ -21,6 +21,7 @@ Covers (brief Step 1 a-g):
       agreement carries the new percent/price
 """
 from decimal import Decimal
+from apps.deliverables.models import Deliverable
 
 from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
@@ -99,6 +100,11 @@ class AdjustmentReplaceBase(FixtureTestCase):
             adjustment_service=self.scheme, adjustment_percent=Decimal('10.00'),
         )
 
+        # A CO can't leave draft while the job has no deliverables
+        # (ChangeOrderService.assert_job_has_deliverables).
+        Deliverable.objects.create(
+            job=self.job, description='Guard deliverable',
+            qty_ordered=Decimal('1'), units='ea', sort_order=10)
         self.co = _make_co(self.job, self.est)
 
 

@@ -7,10 +7,12 @@
   // server-composed amended-agreement — Tasks 5-8). Extracted from the old
   // ChangeOrderDetailPage route (2026-07-19); COEditView replaced the old
   // flat line-item diff table (COLineItemsSection) 2026-08-09.
-  import { link } from 'svelte-spa-router';
+  import { untrack } from 'svelte';
   import { api, errorMessage } from '../../lib/api.js';
+  import { deliverablesVersion } from '../../stores/deliverables.js';
   import { showError } from '../../stores/messages.js';
   import CODeliverablesSection from './CODeliverablesSection.svelte';
+  import DeliverablesEditModal from '../jobs/DeliverablesEditModal.svelte';
   import COEditView from './COEditView.svelte';
   import COCustomerView from './COCustomerView.svelte';
   import DocModeBar from '../docsurface/DocModeBar.svelte';
@@ -36,7 +38,7 @@
   let error = $state('');
 
   // Deliverables diff state
-  let liveDeliverables = $state([]);
+  let liveDeliverables = $state(null); // null = not loaded yet
   let delivBaseline = $state([]);
   let deliverablesDiff = $state([]); // server-composed kind rows (Customer mode)
 
@@ -238,6 +240,50 @@
     await loadCO({ silent: true });
   }
 
+  // Send gate — the CO sibling of EstimatePanel's. The server refuses to
+  // open a CO whose job has no deliverables (ChangeOrderService.
+  // assert_job_has_deliverables), so "Send to customer" on such a job opens
+  // the deliverables editor with a notice instead of the send form. Send
+  // affordances are buttons in every state (RM 2026-09-29): the email step
+  // is slated to become a modal, so nothing here is a navigation link.
+  let deliverablesModalOpen = $state(false);
+  const needsDeliverables = $derived(
+    liveDeliverables !== null && liveDeliverables.length === 0);
+
+  function goToSend() {
+    window.location.hash = `/change-orders/${co.change_order_id}/send`;
+  }
+
+  function handleSend() {
+    if (needsDeliverables) {
+      deliverablesModalOpen = true;
+    } else {
+      goToSend();
+    }
+  }
+
+  async function handleDeliverablesModalClose(changed) {
+    deliverablesModalOpen = false;
+    if (!changed) return;
+    await loadCO({ silent: true });
+    onJobChange();
+    // The user was on their way to send; carry on once the job has a
+    // deliverable. Cancel (or an empty save) stays here.
+    if (!needsDeliverables) goToSend();
+  }
+
+  // The live deliverables list (diff rows, send gate) is a copy of the job's
+  // list — refetch when any view mutates it (the context band's modal, this
+  // panel's own deliverables section). Skips the initial value.
+  let lastDeliverablesVersion = $state(0);
+  $effect(() => {
+    const v = $deliverablesVersion;
+    if (v !== lastDeliverablesVersion) {
+      lastDeliverablesVersion = v;
+      if (co) untrack(() => loadCO({ silent: true }));
+    }
+  });
+
   // --------------------------------------------------------------------------
 
   // Status actions
@@ -339,17 +385,17 @@
         <button type="button" onclick={handleSaveButton} disabled={actionBusy}>
           {saveLabel}
         </button>
-        <a href={`/change-orders/${co.change_order_id}/send`} use:link class="send-link">
+        <button type="button" class="send-link" onclick={handleSend}>
           Send to customer
-        </a>
+        </button>
         <span class="toolbar-spacer"></span>
         <button type="button" class="btn-danger" onclick={discard} disabled={actionBusy}>
           Discard
         </button>
       {:else if isOpen}
-        <a href={`/change-orders/${co.change_order_id}/send`} use:link class="send-link">
+        <button type="button" class="send-link" onclick={goToSend}>
           Resend to customer
-        </a>
+        </button>
         <button type="button" class="btn-accept" onclick={() => handleStatusChange('accepted')} disabled={actionBusy}>
           {actionBusy ? 'Saving…' : 'Record Accepted'}
         </button>
@@ -436,6 +482,14 @@
     <button type="button" onclick={() => { startNewDialogOpen = false; }}>Cancel</button>
   </div>
 </Modal>
+
+{#if deliverablesModalOpen && co}
+  <DeliverablesEditModal
+    jobId={co.job}
+    notice="Deliverables are required before this change order can be sent."
+    onClose={handleDeliverablesModalClose}
+  />
+{/if}
 
 <style>
   .error { color: #a8071a; padding: 16px; }

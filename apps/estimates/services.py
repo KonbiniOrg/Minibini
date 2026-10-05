@@ -1043,6 +1043,7 @@ class ChangeOrderEmailService(DocumentEmailService):
                 'changes and no deliverable changes.'
             )
         ChangeOrderService.assert_all_bare_add_lines_have_ac(co)
+        ChangeOrderService.assert_job_has_deliverables(co)
 
     @classmethod
     def send_change_order(cls, co, *, to, subject, body, cc=None, bcc=None,

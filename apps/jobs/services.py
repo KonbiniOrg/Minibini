@@ -2448,6 +2448,9 @@ class BoardService:
             'est_worker_time': (
                 str(task.est_worker_time) if task.est_worker_time else None
             ),
+            # Reference display for the board's worker-time prompt.
+            'est_qty': str(task.est_qty) if task.est_qty is not None else None,
+            'unit_label': task.unit_label,
             'has_active_blep': bool(open_user_ids),
             'active_worker_count': len(open_user_ids),
             'has_bleps': bool(bleps),

@@ -17,7 +17,7 @@
   let addedWorkers = $state([]);
 
   // Holds a pending drop while the worker-time prompt is open:
-  // {taskId, targetWorkerId, insertIndex, taskName}
+  // {taskId, targetWorkerId, insertIndex, task}
   let workerTimeModal = $state(null);
 
   // Sync from props when data changes
@@ -63,9 +63,7 @@
     if (targetWorkerId !== null) {
       const task = findTask(taskId);
       if (task && !task.est_worker_time) {
-        workerTimeModal = {
-          taskId, targetWorkerId, insertIndex, taskName: task.name,
-        };
+        workerTimeModal = { taskId, targetWorkerId, insertIndex, task };
         return;
       }
     }
@@ -244,7 +242,7 @@
 
 <WorkerTimePromptModal
   open={workerTimeModal !== null}
-  taskName={workerTimeModal?.taskName || ''}
+  task={workerTimeModal?.task ?? null}
   onSubmit={submitWorkerTime}
   onCancel={() => { workerTimeModal = null; }}
 />

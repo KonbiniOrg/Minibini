@@ -418,6 +418,24 @@ class BoardDataAssemblyTest(FixtureTestCase):
         self.assertEqual(len(data['approved']['workers'][0]['tasks']), 1)
         self.assertEqual(len(data['approved']['unassigned']), 1)
 
+    def test_task_dict_carries_est_qty_and_unit_label(self):
+        # The board's worker-time prompt shows the task's estimated quantity
+        # for reference, so the board payload must carry qty + units.
+        from apps.jobs.services import BoardService
+        job = Job.objects.create(
+            job_number='JOB-APP-QTY', name='Job',
+            status='in_progress', contact=self.contact,
+        )
+        task = Task(name='Cut panels', job=job, est_qty=Decimal('12.50'))
+        task.stamp_from_scheme(RateScheme.objects.get(pk=1))
+        task.unit_label = 'sqft'
+        task.save()
+        data = BoardService.get_board_data()
+        row = next(t for t in data['approved']['unassigned']
+                   if t['task_id'] == task.task_id)
+        self.assertEqual(row['est_qty'], '12.50')
+        self.assertEqual(row['unit_label'], 'sqft')
+
     def test_available_workers_excludes_assigned(self):
         from apps.jobs.services import BoardService
         other_worker = User.objects.create_user(

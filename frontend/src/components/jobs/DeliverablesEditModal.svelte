@@ -2,8 +2,12 @@
   import { api } from '../../lib/api.js';
   import Modal from '../Modal.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
+  import { notifyDeliverablesChanged } from '../../stores/deliverables.js';
 
-  let { jobId, onClose } = $props();
+  // `notice`: optional one-line message shown under the heading. The
+  // estimate panel passes "deliverables are required" when Send Email is
+  // clicked on a job with none; the job overview's Edit link passes nothing.
+  let { jobId, onClose, notice = '' } = $props();
 
   let rows = $state([]);
   let loading = $state(true);
@@ -99,6 +103,7 @@
       if (ordered_ids.length > 0) {
         await api.post(`/api/jobs/${jobId}/deliverables/reorder/`, { ordered_ids });
       }
+      notifyDeliverablesChanged();
       onClose(true);
     } catch (err) {
       errorMsg = err.message || 'Save failed.';
@@ -120,6 +125,7 @@
   onCancel={cancel} maxWidth="80vw" label="Edit deliverables">
 <form onsubmit={(e) => { e.preventDefault(); if (!saving && dirty) save(); }}>
   <h3>Edit deliverables</h3>
+    {#if notice}<p class="notice">{notice}</p>{/if}
     {#if loading}
       <p>Loading...</p>
     {:else}
@@ -154,5 +160,6 @@
 
 <style>
   .err { color: #c00; }
+  .notice { color: #92400e; background: #fef3c7; padding: 6px 10px; border-radius: 3px; }
   table { width: 100%; border-collapse: collapse; }
 </style>

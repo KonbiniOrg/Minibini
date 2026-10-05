@@ -54,6 +54,24 @@ describe('WorkerTimePromptModal', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it('shows the task name and estimated quantity for reference', () => {
+    const task = { task_id: 10, name: 'Cut panels', est_qty: '12.50', unit_label: 'sqft' };
+    const { getByText } = render(WorkerTimePromptModal, {
+      props: { open: true, task, onSubmit: vi.fn(), onCancel: vi.fn() },
+    });
+    expect(getByText('Cut panels')).toBeInTheDocument();
+    expect(getByText('12.50 sqft')).toBeInTheDocument();
+  });
+
+  it('shows a dash when the task has no estimated quantity', () => {
+    const task = { task_id: 10, name: 'Cut panels', est_qty: null, unit_label: 'none' };
+    const { getByText } = render(WorkerTimePromptModal, {
+      props: { open: true, task, onSubmit: vi.fn(), onCancel: vi.fn() },
+    });
+    expect(getByText('Cut panels')).toBeInTheDocument();
+    expect(getByText('-')).toBeInTheDocument();
+  });
+
   it('cancels via onCancel', async () => {
     const onCancel = vi.fn();
     const { getByRole } = render(WorkerTimePromptModal, {

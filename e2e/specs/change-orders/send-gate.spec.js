@@ -71,7 +71,7 @@ test('§5 Send gate — truly empty refused; deliverables-only sendable', async 
     // And the CO page reflects it: the open-CO toolbar replaces the draft one.
     await page.goto(`/#/jobs/${job.job_id}/change-order/${co.change_order_id}`);
     await expect(page.getByRole('button', { name: 'Record Accepted' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Resend to customer' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Resend to customer' })).toBeVisible();
   });
 
   await api.dispose();
