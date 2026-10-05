@@ -21,7 +21,12 @@ test.describe('with can_manage_jobs', () => {
     // estimate, so mint one on a job the board's In Progress area already
     // shows. Rate scheme 1 ("CNC routing") is minute-denominated, so est_qty
     // does NOT pair-fill est_worker_time the way an hour-unit scheme would.
-    job = (await api.get('/api/jobs/board/approved/')).jobs[0];
+    // Skip held jobs: a job on hold refuses new tasks, and the change-order
+    // specs (which sort ahead of this folder) leave their candidate on hold
+    // behind an open CO.
+    const approved = (await api.get('/api/jobs/board/approved/')).jobs;
+    job = approved.find((j) => !j.on_hold);
+    if (!job) throw new Error('seed gap: no approved board job that is not on hold');
     task = await api.post(`/api/jobs/${job.job_id}/tasks/`, {
       name: `${stamp} prompt task`, rate_scheme: 1, est_qty: '90',
     });
