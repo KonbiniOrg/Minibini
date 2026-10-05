@@ -3,6 +3,7 @@
   import { push } from 'svelte-spa-router';
   import DocumentSendForm from '../../components/email/DocumentSendForm.svelte';
   import { unappliedDepositCredits } from '../../lib/depositCredits.js';
+  import { formatMoney } from '../../lib/format.js';
 
   const { params = {} } = $props();
 
@@ -124,13 +125,13 @@
             <td>{li.line_number}</td>
             <td>{li.description}</td>
             <td>{li.qty}</td>
-            <td>${Number(li.price).toFixed(2)}</td>
-            <td>${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
+            <td>{formatMoney(Number(li.price))}</td>
+            <td>{formatMoney(Number(li.qty) * Number(li.price))}</td>
           </tr>
         {/each}
         <tr>
           <td colspan="4"><strong>Total</strong></td>
-          <td><strong>${total(lineItems).toFixed(2)}</strong></td>
+          <td><strong>{formatMoney(total(lineItems))}</strong></td>
         </tr>
       </tbody>
     </table>

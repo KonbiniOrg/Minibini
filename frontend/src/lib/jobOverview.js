@@ -1,4 +1,5 @@
 import { materialStatus } from './materialStatus.js';
+import { formatMoney } from './format.js';
 
 // jobOverview.js — the pure view-model for the job overview page's six
 // lifecycle blocks (Scope → Work → Materials → Spend → Invoicing → Delivery).
@@ -124,7 +125,7 @@ function num(v) {
 
 // "$12,400" — whole dollars, thousands grouped, cents dropped (mockup style).
 function fmtMoney(v) {
-  return '$' + Math.round(num(v)).toLocaleString('en-US');
+  return formatMoney(num(v), { decimals: 0 });
 }
 
 // "64" from "64.0", "41.5" from "41.5" — drop a trailing .0.
@@ -213,7 +214,12 @@ function scopeActiveChangeOrder(jobId, current, co, deliverableCount, now) {
     value: co.change_order_number,
     pill: { text: String(co.status).toUpperCase(), tone: co.status },
   };
-  if (co.total != null) coStat.sub = `+${fmtMoney(co.total)}`;
+  // fmtMoney already carries the sign for a negative total ("-$500") via
+  // formatMoney's currency style — hardcoding a leading '+' unconditionally
+  // used to double up into the nonsensical "+-$500" (T8 review finding).
+  if (co.total != null) {
+    coStat.sub = co.total > 0 ? `+${fmtMoney(co.total)}` : fmtMoney(co.total);
+  }
   const stats = [
     coStat,
     {

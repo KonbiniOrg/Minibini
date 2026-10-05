@@ -268,6 +268,26 @@ Status coupling, transitions, and what a job may do at each stage.
   start-and-bundle path shows, and the Start Estimate button disables
   while its POST is in flight.
 
+- **`WorkTemplate` has no frontend authoring surface.** — _added 2026-08-04_
+  _Carried over from `feature/fees` 2026-10-01 — written against the pre-better-fees code (Aug 2026); CHECK FOR STALENESS before acting: file/line refs, helper names, and whether main's re-implementation already closed the gap._
+  Task-owned-money Phase 4 added `WorkTemplate.is_product_structure`
+  (the flag that makes template-apply mint a parent + per-unit subtasks
+  in one call, `jobs-and-tasks.md` §4a.4) but it's settable only via
+  `PATCH /api/work-templates/{id}/` — no SPA UI and no Django admin
+  registration create/edit a `WorkTemplate`, toggle the flag, or manage
+  its `TemplateTaskAssociation` items at all. This predates Phase 4 (a
+  `WorkTemplate` has always been admin/script-seeded convenience data),
+  but Phase 4 made the gap more visible by adding a second flag nobody
+  can flip from the UI. Also blocking: `TemplateAssociationSerializer`
+  is currently read-only, so even a hypothetical manager couldn't
+  populate a new template's items through the existing API. Needs a
+  brainstorming session, not a quick fix — real design work (what does
+  authoring a product-structure template look like, item ordering,
+  quantity defaults) before any code.
+  _Done when:_ either a `WorkTemplate` CRUD surface ships (with its own
+  design pass), or the team explicitly decides templates stay
+  admin/script-authored and this entry is closed as "won't do."
+
 ## Change orders
 
 The CO surface and its estimate-parallel code.
@@ -464,6 +484,26 @@ The CO surface and its estimate-parallel code.
   (spec §10, RM-gated) — either a lifecycle link is added or the gap is
   explicitly re-ruled acceptable.
 
+- **`validate_data` has no AC-nullability check for `ChangeOrderLineItem` bare-add lines.** — _added 2026-08-03 (task-owned-money Phase 3, Task 7 carry-note)_
+  _Carried over from `feature/fees` 2026-10-01 — written against the pre-better-fees code (Aug 2026); CHECK FOR STALENESS before acting: file/line refs, helper names, and whether main's re-implementation already closed the gap._
+  Task 7 added `validate_data.check_estimate_hand_line_categorization` and
+  `check_invoice_line_categorization` — WARN on a `draft` document, ERROR
+  once past draft — mirroring the real send-time gates
+  (`EstimateService.assert_all_hand_lines_have_ac`,
+  `InvoiceEmailService._assert_all_lines_categorized`). The CO side has
+  the analogous send-time gate
+  (`ChangeOrderService.assert_all_bare_add_lines_have_ac`,
+  `apps/estimates/change_order_service.py`, wired into both
+  `ChangeOrder.clean()`'s draft-exit guard and
+  `ChangeOrderEmailService._validate_send`) but **no** `validate_data`
+  mirror was added for it — a pre-existing gap, not a regression; a bare
+  `add` `ChangeOrderLineItem` with no `accounting_category` is invisible
+  to `validate_data` regardless of the CO's status.
+  _Done when:_ `validate_data` gains a
+  `check_co_bare_add_line_categorization` (or similarly named) check with
+  the same WARN(draft)/ERROR(past-draft) split as its estimate/invoice
+  siblings, and a test pins it.
+
 ## Invoicing, expenses & payments
 
 - **Partially-backed agreement lines skip seeding entirely — per-unit
@@ -646,6 +686,70 @@ Billing mechanics and money-record lifecycle.
   _Done when:_ adjustment-line-heavy documents render without an
   `adjustment_target_categories` N+1, verified with `assertNumQueries` or
   equivalent.
+
+- **Freeform invoice line-item POST accepts a null accounting_category — frontend-validated only.** — _added 2026-08-03_
+  _Carried over from `feature/fees` 2026-10-01 — written against the pre-better-fees code (Aug 2026); CHECK FOR STALENESS before acting: file/line refs, helper names, and whether main's re-implementation already closed the gap._
+  `InvoiceService.add_line_item` (`apps/invoicing/services.py`) builds the
+  `InvoiceLineItem` from raw kwargs and calls `full_clean()`/`save_line_item()`
+  with no AC-required check of its own — unlike `EstimateService.add_line_item`,
+  which 400s a hand-line with no `accounting_category` at entry. A client that
+  skips the SPA's own validation (or a stale/future non-SPA client) can POST a
+  freeform invoice line with `accounting_category: null` and it persists. This
+  is benign defense-in-depth today: `EstimateAddLineForm`/wizard composition
+  already require a category to reach this endpoint in the normal flow, the
+  invoice's "needs category" styling flags a null-AC line in the UI, and
+  `allLinesHaveCategory` gates the Send action before the line could ever
+  reach a customer uncategorized. Noted here rather than fixed now — decide
+  whether `add_line_item` should gain the same entry-time requiredness
+  `EstimateService` has, or whether the send-time gate is judged sufficient
+  API-side coverage.
+  _Done when:_ either `InvoiceService.add_line_item` gets an entry-time
+  AC-required guard (mirroring the estimate side), or a recorded decision that
+  the frontend validation + send gate is the intended (sufficient) coverage.
+
+- **Fallback-AC settings/display polish (final review of task-owned-money Phase 3).** — _added 2026-08-03_
+  _Carried over from `feature/fees` 2026-10-01 — written against the pre-better-fees code (Aug 2026); CHECK FOR STALENESS before acting: file/line refs, helper names, and whether main's re-implementation already closed the gap._
+  Four small gaps found alongside the final-review fix wave (Findings 1–3 fixed
+  same session — settings management list now fetches `include_fallback=true`;
+  `_resolve_fallback_category` now rechecks `is_active`/`is_deposit`):
+  1. **`update_accounting_category` (`apps/core/services.py`) has no
+     designation-aware guard.** PATCHing the currently-designated fallback AC's
+     `is_active` to `false`, or `is_deposit` to `true`, silently leaves the
+     `fallback_accounting_category` Configuration key pointing at a category
+     that no longer qualifies — the dangling pointer is now caught at
+     invoice-compose time (via the `_resolve_fallback_category` recheck) but
+     not at edit time. `ConfigurationService.update_rate_scheme` has the
+     analogous precedent for `default_rate_scheme` (`apps/core/services.py`:
+     `was_active`/`is_active` check + `_raise_if_default_rate_scheme` rejects
+     the PATCH outright when it would flip the designated default inactive,
+     rather than silently clearing the Configuration key — RM browser-testing
+     fix, 2026-08-04) — `update_accounting_category` wants the same
+     reject-don't-silently-clear shape for the fallback (and arguably
+     deposit) designation.
+  2. **`TaskDetailPage.svelte:228` and `TasksPanel.svelte:170`
+     (`WorkItemForm`'s categories source) fetch `/api/accounting-categories/`
+     without `include_fallback=true`.** If a Task's `accounting_category`
+     is ever the designated fallback, the categories list used for
+     name-lookup (`categories.find(...)`) won't contain it, so the UI renders
+     the bare `#id` instead of the category's name — same display-bug shape
+     Finding 1 fixed for the settings management table, on a different
+     surface (a lookup-for-display, not a picker, so no exclusion logic
+     needed — just the fetch param).
+  3. **`FallbackAccountingCategorySetting.svelte` fetches with no `page_size`**
+     (`api.get('/api/accounting-categories/?include_fallback=true')`), so its
+     dropdown silently truncates at the default page size (25) once a shop
+     has more categories than that — the invoice/estimate panels already pass
+     `page_size=100` alongside `include_fallback=true` for the same endpoint;
+     this setting picker should match.
+  4. **No in-use hint when designating an already-referenced AC as the
+     fallback.** Nothing in `FallbackAccountingCategorySetting.svelte` or its
+     backend warns the user if the category they're about to designate is
+     already referenced by existing lines/materials/services — not incorrect,
+     just a missed opportunity to flag a potentially confusing choice (a
+     heavily-referenced "real" category doing double duty as the universal
+     fallback).
+  _Done when:_ all four are addressed (or explicitly deferred further with a
+  recorded reason per item).
 
 ## Purchasing & inventory
 

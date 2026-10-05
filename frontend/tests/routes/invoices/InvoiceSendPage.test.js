@@ -115,6 +115,27 @@ describe('InvoiceSendPage — unapplied deposit credit send-time confirm', () =>
     confirmSpy.mockRestore();
   });
 
+  it('renders a negative line/total with the sign before the dollar sign (I2)', async () => {
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url === '/api/invoices/5/') {
+        return Promise.resolve({
+          ...INVOICE,
+          line_items: [
+            { line_item_id: 1, line_number: 1, description: 'Credit', qty: '1', price: '-500.00' },
+          ],
+        });
+      }
+      if (url === '/api/invoices/5/send-defaults/') return Promise.resolve({ ...SEND_DEFAULTS });
+      if (url.startsWith('/api/invoices/?job=')) return Promise.resolve({ results: [] });
+      return Promise.resolve({});
+    });
+
+    const { findAllByText } = render(InvoiceSendPage, { props: { params: { id: '5' } } });
+    const matches = await findAllByText('-$500.00');
+    expect(matches.length).toBeGreaterThan(0);
+  });
+
   it('does not confirm about deposit credits when the only credit is already applied', async () => {
     const paidDeposit = makeInvoice({
       invoice_id: 100, display_number: 'INV-1042', status: 'paid',

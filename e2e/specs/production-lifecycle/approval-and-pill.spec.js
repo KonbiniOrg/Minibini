@@ -61,14 +61,18 @@ test('§11 Approval & the status pill', async ({ page }) => {
     await expect(pill(page).locator('option:checked')).toHaveText('Approved');
   });
 
-  await test.step('Release to floor is retired: no manual approved→in_progress option', async () => {
+  await test.step('Estimate-less approved job keeps a manual approved→in_progress option', async () => {
     // docs/plans/2026-08-15-estimating-structure.md "Auto-release replaces
-    // release to floor" — approved→in_progress is now system-driven only
-    // (checklist completion, timeslip-start); the pill no longer offers a
-    // manual gesture for it. Auto-release's own end-to-end journey is
-    // covered separately (structure-journey spec).
+    // release to floor" retired the manual gesture for jobs WITH an accepted
+    // estimate (the checklist auto-releases them). A job that never went
+    // through acceptance has no checklist, so manual release stays legal —
+    // final-review fix 2026-08-16, JobHeader.validNextStatuses'
+    // has_accepted_estimate filter. The option is labelled by its resulting
+    // status, not the old "Release to floor" act. Auto-release's own
+    // end-to-end journey is covered separately (structure-journey spec).
     await expect(pill(page).locator('option', { hasText: 'Release to floor' })).toHaveCount(0);
-    await expect(pill(page).locator('option[value="in_progress"]')).toHaveCount(0);
+    await expect(pill(page).locator('option[value="in_progress"]')).toHaveCount(1);
+    await expect(pill(page).locator('option[value="in_progress"]')).toHaveText('In Progress');
     await expect(pill(page)).toHaveValue('approved');
   });
   // §11's in-flight disable is a millisecond window — covered by the

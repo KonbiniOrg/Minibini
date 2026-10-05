@@ -1,3 +1,4 @@
+{% load money %}
 <!DOCTYPE html>
 <html>
 <head>
@@ -106,21 +107,21 @@
                 <td class="preserve-breaks">{{ row.description }}</td>
                 <td class="amount">{{ row.qty }}</td>
                 <td>{{ row.units }}</td>
-                <td class="amount">${{ row.price|floatformat:2 }}</td>
-                <td class="amount">${{ row.amount|floatformat:2 }}</td>
+                <td class="amount">{{ row.price|money }}</td>
+                <td class="amount">{{ row.amount|money }}</td>
             </tr>
             {% endfor %}
             <tr class="total-row">
                 <td colspan="6">Previous total</td>
-                <td class="amount">${{ prior_total|floatformat:2 }}</td>
+                <td class="amount">{{ prior_total|money }}</td>
             </tr>
             <tr class="total-row grand">
                 <td colspan="6">New total</td>
-                <td class="amount">${{ proposed_total|floatformat:2 }}</td>
+                <td class="amount">{{ proposed_total|money }}</td>
             </tr>
             <tr class="total-row">
                 <td colspan="6">Change</td>
-                <td class="amount">${{ diff_total|floatformat:2 }}</td>
+                <td class="amount">{{ diff_total|money }}</td>
             </tr>
         </tbody>
     </table>

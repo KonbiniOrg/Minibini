@@ -904,6 +904,8 @@ class InvoiceAgreementRefsTest(unittest.TestCase):
             seen[ref] = inv_pk
 
 
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
 class ReconcileTest(unittest.TestCase):
     def setUp(self):
         self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=20)
