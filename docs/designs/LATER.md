@@ -310,7 +310,7 @@ The CO surface and its estimate-parallel code.
   stamps (or fails to stamp) the wrong task. The badge logic is
   correct; fix the converter (claim at most one plausible task per line, or drop
   the pass and accept sourceless converted lines). MUST run
-  `tests.test_neals_builders`; `nealsmall.json` is RM-managed — never regenerate.
+  `tests.test_neals_builders`; `nealseed.json` is RM-managed — never regenerate.
   Separately, RM hand-repairs the existing dev rows (job 61: source_ids 327,
   331, 335, 339 at minimum — Claude drafts the SQL, RM runs it).
   **Progress 2026-08-10:** a second corruption mode fixed — the pass also
@@ -547,7 +547,7 @@ The CO surface and its estimate-parallel code.
   refs for its invoice lines (same spirit as `build_synthetic_estimate_
   sources`, with the same fuzzy-correspondence caveat), and/or a dev-DB
   repair pass (Claude drafts SQL, RM runs). `tests.test_neals_builders`
-  mandatory; nealseed/nealsmall untouched.
+  mandatory; nealseed untouched.
   _Converter half DONE 2026-08-12_ (`build_invoice_agreement_refs`:
   description-matched to the latest accepted estimate, one live invoice
   per line, cancelled invoices skipped; builders 132 OK + fixture suite).
