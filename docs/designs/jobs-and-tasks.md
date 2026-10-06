@@ -790,10 +790,8 @@ open Blep refuses (internal-caller semantics unchanged).
 **Fee retired 2026-08-09** — the `jobs.Fee` model (`db_table='fees'`,
 the Job's former fixed-charge atom: `quantity × unit_rate`, no lifecycle,
 always billable) was deleted, along with `FeeService` and the
-`POST/PATCH/DELETE /api/jobs/{id}/fees/` endpoints (migrations
-`apps/estimates/migrations/0046_alter_changeorderlineitem_is_material_and_more.py`,
-`apps/invoicing/migrations/0025_alter_invoicelineitemsource_source_type.py`,
-`apps/jobs/migrations/0062_delete_fee.py`).
+`POST/PATCH/DELETE /api/jobs/{id}/fees/` endpoints (the fee-purge migrations were consolidated away 2026-10; no
+surviving dataset carries `fee` source rows).
 
 There is no replacement atom. A plain hand-authored line (an
 `EstimateLineItem`/`ChangeOrderLineItem` with no `service_item`, no

@@ -804,9 +804,7 @@ exactly like a Task. Full model shape is in
 
 **Fee retired 2026-08-09** — the `jobs.Fee` model (`apps/jobs/models.py`,
 `db_table = 'fees'`) was deleted
-(`apps/jobs/migrations/0062_delete_fee.py`, alongside
-`apps/estimates/migrations/0046_alter_changeorderlineitem_is_material_and_more.py`
-and `apps/invoicing/migrations/0025_alter_invoicelineitemsource_source_type.py`).
+(its migrations were consolidated away 2026-10).
 There is no longer a pure-money job atom. A **plain hand-line** — no
 `service_item`, no `inventory_item`, `is_material=False` — never
 crystallizes into a job atom on acceptance (§9.1); it stays a document
@@ -1119,8 +1117,8 @@ taxability reads `accounting_category.taxable` directly). Declared in
   `related_name='+'`). Deferred service descriptor: the line carries the
   `ServiceItem`'s snapshotted price at authoring time, and the FK is the
   crystallization target that `on_accept` resolves to a `Task` (§9.1).
-- `work_declined` — BooleanField, default `False`, migration `0048`
-  (estimating-structure spec, 2026-08-15). The acceptance-checklist "no
+- `work_declined` — BooleanField, default `False`, added 2026-08-15
+  (estimating-structure spec). The acceptance-checklist "no
   work needed" answer: a plain hand line (no sources, not an adjustment,
   not a deposit line, no catalog identity) is marked declined instead of
   minted. **Set-able only while the estimate is `accepted`** — the one
@@ -3582,8 +3580,8 @@ crystallize.
   `ChangeOrderService.struck_atom_keys(job)` walk (accepted CO
   remove/replace line → target estimate line → claim rows → atom,
   re-executed on every pool build) is **deleted**; the stamp written once
-  at acceptance is now the single source of truth, and a data migration
-  (`apps/estimates/migrations/0048_backfill_descoped_by.py`) backfilled it
+  at acceptance is now the single source of truth, and a one-time data
+  migration (consolidated away 2026-10) backfilled it
   for every pre-2026-08-09 accepted CO. See `invoicing-and-expenses.md`
   ("Uncovered-work section chips") for the chip's full read side.
   **Considered and declined for now:** keeping the job held after CO

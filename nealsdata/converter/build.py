@@ -1153,8 +1153,7 @@ def _scheme_pk(c, scheme_name):
 
 def _stamp_money_block(c, scheme_pk, modifier_keys=None):
     """Copy a seed RateScheme's money fields onto a jobs.task fixture dict
-    (task-owned money Phase 1). Mirrors Task.stamp_from_scheme /
-    apps.jobs.task_money_backfill.backfill_task_money exactly: qty_source
+    (task-owned money Phase 1). Mirrors Task.stamp_from_scheme exactly: qty_source
     from scheme.algorithm, plus rate/unit_label/accounting_category
     verbatim, source_scheme as provenance only (never read for money math),
     and active_modifiers resolved from modifier_keys (a list of

@@ -29,6 +29,7 @@ cd frontend && npm run build            # Build for production (outputs to dist/
 # Database
 python manage.py makemigrations         # Create migrations (OK to run)
 python manage.py loaddata unit_test_data.json  # Load test fixtures
+# Fresh developer DB (human runs this): migrate, then loaddata fixtures/large_datasets/nealseed.json
 
 # Testing
 python manage.py test                   # Run all tests
