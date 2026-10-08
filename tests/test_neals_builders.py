@@ -562,7 +562,7 @@ class AtomDerivationTest(unittest.TestCase):
             self.assertIn(fields['source_scheme'], schemes_by_pk)
             # Task-owned money (task-owned-money Phase 1): the task carries its
             # own permanent copy of the resolved scheme's money fields, mirroring
-            # Task.stamp_from_scheme / task_money_backfill.backfill_task_money.
+            # Task.stamp_from_scheme.
             scheme = schemes_by_pk[fields['source_scheme']]
             self.assertEqual(fields['qty_source'], scheme['algorithm'])
             self.assertEqual(fields['rate'], scheme['rate'])

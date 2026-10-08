@@ -58,19 +58,20 @@ Per-tenant email account (2026-07-23, Settings → Email; Configuration-first
 with env-settings fallback via `apps/core/email_account.py`):
 `email_imap_server`, `email_address`, `email_password`, `email_smtp_host`,
 `email_smtp_port` — the two server hosts and port are **seeded gmail
-defaults** (migration 0027; tenant supplies address+password).
+defaults** (seeded by `core/0003_seed_setup_defaults`; tenant supplies address+password).
 `email_configured()` (imap+address+password) gates the
 Email area; `POST /api/settings/email-verify/` live-tests both directions.
 
 The live pattern rows, both AppState counters, and `units_list` are **seeded
-by data migration** (`core/0027_seed_setup_defaults`, idempotent, never
-overwrites) — a migrate-only fresh database can create Jobs/POs without
+by data migration** (`core/0003_seed_setup_defaults` — logic in
+`apps/core/setup_defaults.py` — idempotent, never overwrites) — a migrate-only fresh database can create Jobs/POs without
 fixtures (2026-07-23; previously fixture-only, a fresh-tenant trap).
 
 **`units_list` canon.** Units are **singular** (`'hour'`, `'sheet'`, `'lb'`,
 never `'hours'`/`'sheets'`/`'lbs'`) — `apps/core/units.py`'s
-`DEFAULT_UNITS` is the singular seed list and singularized data migration
-`core/0029_singular_units` rewrote the `units_list` Configuration value and
+`DEFAULT_UNITS` is the singular seed list; a 2026-07 one-time data migration
+(consolidated away 2026-10 — every surviving dataset already carries the
+result) rewrote the `units_list` Configuration value and
 every stored unit string in place: `RateScheme.unit_label`,
 `InventoryItem.units`, `Material.units`, `Deliverable.units`,
 `DeliverableSnapshot.units`, and the line-item `units` field on
@@ -86,11 +87,6 @@ every stored unit string in place: `RateScheme.unit_label`,
   `PATCH /api/settings/units/` returns 400 if it's missing from the
   submitted list, and `UnitsManager` refuses to let a user remove it.
   `elapsed_time` `RateScheme`s are pinned to this unit (§1.7).
-
-`core/0029_singular_units` also carries seven forward-only
-ordering-anchor migrations, `purchasing/0018` through `0024` (same idiom
-as `core/0024`) — no schema/data change, just Django migration-graph
-sequencing.
 
 Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
 `{day:02d}`, `{counter:04d}`. Counter values are string-encoded integers.
@@ -691,8 +687,8 @@ Non-CO holds resume manually.
   and auto-release are independent triggers on the same `approved →
   in_progress` edge. **Pre-feature (`< 2026-08-15`) data**: existing
   `approved`/`in_progress`+ jobs were never migrated or backfilled
-  (`work_declined` migration `0048` is a bare `AddField`, default
-  `False`) — their old sourceless hand lines simply sit un-evaluated
+  (`work_declined` was added as a bare `AddField`, default
+  `False`, no backfill) — their old sourceless hand lines simply sit un-evaluated
   until some later mint/decline event touches that same estimate, at
   which point `unanswered_lines` inspects the estimate's lines
   wholesale and would surface those old lines too, not just the one
@@ -886,7 +882,8 @@ Valid transitions:
   target — replace moves the claim onto the CO line instead, see
   `estimates-and-prices.md` §14.11. Provenance only; the invoice pool
   reads it (`descoped_by_co_number`) for the "descoped by CO-N" chip.
-  Backfilled by `apps/estimates/migrations/0048_backfill_descoped_by.py`.
+  Backfilled for pre-2026-08-09 rows by a one-time data migration
+  (consolidated away 2026-10).
 
 #### Implied state from other models
 
@@ -1041,7 +1038,7 @@ Valid transitions:
   unique=True)`): opaque token minted at creation (`secrets.token_urlsafe(32)`,
   ~43 chars) in `Estimate.save()` when `not self.pk and not self.public_token`.
   Unique across all Estimate rows. Nullable so the column is additive (existing
-  rows backfilled by migration `0022`). Each revision row mints its own token.
+  rows were backfilled by a one-time data migration, since consolidated away). Each revision row mints its own token.
   Backs the customer-portal URL (`/portal/?token=<token>`) — see
   `estimates-and-prices.md` §15.1. Never regenerated after creation.
 
@@ -1117,7 +1114,7 @@ Enforced in `Estimate.clean()`.
   `validate_data.check_estimate_line_categories` cross-checks the
   hand-line rule at rest (Phase 3 Task 8); the CO parallel is
   `check_change_order_line_categories` (§1.13a below).
-- **work_declined** (bool, default False, migration `0048`): the
+- **work_declined** (bool, default False, added 2026-08-15): the
   acceptance-checklist "no work needed" answer (estimating-structure
   spec). **Set-able only while the parent estimate is `accepted`**
   (`EstimateService._set_work_declined` — draft and open both refuse;
@@ -1134,7 +1131,7 @@ Enforced in `Estimate.clean()`.
   other field key is rejected on any estimate status (the two update
   paths — draft-only field edits, accepted-only decline toggle — never
   blur together).
-- **per_unit** (bool, default False, migration `0049`): the
+- **per_unit** (bool, default False, added 2026-08): the
   per-unit-lines answer to "do this line's claimed atoms describe one
   unit of qty, or the whole job?" (`False` = whole job, today's original
   reading). **Never client-settable directly** — it is only ever set as
@@ -1159,12 +1156,12 @@ Polymorphic row joining a line item to a Job atom (Task or Material).
 - **estimate_line_item** (required FK → EstimateLineItem, CASCADE)
 - **source_type**: `task` or `material`
 - **source_pk**: integer pointing at the atom
-- **per_unit_qty** (nullable Decimal(10,2), migration `0049`): populated
+- **per_unit_qty** (nullable Decimal(10,2), added 2026-08): populated
   only when the owning line is `per_unit` — the raw per-unit value
   entered at claim time, snapshotted before the atom was stamped to
   `per_unit_qty × line.qty`. `None` on every claim whose line is not
   `per_unit`; never populated any other way.
-- **per_unit_worker_time** (nullable Duration, migration `0049`): the
+- **per_unit_worker_time** (nullable Duration, added 2026-08): the
   per-unit schedule-time snapshot, task claims only. On the **bundle**
   path (`_stamp_atom_per_unit`), the snapshot is **unconditional**: it's
   always the task's pre-stamp `est_worker_time` — whether that value was
@@ -1321,7 +1318,7 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - `clean()` also rejects `service_item` / `is_material` on `remove` lines (display-only; never crystallize)
 - A `replace` line authored without an `accounting_category` inherits its target's at add time (2026-08-12 — an AC-less replacement would become a null-AC agreement line at acceptance and demand the fallback on every later invoice seed); an explicit AC wins
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
-- **per_unit** (bool, default False, migration `0049`): mirrors
+- **per_unit** (bool, default False, added 2026-08): mirrors
   `EstimateLineItem.per_unit` field-for-field (same ask-once rule, same
   no-catalog/no-adjustment scope) — see §1.13 above and
   `estimates-and-prices.md` §9b.
@@ -1332,7 +1329,7 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 
 - **change_order_line_item** (required FK → ChangeOrderLineItem, CASCADE, `related_name='sources'`)
 - **source_type**: `task` | `material`; **source_pk**: positive int
-- **per_unit_qty** / **per_unit_worker_time** (migration `0049`): mirror
+- **per_unit_qty** / **per_unit_worker_time** (added 2026-08): mirror
   `EstimateLineItemSource`'s own fields field-for-field — see §1.13
   above. A replace line's claims **carry their snapshot with them**:
   `_move_claims_to` (the acceptance-time move from the target
@@ -1369,13 +1366,11 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
   `assert_all_bare_add_lines_have_ac` filters `sources__isnull=True`) since
   an authored-claimed atom already carries its own AC.
 
-**Migrations (CO amend-in-place, 2026-08-09):**
-`apps/estimates/migrations/0047_changeorderlineitem_adjustment_percent_and_more.py`
-(schema — the three adjustment fields), `apps/jobs/migrations/0063_task_descoped_by.py`
-and `apps/inventory/migrations/0035_material_descoped_by.py` (schema — the
-`descoped_by` FKs, both depending on `estimates.0046`), and
-`apps/estimates/migrations/0048_backfill_descoped_by.py` (data migration —
-walks every historical ACCEPTED `ChangeOrder` ordered `closed_date`,
+**Migrations (CO amend-in-place, 2026-08-09; all since folded into the
+2026-10 consolidated initial migrations):** schema additions for the three
+adjustment fields and the `descoped_by` FKs on Task and Material, plus a
+one-time data migration (now gone — surviving datasets already carry the
+stamps) that walks every historical ACCEPTED `ChangeOrder` ordered `closed_date`,
 `change_order_id` ascending and stamps `descoped_by` on each `remove`/
 `replace` line's target's then-current claimed atom; a later-accepted CO's
 stamp wins when two both target the same line; no-ops on a dangling/already-
@@ -1505,7 +1500,8 @@ Either a description or a `inventory_item` must be present.
   on a REPLACE target — replace moves the claim onto the CO line instead,
   see `estimates-and-prices.md` §14.11. Provenance only; the invoice pool
   reads it (`descoped_by_co_number`) for the "descoped by CO-N" chip.
-  Backfilled by `apps/estimates/migrations/0048_backfill_descoped_by.py`.
+  Backfilled for pre-2026-08-09 rows by a one-time data migration
+  (consolidated away 2026-10).
 
 #### Implied state from other models
 

@@ -35,6 +35,38 @@ See CLAUDE.md "Architecture" for the full app tree. The split is by
 domain (jobs, estimates, contacts, invoicing, purchasing, inventory,
 core) plus a single `apps/api/` app that owns the REST layer.
 
+### 2.1a Migrations
+
+The migration graph was **consolidated on 2026-10-05**: every app's history
+(255 files, 2025-08 → 2026-08) was deleted and regenerated from the models
+as per-app `0001_initial` (plus the `0002`/`0003_initial` splits Django
+emits for circular FKs). The schema is byte-identical to before; only the
+bookkeeping changed. Two operations that `models.py` cannot express were
+re-authored by hand and **must survive any future squash**:
+
+| Migration | What it does |
+|---|---|
+| `core/0003_seed_setup_defaults` | Seeds the AppState counters, document-number patterns, gmail server defaults, and `units_list` on a fresh DB (`data-constraints.md` §1.1). Logic lives in `apps/core/setup_defaults.py` so tests can re-run it directly. |
+| `invoicing/0002_unique_draft_invoice_per_job` | MySQL stored generated column `draft_job_id` + unique index — the real one-draft-invoice-per-job enforcement. `Invoice.Meta`'s conditional `UniqueConstraint` is skipped on MySQL (no partial indexes). |
+
+Every one-time data backfill from the old graph was dropped: no empty
+database needs them, and every surviving dataset already carries their
+results. Do not re-introduce migrations that import historical models.
+
+**Gotcha:** `makemigrations` silently refuses to create an *initial*
+migration for an app whose `migrations/` directory contains any `.py`
+besides `__init__.py` (Django's `ask_initial` heuristic). Keep helper
+modules out of `migrations/` — that is why the seed logic lives in
+`apps/core/setup_defaults.py`.
+
+**Fresh developer database:** `migrate`, then
+`loaddata fixtures/large_datasets/nealseed.json` (the RM-managed seed, also
+what the deploy step loads). `tests/test_nealseed_fixture.py` proves the
+seed loads onto a migrate-only DB and passes `validate_data`. Existing
+databases that ran the old graph need their `django_migrations` rows
+replaced (`migrate --fake` after clearing the ten apps' rows); that is an
+operator step, not something the code does.
+
 ### 2.2 Service layer
 
 **All model CRUD goes through the service layer.** Every create, update, and

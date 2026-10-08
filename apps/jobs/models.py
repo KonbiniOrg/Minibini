@@ -326,7 +326,8 @@ class Task(TaskBase):
     # from the UI and backend code, but the FIELD stays — this area is on
     # its second redesign and RM wants the structural option open for a
     # third. No code may read or write parent_task; existing rows were
-    # flattened to NULL by migration 0061 (the FK is on_delete=CASCADE, so
+    # flattened to NULL by a 2026-08 data migration, since consolidated
+    # away (the FK is on_delete=CASCADE, so
     # a stale child pointer would let a task deletion silently cascade), and
     # validate_data's check_no_parent_task flags any non-NULL value as a
     # sign some path is still writing it.

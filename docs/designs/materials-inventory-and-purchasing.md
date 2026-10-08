@@ -738,10 +738,10 @@ corresponding generated Task.
 Validation: `template_task_association.work_template` must match
 `work_template`.
 
-**Freeform template materials are explicitly disallowed.** Migration
-`apps/inventory/migrations/0021_backfill_template_material_assoc.py`
-errors out if any freeform `TemplateMaterial` rows exist (the prior
-`TemplateMaterial` model was deleted in `0022_delete_templatematerial`).
+**Freeform template materials are explicitly disallowed.** The prior
+`TemplateMaterial` model was deleted in 2026-06 (its data migration refused
+to run while any freeform rows existed; both migrations were consolidated
+away 2026-10).
 PLI is the catalog of reusable materials; a separate template-material
 catalog was redundant.
 
@@ -1767,7 +1767,7 @@ implementation, two placements. See `estimates-and-prices.md` §6.4 and
 - **`accounting_category` on freeform Material creation.** The Add
   Material form accepts a freeform Material without an
   `accounting_category` selection. The model field is required (PROTECT,
-  no `null=True` after migration `0024`), but the form does not yet
+  no `null=True` since the 2026-06 AC-NOT-NULL change), but the form does not yet
   enforce it pre-submit. Worth a separate investigation.
 - **`accounting_category` required on `PurchaseOrderLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.
 - **`linked_po_variances` (job costing, §10a) is API-only — no frontend

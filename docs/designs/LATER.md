@@ -310,7 +310,7 @@ The CO surface and its estimate-parallel code.
   stamps (or fails to stamp) the wrong task. The badge logic is
   correct; fix the converter (claim at most one plausible task per line, or drop
   the pass and accept sourceless converted lines). MUST run
-  `tests.test_neals_builders`; `nealsmall.json` is RM-managed — never regenerate.
+  `tests.test_neals_builders`; `nealseed.json` is RM-managed — never regenerate.
   Separately, RM hand-repairs the existing dev rows (job 61: source_ids 327,
   331, 335, 339 at minimum — Claude drafts the SQL, RM runs it).
   **Progress 2026-08-10:** a second corruption mode fixed — the pass also
@@ -547,7 +547,7 @@ The CO surface and its estimate-parallel code.
   refs for its invoice lines (same spirit as `build_synthetic_estimate_
   sources`, with the same fuzzy-correspondence caveat), and/or a dev-DB
   repair pass (Claude drafts SQL, RM runs). `tests.test_neals_builders`
-  mandatory; nealseed/nealsmall untouched.
+  mandatory; nealseed untouched.
   _Converter half DONE 2026-08-12_ (`build_invoice_agreement_refs`:
   description-matched to the latest accepted estimate, one live invoice
   per line, cancelled invoices skipped; builders 132 OK + fixture suite).
@@ -1206,6 +1206,24 @@ Cross-cutting UI/API conventions and shared components.
   `change-orders/amend-in-place.spec.js` does) instead of hunting the
   shared seed, and the batch passes.
 
+- **Three e2e specs fail in every full-suite run (2026-10-06, both before and
+  after the migration consolidation — identical results on the old and new
+  graphs, 111 passed / 3 failed / 6 skipped).**
+  - `per-unit-lines/mint-first.spec.js` and
+    `task-view-bundling/start-estimate-offer.spec.js` "State C": both pass in
+    isolation; in the full run the freshly created plain hand line is treated
+    as answered (job goes `in_progress` instead of parking on `approved`, no
+    checklist banner). `EstimateService.unanswered_lines` only counts a line
+    answered when it has source rows or sits in an `is_deposit` category, so
+    an earlier spec is leaking state (category flags or a Configuration key)
+    that makes new hand lines look answered. Same order-dependent family as
+    the entries below.
+  - `production-lifecycle/completion.spec.js` §6 "open session closes": fails
+    in isolation too — after Complete, "Working on:" is still rendered.
+    Real regression or stale expectation; needs a look.
+  _Done when:_ a full `npx playwright test` is green, with the leak identified
+  (not papered over by reordering).
+
 - **Two more intermittently-flaky e2e specs, catalogued 2026-08-08 (skeleton-phase final verification).**
   `production-lifecycle/completion.spec.js` §6 (a timing flake around the
   work-complete cascade) and `deposits/deposit-creation.spec.js` (a
@@ -1533,30 +1551,6 @@ Cross-cutting UI/API conventions and shared components.
   businesses, POs, expenses, catalog tabs, search, email list …).
   _Done when:_ list pages share one race-free reset idiom and a filter
   change from a deep page never issues a stale-page request.
-
-- **Migration cleanup must preserve the hand-written operations.** — _added 2026-07-26_
-  28 migrations carry `RunSQL`/`RunPython`. Two buckets for the planned
-  squash/regeneration: (a) MUST survive into any new initial migrations —
-  `invoicing/0008_unique_draft_invoice_per_job` (MySQL stored generated
-  column `draft_job_id` + unique index = the only DB-level
-  one-draft-per-job enforcement; invisible in models.py) and
-  `core/0027_seed_setup_defaults` (baseline Configuration rows for fresh
-  installs); check `core/0005`/`0007` (default-groups create+cleanup —
-  Groups are unused, the pair may net to nothing and can likely be
-  dropped outright). (b) Safe to lose on from-scratch regeneration — all
-  one-time data backfills (`backfill_*`, `migrate_*`, `rewrite_*`,
-  `copy_*`, `normalize_*`, `cleanup_*`, phase-A), which no empty DB
-  needs; they only matter if some environment must still migrate forward
-  from an old schema. Also: `jobs/migrations/_phase_a_backfill_helper.py`
-  is a plain module imported by `0034`, not a migration — prune
-  accordingly. `squashmigrations` preserves these blocks but fragments
-  around them; regeneration re-authors bucket (a) by hand. After any
-  cleanup, run the full suite WITHOUT --keepdb (fresh from-scratch
-  build) per house rule.
-  _Done when:_ the cleanup lands with bucket (a) re-authored, fresh
-  `migrate` + full suite green from an empty DB, and the e2e seed still
-  loads.
-
 
 - **Unstyled `<select>` elements read as "greyed out / disabled" on
   Chrome-on-macOS (and likely other browser/OS combos).** — _added
