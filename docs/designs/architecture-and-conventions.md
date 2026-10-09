@@ -60,8 +60,13 @@ modules out of `migrations/` — that is why the seed logic lives in
 `apps/core/setup_defaults.py`.
 
 **Fresh developer database:** `migrate`, then
-`loaddata fixtures/large_datasets/nealseed.json` (the RM-managed seed, also
-what the deploy step loads). `tests/test_nealseed_fixture.py` proves the
+`loaddata fixtures/large_datasets/nealseed.json` (the RM-managed seed). The
+staging deploy (`.github/workflows/main.yml`) runs `migrate --noinput` only;
+seeding staging is a one-time operator step (drop/recreate the DB, then
+`migrate` + `loaddata` via `docker compose run --rm minibini_django`), done
+2026-10-08 — the deploy never reloads the seed over a live DB, since
+`loaddata` upserts by PK and would revert edits and reset the counters.
+`tests/test_nealseed_fixture.py` proves the
 seed loads onto a migrate-only DB and passes `validate_data`. Existing
 databases that ran the old graph need their `django_migrations` rows
 replaced (`migrate --fake` after clearing the ten apps' rows); that is an

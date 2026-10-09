@@ -96,11 +96,11 @@ jobs:
           allenvs: "true"
           envs: DATABASE_PASSWORD,QBO_CLIENT_SECRET,QBO_CLIENT_ID,QBO_REDIRECT_URI,EMAIL_USERNAME,EMAIL_PASSWORD,VERSION
           script: |
+            set -e
             touch i-was-here.txt
             set > i-was-here.txt
             docker compose pull
-            docker compose run --rm minibini_django python manage.py migrate
-            docker compose run --rm minibini_django python manage.py loaddata fixtures/large_datasets/nealseed.json
+            docker compose run --rm minibini_django python manage.py migrate --noinput
             docker compose up -d --pull always  minibini_django
             docker compose up -d --pull always  minibini_vite
             docker compose restart cron
