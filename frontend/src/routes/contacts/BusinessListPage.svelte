@@ -1,10 +1,13 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
   import BusinessList from '../../components/contacts/BusinessList.svelte';
+  import BusinessFormModal from '../../components/contacts/BusinessFormModal.svelte';
+  import { canManageJobs } from '../../stores/permissions.js';
   import { push } from 'svelte-spa-router';
   import LoadState from '../../components/LoadState.svelte';
 
   let businesses = $state([]);
+  let newOpen = $state(false);
   let count = $state(0);
   let page = $state(1);
   let loading = $state(true);
@@ -37,7 +40,12 @@
 <div class="page-body">
 <h2>Businesses ({count})</h2>
 
-<p><a href="#/businesses/new">New Business</a></p>
+<p>
+  {#if $canManageJobs}
+    <button type="button" onclick={() => { newOpen = true; }}>New Business</button>
+  {/if}
+</p>
+<BusinessFormModal open={newOpen} onClose={() => { newOpen = false; }} />
 
 <LoadState {loading} {error}>
   <BusinessList {businesses} onSelect={handleSelect} />

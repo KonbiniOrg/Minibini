@@ -56,7 +56,7 @@ export async function resolveSenderToContact(state) {
     }
     // Check for a name conflict before creating the contact below —
     // otherwise a duplicate name fails only after the contact is already
-    // committed, leaving it orphaned (mirrors BusinessFormPage's create flow).
+    // committed, leaving it orphaned (mirrors BusinessFormModal's create flow).
     const nameCheck = await api.get(`/api/businesses/check-name/?name=${encodeURIComponent(newBusinessName)}`);
     if (nameCheck.exists) {
       const err = new Error('A business with this name already exists.');
