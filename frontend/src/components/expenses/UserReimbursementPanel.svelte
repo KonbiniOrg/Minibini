@@ -2,6 +2,8 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { getPaymentAccounts } from '../../lib/paymentAccounts.js';
   import LoadState from '../LoadState.svelte';
+  import Modal from '../Modal.svelte';
+  import FormMessage from '../FormMessage.svelte';
 
   let { user = null } = $props();  // { id, username, first_name, last_name } or similar
 
@@ -197,9 +199,12 @@
       {/if}
     {/if}
 
-    {#if showBatchForm}
-      <div style="border: 2px dashed #d4a017; padding: 10px; background: #fffef0; margin-top: 8px">
-        <h4>Create reimbursement</h4>
+    <!-- Batch creation in the Modal shell (2026-10-10; was a dashed in-page
+         box). The heading carries the count and total so the table behind
+         needn't stay visible. -->
+    <Modal open={showBatchForm} onCancel={() => { showBatchForm = false; }} maxWidth="520px" label="Create reimbursement">
+      <form onsubmit={(e) => { e.preventDefault(); submitBatch(); }}>
+        <h3 class="modal-title">Reimburse {selectedIds.size} expense{selectedIds.size === 1 ? '' : 's'} — ${selectedTotal}</h3>
         <p>
           <label for="bf-paid">Paid on *</label><br>
           <input id="bf-paid" type="date" bind:value={batchPaidOn} required>
@@ -220,17 +225,17 @@
           <label for="bf-notes">Notes</label><br>
           <input id="bf-notes" type="text" bind:value={batchNotes} style="width: 100%">
         </p>
-        {#if batchError}<p><em>{batchError}</em></p>{/if}
         <p>
-          <button type="button" onclick={submitBatch} disabled={batchSaving}>
+          <button type="submit" disabled={batchSaving}>
             {batchSaving ? 'Saving...' : 'Confirm reimbursement'}
           </button>
-          <button type="button" onclick={() => { showBatchForm = false; }}>
+          <button type="button" onclick={() => { showBatchForm = false; }} disabled={batchSaving}>
             Cancel
           </button>
         </p>
-      </div>
-    {/if}
+        <FormMessage error={batchError} />
+      </form>
+    </Modal>
   {/if}
 
   <h3>Past reimbursements</h3>
@@ -295,3 +300,7 @@
     </table>
   {/if}
 </LoadState>
+
+<style>
+  .modal-title { margin: 0 0 12px; font-size: 16px; }
+</style>
