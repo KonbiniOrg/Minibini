@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api, errorMessage } from '../../lib/api.js';
   import LoadState from '../LoadState.svelte';
+  import DataTable from '../DataTable.svelte';
 
   let failures = $state([]);
   let loading = $state(true);
@@ -63,35 +64,30 @@
       {#if retryAllResult}<em class="success">{retryAllResult}</em>{/if}
       {#if retryAllError}<em class="error">{retryAllError}</em>{/if}
     </p>
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Entity</th>
-          <th>Op</th>
-          <th class="text-right">Amount</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each failures as failure (failure.entity_type + '-' + failure.id)}
-          {@const rowKey = failure.id + failure.entity_type}
-          <tr>
-            <td title={failure.qbo_sync_error}>{failure.label}</td>
-            <td><span class="op-badge">{failure.qbo_pending_op}</span></td>
-            <td class="text-right">${Number(failure.amount).toFixed(2)}</td>
-            <td>
-              <button type="button" class="retry-row" onclick={() => retryRow(failure)}>Retry</button>
-              {#if rowErrors[rowKey]}
-                <em class="error">{rowErrors[rowKey]}</em>
-              {/if}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+    <DataTable
+      rows={failures}
+      key={(failure) => failure.entity_type + '-' + failure.id}
+      columns={[
+        { id: 'entity',  label: 'Entity', cell: entityCell },
+        { id: 'op',      label: 'Op',     cell: opCell },
+        { id: 'amount',  label: 'Amount', cell: amountCell, align: 'right' },
+        { id: 'actions', label: '',       cell: actionsCell },
+      ]}
+    />
   {/if}
   </LoadState>
 </section>
+
+
+{#snippet entityCell(failure)}<span title={failure.qbo_sync_error}>{failure.label}</span>{/snippet}
+{#snippet opCell(failure)}<span class="op-badge">{failure.qbo_pending_op}</span>{/snippet}
+{#snippet amountCell(failure)}${Number(failure.amount).toFixed(2)}{/snippet}
+{#snippet actionsCell(failure)}
+  <button type="button" class="retry-row" onclick={() => retryRow(failure)}>Retry</button>
+  {#if rowErrors[failure.id + failure.entity_type]}
+    <em class="error">{rowErrors[failure.id + failure.entity_type]}</em>
+  {/if}
+{/snippet}
 
 <style>
   .qbo-sync-failures { margin-top: 1.5em; }

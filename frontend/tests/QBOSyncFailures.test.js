@@ -9,6 +9,7 @@ vi.mock('@/lib/api.js', () => ({
 
 import { api } from '@/lib/api.js';
 import QBOSyncFailures from '@/components/qbo/QBOSyncFailures.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 const FAILURES = [
   {
@@ -77,5 +78,22 @@ describe('QBOSyncFailures', () => {
     await findByText(container, 'Expense #1: Paint supplies'); // wait for load
     const retryBtns = container.querySelectorAll('button.retry-row');
     expect(retryBtns.length).toBe(2);
+  });
+});
+
+describe('QBOSyncFailures — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  it('renders Entity / Op / Amount / (actions) in both densities with data-col', async () => {
+    viewMode.set('lite');
+    const { container } = render(QBOSyncFailures);
+    await findByText(container, 'Expense #1: Paint supplies');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(['Entity', 'Op', 'Amount', '']);
+    expect(table.querySelector('td[data-col="amount"]').textContent.trim()).toBe('$100.00');
+    expect(table.querySelectorAll('td[data-col="actions"] button.retry-row')).toHaveLength(2);
+    viewMode.set('full');
+    const { container: c2 } = render(QBOSyncFailures);
+    await findByText(c2, 'Expense #1: Paint supplies');
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['Entity', 'Op', 'Amount', '']);
   });
 });

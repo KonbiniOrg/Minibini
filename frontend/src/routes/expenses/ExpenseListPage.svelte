@@ -3,6 +3,7 @@
   import { link, push } from 'svelte-spa-router';
   import ExpenseForm from '../../components/expenses/ExpenseForm.svelte';
   import LoadState from '../../components/LoadState.svelte';
+  import DataTable from '../../components/DataTable.svelte';
 
   let expenses = $state([]);
   let outstanding = $state([]);
@@ -97,18 +98,16 @@
 {#if outstanding.length > 0}
   <section style="border: 1px solid #4a90e2; padding: 10px; margin-bottom: 12px">
     <h3 style="margin-top: 0">Outstanding reimbursements</h3>
-    <table style="width: 100%">
-      <tbody>
-        {#each outstanding as row (row.purchased_by)}
-          <tr>
-            <td><a href="/reimbursements/{row.purchased_by}" use:link>{row.full_name || row.username}</a></td>
-            <td>{row.count} items</td>
-            <td style="text-align: right">${row.total}</td>
-            <td>oldest: {row.oldest_purchased_on || '—'}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+    <DataTable
+      rows={outstanding}
+      key={(row) => row.purchased_by}
+      columns={[
+        { id: 'who',    label: 'Who',             cell: whoCell },
+        { id: 'items',  label: 'Items',           cell: itemsCell },
+        { id: 'total',  label: 'Total',           cell: outstandingTotalCell, align: 'right' },
+        { id: 'oldest', label: 'Oldest purchase', cell: oldestCell },
+      ]}
+    />
   </section>
 {/if}
 
@@ -161,75 +160,71 @@
 </fieldset>
 
 <LoadState {loading} {error}>
-{#if expenses.length === 0}
-  <p><em>No expenses match.</em></p>
-{:else}
-  <table class="data-table" style="width: 100%">
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>Who (purchased by)</th>
-        <th>Description</th>
-        <th>Job</th>
-        <th>Task</th>
-        <th>Category</th>
-        <th style="text-align: right">Amount</th>
-        <th>Paid</th>
-        <th>Status</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each expenses as e (e.id)}
-        <tr>
-          <td>{e.purchased_on}</td>
-          <td>
-            {#if e.purchased_by}
-              <a href="/reimbursements/{e.purchased_by}" use:link>{e.purchased_by_name || '—'}</a>
-            {:else}
-              —
-            {/if}
-          </td>
-          <td class="preserve-breaks">{e.description || '—'}</td>
-          <td>
-            {#if e.job_id}
-              <a href="/jobs/{e.job_id}" use:link>{e.job_number}{e.job_name ? ' — ' + e.job_name : ''}</a>
-            {:else}
-              —
-            {/if}
-          </td>
-          <td>{e.task_name || '—'}</td>
-          <td>{e.accounting_category_name || '—'}</td>
-          <td style="text-align: right">${e.amount}</td>
-          <td>{e.payment_method}</td>
-          <td>
-            <em>{e.status}</em>
-            {#if e.qbo_sync_status === 'sync_failed'}
-              <span class="sync-failed-badge">sync failed</span>
-              <button type="button" onclick={() => retryPush(e)}>retry</button>
-            {:else if e.qbo_sync_status === 'synced'}
-              <span class="synced-badge">synced</span>
-            {/if}
-            {#if e.invoice}<br>{@render invoicedLink(e.invoice)}{/if}
-          </td>
-          <td>
-            {#if e.invoice}
-              <span class="locked-note">billed — locked</span>
-            {:else}
-              <button type="button" onclick={() => editExpense(e)}>edit</button>
-              {#if e.payment_method === 'personal' && e.status === 'submitted'}
-                <button type="button" onclick={() => rejectExpense(e)}>reject</button>
-              {/if}
-              <button type="button" onclick={() => deleteExpense(e)}>delete</button>
-            {/if}
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-{/if}
+<DataTable
+  rows={expenses}
+  key={(e) => e.id}
+  emptyText="No expenses match."
+  columns={[
+    { id: 'date',        label: 'Date',               field: 'purchased_on' },
+    { id: 'who',         label: 'Who (purchased by)', cell: purchasedByCell },
+    { id: 'description', label: 'Description',        cell: descriptionCell },
+    { id: 'job',         label: 'Job',                cell: jobCell },
+    { id: 'task',        label: 'Task',               cell: taskCell },
+    { id: 'category',    label: 'Category',           cell: categoryCell },
+    { id: 'amount',      label: 'Amount',             cell: amountCell, align: 'right' },
+    { id: 'paid',        label: 'Paid',               field: 'payment_method' },
+    { id: 'status',      label: 'Status',             cell: statusCell },
+    { id: 'actions',     label: 'Actions',            cell: actionsCell },
+  ]}
+/>
 </LoadState>
 </div>
+
+
+{#snippet whoCell(row)}<a href="/reimbursements/{row.purchased_by}" use:link>{row.full_name || row.username}</a>{/snippet}
+{#snippet itemsCell(row)}{row.count} items{/snippet}
+{#snippet outstandingTotalCell(row)}${row.total}{/snippet}
+{#snippet oldestCell(row)}{row.oldest_purchased_on || '—'}{/snippet}
+
+{#snippet purchasedByCell(e)}
+  {#if e.purchased_by}
+    <a href="/reimbursements/{e.purchased_by}" use:link>{e.purchased_by_name || '—'}</a>
+  {:else}
+    —
+  {/if}
+{/snippet}
+{#snippet descriptionCell(e)}<span class="preserve-breaks">{e.description || '—'}</span>{/snippet}
+{#snippet jobCell(e)}
+  {#if e.job_id}
+    <a href="/jobs/{e.job_id}" use:link>{e.job_number}{e.job_name ? ' — ' + e.job_name : ''}</a>
+  {:else}
+    —
+  {/if}
+{/snippet}
+{#snippet taskCell(e)}{e.task_name || '—'}{/snippet}
+{#snippet categoryCell(e)}{e.accounting_category_name || '—'}{/snippet}
+{#snippet amountCell(e)}${e.amount}{/snippet}
+{#snippet statusCell(e)}
+  <em>{e.status}</em>
+  {#if e.qbo_sync_status === 'sync_failed'}
+    <span class="sync-failed-badge">sync failed</span>
+    <button type="button" onclick={() => retryPush(e)}>retry</button>
+  {:else if e.qbo_sync_status === 'synced'}
+    <span class="synced-badge">synced</span>
+  {/if}
+  {#if e.invoice}<br>{@render invoicedLink(e.invoice)}{/if}
+{/snippet}
+{#snippet actionsCell(e)}
+  {#if e.invoice}
+    <span class="locked-note">billed — locked</span>
+  {:else}
+    <button type="button" onclick={() => editExpense(e)}>edit</button>
+    {#if e.payment_method === 'personal' && e.status === 'submitted'}
+      <button type="button" onclick={() => rejectExpense(e)}>reject</button>
+    {/if}
+    <button type="button" onclick={() => deleteExpense(e)}>delete</button>
+  {/if}
+{/snippet}
 
 <style>
   /* .badge-invoiced comes from app.css. */
