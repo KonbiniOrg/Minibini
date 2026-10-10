@@ -104,3 +104,12 @@ describe('ContactDetail — DataTable lists', () => {
     expect(tables[1].querySelector('td[data-col="total"]').textContent.trim()).toBe('$10.00');
   });
 });
+
+describe('ContactDetail — New Job (JobCreateModal host)', () => {
+  it('New Job is a button that opens the job modal', async () => {
+    const { findByRole, queryByRole } = render(ContactDetail, { props: { contact: contact() } });
+    expect(queryByRole('link', { name: 'New Job' })).toBeNull();
+    await fireEvent.click(await findByRole('button', { name: 'New Job' }));
+    expect(await findByRole('dialog', { name: 'New job' })).toBeInTheDocument();
+  });
+});

@@ -5,14 +5,17 @@
   // top-right without pushing the header's centered title off-center — the
   // host header only has to be `position: relative`.
   //
-  // It navigates, so it's an <a> dressed as a button (UI Decisions: links
-  // navigate, buttons act). RM 2026-07-31: the create flow itself becomes a
-  // Modal later; this is just the way in.
+  // It opens JobCreateModal in place (buttons act) — 2026-10-10, the create
+  // form became a modal as RM anticipated on 2026-07-31.
   import { canManageJobs } from '../../stores/permissions.js';
+  import JobCreateModal from '../jobs/JobCreateModal.svelte';
+
+  let open = $state(false);
 </script>
 
 {#if $canManageJobs}
-  <a class="new-job" href="#/jobs/new">New Job</a>
+  <button type="button" class="new-job" onclick={() => { open = true; }}>New Job</button>
+  <JobCreateModal {open} onClose={() => { open = false; }} />
 {/if}
 
 <style>
@@ -25,10 +28,10 @@
     border-radius: 3px;
     background: #fff;
     color: #2563eb;
-    text-decoration: none;
     font-size: 12px;
     font-family: inherit;
     white-space: nowrap;
+    cursor: pointer;
   }
   .new-job:hover {
     background: #f3f4f6;

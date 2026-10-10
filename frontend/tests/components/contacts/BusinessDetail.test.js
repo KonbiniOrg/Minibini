@@ -98,3 +98,12 @@ describe('BusinessDetail — New Contact (ContactFormModal host)', () => {
     expect(await findByRole('dialog', { name: 'New contact' })).toBeInTheDocument();
   });
 });
+
+describe('BusinessDetail — New Job (JobCreateModal host)', () => {
+  it('New Job is a button that opens the job modal', async () => {
+    const { findByRole, queryByRole } = render(BusinessDetail, { props: { business: business() } });
+    expect(queryByRole('link', { name: 'New Job' })).toBeNull();
+    await fireEvent.click(await findByRole('button', { name: 'New Job' }));
+    expect(await findByRole('dialog', { name: 'New job' })).toBeInTheDocument();
+  });
+});

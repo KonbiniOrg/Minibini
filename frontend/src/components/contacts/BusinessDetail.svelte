@@ -1,5 +1,6 @@
 <script>
   import ContactFormModal from './ContactFormModal.svelte';
+  import JobCreateModal from '../jobs/JobCreateModal.svelte';
   import FullOnly from '../FullOnly.svelte';
   import DataTable from '../DataTable.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
@@ -8,6 +9,7 @@
   import { viewMode } from '../../stores/viewMode.js';
   import { pageFromUrl, pageRange } from '../../lib/pagination.js';
   let newContactOpen = $state(false);
+  let newJobOpen = $state(false);
   const {
     business,
     invoices = null,
@@ -112,7 +114,7 @@
 
 <h3>Jobs
   {#if $canManageJobs && business.default_contact}
-    — <a href="#/jobs/new?contact={business.default_contact.contact_id}">New Job</a>
+    — <button type="button" class="link-btn" onclick={() => { newJobOpen = true; }}>New Job</button>
   {/if}
 </h3>
 <DataTable
@@ -186,6 +188,9 @@
 
 <ContactFormModal open={newContactOpen} defaultBusinessId={business.business_id}
   onClose={() => { newContactOpen = false; }} />
+{#if business.default_contact}
+  <JobCreateModal open={newJobOpen} defaultContactId={business.default_contact.contact_id} onClose={() => { newJobOpen = false; }} />
+{/if}
 
 <p>
   {#if onEdit && $canManageJobs}

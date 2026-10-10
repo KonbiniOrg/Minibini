@@ -17,7 +17,6 @@
   import BusinessListPage from './routes/contacts/BusinessListPage.svelte';
   import BusinessDetailPage from './routes/contacts/BusinessDetailPage.svelte';
   import JobListPage from './routes/jobs/JobListPage.svelte';
-  import JobFormPage from './routes/jobs/JobFormPage.svelte';
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
   import JobRedirectToOverview from './routes/jobs/JobRedirectToOverview.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
@@ -77,7 +76,7 @@
     '/businesses/:id/edit': wrap({ component: RedirectTo, props: { to: '/businesses/:id' } }),
     '/businesses/:id': BusinessDetailPage,
     '/jobs': JobListPage,
-    '/jobs/new': JobFormPage,
+    '/jobs/new': wrap({ component: RedirectTo, props: { to: '/jobs/board' } }),
     '/jobs/board': JobBoardPage,
     '/schedule': SchedulePage,
     '/jobs/:id': JobDetailPage,

@@ -1,4 +1,5 @@
 <script>
+  import JobCreateModal from '../jobs/JobCreateModal.svelte';
   import FullOnly from '../FullOnly.svelte';
   import DataTable from '../DataTable.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
@@ -6,6 +7,7 @@
   import { canManageJobs, canManageFinancials } from '../../stores/permissions.js';
   import { viewMode } from '../../stores/viewMode.js';
   import { pageFromUrl, pageRange } from '../../lib/pagination.js';
+  let newJobOpen = $state(false);
   const {
     contact,
     invoices = null,
@@ -139,7 +141,7 @@
 
 <h3>Jobs
   {#if $canManageJobs}
-    — <a href="#/jobs/new?contact={contact.contact_id}">New Job</a>
+    — <button type="button" class="link-btn" onclick={() => { newJobOpen = true; }}>New Job</button>
   {/if}
 </h3>
 <DataTable
@@ -211,6 +213,8 @@
 
 <HistoryPanel {history} {onAddNote} />
 
+<JobCreateModal open={newJobOpen} defaultContactId={contact.contact_id} onClose={() => { newJobOpen = false; }} />
+
 <p>
   {#if onEdit && $canManageJobs}
     <button onclick={onEdit}>Edit</button>
@@ -231,4 +235,5 @@
 {#snippet poNumberCell(po)}<a href="#/purchase-orders/{po.po_id}">{po.po_number}</a>{/snippet}
 
 <style>
+  .link-btn { background: none; border: 0; padding: 0; color: #2563eb; cursor: pointer; font: inherit; text-decoration: underline; }
 </style>
