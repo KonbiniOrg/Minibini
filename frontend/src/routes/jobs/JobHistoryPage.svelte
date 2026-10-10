@@ -1,7 +1,8 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import JobShell from '../../components/jobs/JobShell.svelte';
   import JobHistorySection from '../../components/jobs/JobHistorySection.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   let { params = {} } = $props();
   const jobId = $derived(params.jobId ?? params.id);
@@ -14,19 +15,19 @@
     try {
       job = await api.get(`/api/jobs/${jobId}/`);
       contact = job?.contact ? await api.get(`/api/contacts/${job.contact}/`).catch(() => null) : null;
-    } catch (e) { error = e.message || 'Could not load job.'; }
+    } catch (e) { error = errorMessage(e, 'Could not load job.'); }
   }
 
   $effect(() => { if (jobId) loadJob(); });
 </script>
 
-{#if error}<p class="error">{error}</p>
-{:else if job}
+<LoadState loading={!job && !error} {error}>
+{#if job}
   <JobShell {job} {contact} current="history" colorway="cw-neutral" onJobChange={loadJob}>
     <JobHistorySection {job} onJobChange={loadJob} />
   </JobShell>
-{:else}<p>Loading…</p>{/if}
+{/if}
+</LoadState>
 
 <style>
-  .error { color: #a8071a; }
 </style>

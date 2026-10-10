@@ -2,6 +2,8 @@
   import { emailApi } from '../../lib/email.js';
   import { push } from 'svelte-spa-router';
   import JobPicker from '../../components/JobPicker.svelte';
+  import LoadState from '../../components/LoadState.svelte';
+  import { errorMessage } from '../../lib/api.js';
 
   const { params = {} } = $props();
 
@@ -18,7 +20,7 @@
     try {
       email = await emailApi.get(params.id);
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load email.');
     } finally {
       loading = false;
     }
@@ -52,11 +54,7 @@
 
 <p><a href="#/email/{params.id}">&larr; Back to Email</a></p>
 
-{#if loading}
-  <p>Loading…</p>
-{:else if loadError}
-  <p>Error: {loadError}</p>
-{:else}
+<LoadState {loading} error={loadError}>
   <h3>Email Summary</h3>
   <table class="data-table">
     <tbody>
@@ -84,5 +82,5 @@
       <a href="#/email/{params.id}">Cancel</a>
     </p>
   </form>
-{/if}
+</LoadState>
 </div>

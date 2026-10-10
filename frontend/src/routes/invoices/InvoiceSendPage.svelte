@@ -1,9 +1,10 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
   import DocumentSendForm from '../../components/email/DocumentSendForm.svelte';
   import { unappliedDepositCredits } from '../../lib/depositCredits.js';
   import { formatMoney } from '../../lib/format.js';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
 
@@ -39,7 +40,7 @@
         jobInvoices = [];
       }
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load invoice.');
     } finally {
       loading = false;
     }
@@ -93,11 +94,8 @@
 
 <h2>Send Invoice</h2>
 
-{#if loading}
-  <p>Loading…</p>
-{:else if loadError}
-  <p>Error: {loadError}</p>
-{:else if invoice && sendDefaults}
+<LoadState {loading} error={loadError}>
+{#if invoice && sendDefaults}
   <DocumentSendForm
     {sendDefaults}
     submitLabel="Send Invoice"
@@ -137,6 +135,7 @@
     </table>
   </section>
 {/if}
+</LoadState>
 </div>
 
 <style>

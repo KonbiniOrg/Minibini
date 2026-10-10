@@ -1,6 +1,7 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import JobDetail from '../../components/jobs/JobDetail.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
 
@@ -47,7 +48,7 @@
       deliverableCount = (deliverableData?.results ?? deliverableData ?? []).length;
       overview = overviewData;
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load job.');
     } finally {
       loading = false;
     }
@@ -59,11 +60,8 @@
   });
 </script>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if loadError}
-  <p><em>Error: {loadError}</em></p>
-{:else if job}
+<LoadState {loading} error={loadError}>
+{#if job}
   <JobDetail
     {job}
     {contact}
@@ -78,3 +76,4 @@
     onStatusChange={loadJob}
   />
 {/if}
+</LoadState>

@@ -1,5 +1,6 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import LoadState from '../../components/LoadState.svelte';
 
   let { params } = $props();
   const shipmentId = $derived(parseInt(params.sid, 10));
@@ -14,7 +15,7 @@
     try {
       payload = await api.get(`/api/shipments/${shipmentId}/packing-list/`);
     } catch (e) {
-      errorMsg = e.message || 'Load failed.';
+      errorMsg = errorMessage(e, 'Load failed.');
     } finally {
       loading = false;
     }
@@ -28,11 +29,8 @@
   }
 </script>
 
-{#if loading}
-  <p>Loading packing list...</p>
-{:else if errorMsg}
-  <p class="err">{errorMsg}</p>
-{:else if payload}
+<LoadState {loading} error={errorMsg} loadingText="Loading packing list...">
+{#if payload}
   <article class="packing-list">
     <h1>Packing list</h1>
 
@@ -115,6 +113,7 @@
     </section>
   </article>
 {/if}
+</LoadState>
 
 <style>
   .packing-list {
@@ -165,7 +164,6 @@
   }
   .sig-line-long  { flex: 2 1 0; }
   .sig-line-short { flex: 1 1 0; }
-  .err { color: #c00; padding: 16px; }
   @media print {
     :global(.sidebar), :global(.current-blep-band) { display: none !important; }
     :global(.page-content) { margin-left: 0 !important; }

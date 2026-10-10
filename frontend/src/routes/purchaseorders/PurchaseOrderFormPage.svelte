@@ -4,6 +4,7 @@
   import { showError } from '../../stores/messages.js';
   import PurchaseOrderForm from '../../components/purchaseorders/PurchaseOrderForm.svelte';
   import { push, querystring } from 'svelte-spa-router';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
   const isEdit = $derived(!!params.id);
@@ -104,9 +105,7 @@
 <div class="page-body">
 <h2>{isEdit ? 'Edit Purchase Order' : 'New Purchase Order'}</h2>
 
-{#if loading}
-  <p>Loading...</p>
-{:else}
+<LoadState {loading}>
   <PurchaseOrderForm
     {po}
     {businesses}
@@ -118,5 +117,5 @@
     onSubmit={handleSubmit}
     onCancel={handleCancel}
   />
-{/if}
+</LoadState>
 </div>

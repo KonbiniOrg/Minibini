@@ -1,7 +1,8 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { pageRange, pageFromUrl } from '../../lib/pagination.js';
   import CustomerPicker from '../../components/CustomerPicker.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   let invoices = $state(null);
   let page = $state(1);
@@ -29,7 +30,7 @@
       url += customerParam();
       invoices = await api.get(url);
     } catch (e) {
-      error = e.message;
+      error = errorMessage(e, 'Could not load invoices.');
     } finally {
       loading = false;
     }
@@ -77,11 +78,8 @@
   </label>
 </p>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p>Error: {error}</p>
-{:else if invoices}
+<LoadState {loading} {error}>
+{#if invoices}
   <table class="data-table">
     <thead>
       <tr>
@@ -125,6 +123,7 @@
     </p>
   {/if}
 {/if}
+</LoadState>
 </div>
 
 <style>

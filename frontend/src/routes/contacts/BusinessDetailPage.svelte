@@ -4,6 +4,7 @@
   import BusinessDetail from '../../components/contacts/BusinessDetail.svelte';
   import CustomerHeader from '../../components/contacts/CustomerHeader.svelte';
   import { push } from 'svelte-spa-router';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
 
@@ -24,7 +25,7 @@
       business = await api.get(`/api/businesses/${params.id}/`);
       await Promise.all([loadInvoices(1), loadPOs(1), loadHistory(), loadFinancials()]);
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load business.');
     } finally {
       loading = false;
     }
@@ -85,11 +86,8 @@
   });
 </script>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if loadError}
-  <p><em>Error: {loadError}</em></p>
-{:else if business}
+<LoadState {loading} error={loadError}>
+{#if business}
   <CustomerHeader name={business.business_name} defaultContact={business.default_contact} {financials} />
   <BusinessDetail
     {business}
@@ -119,3 +117,4 @@
   <p><a href="#/businesses">Back to list</a></p>
   </div>
 {/if}
+</LoadState>

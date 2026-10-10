@@ -1,9 +1,10 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import PurchaseOrderList from '../../components/purchaseorders/PurchaseOrderList.svelte';
   import { push } from 'svelte-spa-router';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { pageRange, pageFromUrl } from '../../lib/pagination.js';
+  import LoadState from '../../components/LoadState.svelte';
 
   let purchaseOrders = $state(null);
   let page = $state(1);
@@ -27,7 +28,7 @@
       }
       purchaseOrders = await api.get(url);
     } catch (e) {
-      error = e.message;
+      error = errorMessage(e, 'Could not load purchase orders.');
     } finally {
       loading = false;
     }
@@ -69,11 +70,8 @@
   </label>
 </p>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p>Error: {error}</p>
-{:else if purchaseOrders}
+<LoadState {loading} {error}>
+{#if purchaseOrders}
   <PurchaseOrderList
     purchaseOrders={purchaseOrders.results}
     onSelect={handleSelect}
@@ -91,4 +89,5 @@
     </p>
   {/if}
 {/if}
+</LoadState>
 </div>

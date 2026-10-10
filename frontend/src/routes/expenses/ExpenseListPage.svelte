@@ -1,7 +1,8 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { link, push } from 'svelte-spa-router';
   import ExpenseForm from '../../components/expenses/ExpenseForm.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   let expenses = $state([]);
   let outstanding = $state([]);
@@ -36,7 +37,7 @@
       expenses = list.results || list;
       outstanding = summary.users || [];
     } catch (err) {
-      error = err.message || 'Could not load.';
+      error = errorMessage(err, 'Could not load.');
     } finally {
       loading = false;
     }
@@ -58,7 +59,7 @@
       await api.post(`/api/expenses/${exp.id}/retry-sync/`);
       load();
     } catch (err) {
-      error = err.message || 'Retry failed.';
+      error = errorMessage(err, 'Retry failed.');
     }
   }
 
@@ -68,7 +69,7 @@
       await api.post(`/api/expenses/${exp.id}/reject/`);
       load();
     } catch (err) {
-      error = err.message || 'Reject failed.';
+      error = errorMessage(err, 'Reject failed.');
     }
   }
 
@@ -78,7 +79,7 @@
       await api.delete(`/api/expenses/${exp.id}/`);
       load();
     } catch (err) {
-      error = err.message || 'Delete failed.';
+      error = errorMessage(err, 'Delete failed.');
     }
   }
 
@@ -159,11 +160,8 @@
   <label>To: <input type="date" bind:value={filterTo} onchange={load}></label>
 </fieldset>
 
-{#if loading}
-  <p><em>Loading...</em></p>
-{:else if error}
-  <p><em>{error}</em></p>
-{:else if expenses.length === 0}
+<LoadState {loading} {error}>
+{#if expenses.length === 0}
   <p><em>No expenses match.</em></p>
 {:else}
   <table class="data-table" style="width: 100%">
@@ -230,6 +228,7 @@
     </tbody>
   </table>
 {/if}
+</LoadState>
 </div>
 
 <style>

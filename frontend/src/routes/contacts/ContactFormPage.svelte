@@ -6,6 +6,7 @@
   import DuplicateContactModal from '../../components/contacts/DuplicateContactModal.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
   import { push, querystring } from 'svelte-spa-router';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
   const isEdit = $derived(!!params.id);
@@ -83,9 +84,8 @@
 <div class="page-body">
 <h2>{isEdit ? 'Edit Contact' : 'New Contact'}</h2>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if !$canManageJobs}
+<LoadState {loading}>
+{#if !$canManageJobs}
   <p>You do not have permission to manage contacts.</p>
 {:else}
   <ContactForm
@@ -104,4 +104,5 @@
     onClose={() => { duplicateContact = null; }}
   />
 {/if}
+</LoadState>
 </div>

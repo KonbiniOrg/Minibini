@@ -2,9 +2,10 @@
   // v1 scope: hosts the existing EmailPanel full-width, no redesign of the
   // email surface itself. The page owns the /api/emails/?job= fetch — the
   // panel is a dumb renderer of whatever { results } it's handed.
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import JobShell from '../../components/jobs/JobShell.svelte';
   import EmailPanel from '../../components/EmailPanel.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   let { params = {} } = $props();
   const jobId = $derived(params.jobId);
@@ -18,7 +19,7 @@
     try {
       job = await api.get(`/api/jobs/${jobId}/`);
       contact = job?.contact ? await api.get(`/api/contacts/${job.contact}/`).catch(() => null) : null;
-    } catch (e) { error = e.message || 'Could not load job.'; }
+    } catch (e) { error = errorMessage(e, 'Could not load job.'); }
   }
 
   async function loadEmails() {
@@ -37,15 +38,15 @@
   });
 </script>
 
-{#if error}<p class="error">{error}</p>
-{:else if job}
+<LoadState loading={!job && !error} {error}>
+{#if job}
   <JobShell {job} {contact} current="emails" colorway="cw-neutral" onJobChange={loadJob}>
     <div class="page-body">
       <EmailPanel {emails} />
     </div>
   </JobShell>
-{:else}<p>Loading…</p>{/if}
+{/if}
+</LoadState>
 
 <style>
-  .error { color: #a8071a; }
 </style>

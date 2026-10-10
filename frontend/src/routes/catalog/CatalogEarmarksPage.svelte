@@ -1,10 +1,11 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { canManageFinancials } from '../../stores/permissions.js';
   import CatalogTabs from '../../components/CatalogTabs.svelte';
   import StockOrderDialog from '../../components/inventory/StockOrderDialog.svelte';
   import { stockShortfall } from '../../lib/stockShortfall.js';
+  import LoadState from '../../components/LoadState.svelte';
 
   let rows = $state([]);
   let loading = $state(true);
@@ -41,7 +42,7 @@
     try {
       rows = await api.get('/api/earmarks/');
     } catch (e) {
-      error = e.message || 'Could not load earmarks.';
+      error = errorMessage(e, 'Could not load earmarks.');
     } finally {
       loading = false;
     }
@@ -53,11 +54,8 @@
 <div class="page-body">
 <CatalogTabs />
 
-{#if loading}
-  <p><em>Loading...</em></p>
-{:else if error}
-  <p><em>{error}</em></p>
-{:else if rows.length === 0}
+<LoadState {loading} {error}>
+{#if rows.length === 0}
   <p><em>No earmarks — nothing is committed right now.</em></p>
 {:else}
   <table class="data-table" style="width: 100%">
@@ -104,6 +102,7 @@
     </tbody>
   </table>
 {/if}
+</LoadState>
 
 {#if orderRow}
   <StockOrderDialog

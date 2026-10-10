@@ -5,6 +5,7 @@
   import JobForm from '../../components/jobs/JobForm.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
   import { push, querystring } from 'svelte-spa-router';
+  import LoadState from '../../components/LoadState.svelte';
 
   // Context from query param (?contact=…) — e.g. the "New Job" link on a
   // contact or business detail page.
@@ -55,9 +56,8 @@
 <div class="page-body">
 <h2>New Job</h2>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if !$canManageJobs}
+<LoadState {loading}>
+{#if !$canManageJobs}
   <p>You do not have permission to create jobs.</p>
 {:else}
   <JobForm
@@ -69,4 +69,5 @@
     onCancel={handleCancel}
   />
 {/if}
+</LoadState>
 </div>

@@ -4,6 +4,7 @@
   import ContactDetail from '../../components/contacts/ContactDetail.svelte';
   import CustomerHeader from '../../components/contacts/CustomerHeader.svelte';
   import { push } from 'svelte-spa-router';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
 
@@ -23,7 +24,7 @@
       contact = await api.get(`/api/contacts/${params.id}/`);
       await Promise.all([loadInvoices(1), loadPOs(1), loadHistory(), loadFinancials()]);
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load contact.');
     } finally {
       loading = false;
     }
@@ -83,11 +84,8 @@
   });
 </script>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if loadError}
-  <p><em>Error: {loadError}</em></p>
-{:else if contact}
+<LoadState {loading} error={loadError}>
+{#if contact}
   <CustomerHeader name={contact.name} kind="contact" business={contact.business} {financials} />
   <ContactDetail
     {contact}
@@ -114,3 +112,4 @@
   <p><a href="#/contacts">Back to list</a></p>
   </div>
 {/if}
+</LoadState>

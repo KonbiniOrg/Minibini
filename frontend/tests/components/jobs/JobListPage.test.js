@@ -6,7 +6,7 @@ const qs = await vi.hoisted(async () => {
   return writable('');
 });
 vi.mock('svelte-spa-router', () => ({ push: vi.fn(), querystring: qs }));
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 
 import { api } from '@/lib/api.js';
 import JobListPage from '@/routes/jobs/JobListPage.svelte';

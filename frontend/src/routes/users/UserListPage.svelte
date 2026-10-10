@@ -1,10 +1,11 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { canManageTime, canManageFinancials } from '../../stores/permissions.js';
   import ShiftRequestQueue from '../../components/users/ShiftRequestQueue.svelte';
   import PayrollReport from '../../components/users/PayrollReport.svelte';
   import WorkSessionsList from '../../components/time/WorkSessionsList.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   let tab = $state('users');
   const canSeeShifts = $derived($canManageTime || $canManageFinancials);
@@ -34,7 +35,7 @@
     try {
       users = await api.get('/api/users/');
     } catch (err) {
-      loadError = err.message || 'Could not load users.';
+      loadError = errorMessage(err, 'Could not load users.');
     } finally {
       loading = false;
     }
@@ -64,11 +65,8 @@
 
 <p><a href="/users/new" use:link>New user</a></p>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if loadError}
-  <p>{loadError}</p>
-{:else if users.length === 0}
+<LoadState {loading} error={loadError}>
+{#if users.length === 0}
   <p>No users found.</p>
 {:else}
   <table class="data-table">
@@ -104,6 +102,7 @@
     </tbody>
   </table>
 {/if}
+</LoadState>
 {/if}
 </div>
 

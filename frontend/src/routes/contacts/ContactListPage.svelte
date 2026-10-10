@@ -5,6 +5,7 @@
   import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
   import { showError, showSuccess } from '../../stores/messages.js';
+  import LoadState from '../../components/LoadState.svelte';
 
   let pullEpoch = $state(0);
 
@@ -80,7 +81,7 @@
       );
       count = contactData.count + businessData.count;
     } catch (e) {
-      error = e.message;
+      error = errorMessage(e, 'Could not load contacts.');
     } finally {
       loading = false;
     }
@@ -209,11 +210,8 @@
   />
 </p>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p>Error: {error}</p>
-{:else if filteredItems.length === 0}
+<LoadState {loading} {error}>
+{#if filteredItems.length === 0}
   <p>No results found.</p>
 {:else}
   <table class="data-table">
@@ -260,6 +258,7 @@
     </p>
   {/if}
 {/if}
+</LoadState>
 </div>
 
 <style>

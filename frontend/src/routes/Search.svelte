@@ -1,6 +1,7 @@
 <script>
   import { querystring } from 'svelte-spa-router';
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
+  import LoadState from '../components/LoadState.svelte';
 
   let results = $state(null);
   let loading = $state(false);
@@ -105,7 +106,7 @@
 
     api.get(`/api/search/?${params}`)
       .then(data => { results = data; })
-      .catch(e => { error = e.message || 'Search failed.'; })
+      .catch(e => { error = errorMessage(e, 'Search failed.'); })
       .finally(() => { loading = false; });
   });
 
@@ -162,11 +163,8 @@
 
   <div class="search-layout">
     <div class="results">
-      {#if loading}
-        <p>Searching...</p>
-      {:else if error}
-        <p>{error}</p>
-      {:else if results}
+      <LoadState {loading} {error} loadingText="Searching...">
+      {#if results}
         <p>{results.total} result{results.total !== 1 ? 's' : ''} for <strong>{results.query}</strong>{withinQuery ? `, narrowed by "${withinQuery}"` : ''}</p>
 
         {#if results.results.jobs?.length}
@@ -316,6 +314,7 @@
           <p>No results found.</p>
         {/if}
       {/if}
+      </LoadState>
     </div>
 
     <aside class="filters">

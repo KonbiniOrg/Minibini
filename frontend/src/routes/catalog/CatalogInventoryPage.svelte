@@ -1,5 +1,5 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { canManageFinancials, canManageConfig } from '../../stores/permissions.js';
   import InventoryItemForm from '../../components/inventory/InventoryItemForm.svelte';
   import StockOrderDialog from '../../components/inventory/StockOrderDialog.svelte';
@@ -8,6 +8,7 @@
   import CatalogTabs from '../../components/CatalogTabs.svelte';
   import InventoryImportPanel from '../../components/qboimport/InventoryImportPanel.svelte';
   import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   // Write access: either the money role or the admin role.
   let pullEpoch = $state(0);
@@ -112,7 +113,7 @@
       }
       items = all;
     } catch (err) {
-      error = err.message || 'Could not load inventory.';
+      error = errorMessage(err, 'Could not load inventory.');
     } finally {
       loading = false;
     }
@@ -214,11 +215,8 @@
   <label><input type="checkbox" bind:checked={activeOnly} onchange={load}> Active only</label>
 </fieldset>
 
-{#if loading}
-  <p><em>Loading...</em></p>
-{:else if error}
-  <p><em>{error}</em></p>
-{:else if shown.length === 0}
+<LoadState {loading} {error}>
+{#if shown.length === 0}
   <p><em>No inventory items match.</em></p>
 {:else}
   <table class="data-table" style="width: 100%">
@@ -268,6 +266,7 @@
     </tbody>
   </table>
 {/if}
+</LoadState>
 </div>
 
 <style>

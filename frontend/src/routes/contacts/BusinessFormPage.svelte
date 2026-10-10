@@ -7,6 +7,7 @@
   import DuplicateBusinessModal from '../../components/contacts/DuplicateBusinessModal.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
   import { push } from 'svelte-spa-router';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
   const isEdit = $derived(!!params.id);
@@ -101,9 +102,8 @@
 <div class="page-body">
 <h2>{isEdit ? 'Edit Business' : 'New Business'}</h2>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if !$canManageJobs}
+<LoadState {loading}>
+{#if !$canManageJobs}
   <p>You do not have permission to manage businesses.</p>
 {:else}
   <BusinessForm
@@ -127,4 +127,5 @@
     onClose={() => { duplicateBusiness = null; }}
   />
 {/if}
+</LoadState>
 </div>

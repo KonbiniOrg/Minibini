@@ -1,8 +1,9 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
   import { blepActivityVersion } from '../stores/blepActivity.js';
   import BlepLogTable from '../components/time/BlepLogTable.svelte';
+  import LoadState from '../components/LoadState.svelte';
 
   // Single-glance dashboard: who's on shift right now and what changed recently
   // across estimates/jobs, POs, and invoices. One fetch of /api/activity/ drives
@@ -17,7 +18,7 @@
     try {
       data = await api.get('/api/activity/');
     } catch (e) {
-      error = e.message || 'Could not load activity.';
+      error = errorMessage(e, 'Could not load activity.');
     } finally {
       loading = false;
     }
@@ -63,11 +64,8 @@
 </script>
 
 <div class="page-body">
-{#if loading}
-  <p>Loading…</p>
-{:else if error}
-  <p class="error">{error}</p>
-{:else if data}
+<LoadState {loading} {error}>
+{#if data}
   <h2>Recent activity</h2>
 
   <section class="on-shift">
@@ -156,10 +154,10 @@
     {/if}
   </section>
 {/if}
+</LoadState>
 </div>
 
 <style>
-  .error { color: #a8071a; }
   .empty { color: #666; font-size: 13px; }
   .window-note { color: #6b7280; font-size: 0.85em; margin: -0.5em 0 0.5em; }
 
