@@ -43,3 +43,21 @@ describe('EmailActionPanel', () => {
     confirmSpy.mockRestore();
   });
 });
+
+describe('EmailActionPanel — job/PO actions open modals (2026-10-10)', () => {
+  it('Create new / Link existing are buttons that report their action', async () => {
+    user.set({ permissions: ['can_manage_jobs', 'can_manage_financials'] });
+    const onAction = vi.fn();
+    const { getAllByRole, queryByRole } = render(EmailActionPanel, {
+      props: { emailRecord: { email_record_id: 1 }, onAction },
+    });
+    const linkButtons = getAllByRole('button', { name: 'Link existing' });
+    expect(linkButtons).toHaveLength(2); // job + PO
+    await fireEvent.click(getAllByRole('button', { name: 'Create new' })[0]);
+    await fireEvent.click(linkButtons[0]);
+    await fireEvent.click(linkButtons[1]);
+    expect(onAction.mock.calls.map((c) => c[0])).toEqual(['create-job', 'link-job', 'link-po']);
+    // The PO "Create new" stays a link (PO work is parked).
+    expect(queryByRole('link', { name: 'Create new' })).not.toBeNull();
+  });
+});

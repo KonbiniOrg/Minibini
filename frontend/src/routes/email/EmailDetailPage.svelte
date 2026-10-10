@@ -3,6 +3,8 @@
   import EmailContent from '../../components/email/EmailContent.svelte';
   import EmailActionPanel from '../../components/email/EmailActionPanel.svelte';
   import EmailReplyComposer from '../../components/email/EmailReplyComposer.svelte';
+  import EmailCreateJobModal from '../../components/email/EmailCreateJobModal.svelte';
+  import EmailLinkModal from '../../components/email/EmailLinkModal.svelte';
   import LoadState from '../../components/LoadState.svelte';
   import { errorMessage } from '../../lib/api.js';
 
@@ -17,6 +19,10 @@
   // this is non-null; the right rail stays sticky so the panel and the
   // Job/PO/Bill associations remain visible while composing.
   let replyMode = $state(null);
+
+  // null | 'create-job' | 'link-job' | 'link-po' — which action-panel modal
+  // is open (the old per-action pages, 2026-10-10).
+  let actionModal = $state(null);
 
   async function load() {
     loading = true;
@@ -72,9 +78,16 @@
         emailRecord={email}
         onChange={load}
         onReply={(mode) => (replyMode = mode)}
+        onAction={(name) => (actionModal = name)}
       />
     </div>
   </div>
+  <EmailCreateJobModal emailRecordId={email.email_record_id} open={actionModal === 'create-job'}
+    onClose={() => (actionModal = null)} />
+  <EmailLinkModal emailRecordId={email.email_record_id} kind="job" open={actionModal === 'link-job'}
+    onLinked={() => { actionModal = null; load(); }} onClose={() => (actionModal = null)} />
+  <EmailLinkModal emailRecordId={email.email_record_id} kind="po" open={actionModal === 'link-po'}
+    onLinked={() => { actionModal = null; load(); }} onClose={() => (actionModal = null)} />
 {/if}
 </LoadState>
 </div>

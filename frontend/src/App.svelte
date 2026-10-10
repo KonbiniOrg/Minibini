@@ -52,10 +52,7 @@
   import ReimbursementDetailPage from './routes/reimbursements/ReimbursementDetailPage.svelte';
   import EmailInboxPage from './routes/email/EmailInboxPage.svelte';
   import EmailDetailPage from './routes/email/EmailDetailPage.svelte';
-  import EmailCreateJobPage from './routes/email/EmailCreateJobPage.svelte';
   import EmailCreatePOPage from './routes/email/EmailCreatePOPage.svelte';
-  import EmailAssociatePage from './routes/email/EmailAssociatePage.svelte';
-  import EmailAssociatePOPage from './routes/email/EmailAssociatePOPage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
   import JobChangeOrderPage from './routes/jobs/JobChangeOrderPage.svelte';
   import ChangeOrderRedirect from './routes/change-orders/ChangeOrderRedirect.svelte';
@@ -116,10 +113,10 @@
     '/expenses': ExpenseListPage,
     '/reimbursements/:id': ReimbursementDetailPage,
     '/email': EmailInboxPage,
-    '/email/:id/create-job': EmailCreateJobPage,
+    '/email/:id/create-job': wrap({ component: RedirectTo, props: { to: '/email/:id' } }),
     '/email/:id/create-po': EmailCreatePOPage,
-    '/email/:id/associate': EmailAssociatePage,
-    '/email/:id/associate-po': EmailAssociatePOPage,
+    '/email/:id/associate': wrap({ component: RedirectTo, props: { to: '/email/:id' } }),
+    '/email/:id/associate-po': wrap({ component: RedirectTo, props: { to: '/email/:id' } }),
     '/email/:id': EmailDetailPage,
     // Home with the Profile / Help tab active (tab derived from location
     // in Home).

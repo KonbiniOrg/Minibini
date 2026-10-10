@@ -2,7 +2,10 @@
   import { canManageJobs as canManageJobsStore, canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { emailApi } from '../../lib/email.js';
 
-  let { emailRecord, onChange = null, onReply = null } = $props();
+  // onAction(name): 'create-job' | 'link-job' | 'link-po' — the host page opens
+  // the matching modal (EmailCreateJobModal / EmailLinkModal, 2026-10-10).
+  // The PO "Create new" stays a page link: PO work is parked.
+  let { emailRecord, onChange = null, onReply = null, onAction = () => {} } = $props();
 
   let canManageJobs = $derived($canManageJobsStore);
   let canManageFinancials = $derived($canManageFinancialsStore);
@@ -52,10 +55,10 @@
         </p>
       {:else}
         <p>
-          <a class="action-button" href="#/email/{emailRecord.email_record_id}/create-job">Create new</a>
+          <button type="button" class="action-button" onclick={() => onAction('create-job')}>Create new</button>
         </p>
         <p>
-          <a class="action-button" href="#/email/{emailRecord.email_record_id}/associate">Link existing</a>
+          <button type="button" class="action-button" onclick={() => onAction('link-job')}>Link existing</button>
         </p>
       {/if}
     </section>
@@ -76,7 +79,7 @@
           <a class="action-button" href="#/email/{emailRecord.email_record_id}/create-po">Create new</a>
         </p>
         <p>
-          <a class="action-button" href="#/email/{emailRecord.email_record_id}/associate-po">Link existing</a>
+          <button type="button" class="action-button" onclick={() => onAction('link-po')}>Link existing</button>
         </p>
       {/if}
     </section>
