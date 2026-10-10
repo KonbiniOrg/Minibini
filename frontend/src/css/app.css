@@ -162,6 +162,8 @@ dd {
 .data-card dt { font-weight: 600; color: var(--doc-accent); font-size: 13px; }
 .data-card dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
 .data-table-empty { color: #555; }
+.load-state.loading { color: #555; }
+.load-state.error { color: #b00020; }
 
 /*
  * Status pills. ONE source of truth for status badge/select coloring — the
