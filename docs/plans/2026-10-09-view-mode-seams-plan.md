@@ -20,7 +20,7 @@
 - `routes/*.svelte` never import `viewMode` or `layout` (spec §5). A route that uses `DataTable` passes column flags; it does not read the stores.
 - Density hides noise, never rights: permission gating stays on the permission stores and is applied **before** density filtering — a page builds its `columns` array from `$canManageX` and hands the result to `DataTable` (spec §5).
 - Every `<tr>` lives inside `<thead>`/`<tbody>` (CLAUDE.md "Table markup").
-- Migrations are behaviour-preserving: same visible text, same links, same buttons, same `href`s in full density. Lite/phone flags are the only intended visible change, and until RM's §7 inventory exists they are set conservatively (see Task 6 recipe).
+- Migrations are behaviour-preserving: same visible text, same links, same buttons, same `href`s, in **both** densities. **No lite-content decisions are made in this plan** (RM 2026-10-09: the Full UI comes first; this pass only makes lite cheap later). No migrated table sets a `lite:` or `phone:` flag; every migrated list's test asserts the lite and full header lists are identical. The flags exist and are tested on `DataTable` itself (Task 2) — that is the setup.
 - `DataTable`'s API grows only when a migration needs it, and every growth lands with a `DataTable.test.js` case in the same commit.
 - Front-end tests: Vitest in `frontend/tests/`, run `npm run test:run` from `frontend/` — never watch mode. E2E: `npx playwright test` from `e2e/`. No Django tests are involved (no backend changes).
 - Commit messages end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push, merge, or open a PR.
@@ -612,16 +612,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `DataTable` (Task 2) with props `rows`, `columns`, `key`, `emptyText`.
-- Produces: no new exports. Column decision for the pilot (RM may flip any flag — spec §7 inventory is still open; this is a starting point, not a ruling):
-
-  | column | lite | phone |
-  |---|---|---|
-  | Name | ✓ | ✓ |
-  | Type | hidden | ✓ |
-  | Business | ✓ | hidden |
-  | Email | ✓ | ✓ |
-  | Phone | ✓ | ✓ |
-  | Tags | hidden | hidden |
+- Produces: no new exports. All six columns stay visible in both densities (no lite-content decisions in this plan).
 
 - [ ] **Step 1: Write the test stub component**
 
@@ -695,29 +686,17 @@ describe('ContactListPage — DataTable pilot', () => {
     expect(names).toEqual(['Acme Corp', 'Jane Doe']); // sorted by name
   });
 
-  it('in lite density hides the Type and Tags columns', async () => {
+  it('renders the same six columns in lite and full (no lite-content decisions yet), stamped with data-col', async () => {
     const { container } = render(ContactListPage);
     await waitFor(() => expect(container.querySelector('table')).toBeTruthy());
-    expect(headers(container)).toEqual(['Name', 'Business', 'Email', 'Phone']);
-    expect(container.textContent).not.toContain('vip');
-  });
-
-  it('in full density shows every column including Type and Tags', async () => {
-    viewMode.set('full');
-    const { container } = render(ContactListPage);
-    await waitFor(() => expect(container.querySelector('table')).toBeTruthy());
-    expect(headers(container)).toEqual(['Name', 'Type', 'Business', 'Email', 'Phone', 'Tags']);
-    expect(container.textContent).toContain('vip');
-  });
-
-  it('switching density after load adds the hidden columns without refetching', async () => {
-    const { container } = render(ContactListPage);
-    await waitFor(() => expect(container.querySelector('table')).toBeTruthy());
+    const all = ['Name', 'Type', 'Business', 'Email', 'Phone', 'Tags'];
+    expect(headers(container)).toEqual(all);
+    expect(container.querySelector('td[data-col="tags"]').textContent).toContain('vip');
     const callsBefore = api.get.mock.calls.length;
     viewMode.set('full');
     await tick();
-    expect(headers(container)).toContain('Type');
-    expect(api.get.mock.calls.length).toBe(callsBefore);
+    expect(headers(container)).toEqual(all);
+    expect(api.get.mock.calls.length).toBe(callsBefore); // density toggle never refetches
   });
 
   it('links the name to the detail route and the business column to the business', async () => {
@@ -747,7 +726,7 @@ describe('ContactListPage — DataTable pilot', () => {
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run from `frontend/`: `npx vitest run tests/components/contacts/ContactListPage.test.js`
-Expected: the "shares an id" and "links the name" tests may pass against the old table; the lite/full header tests FAIL (headers are always all six, and `data-col` attributes don't exist yet). Confirm at least "in lite density hides the Type and Tags columns" fails.
+Expected: the "shares an id" and "links the name" tests may pass against the old table; the "same six columns" test FAILS because the old markup has no `data-col` attributes. Confirm that one fails.
 
 - [ ] **Step 4: Convert the page**
 
@@ -769,11 +748,11 @@ In `frontend/src/routes/contacts/ContactListPage.svelte`:
     emptyText="No results found."
     columns={[
       { id: 'name',     label: 'Name',     cell: nameCell },
-      { id: 'type',     label: 'Type',     cell: typeCell,     lite: false },
-      { id: 'business', label: 'Business', cell: businessCell, phone: false },
+      { id: 'type',     label: 'Type',     cell: typeCell },
+      { id: 'business', label: 'Business', cell: businessCell },
       { id: 'email',    label: 'Email',    field: 'email' },
       { id: 'phone',    label: 'Phone',    field: 'phone' },
-      { id: 'tags',     label: 'Tags',     cell: tagsCell,     lite: false, phone: false },
+      { id: 'tags',     label: 'Tags',     cell: tagsCell },
     ]}
   />
 ```
@@ -839,10 +818,10 @@ Expected: no errors. If the build reports an unused CSS selector warning for `.r
 ```bash
 cd /Users/drshiny/Documents/konbini/Minibini
 git add frontend/src/routes/contacts/ContactListPage.svelte frontend/tests/components/contacts/ContactListPage.test.js frontend/tests/components/contacts/_Noop.svelte
-git commit -m "feat(contacts): list page uses DataTable; Type and Tags hidden in lite
+git commit -m "refactor(contacts): list page uses DataTable
 
-Pilot A (links) for the view-mode column seam. Column flags are a
-starting point pending the lite-view inventory (spec §7).
+Pilot A (links) for the view-mode column seam. Behaviour-preserving;
+no lite flags set.
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
@@ -964,7 +943,7 @@ describe('JobList row selection', () => {
     expect(getByText('No jobs found.')).toBeInTheDocument();
   });
 
-  it('shows all four columns in both densities (no lite flags yet — pending the §7 inventory)', () => {
+  it('shows all four columns in both densities (no lite-content decisions in this pass)', () => {
     const headers = (c) => Array.from(c.querySelectorAll('thead th')).map((th) => th.textContent.trim());
     const { container } = render(JobList, { props: { jobs } });
     expect(headers(container)).toEqual(['Job #', 'Name', 'Status', 'PM']);
@@ -1050,19 +1029,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `DataTable` (`rows`, `columns`, `key`, `emptyText`).
-- Produces: nothing new. Lite decision for the pilot (starting point; the §7 inventory may revise): in lite, each result table keeps its identifying columns and status and drops the long-text/secondary columns:
-
-  | table | hidden in lite |
-  |---|---|
-  | Jobs | Started, Description, Customer PO |
-  | Contacts | Mobile, Home, City |
-  | Businesses | Code, Address |
-  | Invoices | Created |
-  | Estimates | Version, Created |
-  | Purchase Orders | Created |
-  | Inventory Items | Units |
-
-  "Matching …" columns stay in lite (they are *why* the row matched). Nothing is hidden on phone beyond the lite set; phone-specific trimming waits for the phone shell.
+- Produces: nothing new. No `lite`/`phone` flags: all 38 columns stay visible in both densities. The value of this pilot is proving that seven tables' worth of `{@html}` cells move into snippets without loss.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1071,6 +1038,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```js
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
 vi.mock('svelte-spa-router', async () => {
@@ -1117,21 +1085,19 @@ describe('Search results tables — DataTable pilot', () => {
     expect(getByRole('link', { name: /Acme Jane/ })).toHaveAttribute('href', '#/contacts/3');
   });
 
-  it('in lite density drops the long-text job columns and the secondary contact columns', async () => {
+  it('shows the same columns in lite and full (no lite-content decisions yet)', async () => {
+    const jobHeaders = ['Job #', 'Name', 'Contact', 'Status', 'Created', 'Started', 'Description', 'Customer PO', 'Matching Tasks'];
+    const contactHeaders = ['Name', 'Business', 'Email', 'Mobile', 'Work', 'Home', 'City'];
     const { container } = render(Search);
     await waitFor(() => expect(container.querySelectorAll('table.data-table')).toHaveLength(2));
-    const [jobs, contacts] = container.querySelectorAll('table.data-table');
-    expect(headersOf(jobs)).toEqual(['Job #', 'Name', 'Contact', 'Status', 'Created', 'Matching Tasks']);
-    expect(headersOf(contacts)).toEqual(['Name', 'Business', 'Email']);
-  });
-
-  it('in full density shows every column', async () => {
+    let [jobs, contacts] = container.querySelectorAll('table.data-table');
+    expect(headersOf(jobs)).toEqual(jobHeaders);
+    expect(headersOf(contacts)).toEqual(contactHeaders);
     viewMode.set('full');
-    const { container } = render(Search);
-    await waitFor(() => expect(container.querySelectorAll('table.data-table')).toHaveLength(2));
-    const [jobs, contacts] = container.querySelectorAll('table.data-table');
-    expect(headersOf(jobs)).toEqual(['Job #', 'Name', 'Contact', 'Status', 'Created', 'Started', 'Description', 'Customer PO', 'Matching Tasks']);
-    expect(headersOf(contacts)).toEqual(['Name', 'Business', 'Email', 'Mobile', 'Work', 'Home', 'City']);
+    await tick();
+    [jobs, contacts] = container.querySelectorAll('table.data-table');
+    expect(headersOf(jobs)).toEqual(jobHeaders);
+    expect(headersOf(contacts)).toEqual(contactHeaders);
   });
 
   it('renders dashes for empty values via hl()', async () => {
@@ -1149,7 +1115,7 @@ Before running, check how `Search.svelte` triggers its fetch (an `$effect` on `q
 - [ ] **Step 2: Run to verify it fails**
 
 Run from `frontend/`: `npx vitest run tests/routes/Search.test.js`
-Expected: the lite-density test FAILS (all nine job headers present) and the `data-col` lookups FAIL; the first test may pass.
+Expected: the `data-col` lookups FAIL (old markup has no `data-col` attributes); the first test may pass.
 
 - [ ] **Step 3: Convert the seven tables**
 
@@ -1167,9 +1133,9 @@ In `Search.svelte`, add `import DataTable from '../components/DataTable.svelte';
       { id: 'contact',     label: 'Contact',        cell: jobContactCell },
       { id: 'status',      label: 'Status',         cell: jobStatusCell },
       { id: 'created',     label: 'Created',        cell: jobCreatedCell },
-      { id: 'started',     label: 'Started',        cell: jobStartedCell,  lite: false },
-      { id: 'description', label: 'Description',    cell: jobDescCell,     lite: false },
-      { id: 'po',          label: 'Customer PO',    cell: jobPoCell,       lite: false },
+      { id: 'started',     label: 'Started',        cell: jobStartedCell },
+      { id: 'description', label: 'Description',    cell: jobDescCell },
+      { id: 'po',          label: 'Customer PO',    cell: jobPoCell },
       { id: 'tasks',       label: 'Matching Tasks', cell: jobTasksCell },
     ]}
   />
@@ -1184,10 +1150,10 @@ In `Search.svelte`, add `import DataTable from '../components/DataTable.svelte';
       { id: 'name',     label: 'Name',     cell: contactNameCell },
       { id: 'business', label: 'Business', cell: contactBusinessCell },
       { id: 'email',    label: 'Email',    cell: contactEmailCell },
-      { id: 'mobile',   label: 'Mobile',   cell: contactMobileCell, lite: false },
+      { id: 'mobile',   label: 'Mobile',   cell: contactMobileCell },
       { id: 'work',     label: 'Work',     cell: contactWorkCell },
-      { id: 'home',     label: 'Home',     cell: contactHomeCell,   lite: false },
-      { id: 'city',     label: 'City',     cell: contactCityCell,   lite: false },
+      { id: 'home',     label: 'Home',     cell: contactHomeCell },
+      { id: 'city',     label: 'City',     cell: contactCityCell },
     ]}
   />
 {/if}
@@ -1215,7 +1181,7 @@ and the snippets, placed at the top level of the template (outside `.search-layo
 {#snippet contactCityCell(c)}{@html hl(c.city)}{/snippet}
 ```
 
-Repeat for Businesses (`key: b.business_id`; `Code`, `Address` get `lite: false`), Invoices (`key: inv.invoice_id`; `Created` gets `lite: false`), Estimates (`key: est.estimate_id`; `Version`, `Created` get `lite: false`), Purchase Orders (`key: po.po_id`; `Created` gets `lite: false`) and Inventory Items (`key: item.inventory_item_id`; `Units` gets `lite: false`). Every old `<td>` expression moves verbatim into its snippet; `formatDate`, `hl`, `hlt` are unchanged.
+Repeat for Businesses (`key: b.business_id`), Invoices (`key: inv.invoice_id`), Estimates (`key: est.estimate_id`), Purchase Orders (`key: po.po_id`) and Inventory Items (`key: item.inventory_item_id`). No `lite`/`phone` flags anywhere. Every old `<td>` expression moves verbatim into its snippet; `formatDate`, `hl`, `hlt` are unchanged.
 
 If the snippet count feels heavy, that is the honest cost of this page having 38 cells; do **not** collapse them into a generic "html field" column type in this task — note the idea in `docs/designs/LATER.md` instead and let the batch migration (Task 6) decide if a second page needs it.
 
@@ -1230,9 +1196,10 @@ Run from `frontend/`: `npm run build` → no errors.
 ```bash
 cd /Users/drshiny/Documents/konbini/Minibini
 git add frontend/src/routes/Search.svelte frontend/tests/routes/Search.test.js
-git commit -m "feat(search): result tables on DataTable; long-text columns hidden in lite
+git commit -m "refactor(search): result tables on DataTable
 
-Pilot C (seven dense tables, {@html} highlight cells).
+Pilot C (seven dense tables, {@html} highlight cells). Behaviour-preserving;
+no lite flags set.
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
@@ -1248,7 +1215,9 @@ After the three pilots the `DataTable` API is: `rows`, `columns` (`id, label, li
 **Scope — do NOT migrate:**
 - Editing grids with per-row inputs: all six `components/qboimport/*ImportPanel.svelte`, `purchaseorders/ReceiveItemsForm.svelte`, `purchaseorders/ReconciliationSection.svelte`, `changeorders/CODeliverablesSection.svelte`, `jobs/DeliverablesEditModal.svelte`, `settings/AccountingCategories.svelte`, `routes/SettingsPage.svelte`, `expenses/UserReimbursementPanel.svelte`, `shipments/ShipmentsPanel.svelte`.
 - Document line tables with footers/totals: `LineItemTable.svelte`, `estimates/EstimateEditView.svelte`, `changeorders/COEditView.svelte`, `changeorders/COCustomerView.svelte`, `invoices/InvoiceEditView.svelte`, `docsurface/*`, `TaskTree.svelte`, `EstimatePortal.svelte`, `ChangeOrderPortal.svelte`, `routes/*/…SendPage.svelte`, `routes/shipments/PackingListPrint.svelte`, `routes/jobs/TaskDetailPage.svelte`, `purchaseorders/PurchaseOrderDetail.svelte`.
-- Tables used as key/value layout (no header row): `board/UnpaidCard.svelte`, `email/EmailContent.svelte`, `email/SenderResolutionForm.svelte`, `routes/email/EmailAssociatePage.svelte`, `routes/email/EmailAssociatePOPage.svelte`, `settings/EmailTemplates.svelte`, `jobs/DeliverablesSection.svelte`, `jobs/JobHistorySection.svelte`. (Candidates for a `<dl>` cleanup later; add one line to `docs/designs/LATER.md` in batch 5.)
+- Grouped row structures `DataTable` does not model: `board/UnpaidCard.svelte` (invoice rows with nested payment sub-rows, board-card styling) and `jobs/JobHistorySection.svelte` (rows grouped under per-day header rows across multiple `<tbody>`s). Leave both.
+
+**Scope — convert to the house key/value pattern (batch 6):** six header-less tables that are really label/value layouts become `<dl>` (the global `dl` grid style in `app.css` that `ContactDetail`/`BusinessDetail` already use), and one header-less flat list joins `DataTable`. Listed in batch 6.
 
 **The recipe (apply to every file in every batch):**
 
@@ -1266,8 +1235,8 @@ After the three pilots the `DataTable` API is: `rows`, `columns` (`id, label, li
    where `baseColumns` is an inline array literal in the same expression (keep snippets referenced from markup). Permission filtering is applied before density filtering by construction.
 6. Row `key`: the entity pk (`job_id`, `invoice_id`, `po_id`, `contact_id`, `business_id`, `blep_id`, `shift_id`, `user_id`/`id`, `inventory_item_id`, `earmark_id`, `rate_scheme_id`, `service_item_id`, `terms_id`, …). Read the field name off the existing `{#each … (key)}` or the row's link `href`; never fall back to the index when a pk exists.
 7. Per-row status styling that existed as `class={…}` on `<tr>` becomes `rowClass`.
-8. **Lite flags are conservative:** set `lite: false` only on columns that are (a) free-text descriptions/notes/reasons, (b) secondary identifiers (reference codes, IP addresses, versions), or (c) a second/third phone or address. Never flag identifiers, names, status, dates that drive action, money owed, or action columns. Set no `phone: false` flags in this task (the phone shell is later). Record each page's chosen lite set as one line in the batch commit message so RM's §7 inventory can start from it.
-9. Tests: run the component's existing test file first (unchanged, must still pass — behaviour preserved). Then add one test to it (create `tests/components/<path>/<Name>.test.js` if none exists, mirroring the mocks of the nearest sibling test) asserting the lite header list vs the full header list, using the `headers(container)` helper from Task 3's test. If the component took no lite flags, the test asserts both lists are equal, as in Task 4's JobList test.
+8. **No `lite` or `phone` flags.** RM is working on the Full UI first; lite-content decisions come later from the spec §7 inventory. Every column is `{ id, label, field|cell }` (plus `align`/`header` where needed). Do not "helpfully" flag an obviously secondary column.
+9. Tests: run the component's existing test file first (unchanged, must still pass — behaviour preserved). Then add one test to it (create `tests/components/<path>/<Name>.test.js` if none exists, mirroring the mocks of the nearest sibling test) asserting the header list is identical in lite and full and that each header carries `data-col`, using the `headers(container)` helper from Task 3's test and the shape of Task 4's JobList test.
 10. `npm run test:run` and `npm run build` green before each batch commit.
 
 **Batch 1 — CRM** (one commit):
@@ -1275,14 +1244,14 @@ After the three pilots the `DataTable` API is: `rows`, `columns` (`id, label, li
 | file | headers today | notes |
 |---|---|---|
 | `components/contacts/ContactList.svelte` | Name, Email, Phone | `onSelect` button pattern as in JobList |
-| `components/contacts/BusinessList.svelte` | Reference, Name, Phone | Reference → `lite: false` |
+| `components/contacts/BusinessList.svelte` | Reference, Name, Phone | `onSelect` button pattern |
 | `components/contacts/ContactDetail.svelte` (3 tables) | Jobs: Job #, Name, Status · Invoices: Invoice #, Job, Status, Total, Paid, Balance · POs: PO #, Status | rows are already the `visibleJobs`/`visibleInvoices`/`visiblePOs` `$derived`s — pass those; the "No open jobs." empty copy stays via `emptyText` |
 | `components/contacts/BusinessDetail.svelte` (4 tables) | Contacts: Name, Email, Phone · Jobs/Invoices/POs as above | same |
 
 Existing tests to keep green: `tests/components/contacts/ContactDetail.test.js`, `BusinessDetail.test.js`, `ContactDetailPage.test.js`, `ContactPicker.test.js`, `BusinessPicker.test.js` (pickers render the lists).
 
-- [ ] Apply the recipe to the four files; add lite/full header tests; suite + build green.
-- [ ] Commit: `refactor(contacts): CRM lists on DataTable` with the per-page lite sets in the body.
+- [ ] Apply the recipe to the four files; add header tests; suite + build green.
+- [ ] Commit: `refactor(contacts): CRM lists on DataTable`.
 
 **Batch 2 — Jobs & money lists** (one commit):
 
@@ -1306,8 +1275,8 @@ Existing tests: `InvoiceListPage.test.js`, `PurchaseOrderList.test.js`, `Purchas
 |---|---|---|
 | `components/home/CurrentTaskList.svelte` | Task, Job, Status, Start, Reorder | Start/Reorder are action cells |
 | `components/home/ExpensesList.svelte` | Date, Description, Job, Task, Amount, Status, Reimbursed | |
-| `components/home/MyChangeRequestsList.svelte` | Type, Requested, Status, Reason | Reason → `lite: false` |
-| `components/home/RecentLoginsList.svelte` | Time, IP address | IP address → `lite: false` |
+| `components/home/MyChangeRequestsList.svelte` | Type, Requested, Status, Reason | |
+| `components/home/RecentLoginsList.svelte` | Time, IP address | |
 | `components/home/RecentTaskList.svelte` | Task, Job, Last worked | |
 | `components/email/EmailList.svelte` | Date, From, Subject, Job, Attachments | |
 
@@ -1324,7 +1293,7 @@ Existing tests: all five `tests/components/home/*List.test.js`; EmailList is exe
 | `components/time/ShiftLogTable.svelte` | Worker, Clock In, Clock Out, Duration, (actions) | harness `_ShiftLogTableHarness.svelte` |
 | `components/tasks/BlepList.svelte` | Worker, Start, End, Elapsed, (actions) | |
 | `components/users/PayrollReport.svelte` | Date, Shifts, Day total | |
-| `components/users/ShiftRequestQueue.svelte` | Type, Worker, Record, Requested, Reason, Conflict, Actions | Reason → `lite: false` |
+| `components/users/ShiftRequestQueue.svelte` | Type, Worker, Record, Requested, Reason, Conflict, Actions | |
 | `routes/users/UserListPage.svelte` | Username, Name, Email, Permissions, Status, Actions | |
 
 Existing tests: `time/BlepLogTable.test.js`, `time/ShiftLogTable.test.js`, `tasks/BlepList.test.js`, `users/PayrollReport.test.js`, `users/ShiftRequestQueue.test.js`, `users/UserListPage.workSessions.test.js`.
@@ -1362,24 +1331,46 @@ describe('DataTable — header snippet', () => {
 |---|---|---|
 | `routes/catalog/CatalogInventoryPage.svelte` | Code, Description, Units, On hand, Earmarked, Available, On order, Status, Cost, Sell, Actions | numeric columns `align: 'right'`; Actions gated on `$canManageFinancials` via array construction |
 | `routes/catalog/CatalogEarmarksPage.svelte` | Code, Description, Units, Job, Earmarked, On hand, On order, Shortfall, POs, (actions if `$canManageFinancials`) | sortable headers via `header` snippets calling the existing `setSort(...)`; **add the Review Focus test**: with `user.set({ id: 1, permissions: [] })` and `viewMode.set('full')`, the headers list contains no empty/Actions column |
-| `components/RateSchemeManager.svelte` | Name, Type, Rate, Unit, Category, Modifiers, Active, (actions) | Modifiers → `lite: false` |
+| `components/RateSchemeManager.svelte` | Name, Type, Rate, Unit, Category, Modifiers, Active, (actions) | |
 | `components/ServiceItemManager.svelte` | Name, Rate Scheme, Active, (actions) | |
 | `components/settings/PaymentTermsManager.svelte` | Name, Days, (?), In use, (actions) | inspect the unlabeled third header |
 | `components/UnitsManager.svelte` | Unit, Order, (actions) | not `data-table` today — adopt the house class via DataTable, check the visual |
-| `components/purchaseorders/RatePromptDialog.svelte` | Task, Current Rate, Suggested Rate, Decision | Decision is a button cell; stays in lite |
+| `components/purchaseorders/RatePromptDialog.svelte` | Task, Current Rate, Suggested Rate, Decision | Decision is a button cell |
 | `components/purchaseorders/MaterialSeverDialog.svelte` | Job, Material, Qty, Decision | has two inputs in the table — if they are inside `<tbody>`, this is an editing grid: skip it and say so |
 
 Existing tests: `catalog/CatalogInventoryPage.test.js`, `catalog/CatalogEarmarksPage.test.js`, `RateSchemeManager.test.js`, `ServiceItemManager.test.js`, `settings/PaymentTermsManager.test.js`, `UnitsManager.test.js`, `purchaseorders/RatePromptDialog.test.js`, `purchaseorders/MaterialSeverDialog.test.js`.
 
-- [ ] **Step 5.4:** add to `docs/designs/LATER.md`: one line listing the eight layout-only tables as `<dl>` cleanup candidates, and (if Task 5 raised it) the "generic html-field column" idea.
+- [ ] **Step 5.4:** if Task 5 raised the "generic html-field column" idea, add it as one line to `docs/designs/LATER.md`; otherwise nothing.
 - [ ] Suite + build green. Commit: `refactor(catalog,settings): managers on DataTable; DataTable gains header snippet`.
+
+**Batch 6 — header-less tables: key/value layouts to `<dl>`, one flat list to `DataTable`** (one commit):
+
+These are not list tables; their consolidation target is the existing key/value convention, not `DataTable`. Behaviour-preserving: same labels, same values, same order, same conditional rows.
+
+| file | today | becomes |
+|---|---|---|
+| `components/email/EmailContent.svelte` (2 tables) | `<tr><th>From:</th><td>…</td></tr>` rows for From/To/CC/Date/Subject, twice (content vs tempEmail) | one `<dl>` each: `<dt>From</dt><dd>{@render addrCell(…)}</dd>` …; drop the trailing colons from labels (the `dl` grid supplies the visual separation); keep the `{#if cc}` guard around its `dt`/`dd` pair |
+| `components/email/SenderResolutionForm.svelte` | Name / Email / Company (from signature) | `<dl>` |
+| `routes/email/EmailAssociatePage.svelte` | From / Subject | `<dl>` |
+| `routes/email/EmailAssociatePOPage.svelte` | From / Subject | `<dl>` |
+| `components/settings/EmailTemplates.svelte` | `<table class="vars">` of `<th><code>{name}</code></th><td>{desc}</td>` | `<dl class="vars">` with `<dt><code>{name}</code></dt><dd>{desc}</dd>`; move the `.vars` table styles onto the `dl` (check the visual) |
+| `components/jobs/DeliverablesSection.svelte` | `<table class="simple-list">` with no header: qty, units, description | `DataTable` with columns `Qty` (`align: 'right'`), `Units`, `Description` (`cell` snippet keeping the `preserve-breaks` class), `key: d.id` (the Deliverable serializer exposes `id`, not `deliverable_id`), `emptyText` as the section's current empty copy. **This adds a visible header row** — flag it in the commit message for RM's browser review; if RM prefers headerless, the follow-up is a `showHeader` prop, not a revert |
+
+Recipe for the `<dl>` conversions: one `<dt>`/`<dd>` pair per former row, in the same order, same text (minus trailing colons), same conditionals; `<th>` content becomes `<dt>` content, `<td>` content becomes `<dd>` content verbatim. Keep any `class` the table had on the `dl` so component styles can be retargeted (`table.vars` → `dl.vars`, etc.) and update those selectors in the component's `<style>`.
+
+Existing tests to keep green: `tests/components/email/EmailAssociatePage.test.js`, `tests/components/email/SenderResolutionForm.test.js`, `tests/components/email/EmailActionPanel.test.js`, `tests/components/settings/EmailTemplates.test.js`, `tests/components/jobs/DeliverablesSection.test.js`. `EmailContent` and `EmailAssociatePOPage` have no test of their own — create one each following the recipe's "add one test per converted file". Where a test asserts on `tr`/`td`, retarget it to `dt`/`dd` (or `data-col` for DeliverablesSection) — the asserted *text* must not change. Add one test per converted file asserting the label/value pairs render in order (e.g. `dl dt` texts equal `['From', 'To', 'Date', 'Subject']`).
+
+- [ ] Apply; suite + build green.
+- [ ] Commit: `refactor(ui): header-less tables → dl (email, templates); deliverables list on DataTable`.
 
 ---
 
-### Task 7: E2E — lite hides columns, FULL toggle restores them
+### Task 7: E2E — density toggle leaves a migrated list intact; full-suite regression gate
+
+This pass is a behaviour-preserving refactor, so the existing e2e suite is the main gate. One small new spec pins the only user-reachable thing the pass adds: toggling density on a `DataTable`-rendered list re-renders it without losing rows or columns (the hook that later lite decisions will extend).
 
 **Files:**
-- Create: `e2e/specs/contacts/lite-view-columns.spec.js`
+- Create: `e2e/specs/contacts/density-toggle-list.spec.js`
 
 **Interfaces:**
 - Consumes: the converted contacts list (Task 3), the sidebar `LITE | FULL` toggle (`components/Sidebar.svelte`, a `<button>` named `FULL` when lite is active), persona `worker` from `e2e/fixtures/personas.js`.
@@ -1389,66 +1380,67 @@ There is no `docs/ui-flows/` doc for view mode yet, so test titles describe the 
 - [ ] **Step 1: Write the spec**
 
 ```js
-// View-mode column seam on the Contacts & Businesses list: lite density hides
-// the Type and Tags columns; flipping the sidebar toggle to FULL brings them
-// back without a reload (docs/plans/2026-10-08-view-mode-seams.md §4.3).
+// View-mode column seam on the Contacts & Businesses list (DataTable): with no
+// lite-content decisions made yet, both densities show the same six columns,
+// and flipping the sidebar toggle re-renders in place without a refetch flash
+// (docs/plans/2026-10-08-view-mode-seams.md §4.3).
 import { expect, test } from '@playwright/test';
 import { personas } from '../../fixtures/personas.js';
 
 test.use({ storageState: personas.worker.storageState });
+
+const ALL = ['Name', 'Type', 'Business', 'Email', 'Phone', 'Tags'];
 
 test.beforeEach(async ({ page }) => {
   // Pin density to lite regardless of what the saved session carries.
   await page.addInitScript(() => localStorage.setItem('minibini_view_mode', 'lite'));
 });
 
-test('lite hides Type and Tags; FULL restores them', async ({ page }) => {
+test('density toggle keeps the contacts list columns and rows', async ({ page }) => {
   await page.goto('/#/contacts');
   const table = page.locator('table.data-table');
   await expect(table).toBeVisible();
 
-  await test.step('Lite: Name/Business/Email/Phone headers only', async () => {
-    await expect(table.getByRole('columnheader', { name: 'Name' })).toBeVisible();
-    await expect(table.getByRole('columnheader', { name: 'Email' })).toBeVisible();
-    await expect(table.getByRole('columnheader', { name: 'Type' })).toHaveCount(0);
-    await expect(table.getByRole('columnheader', { name: 'Tags' })).toHaveCount(0);
+  await test.step('Lite: all six headers, at least one row', async () => {
+    await expect(table.getByRole('columnheader')).toHaveText(ALL);
+    await expect(table.locator('tbody tr').first()).toBeVisible();
   });
 
-  await test.step('Toggle FULL in the sidebar → Type and Tags appear', async () => {
+  await test.step('Toggle FULL in the sidebar → same headers, rows still there', async () => {
     // The sidebar is a pull-out that animates on hover — dispatch the event
     // directly (same approach as specs/setup-status.spec.js).
     await page.locator('.sidebar').dispatchEvent('mouseenter');
     await page.getByRole('button', { name: 'FULL' }).click();
-    await expect(table.getByRole('columnheader', { name: 'Type' })).toBeVisible();
-    await expect(table.getByRole('columnheader', { name: 'Tags' })).toBeVisible();
+    await expect(page.locator('body')).toHaveAttribute('data-view-mode', 'full');
+    await expect(table.getByRole('columnheader')).toHaveText(ALL);
     await expect(table.locator('tbody tr').first()).toBeVisible();
   });
 
-  await test.step('Toggle LITE → they are gone again', async () => {
+  await test.step('Toggle LITE → unchanged', async () => {
     await page.locator('.sidebar').dispatchEvent('mouseenter');
     await page.getByRole('button', { name: 'LITE' }).click();
-    await expect(table.getByRole('columnheader', { name: 'Type' })).toHaveCount(0);
-    await expect(table.getByRole('columnheader', { name: 'Tags' })).toHaveCount(0);
+    await expect(page.locator('body')).toHaveAttribute('data-view-mode', 'lite');
+    await expect(table.getByRole('columnheader')).toHaveText(ALL);
   });
 });
 ```
 
 - [ ] **Step 2: Run the spec**
 
-Run from `e2e/`: `npx playwright test specs/contacts/lite-view-columns.spec.js`
+Run from `e2e/`: `npx playwright test specs/contacts/density-toggle-list.spec.js`
 Expected: 1 passed. If the `FULL` button is not found, the sidebar did not open — check `.sidebar` is the pull-out's root class and adjust the locator, not the app.
 
 - [ ] **Step 3: Run the full e2e suite once**
 
 Run from `e2e/`: `npx playwright test`
-Expected: all passed. The migrated lists are behaviour-preserving in full density and the suite's existing specs assert on link/button names, which the snippets keep. Any failure here is a regression in a migration, not a test to loosen.
+Expected: all passed. The migrated lists are behaviour-preserving and the suite's existing specs assert on link/button names, which the snippets keep. Any failure here is a regression in a migration, not a test to loosen.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 cd /Users/drshiny/Documents/konbini/Minibini
-git add e2e/specs/contacts/lite-view-columns.spec.js
-git commit -m "test(e2e): contacts list hides Type/Tags in lite, FULL toggle restores
+git add e2e/specs/contacts/density-toggle-list.spec.js
+git commit -m "test(e2e): density toggle keeps a DataTable list's columns and rows
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
@@ -1535,8 +1527,8 @@ reads `$viewMode` or `$layout` anywhere else is a convention violation, and
    (QBO import panels, receive/reconcile forms, deliverables editors,
    settings grids), document line tables with footers (`LineItemTable`,
    estimate/CO/invoice edit views, docsurface, portals, send pages), and
-   the handful of tables used as key/value layout (LATER.md lists them for
-   a `<dl>` cleanup).
+   grouped-row structures (`UnpaidCard`, `JobHistorySection`). Label/value
+   layouts are `<dl>` (the global `dl` grid in `app.css`), never a table.
 4. **Shell — `App.svelte`.** The one place a *parallel component* is
    legitimate: on phone layout the shell may mount a drawer nav instead of
    `Sidebar.svelte` and make modals full-screen. Not built yet.
@@ -1556,11 +1548,13 @@ question. There is no layout toggle: layout is a device fact.
 ### 6.4 Rollout state
 
 Done (2026-10, `feature/lite-view`): both stores, `DataTable`, all plain
-list tables migrated. Lite flags are a conservative first cut (free text,
-secondary identifiers, extra phones/addresses hidden); the per-page lite
-inventory (spec §7) is RM's and will revise them. Remaining: the phone
-shell, `phone: false` flags once the shell exists, toggle consolidation,
-server-side density persistence.
+list tables migrated, header-less label/value tables converted to `<dl>`.
+**No lite-content decisions have been made**: no migrated table sets a
+`lite`/`phone` flag, so lite and full currently render identical lists.
+RM is finishing the Full UI first; the per-page lite inventory (spec §7)
+then decides the flags. Remaining after that: the phone shell and its
+`phone: false` flags, toggle consolidation, server-side density
+persistence.
 
 ---
 ```
@@ -1571,10 +1565,10 @@ Replace the bullet that begins `- **Lite-mode rollout** (deferred pending user f
 
 ```markdown
 - **View-mode rollout.** Plumbing and the list-table consolidation are in
-  (§6). Remaining: build the phone shell, fill the per-page lite inventory
-  (`docs/plans/2026-10-08-view-mode-seams.md` §7) and revise the column
-  flags from it, consolidate the density toggle to one home, and persist
-  density server-side per user.
+  (§6); lite still shows everything. Remaining, in order: Full UI work,
+  then the per-page lite inventory (`docs/plans/2026-10-08-view-mode-seams.md`
+  §7) sets `lite:` flags, then the phone shell, toggle consolidation, and
+  server-side density persistence.
 ```
 
 - [ ] **Step 3: Update the frontend README view-mode section**
@@ -1592,8 +1586,9 @@ Replace the `### View Mode (Full / Lite)` section's five bullets with:
   sections, `$derived` filters for rows/labels, `components/DataTable.svelte`
   for columns (`lite: false` / `phone: false` flags; cards on phone), and the
   app shell. Routes never import either store.
-- New list tables use `DataTable`. Editing grids and document line tables
-  do not (see the architecture doc §6.2 for the list).
+- New list tables use `DataTable`; label/value layouts use `<dl>`. Editing
+  grids and document line tables stay hand-written (architecture doc §6.2).
+- No lite-content decisions yet: no `lite:`/`phone:` flags are set anywhere.
 - Lite still fetches full data; toggling density re-renders without a refetch.
 - Full reference: `docs/designs/architecture-and-conventions.md` §6.
 ```
@@ -1606,9 +1601,9 @@ Append to the "## Coverage status" section of `docs/designs/frontend-testing.md`
 - View-mode seams (2026-10): `tests/stores/layout.test.js` (matchMedia
   fakes via `vi.resetModules` + dynamic import), `tests/components/DataTable.test.js`
   (snippet columns via `_DataTableHarness.svelte`; `layout` store mocked as
-  a writable), and a lite-vs-full header assertion in every migrated list's
-  test (pattern: `tests/components/contacts/ContactListPage.test.js`, QBO
-  children stubbed with `_Noop.svelte`; `tests/routes/Search.test.js`).
+  a writable), and a same-headers-in-both-densities assertion in every
+  migrated list's test (pattern: `tests/components/contacts/ContactListPage.test.js`,
+  QBO children stubbed with `_Noop.svelte`; `tests/routes/Search.test.js`).
 ```
 
 In `docs/plans/2026-10-08-view-mode-seams.md`, replace the `Status:` paragraph with:
@@ -1617,9 +1612,9 @@ In `docs/plans/2026-10-08-view-mode-seams.md`, replace the `Status:` paragraph w
 Status: MECHANISM + CONSOLIDATION SHIPPED on `feature/lite-view` (2026-10,
 plan: `docs/plans/2026-10-09-view-mode-seams-plan.md`) — §3–§6 steps 1–5
 are built and documented in `docs/designs/architecture-and-conventions.md`
-§6. §7 (lite-view inventory) is RM's to fill; it revises the conservative
-first-cut lite flags recorded in the batch commit messages. §6 step 6 (phone
-shell) is a separate spec.
+§6, with **no lite flags set** (RM is finishing the Full UI first). §7
+(lite-view inventory) is RM's to fill and is what sets the flags. §6 step 6
+(phone shell) is a separate spec.
 ```
 
 - [ ] **Step 5: Check the docs read correctly**
@@ -1649,6 +1644,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] From `frontend/`: `npm run build` — no errors, no unused-selector warnings introduced by a migration (a warning means a snippet lost its scoped style — investigate, don't delete the rule).
 - [ ] From `e2e/`: `npx playwright test` — all pass (one run, serial).
 - [ ] `grep -rn "viewMode\|stores/layout" frontend/src/routes` prints nothing (routes never import the stores).
-- [ ] `grep -rln "<table" frontend/src` lists only the do-not-migrate files from Task 6 plus `DataTable.svelte`.
+- [ ] `grep -rln "<table" frontend/src` lists only the do-not-migrate files from Task 6 (editing grids, document line tables, `UnpaidCard`, `JobHistorySection`) plus `DataTable.svelte`.
+- [ ] `grep -rn "lite: false\|phone: false" frontend/src` prints nothing (no lite-content decisions made).
 - [ ] `git log --oneline main..feature/lite-view` shows the spec + plan commits plus one commit per task/batch, all on `feature/lite-view`.
 - [ ] Do **not** merge, push, or open a PR. Report done and ready for RM's browser review (RM reviews the running app and often adjusts before merging).
