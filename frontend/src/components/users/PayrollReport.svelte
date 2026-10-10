@@ -1,6 +1,7 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
   import LoadState from '../LoadState.svelte';
+  import DataTable from '../DataTable.svelte';
 
   function isoDate(d) { return d.toISOString().slice(0, 10); }
   let start = $state(isoDate(new Date(Date.now() - 6 * 86400000)));
@@ -34,19 +35,19 @@
   {:else}
     {#each workers as w (w.user_id)}
       <h4>{w.name} — total {hm(w.total_minutes)}</h4>
-      <table class="data-table">
-        <thead><tr><th>Date</th><th>Shifts</th><th>Day total</th></tr></thead>
-        <tbody>
-          {#each w.days as d (d.date)}
-            <tr>
-              <td>{d.date}</td>
-              <td>{d.shifts.map(s => `${new Date(s.start).toLocaleTimeString()}–${s.end ? new Date(s.end).toLocaleTimeString() : 'open'}`).join(', ')}</td>
-              <td>{hm(d.shifts.reduce((t, s) => t + s.minutes, 0))}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+      <DataTable
+        rows={w.days}
+        key={(d) => d.date}
+        columns={[
+          { id: 'date',   label: 'Date',      field: 'date' },
+          { id: 'shifts', label: 'Shifts',    cell: shiftsCell },
+          { id: 'total',  label: 'Day total', cell: dayTotalCell },
+        ]}
+      />
     {/each}
   {/if}
   </LoadState>
 </section>
+
+{#snippet shiftsCell(d)}{d.shifts.map(s => `${new Date(s.start).toLocaleTimeString()}–${s.end ? new Date(s.end).toLocaleTimeString() : 'open'}`).join(', ')}{/snippet}
+{#snippet dayTotalCell(d)}{hm(d.shifts.reduce((t, s) => t + s.minutes, 0))}{/snippet}

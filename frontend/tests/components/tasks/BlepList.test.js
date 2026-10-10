@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import BlepList from '@/components/tasks/BlepList.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 import { user } from '@/stores/auth.js';
 
 const recent = new Date(Date.now() - 1000).toISOString();
@@ -52,5 +53,20 @@ describe('BlepList', () => {
     });
     expect(queryByRole('button', { name: 'Edit' })).toBeNull();
     expect(queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+});
+
+describe('BlepList — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  it('renders Worker / Start / End / Elapsed / (actions) in both densities with data-col', () => {
+    viewMode.set('lite');
+    const bleps = [{ blep_id: 1, user: 99, user_name: 'Bob', start_time: old, end_time: null }];
+    const { container } = render(BlepList, { props: { bleps, currentUser: { id: 5 } } });
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(['Worker', 'Start', 'End', 'Elapsed', '']);
+    expect(table.querySelector('td[data-col="end"]').textContent.trim()).toBe('Active');
+    viewMode.set('full');
+    const { container: c2 } = render(BlepList, { props: { bleps, currentUser: { id: 5 } } });
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['Worker', 'Start', 'End', 'Elapsed', '']);
   });
 });

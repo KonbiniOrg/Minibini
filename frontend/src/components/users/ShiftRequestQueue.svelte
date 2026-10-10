@@ -3,6 +3,7 @@
   import { user as userStore } from '../../stores/auth.js';
   import TimeEditModal from '../time/TimeEditModal.svelte';
   import LoadState from '../LoadState.svelte';
+  import DataTable from '../DataTable.svelte';
 
   let rows = $state([]);
   let loading = $state(true);
@@ -67,47 +68,21 @@
   <h3>Pending Time Change Requests</h3>
   {#if error}<p style="color:#b91c1c">{error}</p>{/if}
   <LoadState {loading}>
-  {#if rows.length === 0}<p>No pending requests.</p>
-  {:else}
-    <table class="data-table">
-      <thead><tr>
-        <th>Type</th><th>Worker</th><th>Record</th><th>Requested</th>
-        <th>Reason</th><th>Conflict</th><th>Actions</th>
-      </tr></thead>
-      <tbody>
-        {#each rows as r (r.kind + r.request_id)}
-          <tr>
-            <td>{r.kind}</td>
-            <td>{r.requester_name}</td>
-            <td>
-              {#if r.kind === 'Shift' && r.shift}
-                <button type="button" onclick={() => openTarget(r)}>Open shift</button>
-              {:else if r.kind === 'Time' && r.blep}
-                <button type="button" onclick={() => openTarget(r)}>Open timeslip{#if r.task_name} ({r.task_name}){/if}</button>
-              {:else}
-                <em>new {r.kind === 'Shift' ? 'shift' : 'entry'}</em>
-              {/if}
-            </td>
-            <td>{new Date(r.requested_start).toLocaleString()} → {r.requested_end ? new Date(r.requested_end).toLocaleString() : '—'}</td>
-            <td>{r.reason}</td>
-            <td>
-              {#if r.conflicts && r.conflicts.length}
-                ⚠
-                {#each r.conflicts as c}
-                  <button type="button" onclick={() => openRecord(c.type, c.id)}>Open {c.type === 'shift' ? 'shift' : 'timeslip'} ({c.label})</button>
-                {/each}
-              {:else if r.has_known_conflict}
-                ⚠ no covering shift
-              {:else}—{/if}
-            </td>
-            <td>
-              <button type="button" onclick={() => approve(r)}>Approve</button>
-              <button type="button" onclick={() => deny(r)}>Deny</button>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+  <DataTable
+    rows={rows}
+    key={(r) => r.kind + r.request_id}
+    emptyText="No pending requests."
+    columns={[
+      { id: 'type',      label: 'Type',      field: 'kind' },
+      { id: 'worker',    label: 'Worker',    field: 'requester_name' },
+      { id: 'record',    label: 'Record',    cell: recordCell },
+      { id: 'requested', label: 'Requested', cell: requestedCell },
+      { id: 'reason',    label: 'Reason',    field: 'reason' },
+      { id: 'conflict',  label: 'Conflict',  cell: conflictCell },
+      { id: 'actions',   label: 'Actions',   cell: actionsCell },
+    ]}
+  />
+  {#if rows.length > 0}
     <p><em>If Approve is blocked by a conflict, open the relevant shift/timeslip here, adjust
       it so the shift encloses the timeslip, then approve.</em></p>
   {/if}
@@ -123,3 +98,28 @@
   onSaved={onModalSaved}
   onClose={() => { modalOpen = false; modalRecord = null; }}
 />
+
+{#snippet recordCell(r)}
+  {#if r.kind === 'Shift' && r.shift}
+    <button type="button" onclick={() => openTarget(r)}>Open shift</button>
+  {:else if r.kind === 'Time' && r.blep}
+    <button type="button" onclick={() => openTarget(r)}>Open timeslip{#if r.task_name} ({r.task_name}){/if}</button>
+  {:else}
+    <em>new {r.kind === 'Shift' ? 'shift' : 'entry'}</em>
+  {/if}
+{/snippet}
+{#snippet requestedCell(r)}{new Date(r.requested_start).toLocaleString()} → {r.requested_end ? new Date(r.requested_end).toLocaleString() : '—'}{/snippet}
+{#snippet conflictCell(r)}
+  {#if r.conflicts && r.conflicts.length}
+    ⚠
+    {#each r.conflicts as c}
+      <button type="button" onclick={() => openRecord(c.type, c.id)}>Open {c.type === 'shift' ? 'shift' : 'timeslip'} ({c.label})</button>
+    {/each}
+  {:else if r.has_known_conflict}
+    ⚠ no covering shift
+  {:else}—{/if}
+{/snippet}
+{#snippet actionsCell(r)}
+  <button type="button" onclick={() => approve(r)}>Approve</button>
+  <button type="button" onclick={() => deny(r)}>Deny</button>
+{/snippet}
