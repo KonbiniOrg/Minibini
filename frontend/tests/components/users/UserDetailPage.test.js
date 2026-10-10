@@ -99,3 +99,13 @@ describe('UserDetailPage load failure', () => {
     expect(getByRole('link', { name: '← Back to users' })).toBeInTheDocument();
   });
 });
+
+describe('UserDetailPage reset password (modal, 2026-10-10)', () => {
+  it('Reset password… opens the reset modal for this user', async () => {
+    const { findByRole, getByRole } = render(UserDetailPage, { props: { params: { id: '7' } } });
+    await fireEvent.click(await findByRole('button', { name: 'Reset password…' }));
+    const dialog = await findByRole('dialog', { name: 'Reset password' });
+    expect(dialog).toHaveTextContent('Reset password for worker7');
+    void getByRole;
+  });
+});

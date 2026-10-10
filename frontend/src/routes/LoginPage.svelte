@@ -49,11 +49,11 @@
 <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
   <p>
     <label for="username"><strong>Username</strong></label><br>
-    <input id="username" type="text" bind:value={username} required>
+    <input id="username" name="username" type="text" autocomplete="username" bind:value={username} required>
   </p>
   <p>
     <label for="password"><strong>Password</strong></label><br>
-    <input id="password" type="password" bind:value={password} required>
+    <input id="password" name="password" type="password" autocomplete="current-password" bind:value={password} required>
   </p>
   {#if error}
     <p style="color: red;">{error}</p>
