@@ -1,12 +1,14 @@
 <script>
-  // Inline reply composer — mounted on EmailDetailPage.svelte when the
-  // user clicks Reply or Reply All in the action panel. Owns the form
-  // state directly (via $bindable on DocumentSendForm) so mode-switches
-  // between Reply and Reply All update only the CC field, preserving
-  // anything the user has already typed in subject / body / to / etc.
+  // Reply composer, in Modal over the email (2026-10-10; was inline above
+  // the message) — mounted by EmailDetailPage.svelte while the user has
+  // clicked Reply or Reply All in the action panel. Owns the form state
+  // directly (via $bindable on DocumentSendForm) so mode-switches between
+  // Reply and Reply All update only the CC field, preserving anything the
+  // user has already typed in subject / body / to / etc.
 
   import { emailApi } from '../../lib/email.js';
   import DocumentSendForm from './DocumentSendForm.svelte';
+  import Modal from '../Modal.svelte';
   import LoadState from '../LoadState.svelte';
   import { errorMessage } from '../../lib/api.js';
 
@@ -15,6 +17,7 @@
     mode,                 // 'reply' | 'reply-all'
     onClose,              // () => void
     onSent,               // () => void
+    onModeChange = () => {}, // (mode) => void — the in-modal Reply / Reply All toggle
   } = $props();
 
   let replyDefaults = $state(null);
@@ -94,10 +97,18 @@
   });
 </script>
 
-<section class="composer">
+<!-- Enter is owned by DocumentSendForm's native <form>; the shell only wires Escape. -->
+<Modal open={true} onCancel={onClose} maxWidth="780px" label={mode === 'reply-all' ? 'Reply All' : 'Reply'}>
   <div class="composer-header">
-    <h3>{mode === 'reply-all' ? 'Reply All' : 'Reply'}</h3>
-    <button type="button" class="cancel" onclick={onClose}>Cancel</button>
+    <h3 class="modal-title">{mode === 'reply-all' ? 'Reply All' : 'Reply'}</h3>
+    <!-- Mode toggle lives in here now: the action panel's own Reply /
+         Reply All buttons sit behind the overlay while composing. -->
+    <span class="mode-toggle">
+      <button type="button" class="mode" aria-pressed={mode === 'reply'}
+        onclick={() => onModeChange('reply')}>Reply</button>
+      <button type="button" class="mode" aria-pressed={mode === 'reply-all'}
+        onclick={() => onModeChange('reply-all')}>Reply All</button>
+    </span>
   </div>
 
   <LoadState {loading} error={loadError}>
@@ -120,30 +131,16 @@
       {submitting}
       {submitError}
       onSubmit={handleSubmit}
+      onCancel={onClose}
     />
   {/if}
   </LoadState>
-</section>
+</Modal>
 
 <style>
-  .composer {
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
-    padding: 12px;
-    background: #fff;
-    margin-bottom: 16px;
-  }
-  .composer-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-  }
-  .composer-header h3 {
-    margin: 0;
-    font-size: 16px;
-  }
-  .cancel {
-    font-size: 13px;
-  }
+  .composer-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .modal-title { margin: 0; font-size: 16px; }
+  .mode-toggle { display: inline-flex; gap: 4px; }
+  .mode { font-size: 13px; }
+  .mode[aria-pressed="true"] { font-weight: 600; background: #e5e7eb; }
 </style>

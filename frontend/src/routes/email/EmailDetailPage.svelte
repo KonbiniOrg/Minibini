@@ -15,9 +15,8 @@
   let loadError = $state(null);
 
   // null | 'reply' | 'reply-all' — set by the action panel's Reply / Reply All
-  // buttons. The composer renders inline above the original email while
-  // this is non-null; the right rail stays sticky so the panel and the
-  // Job/PO/Bill associations remain visible while composing.
+  // buttons. The composer opens as a modal over the email while this is
+  // non-null (2026-10-10; it used to render inline above the message).
   let replyMode = $state(null);
 
   // null | 'create-job' | 'link-job' | 'link-po' — which action-panel modal
@@ -64,6 +63,7 @@
           mode={replyMode}
           onClose={() => (replyMode = null)}
           onSent={handleSent}
+          onModeChange={(mode) => (replyMode = mode)}
         />
       {/if}
       <EmailContent
