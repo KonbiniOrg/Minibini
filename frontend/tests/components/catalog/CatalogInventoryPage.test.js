@@ -197,3 +197,23 @@ describe('CatalogInventoryPage — DataTable', () => {
     expect(table.querySelector('td[data-col="actions"]').textContent).toContain('edit');
   });
 });
+
+describe('CatalogInventoryPage — merge and write-off are modals (2026-10-10)', () => {
+  beforeEach(() => { user.set({ username: 'fin', permissions: ['can_manage_financials'] }); });
+
+  it('write off opens a dialog named Write off', async () => {
+    const { findAllByRole, findByRole } = render(CatalogInventoryPage);
+    const writeOffBtns = await findAllByRole('button', { name: 'write off' });
+    await fireEvent.click(writeOffBtns[0]);
+    const dialog = await findByRole('dialog', { name: 'Write off' });
+    expect(dialog).toHaveTextContent('Write off — FELT');
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('Merge items opens a dialog named Merge items', async () => {
+    const { findByText, getByRole, findByRole } = render(CatalogInventoryPage);
+    await findByText('FELT');
+    await fireEvent.click(getByRole('button', { name: 'Merge items' }));
+    expect(await findByRole('dialog', { name: 'Merge items' })).toBeInTheDocument();
+  });
+});
