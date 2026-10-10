@@ -421,13 +421,25 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 - Hash-based routing (`#/path`). All internal links use the `#/` prefix.
 - The `svelte-spa-router` library handles client-side navigation.
 
-### View Mode (Full / Lite)
+### View mode: density and layout
 
-- A `viewMode` Svelte store (`'full'` or `'lite'`) controls content density at runtime.
-- Defaults to `'lite'`, persisted in `localStorage`. (Server-side user preference planned.)
-- Components use a `<FullOnly>` wrapper to hide sections in lite mode — avoids scattering `$viewMode` checks throughout components.
-- Lite mode still fetches full data; hidden sections can be expanded inline without extra API calls.
-- Responsive layout (mobile, kiosk) is handled separately via CSS media queries, independent of view mode.
+- Two independent axes. **Density** (`stores/viewMode.js`, `'lite' | 'full'`)
+  is a user preference, defaults to `'lite'`, persisted in `localStorage`.
+  **Layout** (`stores/layout.js`, `'desktop' | 'phone'`) is a device fact
+  from `matchMedia('(max-width: 720px)')`. Nothing infers one from the other.
+- Mode-dependent behaviour lives in four seams only: `<FullOnly>` for
+  sections, `$derived` filters for rows/labels, `components/DataTable.svelte`
+  for columns (`lite: false` / `phone: false` flags; cards on phone), and the
+  app shell. Routes never import either store.
+- New list tables use `DataTable`; label/value layouts use `<dl>`. Editing
+  grids and document line tables stay hand-written (architecture doc §6.2).
+- Every fetch site wraps its content in `components/LoadState.svelte`
+  (`{loading} {error}` + optional `loadingText`, default "Loading...");
+  the error text comes from `errorMessage()` in the catch block. Never
+  hand-write a loading/error branch.
+- No lite-content decisions yet: no `lite:`/`phone:` flags are set anywhere.
+- Lite still fetches full data; toggling density re-renders without a refetch.
+- Full reference: `docs/designs/architecture-and-conventions.md` §6.
 
 ### Job workspace state
 

@@ -1,9 +1,11 @@
 # View mode seams: lite / full density and desktop / phone layout
 
-Status: DESIGN DRAFT — discussed RM ↔ Claude 2026-10-08. Not yet planned or
-implemented. §7 (lite-view inventory) is RM's to fill before this becomes a
-plan; the mechanism in §3–§5 is agreed in principle and should be re-checked
-against that inventory.
+Status: MECHANISM + CONSOLIDATION SHIPPED on `feature/lite-view` (2026-10,
+plan: `docs/plans/2026-10-09-view-mode-seams-plan.md`) — §3–§6 steps 1–5
+are built and documented in `docs/designs/architecture-and-conventions.md`
+§6, with **no lite flags set** (RM is finishing the Full UI first). §7
+(lite-view inventory) is RM's to fill and is what sets the flags. §6 step 6
+(phone shell) is a separate spec.
 
 Related durable doc: `docs/designs/architecture-and-conventions.md` §6 (View
 mode) and §10 ("Lite-mode rollout" in Unfinished work). Those sections get

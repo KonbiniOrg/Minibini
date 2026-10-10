@@ -1196,63 +1196,123 @@ blep wrapper.
 
 ---
 
-## 6. View mode (full / lite)
+## 6. View mode: density and layout
 
-Two-axis design: **content density** (lite vs. full) is independent of
-**layout/styling** (responsive CSS). The store handles density only;
-layout is per-component CSS.
+Two independent axes (design: `docs/plans/2026-10-08-view-mode-seams.md`,
+2026-10-08):
 
-The bigger lite-mode design — what each page actually shows in lite,
-how aggressively to hide things, the toggle's permanent home — is
-deferred pending real user feedback. Today's behavior (sparse
-`<FullOnly>` adoption, sidebar-mounted toggle, `localStorage`
-persistence) is intentionally minimal until that feedback exists.
+- **Density** — `lite` / `full`. A *user preference* about how much data is
+  in front of them: some people want everything, some want only what the
+  task at hand needs. Most shop-floor workers are expected to stay in lite,
+  but it is a working-style choice, not a role. It is **never** a permission
+  mechanism: anything a user may not see is gated by the permission stores
+  first (a page builds its column array from `$canManageX`), and density
+  only trims what remains.
+- **Layout** — `desktop` / `phone`. A *device fact*: is there room for a
+  sidebar and a wide table? Derived from `matchMedia`, never from the
+  density choice.
 
-### 6.1 Store
+Nothing reads one axis to infer the other. A phone user may run full
+density in a stacked layout; a desktop user may run lite in a tabular one.
 
-`frontend/src/stores/viewMode.js` — Svelte writable, defaults to
-`'lite'`, persisted to `localStorage` under `minibini_view_mode`.
-`toggleViewMode()` flips between `'full'` and `'lite'`.
+### 6.1 Stores
 
-```javascript
-const stored = localStorage.getItem(STORAGE_KEY) || 'lite';
-export const viewMode = writable(stored);
-viewMode.subscribe((value) => localStorage.setItem(STORAGE_KEY, value));
-```
+`frontend/src/stores/viewMode.js` — writable `'lite' | 'full'`, default
+`'lite'`, persisted to `localStorage` under `minibini_view_mode`;
+`toggleViewMode()` flips it. Written only by the two toggle affordances
+(sidebar `LITE | FULL`, profile panel). Server-side per-user persistence
+remains future work.
 
-Persistence is client-side only. Future work: store as a user
-preference fetched from the API on load.
+`frontend/src/stores/layout.js` — readable `'desktop' | 'phone'` from
+`window.matchMedia('(max-width: 720px)')`, following `change` events;
+`'desktop'` when `matchMedia` is unavailable (jsdom). Exports
+`PHONE_MAX_WIDTH = 720`; CSS uses the same number in `@media` rules.
+Nothing writes it.
 
-### 6.2 The `<FullOnly>` wrapper
+`main.js` mirrors both onto `<body>` as `data-view-mode` and `data-layout`
+so plain CSS can key off either axis.
 
-`frontend/src/components/FullOnly.svelte`:
+### 6.2 The four seams
 
-```svelte
-<script>
-  import { viewMode } from '../stores/viewMode.js';
-  const { children } = $props();
-</script>
+All mode-dependent behaviour lives in exactly one of these. A template that
+reads `$viewMode` or `$layout` anywhere else is a convention violation, and
+`routes/*.svelte` never import either store.
 
-{#if $viewMode === 'full'}
-  {@render children()}
-{/if}
-```
+1. **Sections — `<FullOnly>`** (`components/FullOnly.svelte`). Whole blocks
+   lite doesn't show. Consumers: `contacts/ContactDetail.svelte`,
+   `contacts/BusinessDetail.svelte`.
+2. **Rows and labels — `$derived` view objects.** Which rows appear (closed
+   items hidden), what a label says, whether a cell links out. One
+   `$derived` (or a pure `lib/` helper) consults the store; the markup
+   iterates the result and never branches on mode. Exemplar:
+   `ContactDetail.svelte`'s `visibleJobs` / `visibleInvoices` / `visiblePOs`.
+   `HistoryPanel.svelte` filters entries the same way.
+3. **Columns — `components/DataTable.svelte`.** Every plain list table in
+   the SPA (~40 tables, consolidated 2026-10) declares its columns as data:
+   `{ id, label, liteLabel?, field?, cell?, header?, lite?, phone?, align? }`.
+   `lite: false` hides a column in lite density; `phone: false` hides it in
+   phone layout. `cell` is a Svelte 5 snippet `(row) => markup` for links,
+   badges, buttons and `{@html}`; `field` renders `row[field]` as text;
+   `header` is an optional snippet for the `<th>` (sortable headers).
+   Permission-gated columns are added to the array conditionally by the
+   page, never via a flag. On phone the same visible columns render as one
+   `<dl>` card per row (`.data-cards` / `.data-card` in `app.css`) instead
+   of a `<table>`. Props: `rows`, `columns`, `key` (`(row, i) => key`),
+   `emptyText`, `class`, `rowClass` (`(row) => class`). Component-scoped
+   styles that target the rendered rows must opt out of scoping
+   (`:global(tr.short td)`), because the `<tr>`/`<td>` belong to
+   `DataTable`'s scope.
+   **Not** on `DataTable`, deliberately: editing grids with per-row inputs
+   (QBO import panels, receive/reconcile forms, deliverables editors,
+   settings grids, `MaterialSeverDialog`), document line tables with footers
+   (`LineItemTable`, estimate/CO/invoice edit views, docsurface, portals,
+   send pages), and grouped-row structures (`UnpaidCard`,
+   `JobHistorySection`). Label/value layouts are `<dl>` (the global `dl`
+   grid in `app.css`), never a table.
+4. **Shell — `App.svelte`.** The one place a *parallel component* is
+   legitimate: on phone layout the shell may mount a drawer nav instead of
+   `Sidebar.svelte` and make modals full-screen. Not built yet.
 
-Convention: wrap full-mode-only sections in `<FullOnly>` rather than
-checking `$viewMode` in business components.
+Anti-patterns: wrapping a single `<th>` in `<FullOnly>` (use a column
+flag); wrapping a single row (use a `$derived` filter); hiding fetched,
+data-heavy content with `display: none`; a `lite`/`phone` flag on a
+permission-gated column.
 
-Adoption is sparse — currently only two consumers
-(`components/contacts/BusinessDetail.svelte`,
-`components/contacts/ContactDetail.svelte`). Other components either
-predate the convention or check `$viewMode` directly (e.g.,
-`HistoryPanel.svelte` filters history entries based on `$viewMode === 'lite'`).
+### 6.2a Fetch-site state — `components/LoadState.svelte`
+
+Not a mode seam, but consolidated in the same pass (2026-10): every
+fetch site renders `<LoadState {loading} {error}>…content…</LoadState>`
+instead of a hand-written `{#if loading}…{:else if error}…{:else}` chain.
+State stays in the caller (`let loading = $state(true); let error =
+$state(null);`); the catch block sets `error = errorMessage(err,
+'Could not load …')` per §3.9. `loadingText` carries page-specific copy
+("Searching..."); the default is "Loading...". The error renders with
+`role="alert"`. Loading wins over a stale error during a reload. Where a
+component shares one error state between its load and its row actions
+(`UnitsManager`, `ShiftRequestQueue`, `ShipmentsPanel`) it keeps its own
+error paragraph and `LoadState` wraps loading only; the four `*FormPage`
+routes and `PaymentTermsManager` send a load failure to the global overlay
+(no form to land on). The five redirect placeholder pages render an
+unconditional "Loading…" while redirecting and are not fetch-state
+branches.
 
 ### 6.3 Toggle location
 
-The view-mode toggle currently lives at the bottom of the sidebar
-(`components/Sidebar.svelte`), shown as `LITE | FULL` with the
-active state in white. The original sidebar spec called for relocating
-it to a user profile page — that move hasn't happened.
+The density toggle lives at the bottom of the sidebar
+(`components/Sidebar.svelte`, `LITE | FULL`) and in the profile panel
+(`home/ProfilePanel.svelte`). Consolidating to one home is an open
+question. There is no layout toggle: layout is a device fact.
+
+### 6.4 Rollout state
+
+Done (2026-10, `feature/lite-view`): both stores, `DataTable`, `LoadState`
+at every fetch site, all plain list tables migrated, header-less
+label/value tables converted to `<dl>`. **No lite-content decisions have
+been made**: no migrated table sets a `lite`/`phone` flag, so lite and full
+currently render identical lists. RM is finishing the Full UI first; the
+per-page lite inventory (spec §7) then decides the flags. Remaining after
+that: the phone shell and its `phone: false` flags, toggle consolidation,
+server-side density persistence.
 
 ---
 
@@ -1916,11 +1976,11 @@ Concrete items, smallest first:
   `Job.objects.filter(...)` directly to compute the impact dict. That
   belongs on the service.
 
-- **Lite-mode rollout** (deferred pending user feedback). Once the
-  shape of lite mode is decided, expect: server-side persistence of
-  the per-user preference (currently `localStorage`-only), wider
-  `<FullOnly>` adoption (only two components use it today), and a
-  decision on the toggle's permanent home.
+- **View-mode rollout.** Plumbing and the list-table consolidation are in
+  (§6); lite still shows everything. Remaining, in order: Full UI work,
+  then the per-page lite inventory (`docs/plans/2026-10-08-view-mode-seams.md`
+  §7) sets `lite:` flags, then the phone shell, toggle consolidation, and
+  server-side density persistence.
 
 - **Pick a signals-vs-services convention.** `apps/jobs/signals.py` is
   empty; `apps/estimates/signals.py` is 123 lines. Decide on one

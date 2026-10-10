@@ -107,3 +107,15 @@ Every test follows one of these; copy the matching committed example.
 - **Intentionally uncovered:** display-only components and trivial wrappers (see the triage rubric).
 - **Lighter coverage by design:** `JobDetail` is an orchestrator (flagged oversized in `LATER.md`) — only a mount/wiring test; its deep derivations (version timeline, CO delta layering) are best unit-tested once it's split out.
 - **Out of scope (for now):** `src/routes/**` — a separate future sweep.
+- **View-mode seams (2026-10):** `tests/stores/layout.test.js` (matchMedia
+  fakes via `vi.resetModules` + dynamic import), `tests/components/DataTable.test.js`
+  (snippet columns via `_DataTableHarness.svelte`; `layout` store mocked as
+  a writable), and a same-headers-in-both-densities assertion in every
+  migrated list's test (pattern: `tests/components/contacts/ContactListPage.test.js`,
+  QBO children stubbed with `_Noop.svelte`; `tests/routes/Search.test.js`).
+  `tests/components/catalog/CatalogEarmarksPage.worker.test.js` pins that
+  permission gating of columns is independent of density.
+- **Load state (2026-10):** `tests/components/LoadState.test.js`
+  (`_LoadStateHarness.svelte` for children), plus a reject-the-fetch →
+  `getByRole('alert')` test in every component that gained an error branch
+  in the sweep.
