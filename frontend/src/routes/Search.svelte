@@ -1,6 +1,8 @@
 <script>
   import { querystring } from 'svelte-spa-router';
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
+  import DataTable from '../components/DataTable.svelte';
+  import LoadState from '../components/LoadState.svelte';
 
   let results = $state(null);
   let loading = $state(false);
@@ -105,7 +107,7 @@
 
     api.get(`/api/search/?${params}`)
       .then(data => { results = data; })
-      .catch(e => { error = e.message || 'Search failed.'; })
+      .catch(e => { error = errorMessage(e, 'Search failed.'); })
       .finally(() => { loading = false; });
   });
 
@@ -162,160 +164,123 @@
 
   <div class="search-layout">
     <div class="results">
-      {#if loading}
-        <p>Searching...</p>
-      {:else if error}
-        <p>{error}</p>
-      {:else if results}
+      <LoadState {loading} {error} loadingText="Searching...">
+      {#if results}
         <p>{results.total} result{results.total !== 1 ? 's' : ''} for <strong>{results.query}</strong>{withinQuery ? `, narrowed by "${withinQuery}"` : ''}</p>
 
         {#if results.results.jobs?.length}
           <h3>Jobs</h3>
-          <table class="data-table">
-            <thead>
-              <tr><th>Job #</th><th>Name</th><th>Contact</th><th>Status</th><th>Created</th><th>Started</th><th>Description</th><th>Customer PO</th><th>Matching Tasks</th></tr>
-            </thead>
-            <tbody>
-              {#each results.results.jobs as group}
-                <tr>
-                  <td><a href="#/jobs/{group.job.job_id}">{@html hl(group.job.job_number)}</a></td>
-                  <td>{@html hl(group.job.name)}</td>
-                  <td>{@html hl(group.job.contact_name)}</td>
-                  <td>{group.job.status}</td>
-                  <td>{formatDate(group.job.created_date)}</td>
-                  <td>{formatDate(group.job.start_date)}</td>
-                  <td>{@html hlt(group.job.description)}</td>
-                  <td>{@html hl(group.job.customer_po_number)}</td>
-                  <td>{@html hlt(group.tasks.map(t => t.name).join(', ') || null)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+          <DataTable
+            rows={results.results.jobs}
+            key={(g) => g.job.job_id}
+            columns={[
+              { id: 'number',      label: 'Job #',          cell: jobNumberCell },
+              { id: 'name',        label: 'Name',           cell: jobNameCell },
+              { id: 'contact',     label: 'Contact',        cell: jobContactCell },
+              { id: 'status',      label: 'Status',         cell: jobStatusCell },
+              { id: 'created',     label: 'Created',        cell: jobCreatedCell },
+              { id: 'started',     label: 'Started',        cell: jobStartedCell },
+              { id: 'description', label: 'Description',    cell: jobDescCell },
+              { id: 'po',          label: 'Customer PO',    cell: jobPoCell },
+              { id: 'tasks',       label: 'Matching Tasks', cell: jobTasksCell },
+            ]}
+          />
         {/if}
 
         {#if results.results.contacts?.length}
           <h3>Contacts</h3>
-          <table class="data-table">
-            <thead>
-              <tr><th>Name</th><th>Business</th><th>Email</th><th>Mobile</th><th>Work</th><th>Home</th><th>City</th></tr>
-            </thead>
-            <tbody>
-              {#each results.results.contacts as c}
-                <tr>
-                  <td><a href="#/contacts/{c.contact_id}">{@html hl(c.name)}</a></td>
-                  <td>{#if c.business_name}{@html hl(c.business_name)}{:else}—{/if}</td>
-                  <td>{@html hl(c.email)}</td>
-                  <td>{@html hl(c.mobile_number)}</td>
-                  <td>{@html hl(c.work_number)}</td>
-                  <td>{@html hl(c.home_number)}</td>
-                  <td>{@html hl(c.city)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+          <DataTable
+            rows={results.results.contacts}
+            key={(c) => c.contact_id}
+            columns={[
+              { id: 'name',     label: 'Name',     cell: contactNameCell },
+              { id: 'business', label: 'Business', cell: contactBusinessCell },
+              { id: 'email',    label: 'Email',    cell: contactEmailCell },
+              { id: 'mobile',   label: 'Mobile',   cell: contactMobileCell },
+              { id: 'work',     label: 'Work',     cell: contactWorkCell },
+              { id: 'home',     label: 'Home',     cell: contactHomeCell },
+              { id: 'city',     label: 'City',     cell: contactCityCell },
+            ]}
+          />
         {/if}
 
         {#if results.results.businesses?.length}
           <h3>Businesses</h3>
-          <table class="data-table">
-            <thead>
-              <tr><th>Name</th><th>Code</th><th>Address</th><th>Phone</th></tr>
-            </thead>
-            <tbody>
-              {#each results.results.businesses as b}
-                <tr>
-                  <td><a href="#/businesses/{b.business_id}">{@html hl(b.business_name)}</a></td>
-                  <td>{@html hl(b.our_reference_code)}</td>
-                  <td>{@html hl(b.business_address)}</td>
-                  <td>{@html hl(b.business_phone)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+          <DataTable
+            rows={results.results.businesses}
+            key={(b) => b.business_id}
+            columns={[
+              { id: 'name',    label: 'Name',    cell: bizNameCell },
+              { id: 'code',    label: 'Code',    cell: bizCodeCell },
+              { id: 'address', label: 'Address', cell: bizAddressCell },
+              { id: 'phone',   label: 'Phone',   cell: bizPhoneCell },
+            ]}
+          />
         {/if}
 
         {#if results.results.invoices?.length}
           <h3>Invoices</h3>
-          <table class="data-table">
-            <thead>
-              <tr><th>Invoice #</th><th>Job #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
-            </thead>
-            <tbody>
-              {#each results.results.invoices as inv}
-                <tr>
-                  <td><a href="#/invoices/{inv.invoice_id}">{@html hl(inv.display_number)}</a></td>
-                  <td>{@html hl(inv.job_number)}</td>
-                  <td>{inv.status}</td>
-                  <td>{formatDate(inv.created_date)}</td>
-                  <td>{@html hlt(inv.matching_descriptions?.join(', ') || null)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+          <DataTable
+            rows={results.results.invoices}
+            key={(inv) => inv.invoice_id}
+            columns={[
+              { id: 'number',  label: 'Invoice #',           cell: invNumberCell },
+              { id: 'job',     label: 'Job #',               cell: invJobCell },
+              { id: 'status',  label: 'Status',              cell: invStatusCell },
+              { id: 'created', label: 'Created',             cell: invCreatedCell },
+              { id: 'lines',   label: 'Matching line items', cell: invLinesCell },
+            ]}
+          />
         {/if}
 
         {#if results.results.estimates?.length}
           <h3>Estimates</h3>
-          <table class="data-table">
-            <thead>
-              <tr><th>Estimate #</th><th>Version</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
-            </thead>
-            <tbody>
-              {#each results.results.estimates as est}
-                <tr>
-                  <td><a href="#/estimates/{est.estimate_id}">{@html hl(est.estimate_number)}</a></td>
-                  <td>{est.version}</td>
-                  <td>{est.status}</td>
-                  <td>{formatDate(est.created_date)}</td>
-                  <td>{@html hlt(est.matching_descriptions?.join(', ') || null)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+          <DataTable
+            rows={results.results.estimates}
+            key={(est) => est.estimate_id}
+            columns={[
+              { id: 'number',  label: 'Estimate #',          cell: estNumberCell },
+              { id: 'version', label: 'Version',             field: 'version' },
+              { id: 'status',  label: 'Status',              field: 'status' },
+              { id: 'created', label: 'Created',             cell: estCreatedCell },
+              { id: 'lines',   label: 'Matching line items', cell: estLinesCell },
+            ]}
+          />
         {/if}
 
         {#if results.results.purchase_orders?.length}
           <h3>Purchase Orders</h3>
-          <table class="data-table">
-            <thead>
-              <tr><th>PO #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
-            </thead>
-            <tbody>
-              {#each results.results.purchase_orders as po}
-                <tr>
-                  <td><a href="#/purchase-orders/{po.po_id}">{@html hl(po.po_number)}</a></td>
-                  <td>{po.status}</td>
-                  <td>{formatDate(po.created_date)}</td>
-                  <td>{@html hlt(po.matching_descriptions?.join(', ') || null)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+          <DataTable
+            rows={results.results.purchase_orders}
+            key={(po) => po.po_id}
+            columns={[
+              { id: 'number',  label: 'PO #',                cell: poNumberCell },
+              { id: 'status',  label: 'Status',              field: 'status' },
+              { id: 'created', label: 'Created',             cell: poCreatedCell },
+              { id: 'lines',   label: 'Matching line items', cell: poLinesCell },
+            ]}
+          />
         {/if}
 
         {#if results.results.inventory_items?.length}
           <h3>Inventory Items</h3>
-          <table class="data-table">
-            <thead>
-              <tr><th>Code</th><th>Description</th><th>Units</th><th>Selling Price</th></tr>
-            </thead>
-            <tbody>
-              {#each results.results.inventory_items as item}
-                <tr>
-                  <td>{@html hl(item.code)}</td>
-                  <td>{@html hlt(item.description)}</td>
-                  <td>{@html hl(item.units)}</td>
-                  <td>{item.selling_price}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+          <DataTable
+            rows={results.results.inventory_items}
+            key={(item) => item.inventory_item_id}
+            columns={[
+              { id: 'code',        label: 'Code',          cell: itemCodeCell },
+              { id: 'description', label: 'Description',   cell: itemDescCell },
+              { id: 'units',       label: 'Units',         cell: itemUnitsCell },
+              { id: 'price',       label: 'Selling Price', field: 'selling_price' },
+            ]}
+          />
         {/if}
 
         {#if results.total === 0}
           <p>No results found.</p>
         {/if}
       {/if}
+      </LoadState>
     </div>
 
     <aside class="filters">
@@ -425,6 +390,47 @@
   </div>
 {/if}
 </div>
+
+{#snippet jobNumberCell(g)}<a href="#/jobs/{g.job.job_id}">{@html hl(g.job.job_number)}</a>{/snippet}
+{#snippet jobNameCell(g)}{@html hl(g.job.name)}{/snippet}
+{#snippet jobContactCell(g)}{@html hl(g.job.contact_name)}{/snippet}
+{#snippet jobStatusCell(g)}{g.job.status}{/snippet}
+{#snippet jobCreatedCell(g)}{formatDate(g.job.created_date)}{/snippet}
+{#snippet jobStartedCell(g)}{formatDate(g.job.start_date)}{/snippet}
+{#snippet jobDescCell(g)}{@html hlt(g.job.description)}{/snippet}
+{#snippet jobPoCell(g)}{@html hl(g.job.customer_po_number)}{/snippet}
+{#snippet jobTasksCell(g)}{@html hlt(g.tasks.map(t => t.name).join(', ') || null)}{/snippet}
+
+{#snippet contactNameCell(c)}<a href="#/contacts/{c.contact_id}">{@html hl(c.name)}</a>{/snippet}
+{#snippet contactBusinessCell(c)}{#if c.business_name}{@html hl(c.business_name)}{:else}—{/if}{/snippet}
+{#snippet contactEmailCell(c)}{@html hl(c.email)}{/snippet}
+{#snippet contactMobileCell(c)}{@html hl(c.mobile_number)}{/snippet}
+{#snippet contactWorkCell(c)}{@html hl(c.work_number)}{/snippet}
+{#snippet contactHomeCell(c)}{@html hl(c.home_number)}{/snippet}
+{#snippet contactCityCell(c)}{@html hl(c.city)}{/snippet}
+
+{#snippet bizNameCell(b)}<a href="#/businesses/{b.business_id}">{@html hl(b.business_name)}</a>{/snippet}
+{#snippet bizCodeCell(b)}{@html hl(b.our_reference_code)}{/snippet}
+{#snippet bizAddressCell(b)}{@html hl(b.business_address)}{/snippet}
+{#snippet bizPhoneCell(b)}{@html hl(b.business_phone)}{/snippet}
+
+{#snippet invNumberCell(inv)}<a href="#/invoices/{inv.invoice_id}">{@html hl(inv.display_number)}</a>{/snippet}
+{#snippet invJobCell(inv)}{@html hl(inv.job_number)}{/snippet}
+{#snippet invStatusCell(inv)}{inv.status}{/snippet}
+{#snippet invCreatedCell(inv)}{formatDate(inv.created_date)}{/snippet}
+{#snippet invLinesCell(inv)}{@html hlt(inv.matching_descriptions?.join(', ') || null)}{/snippet}
+
+{#snippet estNumberCell(est)}<a href="#/estimates/{est.estimate_id}">{@html hl(est.estimate_number)}</a>{/snippet}
+{#snippet estCreatedCell(est)}{formatDate(est.created_date)}{/snippet}
+{#snippet estLinesCell(est)}{@html hlt(est.matching_descriptions?.join(', ') || null)}{/snippet}
+
+{#snippet poNumberCell(po)}<a href="#/purchase-orders/{po.po_id}">{@html hl(po.po_number)}</a>{/snippet}
+{#snippet poCreatedCell(po)}{formatDate(po.created_date)}{/snippet}
+{#snippet poLinesCell(po)}{@html hlt(po.matching_descriptions?.join(', ') || null)}{/snippet}
+
+{#snippet itemCodeCell(item)}{@html hl(item.code)}{/snippet}
+{#snippet itemDescCell(item)}{@html hlt(item.description)}{/snippet}
+{#snippet itemUnitsCell(item)}{@html hl(item.units)}{/snippet}
 
 <style>
   .search-layout {

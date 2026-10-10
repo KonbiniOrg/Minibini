@@ -1,6 +1,7 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
   import { getPaymentAccounts } from '../../lib/paymentAccounts.js';
+  import LoadState from '../LoadState.svelte';
 
   let { user = null } = $props();  // { id, username, first_name, last_name } or similar
 
@@ -45,7 +46,7 @@
         batchAccountId = accts[0].qbo_account_id;
       }
     } catch (err) {
-      error = err.message || 'Could not load.';
+      error = errorMessage(err, 'Could not load.');
     } finally {
       loading = false;
     }
@@ -103,7 +104,7 @@
       await api.post(`/api/reimbursements/${batch.id}/retry-sync/`);
       await loadAll();
     } catch (err) {
-      error = err.message || 'Retry failed.';
+      error = errorMessage(err, 'Retry failed.');
     }
   }
 
@@ -126,7 +127,7 @@
       await api.post(`/api/expenses/${exp.id}/reject/`);
       await loadAll();
     } catch (err) {
-      error = err.message || 'Reject failed.';
+      error = errorMessage(err, 'Reject failed.');
     }
   }
 
@@ -135,11 +136,7 @@
   });
 </script>
 
-{#if loading}
-  <p><em>Loading...</em></p>
-{:else if error}
-  <p><em>{error}</em></p>
-{:else}
+<LoadState {loading} {error}>
   <h3>Outstanding reimbursements</h3>
   {#if outstanding.length === 0}
     <p><em>No outstanding reimbursements.</em></p>
@@ -297,4 +294,4 @@
       </tbody>
     </table>
   {/if}
-{/if}
+</LoadState>

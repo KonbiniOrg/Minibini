@@ -3,7 +3,9 @@
   // span jobs), so this panel never offers create — creation stays on the
   // global Purchase Orders page. Copies field usage from PurchaseOrderList.svelte
   // / PurchaseOrderSerializer: po_id, po_number, status, business_name, po_total.
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import LoadState from '../LoadState.svelte';
+  import DataTable from '../DataTable.svelte';
 
   let { job } = $props();
 
@@ -20,7 +22,7 @@
       const resp = await api.get(`/api/purchase-orders/?job=${jobId}`);
       purchaseOrders = resp?.results || resp || [];
     } catch (e) {
-      errorMsg = e.message || 'Could not load purchase orders.';
+      errorMsg = errorMessage(e, 'Could not load purchase orders.');
     } finally {
       loading = false;
     }
@@ -34,35 +36,26 @@
 </script>
 
 <div class="page-body">
-  {#if loading}
-    <p>Loading…</p>
-  {:else if errorMsg}
-    <p class="err">{errorMsg}</p>
-  {:else if purchaseOrders.length === 0}
-    <p>No purchase orders touch this job yet.</p>
-  {:else}
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>PO #</th>
-          <th>Status</th>
-          <th>Vendor</th>
-          <th class="num">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each purchaseOrders as po (po.po_id)}
-          <tr>
-            <td><a href={`#/purchase-orders/${po.po_id}`}>{po.po_number}</a></td>
-            <td><span class="status-badge status-{po.status}">{po.status}</span></td>
-            <td>{po.business_name || '—'}</td>
-            <td class="num">{formatTotal(po.po_total)}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {/if}
+  <LoadState {loading} error={errorMsg}>
+    <DataTable
+      rows={purchaseOrders}
+      key={(po) => po.po_id}
+      emptyText="No purchase orders touch this job yet."
+      columns={[
+        { id: 'number', label: 'PO #',   cell: numberCell },
+        { id: 'status', label: 'Status', cell: statusCell },
+        { id: 'vendor', label: 'Vendor', cell: vendorCell },
+        { id: 'total',  label: 'Total',  cell: totalCell, align: 'right' },
+      ]}
+    />
+  </LoadState>
 </div>
+
+
+{#snippet numberCell(po)}<a href={`#/purchase-orders/${po.po_id}`}>{po.po_number}</a>{/snippet}
+{#snippet statusCell(po)}<span class="status-badge status-{po.status}">{po.status}</span>{/snippet}
+{#snippet vendorCell(po)}{po.business_name || '—'}{/snippet}
+{#snippet totalCell(po)}{formatTotal(po.po_total)}{/snippet}
 
 <style>
   .num { text-align: right; font-variant-numeric: tabular-nums; }

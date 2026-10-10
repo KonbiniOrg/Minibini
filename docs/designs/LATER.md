@@ -1692,3 +1692,9 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ comment rows render informationally on the three edit
   views + customer views, the needs-category marker exempts `is_comment`,
   and `unanswered_lines` excludes comments.
+
+- **SchedulePage shows "Loading schedule…" forever on a failed fetch.** — _added 2026-10-09 (code review, feature/lite-view)_
+  `stores/schedule.js` only `console.error`s on failure and leaves
+  `$schedule` null, so the page's `LoadState` never leaves loading.
+  _Done when:_ the store exposes an error (or rejects) and `SchedulePage`
+  passes it to `LoadState`.

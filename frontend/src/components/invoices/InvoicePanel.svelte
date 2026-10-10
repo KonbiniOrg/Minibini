@@ -12,6 +12,7 @@
   import InvoiceEditView from './InvoiceEditView.svelte';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
   import { formatMoney } from '../../lib/format.js';
+  import LoadState from '../LoadState.svelte';
 
   let { job, invoiceId, onJobChange = () => {} } = $props();
 
@@ -167,7 +168,7 @@
       if (silent) {
         showError(errorMessage(e, 'Could not refresh the invoice.'));
       } else {
-        error = e.message || 'Could not load invoice.';
+        error = errorMessage(e, 'Could not load invoice.');
       }
     } finally {
       if (!silent) docLoading = false;
@@ -371,11 +372,8 @@
 {/if}
 
 {#if invoiceId}
-  {#if docLoading}
-    <p>Loading...</p>
-  {:else if error}
-    <p class="error"><strong>Error:</strong> {error}</p>
-  {:else if invoice}
+  <LoadState loading={docLoading} {error}>
+  {#if invoice}
   <div class="page-body">
   <div class="toolbar">
     <span class="page-title">Invoice: {invoice.display_number}</span>
@@ -478,9 +476,9 @@
   {/if}
   </div>
   {/if}
-{:else if !listLoaded}
-  <p>Loading...</p>
+  </LoadState>
 {:else}
+<LoadState loading={!listLoaded}>
   <div class="page-body">
     {#if job?.can_manage && jobBillable}
       <button type="button" onclick={startInvoice} disabled={startingInvoice}>
@@ -507,6 +505,7 @@
       <p>No invoices yet.</p>
     {/if}
   </div>
+</LoadState>
 {/if}
 
 <DepositInvoiceModal

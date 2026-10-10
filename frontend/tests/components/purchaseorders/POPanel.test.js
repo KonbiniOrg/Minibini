@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 
 import { api } from '@/lib/api.js';
 import POPanel from '@/components/purchaseorders/POPanel.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 const job = { job_id: 7, job_number: 'JOB-7', name: 'Widget' };
 
@@ -40,5 +41,24 @@ describe('POPanel', () => {
     api.get.mockRejectedValue(new Error('boom'));
     const { findByText } = render(POPanel, { props: { job } });
     expect(await findByText('boom')).toBeInTheDocument();
+  });
+});
+
+describe('POPanel — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  it('renders PO # / Status / Vendor / Total in both densities with data-col', async () => {
+    api.get.mockResolvedValue({ results: [
+      { po_id: 11, po_number: 'PO-2026-0011', status: 'issued', business_name: 'Acme Supply', po_total: '150.00' },
+    ] });
+    viewMode.set('lite');
+    const { findByRole, container } = render(POPanel, { props: { job } });
+    await findByRole('link', { name: 'PO-2026-0011' });
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(['PO #', 'Status', 'Vendor', 'Total']);
+    expect(table.querySelector('td[data-col="status"] .status-badge')).toBeTruthy();
+    viewMode.set('full');
+    const { findByRole: f2, container: c2 } = render(POPanel, { props: { job } });
+    await f2('link', { name: 'PO-2026-0011' });
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['PO #', 'Status', 'Vendor', 'Total']);
   });
 });

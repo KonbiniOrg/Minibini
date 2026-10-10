@@ -1,10 +1,11 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import { canManageTime as canManageTimeStore } from '../../stores/permissions.js';
   import { blepActivityVersion } from '../../stores/blepActivity.js';
   import TimeEditModal from './TimeEditModal.svelte';
   import BlepLogTable from './BlepLogTable.svelte';
+  import LoadState from '../LoadState.svelte';
 
   // Reusable list of work sessions (bleps), recent-first by start time.
   // Surfaces: the Users page "Work Sessions" tab (all users, worker column,
@@ -64,7 +65,7 @@
       bleps = resp.results || resp;
       count = resp.count ?? bleps.length;
     } catch (e) {
-      loadError = e.message || 'Could not load work sessions.';
+      loadError = errorMessage(e, 'Could not load work sessions.');
     } finally {
       loading = false;
     }
@@ -96,11 +97,8 @@
 <section>
   {#if title}<h3>{title}</h3>{/if}
   {#if sinceDays != null}<p class="window-note">(past {sinceDays} days)</p>{/if}
-  {#if loading && bleps.length === 0}
-    <p>Loading…</p>
-  {:else if loadError}
-    <p class="error">{loadError}</p>
-  {:else if bleps.length === 0}
+  <LoadState loading={loading && bleps.length === 0} error={loadError}>
+  {#if bleps.length === 0}
     <p>{emptyText}</p>
   {:else}
     <BlepLogTable {bleps} {showWorker}>
@@ -124,6 +122,7 @@
       </p>
     {/if}
   {/if}
+  </LoadState>
 </section>
 
 <TimeEditModal
@@ -138,6 +137,5 @@
 
 <style>
   .pager { display: flex; gap: 8px; align-items: center; }
-  .error { color: #a8071a; }
   .window-note { color: #6b7280; font-size: 0.85em; margin: -0.5em 0 0.5em; }
 </style>

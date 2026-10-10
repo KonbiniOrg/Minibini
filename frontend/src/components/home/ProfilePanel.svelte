@@ -3,6 +3,7 @@
   import { fieldErrors } from '../../lib/formErrors.js';
   import { user } from '../../stores/auth.js';
   import { viewMode, toggleViewMode } from '../../stores/viewMode.js';
+  import LoadState from '../LoadState.svelte';
 
   let profileForm = $state({
     email: '',
@@ -83,9 +84,7 @@
 
 <h3>Account info</h3>
 
-{#if !$user}
-  <p>Loading...</p>
-{:else}
+<LoadState loading={!$user}>
   <form onsubmit={saveProfile}>
     <p>
       <strong>Username:</strong> {$user.username}
@@ -140,7 +139,7 @@
       <p>{profileMessage}</p>
     {/if}
   </form>
-{/if}
+</LoadState>
 
 <h3>Change password</h3>
 <form onsubmit={changePassword}>

@@ -1,6 +1,7 @@
 <script>
   import { link, push } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import LoadState from '../../components/LoadState.svelte';
   import { user as currentUser } from '../../stores/auth.js';
   import { fieldErrors } from '../../lib/formErrors.js';
   import UserReimbursementPanel from '../../components/expenses/UserReimbursementPanel.svelte';
@@ -57,7 +58,7 @@
       user = await api.get(`/api/users/${params.id}/`);
       seedFormsFromUser();
     } catch (err) {
-      loadError = err.message || 'Could not load user.';
+      loadError = errorMessage(err, 'Could not load user.');
     } finally {
       loading = false;
     }
@@ -199,12 +200,8 @@
 </script>
 
 <div class="page-body">
-{#if loading}
-  <p>Loading...</p>
-{:else if loadError}
-  <p>{loadError}</p>
-  <p><a href="/users" use:link>← Back to users</a></p>
-{:else if user}
+<LoadState {loading} error={loadError}>
+{#if user}
   <h2>User: {user.username}</h2>
   <p>
     <a href="/users" use:link>← Back to users</a>
@@ -362,4 +359,6 @@
        column is suppressed — every row is this user. -->
   <WorkSessionsList userId={user.id} />
 {/if}
+</LoadState>
+{#if loadError && !loading}<p><a href="/users" use:link>← Back to users</a></p>{/if}
 </div>

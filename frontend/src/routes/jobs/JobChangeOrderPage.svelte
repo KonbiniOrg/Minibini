@@ -4,9 +4,10 @@
   // render JobShell, hand the document work to ChangeOrderPanel. No docId
   // resolution here: this route always carries :coId (the estimate section's
   // bare route handles "which document" defaulting).
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import JobShell from '../../components/jobs/JobShell.svelte';
   import ChangeOrderPanel from '../../components/changeorders/ChangeOrderPanel.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   let { params = {} } = $props();
   let job = $state(null);
@@ -24,7 +25,7 @@
     try {
       job = await api.get(`/api/jobs/${jobId}/`);
       contact = job?.contact ? await api.get(`/api/contacts/${job.contact}/`).catch(() => null) : null;
-    } catch (e) { error = e.message || 'Could not load job.'; }
+    } catch (e) { error = errorMessage(e, 'Could not load job.'); }
   }
 
   $effect(() => {
@@ -32,9 +33,10 @@
   });
 </script>
 
-{#if error}<p class="error">{error}</p>
-{:else if job}
+<LoadState loading={!job && !error} {error}>
+{#if job}
   <JobShell {job} {contact} current="estimate" colorway="cw-estimate" onJobChange={loadJob}>
     <ChangeOrderPanel {job} {coId} onJobChange={loadJob} />
   </JobShell>
-{:else}<p>Loading…</p>{/if}
+{/if}
+</LoadState>

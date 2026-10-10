@@ -83,3 +83,16 @@ describe('EmailTemplates', () => {
     expect(await findByRole('alert')).toHaveTextContent('Settings are read-only.');
   });
 });
+
+describe('EmailTemplates — variable glossary as a definition list', () => {
+  it('lists each variable as a dt with a code element and its description as the dd', async () => {
+    const { findByText, container } = render(EmailTemplates);
+    await findByText('Recipient first name');
+    const dl = container.querySelector('dl.vars');
+    expect(dl).toBeTruthy();
+    const firstDt = dl.querySelector('dt');
+    expect(firstDt.querySelector('code').textContent).toBe('{contact_fname}');
+    expect(dl.querySelector('dd').textContent.trim()).toBe('Recipient first name');
+    expect(container.querySelector('table.vars')).toBeNull();
+  });
+});

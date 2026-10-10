@@ -1,7 +1,8 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import BusinessList from '../../components/contacts/BusinessList.svelte';
   import { push } from 'svelte-spa-router';
+  import LoadState from '../../components/LoadState.svelte';
 
   let businesses = $state([]);
   let count = $state(0);
@@ -17,7 +18,7 @@
       businesses = data.results;
       count = data.count;
     } catch (e) {
-      error = e.message;
+      error = errorMessage(e, 'Could not load businesses.');
     } finally {
       loading = false;
     }
@@ -38,11 +39,7 @@
 
 <p><a href="#/businesses/new">New Business</a></p>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p>Error: {error}</p>
-{:else}
+<LoadState {loading} {error}>
   <BusinessList {businesses} onSelect={handleSelect} />
 
   {#if count > 25}
@@ -56,5 +53,5 @@
       {/if}
     </p>
   {/if}
-{/if}
+</LoadState>
 </div>

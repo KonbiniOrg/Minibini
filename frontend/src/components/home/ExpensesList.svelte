@@ -1,8 +1,10 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { link } from 'svelte-spa-router';
   import { user as userStore } from '../../stores/auth.js';
   import ExpenseForm from '../expenses/ExpenseForm.svelte';
+  import LoadState from '../LoadState.svelte';
+  import DataTable from '../DataTable.svelte';
 
   let expenses = $state([]);
   let loading = $state(true);
@@ -19,7 +21,7 @@
       const data = await api.get(`/api/expenses/?purchased_by=${uid}&payment_method=personal&page_size=5`);
       expenses = data.results || data;
     } catch (err) {
-      loadError = err.message || 'Could not load expenses.';
+      loadError = errorMessage(err, 'Could not load expenses.');
     } finally {
       loading = false;
     }
@@ -65,52 +67,42 @@
     </div>
   {/if}
 
-  {#if loading}
-    <p><em>Loading...</em></p>
-  {:else if loadError}
-    <p><em>{loadError}</em></p>
-  {:else if expenses.length === 0}
-    <p><em>No recent expenses.</em></p>
-  {:else}
-    <table class="data-table" style="width: 100%">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Description</th>
-          <th>Job</th>
-          <th>Task</th>
-          <th style="text-align: right">Amount</th>
-          <th>Status</th>
-          <th>Reimbursed</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each expenses as e (e.id)}
-          <tr>
-            <td>{e.purchased_on}</td>
-            <td class="preserve-breaks">{e.description || '—'}</td>
-            <td>
-              {#if e.job_id}
-                <a href="/jobs/{e.job_id}" use:link>{e.job_number}{e.job_name ? ' — ' + e.job_name : ''}</a>
-              {:else}
-                —
-              {/if}
-            </td>
-            <td>{e.task_name || '—'}</td>
-            <td style="text-align: right">${e.amount}</td>
-            <td>
-              <em>{statusLabel(e.status)}</em>
-              {#if syncBadge(e.qbo_sync_status)}
-                <span class={syncBadge(e.qbo_sync_status).cls}>{syncBadge(e.qbo_sync_status).text}</span>
-              {/if}
-            </td>
-            <td>{e.reimbursement_paid_on || '—'}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {/if}
+  <LoadState {loading} error={loadError}>
+  <DataTable
+    rows={expenses}
+    key={(e) => e.id}
+    emptyText="No recent expenses."
+    columns={[
+      { id: 'date',        label: 'Date',        field: 'purchased_on' },
+      { id: 'description', label: 'Description', cell: descriptionCell },
+      { id: 'job',         label: 'Job',         cell: jobCell },
+      { id: 'task',        label: 'Task',        cell: taskCell },
+      { id: 'amount',      label: 'Amount',      cell: amountCell, align: 'right' },
+      { id: 'status',      label: 'Status',      cell: statusCell },
+      { id: 'reimbursed',  label: 'Reimbursed',  cell: reimbursedCell },
+    ]}
+  />
+  </LoadState>
 </section>
+
+
+{#snippet descriptionCell(e)}<span class="preserve-breaks">{e.description || '—'}</span>{/snippet}
+{#snippet jobCell(e)}
+  {#if e.job_id}
+    <a href="/jobs/{e.job_id}" use:link>{e.job_number}{e.job_name ? ' — ' + e.job_name : ''}</a>
+  {:else}
+    —
+  {/if}
+{/snippet}
+{#snippet taskCell(e)}{e.task_name || '—'}{/snippet}
+{#snippet amountCell(e)}${e.amount}{/snippet}
+{#snippet statusCell(e)}
+  <em>{statusLabel(e.status)}</em>
+  {#if syncBadge(e.qbo_sync_status)}
+    <span class={syncBadge(e.qbo_sync_status).cls}>{syncBadge(e.qbo_sync_status).text}</span>
+  {/if}
+{/snippet}
+{#snippet reimbursedCell(e)}{e.reimbursement_paid_on || '—'}{/snippet}
 
 <style>
   .synced-badge { font-size: 11px; color: #047857; font-weight: 600; }

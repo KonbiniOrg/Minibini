@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 vi.mock('svelte-spa-router', () => ({ link: () => ({}) }));
 vi.mock('@/stores/blepActivity.js', async () => {
   const { writable } = await import('svelte/store');
@@ -11,6 +11,7 @@ vi.mock('@/stores/blepActivity.js', async () => {
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import UserListPage from '@/routes/users/UserListPage.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 beforeEach(() => {
   api.get.mockReset();
@@ -44,5 +45,28 @@ describe('UserListPage Work Sessions tab', () => {
     user.set({ id: 1, permissions: ['can_manage_config'] });
     const { queryByRole } = render(UserListPage);
     expect(queryByRole('button', { name: 'Work Sessions' })).toBeNull();
+  });
+});
+
+describe('UserListPage users tab — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  const ALL = ['Username', 'Name', 'Email', 'Permissions', 'Status', 'Actions'];
+  it('renders the six user columns in both densities with data-col', async () => {
+    user.set({ id: 1, permissions: ['can_manage_config'] });
+    api.get.mockImplementation((url) => Promise.resolve(url.startsWith('/api/users/')
+      ? [{ id: 2, username: 'wanda', first_name: 'Wanda', last_name: 'W', email: 'w@x.com', permissions: ['can_manage_time'], is_active: false }]
+      : []));
+    viewMode.set('lite');
+    const { findByText, container } = render(UserListPage);
+    await findByText('wanda');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(ALL);
+    expect(table.querySelector('td[data-col="status"]').textContent.trim()).toBe('Deactivated');
+    expect(table.querySelector('td[data-col="permissions"]').textContent.trim()).toBe('time');
+    expect(table.querySelector('td[data-col="actions"] a')).toHaveAttribute('href', '/users/2');
+    viewMode.set('full');
+    const { findByText: f2, container: c2 } = render(UserListPage);
+    await f2('wanda');
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(ALL);
   });
 });

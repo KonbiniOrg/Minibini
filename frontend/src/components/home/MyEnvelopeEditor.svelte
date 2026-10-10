@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { api, errorMessage } from '../../lib/api.js';
   import EnvelopeEditor from '../schedule/EnvelopeEditor.svelte';
+  import LoadState from '../LoadState.svelte';
 
   let envelope = $state(null);
   let loaded = $state(false);
@@ -43,16 +44,14 @@
 
 <section class="my-envelope">
   <h3>My schedule</h3>
-  {#if loaded}
+  <LoadState loading={!loaded}>
     <EnvelopeEditor value={envelope} allowNull={true} onchange={handleChange} />
     <p>
       <button type="button" onclick={save} disabled={!dirty}>Save</button>
       {#if saveMessage}<em>{saveMessage}</em>{/if}
       {#if error}<em class="err">{error}</em>{/if}
     </p>
-  {:else}
-    <p>Loading…</p>
-  {/if}
+  </LoadState>
 </section>
 
 <style>

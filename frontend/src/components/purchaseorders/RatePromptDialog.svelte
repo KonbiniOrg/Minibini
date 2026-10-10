@@ -32,6 +32,7 @@
   import { api } from '../../lib/api.js';
   import { triageError } from '../../lib/errorTriage.js';
   import { formatMoney } from '../../lib/format.js';
+  import DataTable from '../DataTable.svelte';
 
   // markupApplied mirrors the reconcile response's `markup_applied` flag
   // (compute_rate_prompts): false means no `default_material_markup_percent`
@@ -75,48 +76,48 @@
   {#if !markupApplied}
     <p class="markup-note"><em>No markup configured — suggestion equals vendor cost.</em></p>
   {/if}
-  <table class="data-table">
-    <thead>
-      <tr><th>Task</th><th class="text-right">Current Rate</th><th class="text-right">Suggested Rate</th><th>Decision</th></tr>
-    </thead>
-    <tbody>
-      {#each prompts as prompt (prompt.task_id)}
-        {@const state = rowState[prompt.task_id]}
-        <tr>
-          <td>
-            {prompt.task_name}
-            {#if prompt.has_active_modifiers}
-              <br><small class="modifiers-note">modifiers apply on top of the accepted rate</small>
-            {/if}
-          </td>
-          <td class="text-right">{formatMoney(prompt.current_rate)}</td>
-          <td class="text-right">{formatMoney(prompt.suggested_rate)}</td>
-          <td>
-            {#if !state}
-              <button type="button" onclick={() => accept(prompt)}>Accept</button>
-              <button type="button" onclick={() => decline(prompt)}>Decline</button>
-            {:else if state.status === 'pending'}
-              Updating…
-            {:else if state.status === 'accepted'}
-              Updated.
-            {:else if state.status === 'declined'}
-              Declined.
-            {:else if state.status === 'error'}
-              <span class="row-error">{state.message}</span>
-              <button type="button" onclick={() => accept(prompt)}>Retry</button>
-            {/if}
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+  <DataTable
+    rows={prompts}
+    key={(prompt) => prompt.task_id}
+    columns={[
+      { id: 'task',      label: 'Task',           cell: taskCell },
+      { id: 'current',   label: 'Current Rate',   cell: currentCell,   align: 'right' },
+      { id: 'suggested', label: 'Suggested Rate', cell: suggestedCell, align: 'right' },
+      { id: 'decision',  label: 'Decision',       cell: decisionCell },
+    ]}
+  />
   <p>
     <button type="button" onclick={onClose}>Close</button>
   </p>
 </Modal>
 
+
+{#snippet taskCell(prompt)}
+  {prompt.task_name}
+  {#if prompt.has_active_modifiers}
+    <br><small class="modifiers-note">modifiers apply on top of the accepted rate</small>
+  {/if}
+{/snippet}
+{#snippet currentCell(prompt)}{formatMoney(prompt.current_rate)}{/snippet}
+{#snippet suggestedCell(prompt)}{formatMoney(prompt.suggested_rate)}{/snippet}
+{#snippet decisionCell(prompt)}
+  {@const state = rowState[prompt.task_id]}
+  {#if !state}
+    <button type="button" onclick={() => accept(prompt)}>Accept</button>
+    <button type="button" onclick={() => decline(prompt)}>Decline</button>
+  {:else if state.status === 'pending'}
+    Updating…
+  {:else if state.status === 'accepted'}
+    Updated.
+  {:else if state.status === 'declined'}
+    Declined.
+  {:else if state.status === 'error'}
+    <span class="row-error">{state.message}</span>
+    <button type="button" onclick={() => accept(prompt)}>Retry</button>
+  {/if}
+{/snippet}
+
 <style>
-  .text-right { text-align: right; }
   .row-error { color: #c00; }
   .modifiers-note { color: #666; }
 </style>

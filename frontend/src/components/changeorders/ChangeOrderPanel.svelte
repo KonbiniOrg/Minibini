@@ -22,6 +22,7 @@
   import { buildEstimateDocItems, changeOrderDisplayStatus } from '../../lib/estimateDocs.js';
   import { buildDeliverableRows } from '../../lib/changeOrderDiff.js';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
+  import LoadState from '../LoadState.svelte';
 
   let {
     job,
@@ -189,7 +190,7 @@
       if (silent) {
         showError(errorMessage(e, 'Could not refresh the change order.'));
       } else {
-        error = e.message || 'Could not load change order.';
+        error = errorMessage(e, 'Could not load change order.');
       }
     } finally {
       if (!silent) loading = false;
@@ -366,11 +367,8 @@
   );
 </script>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p class="error">{error}</p>
-{:else if co}
+<LoadState {loading} {error}>
+{#if co}
   {#if subnavItems.length > 0}
     <DocSubnav items={subnavItems} section="estimate" />
   {/if}
@@ -468,6 +466,7 @@
   {/if}
   </div>
 {/if}
+</LoadState>
 
 <Modal open={startNewDialogOpen} onCancel={() => { startNewDialogOpen = false; }} label="Start new change order">
   <h3>Start new change order</h3>

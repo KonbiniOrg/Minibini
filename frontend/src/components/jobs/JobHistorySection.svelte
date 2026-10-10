@@ -1,10 +1,11 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { triageError } from '../../lib/errorTriage.js';
   import { showError } from '../../stores/messages.js';
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
   import { milestoneRows, groupRowsByDay, timeLabel } from '../../lib/historyLog.js';
+  import LoadState from '../LoadState.svelte';
 
   let { job, onJobChange = () => {} } = $props();
   const jobId = $derived(job?.job_id);
@@ -38,7 +39,7 @@
     try {
       history = await fetchAllHistory(jobId);
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load history.');
     } finally {
       loading = false;
     }
@@ -168,11 +169,7 @@
 </script>
 
 <div class="page">
-  {#if loading}
-    <p>Loading…</p>
-  {:else if loadError}
-    <p class="err">{loadError}</p>
-  {:else}
+  <LoadState {loading} error={loadError}>
     <div class="page-body">
     <header class="page-header">
       <h2>History</h2>
@@ -292,7 +289,7 @@
       {/if}
     </div>
   </div>
-  {/if}
+  </LoadState>
 </div>
 
 <style>

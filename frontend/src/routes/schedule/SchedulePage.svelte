@@ -7,6 +7,7 @@
   import NowLine from '../../components/schedule/NowLine.svelte';
   import JobChipStrip from '../../components/board/JobChipStrip.svelte';
   import TaskQuickCard from '../../components/schedule/TaskQuickCard.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   let containerEl;
   let containerWidth = $state(1200);
@@ -243,9 +244,7 @@
       </div>
     {/if}
   </div>
-  {#if $schedule === null}
-    <p>Loading schedule…</p>
-  {:else}
+  <LoadState loading={$schedule === null} loadingText="Loading schedule…">
     <JobChipStrip jobs={$schedule.jobs} bind:focusedJobIds />
     <div class="chart-area">
       <ScheduleHeader days={$schedule.days} laneLabelWidth={LANE_LABEL_WIDTH} {layout}
@@ -281,7 +280,7 @@
         </div>
       {/if}
     </div>
-  {/if}
+  </LoadState>
 
   {#if selectedBar}
     <TaskQuickCard

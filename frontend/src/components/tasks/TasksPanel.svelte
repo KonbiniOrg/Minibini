@@ -13,6 +13,7 @@
   import PriceListPicker from '../PriceListPicker.svelte';
   import Modal from '../Modal.svelte';
   import BundleModal from '../docsurface/BundleModal.svelte';
+  import LoadState from '../LoadState.svelte';
 
   let { job, onJobChange = () => {} } = $props();
 
@@ -22,6 +23,13 @@
   let templates = $state([]);
   let categories = $state([]);
   let loading = $state(true);
+  // Sub-fetches below each swallow their own failure so the task tree stays
+  // usable (see the pool-fetch comments); this records WHICH ones failed so
+  // the panel can say so instead of silently showing less.
+  let loadFailures = $state([]);
+  function noteFailure(label) {
+    if (!loadFailures.includes(label)) loadFailures = [...loadFailures, label];
+  }
 
   // Modal state
   let taskModalOpen = $state(false);
@@ -241,6 +249,7 @@
       const rows = resp.results ?? resp;
       liveEstimate = rows.find((e) => e.status !== 'superseded') ?? null;
     } catch (e) {
+      noteFailure('estimate context');
       liveEstimate = null;
       sourcePool = null;
       estimateContextLoaded = true;
@@ -257,6 +266,7 @@
         // the draft successfully would bounce back to the "Start Estimate"
         // offer as if nothing happened. Land in state A with an empty pool
         // instead (no atoms selectable until a reload succeeds).
+        noteFailure('estimate line pool');
         sourcePool = null;
       }
     } else {
@@ -285,6 +295,7 @@
       const resp = await api.get(`/api/change-orders/?job=${job.job_id}&page_size=100`);
       changeOrders = resp.results ?? resp;
     } catch (e) {
+      noteFailure('change-order context');
       changeOrders = [];
       coSourcePool = null;
       coContextLoaded = true;
@@ -298,6 +309,7 @@
       } catch (e) {
         // Same reasoning as loadEstimateContext's pool-fetch catch: the
         // draft itself is real even if its pool failed to load.
+        noteFailure('change-order line pool');
         coSourcePool = null;
       }
     } else {
@@ -339,6 +351,7 @@
   // effect now reaches this panel (the panel no longer owns the job fetch).
   async function loadPanelData() {
     loading = true;
+    loadFailures = [];
     try {
       jobMaterials = (job.materials || []).filter(m => !m.task);
       try {
@@ -348,6 +361,7 @@
         jobExpenses = (expData.results ?? expData);
       } catch (e) {
         jobExpenses = [];
+        noteFailure('expenses');
       }
       await enrichTasks();
       await loadEstimateContext();
@@ -374,6 +388,7 @@
     try {
       return await api.get(`/api/tasks/${taskId}/materials/`);
     } catch (e) {
+      noteFailure('materials');
       return [];
     }
   }
@@ -583,10 +598,14 @@
   }
 </script>
 
-{#if loading}
-  <p>Loading...</p>
-{:else}
+<LoadState {loading}>
   <div class="page-body">
+  {#if loadFailures.length}
+    <p class="load-degraded" role="status">
+      Some details couldn't be loaded ({loadFailures.join(', ')}). Tasks are shown without them.
+      <button type="button" onclick={loadPanelData}>Retry</button>
+    </p>
+  {/if}
   <div class="toolbar">
     {#if !jobLocked}
       {#if !job?.on_hold}
@@ -762,9 +781,11 @@
     onClose={() => { bundleModalOpen = false; }}
   />
   </div>
-{/if}
+</LoadState>
 
 <style>
+  .load-degraded { background: #fff7e6; border: 1px solid #f0c060; padding: 6px 10px; margin-bottom: 8px; }
+  .load-degraded button { margin-left: 8px; }
   /* .toolbar (and its buttons) come from app.css. */
 
   .estimate-context { color: #888; font-size: 13px; margin: 4px 0 12px; }

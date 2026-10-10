@@ -1,6 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { formatSessionDateTime as fmt } from '../../lib/format.js';
+  import DataTable from '../DataTable.svelte';
   let { shifts = [], showWorker = false, actions = undefined } = $props();
   let now = $state(Date.now());
   function dur(s) {
@@ -14,22 +15,21 @@
   onDestroy(() => tick && clearInterval(tick));
 </script>
 
-<table class="data-table">
-  <thead><tr>
-    {#if showWorker}<th>Worker</th>{/if}
-    <th>Clock In</th><th>Clock Out</th><th>Duration</th>{#if actions}<th></th>{/if}
-  </tr></thead>
-  <tbody>
-    {#each shifts as s (s.shift_id)}
-      <tr>
-        {#if showWorker}<td>{s.user_name || '—'}</td>{/if}
-        <td>{fmt(s.start_time)}</td>
-        <td>{#if s.end_time}{fmt(s.end_time)}{:else}<span class="active-tag">open</span>{/if}</td>
-        <td>{dur(s)}</td>
-        {#if actions}<td>{@render actions(s)}</td>{/if}
-      </tr>
-    {/each}
-  </tbody>
-</table>
+<DataTable
+  rows={shifts}
+  key={(s) => s.shift_id}
+  columns={[
+    ...(showWorker ? [{ id: 'worker', label: 'Worker', cell: workerCell }] : []),
+    { id: 'in',       label: 'Clock In',  cell: inCell },
+    { id: 'out',      label: 'Clock Out', cell: outCell },
+    { id: 'duration', label: 'Duration',  cell: durationCell },
+    ...(actions ? [{ id: 'actions', label: '', cell: actions }] : []),
+  ]}
+/>
+
+{#snippet workerCell(s)}{s.user_name || '—'}{/snippet}
+{#snippet inCell(s)}{fmt(s.start_time)}{/snippet}
+{#snippet outCell(s)}{#if s.end_time}{fmt(s.end_time)}{:else}<span class="active-tag">open</span>{/if}{/snippet}
+{#snippet durationCell(s)}{dur(s)}{/snippet}
 
 <style>.active-tag { color: #16a34a; font-weight: 600; }</style>

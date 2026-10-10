@@ -1,8 +1,10 @@
 <script>
   import { untrack } from 'svelte';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { deliverablesVersion } from '../../stores/deliverables.js';
   import DeliverablesEditModal from './DeliverablesEditModal.svelte';
+  import LoadState from '../LoadState.svelte';
+  import DataTable from '../DataTable.svelte';
 
   // `job`: the host page's job object. Purely a refresh signal — every
   // onJobChange up the chain re-fetches the job, and the new object identity
@@ -13,10 +15,12 @@
   let deliverables = $state([]);
   let editability = $state({ editable: false, reason: null });
   let loading = $state(true);
+  let error = $state(null);
   let modalOpen = $state(false);
 
   async function load() {
     loading = true;
+    error = null;
     try {
       const [items, ed] = await Promise.all([
         api.get(`/api/jobs/${jobId}/deliverables/`),
@@ -24,6 +28,8 @@
       ]);
       deliverables = items;
       editability = ed;
+    } catch (e) {
+      error = errorMessage(e, 'Could not load deliverables.');
     } finally {
       loading = false;
     }
@@ -73,9 +79,8 @@
     {/if}
   </div>
   <div class="panel-scroll">
-    {#if loading}
-      <p class="empty">Loading...</p>
-    {:else if deliverables.length === 0}
+    <LoadState {loading} {error}>
+    {#if deliverables.length === 0}
       <p class="empty">
         No deliverables yet.
         {#if canManage && editability.editable}
@@ -83,24 +88,26 @@
         {/if}
       </p>
     {:else}
-      <table class="simple-list">
-        <tbody>
-          {#each deliverables as d}
-            <tr>
-              <td class="num">{fmtQty(d.qty_ordered)}</td>
-              <td class="units">{d.units}</td>
-              <td class="preserve-breaks">{d.description}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+      <DataTable
+        rows={deliverables}
+        key={(d) => d.id}
+        columns={[
+          { id: 'qty',         label: 'Qty',         cell: qtyCell, align: 'right' },
+          { id: 'units',       label: 'Units',       field: 'units' },
+          { id: 'description', label: 'Description', cell: descriptionCell },
+        ]}
+      />
     {/if}
+    </LoadState>
   </div>
 </div>
 
 {#if modalOpen}
   <DeliverablesEditModal {jobId} onClose={onModalClose} />
 {/if}
+
+{#snippet qtyCell(d)}<span class="qty">{fmtQty(d.qty_ordered)}</span>{/snippet}
+{#snippet descriptionCell(d)}<span class="preserve-breaks">{d.description}</span>{/snippet}
 
 <style>
   /* .panel chrome comes from app.css; locally the head becomes a flex row
@@ -129,32 +136,5 @@
     font-size: 14px;
     line-height: 1.6;
   }
-  table.simple-list {
-    width: 100%;
-    border: none;
-    border-collapse: collapse;
-    color: #333;
-    font-size: 14px;
-    line-height: 1.6;
-  }
-  table.simple-list td {
-    border: none;
-    padding: 6px 16px 6px 0;
-    vertical-align: baseline;
-  }
-  table.simple-list td:last-child {
-    padding-right: 0;
-    width: 100%;
-  }
-  table.simple-list td.num {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    width: 1%;
-  }
-  table.simple-list td.units {
-    color: #666;
-    white-space: nowrap;
-    width: 1%;
-  }
+  .qty { font-variant-numeric: tabular-nums; white-space: nowrap; }
 </style>

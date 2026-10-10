@@ -13,6 +13,7 @@
   import EstimateEditView from './EstimateEditView.svelte';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
   import { user } from '../../stores/auth.js';
+  import LoadState from '../LoadState.svelte';
 
   let { job, estimateId, onJobChange = () => {} } = $props();
 
@@ -195,7 +196,7 @@
       if (silent) {
         showError(errorMessage(e, 'Could not refresh the estimate.'));
       } else {
-        error = e.message || 'Could not load estimate.';
+        error = errorMessage(e, 'Could not load estimate.');
       }
     } finally {
       if (!silent) docLoading = false;
@@ -397,11 +398,8 @@
 {/if}
 
 {#if estimateId}
-  {#if docLoading}
-    <p>Loading...</p>
-  {:else if error}
-    <p class="error">{error}</p>
-  {:else if estimate}
+  <LoadState loading={docLoading} {error}>
+  {#if estimate}
   <div class="page-body">
   <div class="toolbar">
     <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}-{estimate.version}</span>
@@ -510,9 +508,9 @@
   {/if}
   </div>
   {/if}
-{:else if !listLoaded}
-  <p>Loading...</p>
+  </LoadState>
 {:else}
+<LoadState loading={!listLoaded}>
   <div class="page-body">
     <!-- Estimates belong to the quoting phase (draft/submitted): on a job
          past that (hand-approved estimate-less, or later) the backend
@@ -527,6 +525,7 @@
       <p>No estimates yet.</p>
     {/if}
   </div>
+</LoadState>
 {/if}
 
 {#if deliverablesModalOpen && estimate}

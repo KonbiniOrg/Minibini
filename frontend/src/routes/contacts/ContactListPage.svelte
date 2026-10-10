@@ -5,6 +5,8 @@
   import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
   import { showError, showSuccess } from '../../stores/messages.js';
+  import LoadState from '../../components/LoadState.svelte';
+  import DataTable from '../../components/DataTable.svelte';
 
   let pullEpoch = $state(0);
 
@@ -80,7 +82,7 @@
       );
       count = contactData.count + businessData.count;
     } catch (e) {
-      error = e.message;
+      error = errorMessage(e, 'Could not load contacts.');
     } finally {
       loading = false;
     }
@@ -209,44 +211,20 @@
   />
 </p>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p>Error: {error}</p>
-{:else if filteredItems.length === 0}
-  <p>No results found.</p>
-{:else}
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Type</th>
-        <th>Business</th>
-        <th>Email</th>
-        <th>Phone</th>
-        <th>Tags</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each pageItems as item}
-        <tr>
-          <td><a href={item.href}>{item.name}</a></td>
-          <td>{item._type === 'contact' ? 'Contact' : 'Business'}</td>
-          <td>{#if item.business_name}<a href="#/businesses/{item.business_id}">{item.business_name}</a>{:else}—{/if}</td>
-          <td>{item.email}</td>
-          <td>{item.phone}</td>
-          <td>
-            {#each item.tags.slice(0, 3) as tag (tag.tag_id)}
-              <span class="row-tag">{tag.name}</span>
-            {/each}
-            {#if item.tags.length > 3}
-              <span class="row-tag-more">+{item.tags.length - 3} more</span>
-            {/if}
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+<LoadState {loading} {error}>
+  <DataTable
+    rows={pageItems}
+    key={(item) => `${item._type}-${item._id}`}
+    emptyText="No results found."
+    columns={[
+      { id: 'name',     label: 'Name',     cell: nameCell },
+      { id: 'type',     label: 'Type',     cell: typeCell },
+      { id: 'business', label: 'Business', cell: businessCell },
+      { id: 'email',    label: 'Email',    field: 'email' },
+      { id: 'phone',    label: 'Phone',    field: 'phone' },
+      { id: 'tags',     label: 'Tags',     cell: tagsCell },
+    ]}
+  />
 
   {#if totalPages > 1}
     <p>
@@ -259,8 +237,29 @@
       {/if}
     </p>
   {/if}
-{/if}
+</LoadState>
 </div>
+
+{#snippet nameCell(item)}
+  <a href={item.href}>{item.name}</a>
+{/snippet}
+
+{#snippet typeCell(item)}
+  {item._type === 'contact' ? 'Contact' : 'Business'}
+{/snippet}
+
+{#snippet businessCell(item)}
+  {#if item.business_name}<a href="#/businesses/{item.business_id}">{item.business_name}</a>{:else}—{/if}
+{/snippet}
+
+{#snippet tagsCell(item)}
+  {#each item.tags.slice(0, 3) as tag (tag.tag_id)}
+    <span class="row-tag">{tag.name}</span>
+  {/each}
+  {#if item.tags.length > 3}
+    <span class="row-tag-more">+{item.tags.length - 3} more</span>
+  {/if}
+{/snippet}
 
 <style>
   .index-bar {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, within } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 
 import { api } from '@/lib/api.js';
 import AccountingCategories from '@/components/settings/AccountingCategories.svelte';
@@ -145,5 +145,14 @@ describe('AccountingCategories', () => {
       expect(window.confirm).toHaveBeenCalled();
       expect(api.delete).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('AccountingCategories load failure', () => {
+  it('shows the load error as an alert instead of the empty "Add one" prompt', async () => {
+    api.get.mockImplementation(() => Promise.reject(new Error('boom')));
+    const { findByRole, queryByText } = render(AccountingCategories);
+    expect(await findByRole('alert')).toHaveTextContent('boom');
+    expect(queryByText(/No accounting categories found/)).toBeNull();
   });
 });

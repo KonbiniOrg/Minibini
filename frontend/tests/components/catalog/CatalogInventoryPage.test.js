@@ -14,6 +14,7 @@ vi.mock('svelte-spa-router', () => ({
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import CatalogInventoryPage from '@/routes/catalog/CatalogInventoryPage.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 const ITEMS = [
   {
@@ -168,5 +169,31 @@ describe('CatalogInventoryPage — manage actions (financials/config)', () => {
       expect(String(call[1].keep_id)).toBe('1');
       expect(String(call[1].discard_id)).toBe('2');
     });
+  });
+});
+
+describe('CatalogInventoryPage — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  const BASE = ['Code', 'Description', 'Units', 'On hand', 'Earmarked', 'Available', 'On order', 'Status', 'Cost', 'Sell'];
+  it('renders the ten base columns for a worker in both densities (no Actions column without the atom)', async () => {
+    viewMode.set('lite');
+    const { findByText, container } = render(CatalogInventoryPage);
+    await findByText('FELT');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(BASE);
+    expect(table.querySelector('td[data-col="onhand"]').getAttribute('style')).toMatch(/text-align:\s*right/);
+    viewMode.set('full');
+    const { findByText: f2, container: c2 } = render(CatalogInventoryPage);
+    await f2('FELT');
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(BASE);
+  });
+
+  it('adds the Actions column for a financials manager', async () => {
+    user.set({ username: 'u', permissions: ['can_manage_financials'] });
+    const { findByText, container } = render(CatalogInventoryPage);
+    await findByText('FELT');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual([...BASE, 'Actions']);
+    expect(table.querySelector('td[data-col="actions"]').textContent).toContain('edit');
   });
 });

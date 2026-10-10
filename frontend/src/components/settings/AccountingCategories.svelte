@@ -2,7 +2,8 @@
   import CategoriesImportPanel from '../qboimport/CategoriesImportPanel.svelte';
   import QboPullButton from '../qboimport/QboPullButton.svelte';
   import { onMount } from 'svelte';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import LoadState from '../LoadState.svelte';
 
   let pullEpoch = $state(0);
 
@@ -11,6 +12,7 @@
   let loadingCategories = $state(true);
   let loadingQBO = $state(true);
   let error = $state('');
+  let loadError = $state(null);
   let success = $state('');
   let saving = $state(null);
   let showInactive = $state(false);
@@ -27,12 +29,13 @@
 
   async function loadCategories() {
     loadingCategories = true;
+    loadError = null;
     try {
       const catData = await api.get('/api/accounting-categories/');
       categories = catData.results || catData;
     } catch (e) {
       if (e.status !== 403) {
-        error = e.message || 'Failed to load categories';
+        loadError = errorMessage(e, 'Failed to load categories.');
       }
     } finally {
       loadingCategories = false;
@@ -142,9 +145,8 @@
   <CategoriesImportPanel onCommitted={loadCategories} />
 {/key}
 
-{#if loadingCategories}
-  <p>Loading accounting categories...</p>
-{:else if categories.length === 0 && !adding}
+<LoadState loading={loadingCategories} error={loadError} loadingText="Loading accounting categories...">
+{#if categories.length === 0 && !adding}
   <p>No accounting categories found. <button type="button" onclick={startAdd}>Add one</button></p>
 {:else}
   <fieldset>
@@ -223,6 +225,7 @@
     </p>
   </fieldset>
 {/if}
+</LoadState>
 
 {#if adding || editing}
   <fieldset>

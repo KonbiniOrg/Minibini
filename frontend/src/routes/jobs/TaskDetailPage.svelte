@@ -22,6 +22,7 @@
   import AssignModal from '../../components/AssignModal.svelte';
   import JobShell from '../../components/jobs/JobShell.svelte';
   import { formatDuration } from '../../lib/format.js';
+  import LoadState from '../../components/LoadState.svelte';
 
   let { params = {} } = $props();
 
@@ -143,7 +144,7 @@
         await loadJobContext(task.job.id);
       }
     } catch (e) {
-      error = e.message || 'Could not load task.';
+      error = errorMessage(e, 'Could not load task.');
     } finally {
       loading = false;
     }
@@ -298,11 +299,8 @@
      title="Billed on this invoice">INVOICED</a>
 {/snippet}
 
-{#if loading}
-  <p>Loading…</p>
-{:else if error}
-  <p class="error">{error}</p>
-{:else if task}
+<LoadState {loading} {error}>
+{#if task}
   <JobShell {job} {contact} current="tasks" colorway="cw-tasks" onJobChange={refresh}>
   <!-- Task header: crumbs, pill + title left, stat chips right -->
   <div class="task-head">
@@ -551,6 +549,7 @@
   </div>
   </JobShell>
 {/if}
+</LoadState>
 
 <style>
   .error { color: #a8071a; }

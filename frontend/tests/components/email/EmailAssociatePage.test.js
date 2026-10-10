@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 
 vi.mock('svelte-spa-router', () => ({ link: () => ({}), push: vi.fn() }));
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 vi.mock('@/lib/email.js', () => ({
   emailApi: { get: vi.fn() },
 }));
@@ -36,5 +36,16 @@ describe('EmailAssociatePage', () => {
     // button and the input would be absent.
     const input = await findByPlaceholderText(/search jobs/i);
     expect(input).toBeInTheDocument();
+  });
+});
+
+describe('EmailAssociatePage — email summary as a definition list', () => {
+  const dts = (c) => Array.from(c.querySelectorAll('dl dt')).map((dt) => dt.textContent.trim());
+  it('renders From / Subject as dt/dd pairs', async () => {
+    emailApi.get.mockResolvedValue({ email_record_id: 1, temp_email: { from_email: 'sender@example.com', subject: 'Test subject' } });
+    const { findByText, container } = render(EmailAssociatePage, { props: { params: { id: '1' } } });
+    await findByText('Test subject');
+    expect(dts(container)).toEqual(['From', 'Subject']);
+    expect(container.querySelector('table')).toBeNull();
   });
 });

@@ -1,7 +1,8 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
   import DocumentSendForm from '../../components/email/DocumentSendForm.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
 
@@ -25,7 +26,7 @@
       lineItems = poData.line_items || [];
       sendDefaults = defaults;
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load purchase order.');
     } finally {
       loading = false;
     }
@@ -67,11 +68,8 @@
 
 <h2>Send Purchase Order</h2>
 
-{#if loading}
-  <p>Loading…</p>
-{:else if loadError}
-  <p>Error: {loadError}</p>
-{:else if po && sendDefaults}
+<LoadState {loading} error={loadError}>
+{#if po && sendDefaults}
   <DocumentSendForm
     {sendDefaults}
     submitLabel="Send Email"
@@ -110,6 +108,7 @@
     </table>
   </section>
 {/if}
+</LoadState>
 </div>
 
 <style>

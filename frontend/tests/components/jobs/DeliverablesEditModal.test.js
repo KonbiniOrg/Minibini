@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 
 import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
@@ -76,5 +76,16 @@ describe('DeliverablesEditModal', () => {
     await findByDisplayValue('Widget');
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(onClose).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('DeliverablesEditModal — load failure', () => {
+  it('shows the load error as an alert when the deliverables fetch rejects', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.endsWith('/deliverables/')) return Promise.reject(new Error('boom'));
+      return Promise.resolve([]);
+    });
+    const { findByRole } = render(DeliverablesEditModal, { props: { jobId: 5, onClose: vi.fn() } });
+    expect(await findByRole('alert')).toHaveTextContent('boom');
   });
 });

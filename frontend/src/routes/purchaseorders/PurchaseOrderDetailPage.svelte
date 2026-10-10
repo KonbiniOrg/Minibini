@@ -12,6 +12,7 @@
   import ReconciliationSection from '../../components/purchaseorders/ReconciliationSection.svelte';
   import RatePromptDialog from '../../components/purchaseorders/RatePromptDialog.svelte';
   import HistoryPanel from '../../components/HistoryPanel.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
 
@@ -76,7 +77,7 @@
       categories = catData.results || catData;
       await loadPrefill();
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load purchase order.');
     } finally {
       loading = false;
     }
@@ -425,11 +426,8 @@
 </script>
 
 <div class="page-body">
-{#if loading}
-  <p>Loading...</p>
-{:else if loadError}
-  <p><em>Error: {loadError}</em></p>
-{:else if po}
+<LoadState {loading} error={loadError}>
+{#if po}
   <PurchaseOrderDetail
     {po}
     {canManageFinancials}
@@ -499,6 +497,7 @@
 
   <p><a href="#/purchase-orders">Back to list</a></p>
 {/if}
+</LoadState>
 </div>
 
 {#if severPrompt}

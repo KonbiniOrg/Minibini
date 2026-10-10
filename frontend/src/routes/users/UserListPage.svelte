@@ -1,10 +1,12 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { canManageTime, canManageFinancials } from '../../stores/permissions.js';
   import ShiftRequestQueue from '../../components/users/ShiftRequestQueue.svelte';
   import PayrollReport from '../../components/users/PayrollReport.svelte';
   import WorkSessionsList from '../../components/time/WorkSessionsList.svelte';
+  import LoadState from '../../components/LoadState.svelte';
+  import DataTable from '../../components/DataTable.svelte';
 
   let tab = $state('users');
   const canSeeShifts = $derived($canManageTime || $canManageFinancials);
@@ -34,7 +36,7 @@
     try {
       users = await api.get('/api/users/');
     } catch (err) {
-      loadError = err.message || 'Could not load users.';
+      loadError = errorMessage(err, 'Could not load users.');
     } finally {
       loading = false;
     }
@@ -64,48 +66,29 @@
 
 <p><a href="/users/new" use:link>New user</a></p>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if loadError}
-  <p>{loadError}</p>
-{:else if users.length === 0}
-  <p>No users found.</p>
-{:else}
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Username</th>
-        <th>Name</th>
-        <th>Email</th>
-        <th>Permissions</th>
-        <th>Status</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each users as user (user.id)}
-        <tr>
-          <td>{user.username}</td>
-          <td>
-            {user.first_name} {user.last_name}
-          </td>
-          <td>{user.email}</td>
-          <td>{formatPermissions(user.permissions)}</td>
-          <td>
-            {#if user.is_active}
-              Active
-            {:else}
-              <em>Deactivated</em>
-            {/if}
-          </td>
-          <td><a href="/users/{user.id}" use:link>View</a></td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-{/if}
+<LoadState {loading} error={loadError}>
+<DataTable
+  rows={users}
+  key={(user) => user.id}
+  emptyText="No users found."
+  columns={[
+    { id: 'username',    label: 'Username',    field: 'username' },
+    { id: 'name',        label: 'Name',        cell: nameCell },
+    { id: 'email',       label: 'Email',       field: 'email' },
+    { id: 'permissions', label: 'Permissions', cell: permissionsCell },
+    { id: 'status',      label: 'Status',      cell: statusCell },
+    { id: 'actions',     label: 'Actions',     cell: actionsCell },
+  ]}
+/>
+</LoadState>
 {/if}
 </div>
+
+
+{#snippet nameCell(user)}{user.first_name} {user.last_name}{/snippet}
+{#snippet permissionsCell(user)}{formatPermissions(user.permissions)}{/snippet}
+{#snippet statusCell(user)}{#if user.is_active}Active{:else}<em>Deactivated</em>{/if}{/snippet}
+{#snippet actionsCell(user)}<a href="/users/{user.id}" use:link>View</a>{/snippet}
 
 <style>
   /* Tab strip is the shared .page-tabs (app.css). */

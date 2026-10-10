@@ -1,8 +1,9 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
   import DocumentSendForm from '../../components/email/DocumentSendForm.svelte';
   import { formatMoney } from '../../lib/format.js';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
 
@@ -26,7 +27,7 @@
       lineItems = est.line_items || [];
       sendDefaults = defaults;
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load estimate.');
     } finally {
       loading = false;
     }
@@ -73,11 +74,8 @@
 
 <h2>Send Estimate</h2>
 
-{#if loading}
-  <p>Loading…</p>
-{:else if loadError}
-  <p>Error: {loadError}</p>
-{:else if estimate && sendDefaults}
+<LoadState {loading} error={loadError}>
+{#if estimate && sendDefaults}
   <DocumentSendForm
     {sendDefaults}
     submitLabel="Send Email"
@@ -118,6 +116,7 @@
     </table>
   </section>
 {/if}
+</LoadState>
 </div>
 
 <style>

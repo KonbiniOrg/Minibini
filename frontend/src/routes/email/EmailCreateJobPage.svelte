@@ -4,6 +4,8 @@
   import DuplicateContactModal from '../../components/contacts/DuplicateContactModal.svelte';
   import DuplicateBusinessModal from '../../components/contacts/DuplicateBusinessModal.svelte';
   import { push } from 'svelte-spa-router';
+  import LoadState from '../../components/LoadState.svelte';
+  import { errorMessage } from '../../lib/api.js';
 
   const { params = {} } = $props();
 
@@ -28,7 +30,7 @@
       jobName = senderInfo.subject || '';
       jobDescription = senderInfo.suggested_body || '';
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load email.');
     } finally {
       loading = false;
     }
@@ -71,11 +73,8 @@
 
 <p><a href="#/email/{params.id}">&larr; Back to Email</a></p>
 
-{#if loading}
-  <p>Loading…</p>
-{:else if loadError}
-  <p>Error: {loadError}</p>
-{:else if senderInfo}
+<LoadState {loading} error={loadError}>
+{#if senderInfo}
   {#if submitError}
     <p><strong>Error:</strong> {submitError}</p>
   {/if}
@@ -113,4 +112,5 @@
     onClose={() => { duplicateBusiness = null; }}
   />
 {/if}
+</LoadState>
 </div>

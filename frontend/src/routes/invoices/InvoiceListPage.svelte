@@ -1,7 +1,9 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { pageRange, pageFromUrl } from '../../lib/pagination.js';
   import CustomerPicker from '../../components/CustomerPicker.svelte';
+  import LoadState from '../../components/LoadState.svelte';
+  import DataTable from '../../components/DataTable.svelte';
 
   let invoices = $state(null);
   let page = $state(1);
@@ -29,7 +31,7 @@
       url += customerParam();
       invoices = await api.get(url);
     } catch (e) {
-      error = e.message;
+      error = errorMessage(e, 'Could not load invoices.');
     } finally {
       loading = false;
     }
@@ -77,41 +79,24 @@
   </label>
 </p>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p>Error: {error}</p>
-{:else if invoices}
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Invoice #</th><th>Job</th><th>Customer</th><th>Status</th>
-        <th>Sent</th><th>Due</th>
-        <th class="text-right">Amount</th><th class="text-right">Paid</th>
-        <th class="text-right">Balance</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each invoices.results as inv (inv.invoice_id)}
-        <tr>
-          <td><a href={`#/invoices/${inv.invoice_id}`}>{inv.display_number}</a></td>
-          <td>
-            {#if inv.job}<a href={`#/jobs/${inv.job}`}>{inv.job_number}</a>{/if}
-          </td>
-          <td>{inv.customer_name || ''}</td>
-          <td>
-            {inv.status}
-            {#if inv.is_deposit}<span class="deposit-pill">DEPOSIT</span>{/if}
-          </td>
-          <td>{inv.sent_date ? inv.sent_date.slice(0, 10) : ''}</td>
-          <td>{inv.due_date || ''}{#if inv.is_late} ⚠️{/if}</td>
-          <td class="text-right">{money(inv.total)}</td>
-          <td class="text-right">{money(inv.amount_paid)}</td>
-          <td class="text-right">{money(inv.balance)}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+<LoadState {loading} {error}>
+{#if invoices}
+  <DataTable
+    rows={invoices.results}
+    key={(inv) => inv.invoice_id}
+    emptyText="No invoices found."
+    columns={[
+      { id: 'number',   label: 'Invoice #', cell: numberCell },
+      { id: 'job',      label: 'Job',       cell: jobCell },
+      { id: 'customer', label: 'Customer',  field: 'customer_name' },
+      { id: 'status',   label: 'Status',    cell: statusCell },
+      { id: 'sent',     label: 'Sent',      cell: sentCell },
+      { id: 'due',      label: 'Due',       cell: dueCell },
+      { id: 'amount',   label: 'Amount',    cell: amountCell,  align: 'right' },
+      { id: 'paid',     label: 'Paid',      cell: paidCell,    align: 'right' },
+      { id: 'balance',  label: 'Balance',   cell: balanceCell, align: 'right' },
+    ]}
+  />
 
   {#if invoices.count > 25}
     <p>
@@ -125,7 +110,21 @@
     </p>
   {/if}
 {/if}
+</LoadState>
 </div>
+
+
+{#snippet numberCell(inv)}<a href={`#/invoices/${inv.invoice_id}`}>{inv.display_number}</a>{/snippet}
+{#snippet jobCell(inv)}{#if inv.job}<a href={`#/jobs/${inv.job}`}>{inv.job_number}</a>{/if}{/snippet}
+{#snippet statusCell(inv)}
+  {inv.status}
+  {#if inv.is_deposit}<span class="deposit-pill">DEPOSIT</span>{/if}
+{/snippet}
+{#snippet sentCell(inv)}{inv.sent_date ? inv.sent_date.slice(0, 10) : ''}{/snippet}
+{#snippet dueCell(inv)}{inv.due_date || ''}{#if inv.is_late} ⚠️{/if}{/snippet}
+{#snippet amountCell(inv)}{money(inv.total)}{/snippet}
+{#snippet paidCell(inv)}{money(inv.amount_paid)}{/snippet}
+{#snippet balanceCell(inv)}{money(inv.balance)}{/snippet}
 
 <style>
   .deposit-pill {

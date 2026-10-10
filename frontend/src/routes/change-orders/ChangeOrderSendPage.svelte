@@ -1,7 +1,8 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
   import DocumentSendForm from '../../components/email/DocumentSendForm.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
 
@@ -23,7 +24,7 @@
       co = order;
       sendDefaults = defaults;
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load change order.');
     } finally {
       loading = false;
     }
@@ -61,11 +62,8 @@
 
 <h2>Send change order to customer</h2>
 
-{#if loading}
-  <p>Loading…</p>
-{:else if loadError}
-  <p>Error: {loadError}</p>
-{:else if co && sendDefaults}
+<LoadState {loading} error={loadError}>
+{#if co && sendDefaults}
   <DocumentSendForm
     {sendDefaults}
     submitLabel="Send Email"
@@ -83,6 +81,7 @@
       plus a PDF of the change order.</p>
   </section>
 {/if}
+</LoadState>
 </div>
 
 <style>

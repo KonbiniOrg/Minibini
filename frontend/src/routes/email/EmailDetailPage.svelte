@@ -3,6 +3,8 @@
   import EmailContent from '../../components/email/EmailContent.svelte';
   import EmailActionPanel from '../../components/email/EmailActionPanel.svelte';
   import EmailReplyComposer from '../../components/email/EmailReplyComposer.svelte';
+  import LoadState from '../../components/LoadState.svelte';
+  import { errorMessage } from '../../lib/api.js';
 
   const { params = {} } = $props();
 
@@ -22,7 +24,7 @@
     try {
       email = await emailApi.get(params.id);
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load email.');
     } finally {
       loading = false;
     }
@@ -46,11 +48,8 @@
 
 <p><a href="#/email">&larr; Back to Inbox</a></p>
 
-{#if loading}
-  <p>Loading…</p>
-{:else if loadError}
-  <p>Error: {loadError}</p>
-{:else if email}
+<LoadState {loading} error={loadError}>
+{#if email}
   <div class="layout">
     <div class="content">
       {#if replyMode}
@@ -77,6 +76,7 @@
     </div>
   </div>
 {/if}
+</LoadState>
 </div>
 
 <style>
