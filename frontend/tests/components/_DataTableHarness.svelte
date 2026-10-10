@@ -3,12 +3,13 @@
   // snippet lives here. Not collected as a test (no .test.js name). Mirrors
   // the harness pattern in tests/components/docsurface/.
   import DataTable from '@/components/DataTable.svelte';
-  let { rows = [], emptyText = undefined, extraClass = '' } = $props();
+  let { rows = [], emptyText = undefined, extraClass = '', rowClass = undefined } = $props();
 </script>
 
 <DataTable
   {rows}
   {emptyText}
+  {rowClass}
   class={extraClass}
   key={(r) => `${r.kind}-${r.id}`}
   columns={[

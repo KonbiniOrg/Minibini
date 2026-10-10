@@ -14,6 +14,7 @@
   //   lite      false => hidden in lite density        (default true)
   //   phone     false => hidden in phone layout        (default true)
   //   align     'left' | 'right' | 'center' (text-align on th/td)
+  // rowClass  (row) => extra class on the <tr> / card (e.g. a status class)
   import { viewMode } from '../stores/viewMode.js';
   import { layout } from '../stores/layout.js';
 
@@ -23,6 +24,7 @@
     key = (row, i) => i,
     emptyText = 'No results found.',
     class: className = '',
+    rowClass = () => undefined,
   } = $props();
 
   let visibleColumns = $derived(
@@ -59,7 +61,7 @@
 {:else if $layout === 'phone'}
   <ul class="data-cards {className}">
     {#each rows as row, i (key(row, i))}
-      <li class="data-card">
+      <li class="data-card {rowClass(row) || ''}">
         <dl>
           {#each visibleColumns as col (col.id)}
             <dt>{header(col)}</dt>
@@ -80,7 +82,7 @@
     </thead>
     <tbody>
       {#each rows as row, i (key(row, i))}
-        <tr>
+        <tr class={rowClass(row)}>
           {#each visibleColumns as col (col.id)}
             <td data-col={col.id} style={alignStyle(col)}>{@render cellContent(row, col)}</td>
           {/each}

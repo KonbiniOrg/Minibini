@@ -157,3 +157,22 @@ describe('DataTable — phone layout', () => {
     expect(container.querySelector('ul.data-cards.contacts-table')).toBeTruthy();
   });
 });
+
+describe('DataTable — rowClass', () => {
+  it('adds the per-row class to <tr> on desktop and to the card on phone', async () => {
+    const rowClass = (r) => `kind-${r.kind}`;
+    const { container } = render(Harness, { props: { rows, rowClass } });
+    const trs = container.querySelectorAll('tbody tr');
+    expect(trs[0].classList.contains('kind-contact')).toBe(true);
+    expect(trs[1].classList.contains('kind-business')).toBe(true);
+    layout.set('phone');
+    await tick();
+    const cards = container.querySelectorAll('li.data-card');
+    expect(cards[0].classList.contains('kind-contact')).toBe(true);
+  });
+
+  it('omits the class attribute noise when rowClass returns undefined', () => {
+    const { container } = render(Harness, { props: { rows } });
+    expect(container.querySelector('tbody tr').getAttribute('class') || '').toBe('');
+  });
+});
