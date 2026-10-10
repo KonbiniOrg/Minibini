@@ -1,0 +1,37 @@
+<script>
+  // The duplicate-detection SUB-STATE of a create modal (RM 2026-10-10:
+  // sub-state, not a stacked modal). The host renders this in place of its
+  // form while keeping the form mounted-but-hidden, so "Go Back and Edit"
+  // returns to every value the user typed. No <Modal> here — the host owns
+  // the shell and backs out one level on Escape.
+  const {
+    contact = null,
+    onViewExisting = () => {},
+    onBack = () => {},
+  } = $props();
+</script>
+
+<h3 class="dup-title">This contact may already exist</h3>
+
+{#if contact}
+  <p>A contact with this email address is already in the system:</p>
+  <p>
+    <strong>{contact.name}</strong><br>
+    {contact.email}<br>
+    {#if contact.mobile_number || contact.work_number || contact.home_number}
+      {contact.mobile_number || contact.work_number || contact.home_number}<br>
+    {/if}
+    {#if contact.business}
+      {contact.business.business_name}
+    {/if}
+  </p>
+{/if}
+
+<p>
+  <button type="button" onclick={onViewExisting}>View Existing Contact</button>
+  <button type="button" onclick={onBack}>Go Back and Edit</button>
+</p>
+
+<style>
+  .dup-title { margin: 0 0 12px; font-size: 16px; }
+</style>
