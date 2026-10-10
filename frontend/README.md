@@ -436,8 +436,9 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 - Every fetch site wraps its content in `components/LoadState.svelte`
   (`{loading} {error}` + optional `loadingText`, default "Loading...");
   the error text comes from `errorMessage()` in the catch block. Never
-  hand-write a loading/error branch. (Known gaps, logged in LATER.md:
-  `TasksPanel` and `SchedulePage` still fail silently.)
+  hand-write a loading/error branch. `TasksPanel` degrades partially by
+  design and shows a `role="status"` notice naming what failed; the one
+  remaining silent site (`SchedulePage`) is logged in LATER.md.
 - No lite-content decisions yet: no `lite:`/`phone:` flags are set anywhere.
 - Lite still fetches full data; toggling density re-renders without a refetch.
 - Full reference: `docs/designs/architecture-and-conventions.md` §6.

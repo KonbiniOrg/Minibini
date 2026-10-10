@@ -1693,16 +1693,6 @@ Cross-cutting UI/API conventions and shared components.
   views + customer views, the needs-category marker exempts `is_comment`,
   and `unanswered_lines` excludes comments.
 
-- **TasksPanel fails silently when a sub-fetch rejects.** — _added 2026-10-09 (code review, feature/lite-view)_
-  Each sub-fetch in `loadPanelData` (expenses, task enrichment, estimate/CO
-  context) catches its own error to an empty state, so a failed task fetch
-  renders an empty task list with add buttons instead of an error. Left
-  loading-only in the LoadState sweep because setting one `loadError` would
-  turn partial degradation into a full-panel error.
-  _Done when:_ the panel distinguishes "nothing here" from "couldn't load"
-  (e.g. a `loadError` set by the task-enrichment fetch only, rendered by
-  `LoadState`, with the context fetches still degrading quietly).
-
 - **SchedulePage shows "Loading schedule…" forever on a failed fetch.** — _added 2026-10-09 (code review, feature/lite-view)_
   `stores/schedule.js` only `console.error`s on failure and leaves
   `$schedule` null, so the page's `LoadState` never leaves loading.

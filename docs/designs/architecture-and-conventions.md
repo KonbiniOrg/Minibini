@@ -1294,10 +1294,12 @@ error paragraph and `LoadState` wraps loading only; the four `*FormPage`
 routes and `PaymentTermsManager` send a load failure to the global overlay
 (no form to land on). The five redirect placeholder pages render an
 unconditional "Loading…" while redirecting and are not fetch-state
-branches. Two known gaps (LATER.md): `TasksPanel` degrades partially
-when a sub-fetch fails (each sub-fetch swallows its own error, so a
-failed task fetch renders an empty list), and `SchedulePage` stays on
-"Loading schedule…" when the schedule store's fetch fails.
+branches. `TasksPanel` is the one deliberate partial-degradation site:
+its enrichment fetches (expenses, per-task materials, estimate and
+change-order context/pools) each fall back to a neutral value so the task
+tree stays usable, and the panel renders one `role="status"` notice naming
+what failed, with a Retry. One known gap (LATER.md): `SchedulePage` stays
+on "Loading schedule…" when the schedule store's fetch fails.
 
 ### 6.3 Toggle location
 

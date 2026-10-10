@@ -1034,3 +1034,47 @@ describe('TasksPanel — estimate context (Task 2)', () => {
   });
 });
 
+
+describe('TasksPanel — degraded load notice', () => {
+  const twoTasks = () => makeJob({ tasks: [
+    { task_id: 1, name: 'Cut', status: 'pending', qty_source: 'est', assigned_to: null },
+    { task_id: 2, name: 'Sand', status: 'pending', qty_source: 'est', assigned_to: null },
+  ] });
+
+  it('keeps the tasks visible and names what failed when a sub-fetch rejects', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/materials/')) return Promise.reject(new Error('boom'));
+      if (url.startsWith('/api/estimates/')) return Promise.reject(new Error('boom'));
+      return Promise.resolve([]);
+    });
+    const { findByText, findByRole } = render(TasksPanel, { props: { job: twoTasks() } });
+    await findByText('Cut');
+    await findByText('Sand');
+    const notice = await findByRole('status');
+    expect(notice).toHaveTextContent(/couldn't be loaded/i);
+    expect(notice).toHaveTextContent('materials');
+    expect(notice).toHaveTextContent('estimate context');
+    expect(notice).not.toHaveTextContent('expenses');
+  });
+
+  it('shows no notice when every sub-fetch succeeds', async () => {
+    api.get.mockImplementation(() => Promise.resolve([]));
+    const { findByText, queryByRole } = render(TasksPanel, { props: { job: twoTasks() } });
+    await findByText('Cut');
+    expect(queryByRole('status')).toBeNull();
+  });
+
+  it('the notice offers a Retry that reloads the panel data', async () => {
+    let fail = true;
+    api.get.mockImplementation((url) => {
+      if (url.includes('/materials/') && fail) return Promise.reject(new Error('boom'));
+      return Promise.resolve([]);
+    });
+    const { findByText, findByRole, queryByRole } = render(TasksPanel, { props: { job: twoTasks() } });
+    await findByText('Cut');
+    const notice = await findByRole('status');
+    fail = false;
+    await fireEvent.click(within(notice).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(queryByRole('status')).toBeNull());
+  });
+});
