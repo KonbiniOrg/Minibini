@@ -47,7 +47,6 @@
   import PurchaseOrderSendPage from './routes/purchaseorders/PurchaseOrderSendPage.svelte';
   import PurchaseOrderFormPage from './routes/purchaseorders/PurchaseOrderFormPage.svelte';
   import UserListPage from './routes/users/UserListPage.svelte';
-  import UserCreatePage from './routes/users/UserCreatePage.svelte';
   import UserDetailPage from './routes/users/UserDetailPage.svelte';
   import ExpenseListPage from './routes/expenses/ExpenseListPage.svelte';
   import ReimbursementDetailPage from './routes/reimbursements/ReimbursementDetailPage.svelte';
@@ -112,7 +111,7 @@
     '/catalog/service-items': CatalogServiceItemsPage,
     '/catalog/earmarks': CatalogEarmarksPage,
     '/users': UserListPage,
-    '/users/new': UserCreatePage,
+    '/users/new': wrap({ component: RedirectTo, props: { to: '/users' } }),
     '/users/:id': UserDetailPage,
     '/expenses': ExpenseListPage,
     '/reimbursements/:id': ReimbursementDetailPage,

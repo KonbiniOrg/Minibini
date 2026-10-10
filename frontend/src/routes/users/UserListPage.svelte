@@ -7,9 +7,11 @@
   import WorkSessionsList from '../../components/time/WorkSessionsList.svelte';
   import LoadState from '../../components/LoadState.svelte';
   import DataTable from '../../components/DataTable.svelte';
+  import UserCreateModal from '../../components/users/UserCreateModal.svelte';
 
   let tab = $state('users');
   const canSeeShifts = $derived($canManageTime || $canManageFinancials);
+  let newOpen = $state(false);
 
   // Short labels for the permission column — keep the table narrow.
   const ATOM_SHORT_LABELS = {
@@ -64,7 +66,8 @@
   <WorkSessionsList showWorker={true} title="" />
 {:else}
 
-<p><a href="/users/new" use:link>New user</a></p>
+<p><button type="button" onclick={() => { newOpen = true; }}>New user</button></p>
+<UserCreateModal open={newOpen} onClose={() => { newOpen = false; }} />
 
 <LoadState {loading} error={loadError}>
 <DataTable
