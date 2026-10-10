@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, findByText } from '@testing-library/svelte';
+import { render, findByText, fireEvent, screen } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
-  api: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), delete: vi.fn(), patch: vi.fn() },
   errorMessage: (e, fallback) => e?.message || fallback,
 }));
 vi.mock('svelte-spa-router', () => ({ push: vi.fn(), link: () => {} }));
+vi.mock('@/lib/paymentAccounts.js', () => ({ getPaymentAccounts: vi.fn().mockResolvedValue([]) }));
 
 import { api } from '@/lib/api.js';
 import { viewMode } from '@/stores/viewMode.js';
@@ -26,7 +27,7 @@ function mock({ expenses = [expense], users = [outstandingRow] } = {}) {
   api.get.mockImplementation((url) => {
     if (url.startsWith('/api/expenses/')) return Promise.resolve({ results: expenses });
     if (url.startsWith('/api/reimbursements/outstanding-summary/')) return Promise.resolve({ users });
-    return Promise.resolve({});
+    return Promise.resolve({ results: [] }); // ExpenseForm's category / job lookups
   });
 }
 
@@ -67,5 +68,23 @@ describe('ExpenseListPage — DataTable', () => {
     mock({ expenses: [], users: [] });
     const { container } = render(ExpenseListPage);
     expect(await findByText(container, 'No expenses match.')).toBeInTheDocument();
+  });
+});
+
+describe('ExpenseListPage — ExpenseModal host', () => {
+  it('+ New expense opens the expense modal', async () => {
+    const { container } = render(ExpenseListPage);
+    await findByText(container, 'Paint');
+    await fireEvent.click(screen.getByRole('button', { name: '+ New expense' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Add Expense');
+  });
+
+  it('edit opens the modal titled Edit Expense', async () => {
+    const { container } = render(ExpenseListPage);
+    await findByText(container, 'Paint');
+    await fireEvent.click(screen.getAllByRole('button', { name: 'edit' })[0]);
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Edit Expense');
   });
 });
