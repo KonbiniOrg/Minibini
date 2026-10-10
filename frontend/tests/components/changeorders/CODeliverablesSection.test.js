@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
 vi.mock('@/lib/api.js', () => ({
@@ -37,17 +37,44 @@ describe('CODeliverablesSection', () => {
     expect(onReload).toHaveBeenCalled();
   });
 
-  it('bumps the deliverables store after adding a new deliverable', async () => {
+  it('bumps the deliverables store after adding a new deliverable (via the New deliverable modal)', async () => {
     const before = get(deliverablesVersion);
-    const { getByRole, findByRole, getByPlaceholderText } = render(CODeliverablesSection, {
+    const { getByRole, findByRole } = render(CODeliverablesSection, {
       props: { jobId: 9, rows: [], canEdit: true, onReload: vi.fn() },
     });
     await fireEvent.click(getByRole('button', { name: '+ New deliverable' }));
-    const desc = await findByRole('textbox', { name: /description/i }).catch(() => null);
-    const input = desc || getByPlaceholderText(/description/i);
-    await fireEvent.input(input, { target: { value: 'Panel B' } });
-    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    const dialog = await findByRole('dialog', { name: 'New deliverable' });
+    await fireEvent.input(within(dialog).getByLabelText('Description'), { target: { value: 'Panel B' } });
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
     await waitFor(() => expect(get(deliverablesVersion)).toBe(before + 1));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/9/deliverables/', expect.objectContaining({ description: 'Panel B' }));
+  });
+
+  it('Change opens the edit modal prefilled and patches on Save', async () => {
+    api.patch.mockResolvedValue({});
+    const onReload = vi.fn();
+    const { getByRole, findByRole } = render(CODeliverablesSection, {
+      props: { jobId: 9, rows: [ROW], canEdit: true, onReload },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Change' }));
+    const dialog = await findByRole('dialog', { name: 'Edit deliverable' });
+    expect(within(dialog).getByLabelText('Qty').value).toBe('2');
+    expect(within(dialog).getByLabelText('Description').value).toBe('Panel A');
+    await fireEvent.input(within(dialog).getByLabelText('Qty'), { target: { value: '3' } });
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/api/jobs/9/deliverables/1/', expect.objectContaining({ qty_ordered: '3' })));
+    expect(onReload).toHaveBeenCalled();
+  });
+
+  it('Escape closes the drafting modal without saving', async () => {
+    const { getByRole, findByRole, queryByRole } = render(CODeliverablesSection, {
+      props: { jobId: 9, rows: [], canEdit: true, onReload: vi.fn() },
+    });
+    await fireEvent.click(getByRole('button', { name: '+ New deliverable' }));
+    await findByRole('dialog', { name: 'New deliverable' });
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(queryByRole('dialog')).toBeNull();
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it('does not bump the store when the delete fails', async () => {

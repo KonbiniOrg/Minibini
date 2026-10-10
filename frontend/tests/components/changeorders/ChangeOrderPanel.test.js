@@ -169,6 +169,7 @@ describe('ChangeOrderPanel error display', () => {
     await fireEvent.click(await findByText('+ New deliverable'));
     await fireEvent.click(getByRole('button', { name: 'Add' }));
 
+    // The error renders inside the New deliverable modal, not an alert().
     expect(await findByText('Description is required.')).toBeInTheDocument();
     expect(api.post).not.toHaveBeenCalled();
   });
@@ -180,12 +181,13 @@ describe('ChangeOrderPanel error display', () => {
       status: 400, data: { qty_ordered: ['A valid number is required.'] },
     }));
 
-    const { findByText, getByRole, getByPlaceholderText } = render(ChangeOrderPanel, {
+    const { findByText, getByRole, findByRole } = render(ChangeOrderPanel, {
       props: { job: JOB, coId: '3' },
     });
 
     await fireEvent.click(await findByText('+ New deliverable'));
-    await fireEvent.input(getByPlaceholderText('Description'), { target: { value: 'Cabinet' } });
+    const dialog = await findByRole('dialog', { name: 'New deliverable' });
+    await fireEvent.input(within(dialog).getByLabelText('Description'), { target: { value: 'Cabinet' } });
     await fireEvent.click(getByRole('button', { name: 'Add' }));
 
     expect(await findByText('A valid number is required.')).toBeInTheDocument();
