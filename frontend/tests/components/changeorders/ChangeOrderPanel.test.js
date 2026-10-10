@@ -42,6 +42,7 @@ function mockApi(co) {
     if (url.startsWith('/api/change-orders/') && url.includes('deliverables-baseline')) {
       return Promise.resolve({ baseline: [] });
     }
+    if (url.endsWith('/send-defaults/')) return Promise.resolve({ to: 'c@x.y', attachments_preview: [] });
     if (url.startsWith('/api/change-orders/')) {
       // sibling COs list (?job=)
       return Promise.resolve({ results: [] });
@@ -534,14 +535,14 @@ describe('ChangeOrderPanel send gate', () => {
     user.set({ permissions: [] });
   });
 
-  it('Send to customer is a button that navigates to the send page when the job has deliverables', async () => {
+  it('Send to customer is a button that opens the send modal when the job has deliverables', async () => {
     mockApiDeliverables(makeCO(), { list: [{ id: 1 }] });
     const { findByRole, queryByRole } = render(ChangeOrderPanel, { props: { job: JOB, coId: '3' } });
     const btn = await findByRole('button', { name: 'Send to customer' });
     expect(queryByRole('link', { name: 'Send to customer' })).toBeNull();
     await fireEvent.click(btn);
-    expect(window.location.hash).toBe('#/change-orders/3/send');
-    expect(queryByRole('dialog')).toBeNull();
+    expect(await findByRole('dialog', { name: 'Send change order' })).toBeInTheDocument();
+    expect(window.location.hash).toBe('');
   });
 
   it('opens the deliverables modal with the required notice when the job has none', async () => {
@@ -551,10 +552,10 @@ describe('ChangeOrderPanel send gate', () => {
     const dialog = within(await findByRole('dialog'));
     expect(dialog.getByRole('heading', { name: 'Edit deliverables' })).toBeInTheDocument();
     expect(dialog.getByText('Deliverables are required before this change order can be sent.')).toBeInTheDocument();
-    expect(window.location.hash).toBe('');
+    expect(within(document.body).queryByRole('dialog', { name: 'Send change order' })).toBeNull();
   });
 
-  it('navigates to the send page once the modal saves at least one deliverable', async () => {
+  it('opens the send modal once the deliverables modal saves at least one row', async () => {
     const deliverables = { list: [] };
     mockApiDeliverables(makeCO(), deliverables);
     api.post.mockResolvedValue({ id: 2 });
@@ -564,7 +565,7 @@ describe('ChangeOrderPanel send gate', () => {
     await fireEvent.click(await dialog.findByRole('button', { name: '+ Add row' }));
     deliverables.list = [{ id: 2 }];
     await fireEvent.click(dialog.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(window.location.hash).toBe('#/change-orders/3/send'));
+    expect(await findByRole('dialog', { name: 'Send change order' })).toBeInTheDocument();
   });
 
   it('stays on the CO when the modal is cancelled', async () => {
@@ -574,7 +575,6 @@ describe('ChangeOrderPanel send gate', () => {
     const dialog = within(await findByRole('dialog'));
     await fireEvent.click(await dialog.findByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(queryByRole('dialog')).toBeNull());
-    expect(window.location.hash).toBe('');
   });
 
   it('the gate re-fetches when the deliverables store is bumped (last row deleted in the section)', async () => {
@@ -584,21 +584,19 @@ describe('ChangeOrderPanel send gate', () => {
     await findByRole('button', { name: 'Send to customer' });
     deliverables.list = [];
     notifyDeliverablesChanged();
-    // Each retry resets the hash: until the refetch lands, a click still
-    // navigates; once it has, the click opens the modal and the hash stays.
+    // Until the refetch lands, a click still opens the send modal; once it
+    // has, the click opens the deliverables editor.
     await waitFor(async () => {
-      window.location.hash = '';
       await fireEvent.click(await findByRole('button', { name: 'Send to customer' }));
-      expect(window.location.hash).toBe('');
+      expect(within(document.body).queryByRole('dialog', { name: 'Edit deliverables' })).not.toBeNull();
     });
-    expect(await findByRole('dialog')).toBeInTheDocument();
   });
 
-  it('Resend to customer on an open CO is a button that navigates regardless of deliverables', async () => {
+  it('Resend to customer on an open CO opens the send modal regardless of deliverables', async () => {
     mockApiDeliverables(makeCO({ status: 'open' }), { list: [] });
-    const { findByRole, queryByRole } = render(ChangeOrderPanel, { props: { job: JOB, coId: '3' } });
+    const { findByRole } = render(ChangeOrderPanel, { props: { job: JOB, coId: '3' } });
     await fireEvent.click(await findByRole('button', { name: 'Resend to customer' }));
-    expect(window.location.hash).toBe('#/change-orders/3/send');
-    expect(queryByRole('dialog')).toBeNull();
+    expect(await findByRole('dialog', { name: 'Send change order' })).toBeInTheDocument();
+    expect(within(document.body).queryByRole('dialog', { name: 'Edit deliverables' })).toBeNull();
   });
 });

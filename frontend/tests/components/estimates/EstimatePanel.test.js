@@ -51,6 +51,7 @@ function mockApi(estimate, { versions = null, changeOrders = [], deliverables = 
       return Promise.resolve({ ...estimate });
     }
     if (url.endsWith('/deliverables/')) return Promise.resolve([...deliverables.list]);
+    if (url.endsWith('/send-defaults/')) return Promise.resolve({ to: 'c@x.y', attachments_preview: [] });
     if (url === '/api/settings/units/') return Promise.resolve([]);
     if (url.startsWith('/api/estimates/?job=')) {
       return Promise.resolve({ results: versionList });
@@ -313,17 +314,17 @@ describe('EstimatePanel Send Email deliverables gate', () => {
     user.set({ permissions: [] });
   });
 
-  // Send affordances are BUTTONS in every state (RM 2026-09-29: the email
-  // step becomes a modal later, so no link ever navigates to the send page).
-  it('Send Email is a button that navigates to the send page when the job has deliverables', async () => {
+  // Send affordances are BUTTONS in every state; the email step is
+  // DocumentSendModal over the panel (2026-10-10).
+  it('Send Email is a button that opens the send modal when the job has deliverables', async () => {
     const est = makeEstimate({ status: 'draft' });
     mockApi(est, { deliverables: { list: [{ id: 1 }] } });
     const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     const btn = await findByRole('button', { name: 'Send Email' });
     expect(queryByRole('link', { name: 'Send Email' })).toBeNull();
     await fireEvent.click(btn);
-    expect(window.location.hash).toBe('#/estimates/7/send');
-    expect(queryByRole('dialog')).toBeNull();
+    expect(await findByRole('dialog', { name: 'Send estimate' })).toBeInTheDocument();
+    expect(window.location.hash).toBe('');
   });
 
   it('Send Email opens the deliverables modal with the required notice when the job has none', async () => {
@@ -336,10 +337,10 @@ describe('EstimatePanel Send Email deliverables gate', () => {
     const dialog = within(await findByRole('dialog'));
     expect(dialog.getByRole('heading', { name: 'Edit deliverables' })).toBeInTheDocument();
     expect(dialog.getByText('Deliverables are required before this estimate can be sent.')).toBeInTheDocument();
-    expect(window.location.hash).toBe('');
+    expect(queryByRole('dialog', { name: 'Send estimate' })).toBeNull();
   });
 
-  it('navigates to the send page once the modal saves at least one deliverable', async () => {
+  it('opens the send modal once the deliverables modal saves at least one row', async () => {
     const est = makeEstimate({ status: 'draft' });
     const deliverables = { list: [] };
     mockApi(est, { deliverables });
@@ -352,7 +353,7 @@ describe('EstimatePanel Send Email deliverables gate', () => {
     await fireEvent.click(dialog.getByRole('button', { name: '+ Add row' }));
     deliverables.list = [{ id: 2 }]; // what the server holds after the save
     await fireEvent.click(dialog.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(window.location.hash).toBe('#/estimates/7/send'));
+    expect(await findByRole('dialog', { name: 'Send estimate' })).toBeInTheDocument();
     expect(onJobChange).toHaveBeenCalled();
   });
 
@@ -364,17 +365,16 @@ describe('EstimatePanel Send Email deliverables gate', () => {
     const dialog = within(await findByRole('dialog'));
     await fireEvent.click(await dialog.findByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(queryByRole('dialog')).toBeNull());
-    expect(window.location.hash).toBe('');
     expect(await findByRole('button', { name: 'Send Email' })).toBeInTheDocument();
   });
 
-  it('Resend Email on an open estimate is a button that navigates regardless of deliverables', async () => {
+  it('Resend Email on an open estimate opens the send modal regardless of deliverables', async () => {
     const est = makeEstimate({ status: 'open' });
     mockApi(est, { deliverables: { list: [] } });
     const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     await fireEvent.click(await findByRole('button', { name: 'Resend Email' }));
-    expect(window.location.hash).toBe('#/estimates/7/send');
-    expect(queryByRole('dialog')).toBeNull();
+    expect(await findByRole('dialog', { name: 'Send estimate' })).toBeInTheDocument();
+    expect(queryByRole('dialog', { name: 'Edit deliverables' })).toBeNull();
   });
 
   it('the gate re-fetches when the deliverables store is bumped (last deliverable deleted elsewhere)', async () => {
@@ -385,15 +385,14 @@ describe('EstimatePanel Send Email deliverables gate', () => {
     await findByRole('button', { name: 'Send Email' });
     deliverables.list = []; // the band's modal deleted the last row
     notifyDeliverablesChanged();
-    // With none left, Send Email now opens the modal instead of navigating.
-    // Each retry resets the hash: until the refetch lands, a click still
-    // navigates; once it has, the click opens the modal and the hash stays.
+    // With none left, Send Email now opens the deliverables editor instead
+    // of the send modal. Until the refetch lands, a click still opens the
+    // send modal; once it has, the click opens the editor.
+    const { queryByRole } = { queryByRole: (...a) => within(document.body).queryByRole(...a) };
     await waitFor(async () => {
-      window.location.hash = '';
       await fireEvent.click(await findByRole('button', { name: 'Send Email' }));
-      expect(window.location.hash).toBe('');
+      expect(queryByRole('dialog', { name: 'Edit deliverables' })).not.toBeNull();
     });
-    expect(await findByRole('dialog')).toBeInTheDocument();
   });
 
   it('Make Deliverable bumps the deliverables store', async () => {

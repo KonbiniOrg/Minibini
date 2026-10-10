@@ -26,13 +26,11 @@
   import CatalogEarmarksPage from './routes/catalog/CatalogEarmarksPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
   import InvoiceListPage from './routes/invoices/InvoiceListPage.svelte';
-  import InvoiceSendPage from './routes/invoices/InvoiceSendPage.svelte';
   import InvoiceWizardRedirect from './routes/invoices/InvoiceWizardRedirect.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import SchedulePage from './routes/schedule/SchedulePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
-  import EstimateSendPage from './routes/estimates/EstimateSendPage.svelte';
   import EstimateWizardRedirect from './routes/estimates/EstimateWizardRedirect.svelte';
   import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
   import JobShipmentsPage from './routes/jobs/JobShipmentsPage.svelte';
@@ -56,7 +54,6 @@
   import ActivityPage from './routes/ActivityPage.svelte';
   import JobChangeOrderPage from './routes/jobs/JobChangeOrderPage.svelte';
   import ChangeOrderRedirect from './routes/change-orders/ChangeOrderRedirect.svelte';
-  import ChangeOrderSendPage from './routes/change-orders/ChangeOrderSendPage.svelte';
   import LoadState from './components/LoadState.svelte';
 
   const routes = {
@@ -92,7 +89,7 @@
     '/jobs/:id/tasklist': JobTaskListPage,
     '/shipments/:sid/print': PackingListPrint,
     '/estimates/:id/wizard': EstimateWizardRedirect,
-    '/estimates/:id/send': EstimateSendPage,
+    '/estimates/:id/send': wrap({ component: RedirectTo, props: { to: '/estimates/:id' } }),
     '/estimates/:id': EstimateDetailPage,
     '/purchase-orders': PurchaseOrderListPage,
     '/purchase-orders/new': PurchaseOrderFormPage,
@@ -101,7 +98,7 @@
     '/purchase-orders/:id': PurchaseOrderDetailPage,
     '/invoices': InvoiceListPage,
     '/invoices/:id/wizard': InvoiceWizardRedirect,
-    '/invoices/:id/send': InvoiceSendPage,
+    '/invoices/:id/send': wrap({ component: RedirectTo, props: { to: '/invoices/:id' } }),
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
     '/catalog': CatalogInventoryPage,
@@ -122,7 +119,7 @@
     // in Home).
     '/profile': Home,
     '/help': Home,
-    '/change-orders/:id/send': ChangeOrderSendPage,
+    '/change-orders/:id/send': wrap({ component: RedirectTo, props: { to: '/change-orders/:id' } }),
     '/change-orders/:id': ChangeOrderRedirect,
   };
 

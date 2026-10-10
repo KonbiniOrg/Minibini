@@ -44,11 +44,13 @@ test('Send to customer on a CO whose job has no deliverables routes through the 
   const band = page.locator('.context-band .deliverables-panel');
   await expect(band).toContainText(`${stamp} panel`);
 
-  await test.step('With a deliverable, Send to customer goes straight to the send page', async () => {
+  await test.step('With a deliverable, Send to customer goes straight to the send modal', async () => {
     await page.getByRole('button', { name: 'Send to customer' }).click();
+    await expect(page.getByRole('dialog', { name: 'Edit deliverables' })).toHaveCount(0);
+    const send = page.getByRole('dialog', { name: 'Send change order' });
+    await expect(send).toBeVisible();
+    await send.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page).toHaveURL(new RegExp(`#/change-orders/${co.change_order_id}/send$`));
-    await page.goBack();
     await expect(page.getByRole('button', { name: 'Send to customer' })).toBeVisible();
   });
 
@@ -66,7 +68,7 @@ test('Send to customer on a CO whose job has no deliverables routes through the 
 
   await test.step('Send to customer now opens the editor with the CO notice; Cancel stays put', async () => {
     await page.getByRole('button', { name: 'Send to customer' }).click();
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole('dialog', { name: 'Edit deliverables' });
     await expect(dialog.getByRole('heading', { name: 'Edit deliverables' })).toBeVisible();
     await expect(dialog.getByText(NOTICE)).toBeVisible();
     await dialog.getByRole('button', { name: 'Cancel' }).click();
@@ -74,13 +76,14 @@ test('Send to customer on a CO whose job has no deliverables routes through the 
     await expect(page).toHaveURL(new RegExp(`#/jobs/${job.job_id}/change-order/${co.change_order_id}$`));
   });
 
-  await test.step('Add a deliverable through the gate → Save → lands on the send page', async () => {
+  await test.step('Add a deliverable through the gate → Save → opens the send modal', async () => {
     await page.getByRole('button', { name: 'Send to customer' }).click();
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole('dialog', { name: 'Edit deliverables' });
     await dialog.getByRole('button', { name: '+ Add row' }).click();
     await dialog.locator('tbody tr').last().locator('input').first().fill(`${stamp} replacement`);
     await dialog.getByRole('button', { name: 'Save' }).click();
-    await expect(page).toHaveURL(new RegExp(`#/change-orders/${co.change_order_id}/send$`));
+    await expect(page.getByRole('dialog', { name: 'Send change order' })).toBeVisible();
+    await page.getByRole('dialog', { name: 'Send change order' }).getByRole('button', { name: 'Cancel' }).click();
     const rows = await api.get(`/api/jobs/${job.job_id}/deliverables/`);
     expect((rows.results || rows).map((r) => r.description)).toContain(`${stamp} replacement`);
   });
