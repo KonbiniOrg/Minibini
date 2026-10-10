@@ -75,3 +75,32 @@ describe('ContactDetail', () => {
     expect(getByText('VIP')).toBeInTheDocument(); // tags still visible, read-only
   });
 });
+
+describe('ContactDetail — DataTable lists', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+
+  it('renders the Jobs table with the same headers in lite and full, stamped with data-col', async () => {
+    viewMode.set('full');
+    const { container } = render(ContactDetail, { props: { contact: contact() } });
+    const jobs = container.querySelector('table.data-table');
+    expect(headersOf(jobs)).toEqual(['Job #', 'Name', 'Status']);
+    expect(jobs.querySelector('td[data-col="number"] a')).toHaveAttribute('href', '#/jobs/1');
+    viewMode.set('lite');
+    const { container: c2 } = render(ContactDetail, { props: { contact: contact() } });
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['Job #', 'Name', 'Status']);
+  });
+
+  it('renders the Invoices and PO tables with their headers when results are supplied', () => {
+    viewMode.set('full');
+    const invoices = { count: 1, next: null, previous: null, results: [
+      { invoice_id: 5, display_number: 'INV-5', job: 1, job_number: 'JOB-1', status: 'open', total: '10', amount_paid: '0', balance: '10' },
+    ] };
+    const purchaseOrders = { count: 1, next: null, previous: null, results: [{ po_id: 3, po_number: 'PO-3', status: 'draft' }] };
+    const { container } = render(ContactDetail, { props: { contact: contact(), invoices, purchaseOrders } });
+    const tables = container.querySelectorAll('table.data-table');
+    expect(tables).toHaveLength(3);
+    expect(headersOf(tables[1])).toEqual(['Invoice #', 'Job', 'Status', 'Total', 'Paid', 'Balance']);
+    expect(headersOf(tables[2])).toEqual(['PO #', 'Status']);
+    expect(tables[1].querySelector('td[data-col="total"]').textContent.trim()).toBe('$10.00');
+  });
+});

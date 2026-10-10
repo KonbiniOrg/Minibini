@@ -1,34 +1,23 @@
 <script>
+  import DataTable from '../DataTable.svelte';
   const { businesses = [], onSelect = null } = $props();
 </script>
 
-{#if businesses.length === 0}
-  <p>No businesses found.</p>
-{:else}
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Reference</th>
-        <th>Name</th>
-        <th>Phone</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each businesses as business}
-        <tr>
-          <td>{business.our_reference_code}</td>
-          <td>
-            {#if onSelect}
-              <button onclick={() => onSelect(business)}>
-                {business.business_name}
-              </button>
-            {:else}
-              {business.business_name}
-            {/if}
-          </td>
-          <td>{business.business_phone || ''}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-{/if}
+<DataTable
+  rows={businesses}
+  key={(business) => business.business_id}
+  emptyText="No businesses found."
+  columns={[
+    { id: 'reference', label: 'Reference', field: 'our_reference_code' },
+    { id: 'name',      label: 'Name',      cell: nameCell },
+    { id: 'phone',     label: 'Phone',     field: 'business_phone' },
+  ]}
+/>
+
+{#snippet nameCell(business)}
+  {#if onSelect}
+    <button onclick={() => onSelect(business)}>{business.business_name}</button>
+  {:else}
+    {business.business_name}
+  {/if}
+{/snippet}

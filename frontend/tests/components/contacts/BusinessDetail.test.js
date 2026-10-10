@@ -64,3 +64,27 @@ describe('BusinessDetail', () => {
     expect(getByText('Wholesale')).toBeInTheDocument();
   });
 });
+
+describe('BusinessDetail — DataTable lists', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+
+  it('renders the Contacts table (full only) and the Jobs table with stable headers', () => {
+    viewMode.set('full');
+    const biz = { ...business(), contacts: [{ contact_id: 9, name: 'Boss', email: 'b@x.com', mobile_number: '555-1' }] };
+    const { container } = render(BusinessDetail, { props: { business: biz } });
+    const tables = container.querySelectorAll('table.data-table');
+    expect(headersOf(tables[0])).toEqual(['Name', 'Email', 'Phone']);
+    expect(tables[0].querySelector('td[data-col="name"]').textContent).toContain('(default)');
+    expect(headersOf(tables[1])).toEqual(['Job #', 'Name', 'Status']);
+    viewMode.set('lite');
+    const { container: c2 } = render(BusinessDetail, { props: { business: biz } });
+    // Contacts section is <FullOnly>; the Jobs table is the first table in lite.
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['Job #', 'Name', 'Status']);
+  });
+
+  it('shows "No contacts." in the full-only Contacts section when the business has none', () => {
+    viewMode.set('full');
+    const { getByText } = render(BusinessDetail, { props: { business: { ...business(), contacts: [] } } });
+    expect(getByText('No contacts.')).toBeInTheDocument();
+  });
+});

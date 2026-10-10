@@ -1,5 +1,6 @@
 <script>
   import FullOnly from '../FullOnly.svelte';
+  import DataTable from '../DataTable.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
   import TagEditor from '../TagEditor.svelte';
   import { canManageJobs, canManageFinancials } from '../../stores/permissions.js';
@@ -95,29 +96,16 @@
       — <a href="#/contacts/new?business={business.business_id}">New Contact</a>
     {/if}
   </h3>
-  {#if business.contacts && business.contacts.length > 0}
-    <table class="data-table">
-      <thead>
-        <tr><th>Name</th><th>Email</th><th>Phone</th></tr>
-      </thead>
-      <tbody>
-        {#each business.contacts as contact}
-          <tr>
-            <td>
-              <a href="#/contacts/{contact.contact_id}">{contact.name}</a>
-              {#if business.default_contact && contact.contact_id === business.default_contact.contact_id}
-                <strong>(default)</strong>
-              {/if}
-            </td>
-            <td>{contact.email || ''}</td>
-            <td>{contact.mobile_number || ''}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {:else}
-    <p>No contacts.</p>
-  {/if}
+  <DataTable
+    rows={business.contacts || []}
+    key={(contact) => contact.contact_id}
+    emptyText="No contacts."
+    columns={[
+      { id: 'name',  label: 'Name',  cell: contactNameCell },
+      { id: 'email', label: 'Email', field: 'email' },
+      { id: 'phone', label: 'Phone', field: 'mobile_number' },
+    ]}
+  />
 </FullOnly>
 
 <h3>Jobs
@@ -125,44 +113,32 @@
     — <a href="#/jobs/new?contact={business.default_contact.contact_id}">New Job</a>
   {/if}
 </h3>
-{#if visibleJobs.length > 0}
-  <table class="data-table">
-    <thead>
-      <tr><th>Job #</th><th>Name</th><th>Status</th></tr>
-    </thead>
-    <tbody>
-      {#each visibleJobs as job}
-        <tr>
-          <td><a href="#/jobs/{job.job_id}">{job.job_number}</a></td>
-          <td>{job.name}</td>
-          <td>{job.status}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-{:else}
-  <p>No {$viewMode === 'lite' ? 'open ' : ''}jobs.</p>
-{/if}
+<DataTable
+  rows={visibleJobs}
+  key={(job) => job.job_id}
+  emptyText={`No ${$viewMode === 'lite' ? 'open ' : ''}jobs.`}
+  columns={[
+    { id: 'number', label: 'Job #',  cell: jobNumberCell },
+    { id: 'name',   label: 'Name',   field: 'name' },
+    { id: 'status', label: 'Status', field: 'status' },
+  ]}
+/>
 
 <h3>Invoices</h3>
+<DataTable
+  rows={visibleInvoices}
+  key={(inv) => inv.invoice_id}
+  emptyText={`No ${$viewMode === 'lite' ? 'open ' : ''}invoices.`}
+  columns={[
+    { id: 'number',  label: 'Invoice #', cell: invNumberCell },
+    { id: 'job',     label: 'Job',       cell: invJobCell },
+    { id: 'status',  label: 'Status',    field: 'status' },
+    { id: 'total',   label: 'Total',     cell: invTotalCell },
+    { id: 'paid',    label: 'Paid',      cell: invPaidCell },
+    { id: 'balance', label: 'Balance',   cell: invBalanceCell },
+  ]}
+/>
 {#if visibleInvoices.length > 0}
-  <table class="data-table">
-    <thead>
-      <tr><th>Invoice #</th><th>Job</th><th>Status</th><th>Total</th><th>Paid</th><th>Balance</th></tr>
-    </thead>
-    <tbody>
-      {#each visibleInvoices as inv}
-        <tr>
-          <td><a href="#/invoices/{inv.invoice_id}">{inv.display_number}</a></td>
-          <td><a href="#/jobs/{inv.job}">{inv.job_number}</a></td>
-          <td>{inv.status}</td>
-          <td>{formatAmount(inv.total)}</td>
-          <td>{formatAmount(inv.amount_paid)}</td>
-          <td>{formatAmount(inv.balance)}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
   {#if invoices}
     <p>
       {pageRange(invoices)}
@@ -174,8 +150,6 @@
       {/if}
     </p>
   {/if}
-{:else}
-  <p>No {$viewMode === 'lite' ? 'open ' : ''}invoices.</p>
 {/if}
 
 <h3>Purchase Orders
@@ -183,20 +157,16 @@
     — <a href="#/purchase-orders/new?business={business.business_id}">New Purchase Order</a>
   {/if}
 </h3>
+<DataTable
+  rows={visiblePOs}
+  key={(po) => po.po_id}
+  emptyText={`No ${$viewMode === 'lite' ? 'open ' : ''}purchase orders.`}
+  columns={[
+    { id: 'number', label: 'PO #',   cell: poNumberCell },
+    { id: 'status', label: 'Status', field: 'status' },
+  ]}
+/>
 {#if visiblePOs.length > 0}
-  <table class="data-table">
-    <thead>
-      <tr><th>PO #</th><th>Status</th></tr>
-    </thead>
-    <tbody>
-      {#each visiblePOs as po}
-        <tr>
-          <td><a href="#/purchase-orders/{po.po_id}">{po.po_number}</a></td>
-          <td>{po.status}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
   {#if purchaseOrders}
     <p>
       {pageRange(purchaseOrders)}
@@ -208,8 +178,6 @@
       {/if}
     </p>
   {/if}
-{:else}
-  <p>No {$viewMode === 'lite' ? 'open ' : ''}purchase orders.</p>
 {/if}
 
 <HistoryPanel {history} {onAddNote} />
@@ -223,6 +191,21 @@
   {/if}
 </p>
 </div>
+
+
+{#snippet jobNumberCell(job)}<a href="#/jobs/{job.job_id}">{job.job_number}</a>{/snippet}
+{#snippet invNumberCell(inv)}<a href="#/invoices/{inv.invoice_id}">{inv.display_number}</a>{/snippet}
+{#snippet invJobCell(inv)}<a href="#/jobs/{inv.job}">{inv.job_number}</a>{/snippet}
+{#snippet invTotalCell(inv)}{formatAmount(inv.total)}{/snippet}
+{#snippet invPaidCell(inv)}{formatAmount(inv.amount_paid)}{/snippet}
+{#snippet invBalanceCell(inv)}{formatAmount(inv.balance)}{/snippet}
+{#snippet poNumberCell(po)}<a href="#/purchase-orders/{po.po_id}">{po.po_number}</a>{/snippet}
+{#snippet contactNameCell(contact)}
+  <a href="#/contacts/{contact.contact_id}">{contact.name}</a>
+  {#if business.default_contact && contact.contact_id === business.default_contact.contact_id}
+    <strong>(default)</strong>
+  {/if}
+{/snippet}
 
 <style>
 </style>
