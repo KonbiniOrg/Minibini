@@ -6,6 +6,7 @@
   import FormMessage from './FormMessage.svelte';
   import LoadState from './LoadState.svelte';
   import DataTable from './DataTable.svelte';
+  import Modal from './Modal.svelte';
 
   let { canEdit = true } = $props();
 
@@ -225,9 +226,13 @@
   {/if}
 {/if}
 
-{#if editingId !== null}
-  <fieldset>
-    <legend><strong>{editingId === 'new' ? 'New Service Item' : 'Edit Service Item'}</strong></legend>
+<!-- Create/edit in the Modal shell (2026-10-10; was a top-of-page inline
+     fieldset — LATER.md "Service Item edit should be a modal"). Button-driven
+     content (no native <form>, Save is type=button like RateSchemeManager),
+     so the shell takes onSave + busy. -->
+<Modal open={editingId !== null} onSave={save} onCancel={cancelEdit} busy={saving} maxWidth="640px"
+  label={editingId === 'new' ? 'New service item' : 'Edit service item'}>
+  <h3 class="modal-title">{editingId === 'new' ? 'New Service Item' : 'Edit Service Item'}</h3>
     <p><label><strong>Name *</strong><br>
       <input type="text" bind:value={form.template_name} style="width:100%;box-sizing:border-box;">
     </label>
@@ -284,8 +289,7 @@
       <button type="button" onclick={cancelEdit} disabled={saving}>Cancel</button>
     </p>
     <FormMessage error={formError} />
-  </fieldset>
-{/if}
+</Modal>
 </LoadState>
 
 {#snippet schemeCell(t)}
@@ -305,3 +309,7 @@
     <button type="button" onclick={() => remove(t)}>Delete</button>
   {/if}
 {/snippet}
+
+<style>
+  .modal-title { margin: 0 0 12px; font-size: 16px; }
+</style>

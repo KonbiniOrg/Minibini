@@ -213,3 +213,19 @@ describe('ServiceItemManager — DataTable', () => {
     expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['Name', 'Rate Scheme', 'Active', '']);
   });
 });
+
+describe('ServiceItemManager — form is a modal (2026-10-10)', () => {
+  it('Add Service Item opens a dialog; Escape closes it', async () => {
+    const { findByRole, queryByRole } = render(ServiceItemManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Service Item' }));
+    expect(await findByRole('dialog', { name: 'New service item' })).toBeInTheDocument();
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(queryByRole('dialog')).toBeNull();
+  });
+
+  it('Edit opens a dialog named Edit service item', async () => {
+    const { findAllByRole, findByRole } = render(ServiceItemManager);
+    await fireEvent.click((await findAllByRole('button', { name: 'Edit' }))[0]);
+    expect(await findByRole('dialog', { name: 'Edit service item' })).toBeInTheDocument();
+  });
+});
