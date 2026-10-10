@@ -98,3 +98,22 @@ describe('ContactListPage — DataTable pilot', () => {
     expect(await findByRole('alert')).toHaveTextContent('boom');
   });
 });
+
+describe('ContactListPage — New Contact button (ContactFormModal host)', () => {
+  it('offers New Contact as a button to a jobs manager and opens the modal', async () => {
+    const { fireEvent } = await import('@testing-library/svelte');
+    user.set({ id: 1, permissions: ['can_manage_jobs'] });
+    const { findByRole, queryByRole } = render(ContactListPage);
+    const btn = await findByRole('button', { name: 'New Contact' });
+    expect(queryByRole('link', { name: 'New Contact' })).toBeNull();
+    await fireEvent.click(btn);
+    expect(await findByRole('dialog', { name: 'New contact' })).toBeInTheDocument();
+  });
+
+  it('hides New Contact without can_manage_jobs', async () => {
+    user.set({ id: 2, permissions: [] });
+    const { findByRole, queryByRole } = render(ContactListPage);
+    await findByRole('heading', { name: /Contacts/ });
+    expect(queryByRole('button', { name: 'New Contact' })).toBeNull();
+  });
+});

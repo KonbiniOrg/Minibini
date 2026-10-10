@@ -2,6 +2,7 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { showError, showSuccess } from '../../stores/messages.js';
   import ContactDetail from '../../components/contacts/ContactDetail.svelte';
+  import ContactFormModal from '../../components/contacts/ContactFormModal.svelte';
   import CustomerHeader from '../../components/contacts/CustomerHeader.svelte';
   import { push } from 'svelte-spa-router';
   import LoadState from '../../components/LoadState.svelte';
@@ -16,6 +17,7 @@
   let loading = $state(true);
   let loadError = $state(null);
   let deleteConfirm = $state(null);
+  let editOpen = $state(false);
 
   async function loadContact() {
     loading = true;
@@ -92,11 +94,17 @@
     {invoices}
     {purchaseOrders}
     {history}
-    onEdit={() => push(`/contacts/${params.id}/edit`)}
+    onEdit={() => { editOpen = true; }}
     onDelete={handleDelete}
     onInvoicePageChange={loadInvoices}
     onPOPageChange={loadPOs}
     onAddNote={handleAddNote}
+  />
+  <ContactFormModal
+    open={editOpen}
+    {contact}
+    onSaved={() => { editOpen = false; loadContact(); }}
+    onClose={() => { editOpen = false; }}
   />
 
   <div class="page-body">

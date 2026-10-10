@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, screen } from '@testing-library/svelte';
+import { render, fireEvent, screen, within } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
 vi.mock('@/lib/api.js', () => ({
-  api: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
   errorMessage: (e, fallback) =>
     e?.data?.detail || e?.message || fallback || 'Something went wrong.',
 }));
@@ -25,6 +25,7 @@ beforeEach(() => {
   api.get.mockReset();
   api.post.mockReset();
   api.delete.mockReset();
+  api.patch.mockReset();
   viewMode.set('full');
   user.set({ id: 1, permissions: ['can_manage_jobs'] });
   api.get.mockImplementation((url) => {
@@ -70,5 +71,23 @@ describe('ContactDetailPage global overlay messages', () => {
       expect(get(overlayMessage)).toEqual({ kind: 'error', text: 'Cannot delete this contact.' });
     });
     expect(document.querySelector('.error-overlay')).toBeNull();
+  });
+});
+
+describe('ContactDetailPage edit modal', () => {
+  it('edit save reloads the contact and stays', async () => {
+    api.patch.mockResolvedValue({ contact_id: 1, name: 'Renamed', email: 'j@x.com', tags: [], jobs: [] });
+    render(ContactDetailPage, { props: { params: { id: '1' } } });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit contact' });
+    // Submit the native form (the mock contact has no first/last name, so a
+    // click would be stopped by `required` validation before reaching us).
+    await fireEvent.submit(within(dialog).getByRole('button', { name: 'Save' }).closest('form'));
+    await vi.waitFor(() => expect(api.patch).toHaveBeenCalledWith('/api/contacts/1/', expect.any(Object)));
+    await vi.waitFor(() => {
+      expect(api.get.mock.calls.filter((c) => c[0] === '/api/contacts/1/').length).toBeGreaterThanOrEqual(2);
+    });
+    expect(push).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

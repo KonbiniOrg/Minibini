@@ -1,4 +1,5 @@
 <script>
+  import ContactFormModal from './ContactFormModal.svelte';
   import FullOnly from '../FullOnly.svelte';
   import DataTable from '../DataTable.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
@@ -6,6 +7,7 @@
   import { canManageJobs, canManageFinancials } from '../../stores/permissions.js';
   import { viewMode } from '../../stores/viewMode.js';
   import { pageFromUrl, pageRange } from '../../lib/pagination.js';
+  let newContactOpen = $state(false);
   const {
     business,
     invoices = null,
@@ -93,7 +95,7 @@
 <FullOnly>
   <h3>Contacts
     {#if $canManageJobs}
-      — <a href="#/contacts/new?business={business.business_id}">New Contact</a>
+      — <button type="button" class="link-btn" onclick={() => { newContactOpen = true; }}>New Contact</button>
     {/if}
   </h3>
   <DataTable
@@ -182,6 +184,9 @@
 
 <HistoryPanel {history} {onAddNote} />
 
+<ContactFormModal open={newContactOpen} defaultBusinessId={business.business_id}
+  onClose={() => { newContactOpen = false; }} />
+
 <p>
   {#if onEdit && $canManageJobs}
     <button onclick={onEdit}>Edit</button>
@@ -208,4 +213,5 @@
 {/snippet}
 
 <style>
+  .link-btn { background: none; border: 0; padding: 0; color: #2563eb; cursor: pointer; font: inherit; text-decoration: underline; }
 </style>

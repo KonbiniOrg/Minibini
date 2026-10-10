@@ -1,5 +1,7 @@
 <script>
   import Router, { location, replace } from 'svelte-spa-router';
+  import { wrap } from 'svelte-spa-router/wrap';
+  import RedirectTo from './routes/RedirectTo.svelte';
   import { setupStatus, refreshSetupStatus, areaUnavailable } from './stores/setupStatus.js';
   import Sidebar from './components/Sidebar.svelte';
   import CurrentBlepBand from './components/CurrentBlepBand.svelte';
@@ -12,7 +14,6 @@
   import Home from './routes/Home.svelte';
   import ContactListPage from './routes/contacts/ContactListPage.svelte';
   import ContactDetailPage from './routes/contacts/ContactDetailPage.svelte';
-  import ContactFormPage from './routes/contacts/ContactFormPage.svelte';
   import BusinessListPage from './routes/contacts/BusinessListPage.svelte';
   import BusinessDetailPage from './routes/contacts/BusinessDetailPage.svelte';
   import BusinessFormPage from './routes/contacts/BusinessFormPage.svelte';
@@ -69,8 +70,8 @@
     '/activity': ActivityPage,
     '/search': SearchPage,
     '/contacts': ContactListPage,
-    '/contacts/new': ContactFormPage,
-    '/contacts/:id/edit': ContactFormPage,
+    '/contacts/new': wrap({ component: RedirectTo, props: { to: '/contacts' } }),
+    '/contacts/:id/edit': wrap({ component: RedirectTo, props: { to: '/contacts/:id' } }),
     '/contacts/:id': ContactDetailPage,
     '/businesses': BusinessListPage,
     '/businesses/new': BusinessFormPage,

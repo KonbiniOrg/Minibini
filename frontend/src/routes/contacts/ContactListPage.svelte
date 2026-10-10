@@ -1,4 +1,5 @@
 <script>
+  import ContactFormModal from '../../components/contacts/ContactFormModal.svelte';
   import { api, errorMessage } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
   import ContactsImportPanel from '../../components/qboimport/ContactsImportPanel.svelte';
@@ -7,6 +8,7 @@
   import { showError, showSuccess } from '../../stores/messages.js';
   import LoadState from '../../components/LoadState.svelte';
   import DataTable from '../../components/DataTable.svelte';
+  let newContactOpen = $state(false);
 
   let pullEpoch = $state(0);
 
@@ -147,7 +149,13 @@
   <ContactsImportPanel onCommitted={loadAll} />
 {/key}
 
-<p><a href="#/contacts/new">New Contact</a> &nbsp; <a href="#/businesses/new">New Business</a></p>
+<p>
+  {#if $canManageJobs}
+    <button type="button" onclick={() => { newContactOpen = true; }}>New Contact</button>
+  {/if}
+  &nbsp; <a href="#/businesses/new">New Business</a>
+</p>
+<ContactFormModal open={newContactOpen} onClose={() => { newContactOpen = false; }} />
 
 <div class="index-bar">
   <button class:active={letterFilter === ''} onclick={() => selectLetter('')}>All</button>

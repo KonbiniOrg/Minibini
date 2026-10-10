@@ -88,3 +88,13 @@ describe('BusinessDetail — DataTable lists', () => {
     expect(getByText('No contacts.')).toBeInTheDocument();
   });
 });
+
+describe('BusinessDetail — New Contact (ContactFormModal host)', () => {
+  it('New Contact opens the contact modal pre-attached to this business', async () => {
+    viewMode.set('full'); // the Contacts section is FullOnly
+    const { findByRole, queryByRole } = render(BusinessDetail, { props: { business: business() } });
+    expect(queryByRole('link', { name: 'New Contact' })).toBeNull();
+    await fireEvent.click(await findByRole('button', { name: 'New Contact' }));
+    expect(await findByRole('dialog', { name: 'New contact' })).toBeInTheDocument();
+  });
+});
