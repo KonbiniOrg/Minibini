@@ -4,6 +4,7 @@
   import { shiftActivityVersion } from '../../stores/shift.js';
   import { blepActivityVersion } from '../../stores/blepActivity.js';
   import LoadState from '../LoadState.svelte';
+  import DataTable from '../DataTable.svelte';
 
   let rows = $state([]);
   let loading = $state(true);
@@ -33,21 +34,19 @@
 <section>
   <h3>My Change Requests</h3>
   <LoadState {loading} {error}>
-  {#if rows.length === 0}<p>No change requests.</p>
-  {:else}
-    <table class="data-table">
-      <thead><tr><th>Type</th><th>Requested</th><th>Status</th><th>Reason</th></tr></thead>
-      <tbody>
-        {#each rows as r (r.kind + r.request_id)}
-          <tr>
-            <td>{r.kind}</td>
-            <td>{formatSessionDateTime(r.requested_start)} → {r.requested_end ? formatSessionDateTime(r.requested_end) : '—'}</td>
-            <td>{r.status}{#if r.has_known_conflict && r.status === 'pending'} ⚠{/if}</td>
-            <td>{r.reason}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {/if}
+  <DataTable
+    rows={rows}
+    key={(r) => r.kind + r.request_id}
+    emptyText="No change requests."
+    columns={[
+      { id: 'type',      label: 'Type',      field: 'kind' },
+      { id: 'requested', label: 'Requested', cell: requestedCell },
+      { id: 'status',    label: 'Status',    cell: statusCell },
+      { id: 'reason',    label: 'Reason',    field: 'reason' },
+    ]}
+  />
   </LoadState>
 </section>
+
+{#snippet requestedCell(r)}{formatSessionDateTime(r.requested_start)} → {r.requested_end ? formatSessionDateTime(r.requested_end) : '—'}{/snippet}
+{#snippet statusCell(r)}{r.status}{#if r.has_known_conflict && r.status === 'pending'} ⚠{/if}{/snippet}

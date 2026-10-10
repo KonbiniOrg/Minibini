@@ -13,6 +13,7 @@ vi.mock('@/stores/blepActivity.js', async () => {
 
 import { api } from '@/lib/api.js';
 import MyChangeRequestsList from '@/components/home/MyChangeRequestsList.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 beforeEach(() => {
   api.get.mockReset();
@@ -42,5 +43,24 @@ describe('MyChangeRequestsList — load failure', () => {
     api.get.mockRejectedValue(new Error('boom'));
     const { findByRole } = render(MyChangeRequestsList);
     expect(await findByRole('alert')).toHaveTextContent('boom');
+  });
+});
+
+describe('MyChangeRequestsList — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  it('renders Type / Requested / Status / Reason in both densities with data-col', async () => {
+    api.get.mockImplementation((url) => Promise.resolve({ results: url.includes('shift')
+      ? [{ request_id: 1, requested_start: '2026-07-10T08:00:00Z', requested_end: null, status: 'pending', reason: 'Forgot to clock in', has_known_conflict: true, created_at: '2026-07-10T09:00:00Z' }]
+      : [] }));
+    viewMode.set('lite');
+    const { findByText, container } = render(MyChangeRequestsList);
+    await findByText('Forgot to clock in');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(['Type', 'Requested', 'Status', 'Reason']);
+    expect(table.querySelector('td[data-col="status"]').textContent).toContain('⚠');
+    viewMode.set('full');
+    const { findByText: f2, container: c2 } = render(MyChangeRequestsList);
+    await f2('Forgot to clock in');
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['Type', 'Requested', 'Status', 'Reason']);
   });
 });
