@@ -7,7 +7,7 @@
   rows={jobs}
   key={(job) => job.job_id}
   emptyText="No jobs found."
-  rowClass={(job) => `status-${job.status}`}
+  rowClass={(job) => `job-status-${job.status}`}
   columns={[
     { id: 'number', label: 'Job #',  cell: numberCell },
     { id: 'name',   label: 'Name',   field: 'name' },

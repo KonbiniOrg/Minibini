@@ -147,3 +147,12 @@ describe('AccountingCategories', () => {
     });
   });
 });
+
+describe('AccountingCategories load failure', () => {
+  it('shows the load error as an alert instead of the empty "Add one" prompt', async () => {
+    api.get.mockImplementation(() => Promise.reject(new Error('boom')));
+    const { findByRole, queryByText } = render(AccountingCategories);
+    expect(await findByRole('alert')).toHaveTextContent('boom');
+    expect(queryByText(/No accounting categories found/)).toBeNull();
+  });
+});

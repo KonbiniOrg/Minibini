@@ -3,6 +3,7 @@ import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), put: vi.fn(), patch: vi.fn(), post: vi.fn() },
+  errorMessage: (e, fallback) => e?.message || fallback,
 }));
 
 import { api } from '@/lib/api.js';
@@ -85,5 +86,16 @@ describe('UserDetailPage work sessions section', () => {
     const blepCall = api.get.mock.calls.find(([u]) => u.startsWith('/api/bleps/'));
     expect(blepCall[0]).toContain('user=7');
     expect(queryByText('Worker')).toBeNull();
+  });
+});
+
+describe('UserDetailPage load failure', () => {
+  it('shows the load error as an alert and still offers the back link', async () => {
+    api.get.mockImplementation((url) => (url.startsWith('/api/users/7/')
+      ? Promise.reject(new Error('boom'))
+      : Promise.resolve([])));
+    const { findByRole, getByRole } = render(UserDetailPage, { props: { params: { id: '7' } } });
+    expect(await findByRole('alert')).toHaveTextContent('boom');
+    expect(getByRole('link', { name: '← Back to users' })).toBeInTheDocument();
   });
 });

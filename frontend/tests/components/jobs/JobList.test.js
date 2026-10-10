@@ -37,11 +37,12 @@ describe('JobList row selection', () => {
     expect(onSelect).toHaveBeenCalledWith(jobs[1]);
   });
 
-  it('stamps a status class on each row', () => {
+  it('stamps a namespaced status class on each row (not the global .status-* pill palette)', () => {
     const { container } = render(JobList, { props: { jobs } });
     const trs = container.querySelectorAll('tbody tr');
-    expect(trs[0].classList.contains('status-draft')).toBe(true);
-    expect(trs[1].classList.contains('status-approved')).toBe(true);
+    expect(trs[0].classList.contains('job-status-draft')).toBe(true);
+    expect(trs[1].classList.contains('job-status-approved')).toBe(true);
+    expect(trs[0].classList.contains('status-draft')).toBe(false);
   });
 
   it('shows "No jobs found." for an empty list', () => {

@@ -359,6 +359,6 @@
        column is suppressed — every row is this user. -->
   <WorkSessionsList userId={user.id} />
 {/if}
-{#if loadError && !loading}<p><a href="/users" use:link>← Back to users</a></p>{/if}
 </LoadState>
+{#if loadError && !loading}<p><a href="/users" use:link>← Back to users</a></p>{/if}
 </div>
