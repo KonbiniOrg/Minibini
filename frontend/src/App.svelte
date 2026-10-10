@@ -62,6 +62,7 @@
   import JobChangeOrderPage from './routes/jobs/JobChangeOrderPage.svelte';
   import ChangeOrderRedirect from './routes/change-orders/ChangeOrderRedirect.svelte';
   import ChangeOrderSendPage from './routes/change-orders/ChangeOrderSendPage.svelte';
+  import LoadState from './components/LoadState.svelte';
 
   const routes = {
     '/': Home,
@@ -184,9 +185,8 @@
   });
 </script>
 
-{#if !$authChecked}
-  <p>Loading...</p>
-{:else if !$user}
+<LoadState loading={!$authChecked}>
+{#if !$user}
   <LoginPage notice={sessionExpired ? 'Your session expired — please log in again.' : ''} />
 {:else}
   <!-- Permanent shift strip; the timeslip band slides in beneath it while a
@@ -206,6 +206,7 @@
   </div>
   <MessageOverlay />
 {/if}
+</LoadState>
 
 <style>
   .app-bands {

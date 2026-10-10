@@ -1,7 +1,8 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
   import JobList from './JobList.svelte';
+  import LoadState from '../LoadState.svelte';
 
   // Self-contained "jobs for a PM" list: fetches, paginates, and renders the
   // JobList table. Titling is intentionally left to the host page so this can
@@ -29,7 +30,7 @@
         onLoaded({ count, pmName });
       }
     } catch (e) {
-      error = e.message;
+      error = errorMessage(e, 'Could not load jobs.');
     } finally {
       loading = false;
     }
@@ -52,11 +53,7 @@
   });
 </script>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p>Error: {error}</p>
-{:else}
+<LoadState {loading} {error}>
   <JobList {jobs} onSelect={handleSelect} />
 
   {#if count > 25}
@@ -70,4 +67,4 @@
       {/if}
     </p>
   {/if}
-{/if}
+</LoadState>

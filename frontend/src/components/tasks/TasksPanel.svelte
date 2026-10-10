@@ -13,6 +13,7 @@
   import PriceListPicker from '../PriceListPicker.svelte';
   import Modal from '../Modal.svelte';
   import BundleModal from '../docsurface/BundleModal.svelte';
+  import LoadState from '../LoadState.svelte';
 
   let { job, onJobChange = () => {} } = $props();
 
@@ -583,9 +584,7 @@
   }
 </script>
 
-{#if loading}
-  <p>Loading...</p>
-{:else}
+<LoadState {loading}>
   <div class="page-body">
   <div class="toolbar">
     {#if !jobLocked}
@@ -762,7 +761,7 @@
     onClose={() => { bundleModalOpen = false; }}
   />
   </div>
-{/if}
+</LoadState>
 
 <style>
   /* .toolbar (and its buttons) come from app.css. */

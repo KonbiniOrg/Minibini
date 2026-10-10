@@ -1,5 +1,6 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import LoadState from '../LoadState.svelte';
 
   function isoDate(d) { return d.toISOString().slice(0, 10); }
   let start = $state(isoDate(new Date(Date.now() - 6 * 86400000)));
@@ -15,7 +16,7 @@
     try {
       const r = await api.get(`/api/shifts/report/?start=${start}&end=${end}`);
       workers = r.workers;
-    } catch (e) { error = e.message || 'Could not load report.'; }
+    } catch (e) { error = errorMessage(e, 'Could not load report.'); }
     finally { loading = false; }
   }
   $effect(() => { load(); });
@@ -28,9 +29,8 @@
     <label>From <input type="date" bind:value={start} onchange={load}></label>
     <label>To <input type="date" bind:value={end} onchange={load}></label>
   </fieldset>
-  {#if error}<p style="color:#b91c1c">{error}</p>{/if}
-  {#if loading}<p>Loading…</p>
-  {:else if workers.length === 0}<p>No shifts in range.</p>
+  <LoadState {loading} {error}>
+  {#if workers.length === 0}<p>No shifts in range.</p>
   {:else}
     {#each workers as w (w.user_id)}
       <h4>{w.name} — total {hm(w.total_minutes)}</h4>
@@ -48,4 +48,5 @@
       </table>
     {/each}
   {/if}
+  </LoadState>
 </section>

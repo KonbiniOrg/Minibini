@@ -3,7 +3,8 @@
   // span jobs), so this panel never offers create — creation stays on the
   // global Purchase Orders page. Copies field usage from PurchaseOrderList.svelte
   // / PurchaseOrderSerializer: po_id, po_number, status, business_name, po_total.
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import LoadState from '../LoadState.svelte';
 
   let { job } = $props();
 
@@ -20,7 +21,7 @@
       const resp = await api.get(`/api/purchase-orders/?job=${jobId}`);
       purchaseOrders = resp?.results || resp || [];
     } catch (e) {
-      errorMsg = e.message || 'Could not load purchase orders.';
+      errorMsg = errorMessage(e, 'Could not load purchase orders.');
     } finally {
       loading = false;
     }
@@ -34,11 +35,8 @@
 </script>
 
 <div class="page-body">
-  {#if loading}
-    <p>Loading…</p>
-  {:else if errorMsg}
-    <p class="err">{errorMsg}</p>
-  {:else if purchaseOrders.length === 0}
+  <LoadState {loading} error={errorMsg}>
+  {#if purchaseOrders.length === 0}
     <p>No purchase orders touch this job yet.</p>
   {:else}
     <table class="data-table">
@@ -62,6 +60,7 @@
       </tbody>
     </table>
   {/if}
+  </LoadState>
 </div>
 
 <style>

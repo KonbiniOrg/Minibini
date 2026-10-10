@@ -7,6 +7,7 @@
   import FieldError from './FieldError.svelte';
   import FormMessage from './FormMessage.svelte';
   import Modal from './Modal.svelte';
+  import LoadState from './LoadState.svelte';
 
   let pullEpoch = $state(0);
 
@@ -63,7 +64,7 @@
       unitsList = unitsResp;
       defaultSchemeId = settingsResp.default_rate_scheme || '';
     } catch (e) {
-      error = e.message || 'Could not load services.';
+      error = errorMessage(e, 'Could not load services.');
     } finally {
       loading = false;
     }
@@ -253,10 +254,7 @@
   <SchemesImportPanel onCommitted={load} {unitsList} />
 {/key}
 
-{#if error}<p><em>{error}</em></p>{/if}
-{#if loading}<p>Loading...</p>{/if}
-
-{#if !loading}
+<LoadState {loading} {error}>
   <p>
     <label>
       <input type="checkbox" bind:checked={showInactive} onchange={load} />
@@ -323,7 +321,7 @@
   {#if editingId === null}
     <p><button type="button" onclick={startCreate}>Add Rate Scheme</button></p>
   {/if}
-{/if}
+</LoadState>
 
 <!-- Button-driven content (no native <form>), so the shell takes onSave and
      owns Enter; `busy` suppresses a double-Enter mid-save. -->

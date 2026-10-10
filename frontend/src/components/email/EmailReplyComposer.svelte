@@ -7,6 +7,8 @@
 
   import { emailApi } from '../../lib/email.js';
   import DocumentSendForm from './DocumentSendForm.svelte';
+  import LoadState from '../LoadState.svelte';
+  import { errorMessage } from '../../lib/api.js';
 
   let {
     emailRecordId,
@@ -43,7 +45,7 @@
       subject = defaults.subject || '';
       body = defaults.body || '';
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load reply defaults.');
     } finally {
       loading = false;
     }
@@ -98,11 +100,8 @@
     <button type="button" class="cancel" onclick={onClose}>Cancel</button>
   </div>
 
-  {#if loading}
-    <p>Loading…</p>
-  {:else if loadError}
-    <p class="error"><strong>Error:</strong> {loadError}</p>
-  {:else if replyDefaults}
+  <LoadState {loading} error={loadError}>
+  {#if replyDefaults}
     <DocumentSendForm
       sendDefaults={{
         cc: '',
@@ -123,6 +122,7 @@
       onSubmit={handleSubmit}
     />
   {/if}
+  </LoadState>
 </section>
 
 <style>
@@ -146,5 +146,4 @@
   .cancel {
     font-size: 13px;
   }
-  .error { color: #b91c1c; }
 </style>

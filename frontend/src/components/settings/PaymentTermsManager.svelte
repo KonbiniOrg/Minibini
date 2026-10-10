@@ -8,6 +8,7 @@
   import Modal from '../Modal.svelte';
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
+  import LoadState from '../LoadState.svelte';
 
   let { refreshEpoch = 0 } = $props();
 
@@ -104,9 +105,7 @@
 </script>
 
 <h4>Payment terms</h4>
-{#if loading}
-  <p>Loading…</p>
-{:else}
+<LoadState {loading}>
   {#if terms.length}
     <table class="data-table terms-table">
       <thead>
@@ -133,7 +132,7 @@
     <p><em>No payment terms yet.</em></p>
   {/if}
   <p><button type="button" onclick={startCreate}>+ New terms</button></p>
-{/if}
+</LoadState>
 
 <Modal open={editingId !== null} onSave={save} onCancel={cancelEdit}
        busy={saving} maxWidth="420px"

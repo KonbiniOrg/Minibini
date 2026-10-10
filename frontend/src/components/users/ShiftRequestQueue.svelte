@@ -1,7 +1,8 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import TimeEditModal from '../time/TimeEditModal.svelte';
+  import LoadState from '../LoadState.svelte';
 
   let rows = $state([]);
   let loading = $state(true);
@@ -24,7 +25,7 @@
       rows = [...tag(sh, 'Shift', 'shift-change-requests'),
               ...tag(bl, 'Time', 'blep-change-requests')]
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    } catch (e) { error = e.message || 'Could not load requests.'; }
+    } catch (e) { error = errorMessage(e, 'Could not load requests.'); }
     finally { loading = false; }
   }
 
@@ -36,7 +37,7 @@
       modalRecord = await api.get(`/api/${type === 'shift' ? 'shifts' : 'bleps'}/${id}/`);
       modalType = type;
       modalOpen = true;
-    } catch (e) { error = e.message || 'Could not load the record.'; }
+    } catch (e) { error = errorMessage(e, 'Could not load the record.'); }
   }
   function openTarget(r) {
     return openRecord(r.kind === 'Shift' ? 'shift' : 'blep',
@@ -51,12 +52,12 @@
   async function approve(r) {
     error = '';
     try { await api.post(`/api/${r.ep}/${r.request_id}/approve/`); await load(); }
-    catch (e) { error = e.message || 'Approve failed (resolve the conflict first).'; }
+    catch (e) { error = errorMessage(e, 'Approve failed (resolve the conflict first).'); }
   }
   async function deny(r) {
     const note = prompt('Reason for denial (optional):') ?? '';
     try { await api.post(`/api/${r.ep}/${r.request_id}/deny/`, { note }); await load(); }
-    catch (e) { error = e.message || 'Deny failed.'; }
+    catch (e) { error = errorMessage(e, 'Deny failed.'); }
   }
 
   $effect(() => { load(); });
@@ -65,8 +66,8 @@
 <section>
   <h3>Pending Time Change Requests</h3>
   {#if error}<p style="color:#b91c1c">{error}</p>{/if}
-  {#if loading}<p>Loading…</p>
-  {:else if rows.length === 0}<p>No pending requests.</p>
+  <LoadState {loading}>
+  {#if rows.length === 0}<p>No pending requests.</p>
   {:else}
     <table class="data-table">
       <thead><tr>
@@ -110,6 +111,7 @@
     <p><em>If Approve is blocked by a conflict, open the relevant shift/timeslip here, adjust
       it so the shift encloses the timeslip, then approve.</em></p>
   {/if}
+  </LoadState>
 </section>
 
 <TimeEditModal

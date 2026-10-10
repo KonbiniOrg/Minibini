@@ -1,8 +1,9 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { link } from 'svelte-spa-router';
   import { user as userStore } from '../../stores/auth.js';
   import ExpenseForm from '../expenses/ExpenseForm.svelte';
+  import LoadState from '../LoadState.svelte';
 
   let expenses = $state([]);
   let loading = $state(true);
@@ -19,7 +20,7 @@
       const data = await api.get(`/api/expenses/?purchased_by=${uid}&payment_method=personal&page_size=5`);
       expenses = data.results || data;
     } catch (err) {
-      loadError = err.message || 'Could not load expenses.';
+      loadError = errorMessage(err, 'Could not load expenses.');
     } finally {
       loading = false;
     }
@@ -65,11 +66,8 @@
     </div>
   {/if}
 
-  {#if loading}
-    <p><em>Loading...</em></p>
-  {:else if loadError}
-    <p><em>{loadError}</em></p>
-  {:else if expenses.length === 0}
+  <LoadState {loading} error={loadError}>
+  {#if expenses.length === 0}
     <p><em>No recent expenses.</em></p>
   {:else}
     <table class="data-table" style="width: 100%">
@@ -110,6 +108,7 @@
       </tbody>
     </table>
   {/if}
+  </LoadState>
 </section>
 
 <style>

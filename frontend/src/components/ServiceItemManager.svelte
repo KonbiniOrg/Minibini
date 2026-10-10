@@ -4,6 +4,7 @@
   import { showError } from '../stores/messages.js';
   import FieldError from './FieldError.svelte';
   import FormMessage from './FormMessage.svelte';
+  import LoadState from './LoadState.svelte';
 
   let { canEdit = true } = $props();
 
@@ -44,7 +45,7 @@
       schemes = schemeResp.results || schemeResp;
       allSchemes = allSchemeResp.results || allSchemeResp;
     } catch (e) {
-      error = e.message || 'Could not load.';
+      error = errorMessage(e, 'Could not load service items.');
     } finally {
       loading = false;
     }
@@ -206,10 +207,8 @@
 
 <h3>Service Items</h3>
 
-{#if error}<p><em>{error}</em></p>{/if}
-{#if loading}<p>Loading...</p>{/if}
-
-{#if !loading && editingId === null}
+<LoadState {loading} {error}>
+{#if editingId === null}
   <table class="data-table">
     <thead>
       <tr><th>Name</th><th>Rate Scheme</th><th>Active</th><th></th></tr>
@@ -305,3 +304,4 @@
     <FormMessage error={formError} />
   </fieldset>
 {/if}
+</LoadState>

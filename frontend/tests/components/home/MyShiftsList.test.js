@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 vi.mock('@/stores/shift.js', async () => {
   const { writable } = await import('svelte/store');
   return { shiftActivityVersion: writable(0) };
@@ -38,5 +38,13 @@ describe('MyShiftsList', () => {
     const days = (Date.now() - since.getTime()) / 86400000;
     expect(days).toBeGreaterThan(2.9);
     expect(days).toBeLessThan(3.1);
+  });
+});
+
+describe('MyShiftsList — load failure', () => {
+  it('shows the fallback error as an alert when the fetch rejects', async () => {
+    api.get.mockRejectedValue(new Error('boom'));
+    const { findByRole } = render(MyShiftsList);
+    expect(await findByRole('alert')).toHaveTextContent('boom');
   });
 });

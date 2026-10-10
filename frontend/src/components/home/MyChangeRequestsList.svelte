@@ -1,14 +1,17 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { formatSessionDateTime } from '../../lib/format.js';
   import { shiftActivityVersion } from '../../stores/shift.js';
   import { blepActivityVersion } from '../../stores/blepActivity.js';
+  import LoadState from '../LoadState.svelte';
 
   let rows = $state([]);
   let loading = $state(true);
+  let error = $state(null);
 
   async function load() {
     loading = true;
+    error = null;
     try {
       const [sh, bl] = await Promise.all([
         api.get('/api/shift-change-requests/?mine=true'),
@@ -17,6 +20,8 @@
       const tag = (list, kind) => (list.results || list).map(r => ({ ...r, kind }));
       rows = [...tag(sh, 'Shift'), ...tag(bl, 'Time')]
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    } catch (e) {
+      error = errorMessage(e, 'Could not load change requests.');
     } finally { loading = false; }
   }
   $effect(() => { load(); });
@@ -27,8 +32,8 @@
 
 <section>
   <h3>My Change Requests</h3>
-  {#if loading}<p>Loading…</p>
-  {:else if rows.length === 0}<p>No change requests.</p>
+  <LoadState {loading} {error}>
+  {#if rows.length === 0}<p>No change requests.</p>
   {:else}
     <table class="data-table">
       <thead><tr><th>Type</th><th>Requested</th><th>Status</th><th>Reason</th></tr></thead>
@@ -44,4 +49,5 @@
       </tbody>
     </table>
   {/if}
+  </LoadState>
 </section>

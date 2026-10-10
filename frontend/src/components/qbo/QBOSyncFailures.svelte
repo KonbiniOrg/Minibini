@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api, errorMessage } from '../../lib/api.js';
+  import LoadState from '../LoadState.svelte';
 
   let failures = $state([]);
   let loading = $state(true);
@@ -53,11 +54,8 @@
 <section class="qbo-sync-failures">
   <h3>QBO Sync Failures</h3>
 
-  {#if loading}
-    <p>Loading…</p>
-  {:else if loadError}
-    <p class="error">{loadError}</p>
-  {:else if failures.length === 0}
+  <LoadState {loading} error={loadError}>
+  {#if failures.length === 0}
     <p>No QBO sync failures.</p>
   {:else}
     <p>
@@ -92,6 +90,7 @@
       </tbody>
     </table>
   {/if}
+  </LoadState>
 </section>
 
 <style>

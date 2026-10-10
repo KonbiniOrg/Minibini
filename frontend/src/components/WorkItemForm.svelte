@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
   import { parseDurationToISO, isoHoursFromDuration } from '../lib/format.js';
   import { triageError } from '../lib/errorTriage.js';
   import { showError } from '../stores/messages.js';
@@ -8,6 +8,7 @@
   import FormMessage from './FormMessage.svelte';
   import Modal from './Modal.svelte';
   import UnitsSelect from './UnitsSelect.svelte';
+  import LoadState from './LoadState.svelte';
 
   let {
     open = false,
@@ -136,7 +137,7 @@
       const defaultRow = schemes.find((s) => s.is_default);
       defaultSchemeId = defaultRow ? defaultRow.rate_scheme_id : '';
     } catch (e) {
-      formError = e.message || 'Could not load rate schemes.';
+      formError = errorMessage(e, 'Could not load rate schemes.');
     } finally {
       loading = false;
     }
@@ -595,9 +596,7 @@
 <form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
       <h3>{isEdit ? 'Edit Task' : (mode === 'template' ? 'Add Task From Template' : 'Add Manual Task')}</h3>
 
-      {#if loading}
-        <p>Loading rate schemes…</p>
-      {:else}
+      <LoadState {loading} loadingText="Loading rate schemes…">
         {#if !isEdit && mode === 'template'}
           <p>
             <label><strong>Template *</strong><br>
@@ -869,7 +868,7 @@
           <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
         </div>
         <FormMessage error={formError} />
-      {/if}
+      </LoadState>
 </form>
 </Modal>
 

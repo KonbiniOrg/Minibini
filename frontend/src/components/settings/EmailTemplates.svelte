@@ -1,8 +1,9 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { triageError } from '../../lib/errorTriage.js';
   import { showError } from '../../stores/messages.js';
   import FormMessage from '../FormMessage.svelte';
+  import LoadState from '../LoadState.svelte';
 
   // The 8 boilerplate Configuration keys (4 document types × subject + body).
   // The backend service for each document type falls back to a built-in
@@ -117,7 +118,7 @@
       next[DISPLAY_LIMIT_KEY] = all[DISPLAY_LIMIT_KEY] ?? DISPLAY_LIMIT_DEFAULT;
       values = next;
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load templates.');
     } finally {
       loading = false;
     }
@@ -247,11 +248,7 @@
     </p>
   </fieldset>
 
-  {#if loading}
-    <p>Loading templates&hellip;</p>
-  {:else if loadError}
-    <p class="error">Could not load settings: {loadError}</p>
-  {:else}
+  <LoadState {loading} error={loadError} loadingText="Loading templates&hellip;">
     {#each TEMPLATES as t (t.label)}
       <fieldset class="template-block">
         <legend><strong>{t.label}</strong></legend>
@@ -295,7 +292,7 @@
         <FormMessage error={saveErrors[t.body.key]} />
       </fieldset>
     {/each}
-  {/if}
+  </LoadState>
 </section>
 
 <style>
@@ -325,7 +322,6 @@
     margin: 0 4px;
   }
   .ok { color: #047857; margin-left: 8px; }
-  .error { color: #b91c1c; }
   .vars { border-collapse: collapse; }
   .vars th, .vars td { padding: 2px 12px 2px 0; text-align: left; font-weight: normal; }
   .vars th code { font-weight: bold; }

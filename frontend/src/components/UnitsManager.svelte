@@ -1,5 +1,6 @@
 <script>
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
+  import LoadState from './LoadState.svelte';
 
   let units = $state([]);
   let newUnit = $state('');
@@ -13,7 +14,7 @@
     try {
       units = await api.get('/api/settings/units/');
     } catch (e) {
-      error = 'Failed to load units.';
+      error = errorMessage(e, 'Failed to load units.');
     } finally {
       loading = false;
     }
@@ -25,7 +26,7 @@
     try {
       units = await api.patch('/api/settings/units/', units);
     } catch (e) {
-      error = e.data?.detail || e.message || 'Failed to save.';
+      error = errorMessage(e, 'Failed to save.');
     } finally {
       saving = false;
     }
@@ -76,9 +77,7 @@
   <p><strong>Error:</strong> {error}</p>
 {/if}
 
-{#if loading}
-  <p>Loading...</p>
-{:else}
+<LoadState {loading}>
   <table>
     <thead>
       <tr>
@@ -118,4 +117,4 @@
     />
     <button onclick={addUnit} disabled={saving || !newUnit.trim()}>Add</button>
   </p>
-{/if}
+</LoadState>
