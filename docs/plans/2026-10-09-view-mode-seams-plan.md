@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Put the lite/full density and desktop/phone layout plumbing in place (a `layout` store, a declarative `DataTable`), then consolidate every plain list table in the SPA onto `DataTable`, so UI polish and lite-view decisions each have one place to land.
+**Goal:** Put the lite/full density and desktop/phone layout plumbing in place (a `layout` store, a declarative `DataTable`, a `LoadState` wrapper), then consolidate every plain list table onto `DataTable` and every fetch site onto `LoadState`, so UI polish and later lite-view decisions each have one place to land.
 
-**Architecture:** Two independent Svelte stores (`viewMode` exists; `layout` is new, from `matchMedia`) are consumed only at four seams: `<FullOnly>` for sections (exists), `$derived` filters for rows, a new `components/DataTable.svelte` for columns, and the app shell (out of scope here). `DataTable` takes columns as data with `lite`/`phone` flags and renders a `<table>` on desktop or stacked cards on phone. Three pilots of different shapes (links, row-action buttons, many dense tables with HTML highlights) settle the component's API; the remaining ~35 plain list tables then migrate in five domain batches. Editing grids, document line tables and layout-only tables are explicitly left alone.
+**Architecture:** Two independent Svelte stores (`viewMode` exists; `layout` is new, from `matchMedia`) are consumed only at four seams: `<FullOnly>` for sections (exists), `$derived` filters for rows, a new `components/DataTable.svelte` for columns, and the app shell (out of scope here). `DataTable` takes columns as data with `lite`/`phone` flags and renders a `<table>` on desktop or stacked cards on phone. A sibling `components/LoadState.svelte` replaces the 56 hand-written loading/error branches (state stays at the fetch site; only the markup is shared). Three pilots of different shapes (links, row-action buttons, many dense tables with HTML highlights) settle `DataTable`'s API; the remaining plain list tables then migrate in five domain batches, and a sixth batch converts header-less label/value tables to `<dl>`. Editing grids, document line tables and grouped-row structures are explicitly left alone.
 
 **Tech Stack:** Svelte 5 (runes + snippets), Vitest + @testing-library/svelte (jsdom), Playwright e2e, plain CSS in `frontend/src/css/app.css`.
 
@@ -33,6 +33,7 @@
 3. **Toggle while mounted**: switching density after the table rendered must add/remove columns reactively, not only on mount. → Task 2 test "reacts to a density change after mount".
 4. **Row key collisions**: contacts and businesses share numeric ids (a contact 1 and a business 1 are both real). The pilot's `key` must combine type and id. → Task 3 test "renders a contact and a business that share an id".
 5. **Permission-gated columns stay gated in full density**: a user without `can_manage_financials` must not gain the Actions column by switching to full. → Task 6 batch 5 step for `CatalogEarmarksPage` adds the test "no Actions column for a worker in full density".
+6. **A failed fetch must say so**: today 40 fetch sites have no error branch, so a rejected request leaves the page blank or stale. → Task 2c recipe step 6 adds a reject-and-assert-alert test to each of those files; Task 2b test "shows the error as an alert".
 
 ---
 
@@ -603,6 +604,203 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
+### Task 2b: `LoadState` component (one shape for loading / error / content)
+
+Loading and error state is a property of each fetch, and fetches live at 56 sites across routes and panels, so there is no shell that can own it (`App.svelte` is a flat router; `JobShell` receives an already-loaded job). The consolidation is a small component used at every fetch site. State variables stay where they are — the established `let loading = $state(true); let error = $state(null);` shape is kept — only the markup collapses.
+
+**Files:**
+- Create: `frontend/src/components/LoadState.svelte`
+- Modify: `frontend/src/css/app.css` (two baseline rules next to `.data-table-empty`)
+- Create: `frontend/tests/components/_LoadStateHarness.svelte`
+- Test: `frontend/tests/components/LoadState.test.js`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: `LoadState` with props:
+  - `loading` (boolean, default `false`) — when true renders `<p class="load-state loading">{loadingText}</p>` and nothing else.
+  - `error` (string | null, default `null`) — when truthy (and not loading) renders `<p class="load-state error" role="alert">{error}</p>` and nothing else. The caller supplies display-ready text (via `errorMessage()`); the component never reads `.message` or `.data`.
+  - `loadingText` (string, default `'Loading...'`) — page-specific copy such as "Searching..." stays available through this prop.
+  - `children` (snippet) — rendered only when `!loading && !error`.
+
+- [ ] **Step 1: Write the harness and the failing tests**
+
+`frontend/tests/components/_LoadStateHarness.svelte`:
+
+```svelte
+<script>
+  // Test-only harness so a .js test can pass children to LoadState.
+  import LoadState from '@/components/LoadState.svelte';
+  let { loading = false, error = null, loadingText = undefined } = $props();
+</script>
+
+<LoadState {loading} {error} {loadingText}>
+  <p data-testid="content">Loaded content</p>
+</LoadState>
+```
+
+`frontend/tests/components/LoadState.test.js`:
+
+```js
+import { describe, it, expect } from 'vitest';
+import { render } from '@testing-library/svelte';
+import Harness from './_LoadStateHarness.svelte';
+
+describe('LoadState', () => {
+  it('shows the default loading text and no content while loading', () => {
+    const { getByText, queryByTestId, container } = render(Harness, { props: { loading: true } });
+    expect(getByText('Loading...')).toBeInTheDocument();
+    expect(container.querySelector('p.load-state.loading')).toBeTruthy();
+    expect(queryByTestId('content')).toBeNull();
+  });
+
+  it('uses a custom loadingText', () => {
+    const { getByText } = render(Harness, { props: { loading: true, loadingText: 'Searching...' } });
+    expect(getByText('Searching...')).toBeInTheDocument();
+  });
+
+  it('shows the error as an alert and no content when error is set', () => {
+    const { getByRole, queryByTestId, container } = render(Harness, { props: { error: 'Could not load jobs.' } });
+    expect(getByRole('alert')).toHaveTextContent('Could not load jobs.');
+    expect(container.querySelector('p.load-state.error')).toBeTruthy();
+    expect(queryByTestId('content')).toBeNull();
+  });
+
+  it('loading wins over a stale error (a reload in progress hides the old error)', () => {
+    const { getByText, queryByRole } = render(Harness, { props: { loading: true, error: 'old' } });
+    expect(getByText('Loading...')).toBeInTheDocument();
+    expect(queryByRole('alert')).toBeNull();
+  });
+
+  it('renders children when neither loading nor error', () => {
+    const { getByTestId, container } = render(Harness);
+    expect(getByTestId('content')).toHaveTextContent('Loaded content');
+    expect(container.querySelector('p.load-state')).toBeNull();
+  });
+
+  it('treats an empty-string error as no error', () => {
+    const { getByTestId } = render(Harness, { props: { error: '' } });
+    expect(getByTestId('content')).toBeInTheDocument();
+  });
+});
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run from `frontend/`: `npx vitest run tests/components/LoadState.test.js`
+Expected: FAIL — "Failed to resolve import "@/components/LoadState.svelte"".
+
+- [ ] **Step 3: Write the component**
+
+`frontend/src/components/LoadState.svelte`:
+
+```svelte
+<script>
+  // One shape for the loading / error / content branch that every fetch site
+  // used to hand-write (docs/designs/architecture-and-conventions.md §3.9 for
+  // the error-text contract). State stays in the caller:
+  //
+  //   <LoadState {loading} {error} loadingText="Searching...">
+  //     …content…
+  //   </LoadState>
+  //
+  // `error` must already be display text (route it through errorMessage() in
+  // the catch block); this component never inspects an Error object.
+  let {
+    loading = false,
+    error = null,
+    loadingText = 'Loading...',
+    children,
+  } = $props();
+</script>
+
+{#if loading}
+  <p class="load-state loading">{loadingText}</p>
+{:else if error}
+  <p class="load-state error" role="alert">{error}</p>
+{:else}
+  {@render children?.()}
+{/if}
+```
+
+- [ ] **Step 4: Run to verify they pass**
+
+Run from `frontend/`: `npx vitest run tests/components/LoadState.test.js`
+Expected: PASS, 6 tests.
+
+- [ ] **Step 5: CSS baseline**
+
+In `frontend/src/css/app.css`, directly after the `.data-table-empty { color: #555; }` line added in Task 2:
+
+```css
+.load-state.loading { color: #555; }
+.load-state.error { color: #b00020; }
+```
+
+- [ ] **Step 6: Suite + build green; commit**
+
+Run from `frontend/`: `npm run test:run` (all pass) and `npm run build` (no errors).
+
+```bash
+cd /Users/drshiny/Documents/konbini/Minibini
+git add frontend/src/components/LoadState.svelte frontend/src/css/app.css frontend/tests/components/LoadState.test.js frontend/tests/components/_LoadStateHarness.svelte
+git commit -m "feat(frontend): LoadState — one loading/error/content shape for fetch sites
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 2c: Sweep every fetch site onto `LoadState`
+
+Apply to all 56 files that render a `{#if loading}` branch today (31 routes, 25 components; lists below). Behaviour-preserving for the happy path; two deliberate improvements: the 40 files with no error branch gain one, and catch blocks that display bare `err.message` move to `errorMessage(err, '<fallback>')` per the error contract (CLAUDE.md "Error responses").
+
+**Recipe (per file):**
+
+1. `import LoadState from '<relative>/components/LoadState.svelte';`
+2. Find the fetch's `catch`. If it sets the error from `err.message` (or `e.message`), change it to `errorMessage(err, 'Could not load <things>.')` with a fallback that names what failed (import `errorMessage` from `lib/api.js` if not already imported). If the file has `loading` state but **no** error state at all, add `let error = $state(null);`, set it in the catch (`error = errorMessage(err, 'Could not load <things>.')`), and clear it (`error = null`) where `loading = true` is set. Keep the existing variable name where one exists (`error`, `loadError`, `errorMessage`) — do not rename state in this sweep.
+3. Replace the markup chain
+
+   ```svelte
+   {#if loading}
+     <p>Loading...</p>           ← any of the ten spellings
+   {:else if error}
+     <p>Error: {error}</p>       ← any of the seven spellings, or absent
+   {:else}
+     …content…
+   {/if}
+   ```
+
+   with
+
+   ```svelte
+   <LoadState {loading} {error}>
+     …content…
+   </LoadState>
+   ```
+
+   passing `loadingText="…"` only where the old text was page-specific (today: `Searching...` in `routes/Search.svelte`, `Loading packing list...` in `routes/shipments/PackingListPrint.svelte`, `Loading templates…` in `settings/EmailTemplates.svelte`, `Loading rate schemes…` in `RateSchemeManager.svelte`, `Loading QuickBooks status...` in `QBOConnectionCard.svelte`). Generic "Loading…" / "Loading..." / `<em>Loading...</em>` variants all become the default.
+4. If the old chain had further `{:else if}` arms that are not loading/error (e.g. `{:else if filteredItems.length === 0}`), they move **inside** the `LoadState` children as their own `{#if}`.
+5. Where a page's `error` was also rendered somewhere else (e.g. a `FormMessage` under a form for a *save* error), leave that alone — this sweep is only for the **load** state. A file whose `loading` guards a form submit rather than a fetch is out of scope; skip it and say so in the commit message.
+6. Run that file's existing test(s). Where a test asserted on the old literal ("Loading…" with an ellipsis, "Error: …"), update the literal — the behaviour under test is unchanged. For each of the 40 files that gained an error branch, add one test: mock the fetch to reject and assert `getByRole('alert')` has the fallback text. Mirror the mocks of the file's nearest existing test.
+
+**Commit 1 — routes (31 files):**
+`routes/ActivityPage.svelte`, `routes/Search.svelte`, `routes/catalog/CatalogEarmarksPage.svelte`, `routes/catalog/CatalogInventoryPage.svelte`, `routes/change-orders/ChangeOrderSendPage.svelte`, `routes/contacts/BusinessDetailPage.svelte`, `routes/contacts/BusinessFormPage.svelte`, `routes/contacts/BusinessListPage.svelte`, `routes/contacts/ContactDetailPage.svelte`, `routes/contacts/ContactFormPage.svelte`, `routes/contacts/ContactListPage.svelte`, `routes/email/EmailAssociatePage.svelte`, `routes/email/EmailAssociatePOPage.svelte`, `routes/email/EmailCreateJobPage.svelte`, `routes/email/EmailCreatePOPage.svelte`, `routes/email/EmailDetailPage.svelte`, `routes/email/EmailInboxPage.svelte`, `routes/estimates/EstimateSendPage.svelte`, `routes/expenses/ExpenseListPage.svelte`, `routes/invoices/InvoiceListPage.svelte`, `routes/invoices/InvoiceSendPage.svelte`, `routes/jobs/JobDetailPage.svelte`, `routes/jobs/JobFormPage.svelte`, `routes/jobs/TaskDetailPage.svelte`, `routes/purchaseorders/PurchaseOrderDetailPage.svelte`, `routes/purchaseorders/PurchaseOrderFormPage.svelte`, `routes/purchaseorders/PurchaseOrderListPage.svelte`, `routes/purchaseorders/PurchaseOrderSendPage.svelte`, `routes/shipments/PackingListPrint.svelte`, `routes/users/UserDetailPage.svelte`, `routes/users/UserListPage.svelte`.
+
+- [ ] Apply the recipe; `npm run test:run` and `npm run build` green.
+- [ ] Commit: `refactor(routes): load/error branches on LoadState; load errors via errorMessage()` — list any skipped files and why in the body.
+
+**Commit 2 — components (25 files):**
+`components/changeorders/ChangeOrderPanel.svelte`, `components/email/EmailReplyComposer.svelte`, `components/expenses/UserReimbursementPanel.svelte`, `components/home/ExpensesList.svelte`, `components/home/MyChangeRequestsList.svelte`, `components/home/MyShiftsList.svelte`, `components/jobs/DeliverablesEditModal.svelte`, `components/jobs/DeliverablesSection.svelte`, `components/jobs/JobHistorySection.svelte`, `components/jobs/PmJobList.svelte`, `components/PortalDocument.svelte`, `components/purchaseorders/POPanel.svelte`, `components/qbo/QBOSyncFailures.svelte`, `components/QBOConnectionCard.svelte`, `components/RateSchemeManager.svelte`, `components/schedule/TaskQuickCard.svelte`, `components/ServiceItemManager.svelte`, `components/settings/EmailTemplates.svelte`, `components/settings/PaymentTermsManager.svelte`, `components/shipments/ShipmentsPanel.svelte`, `components/tasks/TasksPanel.svelte`, `components/UnitsManager.svelte`, `components/users/PayrollReport.svelte`, `components/users/ShiftRequestQueue.svelte`, `components/WorkItemForm.svelte`.
+
+`PortalDocument.svelte` is rendered by the customer portals (`EstimatePortal`, `ChangeOrderPortal`), which have their own entry (`portal/index.html`) but share `app.css` — confirm the `.load-state` rules reach it (they will if the portal imports `app.css`; check `portal/` and `EstimatePortal.svelte`'s imports).
+
+- [ ] Apply the recipe; `npm run test:run` and `npm run build` green.
+- [ ] Commit: `refactor(components): load/error branches on LoadState; load errors via errorMessage()`.
+
+**Verification for this task:** `grep -rn "{#if loading}" frontend/src` prints only lines inside `LoadState.svelte` itself (or files the commit messages explicitly skipped as submit-guards). `grep -rn "<p>Loading" frontend/src` prints nothing.
+
+---
+
 ### Task 3: Pilot A (links) — Contacts & Businesses list
 
 **Files:**
@@ -738,10 +936,10 @@ In `frontend/src/routes/contacts/ContactListPage.svelte`:
   import DataTable from '../../components/DataTable.svelte';
 ```
 
-(b) Replace the template block that starts at `{:else if filteredItems.length === 0}` and runs through the closing `</table>` with:
+(b) After Task 2c this region is already `<LoadState {loading} {error}>…</LoadState>` with the empty-check and the `<table>` inside it. Replace the children of that `LoadState` (the `{#if filteredItems.length === 0}<p>No results found.</p>{:else}<table …>…</table>{/if}` block) with:
 
 ```svelte
-{:else}
+<LoadState {loading} {error}>
   <DataTable
     rows={pageItems}
     key={(item) => `${item._type}-${item._id}`}
@@ -755,21 +953,10 @@ In `frontend/src/routes/contacts/ContactListPage.svelte`:
       { id: 'tags',     label: 'Tags',     cell: tagsCell },
     ]}
   />
+</LoadState>
 ```
 
-so that the whole loading/error/table region reads:
-
-```svelte
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p>Error: {error}</p>
-{:else}
-  <DataTable … (as above) … />
-{/if}
-```
-
-The `{:else if filteredItems.length === 0}` branch is removed on purpose: when `filteredItems` is empty so is `pageItems`, and `DataTable` renders the same "No results found." text.
+The empty-check is removed on purpose: when `filteredItems` is empty so is `pageItems`, and `DataTable` renders the same "No results found." text.
 
 (c) Keep the existing `{#if totalPages > 1}` pagination block unchanged below it.
 
@@ -1538,6 +1725,17 @@ flag); wrapping a single row (use a `$derived` filter); hiding fetched,
 data-heavy content with `display: none`; a `lite`/`phone` flag on a
 permission-gated column.
 
+### 6.2a Fetch-site state — `components/LoadState.svelte`
+
+Not a mode seam, but consolidated in the same pass (2026-10): every
+fetch site renders `<LoadState {loading} {error}>…content…</LoadState>`
+instead of a hand-written `{#if loading}…{:else if error}…{:else}` chain.
+State stays in the caller (`let loading = $state(true); let error =
+$state(null);`); the catch block sets `error = errorMessage(err,
+'Could not load …')` per §3.9. `loadingText` carries page-specific copy
+("Searching..."); the default is "Loading...". The error renders with
+`role="alert"`. Loading wins over a stale error during a reload.
+
 ### 6.3 Toggle location
 
 The density toggle lives at the bottom of the sidebar
@@ -1588,6 +1786,10 @@ Replace the `### View Mode (Full / Lite)` section's five bullets with:
   app shell. Routes never import either store.
 - New list tables use `DataTable`; label/value layouts use `<dl>`. Editing
   grids and document line tables stay hand-written (architecture doc §6.2).
+- Every fetch site wraps its content in `components/LoadState.svelte`
+  (`{loading} {error}` + optional `loadingText`, default "Loading...");
+  the error text comes from `errorMessage()` in the catch block. Never
+  hand-write a loading/error branch.
 - No lite-content decisions yet: no `lite:`/`phone:` flags are set anywhere.
 - Lite still fetches full data; toggling density re-renders without a refetch.
 - Full reference: `docs/designs/architecture-and-conventions.md` §6.
@@ -1604,6 +1806,10 @@ Append to the "## Coverage status" section of `docs/designs/frontend-testing.md`
   a writable), and a same-headers-in-both-densities assertion in every
   migrated list's test (pattern: `tests/components/contacts/ContactListPage.test.js`,
   QBO children stubbed with `_Noop.svelte`; `tests/routes/Search.test.js`).
+- Load state (2026-10): `tests/components/LoadState.test.js`
+  (`_LoadStateHarness.svelte` for children), plus a reject-the-fetch →
+  `getByRole('alert')` test in every component that gained an error branch
+  in the sweep.
 ```
 
 In `docs/plans/2026-10-08-view-mode-seams.md`, replace the `Status:` paragraph with:
@@ -1646,5 +1852,6 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] `grep -rn "viewMode\|stores/layout" frontend/src/routes` prints nothing (routes never import the stores).
 - [ ] `grep -rln "<table" frontend/src` lists only the do-not-migrate files from Task 6 (editing grids, document line tables, `UnpaidCard`, `JobHistorySection`) plus `DataTable.svelte`.
 - [ ] `grep -rn "lite: false\|phone: false" frontend/src` prints nothing (no lite-content decisions made).
+- [ ] `grep -rn "{#if loading}" frontend/src` prints only `LoadState.svelte` (plus any submit-guard files the Task 2c commits named as skipped); `grep -rn "<p>Loading" frontend/src` prints nothing.
 - [ ] `git log --oneline main..feature/lite-view` shows the spec + plan commits plus one commit per task/batch, all on `feature/lite-view`.
 - [ ] Do **not** merge, push, or open a PR. Report done and ready for RM's browser review (RM reviews the running app and often adjusts before merging).
