@@ -1278,6 +1278,24 @@ flag); wrapping a single row (use a `$derived` filter); hiding fetched,
 data-heavy content with `display: none`; a `lite`/`phone` flag on a
 permission-gated column.
 
+**Per-page defaults (planned, not built).** Density may also change which
+view a page *opens on*, not only what it shows — e.g. lite opening an
+estimate on Customer view where full opens on Edit view, or a different
+chip order in the mode bar. This is a use of seam 2, not a fifth seam:
+the page already holds its tab as data (`EstimatePanel` /
+`ChangeOrderPanel` have one `mode` state, a `modes` array that decides
+which chips appear and in what order, and one chooser that reads the
+per-document memory in `stores/jobWorkspace.js` and falls back to
+`'edit'`; `JobHistorySection`'s summary/timeline tab has the same shape).
+When the first such decision is made, the fallback and the `modes` order
+come from a `$derived` defaults object keyed by `$viewMode` — a small
+shared helper in the docsurface kit (returning `{ initialMode, modes }`)
+rather than an `if ($viewMode === 'lite')` in each panel — and the
+markup keeps branching only on `mode`. Remembered mode still wins over
+the density default (memory is the user's own last choice); whether
+memory is keyed per density, or reset on a density flip, is decided
+inside that same chooser when it comes up, and nowhere else.
+
 ### 6.2a Fetch-site state — `components/LoadState.svelte`
 
 Not a mode seam, but consolidated in the same pass (2026-10): every
