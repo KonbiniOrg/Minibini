@@ -152,6 +152,18 @@ dd {
 :where(.data-table) tbody tr:nth-child(even) { background: var(--doc-faint); }
 
 /*
+ * Phone-layout counterpart of .data-table: DataTable.svelte renders one card
+ * per row (a <dl> of label/value pairs) when body[data-layout="phone"].
+ * Same colorway variables as .data-table so a page's .cw-* class themes both.
+ */
+.data-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.data-card { border: 1px solid var(--doc-border); border-radius: 4px; background: var(--doc-faint); padding: 10px 12px; }
+.data-card dl { margin: 0; row-gap: 4px; column-gap: 12px; }
+.data-card dt { font-weight: 600; color: var(--doc-accent); font-size: 13px; }
+.data-card dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.data-table-empty { color: #555; }
+
+/*
  * Status pills. ONE source of truth for status badge/select coloring — the
  * per-component .status-badge copies were consolidated here (2026-07). Apply
  * `status-badge status-{status}` to a span, or `status-{status}` alone to a
