@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 
 import { api } from '@/lib/api.js';
 import UnitsManager from '@/components/UnitsManager.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 beforeEach(() => {
   api.get.mockReset();
@@ -70,5 +71,23 @@ describe('UnitsManager', () => {
     // Remove button exists for 'ea' only (not 'none' or 'hour').
     const removeButtons = getAllByRole('button', { name: 'Remove' });
     expect(removeButtons).toHaveLength(1);
+  });
+});
+
+describe('UnitsManager — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  it('renders Unit / Order / (remove) in both densities with data-col and keeps special units undeletable', async () => {
+    viewMode.set('lite');
+    const { findByText, container } = render(UnitsManager);
+    await findByText('kg');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(['Unit', 'Order', '']);
+    const removeCells = table.querySelectorAll('td[data-col="remove"]');
+    expect(removeCells[0].querySelector('button')).toBeNull(); // 'none' is special
+    expect(removeCells[1].querySelector('button').textContent).toBe('Remove');
+    viewMode.set('full');
+    const { findByText: f2, container: c2 } = render(UnitsManager);
+    await f2('kg');
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['Unit', 'Order', '']);
   });
 });

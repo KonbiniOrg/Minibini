@@ -6,6 +6,7 @@
   import StockOrderDialog from '../../components/inventory/StockOrderDialog.svelte';
   import { stockShortfall } from '../../lib/stockShortfall.js';
   import LoadState from '../../components/LoadState.svelte';
+  import DataTable from '../../components/DataTable.svelte';
 
   let rows = $state([]);
   let loading = $state(true);
@@ -55,53 +56,24 @@
 <CatalogTabs />
 
 <LoadState {loading} {error}>
-{#if rows.length === 0}
-  <p><em>No earmarks — nothing is committed right now.</em></p>
-{:else}
-  <table class="data-table" style="width: 100%">
-    <thead>
-      <tr>
-        <th><button type="button" class="sort" onclick={() => setSort('item_code')}>Code</button></th>
-        <th><button type="button" class="sort" onclick={() => setSort('item_description')}>Description</button></th>
-        <th><button type="button" class="sort" onclick={() => setSort('units')}>Units</button></th>
-        <th><button type="button" class="sort" onclick={() => setSort('job_number')}>Job</button></th>
-        <th style="text-align: right"><button type="button" class="sort" onclick={() => setSort('quantity')}>Earmarked</button></th>
-        <th style="text-align: right"><button type="button" class="sort" onclick={() => setSort('qty_on_hand')}>On hand</button></th>
-        <th style="text-align: right"><button type="button" class="sort" onclick={() => setSort('qty_on_order')}>On order</button></th>
-        <th style="text-align: right"><button type="button" class="sort" onclick={() => setSort('shortfall')}>Shortfall</button></th>
-        <th>POs</th>
-        {#if $canManageFinancials}<th></th>{/if}
-      </tr>
-    </thead>
-    <tbody>
-      {#each sorted as r (r.earmark_id)}
-        <tr class:short={Number(stockShortfall(r)) > 0}>
-          <td>{r.item_code}</td>
-          <td class="preserve-breaks">{r.item_description || '—'}</td>
-          <td>{r.units}</td>
-          <td><a href={`/jobs/${r.job}`} use:link>{r.job_number}</a></td>
-          <td style="text-align: right">{r.quantity}</td>
-          <td style="text-align: right">{r.qty_on_hand}</td>
-          <td style="text-align: right">{r.qty_on_order}</td>
-          <td style="text-align: right">{stockShortfall(r)}</td>
-          <td>
-            {#if r.pos.length === 0}
-              —
-            {:else}
-              {#each r.pos as po, i (po.po_id)}
-                {#if i > 0},&nbsp;{/if}
-                <a href={`/purchase-orders/${po.po_id}`} use:link>{po.po_number}</a>
-              {/each}
-            {/if}
-          </td>
-          {#if $canManageFinancials}
-            <td><button type="button" onclick={() => orderRow = r}>order</button></td>
-          {/if}
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-{/if}
+<DataTable
+  rows={sorted}
+  key={(r) => r.earmark_id}
+  emptyText="No earmarks — nothing is committed right now."
+  rowClass={(r) => (Number(stockShortfall(r)) > 0 ? 'short' : undefined)}
+  columns={[
+    { id: 'code',        label: 'Code',        field: 'item_code',    header: sortHeader, sortKey: 'item_code' },
+    { id: 'description', label: 'Description', cell: descriptionCell, header: sortHeader, sortKey: 'item_description' },
+    { id: 'units',       label: 'Units',       field: 'units',        header: sortHeader, sortKey: 'units' },
+    { id: 'job',         label: 'Job',         cell: jobCell,         header: sortHeader, sortKey: 'job_number' },
+    { id: 'earmarked',   label: 'Earmarked',   field: 'quantity',     header: sortHeader, sortKey: 'quantity',     align: 'right' },
+    { id: 'onhand',      label: 'On hand',     field: 'qty_on_hand',  header: sortHeader, sortKey: 'qty_on_hand',  align: 'right' },
+    { id: 'onorder',     label: 'On order',    field: 'qty_on_order', header: sortHeader, sortKey: 'qty_on_order', align: 'right' },
+    { id: 'shortfall',   label: 'Shortfall',   cell: shortfallCell,   header: sortHeader, sortKey: 'shortfall',    align: 'right' },
+    { id: 'pos',         label: 'POs',         cell: posCell },
+    ...($canManageFinancials ? [{ id: 'actions', label: '', cell: actionsCell }] : []),
+  ]}
+/>
 </LoadState>
 
 {#if orderRow}
@@ -113,9 +85,27 @@
 {/if}
 </div>
 
+
+{#snippet sortHeader(col)}<button type="button" class="sort" onclick={() => setSort(col.sortKey)}>{col.label}</button>{/snippet}
+{#snippet descriptionCell(r)}<span class="preserve-breaks">{r.item_description || '—'}</span>{/snippet}
+{#snippet jobCell(r)}<a href={`/jobs/${r.job}`} use:link>{r.job_number}</a>{/snippet}
+{#snippet shortfallCell(r)}{stockShortfall(r)}{/snippet}
+{#snippet posCell(r)}
+  {#if r.pos.length === 0}
+    —
+  {:else}
+    {#each r.pos as po, i (po.po_id)}
+      {#if i > 0},&nbsp;{/if}
+      <a href={`/purchase-orders/${po.po_id}`} use:link>{po.po_number}</a>
+    {/each}
+  {/if}
+{/snippet}
+{#snippet actionsCell(r)}<button type="button" onclick={() => orderRow = r}>order</button>{/snippet}
+
 <style>
-  .short td { background: #fff1f0; }
-  th button.sort {
+  /* rows/headers come from DataTable (another component's scope) */
+  :global(tr.short td) { background: #fff1f0; }
+  :global(th) button.sort {
     background: none;
     border: none;
     padding: 0;

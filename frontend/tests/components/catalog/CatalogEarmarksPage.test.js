@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 vi.mock('@/stores/permissions.js', () => ({
   canManageFinancials: readable(true),
   canManageJobs: readable(true),
@@ -11,6 +11,7 @@ vi.mock('@/stores/permissions.js', () => ({
 
 import { api } from '@/lib/api.js';
 import CatalogEarmarksPage from '@/routes/catalog/CatalogEarmarksPage.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 const rows = [
   {
@@ -71,5 +72,23 @@ describe('CatalogEarmarksPage', () => {
     const { findAllByRole } = render(CatalogEarmarksPage);
     const buttons = await findAllByRole('button', { name: 'order' });
     expect(buttons.length).toBe(2);
+  });
+});
+
+describe('CatalogEarmarksPage — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  const ALL = ['Code', 'Description', 'Units', 'Job', 'Earmarked', 'On hand', 'On order', 'Shortfall', 'POs', ''];
+  it('renders sortable headers as buttons inside the header cells, same columns in both densities', async () => {
+    viewMode.set('lite');
+    const { findByText, container } = render(CatalogEarmarksPage);
+    await findByText('B-SHEET');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(ALL);
+    expect(table.querySelectorAll('th button.sort')).toHaveLength(8);
+    expect(table.querySelector('td[data-col="shortfall"]').getAttribute('style')).toMatch(/text-align:\s*right/);
+    viewMode.set('full');
+    const { findByText: f2, container: c2 } = render(CatalogEarmarksPage);
+    await f2('B-SHEET');
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(ALL);
   });
 });

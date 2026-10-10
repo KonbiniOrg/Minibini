@@ -8,6 +8,7 @@ vi.mock('@/lib/api.js', () => ({
 
 import { api } from '@/lib/api.js';
 import ServiceItemManager from '@/components/ServiceItemManager.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 const TMPL = { template_id: 1, template_name: 'Welding', rate_scheme: 1, is_active: true, default_active_modifiers: ['rush'], display_rate: '37.50' };
 const FLAT_FEE_TMPL = { template_id: 2, template_name: 'Flat Weld', rate_scheme: 2, is_active: true, default_active_modifiers: [], display_rate: '150.00' };
@@ -194,5 +195,21 @@ describe('ServiceItemManager list price notes (RM 2026-08-17)', () => {
     await findByText('Flat Weld');
     // The percentage scheme's display_rate must not render as a money note.
     expect(queryByText(/\$150\.00/)).toBeNull();
+  });
+});
+
+describe('ServiceItemManager — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  it('renders Name / Rate Scheme / Active / (actions) in both densities with data-col', async () => {
+    viewMode.set('lite');
+    const { findByText, container } = render(ServiceItemManager);
+    await findByText('Welding');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(['Name', 'Rate Scheme', 'Active', '']);
+    expect(table.querySelector('td[data-col="scheme"]').textContent).toContain('Hourly');
+    viewMode.set('full');
+    const { findByText: f2, container: c2 } = render(ServiceItemManager);
+    await f2('Welding');
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['Name', 'Rate Scheme', 'Active', '']);
   });
 });

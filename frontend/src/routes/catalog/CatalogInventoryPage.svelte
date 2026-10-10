@@ -9,6 +9,7 @@
   import InventoryImportPanel from '../../components/qboimport/InventoryImportPanel.svelte';
   import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
   import LoadState from '../../components/LoadState.svelte';
+  import DataTable from '../../components/DataTable.svelte';
 
   // Write access: either the money role or the admin role.
   let pullEpoch = $state(0);
@@ -216,62 +217,48 @@
 </fieldset>
 
 <LoadState {loading} {error}>
-{#if shown.length === 0}
-  <p><em>No inventory items match.</em></p>
-{:else}
-  <table class="data-table" style="width: 100%">
-    <thead>
-      <tr>
-        <th>Code</th>
-        <th>Description</th>
-        <th>Units</th>
-        <th style="text-align: right">On hand</th>
-        <th style="text-align: right">Earmarked</th>
-        <th style="text-align: right">Available</th>
-        <th style="text-align: right">On order</th>
-        <th>Status</th>
-        <th style="text-align: right">Cost</th>
-        <th style="text-align: right">Sell</th>
-        {#if canManage}<th>Actions</th>{/if}
-      </tr>
-    </thead>
-    <tbody>
-      {#each shown as it (it.inventory_item_id)}
-        <tr
-          class:short={Number(it.qty_available) < 0}
-        >
-          <td>{it.code}</td>
-          <td class="preserve-breaks">{it.description || '—'}</td>
-          <td>{it.units}</td>
-          <td style="text-align: right">{it.qty_on_hand}</td>
-          <td style="text-align: right">{it.qty_earmarked}</td>
-          <td style="text-align: right">{it.qty_available}</td>
-          <td style="text-align: right">{Number(it.qty_on_order) > 0 ? it.qty_on_order : '—'}</td>
-          <td>{it.is_active ? 'active' : 'inactive'}</td>
-          <td style="text-align: right">${it.purchase_price}</td>
-          <td style="text-align: right">${it.selling_price}</td>
-          {#if canManage}
-            <td>
-              <button type="button" onclick={() => editItem(it)}>edit</button>
-              {#if Number(it.qty_on_hand) > 0}
-                <button type="button" onclick={() => startWriteOff(it)}>write off</button>
-              {/if}
-              {#if $canManageFinancials}
-                <button type="button" onclick={() => orderItem = it}>order</button>
-              {/if}
-            </td>
-          {/if}
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-{/if}
+<DataTable
+  rows={shown}
+  key={(it) => it.inventory_item_id}
+  emptyText="No inventory items match."
+  rowClass={(it) => (Number(it.qty_available) < 0 ? 'short' : undefined)}
+  columns={[
+    { id: 'code',        label: 'Code',        field: 'code' },
+    { id: 'description', label: 'Description', cell: descriptionCell },
+    { id: 'units',       label: 'Units',       field: 'units' },
+    { id: 'onhand',      label: 'On hand',     field: 'qty_on_hand',   align: 'right' },
+    { id: 'earmarked',   label: 'Earmarked',   field: 'qty_earmarked', align: 'right' },
+    { id: 'available',   label: 'Available',   field: 'qty_available', align: 'right' },
+    { id: 'onorder',     label: 'On order',    cell: onOrderCell,      align: 'right' },
+    { id: 'status',      label: 'Status',      cell: statusCell },
+    { id: 'cost',        label: 'Cost',        cell: costCell,         align: 'right' },
+    { id: 'sell',        label: 'Sell',        cell: sellCell,         align: 'right' },
+    ...(canManage ? [{ id: 'actions', label: 'Actions', cell: actionsCell }] : []),
+  ]}
+/>
 </LoadState>
 </div>
 
+
+{#snippet descriptionCell(it)}<span class="preserve-breaks">{it.description || '—'}</span>{/snippet}
+{#snippet onOrderCell(it)}{Number(it.qty_on_order) > 0 ? it.qty_on_order : '—'}{/snippet}
+{#snippet statusCell(it)}{it.is_active ? 'active' : 'inactive'}{/snippet}
+{#snippet costCell(it)}${it.purchase_price}{/snippet}
+{#snippet sellCell(it)}${it.selling_price}{/snippet}
+{#snippet actionsCell(it)}
+  <button type="button" onclick={() => editItem(it)}>edit</button>
+  {#if Number(it.qty_on_hand) > 0}
+    <button type="button" onclick={() => startWriteOff(it)}>write off</button>
+  {/if}
+  {#if $canManageFinancials}
+    <button type="button" onclick={() => orderItem = it}>order</button>
+  {/if}
+{/snippet}
+
 <style>
   /* Available < 0: earmarked exceeds on-hand — oversubscribed / shortfall. */
-  .short td {
+  /* rows come from DataTable (another component's scope); rowClass sets .short on its <tr> */
+  :global(tr.short td) {
     background: #fff1f0;
   }
 </style>

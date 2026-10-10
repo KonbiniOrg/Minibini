@@ -176,3 +176,17 @@ describe('DataTable — rowClass', () => {
     expect(container.querySelector('tbody tr').getAttribute('class') || '').toBe('');
   });
 });
+
+describe('DataTable — header snippet', () => {
+  it('renders the header snippet inside <th> on desktop and the plain label in phone cards', async () => {
+    const { container } = render(Harness, { props: { rows, sortable: true } });
+    const th = container.querySelector('th[data-col="name"]');
+    expect(th.querySelector('button.sort')).toBeTruthy();
+    expect(th.textContent).toContain('Name ▲');
+    layout.set('phone');
+    await tick();
+    const dt = container.querySelector('li.data-card dt');
+    expect(dt.textContent.trim()).toBe('Name');
+    expect(dt.querySelector('button')).toBeNull();
+  });
+});

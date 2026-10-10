@@ -9,6 +9,7 @@
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
   import LoadState from '../LoadState.svelte';
+  import DataTable from '../DataTable.svelte';
 
   let { refreshEpoch = 0 } = $props();
 
@@ -106,31 +107,19 @@
 
 <h4>Payment terms</h4>
 <LoadState {loading}>
-  {#if terms.length}
-    <table class="data-table terms-table">
-      <thead>
-        <tr><th>Name</th><th>Days</th><th></th><th>In use</th><th></th></tr>
-      </thead>
-      <tbody>
-        {#each terms as term (term.term_id)}
-          <tr>
-            <td>{term.name}</td>
-            <td>{term.days ?? '—'}</td>
-            <td>{#if term.qbo_id}<span class="qbo-badge">QBO</span>{/if}</td>
-            <td>{term.business_count
-                  ? `${term.business_count} business${term.business_count === 1 ? '' : 'es'}`
-                  : '—'}</td>
-            <td>
-              <button type="button" onclick={() => startEdit(term)}>Edit</button>
-              <button type="button" onclick={() => remove(term)}>Delete</button>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {:else}
-    <p><em>No payment terms yet.</em></p>
-  {/if}
+  <DataTable
+    rows={terms}
+    key={(term) => term.term_id}
+    emptyText="No payment terms yet."
+    class="terms-table"
+    columns={[
+      { id: 'name',    label: 'Name',   field: 'name' },
+      { id: 'days',    label: 'Days',   cell: daysCell },
+      { id: 'qbo',     label: '',       cell: qboCell },
+      { id: 'inuse',   label: 'In use', cell: inUseCell },
+      { id: 'actions', label: '',       cell: actionsCell },
+    ]}
+  />
   <p><button type="button" onclick={startCreate}>+ New terms</button></p>
 </LoadState>
 
@@ -158,8 +147,17 @@
   <FormMessage error={formError} />
 </Modal>
 
+
+{#snippet daysCell(term)}{term.days ?? '—'}{/snippet}
+{#snippet qboCell(term)}{#if term.qbo_id}<span class="qbo-badge">QBO</span>{/if}{/snippet}
+{#snippet inUseCell(term)}{term.business_count ? `${term.business_count} business${term.business_count === 1 ? '' : 'es'}` : '—'}{/snippet}
+{#snippet actionsCell(term)}
+  <button type="button" onclick={() => startEdit(term)}>Edit</button>
+  <button type="button" onclick={() => remove(term)}>Delete</button>
+{/snippet}
+
 <style>
-  .terms-table { max-width: 480px; }
+  :global(.terms-table) { max-width: 480px; }
   .qbo-badge {
     font-size: 0.75em;
     border: 1px solid #2ca01c;

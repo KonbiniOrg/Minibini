@@ -15,6 +15,7 @@ vi.mock('@/stores/messages.js', () => ({
 
 import { api } from '@/lib/api.js';
 import PaymentTermsManager from '@/components/settings/PaymentTermsManager.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 const TERMS = [
   { term_id: 1, name: 'Net 30', days: 30, qbo_id: '3', business_count: 2 },
@@ -96,5 +97,24 @@ describe('PaymentTermsManager', () => {
     const { findAllByText } = render(PaymentTermsManager);
     await fireEvent.click((await findAllByText('Delete'))[0]);
     expect(api.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PaymentTermsManager — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  const ALL = ['Name', 'Days', '', 'In use', ''];
+  it('renders the terms columns in both densities with data-col', async () => {
+    viewMode.set('lite');
+    const { findByText, container } = render(PaymentTermsManager);
+    await findByText('Net 30');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(ALL);
+    expect(table.querySelector('td[data-col="qbo"] .qbo-badge')).toBeTruthy();
+    expect(table.querySelectorAll('td[data-col="inuse"]')[0].textContent.trim()).toBe('2 businesses');
+    expect(table.querySelectorAll('td[data-col="days"]')[1].textContent.trim()).toBe('—');
+    viewMode.set('full');
+    const { findByText: f2, container: c2 } = render(PaymentTermsManager);
+    await f2('Net 30');
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(ALL);
   });
 });

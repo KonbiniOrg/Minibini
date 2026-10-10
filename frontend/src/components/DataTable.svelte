@@ -14,6 +14,8 @@
   //   lite      false => hidden in lite density        (default true)
   //   phone     false => hidden in phone layout        (default true)
   //   align     'left' | 'right' | 'center' (text-align on th/td)
+  //   header    optional snippet (col) => markup rendered inside <th> instead of
+  //             the label text (sortable headers); phone cards still show label
   // rowClass  (row) => extra class on the <tr> / card (e.g. a status class)
   import { viewMode } from '../stores/viewMode.js';
   import { layout } from '../stores/layout.js';
@@ -76,7 +78,7 @@
     <thead>
       <tr>
         {#each visibleColumns as col (col.id)}
-          <th data-col={col.id} style={alignStyle(col)}>{header(col)}</th>
+          <th data-col={col.id} style={alignStyle(col)}>{#if col.header}{@render col.header(col)}{:else}{header(col)}{/if}</th>
         {/each}
       </tr>
     </thead>

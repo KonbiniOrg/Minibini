@@ -1,6 +1,7 @@
 <script>
   import { api, errorMessage } from '../lib/api.js';
   import LoadState from './LoadState.svelte';
+  import DataTable from './DataTable.svelte';
 
   let units = $state([]);
   let newUnit = $state('');
@@ -78,35 +79,15 @@
 {/if}
 
 <LoadState {loading}>
-  <table>
-    <thead>
-      <tr>
-        <th>Unit</th>
-        <th>Order</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each units as unit, i}
-        <tr>
-          <td>{unit}</td>
-          <td>
-            {#if i > 1}
-              <button onclick={() => moveUp(i)} disabled={saving}>↑</button>
-            {/if}
-            {#if i > 0 && i < units.length - 1}
-              <button onclick={() => moveDown(i)} disabled={saving}>↓</button>
-            {/if}
-          </td>
-          <td>
-            {#if !SPECIAL_UNITS.includes(unit)}
-              <button onclick={() => removeUnit(i)} disabled={saving}>Remove</button>
-            {/if}
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+  <DataTable
+    rows={units}
+    key={(unit) => unit}
+    columns={[
+      { id: 'unit',   label: 'Unit',  cell: unitCell },
+      { id: 'order',  label: 'Order', cell: orderCell },
+      { id: 'remove', label: '',      cell: removeCell },
+    ]}
+  />
 
   <p>
     <input
@@ -118,3 +99,19 @@
     <button onclick={addUnit} disabled={saving || !newUnit.trim()}>Add</button>
   </p>
 </LoadState>
+
+{#snippet unitCell(unit)}{unit}{/snippet}
+{#snippet orderCell(unit)}
+  {@const i = units.indexOf(unit)}
+  {#if i > 1}
+    <button onclick={() => moveUp(i)} disabled={saving}>↑</button>
+  {/if}
+  {#if i > 0 && i < units.length - 1}
+    <button onclick={() => moveDown(i)} disabled={saving}>↓</button>
+  {/if}
+{/snippet}
+{#snippet removeCell(unit)}
+  {#if !SPECIAL_UNITS.includes(unit)}
+    <button onclick={() => removeUnit(units.indexOf(unit))} disabled={saving}>Remove</button>
+  {/if}
+{/snippet}
