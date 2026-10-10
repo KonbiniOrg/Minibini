@@ -26,3 +26,15 @@ describe('SenderResolutionForm', () => {
     expect(await findByDisplayValue('Acme')).toBeInTheDocument();       // new business name
   });
 });
+
+describe('SenderResolutionForm — sender summary as a definition list', () => {
+  const dts = (c) => Array.from(c.querySelectorAll('dl dt')).map((dt) => dt.textContent.trim());
+  it('renders Name / Email (and the signature company when extracted) as dt/dd pairs', async () => {
+    const { findByText, container } = render(SenderResolutionForm, {
+      props: { senderInfo: { matching_contacts: [], matching_businesses: [], sender_name: 'Jane Doe', sender_email: 'jane@x.com', extracted_company: 'Acme' } },
+    });
+    await findByText('Sender');
+    expect(dts(container)).toEqual(['Name', 'Email', 'Company (from signature)']);
+    expect(container.querySelector('table')).toBeNull();
+  });
+});

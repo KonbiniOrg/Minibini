@@ -222,13 +222,11 @@
 
   <fieldset class="template-block">
     <legend><strong>Available variables</strong></legend>
-    <table class="vars">
-      <tbody>
-        {#each COMMON_VARS as [name, desc]}
-          <tr><th><code>{name}</code></th><td>{desc}</td></tr>
-        {/each}
-      </tbody>
-    </table>
+    <dl class="vars">
+      {#each COMMON_VARS as [name, desc]}
+        <dt><code>{name}</code></dt><dd>{desc}</dd>
+      {/each}
+    </dl>
     <p>
       <small>
         Per-document aliases also work: <code>{'{estimate_number}'}</code> on the
@@ -322,7 +320,7 @@
     margin: 0 4px;
   }
   .ok { color: #047857; margin-left: 8px; }
-  .vars { border-collapse: collapse; }
-  .vars th, .vars td { padding: 2px 12px 2px 0; text-align: left; font-weight: normal; }
-  .vars th code { font-weight: bold; }
+  .vars { gap: 2px 12px; }
+  .vars dt { font-weight: normal; }
+  .vars dt code { font-weight: bold; }
 </style>

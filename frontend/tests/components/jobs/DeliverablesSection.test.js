@@ -87,3 +87,15 @@ describe('DeliverablesSection — load failure', () => {
     expect(await findByRole('alert')).toHaveTextContent('boom');
   });
 });
+
+describe('DeliverablesSection — DataTable', () => {
+  it('renders Qty / Units / Description headers with a right-aligned quantity', async () => {
+    mockApi({ items: [{ id: 1, qty_ordered: '10.00', units: 'ea', description: 'Widget' }] });
+    const { findByText, container } = render(DeliverablesSection, { props: { jobId: 5 } });
+    await findByText('Widget');
+    const table = container.querySelector('table.data-table');
+    expect(Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent.trim())).toEqual(['Qty', 'Units', 'Description']);
+    expect(table.querySelector('td[data-col="qty"]').getAttribute('style')).toMatch(/text-align:\s*right/);
+    expect(table.querySelector('td[data-col="description"] .preserve-breaks')).toBeTruthy();
+  });
+});

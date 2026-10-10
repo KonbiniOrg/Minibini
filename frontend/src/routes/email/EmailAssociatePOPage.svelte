@@ -56,12 +56,10 @@
 
 <LoadState {loading} error={loadError}>
   <h3>Email Summary</h3>
-  <table class="data-table">
-    <tbody>
-      <tr><th>From:</th><td>{email.temp_email?.from_email || email.content?.from || ''}</td></tr>
-      <tr><th>Subject:</th><td><strong>{email.temp_email?.subject || email.content?.subject || ''}</strong></td></tr>
-    </tbody>
-  </table>
+  <dl>
+    <dt>From</dt><dd>{email.temp_email?.from_email || email.content?.from || ''}</dd>
+    <dt>Subject</dt><dd><strong>{email.temp_email?.subject || email.content?.subject || ''}</strong></dd>
+  </dl>
 
   <h3>Select Purchase Order</h3>
 
