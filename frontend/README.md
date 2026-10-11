@@ -514,6 +514,15 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   Coverage stat only (`docs/designs/jobs-and-tasks.md` §9.1a).
 - Full vocabulary + backend contract: `docs/designs/materials-inventory-and-purchasing.md` §16.
 
+### Pagination
+
+Every paged list renders `components/Pager.svelte` (`page`, `count`, optional
+`pageSize` / `label`, `onPage(n)`); it hides itself when everything fits on
+one page. Both buttons are always in the DOM — Previous is disabled on page 1
+and Next on the last page, never removed — so the buttons sit in the same
+place on every page and the pointer never has to chase Next after a click.
+Don't hand-roll `{#if page > 1}` pagers.
+
 ### Delete Flow
 
 - First DELETE request (no `?confirm=true`) returns impact information and `confirm_required: true`.

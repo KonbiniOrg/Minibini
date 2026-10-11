@@ -3,8 +3,9 @@
   import PurchaseOrderList from '../../components/purchaseorders/PurchaseOrderList.svelte';
   import { push } from 'svelte-spa-router';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
-  import { pageRange, pageFromUrl } from '../../lib/pagination.js';
+  import { pageRange } from '../../lib/pagination.js';
   import LoadState from '../../components/LoadState.svelte';
+  import Pager from '../../components/Pager.svelte';
 
   let purchaseOrders = $state(null);
   let page = $state(1);
@@ -77,17 +78,7 @@
     onSelect={handleSelect}
   />
 
-  {#if purchaseOrders.count > 25}
-    <p>
-      {pageRange(purchaseOrders)}
-      {#if purchaseOrders.previous}
-        | <button onclick={() => { page = pageFromUrl(purchaseOrders.previous); }}>Previous</button>
-      {/if}
-      {#if purchaseOrders.next}
-        | <button onclick={() => { page = pageFromUrl(purchaseOrders.next); }}>Next</button>
-      {/if}
-    </p>
-  {/if}
+  <Pager {page} count={purchaseOrders.count} label={pageRange(purchaseOrders)} onPage={(n) => { page = n; }} />
 {/if}
 </LoadState>
 </div>

@@ -582,6 +582,16 @@ tr.grand td { font-weight:600; border-top:2px solid var(--doc-border); backgroun
 .toolbar button:hover { background: #f3f4f6; }
 .toolbar button:disabled { opacity: 0.5; cursor: default; }
 
+/* Pager (components/Pager.svelte). Both buttons always render; the one that
+   doesn't apply is disabled, never removed, so Next stays put between pages. */
+.pager { display: flex; align-items: center; gap: 10px; margin: 12px 0; font-size: 13px; }
+.pager button {
+  padding: 4px 12px; border: 1px solid var(--border-control); border-radius: 4px;
+  background: #fff; cursor: pointer; font-size: 13px;
+}
+.pager button:hover:not(:disabled) { background: #f3f4f6; }
+.pager button:disabled { opacity: 0.4; cursor: default; }
+
 /* Toolbar companions. */
 .back-link { font-size: 13px; }
 .page-title { font-size: 18px; font-weight: 600; }

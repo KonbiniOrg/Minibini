@@ -8,6 +8,7 @@
   import { canManageJobs } from '../../stores/permissions.js';
   import { showError, showSuccess } from '../../stores/messages.js';
   import LoadState from '../../components/LoadState.svelte';
+  import Pager from '../../components/Pager.svelte';
   import DataTable from '../../components/DataTable.svelte';
   let newContactOpen = $state(false);
   let newBusinessOpen = $state(false);
@@ -35,7 +36,6 @@
     (item._type === 'business' && showBusinesses)
   ));
   let pageItems = $derived(filteredItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE));
-  let totalPages = $derived(Math.ceil(filteredItems.length / PAGE_SIZE));
 
   $effect(() => {
     api.get('/api/tags/?page_size=200')
@@ -238,17 +238,7 @@
     ]}
   />
 
-  {#if totalPages > 1}
-    <p>
-      {#if page > 1}
-        <button onclick={() => { page--; }}>Previous</button>
-      {/if}
-      Page {page} of {totalPages}
-      {#if page < totalPages}
-        <button onclick={() => { page++; }}>Next</button>
-      {/if}
-    </p>
-  {/if}
+  <Pager {page} count={filteredItems.length} pageSize={PAGE_SIZE} onPage={(n) => { page = n; }} />
 </LoadState>
 </div>
 

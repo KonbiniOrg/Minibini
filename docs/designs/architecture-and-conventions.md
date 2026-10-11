@@ -297,6 +297,9 @@ viewsets disable it (e.g., `UserViewSet` sets `pagination_class = None`).
 > - **Disable pagination on the viewset** (`pagination_class = None`) — only when
 >   the result set is *intrinsically bounded* and small (like `UserViewSet`).
 > - **Real pagination UI** — page controls, when the user should page through.
+>   In the SPA that is always `components/Pager.svelte` (both buttons rendered,
+>   the inapplicable one disabled, so Next never moves between pages); see
+>   `frontend/README.md` → Pagination.
 >
 > The anti-pattern to avoid: bumping `?page_size` to a big number and assuming
 > it's complete. If you bound a result deliberately, say so in the UI; never let

@@ -5,6 +5,7 @@
   import { canManageJobs } from '../../stores/permissions.js';
   import { push } from 'svelte-spa-router';
   import LoadState from '../../components/LoadState.svelte';
+  import Pager from '../../components/Pager.svelte';
 
   let businesses = $state([]);
   let newOpen = $state(false);
@@ -50,16 +51,6 @@
 <LoadState {loading} {error}>
   <BusinessList {businesses} onSelect={handleSelect} />
 
-  {#if count > 25}
-    <p>
-      {#if page > 1}
-        <button onclick={() => { page--; }}>Previous</button>
-      {/if}
-      Page {page}
-      {#if page * 25 < count}
-        <button onclick={() => { page++; }}>Next</button>
-      {/if}
-    </p>
-  {/if}
+  <Pager {page} {count} onPage={(n) => { page = n; }} />
 </LoadState>
 </div>

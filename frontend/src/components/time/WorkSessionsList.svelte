@@ -6,6 +6,7 @@
   import TimeEditModal from './TimeEditModal.svelte';
   import BlepLogTable from './BlepLogTable.svelte';
   import LoadState from '../LoadState.svelte';
+  import Pager from '../Pager.svelte';
 
   // Reusable list of work sessions (bleps), recent-first by start time.
   // Surfaces: the Users page "Work Sessions" tab (all users, worker column,
@@ -110,16 +111,8 @@
         {/if}
       {/snippet}
     </BlepLogTable>
-    {#if paginate && count > PAGE_SIZE}
-      <p class="pager">
-        {#if page > 1}
-          <button type="button" onclick={() => { page--; }}>Previous</button>
-        {/if}
-        Page {page}
-        {#if page * PAGE_SIZE < count}
-          <button type="button" onclick={() => { page++; }}>Next</button>
-        {/if}
-      </p>
+    {#if paginate}
+      <Pager {page} {count} pageSize={PAGE_SIZE} onPage={(n) => { page = n; }} />
     {/if}
   {/if}
   </LoadState>
@@ -136,6 +129,5 @@
 />
 
 <style>
-  .pager { display: flex; gap: 8px; align-items: center; }
   .window-note { color: #6b7280; font-size: 0.85em; margin: -0.5em 0 0.5em; }
 </style>
