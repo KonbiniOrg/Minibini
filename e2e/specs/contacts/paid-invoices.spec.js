@@ -45,8 +45,11 @@ for (const kind of ['businesses', 'contacts']) {
     // empty text; the toggle in the head is what proves the paid rows arrived.
     const toggle = section.getByRole('button', { name: /show \d+ paid/ });
     await expect(toggle).toBeVisible();
+    // Nothing open: the same dashed box as an empty section, with "open" wording.
+    const box = section.locator('.empty-box');
+    if (await box.count()) await expect(box).toHaveText('No open invoices.');
     await toggle.click();
     await expect(section).toContainText(target.number);
-    await expect(section.locator('tbody')).not.toContainText('No open invoices');
+    await expect(box).toHaveCount(0);
   });
 }

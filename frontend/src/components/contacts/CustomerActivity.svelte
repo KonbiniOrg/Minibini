@@ -4,9 +4,11 @@
   // Contacts (business pages only) → Recent Jobs → Open Invoices → Purchase
   // orders → History. Each list section hides its closed rows behind a
   // "show N completed / paid / closed" toggle that extends the table in
-  // place; a section with no rows at all collapses to one dashed line
-  // carrying its action. Populated sections precede collapsed ones. All of
-  // those rules live in lib/customerActivity.js — this component renders.
+  // place. Every section always renders its heading (.section-title) and
+  // its action; when nothing is on display a dashed box says why — "No jobs
+  // yet." when the section is empty, "No open jobs." when the rows are all
+  // hidden behind the toggle (2026-10-11). Populated sections precede empty
+  // ones. The rules live in lib/customerActivity.js — this component renders.
   //
   // Modals are hosted by the caller: this component only calls back
   // (onNewContact, onNewJobFor(contactId), onSetDefault(contactId)).
@@ -92,88 +94,78 @@
 <div class="activity">
   {#each sections as s (s.key)}
     {#if s.key === 'contacts'}
-      {#if s.total === 0}
-        <div class="collapsed-section" data-section="contacts">
-          <span class="label">Contacts</span><span>none</span>
-          {#if $canManageJobs && onNewContact}
-            <button type="button" class="action-link" onclick={onNewContact}>New contact</button>
-          {/if}
+      <section data-section="contacts">
+        <div class="section-head">
+          <h3 class="section-title">Contacts</h3>
+          <span class="hint">
+            {#if $canManageJobs && onNewContact}
+              <button type="button" class="action-link" onclick={onNewContact}>New contact</button>
+            {/if}
+          </span>
         </div>
-      {:else}
-        <section data-section="contacts">
-          <div class="section-head">
-            <h3>Contacts</h3>
-            <span class="hint">
-              {#if $canManageJobs && onNewContact}
-                <button type="button" class="action-link" onclick={onNewContact}>New contact</button>
-              {/if}
-            </span>
-          </div>
+        {#if contacts.length}
           <DataTable rows={contacts} key={(c) => c.contact_id} columns={contactColumns} />
-        </section>
-      {/if}
+        {:else}
+          <p class="empty-box">No contacts yet.</p>
+        {/if}
+      </section>
     {:else if s.key === 'jobs'}
-      {#if s.total === 0}
-        <div class="collapsed-section" data-section="jobs"><span class="label">Recent Jobs</span><span>none</span></div>
-      {:else}
-        <section data-section="jobs">
-          <div class="section-head">
-            <h3>Recent Jobs</h3>
-            <span class="hint">
-              {#if showLabel(jobSplit.closed.length, 'completed', expanded.jobs)}
-                <button type="button" class="link-btn" onclick={() => { expanded.jobs = !expanded.jobs; }}>
-                  {showLabel(jobSplit.closed.length, 'completed', expanded.jobs)}
-                </button>
-              {/if}
-            </span>
-          </div>
-          <DataTable rows={jobRows} key={(j) => j.job_id} columns={jobColumns} emptyText="No open jobs." />
-        </section>
-      {/if}
-    {:else if s.key === 'invoices'}
-      {#if s.total === 0}
-        <div class="collapsed-section" data-section="invoices"><span class="label">Open Invoices</span><span>none</span></div>
-      {:else}
-        <section data-section="invoices">
-          <div class="section-head">
-            <h3>Open Invoices</h3>
-            <span class="hint">
-              {#if showLabel(invSplit.closed.length, 'paid', expanded.invoices)}
-                <button type="button" class="link-btn" onclick={() => { expanded.invoices = !expanded.invoices; }}>
-                  {showLabel(invSplit.closed.length, 'paid', expanded.invoices)}
-                </button>
-              {/if}
-            </span>
-          </div>
-          <DataTable rows={invRows} key={(i) => i.invoice_id} columns={invoiceColumns} emptyText="No open invoices." />
-        </section>
-      {/if}
-    {:else if s.key === 'pos'}
-      {#if s.total === 0}
-        <div class="collapsed-section" data-section="pos">
-          <span class="label">Purchase orders</span><span>none</span>
-          {#if $canManageFinancials && newPOHref}
-            <a class="action-link" href={newPOHref}>New purchase order</a>
-          {/if}
+      <section data-section="jobs">
+        <div class="section-head">
+          <h3 class="section-title">Recent Jobs</h3>
+          <span class="hint">
+            {#if showLabel(jobSplit.closed.length, 'completed', expanded.jobs)}
+              <button type="button" class="link-btn" onclick={() => { expanded.jobs = !expanded.jobs; }}>
+                {showLabel(jobSplit.closed.length, 'completed', expanded.jobs)}
+              </button>
+            {/if}
+          </span>
         </div>
-      {:else}
-        <section data-section="pos">
-          <div class="section-head">
-            <h3>Purchase orders</h3>
-            <span class="hint">
-              {#if showLabel(poSplit.closed.length, 'closed', expanded.pos)}
-                <button type="button" class="link-btn" onclick={() => { expanded.pos = !expanded.pos; }}>
-                  {showLabel(poSplit.closed.length, 'closed', expanded.pos)}
-                </button>
-              {/if}
-              {#if $canManageFinancials && newPOHref}
-                <a class="action-link" href={newPOHref}>New purchase order</a>
-              {/if}
-            </span>
-          </div>
-          <DataTable rows={poRows} key={(p) => p.po_id} columns={poColumns} emptyText="No open purchase orders." />
-        </section>
-      {/if}
+        {#if jobRows.length}
+          <DataTable rows={jobRows} key={(j) => j.job_id} columns={jobColumns} />
+        {:else}
+          <p class="empty-box">{s.total ? 'No open jobs.' : 'No jobs yet.'}</p>
+        {/if}
+      </section>
+    {:else if s.key === 'invoices'}
+      <section data-section="invoices">
+        <div class="section-head">
+          <h3 class="section-title">Open Invoices</h3>
+          <span class="hint">
+            {#if showLabel(invSplit.closed.length, 'paid', expanded.invoices)}
+              <button type="button" class="link-btn" onclick={() => { expanded.invoices = !expanded.invoices; }}>
+                {showLabel(invSplit.closed.length, 'paid', expanded.invoices)}
+              </button>
+            {/if}
+          </span>
+        </div>
+        {#if invRows.length}
+          <DataTable rows={invRows} key={(i) => i.invoice_id} columns={invoiceColumns} />
+        {:else}
+          <p class="empty-box">{s.total ? 'No open invoices.' : 'No invoices yet.'}</p>
+        {/if}
+      </section>
+    {:else if s.key === 'pos'}
+      <section data-section="pos">
+        <div class="section-head">
+          <h3 class="section-title">Purchase orders</h3>
+          <span class="hint">
+            {#if showLabel(poSplit.closed.length, 'closed', expanded.pos)}
+              <button type="button" class="link-btn" onclick={() => { expanded.pos = !expanded.pos; }}>
+                {showLabel(poSplit.closed.length, 'closed', expanded.pos)}
+              </button>
+            {/if}
+            {#if $canManageFinancials && newPOHref}
+              <a class="action-link" href={newPOHref}>New purchase order</a>
+            {/if}
+          </span>
+        </div>
+        {#if poRows.length}
+          <DataTable rows={poRows} key={(p) => p.po_id} columns={poColumns} />
+        {:else}
+          <p class="empty-box">{s.total ? 'No open purchase orders.' : 'No purchase orders yet.'}</p>
+        {/if}
+      </section>
     {/if}
   {/each}
 
@@ -217,16 +209,12 @@
 <style>
   .activity { display: grid; gap: 18px; min-width: 0; }
   .section-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
-  .section-head h3 { margin: 0; font-size: 15px; }
   .section-head .hint { margin-left: auto; display: flex; gap: 12px; align-items: center; font-size: 12px; }
   .link-btn { background: none; border: 0; padding: 0; color: #2563eb; cursor: pointer; font: inherit; font-size: 12px; text-decoration: underline; }
   button.action-link { font: inherit; }
-  .collapsed-section {
-    border: 1.5px dashed #e2e8f0; border-radius: 8px; padding: 10px 16px; color: #94a3b8;
-    display: flex; gap: 16px; align-items: baseline; font-size: 14px;
-  }
-  .collapsed-section .label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #64748b; min-width: 140px; }
-  .collapsed-section .action-link { margin-left: auto; }
+  /* What a section shows when nothing is on display (empty, or all rows
+     hidden behind the toggle). Same box either way; the words differ. */
+  .empty-box { margin: 0; border: 1.5px dashed #e2e8f0; border-radius: 8px; padding: 10px 16px; color: #94a3b8; font-size: 13px; }
   .date { white-space: nowrap; color: #64748b; }
   .chip-default {
     display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;

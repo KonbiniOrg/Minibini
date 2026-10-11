@@ -329,7 +329,9 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   look), the feedback overlays; banner-page kit: `.toolbar` (+ its buttons),
   `.back-link`, `.page-title`, `.action-link`, `.edit-link` (quiet links in a
   dark banner), `.action-band` (+ `primary`/`quiet` buttons), `.stat-chips` /
-  `.stat-chip` (+ `money`), `.panel` / `.panel-head` / `.panel-scroll`;
+  `.stat-chip` (+ `money`), `.panel` / `.panel-head` / `.panel-scroll`,
+  `.section-title` (the 13px small-caps title of a section or summary block —
+  `.panel-head` is the quieter 10px micro-label for identity panels);
   plain-page kit: `.page-tabs` (works with `<button>` or `<a>` items). The
   task detail page is the reference implementation of the banner-page kit.
 - **The categories are stations, not a taxonomy** — pages move III→II as area

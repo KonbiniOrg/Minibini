@@ -88,6 +88,13 @@ test.describe('with can_manage_jobs', () => {
     }
 
     await page.goto(`/#/businesses/${created.business_id}`);
+    await test.step('Empty sections keep their heading and say "yet"', async () => {
+      const jobs = page.locator('[data-section="jobs"]');
+      await expect(jobs.getByRole('heading', { name: 'Recent Jobs' })).toBeVisible();
+      await expect(jobs.locator('.empty-box')).toHaveText('No jobs yet.');
+      await expect(page.locator('[data-section="invoices"] .empty-box')).toHaveText('No invoices yet.');
+      await expect(page.locator('[data-section="pos"] .empty-box')).toHaveText('No purchase orders yet.');
+    });
     await page.getByRole('button', { name: 'Delete…' }).click();
     const dialog = page.getByRole('dialog', { name: 'Delete business' });
     await expect(dialog).toBeVisible();

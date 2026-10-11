@@ -816,7 +816,9 @@ banner pages, plain pages; `frontend/README.md` § CSS). The 2026-07
 consolidation promoted every rule that existed as copies in two or more
 components: `.toolbar` (+ buttons), `.back-link`, `.page-title`,
 `.action-link`, `.edit-link`, `.panel`/`.panel-head`/`.panel-scroll`,
-`.badge-invoiced`, `.row-actions button`, and `.page-tabs`, alongside
+`.badge-invoiced`, `.row-actions button`, `.page-tabs`, and (2026-10-11)
+`.section-title` — the summary blocks' small-caps title, now also the
+contact/business activity-section heading — alongside
 the families below. Rule of the road: page styles arrange and tune;
 copying a rule between components means it should be promoted instead;
 local overrides may resize a family for dense contexts but never

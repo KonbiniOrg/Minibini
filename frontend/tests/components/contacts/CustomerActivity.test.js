@@ -67,16 +67,39 @@ describe('CustomerActivity — Open Invoices and POs', () => {
     expect(getByText('INV-6')).toBeInTheDocument();
   });
 
-  it('collapses empty sections to one line, sinks them below populated ones, and carries the PO action', () => {
+  it('an empty section keeps its heading, shows the "yet" box, sinks below populated ones, and carries the PO action', () => {
     const { container } = render(CustomerActivity, {
       props: { jobs: [], invoices: INVOICES, purchaseOrders: [], newPOHref: '#/purchase-orders/new?business=1' },
     });
     const keys = Array.from(container.querySelectorAll('[data-section]')).map((el) => el.dataset.section);
     expect(keys).toEqual(['invoices', 'jobs', 'pos', 'history']);
     const pos = section(container, 'pos');
-    expect(pos.classList.contains('collapsed-section')).toBe(true);
+    expect(pos.tagName).toBe('SECTION');
+    expect(within(pos).getByRole('heading', { name: 'Purchase orders' })).toHaveClass('section-title');
+    expect(pos.querySelector('.empty-box').textContent.trim()).toBe('No purchase orders yet.');
     expect(within(pos).getByRole('link', { name: 'New purchase order' })).toHaveAttribute('href', '#/purchase-orders/new?business=1');
-    expect(section(container, 'jobs').textContent).toMatch(/Recent Jobs\s*none/);
+    const jobs = section(container, 'jobs');
+    expect(within(jobs).getByRole('heading', { name: 'Recent Jobs' })).toHaveClass('section-title');
+    expect(jobs.querySelector('.empty-box').textContent.trim()).toBe('No jobs yet.');
+    expect(jobs.querySelector('table')).toBeNull();
+    // A populated section uses the very same heading style.
+    expect(within(section(container, 'invoices')).getByRole('heading', { name: 'Open Invoices' })).toHaveClass('section-title');
+  });
+
+  it('a section whose rows are all closed shows the "open" box under the toggle, and the table replaces it on expand', async () => {
+    const closedOnly = [JOBS[1], JOBS[2]];
+    const paidOnly = [INVOICES[1]];
+    const { container, getByRole } = render(CustomerActivity, { props: { jobs: closedOnly, invoices: paidOnly } });
+    const jobs = section(container, 'jobs');
+    expect(jobs.querySelector('.empty-box').textContent.trim()).toBe('No open jobs.');
+    expect(jobs.querySelector('table')).toBeNull();
+    expect(section(container, 'invoices').querySelector('.empty-box').textContent.trim()).toBe('No open invoices.');
+
+    await fireEvent.click(getByRole('button', { name: 'show 2 completed' }));
+    expect(jobs.querySelector('.empty-box')).toBeNull();
+    expect(jobs.querySelectorAll('tbody tr')).toHaveLength(2);
+    await fireEvent.click(getByRole('button', { name: 'hide 2 completed' }));
+    expect(jobs.querySelector('.empty-box').textContent.trim()).toBe('No open jobs.');
   });
 
   it('hides the New purchase order link from a user without the financials atom', () => {

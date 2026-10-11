@@ -330,15 +330,23 @@ dd {
   gap: 22px;
 }
 
-/* Block title/header — used in frozen and dormant blocks. Inside active blocks,
-   use the .stat-spread instead. */
-.summary-block-title {
+/* Section title — the app's one titled-section voice (2026-10-11): small-caps
+   slate, 13px bold. Heads the job overview's six summary blocks and the
+   contact/business pages' activity sections (Recent Jobs, Open Invoices…).
+   Applies to a <div> or an <h3> alike — the class wins over the global navy
+   heading colour. Not for the 10px .panel-head micro-labels on identity
+   panels; that is a quieter register on purpose. */
+.section-title {
   font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
   color: #475569;
+  margin: 0;
 }
+
+/* Block title — a .section-title inside a summary block; the rules below only
+   lay it out per block state (frozen/dormant inline, active above the stats). */
 
 /* Scope min-width to frozen and dormant states only. */
 .summary-block.frozen .summary-block-title,

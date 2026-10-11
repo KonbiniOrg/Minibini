@@ -683,11 +683,17 @@ grew to 14px / 0.75 opacity on 2026-10-10 so both banners match.
   hides its closed rows behind a **show N completed / paid / closed** link
   (jobs: completed + rejected + cancelled; invoices: paid + cancelled +
   superseded; POs: received_in_full + cancelled) that extends the table in
-  place and toggles to "hide N …"; the link is absent when N is 0. A
-  section with no rows at all renders as a dashed one-line **collapsed
-  section** ("Purchase orders · none") carrying its action (New purchase
-  order, `can_manage_financials`); populated sections precede collapsed
-  ones. Sections are stamped `data-section="contacts|jobs|invoices|pos|history"`.
+  place and toggles to "hide N …"; the link is absent when N is 0. Every
+  section always renders its heading — an `<h3 class="section-title">`, the
+  app-wide small-caps slate title shared with the job overview's summary
+  blocks (2026-10-11) — and its action (New contact, `can_manage_jobs`; New
+  purchase order, `can_manage_financials`) in the heading's right slot. When
+  nothing is on display the table gives way to one dashed **empty box**
+  whose words carry the distinction: "No jobs yet." when the section has no
+  rows at all, "No open jobs." when every row is hidden behind the toggle
+  (likewise invoices / purchase orders / contacts). Populated sections
+  precede empty ones. Sections are stamped
+  `data-section="contacts|jobs|invoices|pos|history"`.
   Contacts rows: name link + yellow "default" chip, `mailto:` email,
   mobile-else-work phone, and (managers) **New job** for that contact and
   **Set as default** (`PATCH /api/businesses/{id}/ {default_contact_id}`
