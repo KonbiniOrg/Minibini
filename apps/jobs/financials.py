@@ -251,3 +251,59 @@ def compute_job_financials(job):
         'profit': profit.quantize(CENTS),
         'linked_po_variances': _linked_po_variances(job),
     }
+
+
+def compute_customer_financials(jobs):
+    """Rollup for a customer-side detail page (a Contact's jobs, or every job
+    under a Business). `jobs` is a Job queryset or iterable.
+
+    Returns the per-job `invoiced` / `profit` sums plus the four
+    "about now" facts the CustomerHeader banner shows:
+
+    - ``open_jobs``: jobs not completed / rejected / cancelled
+    - ``outstanding``: sum of (total - amount paid) over invoices in
+      ``Invoice.UNPAID_STATUSES`` (open, partly-paid, defaulted); total is
+      the line-item sum exactly as the A/R list computes it
+    - ``first_job_date`` / ``last_job_start``: ISO dates (local) or None —
+      earliest ``created_date``, and the latest of each job's
+      ``start_date`` falling back to ``created_date``
+    """
+    from django.utils import timezone
+    from apps.invoicing.models import Invoice, InvoiceLineItem
+    from apps.jobs.models import Job
+
+    jobs = list(jobs)
+    invoiced = Decimal('0')
+    profit = Decimal('0')
+    for job in jobs:
+        fin = compute_job_financials(job)
+        invoiced += fin['invoiced']
+        profit += fin['profit']
+
+    closed = {Job.STATUS_COMPLETED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED}
+    open_jobs = sum(1 for j in jobs if j.status not in closed)
+
+    job_pks = [j.pk for j in jobs]
+    unpaid = Invoice.objects.filter(
+        job_id__in=job_pks, status__in=Invoice.UNPAID_STATUSES)
+    billed = InvoiceLineItem.objects.filter(invoice__in=unpaid).aggregate(
+        total=models.Sum(models.F('qty') * models.F('price')))['total'] or Decimal('0')
+    paid = unpaid.aggregate(
+        total=models.Sum('qbo_amount_paid'))['total'] or Decimal('0')
+    outstanding = billed - paid
+
+    def _local_date(dt):
+        return timezone.localtime(dt).date().isoformat() if dt else None
+
+    first = min((j.created_date for j in jobs if j.created_date), default=None)
+    last = max(((j.start_date or j.created_date) for j in jobs
+                if (j.start_date or j.created_date)), default=None)
+
+    return {
+        'invoiced': invoiced.quantize(CENTS),
+        'profit': profit.quantize(CENTS),
+        'open_jobs': open_jobs,
+        'outstanding': outstanding.quantize(CENTS),
+        'first_job_date': _local_date(first),
+        'last_job_start': _local_date(last),
+    }

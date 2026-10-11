@@ -18,6 +18,20 @@ from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import ContactSerializer, ContactDetailSerializer, BusinessSerializer, BusinessDetailSerializer, PaymentTermsSerializer, TagSerializer
 
 
+
+def _financials_payload(rollup):
+    """Serialize `compute_customer_financials` for the detail banner:
+    money as 2-dp strings, counts as ints, dates as ISO strings or null."""
+    return {
+        'invoiced': str(rollup['invoiced']),
+        'profit': str(rollup['profit']),
+        'open_jobs': rollup['open_jobs'],
+        'outstanding': str(rollup['outstanding']),
+        'first_job_date': rollup['first_job_date'],
+        'last_job_start': rollup['last_job_start'],
+    }
+
+
 class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
     queryset = Contact.objects.all().order_by('last_name', 'first_name')
     serializer_class = ContactSerializer
@@ -173,19 +187,10 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='financials', url_name='financials')
     def financials(self, request, pk=None):
-        from decimal import Decimal
-        from apps.jobs.financials import compute_job_financials
+        from apps.jobs.financials import compute_customer_financials
         contact = self.get_object()
-        total_invoiced = Decimal('0')
-        total_profit = Decimal('0')
-        for job in contact.job_set.all():
-            fin = compute_job_financials(job)
-            total_invoiced += fin['invoiced']
-            total_profit += fin['profit']
-        return Response({
-            'invoiced': str(total_invoiced.quantize(Decimal('0.01'))),
-            'profit': str(total_profit.quantize(Decimal('0.01'))),
-        })
+        return Response(_financials_payload(
+            compute_customer_financials(contact.job_set.all())))
 
     @action(detail=True, methods=['post'], url_path='add-tag')
     def add_tag(self, request, pk=None):
@@ -371,20 +376,11 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='financials', url_name='financials')
     def financials(self, request, pk=None):
-        from decimal import Decimal
-        from apps.jobs.financials import compute_job_financials
+        from apps.jobs.financials import compute_customer_financials
         from apps.jobs.models import Job
         business = self.get_object()
-        total_invoiced = Decimal('0')
-        total_profit = Decimal('0')
-        for job in Job.objects.filter(contact__business=business):
-            fin = compute_job_financials(job)
-            total_invoiced += fin['invoiced']
-            total_profit += fin['profit']
-        return Response({
-            'invoiced': str(total_invoiced.quantize(Decimal('0.01'))),
-            'profit': str(total_profit.quantize(Decimal('0.01'))),
-        })
+        return Response(_financials_payload(compute_customer_financials(
+            Job.objects.filter(contact__business=business))))
 
     @action(detail=True, methods=['post'], url_path='add-tag')
     def add_tag(self, request, pk=None):

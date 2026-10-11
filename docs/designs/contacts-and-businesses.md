@@ -464,9 +464,9 @@ panel arbitrates. Deleting a mirrored term is allowed — it re-appears as
 | Serializer | Notes |
 |---|---|
 | `ContactSerializer` | `name` read-only (the model `@property`). `email` explicit (see "Duplicate detection"). `business` nested read-only (`BusinessSummarySerializer`); `business_id` write-only PK field (`source='business'`). `tags` nested read-only. |
-| `ContactSummarySerializer` | `contact_id`, `name`, `email`, `mobile_number` — used wherever a contact is nested inside another object (e.g. `BusinessDetailSerializer.contacts`). |
-| `ContactDetailSerializer(ContactSerializer)` | Adds `jobs` (`SerializerMethodField`, `Job.objects.filter(contact=obj)` via `JobSummarySerializer`) and nests full `BusinessSerializer` (not just the summary) for `business`. Used only for `retrieve`. |
-| `BusinessSerializer` | `business_name` explicit (see "Duplicate detection"). `default_contact` nested read-only full `ContactSerializer`; `default_contact_id` write-only PK field. `qbo_customer_id`/`qbo_vendor_id`/`business_id`/`our_reference_code` all read-only. |
+| `ContactSummarySerializer` | `contact_id`, `name`, `email`, `mobile_number`, `work_number` (added 2026-10-10 so the business page's Contacts table can fall back to the work number) — used wherever a contact is nested inside another object (e.g. `BusinessDetailSerializer.contacts`). |
+| `ContactDetailSerializer(ContactSerializer)` | Adds `jobs` (`SerializerMethodField`, `Job.objects.filter(contact=obj)` via `JobSummarySerializer` — since 2026-10-10 each row carries `contact`, `contact_name`, `start_date`, `created_date` and `estimated_amount`, the last computed per job through `compute_job_financials` and memoized per serializer instance) and nests full `BusinessSerializer` (not just the summary) for `business`. Used only for `retrieve`. |
+| `BusinessSerializer` | `business_name` explicit (see "Duplicate detection"). `default_contact` nested read-only full `ContactSerializer`; `default_contact_id` write-only PK field. `qbo_customer_id`/`qbo_vendor_id`/`business_id`/`our_reference_code` all read-only. Also exposes read-only `terms_name` (2026-10-10): `terms` itself serializes as the PaymentTerms pk the form writes, and the detail page's Billing panel shows the name. |
 | `BusinessSummarySerializer` | `business_id`, `business_name`, `our_reference_code`, `default_contact` — nested elsewhere (e.g. `ContactSerializer.business`). |
 | `BusinessDetailSerializer(BusinessSerializer)` | Adds `contacts` (`ContactSummarySerializer`, many) and `jobs` (`SerializerMethodField`, `Job.objects.filter(contact__business=obj)`). Used only for `retrieve`. |
 | `TagSerializer` | `tag_id`, `name`. |
@@ -544,23 +544,32 @@ violation.
 
 ## Financials rollup
 
-`ContactViewSet.financials` / `BusinessViewSet.financials` both iterate the
+`ContactViewSet.financials` / `BusinessViewSet.financials` both hand the
 relevant Jobs (`contact.job_set.all()`, or
-`Job.objects.filter(contact__business=business)`), call
-`compute_job_financials(job)` (`apps/jobs/financials.py`) per job, and sum
-its `invoiced`/`profit` Decimal fields, returning
-`{'invoiced': str(...), 'profit': str(...)}` quantized to cents. This is a
-plain per-job loop (no aggregate query) — fine at current data volumes, but
-an N × query-cost pattern worth knowing about before it's used somewhere
-hot (`docs/designs/LATER.md` is where such notes accumulate). See
-`apps/jobs/financials.py` for what `invoiced`/`profit` actually mean per
-job — not duplicated here.
+`Job.objects.filter(contact__business=business)`) to
+`compute_customer_financials(jobs)` (`apps/jobs/financials.py`, 2026-10-10),
+which returns:
+
+| key | meaning |
+|---|---|
+| `invoiced`, `profit` | sums of the per-job `compute_job_financials` figures (a plain per-job loop, as before — fine at current volumes, an N × query-cost pattern to know about) |
+| `open_jobs` | count of jobs not completed / rejected / cancelled |
+| `outstanding` | Σ (line-item total − `qbo_amount_paid`) over invoices in `Invoice.UNPAID_STATUSES` (open / partly-paid / defaulted — the constant moved onto the model so the A/R serializer and this rollup share one set) |
+| `first_job_date` | earliest `created_date`, as a local ISO date, or null |
+| `last_job_start` | latest of each job's `start_date` (falling back to `created_date`), local ISO date or null |
+
+The viewsets serialize money as 2-dp strings, counts as ints, dates as ISO
+strings or null (`_financials_payload` in `apps/api/contacts/views.py`).
 
 `CustomerHeader.svelte` (frontend) is the shared banner component rendering
-this rollup — "Total Invoiced" / "Total Profit" — on both the Contact and
-Business detail pages (green/red profit coloring). It also renders the
-name and the counterpart link (business's default contact ↔ contact's
-business, or "(individual)" when a contact has none).
+this rollup on both detail pages: a facts line ("Customer since Mar 2024 ·
+Last job started Sep 26, 2026 · Net 30"; "Contact since …" on contact
+pages; null facts omitted) over a numbers box of Open jobs / Outstanding
+(amber) / Invoiced (green) / Profit (green or red). It also renders the
+name, the counterpart link (business's default contact ↔ contact's
+business, or "(individual)" when a contact has none), the "default
+contact" chip, and the page-supplied `actions` snippet — see "Detail
+pages" below.
 
 ---
 
@@ -602,7 +611,7 @@ already holding rather than re-checking it. Full OAuth/sync mechanics:
 | `/contacts` | `ContactListPage.svelte` | **The primary nav entry** (`Sidebar.svelte` links here, labeled "Contacts") — despite the name, this is a **combined** Contacts + Businesses list (see below). |
 | `/contacts/new`, `/contacts/:id/edit` | `RedirectTo` stub | Retired 2026-10-10: the form is `ContactFormModal.svelte`, opened from the list's **New Contact** button, the detail page's **Edit**, or a business page's **New Contact** (pre-attached via `defaultBusinessId`). The stub bounces stale links to `/contacts` / `/contacts/:id`. |
 | `/contacts/:id` | `ContactDetailPage.svelte` | |
-| `/businesses` | `BusinessListPage.svelte` | A separate, plain-paginated, **Business-only** list with no letter/tag filters (thin wrapper over `BusinessList.svelte`). Not in the sidebar nav — reached via "Back to list" from a Business detail page, or directly by URL. Effectively a secondary surface; `/contacts` is where users land day to day. |
+| `/businesses` | `BusinessListPage.svelte` | A separate, plain-paginated, **Business-only** list with no letter/tag filters (thin wrapper over `BusinessList.svelte`). Not in the sidebar nav and (since the 2026-10-10 detail-page redesign dropped "Back to list") reachable only by URL. Effectively a secondary surface; `/contacts` is where users land day to day. |
 | `/businesses/new`, `/businesses/:id/edit` | `RedirectTo` stub | Retired 2026-10-10: the form is `BusinessFormModal.svelte`, opened from the lists' **New Business** buttons or the detail page's **Edit**. |
 | `/businesses/:id` | `BusinessDetailPage.svelte` | |
 
@@ -620,21 +629,78 @@ that filter the already-merged client-side list without refetching.
 
 ### Detail pages
 
-`ContactDetailPage.svelte` / `BusinessDetailPage.svelte` are near-mirrors:
-load the object plus its invoices/POs (paginated, `?contact=`/
-`?business=` scoped) and financials/history in parallel, render
-`CustomerHeader` (name + financials banner) above the page body, then the
-`ContactDetail.svelte` / `BusinessDetail.svelte` component, then a delete
-confirmation block if a two-phase delete is in flight.
+Redesigned 2026-10-10 (spec: `docs/plans/2026-10-10-contacts-ui-redesign.md`,
+disposable). `ContactDetailPage.svelte` / `BusinessDetailPage.svelte` are
+near-mirrors: load the object, then in parallel its invoices
+(`?contact=`/`?business=` + `summary=true&page_size=100`), purchase orders
+(`page_size=100`), financials and history. The lists are fetched **whole**
+(no pager; 100 is the documented ceiling — if a customer outgrows it the
+answer is a Job History tab, not pagination here). The contact page also
+fetches its business's **detail** payload (`/api/businesses/{id}/`) so the
+"Also here" list can show sibling job counts from `contacts[]` × `jobs[]`
+without a new endpoint.
 
-`BusinessDetail.svelte` additionally renders (full-mode only, via
-`<FullOnly>` — architecture doc §6.2) a **Contacts** table listing every
-contact on the business with a `(default)` marker, and a `TagEditor`. Both
-detail components render Jobs / Invoices / Purchase Orders tables
-below that (the Bills panels were removed with the 2026-07-23 bill
-retirement), each filtered by `viewMode` (architecture doc §6) to hide
-closed-status rows in `'lite'` mode, then a `HistoryPanel` (architecture
-doc §7.5) with the notes-entry box.
+**Banner** — `CustomerHeader` (see "Financials rollup") with an `actions`
+snippet the page fills, gated `can_manage_jobs`: **New Job** (the one real
+button; business page → the default contact, contact page → this contact;
+the modal still lets the user change the contact), **Edit** (the form
+modal), and either **Delete…** or **Deactivate**:
+
+- `canDeleteBusiness` / `canDeleteContact` (`lib/customerActivity.js`)
+  mirror `ContactService`'s guards from data already loaded — a business is
+  deletable with no jobs, no POs and at most one contact; a contact with no
+  jobs that is not the only contact of its business.
+- Deletable → **Delete…** opens a `Modal` ("Delete business" / "Delete
+  contact") listing the first-phase DELETE's impact counts (the business
+  payload's retired `bills` count is no longer rendered); confirming runs
+  `?confirm=true` and navigates to `/contacts`.
+- Otherwise → **Deactivate**, a *disabled placeholder* (`title="Not
+  available yet"`). The feature — an active flag on Business and Contact,
+  pickers and lists skipping inactive rows, a Reactivate path — is tracked
+  in the external issue tracker, not `LATER.md`.
+
+The banner's quiet links share `.edit-link` with the job header; that rule
+grew to 14px / 0.75 opacity on 2026-10-10 so both banners match.
+
+**Body** — a two-column grid (`300px minmax(0,1fr)`, stacking at
+`PHONE_MAX_WIDTH`) inside `.page-body`:
+
+- Left, identity `.panel`s. Business: **Contact** (phone, website as a
+  link, address), **Billing** (ref code, `terms_name`, tax exemption or
+  "Not exempt", multiplier or "full rate"), **Tags** (`TagEditor`).
+  Contact: **Contact** (email as `mailto:` + a copy button, Mobile/Work/Home
+  as `tel:` links with blank ones omitted, address block), **Business**
+  (omitted for individuals: name link, "{phone} · {terms} · tax exempt"
+  line, and **Also here** — the business's other contacts with job counts),
+  **Tags**. The old Name / Reference Code rows and the full-mode "Business
+  Details" dump are gone; the banner says the name.
+- Right, `CustomerActivity.svelte` (one component for both pages):
+  **Contacts** (business pages only; always visible) → **Recent Jobs** →
+  **Open Invoices** → **Purchase orders** → **History** (`HistoryPanel`
+  inside a `.panel`; it keeps its own lite/full rule). Each list section
+  hides its closed rows behind a **show N completed / paid / closed** link
+  (jobs: completed + rejected + cancelled; invoices: paid + cancelled +
+  superseded; POs: received_in_full + cancelled) that extends the table in
+  place and toggles to "hide N …"; the link is absent when N is 0. A
+  section with no rows at all renders as a dashed one-line **collapsed
+  section** ("Purchase orders · none") carrying its action (New purchase
+  order, `can_manage_financials`); populated sections precede collapsed
+  ones. Sections are stamped `data-section="contacts|jobs|invoices|pos|history"`.
+  Contacts rows: name link + yellow "default" chip, `mailto:` email,
+  mobile-else-work phone, and (managers) **New job** for that contact and
+  **Set as default** (`PATCH /api/businesses/{id}/ {default_contact_id}`
+  then reload; no confirm — it is reversible; disabled on the current
+  default). The section head carries **New contact** (`ContactFormModal`
+  with `defaultBusinessId`). Recent Jobs columns: Job # (`JOB-` prefix
+  stripped), Name, Contact (business page only), Status pill, Started
+  (`start_date` else `created_date`), Estimate. Open Invoices: Invoice #,
+  Job, Status, Sent, Total, Paid, Balance. POs: PO #, Status, Issued.
+- The pure rules (closed sets, labels, ordering, delete rule, facts line,
+  siblings) live in `frontend/src/lib/customerActivity.js`.
+
+Density: these pages are **FULL-only for now** (RM 2026-10-10) — they no
+longer read `$viewMode` or use `<FullOnly>`; the show-N toggle replaced the
+lite closed-row hiding. A LITE trimming pass is a later, separate piece.
 
 ### Forms (modals)
 

@@ -57,9 +57,9 @@ test('business detail shows POs but no Bills panel', async ({ page }) => {
   test.skip(!business, 'seed gap: no businesses');
 
   await page.goto(`/#/businesses/${business.business_id}`);
-  await expect(
-    page.getByRole('heading', { name: /Purchase Orders/ })
-  ).toBeVisible();
+  // Since 2026-10-10 the section is a heading when the business has POs and
+  // a collapsed one-liner when it has none; either way it carries the label.
+  await expect(page.locator('[data-section="pos"]')).toContainText(/Purchase orders/i);
   await expect(page.getByRole('heading', { name: /^Bills/ })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'New Bill' })).toHaveCount(0);
 });

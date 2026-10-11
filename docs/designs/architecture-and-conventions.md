@@ -1239,14 +1239,16 @@ reads `$viewMode` or `$layout` anywhere else is a convention violation, and
 `routes/*.svelte` never import either store.
 
 1. **Sections — `<FullOnly>`** (`components/FullOnly.svelte`). Whole blocks
-   lite doesn't show. Consumers: `contacts/ContactDetail.svelte`,
-   `contacts/BusinessDetail.svelte`.
+   lite doesn't show. No current consumers: the contact/business detail
+   pages, its only users, went FULL-only in the 2026-10-10 redesign (their
+   "show N completed" toggle replaced density-driven hiding; a LITE
+   trimming pass is pending). The seam stays — it is the right tool when a
+   whole block should disappear in lite.
 2. **Rows and labels — `$derived` view objects.** Which rows appear (closed
    items hidden), what a label says, whether a cell links out. One
    `$derived` (or a pure `lib/` helper) consults the store; the markup
    iterates the result and never branches on mode. Exemplar:
-   `ContactDetail.svelte`'s `visibleJobs` / `visibleInvoices` / `visiblePOs`.
-   `HistoryPanel.svelte` filters entries the same way.
+   `HistoryPanel.svelte`'s `entries` (lite keeps only entries with text).
 3. **Columns — `components/DataTable.svelte`.** Every plain list table in
    the SPA (~40 tables, consolidated 2026-10) declares its columns as data:
    `{ id, label, liteLabel?, field?, cell?, header?, lite?, phone?, align? }`.

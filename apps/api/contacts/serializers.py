@@ -21,7 +21,7 @@ class ContactSummarySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Contact
-        fields = ['contact_id', 'name', 'email', 'mobile_number']
+        fields = ['contact_id', 'name', 'email', 'mobile_number', 'work_number']
 
 
 class ContactSerializer(serializers.ModelSerializer):
@@ -66,16 +66,21 @@ class BusinessSerializer(serializers.ModelSerializer):
         queryset=Contact.objects.all(), source='default_contact', write_only=True, required=False,
     )
     tags = TagSerializer(many=True, read_only=True)
+    # `terms` is the FK pk (what the form writes); the detail page shows the name.
+    terms_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Business
         fields = [
             'business_id', 'our_reference_code', 'business_name',
             'business_address', 'business_phone', 'tax_exemption_number',
-            'website', 'terms', 'default_contact', 'default_contact_id', 'tax_multiplier',
+            'website', 'terms', 'terms_name', 'default_contact', 'default_contact_id', 'tax_multiplier',
             'qbo_customer_id', 'qbo_vendor_id', 'tags',
         ]
         read_only_fields = ['business_id', 'our_reference_code', 'qbo_customer_id', 'qbo_vendor_id']
+
+    def get_terms_name(self, obj):
+        return obj.terms.name if obj.terms_id else None
 
 
 class BusinessDetailSerializer(BusinessSerializer):

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 
@@ -10,106 +10,85 @@ import ContactDetail from '@/components/contacts/ContactDetail.svelte';
 
 function contact() {
   return {
-    contact_id: 1, name: 'Jane', email: 'j@x.com', tags: [],
+    contact_id: 1, name: 'Jane', email: 'j@x.com', mobile_number: '555-0162', work_number: '', home_number: '',
+    addr1: '1 Main St', city: 'Alameda', municipality: 'CA', postal_code: '94501', tags: [],
+    business: { business_id: 7, business_name: 'Acme', default_contact: { contact_id: 1 } },
     jobs: [
-      { job_id: 1, job_number: 'JOB-1', name: 'Open', status: 'pending' },
-      { job_id: 2, job_number: 'JOB-2', name: 'Done', status: 'completed' },
+      { job_id: 1, job_number: 'JOB-1', name: 'Open', status: 'in_progress', contact: 1, contact_name: 'Jane', start_date: null, created_date: '2026-01-01T00:00:00Z', estimated_amount: '10.00' },
+      { job_id: 2, job_number: 'JOB-2', name: 'Done', status: 'completed', contact: 1, contact_name: 'Jane', start_date: null, created_date: '2025-01-01T00:00:00Z', estimated_amount: '20.00' },
     ],
   };
 }
+const BUSINESS = {
+  business_id: 7, business_name: 'Acme', business_phone: '555-0100', terms_name: 'Net 30', tax_exemption_number: 'X1',
+  contacts: [{ contact_id: 1, name: 'Jane' }, { contact_id: 2, name: 'Marcus' }, { contact_id: 3, name: 'Priya' }],
+  jobs: [{ job_id: 1, contact: 1 }, { job_id: 5, contact: 2 }, { job_id: 6, contact: 2 }],
+};
 
 beforeEach(() => {
   api.get.mockReset();
   api.get.mockResolvedValue({ results: [] }); // TagEditor's tag fetch
-  viewMode.set('lite');
+  viewMode.set('full');
   user.set({ id: 1, permissions: ['can_manage_jobs'] });
 });
 
-describe('ContactDetail', () => {
-  it('shows all jobs in full mode', () => {
-    viewMode.set('full');
-    const { getByText } = render(ContactDetail, { props: { contact: contact() } });
-    expect(getByText('JOB-1')).toBeInTheDocument();
-    expect(getByText('JOB-2')).toBeInTheDocument();
+describe('ContactDetail — identity panels', () => {
+  it('renders the Contact panel with mailto / tel links and the address block', () => {
+    const { container } = render(ContactDetail, { props: { contact: contact() } });
+    const panel = container.querySelector('.identity .panel');
+    expect(panel.querySelector('.panel-head').textContent.trim()).toBe('Contact');
+    expect(within(panel).getByRole('link', { name: 'j@x.com' })).toHaveAttribute('href', 'mailto:j@x.com');
+    expect(within(panel).getByRole('link', { name: '555-0162' })).toHaveAttribute('href', 'tel:555-0162');
+    expect(within(panel).getByRole('button', { name: 'copy' })).toBeInTheDocument();
+    expect(panel.textContent).toContain('Alameda, CA 94501');
+    expect(within(panel).queryByText('Work')).toBeNull(); // blank numbers are omitted
   });
 
-  it('hides closed jobs in lite mode', () => {
-    viewMode.set('lite');
-    const { getByText, queryByText } = render(ContactDetail, { props: { contact: contact() } });
-    expect(getByText('JOB-1')).toBeInTheDocument();
-    expect(queryByText('JOB-2')).toBeNull();
+  it('renders the Business card with the mid-call line and the "Also here" siblings with job counts', () => {
+    const { container } = render(ContactDetail, { props: { contact: contact(), business: BUSINESS } });
+    const panels = container.querySelectorAll('.identity .panel');
+    expect(panels[1].querySelector('.panel-head').textContent.trim()).toBe('Business');
+    expect(within(panels[1]).getByRole('link', { name: 'Acme' })).toHaveAttribute('href', '#/businesses/7');
+    expect(panels[1].textContent).toContain('555-0100 · Net 30 · tax exempt');
+    const items = panels[1].querySelectorAll('.siblings li');
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toMatch(/Marcus\s*2 jobs/);
+    expect(items[1].textContent).toMatch(/Priya\s*no jobs/);
+    expect(within(panels[1]).queryByText('Jane')).toBeNull();
   });
 
-  it('pages purchase orders via the callback', async () => {
-    const onPOPageChange = vi.fn();
-    const { getByRole } = render(ContactDetail, {
-      props: {
-        contact: contact(),
-        purchaseOrders: { results: [{ po_id: 1, po_number: 'PO-1', status: 'open' }], next: 'http://x/?page=2', previous: null, count: 30 },
-        onPOPageChange,
-      },
-    });
-    await fireEvent.click(getByRole('button', { name: 'Next' }));
-    expect(onPOPageChange).toHaveBeenCalledWith(2);
+  it('omits the Business panel for an individual', () => {
+    const c = { ...contact(), business: null };
+    const { container } = render(ContactDetail, { props: { contact: c } });
+    const heads = Array.from(container.querySelectorAll('.identity .panel-head')).map((h) => h.textContent.trim());
+    expect(heads).toEqual(['Contact', 'Tags']);
   });
 
-  it('fires edit and delete callbacks (manager)', async () => {
-    const onEdit = vi.fn();
-    const onDelete = vi.fn();
-    const { getByRole } = render(ContactDetail, { props: { contact: contact(), onEdit, onDelete } });
-    await fireEvent.click(getByRole('button', { name: 'Edit' }));
-    await fireEvent.click(getByRole('button', { name: 'Delete' }));
-    expect(onEdit).toHaveBeenCalled();
-    expect(onDelete).toHaveBeenCalled();
-  });
-
-  it('hides edit/delete and the tag editor from a non-manager (shows tags read-only)', () => {
+  it('shows tags read-only to a non-manager', () => {
     user.set({ id: 2, permissions: [] });
     const c = { ...contact(), tags: [{ tag_id: 1, name: 'VIP' }] };
-    const { queryByRole, getByText } = render(ContactDetail, {
-      props: { contact: c, onEdit: vi.fn(), onDelete: vi.fn() },
-    });
-    expect(queryByRole('button', { name: 'Edit' })).toBeNull();
-    expect(queryByRole('button', { name: 'Delete' })).toBeNull();
-    expect(queryByRole('textbox')).toBeNull(); // no tag-add input
-    expect(getByText('VIP')).toBeInTheDocument(); // tags still visible, read-only
+    const { queryByRole, getByText } = render(ContactDetail, { props: { contact: c } });
+    expect(queryByRole('textbox')).toBeNull();
+    expect(getByText('VIP')).toBeInTheDocument();
   });
 });
 
-describe('ContactDetail — DataTable lists', () => {
-  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
-
-  it('renders the Jobs table with the same headers in lite and full, stamped with data-col', async () => {
-    viewMode.set('full');
-    const { container } = render(ContactDetail, { props: { contact: contact() } });
-    const jobs = container.querySelector('table.data-table');
-    expect(headersOf(jobs)).toEqual(['Job #', 'Name', 'Status']);
+describe('ContactDetail — activity column', () => {
+  it('renders Recent Jobs without a Contact column and hides the completed job behind the toggle', () => {
+    const { container, getByRole, queryByText } = render(ContactDetail, { props: { contact: contact() } });
+    const jobs = container.querySelector('[data-section="jobs"]');
+    expect(Array.from(jobs.querySelectorAll('thead th')).map((th) => th.textContent.trim()))
+      .toEqual(['Job #', 'Name', 'Status', 'Started', 'Estimate']);
     expect(jobs.querySelector('td[data-col="number"] a')).toHaveAttribute('href', '#/jobs/1');
-    viewMode.set('lite');
-    const { container: c2 } = render(ContactDetail, { props: { contact: contact() } });
-    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['Job #', 'Name', 'Status']);
+    expect(queryByText('Done')).toBeNull();
+    expect(getByRole('button', { name: 'show 1 completed' })).toBeInTheDocument();
+    expect(container.querySelector('[data-section="contacts"]')).toBeNull();
   });
 
-  it('renders the Invoices and PO tables with their headers when results are supplied', () => {
-    viewMode.set('full');
-    const invoices = { count: 1, next: null, previous: null, results: [
-      { invoice_id: 5, display_number: 'INV-5', job: 1, job_number: 'JOB-1', status: 'open', total: '10', amount_paid: '0', balance: '10' },
-    ] };
-    const purchaseOrders = { count: 1, next: null, previous: null, results: [{ po_id: 3, po_number: 'PO-3', status: 'draft' }] };
-    const { container } = render(ContactDetail, { props: { contact: contact(), invoices, purchaseOrders } });
-    const tables = container.querySelectorAll('table.data-table');
-    expect(tables).toHaveLength(3);
-    expect(headersOf(tables[1])).toEqual(['Invoice #', 'Job', 'Status', 'Total', 'Paid', 'Balance']);
-    expect(headersOf(tables[2])).toEqual(['PO #', 'Status']);
-    expect(tables[1].querySelector('td[data-col="total"]').textContent.trim()).toBe('$10.00');
-  });
-});
-
-describe('ContactDetail — New Job (JobCreateModal host)', () => {
-  it('New Job is a button that opens the job modal', async () => {
-    const { findByRole, queryByRole } = render(ContactDetail, { props: { contact: contact() } });
-    expect(queryByRole('link', { name: 'New Job' })).toBeNull();
-    await fireEvent.click(await findByRole('button', { name: 'New Job' }));
-    expect(await findByRole('dialog', { name: 'New job' })).toBeInTheDocument();
+  it('scopes the New purchase order link to the contact and its business', () => {
+    user.set({ id: 1, permissions: ['can_manage_financials'] });
+    const { getByRole } = render(ContactDetail, { props: { contact: contact(), purchaseOrders: [] } });
+    expect(getByRole('link', { name: 'New purchase order' }))
+      .toHaveAttribute('href', '#/purchase-orders/new?business=7&contact=1');
   });
 });

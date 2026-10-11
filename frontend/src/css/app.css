@@ -594,7 +594,9 @@ tr.grand td { font-weight:600; border-top:2px solid var(--doc-border); backgroun
 .action-link:hover { background: #f3f4f6; }
 
 /* Quiet inline links inside a dark banner (edit / duplicate… / history). */
-.edit-link { font-size: 12px; font-weight: 400; opacity: 0.6; margin-left: 10px; color: #fff; text-decoration: none; }
+/* 14px / 0.75 since 2026-10-10 (was 12px / 0.6): the contact/business banners
+   set the size and the job header follows for parity. */
+.edit-link { font-size: 14px; font-weight: 400; opacity: 0.75; margin-left: 10px; color: #fff; text-decoration: none; }
 .edit-link:hover { opacity: 1; text-decoration: underline; }
 /* A <button> wearing .edit-link (e.g. opening a modal instead of navigating)
    needs its native chrome stripped so the shared quiet-link look applies. */
