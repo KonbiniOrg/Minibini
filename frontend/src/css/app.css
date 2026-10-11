@@ -599,8 +599,11 @@ tr.grand td { font-weight:600; border-top:2px solid var(--doc-border); backgroun
 .edit-link { font-size: 14px; font-weight: 400; opacity: 0.75; margin-left: 10px; color: #fff; text-decoration: none; }
 .edit-link:hover { opacity: 1; text-decoration: underline; }
 /* A <button> wearing .edit-link (e.g. opening a modal instead of navigating)
-   needs its native chrome stripped so the shared quiet-link look applies. */
-.header-action { background: none; border: none; cursor: pointer; font: inherit; }
+   needs its native chrome stripped so the shared quiet-link look applies.
+   Inherit only the family — the `font` shorthand would also reset font-size
+   and font-weight, and since this rule follows .edit-link at equal
+   specificity it would silently override the 14px above. */
+.header-action { background: none; border: none; cursor: pointer; font-family: inherit; line-height: inherit; }
 
 /*
  * Action band. A full-width strip of the actions that operate on the entity
