@@ -1661,7 +1661,7 @@ three-tab area, each tab a real route (not local-state tabs) sharing
 
 | Route | Page | Content |
 |---|---|---|
-| `/catalog` | `routes/catalog/CatalogInventoryPage.svelte` | Inventory list (default tab) |
+| `/catalog` | `routes/catalog/CatalogInventoryPage.svelte` | Inventory list (default tab). New/edit item, **Merge items** and **Write off** are all modals (merge + write-off since 2026-10-10). |
 | `/catalog/service-items` | `routes/catalog/CatalogServiceItemsPage.svelte` | `ServiceItemManager` (moved out of Settings) |
 | `/catalog/earmarks` | `routes/catalog/CatalogEarmarksPage.svelte` | Read-only commitment report (new) |
 
@@ -1694,7 +1694,9 @@ filters (e.g. `is_active=true`); offers a "None (freeform)" escape via the
 ### Service Items tab
 
 `ServiceItemManager.svelte` — same component, now mounted at
-`/catalog/service-items` instead of a Settings tab. Gained a read-only mode:
+`/catalog/service-items` instead of a Settings tab. Its create/edit form is
+a modal in the shared shell (2026-10-10, matching `RateSchemeManager`;
+button-driven, `onSave` + `busy`). Gained a read-only mode:
 the table renders for any authenticated user; Add/Edit/Delete buttons render
 only when the user has **any** of `can_manage_jobs`, `can_manage_financials`,
 `can_manage_config` (backend: `CanManageJobsOrFinancialsOrConfig`, §users-and-permissions.md).

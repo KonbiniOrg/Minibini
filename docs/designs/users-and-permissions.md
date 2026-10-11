@@ -338,9 +338,9 @@ If `actor == target` (an admin resetting their own password through this endpoin
 
 | Route | Component | Purpose |
 |---|---|---|
-| `/users` | `frontend/src/routes/users/UserListPage.svelte` | Tabbed. **Users** (default): all users with a compact permissions column (short labels), active first, deactivated grouped below, "New user" link. **Shifts** and **Work Sessions** tabs (both gated `can_manage_time` OR `can_manage_financials`): Shifts = `ShiftRequestQueue` + `PayrollReport`; Work Sessions = every user's bleps recent-first via the shared `WorkSessionsList` (worker column shown, paged 25/page against `/api/bleps/`). "Work Sessions" is the UI term for bleps — matches the task detail page's session table. |
-| `/users/new` | `frontend/src/routes/users/UserCreatePage.svelte` | Create form. On success pushes to the new user's detail page. |
-| `/users/:id` | `frontend/src/routes/users/UserDetailPage.svelte` | Independent sub-forms (Profile, Permissions, Reset password, Account status, Schedule — an `EnvelopeEditor` writing `PUT /api/users/:id/schedule-envelope/`) plus a `UserReimbursementPanel` for expenses and a per-user **Work Sessions** list (`WorkSessionsList userId={id}` — worker column suppressed, paged). Self-lockout hints rendered client-side; D3 (last-admin) is server-only. |
+| `/users` | `frontend/src/routes/users/UserListPage.svelte` | Tabbed. **Users** (default): all users with a compact permissions column (short labels), active first, deactivated grouped below, a "New user" button opening `UserCreateModal` (`components/users/`, 2026-10-10; a create lands on the new user). **Shifts** and **Work Sessions** tabs (both gated `can_manage_time` OR `can_manage_financials`): Shifts = `ShiftRequestQueue` + `PayrollReport`; Work Sessions = every user's bleps recent-first via the shared `WorkSessionsList` (worker column shown, paged 25/page against `/api/bleps/`). "Work Sessions" is the UI term for bleps — matches the task detail page's session table. |
+| `/users/new` | `RedirectTo` stub | Retired 2026-10-10 — bounces to `/users`; the form is `UserCreateModal`. |
+| `/users/:id` | `frontend/src/routes/users/UserDetailPage.svelte` | Independent sub-forms (Profile, Permissions, Account status, Schedule — plus **Reset password…**, a button opening `ResetPasswordModal` (`components/users/`, 2026-10-10) — an `EnvelopeEditor` writing `PUT /api/users/:id/schedule-envelope/`) plus a `UserReimbursementPanel` for expenses and a per-user **Work Sessions** list (`WorkSessionsList userId={id}` — worker column suppressed, paged). Self-lockout hints rendered client-side; D3 (last-admin) is server-only. |
 
 The sidebar Users link gates on `hasPerm('can_manage_config')`. The atom labels and codename list are hardcoded in `UserDetailPage.svelte` (`ATOMS` array, four entries). The component uses `currentUser` from the auth store to compute `isSelf` and disable the deactivate button and the `can_manage_config` checkbox when applicable.
 
@@ -373,11 +373,13 @@ After `serializer.save()`, the view calls `update_session_auth_hash(request, use
 
 ### Frontend
 
-`frontend/src/components/home/ProfilePanel.svelte` — the Profile tab of the Home page (route `#/profile` renders Home with this tab active; the sidebar username link targets it). Two independent forms (account info, change password) plus the view-mode toggle. Initializes from the `$user` store on first render; updates the store after a successful profile PATCH so the sidebar username stays in sync.
+`frontend/src/components/home/ProfilePanel.svelte` — the Profile tab of the Home page (route `#/profile` renders Home with this tab active; the sidebar username link targets it). The account-info form, a **Change password…** button, and the view-mode toggle. Initializes from the `$user` store on first render; updates the store after a successful profile PATCH so the sidebar username stays in sync.
 
 - Account form fields: `email`, `first_name`, `last_name`. Username is shown read-only.
-- Password form fields: `current_password` (autocomplete `current-password`), `new_password` and `new_password_confirm` (both `new-password`).
+- **Change password…** opens `ChangePasswordModal.svelte` (`components/users/`, 2026-10-10 — RM: a password change is security-notable, so it is a deliberate modal rather than a form sitting open on the page). Fields `current_password` (autocomplete `current-password`), `new_password` and `new_password_confirm` (both `new-password`), each with a `name` attribute; success closes the modal with the global success overlay.
 - Field-level errors rendered via `fieldErrors(errorsObject, fieldName)` from `frontend/src/lib/formErrors.js`.
+
+**Password managers.** Browsers decide between "Save password?" (a new credential) and "Update password?" by finding an `autocomplete="username"` field in the same form as the `new-password` fields. Both password modals therefore carry a visually hidden, read-only, tab-excluded username input (`.pm-username`) — the signed-in user's name on `ChangePasswordModal`, the *target* user's on `ResetPasswordModal` (so an admin's browser may offer to update its saved credential for that account; accepted — there is no reliable way to suppress the prompt). `LoginPage.svelte` carries `name` + `autocomplete="username"` / `"current-password"` on its two inputs for the same pairing.
 
 ## Login tracking
 

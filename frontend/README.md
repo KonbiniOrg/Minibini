@@ -124,6 +124,29 @@ buttons `type="button"` — the HTML default inside a form is submit, so an
 untyped Cancel would save); the shell's `onSave`/`busy` path remains for
 future button-driven modals with an unambiguous primary action.
 
+**Sub-state, not stacking (RM 2026-10-10).** The shell has no stacking
+contract: two open modals would both receive Escape (each attaches its own
+window listener) and share one `--z-modal`. When a modal needs a nested
+prompt — the create forms' duplicate-contact/business detection is the
+standing example — render the prompt *inside* the modal as a sub-state:
+keep the form mounted but `hidden` (never `{#if}`, so typed values survive),
+render a plain fragment (`DuplicateContactNotice`) in its place, and pass
+an `onCancel` that backs out one level (prompt → form → closed). Revisit a
+real stack only if nested prompts multiply.
+
+**Record forms are modals; create navigates, edit stays.** Since 2026-10-10
+the contact, business, job, user, email create-job/link, document send,
+reply, expense, catalog merge/write-off, service item, accounting
+category, reimbursement batch, change-order deliverable and password forms
+all open in the shell over whatever page the user is on (the page behind
+stays visible for reference). A successful **create** closes and `push`es
+to the new record's detail page; a successful **edit** calls `onSaved` and
+the host reloads in place; **cancel** stays. Prefill context travels as
+props (`defaultContactId`, `defaultBusinessId`), never query strings. The
+retired `/new`, `/edit` and `/send` routes are `RedirectTo` stubs
+(`routes/RedirectTo.svelte`, `wrap({ component, props: { to } })` in
+`App.svelte`) that bounce stale links to the host page.
+
 ### Loaders called from `$effect` are write-only
 
 Runes track *reads* transitively: an `$effect` subscribes to every piece of
@@ -409,9 +432,10 @@ Clear `formError`/`errors` at submit start and on open/cancel.
        individualized body inside the shared `JobShell` chrome, not a kit
        consumer; see `docs/designs/architecture-and-conventions.md` §5.5a for
        the "hybrid" categorization this creates.
-    3. **Everything else (whole content buffered):** all remaining list/form/
-       detail/send pages, including search and the contacts/business list+form
-       pages — wrapped in full.
+    3. **Everything else (whole content buffered):** all remaining list/
+       detail pages, including search and the contacts/business lists —
+       wrapped in full. (The former form/send pages are modals now; see
+       "Modals" above.)
 
     The only route-level `.svelte` files without `.page-body` are the four
     Category-1 pages above (job board, schedule, login, shipment print).

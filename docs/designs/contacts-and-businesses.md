@@ -322,38 +322,44 @@ Neither `update_contact` nor `update_business` runs the pre-check — editing
 an existing row's email/name to collide with another only surfaces via
 `full_clean()`'s plain field-level `ValidationError` (a normal 400 rendered
 under the input, not the 409/modal flow). The frontend's edit forms
-(`isEdit` branch in `ContactFormPage.svelte` / `BusinessFormPage.svelte`)
+(`isEdit` in `ContactFormModal.svelte` / `BusinessFormModal.svelte`)
 only check for the 409 codes on the **create** path — this is deliberate,
 not an oversight, since a same-collision-on-edit is rarer and the plain
 field error is adequate.
 
 ### Frontend
 
-`DuplicateContactModal.svelte` / `DuplicateBusinessModal.svelte`
-(`frontend/src/components/contacts/`) are near-identical: a modal with
-"View Existing Contact/Business" (navigates to its detail page) and "Go
-Back and Edit" (closes the modal, leaves the form populated). Both are
-Esc-only (no `onSave`) since neither action is a single obvious "confirm" —
-they're both navigation.
+`DuplicateContactNotice.svelte` / `DuplicateBusinessNotice.svelte`
+(`frontend/src/components/contacts/`) are near-identical plain fragments
+(no `<Modal>` of their own): "View Existing Contact/Business" (navigates
+to its detail page) and "Go Back and Edit" (returns to the form). Since
+2026-10-10 the create forms are themselves modals, so duplicate detection
+is an **in-modal sub-state** rather than a stacked modal: the host keeps
+its form mounted but `hidden`, renders the notice in its place, and its
+`onCancel` backs out one level (notice → form → closed) — the
+`Modal.svelte` sub-state convention (`frontend/README.md` → Modals).
+`DuplicateContactModal.svelte` / `DuplicateBusinessModal.svelte` survive
+only as thin `<Modal>` wrappers for `EmailCreatePOPage.svelte` (PO work is
+parked); they are Esc-only (no `onSave`) since both actions are navigation.
 
-Wired into: `ContactFormPage.svelte`, `BusinessFormPage.svelte` (both
-create-only — see above), and the two email-to-{Job,PO} creation
-pages (`EmailCreateJobPage.svelte`, `EmailCreatePOPage.svelte`;
-`EmailCreateBillPage` was deleted with the 2026-07-23 bill retirement),
-which create a Contact via
+Wired into: `ContactFormModal.svelte`, `BusinessFormModal.svelte` (both
+create-only — see above), and the email-to-Job modal
+(`EmailCreateJobModal.svelte`; `EmailCreatePOPage.svelte` still uses the
+wrappers; `EmailCreateBillPage` was deleted with the 2026-07-23 bill
+retirement), which create a Contact via
 `resolveSenderToContact` (`frontend/src/lib/email.js`) and need the same
 409 handling since that helper POSTs to `/api/contacts/` directly. All four
-pages check both `e.data?.code === 'duplicate_email'` and
+check both `e.data?.code === 'duplicate_email'` and
 `'duplicate_business_name'` before falling through to normal error triage.
 
 `resolveSenderToContact` can also create a **Business** (its
 `businessMode === 'new'` branch). It follows the same "check before you
-create anything" order as `BusinessFormPage`: it calls `check-name` first,
+create anything" order as `BusinessFormModal`: it calls `check-name` first,
 and if a match exists, throws a synthetic `{status: 409, data: {code:
 'duplicate_business_name', existing_business}}` error *before* the contact
-POST — so, like the form page, a collision here never orphans a contact.
-The three email pages render `DuplicateBusinessModal` for this error the
-same way they do `DuplicateContactModal`.
+POST — so, like the form modal, a collision here never orphans a contact.
+The email create-job modal renders `DuplicateBusinessNotice` for this error
+the same way it does `DuplicateContactNotice`.
 
 ---
 
@@ -594,10 +600,10 @@ already holding rather than re-checking it. Full OAuth/sync mechanics:
 | Path | Component | Notes |
 |---|---|---|
 | `/contacts` | `ContactListPage.svelte` | **The primary nav entry** (`Sidebar.svelte` links here, labeled "Contacts") — despite the name, this is a **combined** Contacts + Businesses list (see below). |
-| `/contacts/new`, `/contacts/:id/edit` | `ContactFormPage.svelte` | |
+| `/contacts/new`, `/contacts/:id/edit` | `RedirectTo` stub | Retired 2026-10-10: the form is `ContactFormModal.svelte`, opened from the list's **New Contact** button, the detail page's **Edit**, or a business page's **New Contact** (pre-attached via `defaultBusinessId`). The stub bounces stale links to `/contacts` / `/contacts/:id`. |
 | `/contacts/:id` | `ContactDetailPage.svelte` | |
 | `/businesses` | `BusinessListPage.svelte` | A separate, plain-paginated, **Business-only** list with no letter/tag filters (thin wrapper over `BusinessList.svelte`). Not in the sidebar nav — reached via "Back to list" from a Business detail page, or directly by URL. Effectively a secondary surface; `/contacts` is where users land day to day. |
-| `/businesses/new`, `/businesses/:id/edit` | `BusinessFormPage.svelte` | |
+| `/businesses/new`, `/businesses/:id/edit` | `RedirectTo` stub | Retired 2026-10-10: the form is `BusinessFormModal.svelte`, opened from the lists' **New Business** buttons or the detail page's **Edit**. |
 | `/businesses/:id` | `BusinessDetailPage.svelte` | |
 
 ### `ContactListPage.svelte` — the combined list
@@ -610,7 +616,7 @@ fetched). Filter UI: A–Z letter buttons (`LETTERS`) mapped to
 `starts_with`, a free-text search box, a tag-chip filter (fetched once from
 `/api/tags/?page_size=200`), and `showContacts`/`showBusinesses` toggles
 that filter the already-merged client-side list without refetching.
-"New Contact" / "New Business" links live here.
+"New Contact" / "New Business" are `<button>`s here (gated `can_manage_jobs`) that open `ContactFormModal` / `BusinessFormModal` over the list.
 
 ### Detail pages
 
@@ -630,12 +636,19 @@ retirement), each filtered by `viewMode` (architecture doc §6) to hide
 closed-status rows in `'lite'` mode, then a `HistoryPanel` (architecture
 doc §7.5) with the notes-entry box.
 
-### Forms
+### Forms (modals)
 
-`ContactFormPage.svelte` / `BusinessFormPage.svelte` — shared conventions:
-create vs. edit branch on `params.id`; both wire the duplicate-detection
-modals on create only (see "Duplicate detection" above).
-`BusinessFormPage`'s create flow is the three-step dance from
+`ContactFormModal.svelte` / `BusinessFormModal.svelte`
+(`components/contacts/`, 2026-10-10 — they replaced the `/new` + `/:id/edit`
+pages) — shared conventions: props `{ open, contact|business = null,
+onSaved, onClose }` (null → create, object → edit); the inner
+`ContactForm` / `BusinessForm` components are unchanged. Both wire
+duplicate detection as an in-modal sub-state on create only (see
+"Duplicate detection" above). **Create navigates** to the new record's
+detail page (`push`), **edit calls `onSaved`** and the host detail page
+reloads in place, **cancel stays**. `ContactFormModal` takes
+`defaultBusinessId` (the business page's New Contact). `BusinessFormModal`
+loads `/api/payment-terms/` on open and runs the three-step create from
 "Circular-dependency creation order": `check-name` → create Contact →
 create Business with `default_contact_id`.
 

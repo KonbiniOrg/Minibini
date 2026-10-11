@@ -2162,8 +2162,8 @@ linked there):
 
 | Status | Button | Handler |
 |---|---|---|
-| `draft` | "Send Email" (`<button>`) | navigates to `#/estimates/{id}/send` — the send-form page that calls `EstimateEmailService.send_estimate` on submit. **Deliverables gate** (2026-09-28): the panel fetches the job's deliverables (and refetches on `stores/deliverables.js` bumps); when there are none the button instead opens `DeliverablesEditModal` with the notice "Deliverables are required before this estimate can be sent." (pre-empting the server's `mark_open` refusal, `jobs-and-tasks.md` §12.3). Save with ≥1 row → the panel navigates on to the send page; Cancel or an empty save stays put. The modal itself never navigates — opened from the band's own Edit link it shows no notice and just closes. Send affordances are buttons in every state, an explicit exception to links-navigate/buttons-act (RM 2026-09-29: the email step becomes a modal later). |
-| `open` | "Resend Email" (`<button>`) | navigates to `#/estimates/{id}/send` |
+| `draft` | "Send Email" (`<button>`) | opens `DocumentSendModal` over the panel (architecture doc §7.12; 2026-10-10 — the `/estimates/:id/send` page is a redirect stub) — the send form that calls `EstimateEmailService.send_estimate` on submit. **Deliverables gate** (2026-09-28): the panel fetches the job's deliverables (and refetches on `stores/deliverables.js` bumps); when there are none the button instead opens `DeliverablesEditModal` with the notice "Deliverables are required before this estimate can be sent." (pre-empting the server's `mark_open` refusal, `jobs-and-tasks.md` §12.3). Save with ≥1 row → the panel opens the send modal; Cancel or an empty save stays put. The deliverables modal itself never opens the send modal — opened from the band's own Edit link it shows no notice and just closes. Send affordances are buttons in every state (they open a modal, so links-navigate/buttons-act holds without exception since 2026-10-10). |
+| `open` | "Resend Email" (`<button>`) | opens `DocumentSendModal` |
 | `open`, no CO yet, job on hold | "Create Change Order" | `POST /api/change-orders/` `{job}` → navigates to the new CO's page |
 | `open` | "Revise Estimate" | `POST /api/estimates/{id}/revise/` → opens new draft revision |
 | any | status `<select>` | `PATCH /api/estimates/{id}/` with `{status}` (when transitions are valid) |
@@ -3209,7 +3209,9 @@ relabelling, and the deliverables live/baseline pair) plus the toolbar
 and status actions — it no longer fetches `source-pool` itself (§14.4b:
 the CO page dropped its picklist 2026-09-20; nothing else on this page
 consumed the pool). `CODeliverablesSection.svelte`
-owns the deliverables grid + inline drafting forms
+owns the deliverables grid + its drafting modal (Qty / Units /
+Description for both new and edit, 2026-10-10 — the inline editing rows
+are gone)
 (`lib/changeOrderDiff.js`'s `buildDeliverableRows`, unit-tested), and
 `COEditView.svelte` owns the line-item surface.
 
@@ -3320,15 +3322,16 @@ accepted CO has itself amended — a separate client-side computation
 ordered by `change_order_id`.) See `LATER.md` for the decision record on
 keeping `status = accepted` rather than introducing a stored state.
 
-The draft toolbar's **Send to customer** button routes to
-`ChangeOrderSendPage.svelte` (`/change-orders/:id/send`), which reuses
-`DocumentSendForm` to email the portal link + PDF and flip the CO to
-`open` (the bare `mark-open` endpoint remains for back-compat). When the
+The draft toolbar's **Send to customer** button opens `DocumentSendModal`
+over the panel (architecture doc §7.12; `/change-orders/:id/send` is a
+redirect stub since 2026-10-10), which reuses `DocumentSendForm` to email
+the portal link + PDF and flip the CO to `open` (the bare `mark-open`
+endpoint remains for back-compat). When the
 job has no deliverables the button instead opens `DeliverablesEditModal`
 with "Deliverables are required before this change order can be sent."
 — the SPA pre-empt of `ChangeOrderService.assert_job_has_deliverables`
 (`jobs-and-tasks.md` §12.3); a save leaving ≥1 row continues to the send
-page. Both send affordances are `<button>`s (RM 2026-09-29). On an
+modal. Both send affordances are `<button>`s (RM 2026-09-29). On an
 `open` CO the toolbar shows **Resend to customer** (same send page —
 `send_change_order` only transitions on the first send, so a resend just
 re-emails), alongside the shop's internal **Record Accepted / Record
@@ -3350,7 +3353,7 @@ CO is no longer editable, identical to the estimate/invoice normalization
 rule (§12 intro).
 
 **Deliverables in Edit mode only.** `CODeliverablesSection` — the grid +
-inline drafting forms — renders only when `mode === 'edit'`; Customer and
+its drafting modal — renders only when `mode === 'edit'`; Customer and
 Reorder are read-only document projections and never show it.
 
 **Date chips.** The toolbar carries the same `.stat-chips doc-stat-chips`
@@ -3652,9 +3655,9 @@ is the entry point. `EstimateEmailService` and its CO sibling
 base (same module) that owns `get_email_defaults`,
 `notify_shop_of_decision`, and the send skeleton; each subclass
 declares its default subject/body, Configuration keys, labels, PDF
-generator, and send validation. The SPA route `/estimates/:id/send` mounts
-`DocumentSendForm.svelte`, populated by
-`GET /api/estimates/{id}/send-defaults/`; submit POSTs
+generator, and send validation. The SPA's `DocumentSendModal` (opened by
+the estimate panel's Send Email) mounts `DocumentSendForm.svelte`,
+populated by `GET /api/estimates/{id}/send-defaults/`; submit POSTs
 multipart to `/api/estimates/{id}/send/`.
 
 **Send preconditions.** Before an estimate goes out — enforced in **both**

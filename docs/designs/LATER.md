@@ -1054,10 +1054,11 @@ Cross-cutting UI/API conventions and shared components.
 
 - **`#/jobs` (JobListPage) has no nav link.** — _added 2026-07-31_
   The tabular job list is a destination RM uses and wants kept (2026-07-31)
-  — `JobFormPage`'s Cancel lands there deliberately — but nothing in the SPA
-  navigates to it: the sidebar's "Jobs" goes to `#/jobs/board`, and the only
-  other links in are the PM-filtered `#/jobs?pm=N` ones. So it's reachable by
-  URL or by cancelling out of the new-job form, and not otherwise.
+  but nothing in the SPA navigates to it: the sidebar's "Jobs" goes to
+  `#/jobs/board`, and the only other links in are the PM-filtered
+  `#/jobs?pm=N` ones. (Until 2026-10-10 the new-job page's Cancel landed
+  there too; the create form is a modal now, so that path is gone.) So it's
+  reachable by URL and not otherwise.
   _Done when:_ the plain list is reachable from the nav (or from the board).
 
 - **JobCard's `.doc-pill-*` should join the global `.status-badge` family.** — _added 2026-07-08 (CSS review pass); narrowed 2026-07-09_

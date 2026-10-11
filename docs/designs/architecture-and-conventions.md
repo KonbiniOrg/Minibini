@@ -1609,12 +1609,17 @@ every Create flow that produces a vendor Business naturally produces
 a Contact alongside it. The placeholder name "PO receiver" (or
 similar) is acceptable when no real sales rep is involved.
 
-SPA routes registered in `App.svelte`:
+SPA surfaces (2026-10-10: the job-side actions are modals hosted by
+`EmailDetailPage.svelte`, opened via the action panel's `onAction(name)`;
+their old routes are `RedirectTo` stubs bouncing to `/email/:id`):
 
-- `/email/:id/create-job` → `EmailCreateJobPage.svelte`
-- `/email/:id/create-po` → `EmailCreatePOPage.svelte`
-- `/email/:id/associate` → `EmailAssociatePage.svelte` (Job picker)
-- `/email/:id/associate-po` → `EmailAssociatePOPage.svelte`
+- Job "Create new" → `EmailCreateJobModal.svelte` (sender resolution +
+  job name/description; duplicate contact/business as in-modal sub-states;
+  a create lands on the new job)
+- Job / PO "Link existing" → `EmailLinkModal.svelte` with `kind: 'job' |
+  'po'` (`JobPicker` / `PurchaseOrderPicker`; links in place and reloads)
+- `/email/:id/create-po` → `EmailCreatePOPage.svelte` (still a page — PO
+  work is parked)
 
 (The create-bill / associate-bill routes and pages were deleted with the
 2026-07-23 bill retirement.)
@@ -1756,39 +1761,47 @@ history entry for each sibling would flood the activity feed.
 Disassociate doesn't propagate. Per-email is the surgical tool the
 user reaches for when a sibling really doesn't belong.
 
-### 7.12 SPA send pages
+### 7.12 Send modal
 
-The send compose surface is a per-document route
-(`/estimates/:id/send`, `/purchase-orders/:id/send`,
-`/invoices/:id/send`). Each wraps the shared
-`frontend/src/components/email/DocumentSendForm.svelte` (To / CC /
+The send compose surface for estimates, change orders and invoices is
+`frontend/src/components/email/DocumentSendModal.svelte` (2026-10-10; it
+replaced the three `/…/:id/send` pages, which are now `RedirectTo` stubs
+bouncing to the document). It is mounted beside the document panel
+(`EstimatePanel`, `ChangeOrderPanel`, `InvoicePanel`) and takes
+`{ open, label, title, defaultsUrl, sendUrl, submitLabel, beforeSubmit,
+onSent, onClose }`: on open it fetches `defaultsUrl` (the document's
+`send-defaults`), wraps the shared `DocumentSendForm.svelte` (To / CC /
 BCC / Subject / Body / Attachments-with-remove-checkboxes /
-Add-attachment / Send button with native `confirm()`), fetches its
-own `send-defaults` for prefill, and renders a focused read-only
-document summary below the form. Submit POSTs as
-`multipart/form-data` via `api.postMultipart()` in `lib/api.js` —
-the new sibling of the JSON `api.post()`.
+Add-attachment / Send button with native `confirm()`, plus a Cancel
+button when `onCancel` is given), and on submit POSTs `multipart/form-data`
+to `sendUrl` via `api.postMultipart()`. `beforeSubmit` (async → bool) runs
+*after* the form's own recipient confirm — the invoice panel's
+unapplied-deposit-credit confirm rides it. The read-only document summary
+the old pages rendered under the form is gone: the document is behind the
+modal. The estimate/CO deliverables gate is a modal→modal handoff
+(`DeliverablesEditModal` saves → the send modal opens). The purchase-order
+send page (`/purchase-orders/:id/send`) is unchanged — PO work is parked.
 
 ### 7.13 Reply composer
 
-The reply composer is inline on the email detail page —
-`EmailReplyComposer.svelte` mounted by `EmailDetailPage.svelte` above
-the original `EmailContent` when the user clicks Reply or Reply All in
-the right-rail `EmailActionPanel`. The page tracks a small
+The reply composer is a modal over the email detail page (2026-10-10; it
+used to render inline above the message) — `EmailReplyComposer.svelte`,
+mounted by `EmailDetailPage.svelte` while the user has clicked Reply or
+Reply All in the right-rail `EmailActionPanel`. The page tracks a small
 `replyMode = $state(null)` (one of `null | 'reply' | 'reply-all'`); the
 action panel's Reply / Reply All buttons set it via an `onReply(mode)`
-callback prop. The right rail uses `position: sticky` so the action
-panel (Job / PO associations + Reply controls) stays visible
-while the user scrolls between the compose form and the original
-email below it.
+callback prop, and the composer renders `<Modal open={true}>` while it is
+non-null.
 
 `EmailReplyComposer` owns the form state (to / cc / bcc / subject /
 body / extraFiles) directly and binds it into `DocumentSendForm`
-via `$bindable` props. Mid-compose mode switching (clicking Reply
-All while composing a Reply, or vice versa) preserves everything the
-user has typed and only updates the CC field — driven by an
-`$effect` that fires when `mode` changes after the initial load.
-Cancel button calls `onClose` which clears `replyMode`. Submit calls
+via `$bindable` props. Mid-compose mode switching preserves everything
+the user has typed and only updates the CC field — driven by an
+`$effect` that fires when `mode` changes after the initial load. Because
+the action panel's own buttons sit behind the overlay while composing,
+the Reply / Reply All toggle lives in the modal header and reports through
+an `onModeChange(mode)` prop that the page feeds back into `replyMode`.
+The form's Cancel button calls `onClose` which clears `replyMode`. Submit calls
 the reply endpoint and on success calls `onSent`, which clears the
 composer and reloads the email (so any inherited associations and
 the new outbound row in the linked Job's panel render

@@ -489,7 +489,7 @@ Settings page — `frontend/src/routes/SettingsPage.svelte`:
 
 Invoice detail — `frontend/src/routes/invoices/InvoiceDetailPage.svelte`:
 
-- A "Send Invoice" link (relabelled "Resend Invoice" once `invoice.qbo_id` is set) navigates to the invoice send page (`#/invoices/{id}/send`). That page posts to `POST /api/invoices/{id}/send`, which performs the QBO push (first send only) and the customer email together. There is no separate "Send to QuickBooks" button or `SendToQBODialog`. Once `qbo_id` is set, the detail page also shows read-only QBO ID / payment-status / amount-paid rows.
+- A "Send Invoice" button (relabelled "Resend Invoice" once `invoice.qbo_id` is set) opens the send modal (`DocumentSendModal`, architecture doc §7.12; the `#/invoices/{id}/send` page is a redirect stub since 2026-10-10). The modal posts to `POST /api/invoices/{id}/send`, which performs the QBO push (first send only) and the customer email together. There is no separate "Send to QuickBooks" button or `SendToQBODialog`. Once `qbo_id` is set, the detail page also shows read-only QBO ID / payment-status / amount-paid rows.
 
 The send flow on the Minibini side is documented in `invoicing-and-expenses.md`.
 

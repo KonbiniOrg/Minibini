@@ -9,7 +9,7 @@
 // send-time unapplied-deposit-credit confirm (also Task 22) is likewise not
 // e2e-reachable — sending requires a real QBO push, unavailable in this
 // env — and is covered by Vitest only
-// (frontend/tests/routes/invoices/InvoiceSendPage.test.js).
+// (frontend/tests/components/invoices/InvoicePanel.test.js, "send modal — deposit-credit confirm").
 //
 // UPDATED for the better-fees skeleton phase (Task 13 retired the old
 // Reconcile-wizard toggle): the invoice document now has ONE merged Edit
