@@ -1207,6 +1207,22 @@ stored. Examples (full list in `apps/jobs/services.py`):
 - `needs-invoice` / `invoice-prepped` / `invoice-sent` — for
   `work_complete` jobs based on Invoice state
 
+**Pipeline column sections (2026-10-11).** `PipelineColumn.svelte`
+groups its cards by sub-status into four ordered sections, each under a
+small uppercase header tinted with the same hex as the cards' tab
+(`JobCard.BORDER_COLORS`), so the header reads as the tab of the cards
+beneath it. Top to bottom: **Inquiries** (`needs-scoping`, grey),
+**Estimating** (`estimating`, blue), **Awaiting Approval**
+(`awaiting-response`, brown), **Awaiting Prep** (`approved` jobs, gold —
+the pre-existing section, which keeps its drop-shadow treatment). An
+empty section renders no header. A held pre-approval job reports
+`sub_status: 'on-hold'` (the hold branch wins), so the column buckets it
+client-side by its `estimates` the same way `_pipeline_sub_status` would
+unheld (open → Awaiting Approval, draft → Estimating, else Inquiries);
+a held-from-`approved` job stays in Awaiting Prep. The seed-independent
+e2e spec `e2e/specs/job-board/pipeline-sections.spec.js` derives the
+expected layout from the board payload.
+
 ### 8.3 Configuration
 
 `board_closed_retention_days` (Configuration key; default 14) controls
