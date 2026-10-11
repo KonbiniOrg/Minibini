@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { post: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { post: vi.fn() }, errorMessage: (e, f) => e?.data?.detail || e?.message || f }));
 vi.mock('@/stores/messages.js', () => ({ showSuccess: vi.fn(), showError: vi.fn() }));
 
 import { api } from '@/lib/api.js';
@@ -50,5 +50,17 @@ describe('ChangePasswordModal', () => {
     await fireEvent.click(getByRole('button', { name: 'Change password' }));
     expect(await findByText('Wrong password.')).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChangePasswordModal — operation errors (review fix)', () => {
+  it('renders a {detail} operation error in the modal instead of failing silently', async () => {
+    api.post.mockRejectedValue({ status: 403, data: { detail: 'You do not have permission.' }, message: 'You do not have permission.' });
+    const { findByRole, getByRole, findByText } = render(ChangePasswordModal, { props: { open: true, username: 'rachel', user: { id: 4, username: 'sam' } } });
+    const dialog = await findByRole('dialog');
+    const form = dialog.querySelector('form');
+    await fireEvent.submit(form);
+    expect(await findByText('You do not have permission.')).toBeInTheDocument();
+    void getByRole;
   });
 });

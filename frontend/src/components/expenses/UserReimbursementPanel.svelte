@@ -76,6 +76,11 @@
       .toFixed(2)
   );
 
+  // Open/close reset the error so a failed attempt never greets the next
+  // open of a clean form.
+  function openBatch() { batchError = ''; showBatchForm = true; }
+  function closeBatch() { batchError = ''; showBatchForm = false; }
+
   async function submitBatch() {
     batchSaving = true;
     batchError = '';
@@ -192,7 +197,7 @@
           to reimburse.</em></p>
       {:else}
         <p>
-          <button type="button" onclick={() => { showBatchForm = true; }}>
+          <button type="button" onclick={openBatch}>
             Reimburse selected (${selectedTotal})
           </button>
         </p>
@@ -202,7 +207,7 @@
     <!-- Batch creation in the Modal shell (2026-10-10; was a dashed in-page
          box). The heading carries the count and total so the table behind
          needn't stay visible. -->
-    <Modal open={showBatchForm} onCancel={() => { showBatchForm = false; }} maxWidth="520px" label="Create reimbursement">
+    <Modal open={showBatchForm} onCancel={closeBatch} maxWidth="520px" label="Create reimbursement">
       <form onsubmit={(e) => { e.preventDefault(); submitBatch(); }}>
         <h3 class="modal-title">Reimburse {selectedIds.size} expense{selectedIds.size === 1 ? '' : 's'} — ${selectedTotal}</h3>
         <p>
@@ -229,7 +234,7 @@
           <button type="submit" disabled={batchSaving}>
             {batchSaving ? 'Saving...' : 'Confirm reimbursement'}
           </button>
-          <button type="button" onclick={() => { showBatchForm = false; }} disabled={batchSaving}>
+          <button type="button" onclick={closeBatch} disabled={batchSaving}>
             Cancel
           </button>
         </p>

@@ -64,7 +64,7 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 | Job history & notes | `/jobs/:id/history` | Note box, summary rows, partitioned history tabs. |
 | Activity | `/activity` | Cross-user activity feed. |
 | Search | `/search` + navbar search | Cross-entity search + result navigation. |
-| Users admin & profile | `/users`, `/users/new`, `/users/:id`, profile tab | Atom assignment, deactivation, password self-service. |
+| Users admin & profile | `/users`, `/users/:id` (new user is a modal), profile tab | Atom assignment, deactivation, password self-service. |
 | Settings (non-QBO) | `/settings` | Numbering, units, retention, email templates, board config. Accounting Categories CRUD beyond the delete guard (see Settings.md §1) is still uncovered. |
 | View-mode & sidebar | cross-cutting | FULL/LITE toggle, sidebar behavior — probably steps inside other docs rather than its own. |
 

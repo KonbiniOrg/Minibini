@@ -6,7 +6,8 @@
   // account — accurate, and there is no reliable way to suppress it.
   import { api } from '../../lib/api.js';
   import { fieldErrors } from '../../lib/formErrors.js';
-  import { showSuccess } from '../../stores/messages.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showSuccess, showError } from '../../stores/messages.js';
   import Modal from '../Modal.svelte';
 
   let { open = false, user = null, onClose = () => {} } = $props();
@@ -27,9 +28,11 @@
       showSuccess('Password reset.');
       onClose();
     } catch (err) {
-      errors = (err.data && typeof err.data === 'object')
-        ? err.data
-        : { non_field_errors: ['Could not reset password.'] };
+      // Field errors land under their inputs; an operation error ({detail})
+      // lands in the footer; infrastructure errors go to the global overlay.
+      const t = triageError(err);
+      if (t.overlay) showError(t.overlay);
+      else errors = { ...t.fields, ...(t.message ? { non_field_errors: [t.message] } : {}) };
     } finally {
       saving = false;
     }

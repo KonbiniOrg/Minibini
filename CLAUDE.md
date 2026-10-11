@@ -337,7 +337,7 @@ Job (tasks optionally generated from a WorkTemplate) → Estimate (wizard over t
 3. If contact exists → redirect to job creation with contact pre-selected
 4. If not → session-based flow: create contact → optionally create/associate business (4 scenarios via dropdown) → create job → link EmailRecord to job
 
-Key files: `apps/core/services.py` (EmailService), `apps/core/email_utils.py`, and the API viewsets/actions under `apps/api/` (emails, contacts, businesses, jobs). The email-to-job flow is now fully SPA + API driven — the SPA's `EmailCreateJobPage.svelte` calls `POST /api/emails/{id}/create-job/` plus `/api/contacts/` and `/api/businesses/`.
+Key files: `apps/core/services.py` (EmailService), `apps/core/email_utils.py`, and the API viewsets/actions under `apps/api/` (emails, contacts, businesses, jobs). The email-to-job flow is now fully SPA + API driven — the SPA's `EmailCreateJobModal.svelte` (opened from the email detail page's action panel) calls `POST /api/emails/{id}/create-job/` plus `/api/contacts/` and `/api/businesses/`.
 
 ### Revision Workflow
 Estimates support versioning via parent-child relationships (`POST /api/estimates/{id}/revise`). Old versions marked superseded.

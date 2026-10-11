@@ -147,7 +147,7 @@ credit; and the Send Invoice modal for any invoice on such a job.
   aborts, leaving the send screen untouched. No extra confirm when there
   are no unapplied credits. **Not exercised in e2e** — QBO is unreachable
   in this env, so the send POST itself can't be driven here; covered by
-  Vitest (`frontend/tests/routes/invoices/InvoiceSendPage.test.js`).
+  Vitest (`frontend/tests/components/invoices/InvoicePanel.test.js`, "send modal — deposit-credit confirm").
 
 ---
 

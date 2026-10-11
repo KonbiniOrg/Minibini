@@ -9,7 +9,8 @@
   // same form. It is read-only, out of the tab order, and visually hidden.
   import { api } from '../../lib/api.js';
   import { fieldErrors } from '../../lib/formErrors.js';
-  import { showSuccess } from '../../stores/messages.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showSuccess, showError } from '../../stores/messages.js';
   import Modal from '../Modal.svelte';
 
   let { open = false, username = '', onClose = () => {} } = $props();
@@ -32,9 +33,11 @@
       showSuccess('Password changed.');
       onClose();
     } catch (err) {
-      errors = (err.data && typeof err.data === 'object')
-        ? err.data
-        : { non_field_errors: ['Could not change password. Please try again.'] };
+      // Field errors land under their inputs; an operation error ({detail})
+      // lands in the footer; infrastructure errors go to the global overlay.
+      const t = triageError(err);
+      if (t.overlay) showError(t.overlay);
+      else errors = { ...t.fields, ...(t.message ? { non_field_errors: [t.message] } : {}) };
     } finally {
       saving = false;
     }

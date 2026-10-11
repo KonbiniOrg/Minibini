@@ -7,7 +7,9 @@
   import { push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import { fieldErrors } from '../../lib/formErrors.js';
+  import { triageError } from '../../lib/errorTriage.js';
   import Modal from '../Modal.svelte';
+  import { showError } from '../../stores/messages.js';
 
   let { open = false, onClose = () => {} } = $props();
 
@@ -29,11 +31,11 @@
       onClose();
       push(`/users/${created.id}`);
     } catch (err) {
-      if (err.data && typeof err.data === 'object') {
-        errors = err.data;
-      } else {
-        errors = { non_field_errors: ['Could not create user. Please try again.'] };
-      }
+      // Field errors land under their inputs; an operation error ({detail})
+      // lands in the footer; infrastructure errors go to the global overlay.
+      const t = triageError(err);
+      if (t.overlay) showError(t.overlay);
+      else errors = { ...t.fields, ...(t.message ? { non_field_errors: [t.message] } : {}) };
     } finally {
       saving = false;
     }

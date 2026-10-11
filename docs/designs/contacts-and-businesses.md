@@ -160,7 +160,7 @@ so creating a business "from scratch" is a three-step dance (see
 `docs/designs/data-constraints.md` §1.5): create the Contact first with
 `business=None`, create the Business with `default_contact` pointing at it,
 then set the Contact's `business` FK. `ContactService.create_business_for_contact`
-and the frontend's `BusinessFormPage` create flow (below) both follow this
+and the frontend's `BusinessFormModal` create flow (below) both follow this
 order.
 
 ### `ContactService` — Business methods
@@ -293,8 +293,8 @@ a *new* Business always requires creating its `default_contact` first (see
 the 409-on-create, a duplicate business name would be caught only *after*
 that contact was already committed, leaving it permanently orphaned
 (business-less, since the Business creation that would have linked it never
-completes). `BusinessFormPage`'s create flow calls this endpoint first and
-shows the duplicate modal immediately — without ever POSTing the contact —
+completes). `BusinessFormModal`'s create flow calls this endpoint first and
+shows the duplicate-business notice (its in-modal sub-state) immediately — without ever POSTing the contact —
 if it comes back `exists: true`. There's no equivalent gap on the Contact
 side, since a Contact create has no such "must create something else
 first" step.

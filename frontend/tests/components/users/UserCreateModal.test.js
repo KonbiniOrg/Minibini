@@ -48,3 +48,15 @@ describe('UserCreateModal', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
+
+describe('UserCreateModal — operation errors (review fix)', () => {
+  it('renders a {detail} operation error in the modal instead of failing silently', async () => {
+    api.post.mockRejectedValue({ status: 403, data: { detail: 'You do not have permission.' }, message: 'You do not have permission.' });
+    const { findByRole, getByRole, findByText } = render(UserCreateModal, { props: { open: true, username: 'rachel', user: { id: 4, username: 'sam' } } });
+    const dialog = await findByRole('dialog');
+    const form = dialog.querySelector('form');
+    await fireEvent.submit(form);
+    expect(await findByText('You do not have permission.')).toBeInTheDocument();
+    void getByRole;
+  });
+});
