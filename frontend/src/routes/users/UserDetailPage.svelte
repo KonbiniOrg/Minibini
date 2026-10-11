@@ -8,6 +8,7 @@
   import EnvelopeEditor from '../../components/schedule/EnvelopeEditor.svelte';
   import WorkSessionsList from '../../components/time/WorkSessionsList.svelte';
   import PmJobList from '../../components/jobs/PmJobList.svelte';
+  import ResetPasswordModal from '../../components/users/ResetPasswordModal.svelte';
 
   const { params = {} } = $props();
 
@@ -32,10 +33,8 @@
   let permMessage = $state('');
   let permSaving = $state(false);
 
-  let pwForm = $state({ password: '', password_confirm: '' });
-  let pwErrors = $state({});
-  let pwMessage = $state('');
-  let pwSaving = $state(false);
+  // Password reset lives in ResetPasswordModal (2026-10-10).
+  let resetOpen = $state(false);
 
   let statusErrors = $state({});
   let statusMessage = $state('');
@@ -151,27 +150,6 @@
     }
   }
 
-  async function resetPassword(e) {
-    e.preventDefault();
-    pwErrors = {};
-    pwMessage = '';
-    pwSaving = true;
-    try {
-      await api.post(`/api/users/${user.id}/reset-password/`, pwForm);
-      pwForm.password = '';
-      pwForm.password_confirm = '';
-      pwMessage = 'Password reset.';
-    } catch (err) {
-      if (err.data && typeof err.data === 'object') {
-        pwErrors = err.data;
-      } else {
-        pwErrors = { non_field_errors: ['Could not reset password.'] };
-      }
-    } finally {
-      pwSaving = false;
-    }
-  }
-
   async function toggleStatus() {
     statusErrors = {};
     statusMessage = '';
@@ -284,39 +262,9 @@
     {#if permMessage}<p>{permMessage}</p>{/if}
   </form>
 
-  <h3>Reset password</h3>
-  <form onsubmit={resetPassword}>
-    <p>
-      <label for="reset-pw"><strong>New password</strong></label><br>
-      <input
-        type="password"
-        id="reset-pw"
-        autocomplete="new-password"
-        bind:value={pwForm.password}
-      >
-    </p>
-    {#each fieldErrors(pwErrors, 'password') as msg}<p>{msg}</p>{/each}
-
-    <p>
-      <label for="reset-pw-confirm"><strong>Confirm new password</strong></label><br>
-      <input
-        type="password"
-        id="reset-pw-confirm"
-        autocomplete="new-password"
-        bind:value={pwForm.password_confirm}
-      >
-    </p>
-    {#each fieldErrors(pwErrors, 'password_confirm') as msg}<p>{msg}</p>{/each}
-
-    {#each fieldErrors(pwErrors, 'non_field_errors') as msg}<p>{msg}</p>{/each}
-
-    <p>
-      <button type="submit" disabled={pwSaving}>
-        {pwSaving ? 'Resetting...' : 'Reset password'}
-      </button>
-    </p>
-    {#if pwMessage}<p>{pwMessage}</p>{/if}
-  </form>
+  <h3>Password</h3>
+  <p><button type="button" onclick={() => { resetOpen = true; }}>Reset password…</button></p>
+  <ResetPasswordModal open={resetOpen} {user} onClose={() => { resetOpen = false; }} />
 
   <h3>Account status</h3>
   <p>

@@ -1,4 +1,6 @@
 <script>
+  import ContactFormModal from '../../components/contacts/ContactFormModal.svelte';
+  import BusinessFormModal from '../../components/contacts/BusinessFormModal.svelte';
   import { api, errorMessage } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
   import ContactsImportPanel from '../../components/qboimport/ContactsImportPanel.svelte';
@@ -6,7 +8,10 @@
   import { canManageJobs } from '../../stores/permissions.js';
   import { showError, showSuccess } from '../../stores/messages.js';
   import LoadState from '../../components/LoadState.svelte';
+  import Pager from '../../components/Pager.svelte';
   import DataTable from '../../components/DataTable.svelte';
+  let newContactOpen = $state(false);
+  let newBusinessOpen = $state(false);
 
   let pullEpoch = $state(0);
 
@@ -31,7 +36,6 @@
     (item._type === 'business' && showBusinesses)
   ));
   let pageItems = $derived(filteredItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE));
-  let totalPages = $derived(Math.ceil(filteredItems.length / PAGE_SIZE));
 
   $effect(() => {
     api.get('/api/tags/?page_size=200')
@@ -147,7 +151,15 @@
   <ContactsImportPanel onCommitted={loadAll} />
 {/key}
 
-<p><a href="#/contacts/new">New Contact</a> &nbsp; <a href="#/businesses/new">New Business</a></p>
+<p>
+  {#if $canManageJobs}
+    <button type="button" onclick={() => { newContactOpen = true; }}>New Contact</button>
+    &nbsp;
+    <button type="button" onclick={() => { newBusinessOpen = true; }}>New Business</button>
+  {/if}
+</p>
+<ContactFormModal open={newContactOpen} onClose={() => { newContactOpen = false; }} />
+<BusinessFormModal open={newBusinessOpen} onClose={() => { newBusinessOpen = false; }} />
 
 <div class="index-bar">
   <button class:active={letterFilter === ''} onclick={() => selectLetter('')}>All</button>
@@ -226,17 +238,7 @@
     ]}
   />
 
-  {#if totalPages > 1}
-    <p>
-      {#if page > 1}
-        <button onclick={() => { page--; }}>Previous</button>
-      {/if}
-      Page {page} of {totalPages}
-      {#if page < totalPages}
-        <button onclick={() => { page++; }}>Next</button>
-      {/if}
-    </p>
-  {/if}
+  <Pager {page} count={filteredItems.length} pageSize={PAGE_SIZE} onPage={(n) => { page = n; }} />
 </LoadState>
 </div>
 

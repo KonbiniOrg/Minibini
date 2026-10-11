@@ -122,7 +122,7 @@ heading "Tasks and Materials").
 ## 4. Unapplied deposit credit — draft-panel notice + send-time confirm
 
 Entry: any **draft** invoice on a job that has a paid, unapplied deposit
-credit; and the Send Invoice screen for any invoice on such a job.
+credit; and the Send Invoice modal for any invoice on such a job.
 
 - [ ] **Notice.** Viewing a draft invoice on a job with ≥1 unapplied deposit
   credit shows a row above Line Items: "Unapplied deposit credit — $&lt;amount&gt;
@@ -140,14 +140,14 @@ credit; and the Send Invoice screen for any invoice on such a job.
 - [ ] **Absent** on non-draft invoice views, and when the job has no
   unapplied deposit credits.
 - [ ] **Send-time confirm (soft guard).** Confirming a send
-  (`#/invoices/{id}/send`) on a job that still has ≥1 unapplied deposit
+  (the invoice panel's Send Invoice modal) on a job that still has ≥1 unapplied deposit
   credit at that moment shows a second confirmation — "There's an
   unapplied deposit credit on this job — send anyway?" — after the normal
   "Send this email to...?" confirm. OK proceeds with the send; Cancel
   aborts, leaving the send screen untouched. No extra confirm when there
   are no unapplied credits. **Not exercised in e2e** — QBO is unreachable
   in this env, so the send POST itself can't be driven here; covered by
-  Vitest (`frontend/tests/routes/invoices/InvoiceSendPage.test.js`).
+  Vitest (`frontend/tests/components/invoices/InvoicePanel.test.js`, "send modal — deposit-credit confirm").
 
 ---
 

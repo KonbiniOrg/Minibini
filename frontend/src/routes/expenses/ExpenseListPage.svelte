@@ -1,7 +1,7 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
   import { link, push } from 'svelte-spa-router';
-  import ExpenseForm from '../../components/expenses/ExpenseForm.svelte';
+  import ExpenseModal from '../../components/expenses/ExpenseModal.svelte';
   import LoadState from '../../components/LoadState.svelte';
   import DataTable from '../../components/DataTable.svelte';
 
@@ -112,23 +112,19 @@
 {/if}
 
 <p>
-  {#if !showForm}
-    <button type="button" onclick={() => { editingExpense = null; showForm = true; }}>
-      + New expense
-    </button>
-  {/if}
+  <button type="button" onclick={() => { editingExpense = null; showForm = true; }}>
+    + New expense
+  </button>
 </p>
 
-{#if showForm}
-  <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
-    <h3>{editingExpense ? 'Edit expense' : 'New expense'}</h3>
-    <ExpenseForm
-      expense={editingExpense}
-      onSaved={onSaved}
-      onCancel={() => { showForm = false; editingExpense = null; }}
-    />
-  </div>
-{/if}
+<!-- New/edit in the same ExpenseModal the task pages use (2026-10-10; was an
+     inline bordered form at the top of the page). -->
+<ExpenseModal
+  open={showForm}
+  expense={editingExpense}
+  onSaved={onSaved}
+  onClose={() => { showForm = false; editingExpense = null; }}
+/>
 
 <fieldset style="margin-bottom: 10px">
   <legend>Filters</legend>

@@ -2,7 +2,7 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { link } from 'svelte-spa-router';
   import { user as userStore } from '../../stores/auth.js';
-  import ExpenseForm from '../expenses/ExpenseForm.svelte';
+  import ExpenseModal from '../expenses/ExpenseModal.svelte';
   import LoadState from '../LoadState.svelte';
   import DataTable from '../DataTable.svelte';
 
@@ -52,20 +52,14 @@
 <section>
   <h3>My Expenses</h3>
 
-  {#if !showForm}
-    <p><button type="button" onclick={() => { showForm = true; }}>+ New expense</button></p>
-  {/if}
+  <p><button type="button" onclick={() => { showForm = true; }}>+ New expense</button></p>
 
-  {#if showForm}
-    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
-      <h4>Submit new expense</h4>
-      <ExpenseForm
-        lockPurchasedByToSelf={true}
-        onSaved={onSaved}
-        onCancel={() => { showForm = false; }}
-      />
-    </div>
-  {/if}
+  <ExpenseModal
+    open={showForm}
+    lockPurchasedByToSelf={true}
+    onSaved={onSaved}
+    onClose={() => { showForm = false; }}
+  />
 
   <LoadState {loading} error={loadError}>
   <DataTable

@@ -6,6 +6,7 @@
   import { showError } from '../../stores/messages.js';
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import DeliverablesEditModal from '../jobs/DeliverablesEditModal.svelte';
+  import DocumentSendModal from '../email/DocumentSendModal.svelte';
   import { buildEstimateDocItems } from '../../lib/estimateDocs.js';
   import DocModeBar from '../docsurface/DocModeBar.svelte';
   import DocCustomerView from '../docsurface/DocCustomerView.svelte';
@@ -262,10 +263,17 @@
     }
   });
 
-  // Send affordances are buttons in every state (RM 2026-09-29): the email
-  // step is slated to become a modal, so nothing here is a navigation link.
+  // Send affordances are buttons in every state (RM 2026-09-29); the email
+  // step is DocumentSendModal over this panel (2026-10-10).
+  let sendOpen = $state(false);
   function goToSend() {
-    window.location.hash = `/estimates/${estimate.estimate_id}/send`;
+    sendOpen = true;
+  }
+
+  async function handleSent() {
+    sendOpen = false;
+    await loadEstimate({ silent: true });
+    onJobChange();
   }
 
   function handleSendEmail() {
@@ -534,6 +542,15 @@
     notice="Deliverables are required before this estimate can be sent."
     onClose={handleDeliverablesModalClose}
   />
+{/if}
+
+{#if estimate}
+  <DocumentSendModal open={sendOpen} label="Send estimate" title="Send Estimate"
+    defaultsUrl={`/api/estimates/${estimate.estimate_id}/send-defaults/`}
+    sendUrl={`/api/estimates/${estimate.estimate_id}/send/`}
+    submitLabel="Send Email"
+    onSent={handleSent}
+    onClose={() => { sendOpen = false; }} />
 {/if}
 
 <style>

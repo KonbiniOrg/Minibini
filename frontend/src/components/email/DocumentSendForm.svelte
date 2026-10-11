@@ -1,6 +1,7 @@
 <script>
-  // Shared compose form for outbound email — sending Estimate / PO / Invoice
-  // documents AND the inline Reply / Reply All composer.
+  // Shared compose form for outbound email — DocumentSendModal (estimate /
+  // change order / invoice), the PO send page, AND the Reply / Reply All
+  // composer.
   //
   // The form's text fields are $bindable so the parent can own the state.
   // Document-send pages don't bind; they let each field default from
@@ -23,6 +24,7 @@
     onSubmit,             // function({ to, subject, body, cc, bcc, includeAutoAttachments: [bool...], extraFiles: [File...] })
     submitError = null,
     submitting = false,
+    onCancel = null,      // when given (modal hosts), renders a Cancel button beside Send
   } = $props();
 
   // Which auto-attached PDFs to include (default all checked).
@@ -120,6 +122,9 @@
     <button type="submit" disabled={submitting || !to.trim()}>
       {submitting ? 'Sending…' : submitLabel}
     </button>
+    {#if onCancel}
+      <button type="button" onclick={onCancel} disabled={submitting}>Cancel</button>
+    {/if}
   </p>
   <FormMessage error={submitError || ''} />
 </form>

@@ -38,3 +38,11 @@ describe('ExpenseModal', () => {
     expect(await findByText(/JOB-7/, { exact: false })).toBeInTheDocument();
   });
 });
+
+describe('ExpenseModal — lockPurchasedByToSelf pass-through', () => {
+  it('hides the Paid by / Purchased by controls when locked to self', async () => {
+    const { findByLabelText, queryByLabelText } = render(ExpenseModal, { props: { open: true, lockPurchasedByToSelf: true } });
+    await findByLabelText(/Amount/);
+    expect(queryByLabelText(/Paid by/)).toBeNull();
+  });
+});

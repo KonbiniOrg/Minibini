@@ -330,15 +330,23 @@ dd {
   gap: 22px;
 }
 
-/* Block title/header — used in frozen and dormant blocks. Inside active blocks,
-   use the .stat-spread instead. */
-.summary-block-title {
+/* Section title — the app's one titled-section voice (2026-10-11): small-caps
+   slate, 13px bold. Heads the job overview's six summary blocks and the
+   contact/business pages' activity sections (Recent Jobs, Open Invoices…).
+   Applies to a <div> or an <h3> alike — the class wins over the global navy
+   heading colour. Not for the 10px .panel-head micro-labels on identity
+   panels; that is a quieter register on purpose. */
+.section-title {
   font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
   color: #475569;
+  margin: 0;
 }
+
+/* Block title — a .section-title inside a summary block; the rules below only
+   lay it out per block state (frozen/dormant inline, active above the stats). */
 
 /* Scope min-width to frozen and dormant states only. */
 .summary-block.frozen .summary-block-title,
@@ -582,6 +590,16 @@ tr.grand td { font-weight:600; border-top:2px solid var(--doc-border); backgroun
 .toolbar button:hover { background: #f3f4f6; }
 .toolbar button:disabled { opacity: 0.5; cursor: default; }
 
+/* Pager (components/Pager.svelte). Both buttons always render; the one that
+   doesn't apply is disabled, never removed, so Next stays put between pages. */
+.pager { display: flex; align-items: center; gap: 10px; margin: 12px 0; font-size: 13px; }
+.pager button {
+  padding: 4px 12px; border: 1px solid var(--border-control); border-radius: 4px;
+  background: #fff; cursor: pointer; font-size: 13px;
+}
+.pager button:hover:not(:disabled) { background: #f3f4f6; }
+.pager button:disabled { opacity: 0.4; cursor: default; }
+
 /* Toolbar companions. */
 .back-link { font-size: 13px; }
 .page-title { font-size: 18px; font-weight: 600; }
@@ -594,11 +612,16 @@ tr.grand td { font-weight:600; border-top:2px solid var(--doc-border); backgroun
 .action-link:hover { background: #f3f4f6; }
 
 /* Quiet inline links inside a dark banner (edit / duplicate… / history). */
-.edit-link { font-size: 12px; font-weight: 400; opacity: 0.6; margin-left: 10px; color: #fff; text-decoration: none; }
+/* 14px / 0.75 since 2026-10-10 (was 12px / 0.6): the contact/business banners
+   set the size and the job header follows for parity. */
+.edit-link { font-size: 14px; font-weight: 400; opacity: 0.75; margin-left: 10px; color: #fff; text-decoration: none; }
 .edit-link:hover { opacity: 1; text-decoration: underline; }
 /* A <button> wearing .edit-link (e.g. opening a modal instead of navigating)
-   needs its native chrome stripped so the shared quiet-link look applies. */
-.header-action { background: none; border: none; cursor: pointer; font: inherit; }
+   needs its native chrome stripped so the shared quiet-link look applies.
+   Inherit only the family — the `font` shorthand would also reset font-size
+   and font-weight, and since this rule follows .edit-link at equal
+   specificity it would silently override the 14px above. */
+.header-action { background: none; border: none; cursor: pointer; font-family: inherit; line-height: inherit; }
 
 /*
  * Action band. A full-width strip of the actions that operate on the entity

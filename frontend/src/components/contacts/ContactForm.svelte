@@ -5,7 +5,6 @@
 
   const {
     contact = null,
-    businesses = [],
     defaultBusinessId = null,
     onSubmit,
     onCancel,

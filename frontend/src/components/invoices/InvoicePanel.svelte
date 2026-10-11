@@ -3,6 +3,7 @@
   import { showError } from '../../stores/messages.js';
   import { canManageFinancials } from '../../stores/permissions.js';
   import { unappliedDepositCredits } from '../../lib/depositCredits.js';
+  import DocumentSendModal from '../email/DocumentSendModal.svelte';
   import { triageError } from '../../lib/errorTriage.js';
   import DepositInvoiceModal from './DepositInvoiceModal.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
@@ -119,6 +120,25 @@
   // draft (informational); only the Apply action is gated on
   // canEditLineItems, same as any other line-item mutation.
   let unappliedCredits = $derived(unappliedDepositCredits(invoices));
+
+  // Send step: DocumentSendModal over this panel (replaces the
+  // /invoices/:id/send page, 2026-10-10). The soft deposit-credit guard
+  // (invoicing-and-expenses.md "Part 2 — send-time confirm") refreshes the
+  // job's invoices and asks; it runs after DocumentSendForm's own
+  // recipient confirm. Never a hard block — deducting the credit on a
+  // later invoice is legitimate.
+  let sendOpen = $state(false);
+  async function confirmDepositCredits() {
+    await loadInvoices();
+    if (unappliedCredits.length === 0) return true;
+    return confirm("There's an unapplied deposit credit on this job — send anyway?");
+  }
+  async function handleSent() {
+    sendOpen = false;
+    await loadInvoice({ silent: true });
+    await loadInvoices();
+    onJobChange();
+  }
   let applyingCreditId = $state(null);
 
   async function applyDepositCredit(credit) {
@@ -380,9 +400,9 @@
     <span class="status-badge status-{invoice.status}">{invoice.status}</span>
     {#if $canManageFinancials}
       {#if allLinesHaveCategory}
-        <a class="action-link" href="#/invoices/{invoice.invoice_id}/send">
+        <button type="button" class="action-link" onclick={() => { sendOpen = true; }}>
           {invoice.qbo_id ? 'Resend Invoice' : 'Send Invoice'}
-        </a>
+        </button>
       {:else}
         <button type="button" disabled class="action-link send-blocked">
           {invoice.qbo_id ? 'Resend Invoice' : 'Send Invoice'}
@@ -515,6 +535,16 @@
   onCreated={handleDepositCreated}
   onClose={() => { depositModalOpen = false; }}
 />
+
+{#if invoice}
+  <DocumentSendModal open={sendOpen} label="Send invoice" title="Send Invoice"
+    defaultsUrl={`/api/invoices/${invoice.invoice_id}/send-defaults/`}
+    sendUrl={`/api/invoices/${invoice.invoice_id}/send/`}
+    submitLabel="Send Invoice"
+    beforeSubmit={confirmDepositCredits}
+    onSent={handleSent}
+    onClose={() => { sendOpen = false; }} />
+{/if}
 
 <style>
   .error { color: #a8071a; }

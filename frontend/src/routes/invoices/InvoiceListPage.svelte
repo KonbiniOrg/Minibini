@@ -1,8 +1,9 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
-  import { pageRange, pageFromUrl } from '../../lib/pagination.js';
+  import { pageRange } from '../../lib/pagination.js';
   import CustomerPicker from '../../components/CustomerPicker.svelte';
   import LoadState from '../../components/LoadState.svelte';
+  import Pager from '../../components/Pager.svelte';
   import DataTable from '../../components/DataTable.svelte';
 
   let invoices = $state(null);
@@ -98,17 +99,7 @@
     ]}
   />
 
-  {#if invoices.count > 25}
-    <p>
-      {pageRange(invoices)}
-      {#if invoices.previous}
-        | <button onclick={() => { page = pageFromUrl(invoices.previous); }}>Previous</button>
-      {/if}
-      {#if invoices.next}
-        | <button onclick={() => { page = pageFromUrl(invoices.next); }}>Next</button>
-      {/if}
-    </p>
-  {/if}
+  <Pager {page} count={invoices.count} label={pageRange(invoices)} onPage={(n) => { page = n; }} />
 {/if}
 </LoadState>
 </div>

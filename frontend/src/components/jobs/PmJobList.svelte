@@ -3,6 +3,7 @@
   import { push } from 'svelte-spa-router';
   import JobList from './JobList.svelte';
   import LoadState from '../LoadState.svelte';
+  import Pager from '../Pager.svelte';
 
   // Self-contained "jobs for a PM" list: fetches, paginates, and renders the
   // JobList table. Titling is intentionally left to the host page so this can
@@ -56,15 +57,5 @@
 <LoadState {loading} {error}>
   <JobList {jobs} onSelect={handleSelect} />
 
-  {#if count > 25}
-    <p>
-      {#if page > 1}
-        <button onclick={() => { page--; }}>Previous</button>
-      {/if}
-      Page {page}
-      {#if page * 25 < count}
-        <button onclick={() => { page++; }}>Next</button>
-      {/if}
-    </p>
-  {/if}
+  <Pager {page} {count} onPage={(n) => { page = n; }} />
 </LoadState>

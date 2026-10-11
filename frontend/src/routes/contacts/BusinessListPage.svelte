@@ -1,10 +1,14 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
   import BusinessList from '../../components/contacts/BusinessList.svelte';
+  import BusinessFormModal from '../../components/contacts/BusinessFormModal.svelte';
+  import { canManageJobs } from '../../stores/permissions.js';
   import { push } from 'svelte-spa-router';
   import LoadState from '../../components/LoadState.svelte';
+  import Pager from '../../components/Pager.svelte';
 
   let businesses = $state([]);
+  let newOpen = $state(false);
   let count = $state(0);
   let page = $state(1);
   let loading = $state(true);
@@ -37,21 +41,16 @@
 <div class="page-body">
 <h2>Businesses ({count})</h2>
 
-<p><a href="#/businesses/new">New Business</a></p>
+<p>
+  {#if $canManageJobs}
+    <button type="button" onclick={() => { newOpen = true; }}>New Business</button>
+  {/if}
+</p>
+<BusinessFormModal open={newOpen} onClose={() => { newOpen = false; }} />
 
 <LoadState {loading} {error}>
   <BusinessList {businesses} onSelect={handleSelect} />
 
-  {#if count > 25}
-    <p>
-      {#if page > 1}
-        <button onclick={() => { page--; }}>Previous</button>
-      {/if}
-      Page {page}
-      {#if page * 25 < count}
-        <button onclick={() => { page++; }}>Next</button>
-      {/if}
-    </p>
-  {/if}
+  <Pager {page} {count} onPage={(n) => { page = n; }} />
 </LoadState>
 </div>

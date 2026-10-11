@@ -13,6 +13,7 @@
   import { showError } from '../../stores/messages.js';
   import CODeliverablesSection from './CODeliverablesSection.svelte';
   import DeliverablesEditModal from '../jobs/DeliverablesEditModal.svelte';
+  import DocumentSendModal from '../email/DocumentSendModal.svelte';
   import COEditView from './COEditView.svelte';
   import COCustomerView from './COCustomerView.svelte';
   import DocModeBar from '../docsurface/DocModeBar.svelte';
@@ -245,14 +246,21 @@
   // open a CO whose job has no deliverables (ChangeOrderService.
   // assert_job_has_deliverables), so "Send to customer" on such a job opens
   // the deliverables editor with a notice instead of the send form. Send
-  // affordances are buttons in every state (RM 2026-09-29): the email step
-  // is slated to become a modal, so nothing here is a navigation link.
+  // affordances are buttons in every state (RM 2026-09-29); the email step
+  // is DocumentSendModal over this panel (2026-10-10).
   let deliverablesModalOpen = $state(false);
   const needsDeliverables = $derived(
     liveDeliverables !== null && liveDeliverables.length === 0);
 
+  let sendOpen = $state(false);
   function goToSend() {
-    window.location.hash = `/change-orders/${co.change_order_id}/send`;
+    sendOpen = true;
+  }
+
+  async function handleSent() {
+    sendOpen = false;
+    await loadCO({ silent: true });
+    onJobChange();
   }
 
   function handleSend() {
@@ -488,6 +496,15 @@
     notice="Deliverables are required before this change order can be sent."
     onClose={handleDeliverablesModalClose}
   />
+{/if}
+
+{#if co}
+  <DocumentSendModal open={sendOpen} label="Send change order" title="Send change order to customer"
+    defaultsUrl={`/api/change-orders/${co.change_order_id}/send-defaults/`}
+    sendUrl={`/api/change-orders/${co.change_order_id}/send/`}
+    submitLabel="Send Email"
+    onSent={handleSent}
+    onClose={() => { sendOpen = false; }} />
 {/if}
 
 <style>

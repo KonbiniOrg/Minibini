@@ -74,3 +74,15 @@ describe('LoginPage landing', () => {
     expect(getByText('Your session expired.')).toBeInTheDocument();
   });
 });
+
+describe('LoginPage password-manager hints', () => {
+  it('marks the fields with name and autocomplete so managers pair the credential with this site', () => {
+    const { container } = render(LoginPage);
+    const u = container.querySelector('#username');
+    const p = container.querySelector('#password');
+    expect(u).toHaveAttribute('autocomplete', 'username');
+    expect(u).toHaveAttribute('name', 'username');
+    expect(p).toHaveAttribute('autocomplete', 'current-password');
+    expect(p).toHaveAttribute('name', 'password');
+  });
+});

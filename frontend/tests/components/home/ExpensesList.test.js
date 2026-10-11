@@ -31,12 +31,14 @@ describe('ExpensesList', () => {
     expect(await findByText('Lunch')).toBeInTheDocument();
   });
 
-  it('reveals the new-expense form', async () => {
+  it('+ New expense opens the expense modal locked to the current user', async () => {
     api.get.mockResolvedValue({ results: [] });
-    const { findByText, getByRole } = render(ExpensesList);
+    const { findByText, getByRole, findByRole, queryByLabelText } = render(ExpensesList);
     await findByText('No recent expenses.');
     await fireEvent.click(getByRole('button', { name: '+ New expense' }));
-    expect(await findByText('Submit new expense')).toBeInTheDocument();
+    const dialog = await findByRole('dialog');
+    expect(dialog).toHaveTextContent('Add Expense');
+    expect(queryByLabelText(/Paid by/)).toBeNull();
   });
 });
 

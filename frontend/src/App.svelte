@@ -1,5 +1,7 @@
 <script>
   import Router, { location, replace } from 'svelte-spa-router';
+  import { wrap } from 'svelte-spa-router/wrap';
+  import RedirectTo from './routes/RedirectTo.svelte';
   import { setupStatus, refreshSetupStatus, areaUnavailable } from './stores/setupStatus.js';
   import Sidebar from './components/Sidebar.svelte';
   import CurrentBlepBand from './components/CurrentBlepBand.svelte';
@@ -12,12 +14,9 @@
   import Home from './routes/Home.svelte';
   import ContactListPage from './routes/contacts/ContactListPage.svelte';
   import ContactDetailPage from './routes/contacts/ContactDetailPage.svelte';
-  import ContactFormPage from './routes/contacts/ContactFormPage.svelte';
   import BusinessListPage from './routes/contacts/BusinessListPage.svelte';
   import BusinessDetailPage from './routes/contacts/BusinessDetailPage.svelte';
-  import BusinessFormPage from './routes/contacts/BusinessFormPage.svelte';
   import JobListPage from './routes/jobs/JobListPage.svelte';
-  import JobFormPage from './routes/jobs/JobFormPage.svelte';
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
   import JobRedirectToOverview from './routes/jobs/JobRedirectToOverview.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
@@ -27,13 +26,11 @@
   import CatalogEarmarksPage from './routes/catalog/CatalogEarmarksPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
   import InvoiceListPage from './routes/invoices/InvoiceListPage.svelte';
-  import InvoiceSendPage from './routes/invoices/InvoiceSendPage.svelte';
   import InvoiceWizardRedirect from './routes/invoices/InvoiceWizardRedirect.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import SchedulePage from './routes/schedule/SchedulePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
-  import EstimateSendPage from './routes/estimates/EstimateSendPage.svelte';
   import EstimateWizardRedirect from './routes/estimates/EstimateWizardRedirect.svelte';
   import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
   import JobShipmentsPage from './routes/jobs/JobShipmentsPage.svelte';
@@ -48,20 +45,15 @@
   import PurchaseOrderSendPage from './routes/purchaseorders/PurchaseOrderSendPage.svelte';
   import PurchaseOrderFormPage from './routes/purchaseorders/PurchaseOrderFormPage.svelte';
   import UserListPage from './routes/users/UserListPage.svelte';
-  import UserCreatePage from './routes/users/UserCreatePage.svelte';
   import UserDetailPage from './routes/users/UserDetailPage.svelte';
   import ExpenseListPage from './routes/expenses/ExpenseListPage.svelte';
   import ReimbursementDetailPage from './routes/reimbursements/ReimbursementDetailPage.svelte';
   import EmailInboxPage from './routes/email/EmailInboxPage.svelte';
   import EmailDetailPage from './routes/email/EmailDetailPage.svelte';
-  import EmailCreateJobPage from './routes/email/EmailCreateJobPage.svelte';
   import EmailCreatePOPage from './routes/email/EmailCreatePOPage.svelte';
-  import EmailAssociatePage from './routes/email/EmailAssociatePage.svelte';
-  import EmailAssociatePOPage from './routes/email/EmailAssociatePOPage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
   import JobChangeOrderPage from './routes/jobs/JobChangeOrderPage.svelte';
   import ChangeOrderRedirect from './routes/change-orders/ChangeOrderRedirect.svelte';
-  import ChangeOrderSendPage from './routes/change-orders/ChangeOrderSendPage.svelte';
   import LoadState from './components/LoadState.svelte';
 
   const routes = {
@@ -69,15 +61,15 @@
     '/activity': ActivityPage,
     '/search': SearchPage,
     '/contacts': ContactListPage,
-    '/contacts/new': ContactFormPage,
-    '/contacts/:id/edit': ContactFormPage,
+    '/contacts/new': wrap({ component: RedirectTo, props: { to: '/contacts' } }),
+    '/contacts/:id/edit': wrap({ component: RedirectTo, props: { to: '/contacts/:id' } }),
     '/contacts/:id': ContactDetailPage,
     '/businesses': BusinessListPage,
-    '/businesses/new': BusinessFormPage,
-    '/businesses/:id/edit': BusinessFormPage,
+    '/businesses/new': wrap({ component: RedirectTo, props: { to: '/businesses' } }),
+    '/businesses/:id/edit': wrap({ component: RedirectTo, props: { to: '/businesses/:id' } }),
     '/businesses/:id': BusinessDetailPage,
     '/jobs': JobListPage,
-    '/jobs/new': JobFormPage,
+    '/jobs/new': wrap({ component: RedirectTo, props: { to: '/jobs/board' } }),
     '/jobs/board': JobBoardPage,
     '/schedule': SchedulePage,
     '/jobs/:id': JobDetailPage,
@@ -97,7 +89,7 @@
     '/jobs/:id/tasklist': JobTaskListPage,
     '/shipments/:sid/print': PackingListPrint,
     '/estimates/:id/wizard': EstimateWizardRedirect,
-    '/estimates/:id/send': EstimateSendPage,
+    '/estimates/:id/send': wrap({ component: RedirectTo, props: { to: '/estimates/:id' } }),
     '/estimates/:id': EstimateDetailPage,
     '/purchase-orders': PurchaseOrderListPage,
     '/purchase-orders/new': PurchaseOrderFormPage,
@@ -106,28 +98,28 @@
     '/purchase-orders/:id': PurchaseOrderDetailPage,
     '/invoices': InvoiceListPage,
     '/invoices/:id/wizard': InvoiceWizardRedirect,
-    '/invoices/:id/send': InvoiceSendPage,
+    '/invoices/:id/send': wrap({ component: RedirectTo, props: { to: '/invoices/:id' } }),
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
     '/catalog': CatalogInventoryPage,
     '/catalog/service-items': CatalogServiceItemsPage,
     '/catalog/earmarks': CatalogEarmarksPage,
     '/users': UserListPage,
-    '/users/new': UserCreatePage,
+    '/users/new': wrap({ component: RedirectTo, props: { to: '/users' } }),
     '/users/:id': UserDetailPage,
     '/expenses': ExpenseListPage,
     '/reimbursements/:id': ReimbursementDetailPage,
     '/email': EmailInboxPage,
-    '/email/:id/create-job': EmailCreateJobPage,
+    '/email/:id/create-job': wrap({ component: RedirectTo, props: { to: '/email/:id' } }),
     '/email/:id/create-po': EmailCreatePOPage,
-    '/email/:id/associate': EmailAssociatePage,
-    '/email/:id/associate-po': EmailAssociatePOPage,
+    '/email/:id/associate': wrap({ component: RedirectTo, props: { to: '/email/:id' } }),
+    '/email/:id/associate-po': wrap({ component: RedirectTo, props: { to: '/email/:id' } }),
     '/email/:id': EmailDetailPage,
     // Home with the Profile / Help tab active (tab derived from location
     // in Home).
     '/profile': Home,
     '/help': Home,
-    '/change-orders/:id/send': ChangeOrderSendPage,
+    '/change-orders/:id/send': wrap({ component: RedirectTo, props: { to: '/change-orders/:id' } }),
     '/change-orders/:id': ChangeOrderRedirect,
   };
 

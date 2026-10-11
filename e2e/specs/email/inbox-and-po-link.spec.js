@@ -39,25 +39,27 @@ test('vendor invoice email links to its PO (the bill-removal breadcrumb)', async
   await page.goto('/#/email');
   await page.getByRole('link', { name: /Invoice MNH-20441/ }).click();
 
-  // No PO linked yet — the action panel offers Link existing.
+  // No PO linked yet — the action panel offers Link existing (a button
+  // that opens EmailLinkModal over the email, 2026-10-10).
   const panel = page.getByRole('complementary');
-  await expect(panel.getByRole('heading', { name: 'Purchase Order' })).toBeVisible();
-  await panel.locator('a[href$="/associate-po"]', { hasText: 'Link existing' }).click();
+  const poSection = panel.locator('section', { has: page.getByRole('heading', { name: 'Purchase Order' }) });
+  await expect(poSection).toBeVisible();
+  await poSection.getByRole('button', { name: 'Link existing' }).click();
 
-  // Associate page: pick PO0001 (Moore Newton Hardwoods) and submit.
-  await expect(
-    page.getByRole('heading', { name: 'Select Purchase Order' })
-  ).toBeVisible();
-  await page.getByPlaceholder('Search purchase order…').fill('PO0001');
-  await page.getByText(/PO0001 — Moore Newton Hardwoods/).click();
-  await page.getByRole('button', { name: 'Associate Email with PO' }).click();
+  // Link modal: pick PO0001 (Moore Newton Hardwoods) and submit.
+  const dialog = page.getByRole('dialog', { name: 'Link to purchase order' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByPlaceholder('Search purchase order…').fill('PO0001');
+  await dialog.getByText(/PO0001 — Moore Newton Hardwoods/).click();
+  await dialog.getByRole('button', { name: 'Link to purchase order' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  // Back on the detail page, the panel shows the linked PO.
+  // Still on the detail page, the panel shows the linked PO.
   await expect(panel.getByRole('link', { name: /PO0001/ })).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Disassociate' })).toBeVisible();
 
   // And the email is unlinked again so reruns within one seeded session
   // start from the seed state.
   await panel.getByRole('button', { name: 'Disassociate' }).click();
-  await expect(panel.locator('a[href$="/associate-po"]', { hasText: 'Link existing' })).toBeVisible();
+  await expect(poSection.getByRole('button', { name: 'Link existing' })).toBeVisible();
 });

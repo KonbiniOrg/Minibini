@@ -12,7 +12,7 @@
 //     mirrors the backend's `claimed_sources` query, which excludes
 //     Invoice.STATUS_CANCELLED.
 //
-// Both callers (InvoicePanel's draft-panel notice, InvoiceSendPage's
+// Both callers (InvoicePanel's draft-panel notice, InvoicePanel's send modal's
 // send-time confirm) already have the job-scoped `invoices` array loaded
 // via GET /api/invoices/?job=<id> with no ?summary= param — every entry is
 // the full InvoiceSerializer (nested line_items with is_deposit, nested

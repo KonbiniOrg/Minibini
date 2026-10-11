@@ -3,7 +3,7 @@ import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
 vi.mock('@/lib/api.js', () => ({
-  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn(), postMultipart: vi.fn() },
   errorMessage: (e, fallback) => e?.data?.detail || e?.message || fallback || 'Error',
 }));
 vi.mock('svelte-spa-router', () => ({
@@ -70,6 +70,7 @@ function mockApi(invoice, { invoices = null, categories = [] } = {}) {
     if (url.startsWith('/api/invoices/?job=')) {
       return Promise.resolve({ results: invoiceList });
     }
+    if (url.endsWith('/send-defaults/')) return Promise.resolve({ to: 'client@example.com', subject: 'S', body: 'B', attachments_preview: [] });
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: categories });
     if (url.includes('rate-schemes')) return Promise.resolve({ results: [ADJ_SERVICE] });
     if (url.includes('source-pool')) return Promise.resolve({ tasks: [] });
@@ -544,17 +545,16 @@ describe('InvoicePanel send gate', () => {
     });
     mockApi(inv);
     const { findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    const sendLink = await findByRole('link', { name: /send invoice/i });
-    expect(sendLink).toBeInTheDocument();
-    expect(sendLink.tagName).toBe('A');
+    const sendBtn = await findByRole('button', { name: /send invoice/i });
+    expect(sendBtn).toBeInTheDocument();
+    expect(sendBtn).not.toBeDisabled();
   });
 
-  it('shows active Send link when there are no line items (nothing missing a category)', async () => {
+  it('shows an active Send button when there are no line items (nothing missing a category)', async () => {
     user.set({ permissions: ['can_manage_financials'] });
     mockApi(makeInvoice({ status: 'draft', line_items: [] }));
     const { findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
-    const sendLink = await findByRole('link', { name: /send invoice/i });
-    expect(sendLink).toBeInTheDocument();
+    expect(await findByRole('button', { name: /send invoice/i })).not.toBeDisabled();
   });
 
   it('shows disabled Send button + note when a line item has no accounting_category', async () => {
@@ -571,8 +571,6 @@ describe('InvoicePanel send gate', () => {
 
     await findByText('Line Items');
 
-    expect(queryByRole('link', { name: /send invoice/i })).not.toBeInTheDocument();
-
     const sendBtn = await findByText('Send Invoice');
     expect(sendBtn.tagName).toBe('BUTTON');
     expect(sendBtn).toBeDisabled();
@@ -580,7 +578,7 @@ describe('InvoicePanel send gate', () => {
     expect(await findByText(/assign an accounting category to every line before sending/i)).toBeInTheDocument();
   });
 
-  it('a comment line (category-free by design) does NOT block the Send link', async () => {
+  it('a comment line (category-free by design) does NOT block the Send button', async () => {
     // Mirrors the backend gate exactly: _assert_all_lines_categorized
     // filters is_comment=False, so a categorized real line + a comment
     // line is sendable (comment-lines e2e backfill fix, 2026-09-22).
@@ -599,7 +597,7 @@ describe('InvoicePanel send gate', () => {
     mockApi(inv);
     const { findByRole, findByText, queryByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Line Items');
-    expect(await findByRole('link', { name: /send invoice/i })).toBeInTheDocument();
+    expect(await findByRole('button', { name: /send invoice/i })).not.toBeDisabled();
     expect(queryByText(/assign an accounting category to every line before sending/i)).not.toBeInTheDocument();
   });
 
@@ -619,7 +617,6 @@ describe('InvoicePanel send gate', () => {
     mockApi(inv);
     const { findByText, queryByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Line Items');
-    expect(queryByRole('link', { name: /send invoice/i })).not.toBeInTheDocument();
     const sendBtn = await findByText('Send Invoice');
     expect(sendBtn.tagName).toBe('BUTTON');
     expect(sendBtn).toBeDisabled();
@@ -1047,5 +1044,55 @@ describe('InvoicePanel unapplied deposit credit notice', () => {
     await waitFor(() => {
       expect(get(overlayMessage)?.text).toMatch(/already claimed/i);
     });
+  });
+});
+
+// ─── Send modal + unapplied-deposit-credit confirm (ported from the retired InvoiceSendPage) ───
+
+describe('InvoicePanel send modal — deposit-credit confirm', () => {
+  function makeDepositLine(overrides = {}) {
+    return {
+      line_item_id: 501, line_number: 1, description: 'Deposit on JOB-9',
+      qty: '1', price: '5000.00', units: 'none', is_deposit: true, sources: [],
+      ...overrides,
+    };
+  }
+  const paidDeposit = () => makeInvoice({
+    invoice_id: 100, display_number: 'INV-1042', status: 'paid', line_items: [makeDepositLine()],
+  });
+
+  beforeEach(() => { api.postMultipart.mockReset(); });
+
+  it('Send Invoice opens the send modal; declining the deposit-credit confirm leaves it open and does not post', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const inv = makeInvoice({ status: 'draft', line_items: [] });
+    mockApi(inv, { invoices: [inv, paidDeposit()] });
+    // First confirm (DocumentSendForm's "Send this email to…?") → OK.
+    // Second confirm (the deposit-credit guard) → Cancel.
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(true).mockReturnValueOnce(false);
+    const { findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await fireEvent.click(await findByRole('button', { name: /send invoice/i }));
+    const dialog = await findByRole('dialog', { name: 'Send invoice' });
+    await fireEvent.click(await within(dialog).findByRole('button', { name: 'Send Invoice' }));
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(2));
+    expect(confirmSpy).toHaveBeenLastCalledWith("There's an unapplied deposit credit on this job — send anyway?");
+    expect(api.postMultipart).not.toHaveBeenCalled();
+    expect(within(dialog).getByLabelText('To *')).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  it('does not confirm about deposit credits when none are unapplied, and posts', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const inv = makeInvoice({ status: 'draft', line_items: [] });
+    mockApi(inv, { invoices: [inv] });
+    api.postMultipart.mockResolvedValue({ message: 'sent' });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await fireEvent.click(await findByRole('button', { name: /send invoice/i }));
+    const dialog = await findByRole('dialog', { name: 'Send invoice' });
+    await fireEvent.click(await within(dialog).findByRole('button', { name: 'Send Invoice' }));
+    await waitFor(() => expect(api.postMultipart).toHaveBeenCalledWith('/api/invoices/5/send/', expect.any(FormData)));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    confirmSpy.mockRestore();
   });
 });

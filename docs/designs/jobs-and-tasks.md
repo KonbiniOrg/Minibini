@@ -1136,21 +1136,22 @@ kanban-style overview of all current and recently-closed jobs. All data
 comes from `BoardService` (`apps/jobs/services.py`).
 
 The board is the sidebar's "Jobs" destination, so it also carries the
-**New Job** entry point — `components/board/NewJobButton.svelte`, a link
-(gated on `can_manage_jobs`) to `#/jobs/new`, the from-scratch create
-form (`JobFormPage` → `components/jobs/JobForm.svelte` →
-`POST /api/jobs/`). It sits top-right *inside each pillar's header*,
+**New Job** entry point — `components/board/NewJobButton.svelte`, a
+button (gated on `can_manage_jobs`) that opens `JobCreateModal`
+(`components/jobs/`, wrapping `JobForm.svelte` → `POST /api/jobs/`) over
+the board; a create lands on the new job. It sits top-right *inside each pillar's header*,
 absolutely positioned so it doesn't shift the header's centered title;
 the four headers just add `position: relative`. A page-level bar above
 the board was the first cut and was dropped — it cost a full-width strip
 of board height for one button. Since exactly one pillar is expanded at
 a time, exactly one button is on screen.
-Added 2026-07-31: before it, `/jobs/new` was reachable only from a
-contact/business detail page's "New Job" link, from the email→job flow,
-or by typing the URL — the `#/jobs` list page that carries the other
-link is not linked from anywhere. RM has flagged that the create form
-itself should become a Modal (the standard for data entry) in a later
-pass; only the entry point is wired now.
+Added 2026-07-31; the form became `JobCreateModal` on 2026-10-10
+(replacing `JobFormPage`). The same modal opens from the `#/jobs` list's
+New Job button and from a contact/business detail page's **New Job**
+button, which pre-selects the customer via `defaultContactId` (the old
+`?contact=` query string). `/jobs/new` is a `RedirectTo` stub bouncing to
+the board; the email→job flow is `EmailCreateJobModal` (architecture doc
+§7.11).
 
 ### 8.1 Columns
 

@@ -63,3 +63,18 @@ describe('DocumentSendForm', () => {
     expect(queryByRole('alert')).toBeNull();
   });
 });
+
+describe('DocumentSendForm — Cancel (modal host)', () => {
+  it('renders Cancel only when onCancel is given, and it calls back', async () => {
+    const onCancel = vi.fn();
+    const { getByRole, queryByRole, unmount } = render(DocumentSendForm, {
+      props: { sendDefaults: { to: 'a@b.com' }, onSubmit: vi.fn(), onCancel },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalled();
+    unmount();
+    const bare = render(DocumentSendForm, { props: { sendDefaults: { to: 'a@b.com' }, onSubmit: vi.fn() } });
+    expect(bare.queryByRole('button', { name: 'Cancel' })).toBeNull();
+    void queryByRole;
+  });
+});

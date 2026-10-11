@@ -1037,16 +1037,6 @@ Billing mechanics and money-record lifecycle.
   _Done when:_ RM picks a placement and adding an expense no longer
   reads as a sibling of Add Work.
 
-- **Service Item edit should be a modal.** — _added 2026-08-17 (RM)_
-  `ServiceItemManager.svelte` still uses the old top-of-page inline
-  `<fieldset>` form (the `{#if editingId !== null}` block replaces the
-  list) — the same pattern the inventory merge entry flags. Sibling
-  managers already moved on: `RateSchemeManager` puts its form in the
-  `Modal` shell. Convert the create/edit form to a `Modal` like its
-  sibling.
-  _Done when:_ adding/editing a Service Item happens in a modal over the
-  list, matching RateSchemeManager.
-
 - **Modals' first field should have focus** - _added 2026_08_16_
   It's an extra click to select the field you want to type in when a modal pops
   up, and it's nearly always obvious which field needs entry.
@@ -1064,10 +1054,11 @@ Cross-cutting UI/API conventions and shared components.
 
 - **`#/jobs` (JobListPage) has no nav link.** — _added 2026-07-31_
   The tabular job list is a destination RM uses and wants kept (2026-07-31)
-  — `JobFormPage`'s Cancel lands there deliberately — but nothing in the SPA
-  navigates to it: the sidebar's "Jobs" goes to `#/jobs/board`, and the only
-  other links in are the PM-filtered `#/jobs?pm=N` ones. So it's reachable by
-  URL or by cancelling out of the new-job form, and not otherwise.
+  but nothing in the SPA navigates to it: the sidebar's "Jobs" goes to
+  `#/jobs/board`, and the only other links in are the PM-filtered
+  `#/jobs?pm=N` ones. (Until 2026-10-10 the new-job page's Cancel landed
+  there too; the create form is a modal now, so that path is gone.) So it's
+  reachable by URL and not otherwise.
   _Done when:_ the plain list is reachable from the nav (or from the board).
 
 - **JobCard's `.doc-pill-*` should join the global `.status-badge` family.** — _added 2026-07-08 (CSS review pass); narrowed 2026-07-09_

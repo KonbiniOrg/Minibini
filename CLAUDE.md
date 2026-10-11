@@ -178,7 +178,7 @@ Django serves only two URL prefixes now: `/admin/` (Django admin) and `/api/` (t
 Per-viewset action endpoints (status transitions, line items, wizard, etc.) live in the topic docs.
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
-Hash-based routing (`#/path`). The SPA is the only UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, change orders, invoices (incl. wizard), purchase orders, catalog (inventory / service items / earmarks tabs), expenses, reimbursements, users, settings, profile, email, search. (The legacy Django HTML views have been removed.)
+Hash-based routing (`#/path`). The SPA is the only UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, change orders, invoices (incl. wizard), purchase orders, catalog (inventory / service items / earmarks tabs), expenses, reimbursements, users, settings, profile, email, search. Create/edit/send forms are modals over those pages (not routes); the old `/new`, `/edit`, `/send` and email-action routes are `RedirectTo` stubs. (The legacy Django HTML views have been removed.)
 
 ## Frontend (Svelte SPA)
 
@@ -196,7 +196,8 @@ The primary UI is a Svelte 5 SPA at `frontend/`, built with Vite and using hash-
 
 Conventions to keep the SPA's interaction vocabulary consistent. New code follows these unless there's a specific reason not to.
 
-- **Links navigate; buttons act.** Use `<a href="...">` (or `use:link`) for anything that takes the user to a different view. Use `<button>` for anything that mutates state, opens a modal, or triggers an API call without a navigation. Don't dress a `<button>` as a link to navigate, and don't wrap a `<a>` around an action handler. **One standing exception (RM 2026-09-29):** the send-to-customer affordances on estimates and change orders ("Send Email" / "Resend Email" / "Send to customer" / "Resend to customer") are `<button>`s even while they navigate to a send page — the email step is slated to become a modal, and they already gate through the deliverables editor.
+- **Links navigate; buttons act.** Use `<a href="...">` (or `use:link`) for anything that takes the user to a different view. Use `<button>` for anything that mutates state, opens a modal, or triggers an API call without a navigation. Don't dress a `<button>` as a link to navigate, and don't wrap a `<a>` around an action handler. (The 2026-09-29 send-button exception is retired: since 2026-10-10 the send step is `DocumentSendModal`, so those buttons act.)
+- **Record forms are modals** (RM 2026-10-10): create/edit forms (contacts, businesses, jobs, users, email create-job/link, document send, reply, expenses, catalog merge/write-off, service items, accounting categories, reimbursement batches, CO deliverables, password change/reset) open in `components/Modal.svelte` over the current page. Create → navigate to the new record; edit → stay and reload; cancel → stay. Nested prompts are in-modal sub-states, never a second modal. Retired routes get a `RedirectTo` stub. Details: `frontend/README.md` → Modals.
 - **Saves are explicit, never blur-only.** `onblur` (or any other implicit focus/navigation event) must never be the only trigger that commits a change to the server. Users move focus accidentally — losing or saving work as a side effect is hostile. Every mutation needs an explicit confirmation: a Save button, an Enter-on-form, an explicit modal "OK". `onblur` is fine as a secondary trigger (validating format, normalizing values into pending state) but the actual API call must wait for a deliberate action.
 - **Confirmations are for the irreversible, not the reversible.** Only prompt (`confirm()` / a modal) when an action is irreversible or extremely arduous to undo — deleting a persisted record, sending a document to a customer. **Never** confirm an action that's exactly undoable by another local action (editing a field, toggling, reordering, adding/removing a draft line that can be re-added or removed). A reversible action just does the thing.
 
@@ -336,7 +337,7 @@ Job (tasks optionally generated from a WorkTemplate) → Estimate (wizard over t
 3. If contact exists → redirect to job creation with contact pre-selected
 4. If not → session-based flow: create contact → optionally create/associate business (4 scenarios via dropdown) → create job → link EmailRecord to job
 
-Key files: `apps/core/services.py` (EmailService), `apps/core/email_utils.py`, and the API viewsets/actions under `apps/api/` (emails, contacts, businesses, jobs). The email-to-job flow is now fully SPA + API driven — the SPA's `EmailCreateJobPage.svelte` calls `POST /api/emails/{id}/create-job/` plus `/api/contacts/` and `/api/businesses/`.
+Key files: `apps/core/services.py` (EmailService), `apps/core/email_utils.py`, and the API viewsets/actions under `apps/api/` (emails, contacts, businesses, jobs). The email-to-job flow is now fully SPA + API driven — the SPA's `EmailCreateJobModal.svelte` (opened from the email detail page's action panel) calls `POST /api/emails/{id}/create-job/` plus `/api/contacts/` and `/api/businesses/`.
 
 ### Revision Workflow
 Estimates support versioning via parent-child relationships (`POST /api/estimates/{id}/revise`). Old versions marked superseded.

@@ -34,7 +34,7 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 |---|---|---|---|
 | Job overview | `/jobs/:id` | Job-Overview.md | — |
 | Estimate & work authoring | `/jobs/:id/estimate`, task-list Add Work, wizard | Add-Line-and-Work-Authoring.md | `add-line-and-work-authoring/` |
-| Change orders | `/jobs/:id/change-order/:coId`, `/change-orders/:id/send` | Change-Orders.md | — |
+| Change orders | `/jobs/:id/change-order/:coId` (send is a modal) | Change-Orders.md | — |
 | Invoice seeding & send | `/jobs/:id/invoice`, `/invoices/*` | Invoice-Seeding-and-Send.md | — |
 | Bills & payments | `/bills/*` | Bills.md | — |
 | Expenses & reimbursements | `/expenses`, `/reimbursements/:id` | Expenses.md | `expenses/` (§1 only) |
@@ -56,15 +56,15 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 | Schedule | `/schedule` | Per-worker bars, forecast cascade, envelope config. |
 | Home & cards | `/`, `/profile`, `/help` | My-Expenses card (locked-to-self form), lists, first-login → Help. |
 | Login & session | login form, logout, expiry notice | Personas land here via auth.setup; guards + session-expired path. Post-login/logout landing is already covered by `e2e/specs/auth/session-landing.spec.js` (see users-and-permissions.md → Login flow); the rest of the surface is uncovered. |
-| Contacts | `/contacts`, `/contacts/new`, `:id`, `:id/edit` | CRUD, notes, delete impact counts. |
-| Businesses | `/businesses`, `/businesses/new`, `:id`, `:id/edit` | CRUD, payment terms, contact association. |
+| Contacts | `/contacts`, `:id` (new/edit are modals) | CRUD, notes, delete impact counts. |
+| Businesses | `/businesses`, `:id` (new/edit are modals) | CRUD, payment terms, contact association. |
 | Deliverables & shipments | `/jobs/:jobId/shipments`, `/shipments/:sid/print` | Deliverable states, shipment build, packing-list print. |
-| Estimate lifecycle (beyond authoring) | `/estimates/:id`, `/estimates/:id/send` | Send + PDF, accept/reject, revision/supersede, expiry. Authoring is Add-Line's. |
+| Estimate lifecycle (beyond authoring) | `/estimates/:id` (send is a modal) | Send + PDF, accept/reject, revision/supersede, expiry. Authoring is Add-Line's. |
 | Email inbox & email-to-X | `/email`, `/email/:id/*` | Inbox, detail, create-job/PO/bill, associate flows. Bills §9 covers one path. |
 | Job history & notes | `/jobs/:id/history` | Note box, summary rows, partitioned history tabs. |
 | Activity | `/activity` | Cross-user activity feed. |
 | Search | `/search` + navbar search | Cross-entity search + result navigation. |
-| Users admin & profile | `/users`, `/users/new`, `/users/:id`, profile tab | Atom assignment, deactivation, password self-service. |
+| Users admin & profile | `/users`, `/users/:id` (new user is a modal), profile tab | Atom assignment, deactivation, password self-service. |
 | Settings (non-QBO) | `/settings` | Numbering, units, retention, email templates, board config. Accounting Categories CRUD beyond the delete guard (see Settings.md §1) is still uncovered. |
 | View-mode & sidebar | cross-cutting | FULL/LITE toggle, sidebar behavior — probably steps inside other docs rather than its own. |
 

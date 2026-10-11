@@ -4,9 +4,30 @@ from apps.api.mixins import JobScopedCanManageMixin
 
 
 class JobSummarySerializer(serializers.ModelSerializer):
+    """One job row on the contact/business detail pages (and search).
+    `estimated_amount` is the same per-job financials figure JobSerializer
+    reports, memoized per serializer instance so a many=True render computes
+    each job once."""
+    contact_name = serializers.SerializerMethodField()
+    estimated_amount = serializers.SerializerMethodField()
+
     class Meta:
         model = Job
-        fields = ['job_id', 'job_number', 'name', 'status']
+        fields = ['job_id', 'job_number', 'name', 'status', 'contact', 'contact_name',
+                  'start_date', 'created_date', 'estimated_amount']
+
+    def get_contact_name(self, obj):
+        return obj.contact.name if obj.contact_id else None
+
+    def get_estimated_amount(self, obj):
+        cache = getattr(self, '_financials_cache', None)
+        if cache is None:
+            cache = {}
+            self._financials_cache = cache
+        if obj.pk not in cache:
+            from apps.jobs.financials import compute_job_financials
+            cache[obj.pk] = compute_job_financials(obj)
+        return str(cache[obj.pk]['estimated'])
 
 
 class JobSearchSerializer(serializers.ModelSerializer):

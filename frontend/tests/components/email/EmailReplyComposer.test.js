@@ -44,3 +44,29 @@ describe('EmailReplyComposer', () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe('EmailReplyComposer — modal (2026-10-10)', () => {
+  it('is a modal: renders a dialog named after the mode and Escape calls onClose', async () => {
+    const onClose = vi.fn();
+    const { findByRole } = render(EmailReplyComposer, {
+      props: { emailRecordId: 1, mode: 'reply-all', onClose, onSent: vi.fn() },
+    });
+    expect(await findByRole('dialog', { name: 'Reply All' })).toBeInTheDocument();
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('EmailReplyComposer — in-modal mode toggle', () => {
+  it('offers Reply / Reply All inside the dialog and reports the switch via onModeChange', async () => {
+    const onModeChange = vi.fn();
+    const { findByRole, getByRole } = render(EmailReplyComposer, {
+      props: { emailRecordId: 1, mode: 'reply', onClose: vi.fn(), onSent: vi.fn(), onModeChange },
+    });
+    const dialog = await findByRole('dialog', { name: 'Reply' });
+    const within = (await import('@testing-library/svelte')).within;
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Reply All' }));
+    expect(onModeChange).toHaveBeenCalledWith('reply-all');
+    void getByRole;
+  });
+});

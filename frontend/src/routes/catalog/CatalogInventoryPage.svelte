@@ -5,6 +5,9 @@
   import StockOrderDialog from '../../components/inventory/StockOrderDialog.svelte';
   import { stockShortfall } from '../../lib/stockShortfall.js';
   import Modal from '../../components/Modal.svelte';
+  import FormMessage from '../../components/FormMessage.svelte';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
   import CatalogTabs from '../../components/CatalogTabs.svelte';
   import InventoryImportPanel from '../../components/qboimport/InventoryImportPanel.svelte';
   import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
@@ -32,7 +35,7 @@
   // Order dialog: qty prompt (prefilled from shortfall) -> draft-append-or-create
   let orderItem = $state(null);
 
-  // Write-off (irreversible). Opens a small panel to enter how much to waste
+  // Write-off (irreversible). Opens a small modal to enter how much to waste
   // (defaults to the full on-hand; the Confirm button is the explicit gesture).
   let writeOffItem = $state(null);
   let writeOffQty = $state('');
@@ -60,17 +63,22 @@
       writeOffItem = null;
       load();
     } catch (err) {
-      writeOffError = err.message || 'Write-off failed.';
+      const t = triageError(err);
+      if (t.overlay) showError(t.overlay); else writeOffError = t.message;
     }
   }
 
   // Merge (irreversible). Any item can be the discard; the server enforces
-  // unit-match rules and an explicit confirm lives here in the UI.
+  // unit-match rules and an explicit confirm lives here in the UI (a modal
+  // since 2026-10-10).
   let showMerge = $state(false);
   let mergeKeep = $state('');
   let mergeDiscard = $state('');
   let mergeError = $state('');
   let lotOptions = $derived(items);
+
+  function openMerge() { showMerge = true; mergeError = ''; }
+  function cancelMerge() { showMerge = false; mergeKeep = ''; mergeDiscard = ''; mergeError = ''; }
 
   async function doMerge() {
     mergeError = '';
@@ -80,10 +88,11 @@
       await api.post('/api/inventory/merge/', {
         keep_id: mergeKeep, discard_id: mergeDiscard,
       });
-      showMerge = false; mergeKeep = ''; mergeDiscard = '';
+      cancelMerge();
       load();
     } catch (err) {
-      mergeError = err.message || 'Merge failed.';
+      const t = triageError(err);
+      if (t.overlay) showError(t.overlay); else mergeError = t.message;
     }
   }
 
@@ -148,9 +157,7 @@
   <p>
     {#if !showForm}
       <button type="button" onclick={newItem}>+ New item</button>
-      <button type="button" onclick={() => { showMerge = !showMerge; mergeError = ''; }}>
-        {showMerge ? 'Cancel merge' : 'Merge items'}
-      </button>
+      <button type="button" onclick={openMerge}>Merge items</button>
     {/if}
   </p>
   <!-- Modal so editing a row far down a long catalog doesn't jump the user
@@ -162,12 +169,11 @@
       <InventoryItemForm item={editingItem} {onSaved} {onCancel} />
     {/key}
   </Modal>
-  {#if showMerge}
-    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
+  <Modal open={showMerge} onCancel={cancelMerge} maxWidth="640px" label="Merge items">
+    <form onsubmit={(e) => { e.preventDefault(); doMerge(); }}>
       <h3>Merge items</h3>
       <p>Fold one item's stock and references into a keep item, then delete the
         discard. Units must match.</p>
-      {#if mergeError}<p style="color:#c00">{mergeError}</p>{/if}
       <p><label>Keep (survivor):
         <select bind:value={mergeKeep}>
           <option value="">-- select --</option>
@@ -182,26 +188,33 @@
             <option value={it.inventory_item_id}>{it.code} — {it.description || ''} ({it.units})</option>
           {/each}
         </select></label></p>
-      <p><button type="button" onclick={doMerge}>Merge</button></p>
-    </div>
-  {/if}
-  {#if writeOffItem}
-    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
+      <p>
+        <button type="submit">Merge</button>
+        <button type="button" onclick={cancelMerge}>Cancel</button>
+      </p>
+      <FormMessage error={mergeError} />
+    </form>
+  </Modal>
+
+  <Modal open={!!writeOffItem} onCancel={cancelWriteOff} maxWidth="520px" label="Write off">
+    {#if writeOffItem}
+    <form onsubmit={(e) => { e.preventDefault(); doWriteOff(); }}>
       <h3>Write off — {writeOffItem.code}</h3>
       <p>{writeOffItem.qty_on_hand} {writeOffItem.units} on hand. How many are
         wasted (damaged, mis-cut)? This can't be undone.</p>
-      {#if writeOffError}<p style="color:#c00">{writeOffError}</p>{/if}
       <p><label>Quantity to write off:
         <input type="number" step="0.01" min="0" max={writeOffItem.qty_on_hand}
           bind:value={writeOffQty}></label></p>
       <p><label>Reason (optional):
         <input type="text" bind:value={writeOffReason} placeholder="e.g. damaged in storage"></label></p>
       <p>
-        <button type="button" onclick={doWriteOff}>Confirm write-off</button>
+        <button type="submit">Confirm write-off</button>
         <button type="button" onclick={cancelWriteOff}>Cancel</button>
       </p>
-    </div>
-  {/if}
+      <FormMessage error={writeOffError} />
+    </form>
+    {/if}
+  </Modal>
 {/if}
 
 {#if orderItem}

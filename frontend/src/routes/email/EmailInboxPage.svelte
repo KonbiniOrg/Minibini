@@ -2,6 +2,7 @@
   import { emailApi } from '../../lib/email.js';
   import EmailList from '../../components/email/EmailList.svelte';
   import LoadState from '../../components/LoadState.svelte';
+  import Pager from '../../components/Pager.svelte';
   import { errorMessage } from '../../lib/api.js';
 
   let emails = $state([]);
@@ -97,16 +98,6 @@
 <LoadState {loading} {error}>
   <EmailList {emails} />
 
-  {#if count > 25}
-    <p>
-      {#if page > 1}
-        <button onclick={() => { page--; }}>Previous</button>
-      {/if}
-      Page {page}
-      {#if page * 25 < count}
-        <button onclick={() => { page++; }}>Next</button>
-      {/if}
-    </p>
-  {/if}
+  <Pager {page} {count} onPage={(n) => { page = n; }} />
 </LoadState>
 </div>

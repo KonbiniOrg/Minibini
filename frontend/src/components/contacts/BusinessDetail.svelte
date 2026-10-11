@@ -1,211 +1,93 @@
 <script>
-  import FullOnly from '../FullOnly.svelte';
-  import DataTable from '../DataTable.svelte';
-  import HistoryPanel from '../HistoryPanel.svelte';
+  // BusinessDetail — the body of /businesses/:id (contacts UI redesign,
+  // 2026-10-10): identity panels (Contact / Billing / Tags) on the left,
+  // CustomerActivity (Contacts → Recent Jobs → Open Invoices → POs → History)
+  // on the right. The banner and its modals (edit / delete / New Job) are the
+  // page's; this component hosts only the New Contact modal.
+  import ContactFormModal from './ContactFormModal.svelte';
+  import CustomerActivity from './CustomerActivity.svelte';
   import TagEditor from '../TagEditor.svelte';
-  import { canManageJobs, canManageFinancials } from '../../stores/permissions.js';
-  import { viewMode } from '../../stores/viewMode.js';
-  import { pageFromUrl, pageRange } from '../../lib/pagination.js';
+  import { canManageJobs } from '../../stores/permissions.js';
+
   const {
     business,
-    invoices = null,
-    purchaseOrders = null,
+    invoices = [],
+    purchaseOrders = [],
     history = null,
-    onEdit = null,
-    onDelete = null,
-    onInvoicePageChange = null,
-    onPOPageChange = null,
     onAddNote = null,
+    onSetDefault = null,
+    onNewJobFor = null,
   } = $props();
 
-  const closedJobStatuses = ['completed', 'cancelled'];
-  const closedInvoiceStatuses = ['paid', 'cancelled', 'superseded'];
-  const closedPOStatuses = ['received_in_full', 'cancelled'];
+  let newContactOpen = $state(false);
 
-  function formatAmount(v) {
-    if (v == null || v === '') return '$—';
-    return Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-  }
-
-
-  let visibleJobs = $derived(
-    business.jobs
-      ? $viewMode === 'full'
-        ? business.jobs
-        : business.jobs.filter(j => !closedJobStatuses.includes(j.status))
-      : []
-  );
-
-  let visibleInvoices = $derived(
-    invoices?.results
-      ? $viewMode === 'full'
-        ? invoices.results
-        : invoices.results.filter(inv => !closedInvoiceStatuses.includes(inv.status))
-      : []
-  );
-
-  let visiblePOs = $derived(
-    purchaseOrders?.results
-      ? $viewMode === 'full'
-        ? purchaseOrders.results
-        : purchaseOrders.results.filter(po => !closedPOStatuses.includes(po.status))
-      : []
-  );
-
-
-
+  const href = (url) => (/^https?:\/\//i.test(url) ? url : `https://${url}`);
+  const hostOf = (url) => url.replace(/^https?:\/\//i, '').replace(/\/$/, '');
 </script>
 
-<div class="page-body">
-<dl>
-  <dt>Reference Code</dt>
-  <dd>{business.our_reference_code}</dd>
+<div class="page-body customer-body">
+  <aside class="identity">
+    <div class="panel">
+      <div class="panel-head">Contact</div>
+      <dl class="facts">
+        {#if business.business_phone}<dt>Phone</dt><dd>{business.business_phone}</dd>{/if}
+        {#if business.website}<dt>Web</dt><dd><a href={href(business.website)} target="_blank" rel="noopener">{hostOf(business.website)}</a></dd>{/if}
+        {#if business.business_address}<dt>Address</dt><dd class="preserve-breaks">{business.business_address}</dd>{/if}
+        {#if !business.business_phone && !business.website && !business.business_address}
+          <dd class="muted empty">No contact details.</dd>
+        {/if}
+      </dl>
+    </div>
+    <div class="panel">
+      <div class="panel-head">Billing</div>
+      <dl class="facts">
+        {#if business.our_reference_code}<dt>Ref</dt><dd>{business.our_reference_code}</dd>{/if}
+        <dt>Terms</dt><dd>{business.terms_name || 'None'}</dd>
+        <dt>Tax</dt><dd>{business.tax_exemption_number ? `Exempt · ${business.tax_exemption_number}` : 'Not exempt'}</dd>
+        <dt>Multiplier</dt><dd>{business.tax_multiplier ?? 'full rate'}</dd>
+      </dl>
+    </div>
+    <div class="panel">
+      <div class="panel-head">Tags</div>
+      <TagEditor endpoint="/api/businesses/{business.business_id}" initialTags={business.tags || []}
+        readonly={!$canManageJobs} />
+    </div>
+  </aside>
 
-  <dt>Name</dt>
-  <dd>{business.business_name}</dd>
-
-  <dt>Phone</dt>
-  <dd>{business.business_phone}</dd>
-
-  <dt>Address</dt>
-  <dd class="preserve-breaks">{business.business_address}</dd>
-
-  <dt>Website</dt>
-  <dd>{business.website}</dd>
-
-  <dt>Tax Exemption</dt>
-  <dd>{business.tax_exemption_number || "(Not exempt)"}</dd>
-
-  <dt>Tax Multiplier</dt>
-  <dd>{business.tax_multiplier ?? '(full rate)'}</dd>
-
-  <dt>Payment Terms</dt>
-  <dd>{business.terms || 'None'}</dd>
-
-  <dt>Default Contact</dt>
-  <dd><a href="#/contacts/{business.default_contact.contact_id}">{business.default_contact.name}</a></dd>
-</dl>
-
-<h3>Tags</h3>
-<TagEditor endpoint="/api/businesses/{business.business_id}" initialTags={business.tags || []}
-  readonly={!$canManageJobs} />
-
-<FullOnly>
-  <h3>Contacts
-    {#if $canManageJobs}
-      — <a href="#/contacts/new?business={business.business_id}">New Contact</a>
-    {/if}
-  </h3>
-  <DataTable
-    rows={business.contacts || []}
-    key={(contact) => contact.contact_id}
-    emptyText="No contacts."
-    columns={[
-      { id: 'name',  label: 'Name',  cell: contactNameCell },
-      { id: 'email', label: 'Email', field: 'email' },
-      { id: 'phone', label: 'Phone', field: 'mobile_number' },
-    ]}
+  <CustomerActivity
+    jobs={business.jobs || []}
+    {invoices}
+    {purchaseOrders}
+    contacts={business.contacts || []}
+    defaultContactId={business.default_contact?.contact_id ?? null}
+    showContactColumn={true}
+    newPOHref="#/purchase-orders/new?business={business.business_id}"
+    {history}
+    {onAddNote}
+    onNewContact={() => { newContactOpen = true; }}
+    {onNewJobFor}
+    {onSetDefault}
   />
-</FullOnly>
-
-<h3>Jobs
-  {#if $canManageJobs && business.default_contact}
-    — <a href="#/jobs/new?contact={business.default_contact.contact_id}">New Job</a>
-  {/if}
-</h3>
-<DataTable
-  rows={visibleJobs}
-  key={(job) => job.job_id}
-  emptyText={`No ${$viewMode === 'lite' ? 'open ' : ''}jobs.`}
-  columns={[
-    { id: 'number', label: 'Job #',  cell: jobNumberCell },
-    { id: 'name',   label: 'Name',   field: 'name' },
-    { id: 'status', label: 'Status', field: 'status' },
-  ]}
-/>
-
-<h3>Invoices</h3>
-<DataTable
-  rows={visibleInvoices}
-  key={(inv) => inv.invoice_id}
-  emptyText={`No ${$viewMode === 'lite' ? 'open ' : ''}invoices.`}
-  columns={[
-    { id: 'number',  label: 'Invoice #', cell: invNumberCell },
-    { id: 'job',     label: 'Job',       cell: invJobCell },
-    { id: 'status',  label: 'Status',    field: 'status' },
-    { id: 'total',   label: 'Total',     cell: invTotalCell },
-    { id: 'paid',    label: 'Paid',      cell: invPaidCell },
-    { id: 'balance', label: 'Balance',   cell: invBalanceCell },
-  ]}
-/>
-{#if visibleInvoices.length > 0}
-  {#if invoices}
-    <p>
-      {pageRange(invoices)}
-      {#if invoices.previous}
-        | <button type="button" onclick={() => onInvoicePageChange(pageFromUrl(invoices.previous))}>Previous</button>
-      {/if}
-      {#if invoices.next}
-        | <button type="button" onclick={() => onInvoicePageChange(pageFromUrl(invoices.next))}>Next</button>
-      {/if}
-    </p>
-  {/if}
-{/if}
-
-<h3>Purchase Orders
-  {#if $canManageFinancials}
-    — <a href="#/purchase-orders/new?business={business.business_id}">New Purchase Order</a>
-  {/if}
-</h3>
-<DataTable
-  rows={visiblePOs}
-  key={(po) => po.po_id}
-  emptyText={`No ${$viewMode === 'lite' ? 'open ' : ''}purchase orders.`}
-  columns={[
-    { id: 'number', label: 'PO #',   cell: poNumberCell },
-    { id: 'status', label: 'Status', field: 'status' },
-  ]}
-/>
-{#if visiblePOs.length > 0}
-  {#if purchaseOrders}
-    <p>
-      {pageRange(purchaseOrders)}
-      {#if purchaseOrders.previous}
-        | <button type="button" onclick={() => onPOPageChange(pageFromUrl(purchaseOrders.previous))}>Previous</button>
-      {/if}
-      {#if purchaseOrders.next}
-        | <button type="button" onclick={() => onPOPageChange(pageFromUrl(purchaseOrders.next))}>Next</button>
-      {/if}
-    </p>
-  {/if}
-{/if}
-
-<HistoryPanel {history} {onAddNote} />
-
-<p>
-  {#if onEdit && $canManageJobs}
-    <button onclick={onEdit}>Edit</button>
-  {/if}
-  {#if onDelete && $canManageJobs}
-    <button onclick={onDelete}>Delete</button>
-  {/if}
-</p>
 </div>
 
-
-{#snippet jobNumberCell(job)}<a href="#/jobs/{job.job_id}">{job.job_number}</a>{/snippet}
-{#snippet invNumberCell(inv)}<a href="#/invoices/{inv.invoice_id}">{inv.display_number}</a>{/snippet}
-{#snippet invJobCell(inv)}<a href="#/jobs/{inv.job}">{inv.job_number}</a>{/snippet}
-{#snippet invTotalCell(inv)}{formatAmount(inv.total)}{/snippet}
-{#snippet invPaidCell(inv)}{formatAmount(inv.amount_paid)}{/snippet}
-{#snippet invBalanceCell(inv)}{formatAmount(inv.balance)}{/snippet}
-{#snippet poNumberCell(po)}<a href="#/purchase-orders/{po.po_id}">{po.po_number}</a>{/snippet}
-{#snippet contactNameCell(contact)}
-  <a href="#/contacts/{contact.contact_id}">{contact.name}</a>
-  {#if business.default_contact && contact.contact_id === business.default_contact.contact_id}
-    <strong>(default)</strong>
-  {/if}
-{/snippet}
+<ContactFormModal open={newContactOpen} defaultBusinessId={business.business_id}
+  onClose={() => { newContactOpen = false; }} />
 
 <style>
+  .customer-body {
+    padding-top: 16px;
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+  }
+  .identity { display: grid; gap: 12px; }
+  .facts { grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: 13px; }
+  .facts dt { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; padding-top: 2px; }
+  .facts dd { min-width: 0; overflow-wrap: anywhere; }
+  .facts .empty { grid-column: 1 / -1; }
+  .muted { color: #64748b; }
+  @media (max-width: 720px) {
+    .customer-body { grid-template-columns: 1fr; }
+  }
 </style>

@@ -70,3 +70,13 @@ describe('UserListPage users tab — DataTable', () => {
     expect(headersOf(c2.querySelector('table.data-table'))).toEqual(ALL);
   });
 });
+
+describe('UserListPage New user (UserCreateModal host)', () => {
+  it('New user is a button that opens the modal', async () => {
+    user.set({ id: 1, permissions: ['can_manage_config'] });
+    const { findByRole, queryByRole } = render(UserListPage);
+    expect(queryByRole('link', { name: 'New user' })).toBeNull();
+    await fireEvent.click(await findByRole('button', { name: 'New user' }));
+    expect(await findByRole('dialog', { name: 'New user' })).toBeInTheDocument();
+  });
+});
