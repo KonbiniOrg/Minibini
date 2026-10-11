@@ -632,7 +632,9 @@ that filter the already-merged client-side list without refetching.
 Redesigned 2026-10-10 (spec: `docs/plans/2026-10-10-contacts-ui-redesign.md`,
 disposable). `ContactDetailPage.svelte` / `BusinessDetailPage.svelte` are
 near-mirrors: load the object, then in parallel its invoices
-(`?contact=`/`?business=` + `summary=true&page_size=100`), purchase orders
+(`?contact=`/`?business=` + `status=all&summary=true&page_size=100` — the
+list endpoint defaults to the `open` preset, which would hide the paid rows
+the "show N paid" toggle reveals), purchase orders
 (`page_size=100`), financials and history. The lists are fetched **whole**
 (no pager; 100 is the documented ceiling — if a customer outgrows it the
 answer is a Job History tab, not pagination here). The contact page also

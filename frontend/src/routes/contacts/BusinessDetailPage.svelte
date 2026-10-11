@@ -38,7 +38,9 @@
     try {
       business = await api.get(`/api/businesses/${params.id}/`);
       const [inv, pos, fin, hist] = await Promise.all([
-        api.get(`/api/invoices/?business=${params.id}&summary=true&page_size=100`),
+        // status=all: the list endpoint defaults to the 'open' preset, which
+        // would drop the paid rows behind "show N paid".
+        api.get(`/api/invoices/?business=${params.id}&status=all&summary=true&page_size=100`),
         api.get(`/api/purchase-orders/?business=${params.id}&page_size=100`),
         api.get(`/api/businesses/${params.id}/financials/`),
         api.get(`/api/businesses/${params.id}/history/`),

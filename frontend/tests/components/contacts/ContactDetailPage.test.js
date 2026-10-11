@@ -110,6 +110,8 @@ describe('ContactDetailPage business context', () => {
     expect(await screen.findByRole('link', { name: 'Marcus' })).toHaveAttribute('href', '#/contacts/2');
     expect(screen.getByText('1 job')).toBeInTheDocument();
     expect(api.get.mock.calls.map((c) => c[0])).toContain('/api/businesses/7/');
+    // status=all: the endpoint defaults to the 'open' preset, which would drop paid invoices.
+    expect(api.get.mock.calls.map((c) => c[0])).toContain('/api/invoices/?contact=1&status=all&summary=true&page_size=100');
   });
 
   it('New Job in the banner opens the job modal', async () => {

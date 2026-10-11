@@ -54,7 +54,8 @@ describe('BusinessDetailPage banner', () => {
     expect(await screen.findByText('Customer since Mar 2024 · Last job started Sep 26, 2026 · Net 30')).toBeInTheDocument();
     expect(screen.getByText('$5.00')).toBeInTheDocument();
     const urls = api.get.mock.calls.map((c) => c[0]);
-    expect(urls).toContain('/api/invoices/?business=1&summary=true&page_size=100');
+    // status=all: the endpoint defaults to the 'open' preset, which would drop paid invoices.
+    expect(urls).toContain('/api/invoices/?business=1&status=all&summary=true&page_size=100');
     expect(urls).toContain('/api/purchase-orders/?business=1&page_size=100');
   });
 
