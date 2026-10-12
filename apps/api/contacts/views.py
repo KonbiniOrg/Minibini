@@ -17,6 +17,17 @@ from .serializers import ContactSerializer, ContactDetailSerializer, BusinessSer
 
 
 
+def _apply_status_filter(qs, request):
+    """?status=active (default) | inactive | all. Unknown values fall back
+    to the default so a typo can't leak inactive rows into a chooser."""
+    status_param = request.query_params.get('status', 'active')
+    if status_param == 'all':
+        return qs
+    if status_param == 'inactive':
+        return qs.filter(is_active=False)
+    return qs.filter(is_active=True)
+
+
 def _financials_payload(rollup):
     """Serialize `compute_customer_financials` for the detail banner:
     money as 2-dp strings, counts as ints, dates as ISO strings or null."""
@@ -47,6 +58,8 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related('tags')
+        if self.action == 'list':
+            qs = _apply_status_filter(qs, self.request)
         business = self.request.query_params.get('business')
         if business:
             qs = qs.filter(business_id=business)
@@ -133,6 +146,16 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
             'message': f'"{contact}" has been deleted.',
         })
 
+    @action(detail=True, methods=['post'], url_path='deactivate')
+    def deactivate(self, request, pk=None):
+        obj = ContactService.deactivate_contact(self.get_object())
+        return Response(ContactSerializer(obj).data)
+
+    @action(detail=True, methods=['post'], url_path='reactivate')
+    def reactivate(self, request, pk=None):
+        obj = ContactService.reactivate_contact(self.get_object())
+        return Response(ContactSerializer(obj).data)
+
     @action(detail=True, methods=['get'], url_path='history', url_name='history')
     def history(self, request, pk=None):
         contact = self.get_object()
@@ -197,6 +220,8 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related('tags')
+        if self.action == 'list':
+            qs = _apply_status_filter(qs, self.request)
         starts_with = self.request.query_params.get('starts_with')
         if starts_with == '0-9':
             qs = qs.filter(business_name__regex=r'^[0-9]')
@@ -315,6 +340,20 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         business = self.get_object()
         return Response(BusinessSerializer(business).data)
+
+    @action(detail=True, methods=['post'], url_path='deactivate')
+    def deactivate(self, request, pk=None):
+        obj = ContactService.deactivate_business(self.get_object())
+        return Response(BusinessSerializer(obj).data)
+
+    @action(detail=True, methods=['post'], url_path='reactivate')
+    def reactivate(self, request, pk=None):
+        obj = ContactService.reactivate_business(self.get_object())
+        return Response(BusinessSerializer(obj).data)
+
+    @action(detail=True, methods=['get'], url_path='deactivate-impact')
+    def deactivate_impact(self, request, pk=None):
+        return Response(ContactService.deactivate_business_impact(self.get_object()))
 
     @action(detail=True, methods=['get'], url_path='history', url_name='history')
     def history(self, request, pk=None):
