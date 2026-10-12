@@ -27,7 +27,7 @@ class PerUnitDerivationTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='j@example.com', mobile_number='555-0001',
+            email='j@example.com', phones=[{'number': '555-0001', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
@@ -165,7 +165,7 @@ class PerUnitSourceSumQuantizationTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='j2@example.com', mobile_number='555-0002',
+            email='j2@example.com', phones=[{'number': '555-0002', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0002')
@@ -231,7 +231,7 @@ class PerUnitSourceSumSkipContractTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='j3@example.com', mobile_number='555-0003',
+            email='j3@example.com', phones=[{'number': '555-0003', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0003')

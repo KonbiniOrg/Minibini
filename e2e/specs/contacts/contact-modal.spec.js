@@ -20,7 +20,8 @@ test.describe('with can_manage_jobs', () => {
       await dialog.getByLabel('First Name *').fill(stamp);
       await dialog.getByLabel('Last Name *').fill('Modal');
       await dialog.getByLabel('Email *').fill(`${stamp}@example.invalid`);
-      await dialog.getByLabel('Mobile').fill('555-0100'); // a phone is required server-side
+      await dialog.getByRole('button', { name: 'Add phone' }).click();
+      await dialog.getByLabel('Phone 1 number').fill('555-0100'); // a phone is required server-side
       await dialog.getByRole('button', { name: 'Create' }).click();
       await expect(page).toHaveURL(/#\/contacts\/\d+$/);
       await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -44,7 +45,8 @@ test.describe('with can_manage_jobs', () => {
       await dup.getByLabel('First Name *').fill('Dup');
       await dup.getByLabel('Last Name *').fill('Licate');
       await dup.getByLabel('Email *').fill(`${stamp}@example.invalid`);
-      await dup.getByLabel('Mobile').fill('555-0100');
+      await dup.getByRole('button', { name: 'Add phone' }).click();
+      await dup.getByLabel('Phone 1 number').fill('555-0100');
       await dup.getByRole('button', { name: 'Create' }).click();
       await expect(dup.getByText('This contact may already exist')).toBeVisible();
       await expect(page.getByRole('dialog')).toHaveCount(1);

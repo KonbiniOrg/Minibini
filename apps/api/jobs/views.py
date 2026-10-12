@@ -92,7 +92,7 @@ def _resolve_claim_line_per_unit(request):
 
 class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
     job_object_path = 'self'
-    queryset = Job.objects.select_related('contact') \
+    queryset = Job.objects.select_related('contact', 'contact__business') \
         .prefetch_related(
             Prefetch(
                 'tasks',
@@ -241,6 +241,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
     @action(detail=True, methods=['post'], url_path='notes', url_name='notes')
     def notes(self, request, pk=None):
         obj = self.get_object()
+        JobService.assert_mutable(obj, 'add a note to this job')
         text = request.data.get('text', '').strip()
         if not text:
             return Response(

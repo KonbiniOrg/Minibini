@@ -19,7 +19,7 @@ class EstimateWizardAPITest(TestCase):
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555-0', 'label': 'mobile'}],
         )
         self.user = User.objects.create_user(username='u', password='p')
         perm = Permission.objects.get(codename='can_manage_jobs')

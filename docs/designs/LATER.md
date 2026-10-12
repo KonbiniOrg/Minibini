@@ -1689,3 +1689,27 @@ Cross-cutting UI/API conventions and shared components.
   `$schedule` null, so the page's `LoadState` never leaves loading.
   _Done when:_ the store exposes an error (or rejects) and `SchedulePage`
   passes it to `LoadState`.
+
+- **Audit `JobScopedPermissionMixin` coverage; revisit where the inactive-contact
+  freeze lives.** — _added 2026-10-11 (RM, feature/contacts-refine design)_
+  Only five viewsets mix in `JobScopedPermissionMixin` (jobs, tasks, estimates,
+  change orders, deliverables). Invoice, shipment, and blep viewsets write to
+  job-owned state without it, which smells like a `CanManageJobOrPM` coverage
+  gap for PM-scoped users. Separately, the inactive-contact/business freeze
+  (`JobService.assert_mutable` / `PurchaseOrderService.assert_mutable`) was put
+  in the service layer partly *because* the mixin isn't a complete chokepoint;
+  if the audit makes it one, decide whether "frozen" is really a permission
+  check and move the guard accordingly.
+  _Done when:_ every job-owned write viewset either mixes in the mixin or has a
+  written reason not to, and the freeze-placement decision is recorded in
+  `docs/designs/contacts-and-businesses.md`.
+
+- **`PATCH /api/contacts/{id}/ {business_id: null}` is silently ignored.** — _added 2026-10-11 (found writing the default-contact e2e)_
+  `ContactViewSet.perform_update` pops `business` and only forwards it as
+  `business_pk` when non-None, so an explicit null never reaches
+  `ContactService.update_contact(business_pk=None)` — the API cannot unlink a
+  contact from its business (the service can). Pre-existing; the new
+  "move the default needs an active sibling" guard therefore only fires on
+  moves between businesses via the API.
+  _Done when:_ a null `business_id` is forwarded as `business_pk=None` (with
+  the same default-contact guard) and a test covers the unlink.

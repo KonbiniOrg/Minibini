@@ -192,16 +192,19 @@
 {#snippet contactNameCell(c)}
   <a href="#/contacts/{c.contact_id}">{c.name}</a>
   {#if c.contact_id === defaultContactId}<span class="chip-default">default</span>{/if}
+  {#if c.is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}
 {/snippet}
 {#snippet contactEmailCell(c)}{#if c.email}<a href="mailto:{c.email}">{c.email}</a>{/if}{/snippet}
-{#snippet contactPhoneCell(c)}{c.mobile_number || c.work_number || '—'}{/snippet}
+{#snippet contactPhoneCell(c)}{c.phone || '—'}{/snippet}
 {#snippet contactActionsCell(c)}
   <span class="row-actions">
+    {#if c.is_active !== false}
     {#if onNewJobFor}<button type="button" onclick={() => onNewJobFor(c.contact_id)}>New job</button>{/if}
     {#if onSetDefault}
       <button type="button" disabled={c.contact_id === defaultContactId}
         title={c.contact_id === defaultContactId ? 'Already the default' : undefined}
         onclick={() => onSetDefault(c.contact_id)}>Set as default</button>
+    {/if}
     {/if}
   </span>
 {/snippet}

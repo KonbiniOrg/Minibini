@@ -31,17 +31,27 @@ describe('resolveSenderToContact', () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 
-  it('new mode: requires at least one phone number', async () => {
-    await expect(
-      resolveSenderToContact({ mode: 'new', contactForm: { name: 'Bob' }, businessMode: 'none' }),
-    ).rejects.toThrow(/phone number/i);
+  it('new mode: no client-side phone requirement; phones go straight into the payload', async () => {
+    api.post.mockResolvedValueOnce({ contact_id: 3 });
+    await resolveSenderToContact({ mode: 'new', contactForm: { name: 'Bob', phones: [] }, businessMode: 'none' });
+    expect(api.post).toHaveBeenCalledWith('/api/contacts/', expect.objectContaining({ name: 'Bob', phones: [] }));
+  });
+
+  it('new mode: drops blank-number phone rows from the POST payload, keeps filled ones', async () => {
+    api.post.mockResolvedValueOnce({ contact_id: 3 });
+    await resolveSenderToContact({
+      mode: 'new',
+      contactForm: { name: 'Bob', phones: [{ number: '', label: 'x' }, { number: '555', label: 'cell' }, { number: '  ', label: '' }] },
+      businessMode: 'none',
+    });
+    expect(api.post.mock.calls[0][1].phones).toEqual([{ number: '555', label: 'cell' }]);
   });
 
   it('new mode + existing business: requires a selected business', async () => {
     await expect(
       resolveSenderToContact({
         mode: 'new',
-        contactForm: { mobile_number: '555' },
+        contactForm: { phones: [{ number: '555', label: '' }] },
         businessMode: 'existing',
         selectedBusinessId: '',
       }),
@@ -52,11 +62,11 @@ describe('resolveSenderToContact', () => {
     api.post.mockResolvedValue({ contact_id: 100 });
     const result = await resolveSenderToContact({
       mode: 'new',
-      contactForm: { mobile_number: '555' },
+      contactForm: { phones: [{ number: '555', label: '' }] },
       businessMode: 'existing',
       selectedBusinessId: '7',
     });
-    expect(api.post).toHaveBeenCalledWith('/api/contacts/', { mobile_number: '555', business_id: 7 });
+    expect(api.post).toHaveBeenCalledWith('/api/contacts/', { phones: [{ number: '555', label: '' }], business_id: 7 });
     expect(result).toEqual({ contactId: 100, businessId: 7 });
   });
 
@@ -70,7 +80,7 @@ describe('resolveSenderToContact', () => {
 
     const result = await resolveSenderToContact({
       mode: 'new',
-      contactForm: { mobile_number: '555' },
+      contactForm: { phones: [{ number: '555', label: '' }] },
       businessMode: 'new',
       newBusinessName: '  Acme  ',
     });
@@ -88,7 +98,7 @@ describe('resolveSenderToContact', () => {
     await expect(
       resolveSenderToContact({
         mode: 'new',
-        contactForm: { mobile_number: '555' },
+        contactForm: { phones: [{ number: '555', label: '' }] },
         businessMode: 'new',
         newBusinessName: '   ',
       }),
@@ -103,7 +113,7 @@ describe('resolveSenderToContact', () => {
     });
     await resolveSenderToContact({
       mode: 'new',
-      contactForm: { mobile_number: '555' },
+      contactForm: { phones: [{ number: '555', label: '' }] },
       businessMode: 'new',
       newBusinessName: 'Acme',
     });
@@ -118,7 +128,7 @@ describe('resolveSenderToContact', () => {
     try {
       await resolveSenderToContact({
         mode: 'new',
-        contactForm: { mobile_number: '555' },
+        contactForm: { phones: [{ number: '555', label: '' }] },
         businessMode: 'new',
         newBusinessName: 'Acme',
       });

@@ -619,7 +619,8 @@ class MaterialService:
         No permission check: open to any authenticated user (deliberate carve-out
         from can_manage_financials per design).
         """
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'edit this material')
         _assert_job_not_on_hold(material.job, 'edit this material')
         if sell_price is not None and sell_price != material.sell_price:
             MaterialService._assert_not_invoiced(material)
@@ -658,7 +659,8 @@ class MaterialService:
                       inventory_item=None, accounting_category=None, units='none',
                       cost_source=None, customer_supplied=False):
         from django.core.exceptions import ValidationError
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
+        _assert_job_not_frozen(job, 'add a material to this job')
         _assert_job_not_on_hold(job, 'add a material to this job')
         from django.db import transaction
         if customer_supplied and (
@@ -742,12 +744,13 @@ class MaterialService:
         """
         from django.core.exceptions import ValidationError
         from django.db import transaction
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
         if {'quantity', 'released_qty'} & set(fields):
             raise ValidationError(
                 'Quantity changes must use the draw-more or restock actions.')
         # Every mutation path below (establish, PLI pricing, metadata) edits the
         # material, so the on-hold guard applies uniformly up front.
+        _assert_job_not_frozen(material.job, 'edit this material')
         _assert_job_not_on_hold(material.job, 'edit this material')
         # Locked before either pricing route below (the provisional-establish
         # branch and the PLI-backed pricing carve-out) can be reached: a
@@ -814,6 +817,8 @@ class MaterialService:
         Returns the surviving material, or None when the row was deleted.
         """
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'remove this material')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError(
                 'A consumed or released material is job history and cannot be '
@@ -839,6 +844,10 @@ class MaterialService:
         task = material.task
         if task is None or task.status != Task.STATUS_IN_PROGRESS:
             return material
+        # Frozen job (inactive contact): the receipt/expense that got us here
+        # must not fail — leave the material pending (RM 2026-10-11, #11).
+        if material.job is not None and not material.job.contact.is_active:
+            return material
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             return material
         pli = material.inventory_item
@@ -857,6 +866,8 @@ class MaterialService:
         from django.core.exceptions import ValidationError
         from django.db import transaction
         from django.db.models import F
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'receive this material')
         if material.inventory_item_id is None:
             raise ValidationError('Set pricing on this material first.')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
@@ -880,6 +891,8 @@ class MaterialService:
     def consume(material):
         from django.db import transaction
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'consume this material')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError(
                 f'consume requires pending state; got {material.consumption_state}'
@@ -1008,7 +1021,8 @@ class MaterialService:
         """
         from django.db import transaction
         from django.core.exceptions import ValidationError
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'restock this material')
         _assert_job_not_on_hold(material.job, 'restock this material')
         if qty <= Decimal('0.00') or qty > material.quantity:
             raise ValidationError('restock qty must be > 0 and <= quantity')
@@ -1034,6 +1048,8 @@ class MaterialService:
     def draw_more(material, qty):
         from django.db import transaction
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'draw more of this material')
         if qty <= Decimal('0.00'):
             raise ValidationError('draw_more qty must be > 0')
         if material.is_expense_bound:
@@ -1059,6 +1075,8 @@ class MaterialService:
     def assign_task(material, task):
         """Move a material to a different task (or make it taskless with task=None)."""
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'reassign this material')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError('assign_task requires pending state')
         if task is not None:

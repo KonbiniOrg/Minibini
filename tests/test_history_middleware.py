@@ -71,7 +71,7 @@ class HistoryMiddlewareAPITest(BaseTestCase):
         response = self.api_client.post(
             '/api/contacts/',
             {'first_name': 'Brand', 'last_name': 'New', 'email': 'new@test.com',
-             'mobile_number': '555-0199'},
+             'phones': [{'number': '555-0199', 'label': 'mobile'}]},
             format='json',
         )
         self.assertEqual(response.status_code, 201)

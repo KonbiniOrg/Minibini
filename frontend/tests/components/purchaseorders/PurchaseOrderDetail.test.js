@@ -23,6 +23,24 @@ beforeEach(() => {
 });
 
 describe('PurchaseOrderDetail', () => {
+  it('badges an inactive vendor and an inactive contact', () => {
+    const { container } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 5, contact_name: 'Sam', business_is_active: false, contact_is_active: false }, canManageFinancials: true },
+    });
+    const ps = Array.from(container.querySelectorAll('p'));
+    const vendor = ps.find((p) => p.textContent.includes('Vendor:'));
+    const contact = ps.find((p) => p.textContent.includes('Contact:'));
+    expect(vendor.querySelector('.status-inactive')).not.toBeNull();
+    expect(contact.querySelector('.status-inactive')).not.toBeNull();
+  });
+
+  it('shows no inactive badge for active parties', () => {
+    const { container } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 5, contact_name: 'Sam', business_is_active: true, contact_is_active: true }, canManageFinancials: true },
+    });
+    expect(container.querySelector('.status-inactive')).toBeNull();
+  });
+
   it('computes the order total', () => {
     const { getByText } = render(PurchaseOrderDetail, { props: { po: po(), canManageFinancials: true } });
     expect(getByText('$20.00')).toBeInTheDocument();
@@ -108,5 +126,21 @@ describe('PurchaseOrderDetail', () => {
       await fireEvent.click(getAllByRole('button', { name: 'Edit' })[1]);
       expect(getByPlaceholderText('Search jobs…')).toBeInTheDocument();
     });
+  });
+
+  it('shows the frozen banner with the swap when the contact is inactive', () => {
+    const { getByText, getByRole } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 4, contact_name: 'Jo', contact_is_active: false, business_is_active: true }, canManageFinancials: true },
+    });
+    expect(getByText(/Frozen:/)).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Change contact…' })).toBeInTheDocument();
+  });
+
+  it('shows the frozen banner without the swap when the vendor is inactive', () => {
+    const { getByText, queryByRole } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 4, contact_name: 'Jo', contact_is_active: false, business_is_active: false }, canManageFinancials: true },
+    });
+    expect(getByText(/Frozen:/)).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Change contact…' })).toBeNull();
   });
 });

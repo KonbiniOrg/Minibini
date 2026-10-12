@@ -41,7 +41,7 @@ class PerUnitUnstampTestBase(TestCase):
         self.cat = AccountingCategory.objects.create(
             name='Labor', is_active=True, code='LAB-PUU')
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@unstamp.com', mobile_number='555-9',
+            first_name='J', last_name='D', email='j@unstamp.com', phones=[{'number': '555-9', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-8001',

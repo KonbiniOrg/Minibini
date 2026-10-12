@@ -3,6 +3,50 @@ from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator
 from apps.core.history import history
 
+import re
+
+PHONE_STRIP_RE = re.compile(r'[\s\-.()+]')
+PHONE_PART_MAX = 50
+
+
+def strip_phone(number):
+    """Spaces, dashes, dots, parens, plus removed — the search key for a
+    number. Letters survive so an extension typed as 'x12' matches as
+    typed (same rule the contacts list search has always used)."""
+    return PHONE_STRIP_RE.sub('', str(number or ''))
+
+
+PHONES_MAX = 20
+
+
+def clean_phones(value):
+    """Normalize a phones list: [{'number': str, 'label': str}, ...].
+    Returns a fresh list; raises a field-keyed ValidationError on shape
+    problems so the API renders it under the phones editor."""
+    if value in (None, ''):
+        return []
+    if not isinstance(value, list):
+        raise ValidationError({'phones': ['Phones must be a list of {number, label} entries.']})
+    if len(value) > PHONES_MAX:
+        raise ValidationError({'phones': [f'A record can hold at most {PHONES_MAX} phone numbers.']})
+    out = []
+    for i, entry in enumerate(value, start=1):
+        if not isinstance(entry, dict):
+            raise ValidationError({'phones': [f'Phone entry {i} must be an object with number and label.']})
+        number = str(entry.get('number') if entry.get('number') is not None else '').strip()
+        label = str(entry.get('label') if entry.get('label') is not None else '').strip()
+        if not number:
+            raise ValidationError({'phones': [f'Phone entry {i} needs a number.']})
+        if len(number) > PHONE_PART_MAX or len(label) > PHONE_PART_MAX:
+            raise ValidationError({'phones': [
+                f'Phone entry {i}: number and label are limited to {PHONE_PART_MAX} characters.']})
+        out.append({'number': number, 'label': label})
+    return out
+
+
+def phones_digits_for(phones):
+    return ' '.join(strip_phone(p['number']) for p in phones)
+
 
 class Tag(models.Model):
     tag_id = models.AutoField(primary_key=True)
@@ -16,7 +60,7 @@ class Tag(models.Model):
         return self.name
 
 
-@history(exclude=[])
+@history(exclude=['phones_digits'])
 class Contact(models.Model):
     contact_id = models.AutoField(primary_key=True)
     first_name = models.CharField(max_length=100)
@@ -30,9 +74,9 @@ class Contact(models.Model):
     municipality = models.CharField(max_length=100, blank=True)
     postal_code = models.CharField(max_length=20, blank=True)
     country_code = models.CharField(max_length=3, blank=True)
-    mobile_number = models.CharField(max_length=20, blank=True)
-    work_number = models.CharField(max_length=20, blank=True)
-    home_number = models.CharField(max_length=20, blank=True)
+    phones = models.JSONField(default=list, blank=True)
+    phones_digits = models.CharField(max_length=1000, blank=True, default='', editable=False)
+    is_active = models.BooleanField(default=True)
     business = models.ForeignKey('Business', on_delete=models.SET_NULL, null=True, blank=True, related_name='contacts')
 
     # QBO customer ID — only set for individual contacts (no business).
@@ -59,16 +103,14 @@ class Contact(models.Model):
         return ' '.join(parts)
 
     def clean(self):
-        """Validate that email and at least one phone number is provided"""
+        """Validate that email is provided and phones are well-formed"""
         # Normalize (so whitespace variants of the same address collide under
         # the unique constraint below) and validate email is not empty
         self.email = (self.email or '').strip()
         if not self.email:
             raise ValidationError('Email address is required.')
 
-        # Validate at least one phone number is provided
-        if not any([self.work_number, self.mobile_number, self.home_number]):
-            raise ValidationError('At least one phone number (work, mobile, or home) is required.')
+        self.phones = clean_phones(self.phones)
 
         # Contact can't have both a business and a direct QBO customer ID
         if self.business_id and self.qbo_customer_id:
@@ -79,6 +121,8 @@ class Contact(models.Model):
 
     def save(self, *args, **kwargs):
         """Override save to update business default contact"""
+        self.phones = clean_phones(self.phones)
+        self.phones_digits = phones_digits_for(self.phones)
         # Track old business reference before saving
         old_business = None
         if self.pk:
@@ -108,14 +152,22 @@ class Contact(models.Model):
 
         # Check if this contact is the default_contact for its business
         if business and business.default_contact == self:
-            other_contacts = business.contacts.exclude(pk=self.pk)
-            if not other_contacts.exists():
+            # An active business's default must stay active: the stand-in is
+            # the lowest-pk ACTIVE sibling (RM 2026-10-11).
+            others = business.contacts.exclude(pk=self.pk)
+            if not others.exists():
                 raise PermissionDenied(
                     f'Cannot delete the only contact for business "{business}". '
                     'Delete the business or add another contact as the default first.'
                 )
-            # Reassign default_contact to another contact before deleting
-            business.default_contact = other_contacts.first()
+            replacement = others.filter(is_active=True).order_by('contact_id').first()
+            if replacement is None:
+                raise PermissionDenied(
+                    f'Cannot delete the default contact for business "{business}" '
+                    'without another active contact there. Add or reactivate one '
+                    'and make it the default first.'
+                )
+            business.default_contact = replacement
             business.save(update_fields=['default_contact'])
 
         super().delete(*args, **kwargs)
@@ -125,14 +177,8 @@ class Contact(models.Model):
             business.validate_and_fix_default_contact()
 
     def phone(self):
-        # Return highest priority phone number: work > mobile > home
-        if self.work_number:
-            return self.work_number
-        elif self.mobile_number:
-            return self.mobile_number
-        elif self.home_number:
-            return self.home_number
-        return ""
+        """Primary number: the first entry, or ''."""
+        return self.phones[0]['number'] if self.phones else ''
 
     def address(self):
         # Return complete address if all components available
@@ -145,13 +191,15 @@ class Contact(models.Model):
         return ""
 
 
-@history(exclude=['business_id'])
+@history(exclude=['business_id', 'phones_digits'])
 class Business(models.Model):
     business_id = models.AutoField(primary_key=True)
     our_reference_code = models.CharField(max_length=50, blank=True, unique=True)
     business_name = models.CharField(max_length=255, unique=True)
     business_address = models.TextField(blank=True)
-    business_phone = models.CharField(max_length=50, blank=True)
+    phones = models.JSONField(default=list, blank=True)
+    phones_digits = models.CharField(max_length=1000, blank=True, default='', editable=False)
+    is_active = models.BooleanField(default=True)
     tax_exemption_number = models.CharField(max_length=50, blank=True)
     website = models.URLField(max_length=200, blank=True)
     terms = models.ForeignKey('PaymentTerms', on_delete=models.SET_NULL, null=True, blank=True)
@@ -183,9 +231,17 @@ class Business(models.Model):
         self.business_name = (self.business_name or '').strip()
         if not self.business_name:
             raise ValidationError('Business name is required.')
+        self.phones = clean_phones(self.phones)
+
+    def phone(self):
+        """Primary number: the first entry, or ''."""
+        return self.phones[0]['number'] if self.phones else ''
 
     def save(self, *args, **kwargs):
         from django.db import IntegrityError, transaction
+
+        self.phones = clean_phones(self.phones)
+        self.phones_digits = phones_digits_for(self.phones)
 
         # If reference code is provided, just save normally
         if self.our_reference_code:
@@ -243,8 +299,11 @@ class Business(models.Model):
             # Default contact is valid, do nothing
             return
 
-        # Default contact is invalid or missing, set to contact with lowest primary key
-        lowest_pk_contact = contacts.order_by('contact_id').first()
+        # Default contact is invalid or missing: lowest-pk ACTIVE contact,
+        # falling back to any contact only when none is active (self-heal
+        # must never fail; RM 2026-10-11).
+        lowest_pk_contact = (contacts.filter(is_active=True).order_by('contact_id').first()
+                             or contacts.order_by('contact_id').first())
         self.default_contact = lowest_pk_contact
         self.save(update_fields=['default_contact'])
 

@@ -23,7 +23,7 @@ class OrderFromMaterialTests(TestCase):
         self.cat = AccountingCategory.objects.create(
             name='Materials', is_active=True, code='MAT')
         contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='5')
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '5', 'label': 'mobile'}])
         self.job = Job.objects.create(
             contact=contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.material = MaterialService.create_on_job(
@@ -82,7 +82,7 @@ class OrderFromMaterialTests(TestCase):
     def test_order_refuses_appending_to_non_draft_po(self):
         po, _ = MaterialService.order(self.material)
         vendor_contact = Contact.objects.create(
-            first_name='V', last_name='V', mobile_number='6')
+            first_name='V', last_name='V', phones=[{'number': '6', 'label': 'mobile'}])
         business = Business.objects.create(
             business_name='Vendor Co', default_contact=vendor_contact)
         po.business = business
@@ -104,7 +104,7 @@ class OrderFromMaterialApiTests(APITestCase):
         self.cat = AccountingCategory.objects.create(
             name='Materials', is_active=True, code='MATAPI')
         contact = Contact.objects.create(
-            first_name='J', last_name='D', email='japi@d.com', mobile_number='5')
+            first_name='J', last_name='D', email='japi@d.com', phones=[{'number': '5', 'label': 'mobile'}])
         self.job = Job.objects.create(
             contact=contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0002')
         self.material = MaterialService.create_on_job(

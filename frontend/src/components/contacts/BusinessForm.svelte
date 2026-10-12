@@ -1,4 +1,5 @@
 <script>
+  import PhoneListEditor from './PhoneListEditor.svelte';
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
 
@@ -20,7 +21,7 @@
     // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     business_address: business?.business_address || '',
     // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
-    business_phone: business?.business_phone || '',
+    phones: business?.phones ? business.phones.map((p) => ({ ...p })) : [],
     // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     tax_exemption_number: business?.tax_exemption_number || '',
     // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
@@ -37,17 +38,17 @@
     first_name: '',
     last_name: '',
     email: '',
-    mobile_number: '',
+    phones: [],
   });
 
   function handleSubmit(e) {
     e.preventDefault();
-    const data = { ...form };
+    const data = { ...form, phones: form.phones.filter((p) => p.number.trim()) };
     if (data.terms === '') data.terms = null;
     if (data.default_contact_id === '') data.default_contact_id = null;
     if (data.tax_multiplier === '') data.tax_multiplier = null;
     if (!isEdit) {
-      data._contact = { ...contactForm };
+      data._contact = { ...contactForm, phones: contactForm.phones.filter((p) => p.number.trim()) };
     }
     onSubmit(data);
   }
@@ -59,11 +60,7 @@
     <input type="text" id="business_name" bind:value={form.business_name} required>
     <FieldError {errors} field="business_name" />
   </p>
-  <p>
-    <label for="business_phone"><strong>Phone</strong></label><br>
-    <input type="text" id="business_phone" bind:value={form.business_phone}>
-    <FieldError {errors} field="business_phone" />
-  </p>
+  <PhoneListEditor bind:phones={form.phones} {errors} />
   <p>
     <label for="business_address"><strong>Address</strong></label><br>
     <textarea id="business_address" bind:value={form.business_address}></textarea>
@@ -105,7 +102,7 @@
       <label for="default_contact_id"><strong>Default Contact</strong></label><br>
       <select id="default_contact_id" bind:value={form.default_contact_id}>
         <option value="">-- None --</option>
-        {#each business.contacts || [] as c}
+        {#each (business.contacts || []).filter((c) => c.is_active !== false || c.contact_id === business.default_contact?.contact_id) as c}
           <option value={c.contact_id}>{c.name}</option>
         {/each}
       </select>
@@ -115,7 +112,7 @@
     <fieldset>
       <legend><strong>Default Contact</strong></legend>
       <!-- Created via POST /api/contacts/ first, so its field errors carry
-           the contact payload keys (first_name, last_name, email, mobile_number). -->
+           the contact payload keys (first_name, last_name, email, phones). -->
       <p>
         <label for="contact_first_name"><strong>First Name *</strong></label><br>
         <input type="text" id="contact_first_name" bind:value={contactForm.first_name} required>
@@ -131,11 +128,7 @@
         <input type="email" id="contact_email" bind:value={contactForm.email} required>
         <FieldError {errors} field="email" />
       </p>
-      <p>
-        <label for="contact_mobile"><strong>Mobile *</strong></label><br>
-        <input type="text" id="contact_mobile" bind:value={contactForm.mobile_number} required>
-        <FieldError {errors} field="mobile_number" />
-      </p>
+      <PhoneListEditor bind:phones={contactForm.phones} {errors} />
     </fieldset>
   {/if}
 

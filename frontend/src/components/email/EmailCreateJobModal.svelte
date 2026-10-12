@@ -5,7 +5,7 @@
   // SenderResolutionForm block; duplicate contact/business prompts are
   // in-modal sub-states (form hidden, Escape backs out one level).
   import { push } from 'svelte-spa-router';
-  import { errorMessage } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { emailApi, resolveSenderToContact } from '../../lib/email.js';
   import { triageError } from '../../lib/errorTriage.js';
   import { showError } from '../../stores/messages.js';
@@ -85,6 +85,17 @@
     else onClose();
   }
 
+  async function reactivateExisting() {
+    const id = duplicateContact.contact_id;
+    try {
+      await api.post(`/api/contacts/${id}/reactivate/`, {});
+      onClose();
+      push(`/contacts/${id}`);
+    } catch (e) {
+      showError(errorMessage(e, 'Could not reactivate the contact.'));
+    }
+  }
+
   function go(path) { onClose(); push(path); }
 </script>
 
@@ -95,6 +106,7 @@
   {#if duplicateContact}
     <DuplicateContactNotice contact={duplicateContact}
       onViewExisting={() => go(`/contacts/${duplicateContact.contact_id}`)}
+      onReactivate={reactivateExisting}
       onBack={() => { duplicateContact = null; }} />
   {:else if duplicateBusiness}
     <DuplicateBusinessNotice business={duplicateBusiness}

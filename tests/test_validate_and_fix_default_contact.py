@@ -20,7 +20,7 @@ class ValidateAndFixDefaultContactTest(TestCase):
             first_name='John',
             last_name='Doe',
             email='john@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
 
         # Create business with contact1 as default
@@ -36,7 +36,7 @@ class ValidateAndFixDefaultContactTest(TestCase):
             first_name='Jane',
             last_name='Smith',
             email='jane@test.com',
-            work_number='555-0002',
+            phones=[{'number': '555-0002', 'label': 'work'}],
             business=business
         )
 
@@ -54,19 +54,19 @@ class ValidateAndFixDefaultContactTest(TestCase):
             first_name='Alice',
             last_name='Anderson',
             email='alice@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
         contact2 = Contact.objects.create(
             first_name='Bob',
             last_name='Brown',
             email='bob@test.com',
-            work_number='555-0002'
+            phones=[{'number': '555-0002', 'label': 'work'}]
         )
         contact3 = Contact.objects.create(
             first_name='Carol',
             last_name='Clark',
             email='carol@test.com',
-            work_number='555-0003'
+            phones=[{'number': '555-0003', 'label': 'work'}]
         )
 
         # Create business 1 with contact1 as default
@@ -105,19 +105,19 @@ class ValidateAndFixDefaultContactTest(TestCase):
             first_name='John',
             last_name='Doe',
             email='john@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
         contact2 = Contact.objects.create(
             first_name='Jane',
             last_name='Smith',
             email='jane@test.com',
-            work_number='555-0002'
+            phones=[{'number': '555-0002', 'label': 'work'}]
         )
         contact_other = Contact.objects.create(
             first_name='Other',
             last_name='Person',
             email='other@test.com',
-            work_number='555-0099'
+            phones=[{'number': '555-0099', 'label': 'work'}]
         )
 
         # Create business with contact_other as default (will be invalid when we move contacts)
@@ -145,7 +145,7 @@ class ValidateAndFixDefaultContactTest(TestCase):
             first_name='John',
             last_name='Doe',
             email='john@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
 
         # Create business with contact as default
@@ -173,25 +173,25 @@ class ValidateAndFixDefaultContactTest(TestCase):
             first_name='First',
             last_name='Contact',
             email='first@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
         contact2 = Contact.objects.create(
             first_name='Second',
             last_name='Contact',
             email='second@test.com',
-            work_number='555-0002'
+            phones=[{'number': '555-0002', 'label': 'work'}]
         )
         contact3 = Contact.objects.create(
             first_name='Third',
             last_name='Contact',
             email='third@test.com',
-            work_number='555-0003'
+            phones=[{'number': '555-0003', 'label': 'work'}]
         )
         contact_invalid = Contact.objects.create(
             first_name='Invalid',
             last_name='Default',
             email='invalid@test.com',
-            work_number='555-0099'
+            phones=[{'number': '555-0099', 'label': 'work'}]
         )
 
         # Create business with contact_invalid as default
@@ -227,19 +227,19 @@ class AutomaticDefaultContactFixingTest(TestCase):
             first_name='Alice',
             last_name='Anderson',
             email='alice@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
         contact2 = Contact.objects.create(
             first_name='Bob',
             last_name='Brown',
             email='bob@test.com',
-            work_number='555-0002'
+            phones=[{'number': '555-0002', 'label': 'work'}]
         )
         contact3 = Contact.objects.create(
             first_name='Carol',
             last_name='Clark',
             email='carol@test.com',
-            work_number='555-0003'
+            phones=[{'number': '555-0003', 'label': 'work'}]
         )
 
         # Create business1 with contact1 and contact2
@@ -279,13 +279,13 @@ class AutomaticDefaultContactFixingTest(TestCase):
             first_name='Alice',
             last_name='Anderson',
             email='alice@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
         contact2 = Contact.objects.create(
             first_name='Bob',
             last_name='Brown',
             email='bob@test.com',
-            work_number='555-0002'
+            phones=[{'number': '555-0002', 'label': 'work'}]
         )
 
         # Create business with contact1 as default

@@ -28,7 +28,7 @@ class COLiveInvoiceGuardTests(FixtureTestCase):
         )
         self.contact = Contact.objects.create(
             first_name='Guard', last_name='Test', email='guard@t.com',
-            work_number='555-9999',
+            phones=[{'number': '555-9999', 'label': 'work'}],
         )
         self.job = JobService.create_job(name='Guard Job', contact=self.contact)
         Job.objects.filter(pk=self.job.pk).update(status=Job.STATUS_APPROVED)

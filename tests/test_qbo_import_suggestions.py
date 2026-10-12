@@ -1,10 +1,13 @@
 """QBOSuggestionService: live snapshot-vs-database diffs per panel area."""
+import json
 from decimal import Decimal
 from unittest.mock import patch
 
 from django.test import TestCase
 
 from apps.contacts.models import Business, Contact, PaymentTerms
+from apps.contacts.services import ContactService
+from apps.core.models import Configuration
 from apps.core.models import AccountingCategory
 from apps.estimates.models import ServiceItem
 from apps.inventory.models import InventoryItem
@@ -277,7 +280,7 @@ class ContactsSuggestionTest(TestCase):
     def test_imported_and_changed_customers(self):
         contact = Contact.objects.create(
             first_name='Jo', last_name='Acme', email='old@acme.com',
-            mobile_number='555')
+            phones=[{'number': '555', 'label': 'mobile'}])
         Business.objects.create(
             business_name='Acme Corp', default_contact=contact,
             qbo_customer_id='71')
@@ -314,3 +317,51 @@ class SuggestionsEndpointTest(TestCase):
         resp = client.get('/api/qbo/import/suggestions/categories/')
         self.assertEqual(resp.status_code, 200)
         self.assertIn('rows', resp.data)
+
+
+class ContactStatusSuggestionTest(TestCase):
+    def setUp(self):
+        snap = json.loads(json.dumps(SNAPSHOT))
+        snap['customers'][0]['active'] = False                        # Acme inactive in QBO
+        snap['customers'].append({'qbo_id': '72', 'display_name': 'Ghost', 'company_name': 'Ghost',
+                                  'given_name': '', 'family_name': '', 'email': '', 'phone': '',
+                                  'term_qbo_id': '', 'active': False})   # unmatched -> dropped
+        Configuration.objects.update_or_create(key=QBOSnapshotService.KEY, defaults={'value': json.dumps(snap)})
+        dc = Contact.objects.create(first_name='Jo', last_name='Acme', email='jo@acme.com')
+        self.biz = Business.objects.create(business_name='Acme Corp', default_contact=dc, qbo_customer_id='71')
+
+    def test_qbo_inactive_vs_local_active(self):
+        rows = QBOSuggestionService.suggestions('contacts')['rows']
+        by_id = {r['qbo_id']: r for r in rows}
+        self.assertEqual(by_id['71']['state'], 'qbo_inactive')
+        self.assertNotIn('72', by_id)
+
+    def test_qbo_active_vs_local_inactive(self):
+        ContactService.deactivate_business(self.biz, push_to_qbo=False)
+        snap = QBOSnapshotService.load(); snap['customers'][0]['active'] = True
+        Configuration.objects.update_or_create(key=QBOSnapshotService.KEY, defaults={'value': json.dumps(snap)})
+        rows = QBOSuggestionService.suggestions('contacts')['rows']
+        self.assertEqual({r['qbo_id']: r['state'] for r in rows}['71'], 'qbo_active')
+
+    def test_missing_active_key_means_active(self):
+        snap = QBOSnapshotService.load(); snap['customers'][0].pop('active')
+        Configuration.objects.update_or_create(key=QBOSnapshotService.KEY, defaults={'value': json.dumps(snap)})
+        rows = QBOSuggestionService.suggestions('contacts')['rows']
+        self.assertIn({r['qbo_id']: r['state'] for r in rows}['71'], ('imported', 'changed'))
+
+    def test_vendor_status_states_and_unmatched_dropped(self):
+        snap = QBOSnapshotService.load()
+        snap['vendors'][0]['active'] = False
+        snap['vendors'].append({'qbo_id': '83', 'display_name': 'Ghost V', 'company_name': 'Ghost V',
+                                'email': '', 'phone': '', 'active': False})
+        Configuration.objects.update_or_create(key=QBOSnapshotService.KEY, defaults={'value': json.dumps(snap)})
+        Business.objects.filter(pk=self.biz.pk).update(qbo_vendor_id=snap['vendors'][0]['qbo_id'])
+        by_id = {r['qbo_id']: r['state'] for r in QBOSuggestionService.suggestions('contacts')['rows']
+                 if r['kind'] == 'vendor'}
+        self.assertEqual(by_id[snap['vendors'][0]['qbo_id']], 'qbo_inactive')
+        self.assertNotIn('83', by_id)
+
+    def test_pull_summary_excludes_unmatched_inactive(self):
+        from apps.qbo.import_services import QBOImportSummary
+        summary = QBOImportSummary.diff_summary()
+        self.assertEqual(summary['customers']['total'], len(SNAPSHOT['customers']))

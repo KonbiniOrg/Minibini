@@ -10,7 +10,7 @@
   columns={[
     { id: 'reference', label: 'Reference', field: 'our_reference_code' },
     { id: 'name',      label: 'Name',      cell: nameCell },
-    { id: 'phone',     label: 'Phone',     field: 'business_phone' },
+    { id: 'phone',     label: 'Phone',     field: 'phone' },
   ]}
 />
 

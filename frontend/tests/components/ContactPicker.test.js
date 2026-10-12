@@ -17,7 +17,16 @@ describe('ContactPicker', () => {
     await fireEvent.input(getByPlaceholderText(/contact/i), { target: { value: 'pat' } });
     await new Promise((r) => setTimeout(r, 300));
     expect(api.get).toHaveBeenCalledWith('/api/contacts/?search=pat&page_size=25');
+    expect(api.get.mock.calls.map((c) => c[0]).filter((u) => /\/api\/(contacts|businesses)\//.test(u)).every((u) => !u.includes('status='))).toBe(true);
     await fireEvent.mouseDown(await findByRole('button', { name: /Pat Quinn/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ contact_id: 3 }));
+  });
+
+  it('scopes the search to a business when businessId is set', async () => {
+    api.get.mockResolvedValue({ results: [] });
+    const { getByPlaceholderText } = render(ContactPicker, { props: { businessId: 7 } });
+    await fireEvent.input(getByPlaceholderText(/contact/i), { target: { value: 'pat' } });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(api.get).toHaveBeenCalledWith('/api/contacts/?search=pat&page_size=25&business=7');
   });
 });

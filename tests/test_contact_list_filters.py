@@ -14,15 +14,15 @@ class ContactStartsWithTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
         self.alice = Contact.objects.create(
             first_name='Alice', last_name='Zebra',
-            email='alice@filter.com', mobile_number='555-200-0001',
+            email='alice@filter.com', phones=[{'number': '555-200-0001', 'label': 'mobile'}],
         )
         self.bob = Contact.objects.create(
             first_name='Bob', last_name='Yak',
-            email='bob@filter.com', mobile_number='555-200-0002',
+            email='bob@filter.com', phones=[{'number': '555-200-0002', 'label': 'mobile'}],
         )
         self.digit = Contact.objects.create(
             first_name='3M', last_name='Person',
-            email='digit@filter.com', mobile_number='555-200-0003',
+            email='digit@filter.com', phones=[{'number': '555-200-0003', 'label': 'mobile'}],
         )
 
     def test_starts_with_letter_returns_only_matching_first_names(self):
@@ -61,13 +61,11 @@ class ContactSearchTest(BaseTestCase):
         self.target = Contact.objects.create(
             first_name='Srchfirst', last_name='Srchlast',
             email='srchuniq@filtertest.com',
-            mobile_number='4155550101',
-            work_number='(415) 555-0102',
-            home_number='415.555.0103',
+            phones=[{'number': '(415) 555-0102', 'label': 'work'}, {'number': '4155550101', 'label': 'mobile'}, {'number': '415.555.0103', 'label': 'home'}],
         )
         self.other = Contact.objects.create(
             first_name='Unrelated', last_name='Person',
-            email='nope@nope.com', mobile_number='999-999-9999',
+            email='nope@nope.com', phones=[{'number': '999-999-9999', 'label': 'mobile'}],
         )
 
     def _ids(self, response):
@@ -94,8 +92,8 @@ class ContactSearchTest(BaseTestCase):
         self.assertIn(self.target.pk, self._ids(r))
         self.assertNotIn(self.other.pk, self._ids(r))
 
-    def test_search_dashes_stripped_matches_work_number_with_parens_spaces(self):
-        """'4155550102' should match work_number '(415) 555-0102' after stripping."""
+    def test_search_dashes_stripped_matches_work_phone_with_parens_spaces(self):
+        """'4155550102' should match work phone '(415) 555-0102' after stripping."""
         r = self.client.get('/api/contacts/', {'search': '4155550102'})
         self.assertIn(self.target.pk, self._ids(r))
 
@@ -104,8 +102,8 @@ class ContactSearchTest(BaseTestCase):
         r = self.client.get('/api/contacts/', {'search': '415-555-0101'})
         self.assertIn(self.target.pk, self._ids(r))
 
-    def test_search_dots_stripped_matches_home_number(self):
-        """'4155550103' should match home_number '415.555.0103' after stripping dots."""
+    def test_search_dots_stripped_matches_home_phone(self):
+        """'4155550103' should match home phone '415.555.0103' after stripping dots."""
         r = self.client.get('/api/contacts/', {'search': '4155550103'})
         self.assertIn(self.target.pk, self._ids(r))
 
@@ -129,9 +127,9 @@ class BusinessStartsWithTest(BaseTestCase):
         self.client = APIClient()
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
-        dc1 = Contact.objects.create(first_name='B1', last_name='C', email='b1@bsw.com', mobile_number='555-201-0001')
-        dc2 = Contact.objects.create(first_name='B2', last_name='C', email='b2@bsw.com', mobile_number='555-201-0002')
-        dc3 = Contact.objects.create(first_name='B3', last_name='C', email='b3@bsw.com', mobile_number='555-201-0003')
+        dc1 = Contact.objects.create(first_name='B1', last_name='C', email='b1@bsw.com', phones=[{'number': '555-201-0001', 'label': 'mobile'}])
+        dc2 = Contact.objects.create(first_name='B2', last_name='C', email='b2@bsw.com', phones=[{'number': '555-201-0002', 'label': 'mobile'}])
+        dc3 = Contact.objects.create(first_name='B3', last_name='C', email='b3@bsw.com', phones=[{'number': '555-201-0003', 'label': 'mobile'}])
         self.biz_a = Business.objects.create(business_name='Acme Corp Bsw', default_contact=dc1)
         self.biz_b = Business.objects.create(business_name='Beta Ltd Bsw', default_contact=dc2)
         self.biz_0 = Business.objects.create(business_name='3D Co Bsw', default_contact=dc3)
@@ -159,16 +157,16 @@ class BusinessSearchTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
         dc = Contact.objects.create(
             first_name='BizSrch', last_name='C',
-            email='bizsrch@test.com', mobile_number='555-202-0001',
+            email='bizsrch@test.com', phones=[{'number': '555-202-0001', 'label': 'mobile'}],
         )
         self.biz = Business.objects.create(
             business_name='Unique Biz Search Corp',
-            business_phone='555-777-8888',
+            phones=[{'number': '555-777-8888', 'label': ''}],
             default_contact=dc,
         )
         dc2 = Contact.objects.create(
             first_name='Other', last_name='C',
-            email='other@test.com', mobile_number='555-202-0002',
+            email='other@test.com', phones=[{'number': '555-202-0002', 'label': 'mobile'}],
         )
         self.other = Business.objects.create(
             business_name='Unrelated Biz', default_contact=dc2,
@@ -212,19 +210,19 @@ class ContactTagFilterTest(BaseTestCase):
 
         self.contact_both = Contact.objects.create(
             first_name='Both', last_name='Tags',
-            email='both@tagfilter.com', mobile_number='555-300-0001',
+            email='both@tagfilter.com', phones=[{'number': '555-300-0001', 'label': 'mobile'}],
         )
         self.contact_both.tags.add(self.tag_vip, self.tag_local)
 
         self.contact_vip_only = Contact.objects.create(
             first_name='Vip', last_name='Only',
-            email='vip@tagfilter.com', mobile_number='555-300-0002',
+            email='vip@tagfilter.com', phones=[{'number': '555-300-0002', 'label': 'mobile'}],
         )
         self.contact_vip_only.tags.add(self.tag_vip)
 
         self.contact_none = Contact.objects.create(
             first_name='No', last_name='Tags',
-            email='none@tagfilter.com', mobile_number='555-300-0003',
+            email='none@tagfilter.com', phones=[{'number': '555-300-0003', 'label': 'mobile'}],
         )
 
     def _ids(self, response):
@@ -298,9 +296,9 @@ class BusinessTagFilterTest(BaseTestCase):
         self.tag_key = Tag.objects.create(name='key-account-bf')
         self.tag_local = Tag.objects.create(name='local-bf')
 
-        dc1 = Contact.objects.create(first_name='BF1', last_name='C', email='bf1@t.com', mobile_number='555-301-0001')
-        dc2 = Contact.objects.create(first_name='BF2', last_name='C', email='bf2@t.com', mobile_number='555-301-0002')
-        dc3 = Contact.objects.create(first_name='BF3', last_name='C', email='bf3@t.com', mobile_number='555-301-0003')
+        dc1 = Contact.objects.create(first_name='BF1', last_name='C', email='bf1@t.com', phones=[{'number': '555-301-0001', 'label': 'mobile'}])
+        dc2 = Contact.objects.create(first_name='BF2', last_name='C', email='bf2@t.com', phones=[{'number': '555-301-0002', 'label': 'mobile'}])
+        dc3 = Contact.objects.create(first_name='BF3', last_name='C', email='bf3@t.com', phones=[{'number': '555-301-0003', 'label': 'mobile'}])
 
         self.biz_both = Business.objects.create(business_name='BF Both Tags Corp', default_contact=dc1)
         self.biz_both.tags.add(self.tag_key, self.tag_local)
@@ -345,3 +343,48 @@ class BusinessTagFilterTest(BaseTestCase):
         tag_names = [t['name'] for t in target.get('tags', [])]
         self.assertIn('key-account-bf', tag_names)
         self.assertIn('local-bf', tag_names)
+
+
+class PhoneSearchTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+        self.c = Contact.objects.create(
+            first_name='Pho', last_name='Ne', email='pho@filter.com',
+            phones=[{'number': '(555) 777-1234', 'label': 'cell'},
+                    {'number': '555-888-0000', 'label': 'work'}])
+        dc = Contact.objects.create(first_name='D', last_name='C', email='dc@filter.com')
+        self.b = Business.objects.create(
+            business_name='Phoneco', default_contact=dc,
+            phones=[{'number': '555.999.1111', 'label': 'A/P'}])
+
+    def test_contact_matches_any_entry_ignoring_punctuation(self):
+        for q in ('5557771234', '555-777', '888 0000'):
+            ids = [r['contact_id'] for r in self.client.get('/api/contacts/', {'search': q}).data['results']]
+            self.assertIn(self.c.pk, ids, q)
+
+    def test_business_matches_stripped(self):
+        ids = [r['business_id'] for r in self.client.get('/api/businesses/', {'search': '(555) 999'}).data['results']]
+        self.assertIn(self.b.pk, ids)
+
+    def test_text_search_still_works(self):
+        ids = [r['contact_id'] for r in self.client.get('/api/contacts/', {'search': 'Pho'}).data['results']]
+        self.assertIn(self.c.pk, ids)
+
+    def test_phones_digits_not_exposed(self):
+        data = self.client.get(f'/api/contacts/{self.c.pk}/').data
+        self.assertNotIn('phones_digits', data)
+        self.assertEqual(data['phones'][0]['number'], '(555) 777-1234')
+        self.assertTrue(data['is_active'])
+
+    def test_is_active_is_read_only(self):
+        r = self.client.patch(f'/api/contacts/{self.c.pk}/', {'is_active': False}, format='json')
+        self.assertEqual(r.status_code, 200)
+        self.c.refresh_from_db()
+        self.assertTrue(self.c.is_active)
+
+    def test_bad_phones_payload_is_a_field_error(self):
+        r = self.client.patch(f'/api/contacts/{self.c.pk}/', {'phones': [{'label': 'x'}]}, format='json')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('phones', r.data)

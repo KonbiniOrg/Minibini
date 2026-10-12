@@ -9,6 +9,24 @@ const FIN = {
 };
 
 describe('CustomerHeader', () => {
+  it('renders the inactive badge next to the name only when inactive', () => {
+    const { queryByText, rerender } = render(CustomerHeader, { props: { name: 'Jane Doe' } });
+    expect(queryByText('inactive')).toBeNull();
+    rerender({ name: 'Jane Doe', inactive: true });
+    expect(queryByText('inactive')).toBeInTheDocument();
+  });
+
+  it('keeps the pill in the same row as the heading, to its right, outside the heading text', () => {
+    const { container, getByRole } = render(CustomerHeader, { props: { name: 'Jane Doe', inactive: true } });
+    const heading = getByRole('heading', { name: 'Jane Doe' });
+    expect(heading.textContent.trim()).toBe('Jane Doe');
+    const row = container.querySelector('.ch-title-row');
+    expect(row).toContainElement(heading);
+    const pill = row.querySelector('.status-badge.status-inactive');
+    expect(pill).not.toBeNull();
+    expect(heading.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('renders the name', () => {
     const { getByText } = render(CustomerHeader, { props: { name: 'Jane Doe' } });
     expect(getByText('Jane Doe')).toBeInTheDocument();

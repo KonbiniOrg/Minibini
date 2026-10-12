@@ -37,7 +37,8 @@ class Command(ScheduledProcessCommand):
                     if co.status != ChangeOrder.STATUS_OPEN:
                         continue
                     days = self._validity_days(co)
-                    ChangeOrderService.update_status(pk, ChangeOrder.STATUS_EXPIRED)
+                    ChangeOrderService.update_status(pk, ChangeOrder.STATUS_EXPIRED,
+                                                    system_transition=True)
                     record_history(
                         entry_type='action', object_type='changeorder', object_id=pk,
                         user=system_user,

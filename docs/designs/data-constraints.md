@@ -434,6 +434,17 @@ with `default_contact` pointing to that Contact, then update the Contact's
 - **business_name**: required, max 255 chars, **unique** (case-insensitive
   pre-check + DB constraint — see the duplicate-detection section of
   `contacts-and-businesses.md`)
+- **phones**: JSON list of `{number, label}` objects, default `[]` (replaced
+  `business_phone`, 2026-10-11). First entry is the primary
+  (`Business.phone()`). Each entry needs a non-empty `number`; number and
+  label are each ≤ 50 chars; a violation is a `{'phones': [...]}` field
+  error. Not required.
+- **phones_digits**: hidden (`editable=False`), max 1000 — the space-joined
+  `strip_phone` of every number (whitespace, `-`, `.`, `(`, `)`, `+`
+  removed), recomputed by `clean()`/`save()`; the search key for phone
+  queries. Excluded from history; never serialized or fixture-authored.
+- **is_active**: boolean, default True. See "Active / inactive (Contact and
+  Business)" below.
 - **qbo_customer_id** / **qbo_vendor_id**: nullable, for QBO sync
 - **tax_multiplier**: nullable decimal; null/1.0 = full rate, 0 = exempt,
   0.5 = half rate
@@ -443,8 +454,14 @@ with `default_contact` pointing to that Contact, then update the Contact's
 - **email**: required, must be non-empty and valid, **unique** (case-insensitive
   pre-check + DB constraint — see the duplicate-detection section of
   `contacts-and-businesses.md`)
-- **At least one phone number**: one of `work_number`, `mobile_number`,
-  `home_number` must be non-empty
+- **phones**: JSON list of `{number, label}`, default `[]`; first entry is
+  the primary (`Contact.phone()`); same entry rules as `Business.phones`.
+  **No phone is required** — the former "at least one of `work_number` /
+  `mobile_number` / `home_number`" rule was dropped 2026-10-11 along with
+  those columns (historical names; migration `contacts/0002` folds them
+  into labeled `phones` entries).
+- **phones_digits**: hidden search key, as on Business.
+- **is_active**: boolean, default True — see below.
 - **first_name** / **last_name**: required (max 100 chars each)
 - **business** (optional FK → Business): if set, `qbo_customer_id` must be null
   (mutual exclusivity — contacts with a business use the business's QBO ID)
@@ -452,6 +469,34 @@ with `default_contact` pointing to that Contact, then update the Contact's
   business would lose its required `default_contact`), or if it has any
   associated Job or Bill (the Bill check guards legacy rows only — retired
   schema, §1.18)
+
+#### Active / inactive (Contact and Business)
+
+Narrative: `contacts-and-businesses.md` "Active / inactive status".
+
+- **`is_active` is written only by `ContactService.deactivate_*` /
+  `reactivate_*`**; the API treats it as read-only.
+- **OK to deactivate a Contact** only when *none* of these holds: it is the
+  `default_contact` of its (active) business; it is the `contact` of an open
+  Job (`draft`, `submitted`, `approved`, `in_progress`, `work_complete`); it
+  is the contact of an open Invoice (`draft`, `open`, `partly_paid`) via the
+  invoice's job; it is the `contact` of an open PurchaseOrder (`draft`,
+  `issued`, `partly_received`).
+- **OK to deactivate a Business**: none of its contacts has an open Job,
+  Invoice or PurchaseOrder (as above), and no open PurchaseOrder has the
+  business as vendor. Deactivating it deactivates all its contacts in the
+  same transaction.
+- **Reactivate**: a Contact cannot be reactivated while its business is
+  inactive; reactivating a Business reactivates all its contacts.
+- **Frozen-record invariant**: an inactive Contact or Business accepts no
+  edit — not `update_*`, tags, default-contact changes, nor notes — only
+  reactivate and delete. A Job whose contact is inactive, or a PurchaseOrder
+  whose business or contact is inactive, is **frozen**: user-driven
+  mutations are refused (§1.8, §1.17); the sole exception is swapping to an
+  active contact of the same active business.
+- **No new records on inactive parties**: `create_job` / `duplicate_job` and
+  `create_po` reject an inactive contact, a contact at an inactive business,
+  and (PO) an inactive business.
 
 ---
 
@@ -635,7 +680,21 @@ Non-CO holds resume manually.
   left draft (enforced regardless of what else changes in the same save; a
   no-op write of the same contact is always allowed). The SPA's Edit Job modal
   only renders the contact picker for draft jobs, showing the contact name
-  read-only otherwise.
+  read-only otherwise. **One exception (2026-10-11, contacts-refine
+  §5.1)**, encoded in `Job._is_inactive_contact_swap`: the change is allowed
+  when the *old* contact is inactive, the *new* contact is active, both have
+  the same non-null `business`, and that business is active — the escape
+  hatch for a frozen job (the SPA's "Change contact…" on the frozen banner,
+  a `{contact}`-only PATCH). The contact must also be active at creation
+  and on any reassignment (`JobService._assert_party_active`).
+- **Frozen job** (derived: `contact.is_active` is False): refuses every
+  user-driven mutation — job-level edits/hold/release/delete, tasks and
+  their lifecycle, bleps, materials, estimates, change orders, deliverables,
+  shipments, invoices, document sends, wizard edits, notes — via
+  `_assert_job_not_frozen`. System transitions
+  (`update_job(system_transition=True)`, the expiry commands'
+  `update_status(..., system_transition=True)`) bypass it. Details:
+  `jobs-and-tasks.md` §3.7.
 - **project_manager** (optional FK → `core.User`, SET_NULL, `related_name='managed_jobs'`): informational owner of the job; no business-logic side effects, no status interaction, no dedicated permission. Set/cleared via the job edit page by `can_manage_jobs`.
 - **status**: must be one of the choices above, default `draft`
 - **on_hold**: BooleanField, default False. Orthogonal pause flag — see above. Set/cleared only via `JobService.hold_job` / `release_job` (also cleared by CO acceptance and by cancellation); the API exposes it read-only (`POST /api/jobs/{id}/hold/` / `.../release/` are the write paths) and a status PATCH of `'on_hold'` is a 400.
@@ -1705,6 +1764,12 @@ is genuinely terminal.
   NumberGenerationService if not provided.
 - If contact is provided on creation and business is not explicitly set,
   business is auto-populated from contact's business.
+- **Frozen PO** (derived): a PO whose `business` is inactive, or whose
+  `contact` is inactive, refuses every user-driven mutation (header and
+  status edits, line items, receiving, reconcile, cancel, delete, send) via
+  `_assert_po_not_frozen`. The only edit accepted is a `{contact}`-only
+  `update_po` onto another active contact of the PO's own active business.
+  New POs cannot be created against an inactive business/contact.
 
 #### Date rules
 
@@ -2487,6 +2552,44 @@ passes `allow_inactive_scheme=True` — otherwise `SchemeInactiveError` is
 raised (translated to HTTP 409 by the API). `RateScheme.is_active` has
 no other effect: retiring a preset never touches tasks already stamped
 from it.
+
+---
+
+### 2.15 Contact / Business deactivate and reactivate (cascade)
+
+**Trigger:** `ContactService.deactivate_business` / `reactivate_business`
+(and the contact variants).
+
+**Effects:**
+- `deactivate_business`: after the blocker check passes, in one transaction
+  the Business gets `is_active = False` and **every contact still active on
+  it** gets `is_active = False` (per-instance `save()`, so each flip is a
+  history entry).
+- `reactivate_business`: the Business **and every inactive contact on it**
+  become active again. There is no memory of which contacts were inactive
+  beforehand.
+- `deactivate_contact` / `reactivate_contact` touch only that contact;
+  reactivating is refused while its business is inactive.
+- Consequence for dependants (no rows written): Jobs of an inactive contact
+  and POs of an inactive business/contact become frozen (§1.8, §1.17);
+  reactivation thaws them. `push_to_qbo=True` (the default) pushes the flip to QBO before the local write (see "QBO and status" below and the QBO doc's "Active-flag push"); the import commit passes `push_to_qbo=False` because QBO already agrees.
+
+**Data constraint:** through the service, an inactive Business has only
+inactive Contacts (a contact cannot be reactivated under it). Fixtures and
+translations should respect the same implication. Attaching a contact to an
+already-inactive business is refused: `create_contact(business_pk=…)` and
+`update_contact(business_pk=…)` raise `ValidationError({'business_id': ['<name> is inactive.']})`.
+Likewise `update_business(default_contact=…)` refuses an inactive contact
+(`assert_active`) **when the default is changing**; an unchanged default is
+not re-checked, so editing other fields never locks up. The invariant
+"an active business's default contact is active" is also kept by the
+replacement paths: deleting or moving (re-homing/unlinking) the default
+requires another *active* contact at the business (service `ValidationError`
+/ model `PermissionDenied`), and both the explicit replacement and the
+self-heal (`validate_and_fix_default_contact`) skip inactive contacts.
+
+`Contact.phones` / `Business.phones` hold at most 20 entries
+(`clean_phones` → `{'phones': ['A record can hold at most 20 phone numbers.']}`).
 
 ---
 

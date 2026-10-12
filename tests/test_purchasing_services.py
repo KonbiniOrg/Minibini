@@ -16,10 +16,10 @@ class PurchasingTestBase(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Vendor',
-            email='vendor@test.com', work_number='555-1234',
+            email='vendor@test.com', phones=[{'number': '555-1234', 'label': 'work'}],
         )
         self.business = Business.objects.create(
-            business_name='Test Vendor Co', business_phone='555-1234',
+            business_name='Test Vendor Co', phones=[{'number': '555-1234', 'label': ''}],
             default_contact=self.contact,
         )
         self.contact.business = self.business
@@ -59,7 +59,7 @@ class PurchaseOrderServiceUpdateTest(PurchasingTestBase):
     def test_update_po(self):
         """Update PO fields."""
         other_biz = Business.objects.create(
-            business_name='Other Vendor', business_phone='555-9999',
+            business_name='Other Vendor', phones=[{'number': '555-9999', 'label': ''}],
             default_contact=self.contact,
         )
         updated = PurchaseOrderService.update_po(self.po.pk, business=other_biz)

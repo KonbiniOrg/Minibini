@@ -15,6 +15,7 @@ describe('BusinessPicker', () => {
     await fireEvent.input(getByPlaceholderText(/business/i), { target: { value: 'ac' } });
     await new Promise((r) => setTimeout(r, 300));
     expect(api.get).toHaveBeenCalledWith('/api/businesses/?search=ac&page_size=25');
+    expect(api.get.mock.calls.map((c) => c[0]).filter((u) => /\/api\/(contacts|businesses)\//.test(u)).every((u) => !u.includes('status='))).toBe(true);
     await fireEvent.mouseDown(await findByRole('button', { name: /Acme Steel/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ business_id: 5 }));
   });

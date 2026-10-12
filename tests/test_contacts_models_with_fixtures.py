@@ -14,11 +14,11 @@ class ContactModelFixtureTest(FixtureTestCase):
         john_doe = Contact.objects.get(first_name="John", last_name="Doe")
         self.assertEqual(john_doe.email, "john.doe@example.com")
         self.assertEqual(john_doe.address(), "123 Main St, Anytown, ST 12345")
-        self.assertEqual(john_doe.mobile_number, "555-123-4567")
+        self.assertEqual(john_doe.phone(), "555-123-4567")
 
         jane_smith = Contact.objects.get(first_name="Jane", last_name="Smith")
         self.assertEqual(jane_smith.email, "jane.smith@company.com")
-        self.assertEqual(jane_smith.mobile_number, "555-987-6543")
+        self.assertEqual(jane_smith.phone(), "555-987-6543")
 
         acme_vendor = Contact.objects.get(first_name="Acme", last_name="Vendor")
         self.assertEqual(acme_vendor.email, "vendor@acme.com")
@@ -54,7 +54,7 @@ class ContactModelFixtureTest(FixtureTestCase):
             first_name='New Customer',
             last_name='',
             email="new@customer.com",
-            mobile_number="555-000-0000"
+            phones=[{'number': "555-000-0000", 'label': 'mobile'}]
         )
         self.assertEqual(new_contact.name, "New Customer")
         self.assertEqual(Contact.objects.count(), 5)  # 4 from fixture + 1 new
@@ -98,13 +98,13 @@ class BusinessModelFixtureTest(FixtureTestCase):
         """Test that businesses from fixture data exist and have correct properties"""
         abc_corp = Business.objects.get(business_name="ABC Corporation")
         self.assertEqual(abc_corp.our_reference_code, "CUST001")
-        self.assertEqual(abc_corp.business_phone, "123-456-7890")
+        self.assertEqual(abc_corp.phone(), "123-456-7890")
         self.assertEqual(abc_corp.tax_exemption_number, "TX123456789")
         self.assertEqual(abc_corp.website, "https://www.abccorp.com")
 
         xyz_industries = Business.objects.get(business_name="XYZ Industries")
         self.assertEqual(xyz_industries.our_reference_code, "CUST002")
-        self.assertEqual(xyz_industries.business_phone, "987-654-3210")
+        self.assertEqual(xyz_industries.phone(), "987-654-3210")
         self.assertEqual(xyz_industries.tax_exemption_number, "")  # Empty in fixture
         self.assertEqual(xyz_industries.website, "")  # Empty in fixture
 

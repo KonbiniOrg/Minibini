@@ -16,7 +16,7 @@ class DraftNumberingTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, job_number='JOB-2026-0001',
@@ -52,7 +52,7 @@ class DocNumberWritebackTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, job_number='JOB-2026-0001',
@@ -135,7 +135,7 @@ class EmailDefaultsDraftTest(TestCase):
     def setUp(self):
         contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=contact, job_number='JOB-2026-0001',

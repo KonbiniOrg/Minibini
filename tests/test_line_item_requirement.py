@@ -19,7 +19,7 @@ class EstimateLineItemRequirementTest(TestCase):
 
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
-            email='test@example.com', work_number='555-0100',
+            email='test@example.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.job = Job.objects.create(
             job_number='JOB-TEST-0001', contact=self.contact,
@@ -55,7 +55,7 @@ class InvoiceLineItemRequirementTest(TestCase):
 
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
-            email='test@example.com', work_number='555-0100',
+            email='test@example.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.job = Job.objects.create(
             job_number='JOB-TEST-0001', contact=self.contact,
@@ -89,7 +89,7 @@ class PurchaseOrderLineItemRequirementTest(TestCase):
 
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
-            email='test@example.com', work_number='555-0100',
+            email='test@example.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.business = Business.objects.create(
             business_name='Test Biz', default_contact=self.contact,

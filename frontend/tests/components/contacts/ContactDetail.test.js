@@ -10,7 +10,7 @@ import ContactDetail from '@/components/contacts/ContactDetail.svelte';
 
 function contact() {
   return {
-    contact_id: 1, name: 'Jane', email: 'j@x.com', mobile_number: '555-0162', work_number: '', home_number: '',
+    contact_id: 1, name: 'Jane', email: 'j@x.com', phones: [{ number: '555-0162', label: 'Mobile' }],
     addr1: '1 Main St', city: 'Alameda', municipality: 'CA', postal_code: '94501', tags: [],
     business: { business_id: 7, business_name: 'Acme', default_contact: { contact_id: 1 } },
     jobs: [
@@ -20,7 +20,7 @@ function contact() {
   };
 }
 const BUSINESS = {
-  business_id: 7, business_name: 'Acme', business_phone: '555-0100', terms_name: 'Net 30', tax_exemption_number: 'X1',
+  business_id: 7, business_name: 'Acme', phone: '555-0100', terms_name: 'Net 30', tax_exemption_number: 'X1',
   contacts: [{ contact_id: 1, name: 'Jane' }, { contact_id: 2, name: 'Marcus' }, { contact_id: 3, name: 'Priya' }],
   jobs: [{ job_id: 1, contact: 1 }, { job_id: 5, contact: 2 }, { job_id: 6, contact: 2 }],
 };

@@ -36,7 +36,7 @@ class ContactAPITest(BaseTestCase):
             'first_name': 'New',
             'last_name': 'Contact',
             'email': 'new@example.com',
-            'mobile_number': '555-000-0000',
+            'phones': [{'number': '555-000-0000', 'label': 'mobile'}],
         }, format='json')
         self.assertEqual(response.status_code, 201)
 
@@ -47,7 +47,7 @@ class ContactAPITest(BaseTestCase):
             'first_name': 'Linked',
             'last_name': 'Contact',
             'email': 'linked@example.com',
-            'mobile_number': '555-111-2222',
+            'phones': [{'number': '555-111-2222', 'label': 'mobile'}],
             'business_id': biz.business_id,
         }, format='json')
         self.assertEqual(response.status_code, 201)
@@ -57,13 +57,13 @@ class ContactAPITest(BaseTestCase):
     def test_create_contact_with_duplicate_email_returns_409_with_existing_contact(self):
         existing = Contact.objects.create(
             first_name='Existing', last_name='Person',
-            email='dupe@example.com', mobile_number='555-999-0000',
+            email='dupe@example.com', phones=[{'number': '555-999-0000', 'label': 'mobile'}],
         )
         response = self.client.post('/api/contacts/', {
             'first_name': 'New',
             'last_name': 'Person',
             'email': 'dupe@example.com',
-            'mobile_number': '555-000-0000',
+            'phones': [{'number': '555-000-0000', 'label': 'mobile'}],
         }, format='json')
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data['code'], 'duplicate_email')
@@ -73,13 +73,13 @@ class ContactAPITest(BaseTestCase):
     def test_create_contact_with_duplicate_email_case_insensitive(self):
         Contact.objects.create(
             first_name='Existing', last_name='Person',
-            email='Dupe@Example.com', mobile_number='555-999-0000',
+            email='Dupe@Example.com', phones=[{'number': '555-999-0000', 'label': 'mobile'}],
         )
         response = self.client.post('/api/contacts/', {
             'first_name': 'New',
             'last_name': 'Person',
             'email': 'dupe@example.com',
-            'mobile_number': '555-000-0000',
+            'phones': [{'number': '555-000-0000', 'label': 'mobile'}],
         }, format='json')
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data['code'], 'duplicate_email')
@@ -106,7 +106,7 @@ class ContactAPITest(BaseTestCase):
     def test_delete_contact_with_confirm(self):
         contact = Contact.objects.create(
             first_name='Delete', last_name='Me',
-            email='delete@example.com', mobile_number='555-999-9999',
+            email='delete@example.com', phones=[{'number': '555-999-9999', 'label': 'mobile'}],
         )
         response = self.client.delete(f'/api/contacts/{contact.pk}/?confirm=true')
         self.assertEqual(response.status_code, 200)
@@ -131,12 +131,12 @@ class BusinessAPITest(BaseTestCase):
 
     def test_create_business_with_duplicate_name_returns_409_with_existing_business(self):
         dc = Contact.objects.create(
-            first_name='DC', last_name='', email='dc@example.com', work_number='555-1234',
+            first_name='DC', last_name='', email='dc@example.com', phones=[{'number': '555-1234', 'label': 'work'}],
         )
         existing = Business.objects.create(business_name='Argon.AI', default_contact=dc)
         new_contact = Contact.objects.create(
             first_name='New', last_name='Contact',
-            email='new-contact@example.com', mobile_number='555-000-0000',
+            email='new-contact@example.com', phones=[{'number': '555-000-0000', 'label': 'mobile'}],
         )
         response = self.client.post('/api/businesses/', {
             'business_name': 'Argon.AI',
@@ -150,12 +150,12 @@ class BusinessAPITest(BaseTestCase):
 
     def test_create_business_with_duplicate_name_case_insensitive(self):
         dc = Contact.objects.create(
-            first_name='DC', last_name='', email='dc2@example.com', work_number='555-1234',
+            first_name='DC', last_name='', email='dc2@example.com', phones=[{'number': '555-1234', 'label': 'work'}],
         )
         Business.objects.create(business_name='Argon.AI', default_contact=dc)
         new_contact = Contact.objects.create(
             first_name='New', last_name='Contact',
-            email='new-contact2@example.com', mobile_number='555-000-0000',
+            email='new-contact2@example.com', phones=[{'number': '555-000-0000', 'label': 'mobile'}],
         )
         response = self.client.post('/api/businesses/', {
             'business_name': 'argon.ai',
@@ -166,7 +166,7 @@ class BusinessAPITest(BaseTestCase):
 
     def test_check_name_reports_existing_business(self):
         dc = Contact.objects.create(
-            first_name='DC', last_name='', email='dc3@example.com', work_number='555-1234',
+            first_name='DC', last_name='', email='dc3@example.com', phones=[{'number': '555-1234', 'label': 'work'}],
         )
         existing = Business.objects.create(business_name='Argon.AI', default_contact=dc)
         response = self.client.get('/api/businesses/check-name/?name=argon.ai')
@@ -232,14 +232,14 @@ class CustomerFinancialsAPITest(BaseTestCase):
 
         self.contact = Contact.objects.create(
             first_name='Dana', last_name='Whitfield', email='dana@harbor.test',
-            mobile_number='555-0162', work_number='555-0147')
+            phones=[{'number': '555-0147', 'label': 'work'}, {'number': '555-0162', 'label': 'mobile'}])
         self.business = Business.objects.create(
             business_name='Harbor Light', default_contact=self.contact)
         self.contact.business = self.business
         self.contact.save()
         self.sibling = Contact.objects.create(
             first_name='Marcus', last_name='Lee', email='marcus@harbor.test',
-            business=self.business, work_number='555-0171')
+            business=self.business, phones=[{'number': '555-0171', 'label': 'work'}])
 
         now = timezone.now()
         self.t_first = now - timedelta(days=400)
@@ -323,11 +323,11 @@ class CustomerFinancialsAPITest(BaseTestCase):
         self.assertEqual({j['job_number'] for j in r.data['jobs']}, {'JOB-CF-1', 'JOB-CF-2'})
         self.assertIn('estimated_amount', r.data['jobs'][0])
 
-    def test_business_contacts_carry_work_number(self):
+    def test_business_contacts_carry_primary_phone(self):
         r = self.client.get(f'/api/businesses/{self.business.business_id}/')
         by_id = {c['contact_id']: c for c in r.data['contacts']}
-        self.assertEqual(by_id[self.sibling.contact_id]['work_number'], '555-0171')
-        self.assertEqual(by_id[self.contact.contact_id]['mobile_number'], '555-0162')
+        self.assertEqual(by_id[self.sibling.contact_id]['phone'], '555-0171')
+        self.assertEqual(by_id[self.contact.contact_id]['phone'], '555-0147')
 
     def test_business_payload_carries_terms_name(self):
         r = self.client.get(f'/api/businesses/{self.business.business_id}/')

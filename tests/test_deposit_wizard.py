@@ -25,7 +25,7 @@ class DepositCreditPoolTest(TestCase):
             code='DEP', name='Deposits', taxable=False, is_deposit=True)
         contact = Contact.objects.create(
             first_name='J', last_name='D', email='j@d.com',
-            mobile_number='555')
+            phones=[{'number': '555', 'label': 'mobile'}])
         self.job = Job.objects.create(
             contact=contact, job_number='JOB-2026-0001',
             status=Job.STATUS_APPROVED)
@@ -64,7 +64,7 @@ class DepositCreditPoolTest(TestCase):
     def test_other_jobs_deposits_not_offered(self):
         contact2 = Contact.objects.create(
             first_name='K', last_name='E', email='k@e.com',
-            mobile_number='556')
+            phones=[{'number': '556', 'label': 'mobile'}])
         job2 = Job.objects.create(
             contact=contact2, job_number='JOB-2026-0002',
             status=Job.STATUS_APPROVED)

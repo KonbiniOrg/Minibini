@@ -1,13 +1,11 @@
-import re
 from django.core.exceptions import ValidationError
-from django.db.models import Q, Value
+from django.db.models import Q
 from django.db.models.deletion import ProtectedError
-from django.db.models.functions import Replace
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.contacts.models import Contact, Business, PaymentTerms, Tag
+from apps.contacts.models import Contact, Business, PaymentTerms, Tag, strip_phone
 from apps.contacts.services import ContactService
 from apps.core.models import CrmHistory
 from apps.core.history import record_history
@@ -17,6 +15,17 @@ from apps.api.permissions import CanManageJobs, CanManageConfig
 from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import ContactSerializer, ContactDetailSerializer, BusinessSerializer, BusinessDetailSerializer, PaymentTermsSerializer, TagSerializer
 
+
+
+def _apply_status_filter(qs, request):
+    """?status=active (default) | inactive | all. Unknown values fall back
+    to the default so a typo can't leak inactive rows into a chooser."""
+    status_param = request.query_params.get('status', 'active')
+    if status_param == 'all':
+        return qs
+    if status_param == 'inactive':
+        return qs.filter(is_active=False)
+    return qs.filter(is_active=True)
 
 
 def _financials_payload(rollup):
@@ -49,6 +58,8 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related('tags')
+        if self.action == 'list':
+            qs = _apply_status_filter(qs, self.request)
         business = self.request.query_params.get('business')
         if business:
             qs = qs.filter(business_id=business)
@@ -63,22 +74,7 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
 
         search = self.request.query_params.get('search', '').strip()
         if search:
-            phone_search = re.sub(r'[\s\-.()+]', '', search)
-
-            def strip_phone(field):
-                return Replace(Replace(Replace(Replace(Replace(
-                    field,
-                    Value(' '), Value('')),
-                    Value('-'), Value('')),
-                    Value('.'), Value('')),
-                    Value('('), Value('')),
-                    Value(')'), Value(''))
-
-            qs = qs.annotate(
-                mobile_clean=strip_phone('mobile_number'),
-                work_clean=strip_phone('work_number'),
-                home_clean=strip_phone('home_number'),
-            )
+            phone_search = strip_phone(search)
             q = (
                 Q(first_name__icontains=search) |
                 Q(last_name__icontains=search) |
@@ -86,11 +82,7 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
                 Q(business__business_name__icontains=search)
             )
             if phone_search:
-                q |= (
-                    Q(mobile_clean__icontains=phone_search) |
-                    Q(work_clean__icontains=phone_search) |
-                    Q(home_clean__icontains=phone_search)
-                )
+                q |= Q(phones_digits__icontains=phone_search)
             qs = qs.filter(q)
         return qs
 
@@ -154,6 +146,16 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
             'message': f'"{contact}" has been deleted.',
         })
 
+    @action(detail=True, methods=['post'], url_path='deactivate')
+    def deactivate(self, request, pk=None):
+        obj = ContactService.deactivate_contact(self.get_object())
+        return Response(ContactSerializer(obj).data)
+
+    @action(detail=True, methods=['post'], url_path='reactivate')
+    def reactivate(self, request, pk=None):
+        obj = ContactService.reactivate_contact(self.get_object())
+        return Response(ContactSerializer(obj).data)
+
     @action(detail=True, methods=['get'], url_path='history', url_name='history')
     def history(self, request, pk=None):
         contact = self.get_object()
@@ -176,12 +178,7 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
                 {'text': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        entry = record_history(
-            entry_type='note',
-            object_type='contact',
-            object_id=obj.pk,
-            text=text,
-        )
+        entry = ContactService.add_note(obj, 'contact', text)
         serializer = HistoryEntrySerializer(entry)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -223,6 +220,8 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related('tags')
+        if self.action == 'list':
+            qs = _apply_status_filter(qs, self.request)
         starts_with = self.request.query_params.get('starts_with')
         if starts_with == '0-9':
             qs = qs.filter(business_name__regex=r'^[0-9]')
@@ -234,12 +233,13 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
 
         search = self.request.query_params.get('search', '').strip()
         if search:
-            qs = qs.filter(
-                Q(business_name__icontains=search) |
-                Q(our_reference_code__icontains=search) |
-                Q(business_phone__icontains=search) |
-                Q(business_address__icontains=search)
-            )
+            q = (Q(business_name__icontains=search) |
+                 Q(our_reference_code__icontains=search) |
+                 Q(business_address__icontains=search))
+            phone_search = strip_phone(search)
+            if phone_search:
+                q |= Q(phones_digits__icontains=phone_search)
+            qs = qs.filter(q)
         return qs
 
     def get_serializer_class(self):
@@ -341,6 +341,20 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         business = self.get_object()
         return Response(BusinessSerializer(business).data)
 
+    @action(detail=True, methods=['post'], url_path='deactivate')
+    def deactivate(self, request, pk=None):
+        obj = ContactService.deactivate_business(self.get_object())
+        return Response(BusinessSerializer(obj).data)
+
+    @action(detail=True, methods=['post'], url_path='reactivate')
+    def reactivate(self, request, pk=None):
+        obj = ContactService.reactivate_business(self.get_object())
+        return Response(BusinessSerializer(obj).data)
+
+    @action(detail=True, methods=['get'], url_path='deactivate-impact')
+    def deactivate_impact(self, request, pk=None):
+        return Response(ContactService.deactivate_business_impact(self.get_object()))
+
     @action(detail=True, methods=['get'], url_path='history', url_name='history')
     def history(self, request, pk=None):
         business = self.get_object()
@@ -365,12 +379,7 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
                 {'text': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        entry = record_history(
-            entry_type='note',
-            object_type='business',
-            object_id=obj.pk,
-            text=text,
-        )
+        entry = ContactService.add_note(obj, 'business', text)
         serializer = HistoryEntrySerializer(entry)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 

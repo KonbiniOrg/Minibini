@@ -17,8 +17,8 @@
     {#if business.our_reference_code}
       {business.our_reference_code}<br>
     {/if}
-    {#if business.business_phone}
-      {business.business_phone}<br>
+    {#if business.phones?.[0]?.number}
+      {business.phones[0].number}<br>
     {/if}
   </p>
 {/if}

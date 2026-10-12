@@ -51,6 +51,14 @@ class BaseWizardService:
     # ChangeOrderWizardService inherits that.
     allows_per_unit = False
 
+    @classmethod
+    def _assert_job_mutable(cls, container, action):
+        """Freeze guard (contacts-refine §5.1): every public wizard mutator
+        funnels through this one check, so a job frozen by an inactive
+        contact/business refuses atom edits on any document type."""
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(container.job, action)
+
     # ── subclass hooks (must be implemented) ───────────────────────────
     @classmethod
     def _line_item_model(cls):
@@ -518,6 +526,7 @@ class BaseWizardService:
         Returns the restamped atom instance."""
         from django.core.exceptions import ObjectDoesNotExist
 
+        cls._assert_job_mutable(container, 'edit this document')
         source_model = cls._source_model()
         try:
             coerced_id = int(source_id)
@@ -620,6 +629,7 @@ class BaseWizardService:
         (a transient attribute, not a model field) for the caller to
         surface. No structural link is stored between the two lines (spec
         §5.3/§9 — the CO sibling reminder is the net)."""
+        cls._assert_job_mutable(container, 'edit this document')
         cls._validate_draft(container)
 
         if per_unit and not cls.allows_per_unit:
@@ -778,6 +788,7 @@ class BaseWizardService:
         would silently contribute $0 to `_sum_per_unit_sources`. Append
         semantics for a per-unit line are deferred to the modal-restructure
         phase (spec §10)."""
+        cls._assert_job_mutable(getattr(line_item, cls.container_attr), 'edit this document')
         cls._validate_draft(getattr(line_item, cls.container_attr))
 
         if getattr(line_item, 'per_unit', False):
@@ -822,6 +833,7 @@ class BaseWizardService:
         from apps.core.adjustments import recompute_adjustments
 
         container = getattr(line_item, cls.container_attr)
+        cls._assert_job_mutable(container, 'edit this document')
         cls._validate_draft(container)
 
         old_sum = cls._line_sum(line_item)

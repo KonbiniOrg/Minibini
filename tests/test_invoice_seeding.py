@@ -43,7 +43,7 @@ class InvoiceSeedingTestCase(TestCase):
             code='MISC-SEED', name='Misc-Seed', taxable=False)
         contact = Contact.objects.create(
             first_name='Seed', last_name='Test', email='seed@test.com',
-            mobile_number='555-0100',
+            phones=[{'number': '555-0100', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=contact, status=Job.STATUS_APPROVED,

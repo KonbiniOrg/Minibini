@@ -9,7 +9,7 @@
   // place; Escape / "Go Back and Edit" return to the form with every typed
   // value intact. Escape again closes. (No stacked modal — RM 2026-10-10.)
   import { push } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { triageError } from '../../lib/errorTriage.js';
   import { showError } from '../../stores/messages.js';
   import Modal from '../Modal.svelte';
@@ -66,6 +66,17 @@
     else onClose();
   }
 
+  async function reactivateExisting() {
+    const id = duplicateContact.contact_id;
+    try {
+      await api.post(`/api/contacts/${id}/reactivate/`, {});
+      onClose();
+      push(`/contacts/${id}`);
+    } catch (e) {
+      showError(errorMessage(e, 'Could not reactivate the contact.'));
+    }
+  }
+
   function viewExisting() {
     const id = duplicateContact.contact_id;
     onClose();
@@ -81,6 +92,7 @@
     <DuplicateContactNotice
       contact={duplicateContact}
       onViewExisting={viewExisting}
+      onReactivate={reactivateExisting}
       onBack={() => { duplicateContact = null; }}
     />
   {/if}

@@ -46,7 +46,7 @@ class AutoReleaseBase(TestCase):
             taxable=False, is_deposit=True,
         )
         self.contact = Contact.objects.create(
-            first_name='A', last_name='R', email='ar@test.com', mobile_number='555-0200',
+            first_name='A', last_name='R', email='ar@test.com', phones=[{'number': '555-0200', 'label': 'mobile'}],
         )
         self.scheme = RateScheme.objects.create(
             name='Hourly-AR', algorithm=RateScheme.ELAPSED_TIME,

@@ -15,6 +15,9 @@ from decimal import Decimal
 
 from nealsdata.converter import parsing as P
 
+# Mirrors apps.contacts' phone-digit stripping (converter stays standalone).
+_PHONE_STRIP = re.compile(r'[\s\-.()+]')
+
 # Material unit cost as a fraction of sell price, for materials not linked to a
 # PriceListItem. Mirrors the PriceListItem purchase_price factor so linked and
 # unlinked materials cost consistently.
@@ -480,6 +483,8 @@ def _emit_contact(c, business_pk, fa_row=None, fallback_name=None):
     mobile = _anonymize_phone(mobile) if mobile else ''
     if not work and not mobile:
         work = '555-555-5555'
+    phones = [{'number': n[:50], 'label': lab}
+              for n, lab in ((work, 'work'), (mobile, 'mobile')) if n]
 
     c.add_fixture('contacts.contact', contact_pk, {
         'first_name': first,
@@ -488,9 +493,9 @@ def _emit_contact(c, business_pk, fa_row=None, fallback_name=None):
         'email': email,
         'addr1': '', 'addr2': '', 'addr3': '',
         'city': '', 'municipality': '', 'postal_code': '', 'country_code': '',
-        'mobile_number': mobile[:20],
-        'work_number': work[:20],
-        'home_number': '',
+        'phones': phones,
+        'phones_digits': ' '.join(_PHONE_STRIP.sub('', ph['number']) for ph in phones),
+        'is_active': True,
         'business': business_pk,
         'qbo_customer_id': None,
     })
@@ -546,7 +551,9 @@ def _emit_business(c, key, info):
         'our_reference_code': f'BUS-{business_pk:04d}',
         'default_contact': default_pk,
         'business_address': '',
-        'business_phone': '',
+        'phones': [],
+        'phones_digits': '',
+        'is_active': True,
         'tax_exemption_number': '',
         'website': '',
         'terms': None,

@@ -444,6 +444,7 @@
     onCancelLineItem={handleCancelLineItem}
     onReverseReceipt={handleReverseReceipt}
     onChangeLineJob={handleChangeLineJob}
+    onReload={loadPO}
   />
 
   {#if showReceiveForm}

@@ -3,6 +3,8 @@
   import Modal from '../Modal.svelte';
   import JobPicker from '../JobPicker.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
+  import FrozenPartyBanner from '../FrozenPartyBanner.svelte';
+  import ChangeContactModal from '../ChangeContactModal.svelte';
 
   const {
     po,
@@ -20,7 +22,10 @@
     onCancelLineItem = null,
     onReverseReceipt = null,
     onChangeLineJob = null,
+    onReload = () => {},
   } = $props();
+
+  let swapOpen = $state(false);
 
   let lineItems = $derived(
     (po.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
@@ -162,15 +167,28 @@
   <span class="status-badge status-{po.status}">{po.status.replace(/_/g, ' ')}</span>
 </div>
 
+{#if po.business_is_active === false}
+  <FrozenPartyBanner kind="po" partyName={po.business_name} partyHref={`#/businesses/${po.business}`} businessActive={false} />
+{:else if po.contact_is_active === false}
+  <FrozenPartyBanner kind="po" partyName={po.contact_name || `Contact #${po.contact}`} partyHref={`#/contacts/${po.contact}`}
+    businessName={po.business_name} businessActive={true}
+    onChangeContact={canManageFinancials ? () => { swapOpen = true; } : null} />
+{/if}
+
+<ChangeContactModal open={swapOpen} patchUrl={`/api/purchase-orders/${po.po_id}/`} businessId={po.business}
+  onSaved={onReload} onClose={() => { swapOpen = false; }} />
+
 <p><strong>Vendor:</strong>
   {#if po.business}
     <a href="#/businesses/{po.business}">{po.business_name}</a>
+    {#if po.business_is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}
   {:else}
     —
   {/if}
 </p>
 {#if po.contact}
-  <p><strong>Contact:</strong> <a href="#/contacts/{po.contact}">{po.contact_name || `Contact #${po.contact}`}</a></p>
+  <p><strong>Contact:</strong> <a href="#/contacts/{po.contact}">{po.contact_name || `Contact #${po.contact}`}</a>
+  {#if po.contact_is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}</p>
 {/if}
 <p><strong>Created:</strong> {formatDate(po.created_date)}</p>
 {#if po.requested_date}

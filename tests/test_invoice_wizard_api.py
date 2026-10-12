@@ -21,7 +21,7 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.user = User.objects.create_user(username='test', password='pw')
         self.user.user_permissions.add(
@@ -106,7 +106,7 @@ class SourcePoolEndpointTest(TestCase):
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.user = User.objects.create_user(username='test', password='pw')
         self.user.user_permissions.add(
@@ -181,7 +181,7 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.user = User.objects.create_user(username='test', password='pw')
         self.user.user_permissions.add(
@@ -291,7 +291,7 @@ class AddAtomsEndpointTest(TestCase):
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.user = User.objects.create_user(username='test', password='pw')
         self.user.user_permissions.add(
@@ -390,7 +390,7 @@ class RemoveAtomsEndpointTest(TestCase):
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.user = User.objects.create_user(username='test', password='pw')
         self.user.user_permissions.add(
@@ -477,7 +477,7 @@ class StartInvoiceWizardEndpointTest(TestCase):
 
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.user = User.objects.create_user(username='test', password='pw')
         self.user.user_permissions.add(

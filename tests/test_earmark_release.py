@@ -16,7 +16,7 @@ class EarmarkReleaseOnWorkCompleteTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Contact',
-            email='test@example.com', work_number='555-0100',
+            email='test@example.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.job = Job.objects.create(
             job_number='J-REL-001', contact=self.contact,
@@ -91,7 +91,7 @@ class EarmarkReleaseTransitionTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Contact',
-            email='test2@example.com', work_number='555-0200',
+            email='test2@example.com', phones=[{'number': '555-0200', 'label': 'work'}],
         )
         self.job = Job.objects.create(
             job_number='J-REL-T-001', contact=self.contact,

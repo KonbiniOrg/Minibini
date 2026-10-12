@@ -4,7 +4,7 @@
 //   - which rows a section hides behind "show N completed / paid / closed"
 //   - the toggle's label, the human status label
 //   - section ordering (populated first, canonical order within)
-//   - the Delete-vs-Deactivate rule the banner follows
+//   - the Delete-offered rule the banner follows (Deactivate/Reactivate always shown)
 //   - the banner's facts line and the contact page's sibling list
 
 const CLOSED_JOB = new Set(['completed', 'rejected', 'cancelled']);
@@ -44,7 +44,7 @@ export function orderSections(sections) {
 }
 
 // Mirrors ContactService's delete guards so the banner can offer Delete only
-// when the server would accept it; otherwise the (placeholder) Deactivate.
+// when the server would accept it; otherwise only Deactivate is offered.
 export function canDeleteBusiness({ jobs, poCount, contacts }) {
   return (jobs?.length ?? 0) === 0 && (poCount ?? 0) === 0 && (contacts?.length ?? 0) <= 1;
 }

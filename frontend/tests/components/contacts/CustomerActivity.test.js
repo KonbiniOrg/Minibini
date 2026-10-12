@@ -14,8 +14,8 @@ const INVOICES = [
   { invoice_id: 6, display_number: 'INV-6', job: 2, job_number: 'JOB-2025-0391', status: 'paid', sent_date: null, total: '100.00', amount_paid: '100.00', balance: '0.00' },
 ];
 const CONTACTS = [
-  { contact_id: 9, name: 'Dana Whitfield', email: 'dana@x.test', mobile_number: '555-0162', work_number: '' },
-  { contact_id: 10, name: 'Marcus Lee', email: '', mobile_number: '', work_number: '555-0171' },
+  { contact_id: 9, name: 'Dana Whitfield', email: 'dana@x.test', phone: '555-0162' },
+  { contact_id: 10, name: 'Marcus Lee', email: '', phone: '555-0171' },
 ];
 
 const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
@@ -147,5 +147,19 @@ describe('CustomerActivity — Contacts (business pages)', () => {
     });
     expect(headersOf(section(container, 'contacts').querySelector('table'))).toEqual(['Name', 'Email', 'Phone']);
     expect(queryByRole('button', { name: 'New contact' })).toBeNull();
+  });
+
+  it('shows no row actions for an inactive contact', () => {
+    const contacts = [
+      { contact_id: 9, name: 'Dana Whitfield', email: 'd@x.test', phone: '1', is_active: true },
+      { contact_id: 10, name: 'Gone Away', email: '', phone: '2', is_active: false },
+    ];
+    const { container } = render(CustomerActivity, {
+      props: { jobs: JOBS, contacts, defaultContactId: 9, onNewJobFor: vi.fn(), onSetDefault: vi.fn() },
+    });
+    const rows = section(container, 'contacts').querySelectorAll('tbody tr');
+    expect(within(rows[0]).getByRole('button', { name: 'New job' })).toBeInTheDocument();
+    expect(within(rows[1]).queryByRole('button', { name: 'New job' })).toBeNull();
+    expect(within(rows[1]).queryByRole('button', { name: 'Set as default' })).toBeNull();
   });
 });

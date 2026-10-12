@@ -44,7 +44,7 @@ class ContactTagTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
         self.contact = Contact.objects.create(
             first_name='Tag', last_name='Subject',
-            email='tagsubject@test.com', mobile_number='555-100-0001',
+            email='tagsubject@test.com', phones=[{'number': '555-100-0001', 'label': 'mobile'}],
         )
 
     def test_add_new_tag_creates_tag_and_attaches_to_contact(self):
@@ -135,7 +135,7 @@ class BusinessTagTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
         dc = Contact.objects.create(
             first_name='BizTag', last_name='Contact',
-            email='biztag@test.com', mobile_number='555-100-0002',
+            email='biztag@test.com', phones=[{'number': '555-100-0002', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Tag Test Corp',
@@ -191,11 +191,11 @@ class TagSharingTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
         self.contact = Contact.objects.create(
             first_name='Share', last_name='Contact',
-            email='share@test.com', mobile_number='555-100-0003',
+            email='share@test.com', phones=[{'number': '555-100-0003', 'label': 'mobile'}],
         )
         dc = Contact.objects.create(
             first_name='Share', last_name='BizContact',
-            email='sharebiz@test.com', mobile_number='555-100-0004',
+            email='sharebiz@test.com', phones=[{'number': '555-100-0004', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Share Tag Corp',
@@ -242,11 +242,11 @@ class TagDeleteAPITest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
         self.contact = Contact.objects.create(
             first_name='Global', last_name='Tagged',
-            email='globaltag@test.com', mobile_number='555-100-0005',
+            email='globaltag@test.com', phones=[{'number': '555-100-0005', 'label': 'mobile'}],
         )
         dc = Contact.objects.create(
             first_name='Global', last_name='BizContact',
-            email='globaltagbiz@test.com', mobile_number='555-100-0006',
+            email='globaltagbiz@test.com', phones=[{'number': '555-100-0006', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Global Tag Corp',

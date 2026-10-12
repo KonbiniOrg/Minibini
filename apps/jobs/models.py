@@ -122,6 +122,21 @@ class Job(AbstractWorkContainer):
         ),
     )
 
+    @staticmethod
+    def _is_inactive_contact_swap(old_contact, new_contact):
+        """Spec 5.1 escape hatch: old contact inactive, new contact active,
+        same non-null business, that business active."""
+        if new_contact is None or old_contact is None:
+            return False
+        business = new_contact.business
+        return (
+            not old_contact.is_active
+            and new_contact.is_active
+            and old_contact.business_id is not None
+            and new_contact.business_id == old_contact.business_id
+            and business is not None and business.is_active
+        )
+
     def clean(self):
         """Validate Job state transitions and protect immutable date fields."""
         super().clean()
@@ -165,11 +180,14 @@ class Job(AbstractWorkContainer):
                     self.completed_date = old_job.completed_date
 
                 # Contact is only reassignable while the job is still a draft
-                # (before it's been submitted for approval).
+                # (before it's been submitted for approval) — except the
+                # inactive-contact escape (spec 5.1): a frozen job may move to
+                # an active contact at the same active business.
                 if old_job.contact_id != self.contact_id and old_status != Job.STATUS_DRAFT:
-                    raise ValidationError(
-                        'Cannot change the contact once a Job has left draft status.'
-                    )
+                    if not self._is_inactive_contact_swap(old_job.contact, self.contact):
+                        raise ValidationError(
+                            'Cannot change the contact once a Job has left draft status.'
+                        )
 
                 # If status hasn't changed, no validation needed
                 if old_status == self.status:

@@ -570,7 +570,7 @@ class SFMOMAIntegrationTest(TestCase):
         )
         contact = Contact.objects.create(
             first_name='SFMOMA', last_name='Admin',
-            email='admin@sfmoma.org', mobile_number='555-0100',
+            email='admin@sfmoma.org', phones=[{'number': '555-0100', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='SFMOMA', default_contact=contact,

@@ -29,7 +29,7 @@ test.describe('with can_manage_jobs', () => {
     await page.goto(`/#/contacts/${contactId}`);
     await expect(page.getByRole('heading', { name: contact.name })).toBeVisible();
 
-    await test.step('Banner: business link, New Job button, Edit, Deactivate placeholder (the contact has jobs)', async () => {
+    await test.step('Banner: business link, New Job button, Edit, Deactivate (the contact has jobs)', async () => {
       const banner = page.locator('.customer-header');
       await expect(banner.getByRole('link', { name: business.business_name })).toHaveAttribute('href', `#/businesses/${business.business_id}`);
       if (contactId === business.default_contact.contact_id) {
@@ -37,7 +37,7 @@ test.describe('with can_manage_jobs', () => {
       }
       await expect(page.getByRole('button', { name: 'New Job', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Deactivate' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Deactivate' })).toBeEnabled();
       await expect(page.getByRole('button', { name: 'Delete…' })).toHaveCount(0);
     });
 

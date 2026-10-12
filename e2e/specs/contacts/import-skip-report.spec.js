@@ -18,7 +18,7 @@ test('partial commit imports the clean row and reports the skipped one', async (
   await panel.getByRole('button', { name: 'Apply selected' }).click();
 
   // The skip report names the row and the conflict.
-  await expect(panel.getByText("1 contact couldn't be imported:")).toBeVisible();
+  await expect(panel.getByText("1 contact couldn't be applied:")).toBeVisible();
   await expect(panel.getByText(/Dupmail Company E2E: duplicate email with/))
     .toBeVisible();
 

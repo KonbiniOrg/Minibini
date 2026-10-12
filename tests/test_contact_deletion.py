@@ -25,7 +25,7 @@ class ContactDeletionModelTest(TestCase):
             first_name='Only',
             last_name='Contact',
             email='only@test.com',
-            work_number='555-1234'
+            phones=[{'number': '555-1234', 'label': 'work'}]
         )
         business = Business.objects.create(
             business_name="Test Business",
@@ -55,13 +55,13 @@ class ContactDeletionModelTest(TestCase):
             first_name='First',
             last_name='Contact',
             email='first@test.com',
-            work_number='555-1111'
+            phones=[{'number': '555-1111', 'label': 'work'}]
         )
         contact2 = Contact.objects.create(
             first_name='Second',
             last_name='Contact',
             email='second@test.com',
-            work_number='555-2222'
+            phones=[{'number': '555-2222', 'label': 'work'}]
         )
         business = Business.objects.create(
             business_name="Test Business",
@@ -90,13 +90,13 @@ class ContactDeletionModelTest(TestCase):
             first_name='Default',
             last_name='Contact',
             email='default@test.com',
-            work_number='555-1111'
+            phones=[{'number': '555-1111', 'label': 'work'}]
         )
         contact2 = Contact.objects.create(
             first_name='Other',
             last_name='Contact',
             email='other@test.com',
-            work_number='555-2222'
+            phones=[{'number': '555-2222', 'label': 'work'}]
         )
         business = Business.objects.create(
             business_name="Test Business",
@@ -121,7 +121,7 @@ class ContactDeletionModelTest(TestCase):
             first_name='Independent',
             last_name='Contact',
             email='independent@test.com',
-            work_number='555-1234'
+            phones=[{'number': '555-1234', 'label': 'work'}]
         )
 
         # Should not raise any exception

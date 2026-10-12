@@ -23,7 +23,7 @@ def _make_adjustment_fixture(test_case):
 
     contact = Contact.objects.create(
         first_name='Adj', last_name='Test',
-        email='adj@test.com', mobile_number='555-0001',
+        email='adj@test.com', phones=[{'number': '555-0001', 'label': 'mobile'}],
     )
     cat = AccountingCategory.objects.create(name='AdjCat', code='ADJC')
     svc = RateScheme.objects.create(
@@ -336,7 +336,7 @@ class BillabilityGateTest(BaseTestCase):
 
         self.contact = Contact.objects.create(
             first_name='Bill', last_name='Test',
-            email='bill@test.com', mobile_number='555-9999',
+            email='bill@test.com', phones=[{'number': '555-9999', 'label': 'mobile'}],
         )
         self.cat = AccountingCategory.objects.create(name='BillCat', code='BCAT')
         self.scheme = RateScheme.objects.create(
@@ -754,7 +754,7 @@ class InvoiceAutoSeedAPITest(BaseTestCase):
 
         contact = Contact.objects.create(
             first_name='Seed', last_name='API',
-            email='seed-api@test.com', mobile_number='555-0200',
+            email='seed-api@test.com', phones=[{'number': '555-0200', 'label': 'mobile'}],
         )
         self.cat = AccountingCategory.objects.create(
             code='LAB-SEEDAPI', name='Labor-SeedAPI', taxable=False,
@@ -870,7 +870,7 @@ class InvoiceLineBackingAPITest(BaseTestCase):
 
         self.contact = Contact.objects.create(
             first_name='Backing', last_name='Test',
-            email='backing@test.com', mobile_number='555-0300',
+            email='backing@test.com', phones=[{'number': '555-0300', 'label': 'mobile'}],
         )
         self.cat = AccountingCategory.objects.create(
             code='LAB-BACK', name='Labor-Backing', taxable=False,

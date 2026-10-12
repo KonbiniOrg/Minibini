@@ -91,6 +91,17 @@
     else onClose();
   }
 
+  async function reactivateExisting() {
+    const id = duplicateContact.contact_id;
+    try {
+      await api.post(`/api/contacts/${id}/reactivate/`, {});
+      onClose();
+      push(`/contacts/${id}`);
+    } catch (e) {
+      showError(errorMessage(e, 'Could not reactivate the contact.'));
+    }
+  }
+
   function go(path) { onClose(); push(path); }
 </script>
 
@@ -101,6 +112,7 @@
   {#if duplicateContact}
     <DuplicateContactNotice contact={duplicateContact}
       onViewExisting={() => go(`/contacts/${duplicateContact.contact_id}`)}
+      onReactivate={reactivateExisting}
       onBack={() => { duplicateContact = null; }} />
   {:else if duplicateBusiness}
     <DuplicateBusinessNotice business={duplicateBusiness}

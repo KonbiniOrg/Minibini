@@ -21,7 +21,7 @@ class APIPODeleteSeverTest(TestCase):
         self.user = User.objects.create_user(username='u', password='p')
         self.user.user_permissions.add(
             Permission.objects.get(codename='can_manage_financials'))
-        c = Contact.objects.create(first_name='V', last_name='V', work_number='5')
+        c = Contact.objects.create(first_name='V', last_name='V', phones=[{'number': '5', 'label': 'work'}])
         self.business = Business.objects.create(business_name='B', default_contact=c)
         c.business = self.business
         c.save()

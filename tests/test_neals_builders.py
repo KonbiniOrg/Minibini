@@ -278,12 +278,22 @@ class ContactBuildersTest(unittest.TestCase):
         # Every Business.default_contact resolves to a real Contact.
         for b in businesses:
             self.assertIn(b['fields']['default_contact'], contact_pks)
-        # Every contact has an email and at least one phone.
+        # Every contact has an email and a well-formed phones list with at
+        # least one entry (the converter synthesizes 555-555-5555 when the
+        # export has none), plus the active flag.
         for ct in contacts:
             self.assertTrue(ct['fields']['email'])
-            self.assertTrue(ct['fields']['work_number'] or
-                            ct['fields']['mobile_number'] or
-                            ct['fields']['home_number'])
+            phones = ct['fields']['phones']
+            self.assertIsInstance(phones, list)
+            self.assertGreaterEqual(len(phones), 1)
+            for p in phones:
+                self.assertEqual(set(p), {'number', 'label'})
+                self.assertTrue(p['number'])
+            self.assertTrue(ct['fields']['is_active'])
+            self.assertNotIn('work_number', ct['fields'])
+        for b in businesses:
+            self.assertEqual(b['fields']['phones'], [])
+            self.assertTrue(b['fields']['is_active'])
         # Each entity in the map is consistent: individuals carry a null-business
         # Contact; businesses carry a Business whose contacts all FK to it.
         by_pk = {ct['pk']: ct['fields'] for ct in contacts}

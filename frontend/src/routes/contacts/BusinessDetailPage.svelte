@@ -1,5 +1,7 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import FormMessage from '../../components/FormMessage.svelte';
   import { showError, showSuccess } from '../../stores/messages.js';
   import { canManageJobs } from '../../stores/permissions.js';
   import { canDeleteBusiness } from '../../lib/customerActivity.js';
@@ -27,6 +29,11 @@
   // Two-phase delete: the first DELETE's impact payload opens the confirm modal.
   let deleteImpact = $state(null);
   let deleting = $state(false);
+  let actionError = $state('');
+  // Deactivating a business cascades to its contacts, so it alone confirms
+  // (modal fed by the deactivate-impact endpoint). Reactivate is direct.
+  let deactivateImpact = $state(null);
+  let deactivating = $state(false);
 
   // The tables show everything (closed rows behind the show-N toggle), so
   // the lists are fetched whole; 100 is the documented ceiling.
@@ -75,6 +82,47 @@
     }
   }
 
+  async function requestDeactivate() {
+    actionError = '';
+    try {
+      const impact = await api.get(`/api/businesses/${params.id}/deactivate-impact/`);
+      if (impact.blockers?.length) {
+        actionError = `Cannot deactivate ${business.business_name}: ${impact.blockers.join('; ')}.`;
+        return;
+      }
+      deactivateImpact = impact;
+    } catch (e) {
+      const t = triageError(e);
+      if (t.overlay) showError(t.overlay); else actionError = t.message;
+    }
+  }
+
+  async function confirmDeactivate() {
+    deactivating = true;
+    try {
+      await api.post(`/api/businesses/${params.id}/deactivate/`, {});
+      deactivateImpact = null;
+      await loadBusiness();
+    } catch (e) {
+      const t = triageError(e);
+      if (t.overlay) showError(t.overlay); else actionError = t.message;
+      deactivateImpact = null;
+    } finally {
+      deactivating = false;
+    }
+  }
+
+  async function reactivate() {
+    actionError = '';
+    try {
+      await api.post(`/api/businesses/${params.id}/reactivate/`, {});
+      await loadBusiness();
+    } catch (e) {
+      const t = triageError(e);
+      if (t.overlay) showError(t.overlay); else actionError = t.message;
+    }
+  }
+
   async function requestDelete() {
     try {
       const result = await api.delete(`/api/businesses/${params.id}/`);
@@ -103,6 +151,7 @@
     }
   }
 
+  let active = $derived(business?.is_active !== false);
   let canDelete = $derived(business
     ? canDeleteBusiness({ jobs: business.jobs, poCount: purchaseOrders.length, contacts: business.contacts })
     : false);
@@ -120,20 +169,24 @@
     defaultContact={business.default_contact}
     contactCount={business.contacts?.length ?? null}
     terms={business.terms_name}
+    inactive={!active}
     {financials}
   >
     {#snippet actions()}
       {#if $canManageJobs}
-        {#if business.default_contact}
-          <button type="button" class="banner-btn" onclick={() => { newJobFor = business.default_contact.contact_id; }}>New Job</button>
+        {#if active}
+          {#if business.default_contact}
+            <button type="button" class="banner-btn" onclick={() => { newJobFor = business.default_contact.contact_id; }}>New Job</button>
+          {/if}
+          <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
+          <button type="button" class="edit-link header-action" onclick={requestDeactivate}>Deactivate</button>
+        {:else}
+          <button type="button" class="edit-link header-action" onclick={reactivate}>Reactivate</button>
         {/if}
-        <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
         {#if canDelete}
           <button type="button" class="edit-link header-action danger" onclick={requestDelete}>Delete…</button>
-        {:else}
-          <!-- Placeholder: the active flag + Reactivate path ship separately (external tracker). -->
-          <button type="button" class="edit-link header-action danger" disabled title="Not available yet">Deactivate</button>
         {/if}
+        <FormMessage error={actionError} />
       {/if}
     {/snippet}
   </CustomerHeader>
@@ -146,6 +199,7 @@
     onAddNote={handleAddNote}
     onSetDefault={handleSetDefault}
     onNewJobFor={(id) => { newJobFor = id; }}
+    readonly={!active}
   />
 
   <BusinessFormModal
@@ -155,6 +209,17 @@
     onClose={() => { editOpen = false; }}
   />
   <JobCreateModal open={newJobFor != null} defaultContactId={newJobFor} onClose={() => { newJobFor = null; }} />
+
+  <Modal open={deactivateImpact != null} onSave={confirmDeactivate} onCancel={() => { deactivateImpact = null; }}
+    busy={deactivating} maxWidth="480px" label="Deactivate business">
+    <h3>Deactivate {business.business_name}?</h3>
+    <p>This will deactivate <strong>{business.business_name}</strong> and its {deactivateImpact?.contact_count} contact(s)
+      ({deactivateImpact?.contact_names?.join(', ')}). They will be hidden from choosers and any records on them frozen until reactivated. Continue?</p>
+    <div class="modal-actions">
+      <button type="button" onclick={() => { deactivateImpact = null; }} disabled={deactivating}>Cancel</button>
+      <button type="button" onclick={confirmDeactivate} disabled={deactivating}>{deactivating ? 'Deactivating…' : 'Continue'}</button>
+    </div>
+  </Modal>
 
   <Modal open={deleteImpact != null} onSave={confirmDelete} onCancel={() => { deleteImpact = null; }}
     busy={deleting} maxWidth="480px" label="Delete business">

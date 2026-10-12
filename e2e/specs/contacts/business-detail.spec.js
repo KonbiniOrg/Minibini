@@ -26,10 +26,10 @@ test.describe('with can_manage_jobs', () => {
     await page.goto(`/#/businesses/${business.business_id}`);
     await expect(page.getByRole('heading', { name: business.business_name })).toBeVisible();
 
-    await test.step('Banner: New Job button, Edit, and the Deactivate placeholder (the business has jobs, so no Delete)', async () => {
+    await test.step('Banner: New Job button, Edit, and Deactivate (the business has jobs, so no Delete)', async () => {
       await expect(page.getByRole('button', { name: 'New Job', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Deactivate' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Deactivate' })).toBeEnabled();
       await expect(page.getByRole('button', { name: 'Delete…' })).toHaveCount(0);
     });
 

@@ -198,6 +198,7 @@ dd {
 .status-received_in_full { background: #d1fae5; color: #065f46; }
 .status-rejected { background: #fee2e2; color: #991b1b; }
 .status-cancelled { background: #fef3c7; color: #92400e; }
+.status-inactive { background: #e5e7eb; color: #4b5563; }
 .status-superseded { background: #fed7aa; color: #9a3412; }
 /* Task activity keys (lib/taskActivity.js vocabulary) */
 .status-working { background: #dcfce7; color: #166534; }

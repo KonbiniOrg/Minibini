@@ -59,6 +59,6 @@ class SeededDefaultsTest(TestCase):
         from apps.jobs.services import JobService
         contact = Contact.objects.create(
             first_name='Fresh', last_name='Tenant',
-            email='fresh@example.com', mobile_number='555-0000')
+            email='fresh@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}])
         job = JobService.create_job(contact=contact)
         self.assertTrue(job.job_number.startswith('JOB-'))

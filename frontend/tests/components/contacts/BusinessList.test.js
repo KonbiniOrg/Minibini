@@ -4,8 +4,8 @@ import { viewMode } from '@/stores/viewMode.js';
 import BusinessList from '@/components/contacts/BusinessList.svelte';
 
 const businesses = [
-  { business_id: 1, our_reference_code: 'ACM', business_name: 'Acme Corp', business_phone: '555-0200' },
-  { business_id: 2, our_reference_code: 'GLB', business_name: 'Globex', business_phone: null },
+  { business_id: 1, our_reference_code: 'ACM', business_name: 'Acme Corp', phone: '555-0200' },
+  { business_id: 2, our_reference_code: 'GLB', business_name: 'Globex', phone: '' },
 ];
 
 const headers = (c) => Array.from(c.querySelectorAll('thead th')).map((th) => th.textContent.trim());

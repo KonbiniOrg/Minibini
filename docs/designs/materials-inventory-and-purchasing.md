@@ -527,6 +527,16 @@ pill, the status-action endpoints, the estimate/invoice handlers).
 Material row creation and lifecycle ops. All earmark mutations route
 through `InventoryService._mutate_earmark`.
 
+**Frozen jobs (2026-10-11).** `create_on_job`, `update`/edit, restock, the
+metadata paths, and (final review) `draw_more`, `mark_on_hand`, `assign_task`,
+`consume` and `remove` (including its qty==0 branch) call `_assert_job_not_frozen(material.job, …)` (just ahead of
+the on-hold guard), so a job whose contact is inactive takes no material
+changes — see `jobs-and-tasks.md` §3.7. One deliberate exception (RM
+2026-10-11): `consume_if_task_started` — the sweep that `establish` runs for
+PO-receipt pricing and expense attach — returns the material untouched when
+its job is frozen, so booking stock or an expense against a frozen job's
+provisional material never fails; the material simply stays pending.
+
 | Operation | Effect |
 |---|---|
 | `create_on_job(*, job, task=None, ..., inventory_item=None, cost_source=None, customer_supplied=False)` | Creates `Material`. **Priced at authoring** (no item, non-zero `unit_cost`, `cost_source ∈ {None, entered}`) → born **established** via `establish` (mints `LOT-{pk}`). `customer_supplied=True` → born established at locked $0 (`cost_source='customer_supplied'`; rejects any pricing input). Item-backed or document-cost adds record `cost_source` without minting. Otherwise **provisional**. Earmarks `+quantity` **only for committed (`approved`+) jobs** — pre-approval jobs earmark later at acceptance |
@@ -915,8 +925,8 @@ the `Configuration` keys `po_number_sequence` / `po_counter`.
 
 | Method | Purpose |
 |---|---|
-| `create_po(**kwargs)` | Create with auto-numbered `po_number` |
-| `update_po(pk, **kwargs)` | Update header fields |
+| `create_po(**kwargs)` | Create with auto-numbered `po_number`; refuses an inactive `business` (`{business: ['{name} is inactive.']}`) or an inactive contact / a contact whose business is inactive (`{contact: [...]}`, via `_assert_party_active`) |
+| `update_po(pk, **kwargs)` | Update header fields; frozen-PO guard with the same-vendor contact-swap carve-out (§10 "PO freeze") |
 | `update_status(pk, new_status)` | Direct status change |
 | `add_line_item(po_id, **kwargs)` | Add manual line; accepts transient `job`, `material_id` |
 | `add_line_item_from_pli(po_id, pli_id, qty, job=None, material_id=None)` | Add line from PLI; same transient kwargs |
@@ -933,6 +943,42 @@ the `Configuration` keys `po_number_sequence` / `po_counter`.
 `update_line_item` is gated to draft POs only. Line job changes go
 through `change_line_job` regardless of PO status (allowed on draft,
 issued, partly_received, received_in_full; rejected on cancelled).
+
+### PO freeze (inactive vendor or contact)
+
+(2026-10-11, contacts-refine spec §5.2; the job-side twin is
+`jobs-and-tasks.md` §3.7.) A PO is **frozen** while its `business` (the
+vendor) is inactive or its `contact` is inactive — derived, no stored flag.
+`_assert_po_not_frozen(po, action)` (top of `apps/purchasing/services.py`)
+raises a plain `ValidationError`, checking the business first:
+
+- `Cannot {action}: this PO's vendor, {name}, is inactive. Reactivate the
+  vendor before making changes.`
+- `Cannot {action}: this PO's contact, {name}, is inactive. Reactivate the
+  contact, or move the PO to an active contact at {business}, before making
+  changes.` (the "or move…" clause only when the PO has a vendor; vendor
+  inactive is caught first, so that vendor is always active here.)
+
+**17 call sites**, one per user-driven mutator: `update_po`,
+`update_status`, `reconcile`, `cancel_po`, `delete_po`; the line-item
+operations (add / add-from-PLI / update / change-job / reorder (both `reorder_line_items` and `reorder_line_item`) / delete,
+all worded "edit this purchase order"); the four receiving paths
+("receive against this purchase order"); and send ("send this purchase
+order"). There is no system bypass — nothing system-driven edits a PO.
+
+**Carve-out.** `update_po` with kwargs *exactly* `{'contact'}`, where the
+new contact belongs to the PO's own (non-null, **active**) business, skips
+the freeze check — the swap that unfreezes a PO whose contact (but not
+vendor) went inactive. The freeze check otherwise runs **before** the
+new-contact party check so a frozen PO reports the freeze, not the new
+contact. A new contact must itself be active and at an active business
+(`_assert_party_active`). A vendor-inactive PO has no escape except
+reactivating the vendor (swapping contacts is refused for an inactive
+business).
+
+**Serializer.** `PurchaseOrderSerializer` exposes read-only
+`business_is_active` and `contact_is_active` (each `null` when the PO has
+no business/contact).
 
 ### `PurchaseOrderReceivingService`
 
@@ -1565,6 +1611,18 @@ Components in `frontend/src/components/purchaseorders/`:
 - `RatePromptDialog.svelte` (§10a) — the post-reconcile task-rate prompt;
   rendered by `PurchaseOrderDetailPage.svelte` only when
   `canManageFinancials` and the reconcile response carried `rate_prompts`
+
+**Frozen PO banner (2026-10-11).** `PurchaseOrderDetail.svelte` renders a
+`FrozenPartyBanner kind="po"` when the PO is frozen: if
+`business_is_active === false`, "**Frozen:** {vendor} is inactive. Reactivate
+them before making changes to this purchase order." (links to the business
+page); else if `contact_is_active === false`, "{contact} is inactive.
+Reactivate them, or move this purchase order to another contact at
+{vendor}." with a **Change contact…** button (shown to `canManageFinancials`)
+opening `ChangeContactModal` — a `ContactPicker` scoped to the PO's business
+(`businessId={po.business}`) that PATCHes `/api/purchase-orders/{id}/` with
+`{contact}` only (the §10 carve-out) and reloads. Same components as the job
+banner (`jobs-and-tasks.md` §9.2).
 
 The PO form supports two arrival query params:
 

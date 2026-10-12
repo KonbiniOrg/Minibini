@@ -4,8 +4,8 @@ import { viewMode } from '@/stores/viewMode.js';
 import ContactList from '@/components/contacts/ContactList.svelte';
 
 const contacts = [
-  { contact_id: 1, name: 'Jane Doe', email: 'jane@example.com', work_number: '555-0100' },
-  { contact_id: 2, name: 'Sam Roe', email: '', mobile_number: '555-0200' },
+  { contact_id: 1, name: 'Jane Doe', email: 'jane@example.com', phone: '555-0100' },
+  { contact_id: 2, name: 'Sam Roe', email: '', phone: '555-0200' },
 ];
 
 const headers = (c) => Array.from(c.querySelectorAll('thead th')).map((th) => th.textContent.trim());

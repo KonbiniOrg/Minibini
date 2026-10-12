@@ -34,7 +34,7 @@ class MintServiceAskOncePerUnitTest(TestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(code='PU1', name='Per Unit')
         contact = Contact.objects.create(
-            first_name='P', last_name='U', email='pu@test.example', mobile_number='555')
+            first_name='P', last_name='U', email='pu@test.example', phones=[{'number': '555', 'label': 'mobile'}])
         self.job = Job.objects.create(
             contact=contact, job_number='JOB-PERUNIT-0001', status=Job.STATUS_APPROVED)
         self.scheme = RateScheme.objects.create(

@@ -22,7 +22,7 @@ class CollisionRecoveryTest(TestCase):
         Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', mobile_number='555-0',
+            first_name='J', last_name='D', phones=[{'number': '555-0', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-PREEXIST',

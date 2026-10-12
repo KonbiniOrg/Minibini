@@ -21,7 +21,7 @@ const payload = {
       tasks: [{ name: 'Cut acme letters' }],
     }],
     contacts: [{ contact_id: 3, name: 'Acme Jane', business_name: 'Acme Corp', email: 'j@acme.com',
-                 mobile_number: '555-1', work_number: '555-2', home_number: '555-3', city: 'Springfield' }],
+                 phone: '555-1', city: 'Springfield' }],
     businesses: [], invoices: [], estimates: [], purchase_orders: [], inventory_items: [],
   },
 };
@@ -49,7 +49,7 @@ describe('Search results tables — DataTable pilot', () => {
 
   it('shows the same columns in lite and full (no lite-content decisions yet)', async () => {
     const jobHeaders = ['Job #', 'Name', 'Contact', 'Status', 'Created', 'Started', 'Description', 'Customer PO', 'Matching Tasks'];
-    const contactHeaders = ['Name', 'Business', 'Email', 'Mobile', 'Work', 'Home', 'City'];
+    const contactHeaders = ['Name', 'Business', 'Email', 'Phone', 'City'];
     const { container } = render(Search);
     await waitFor(() => expect(container.querySelectorAll('table.data-table')).toHaveLength(2));
     let [jobs, contacts] = container.querySelectorAll('table.data-table');
@@ -68,5 +68,18 @@ describe('Search results tables — DataTable pilot', () => {
     await waitFor(() => expect(container.querySelectorAll('table.data-table')).toHaveLength(2));
     const jobs = container.querySelector('table.data-table');
     expect(jobs.querySelector('td[data-col="started"]').textContent.trim()).toBe('—');
+  });
+
+  it('badges inactive contact and business rows', async () => {
+    api.get.mockResolvedValue({
+      ...payload,
+      results: {
+        ...payload.results,
+        contacts: [{ ...payload.results.contacts[0], is_active: false }],
+        businesses: [{ business_id: 4, business_name: 'Acme Old', is_active: false }],
+      },
+    });
+    const { findAllByText } = render(Search);
+    expect(await findAllByText('inactive')).toHaveLength(2);
   });
 });

@@ -72,7 +72,7 @@ class CleanupTempEmailsCommandTest(TestCase):
         n = CleanupTempEmailsCommandTest._contact_counter
         return Contact.objects.create(
             first_name=f'C{n}', last_name='X',
-            email=f'c{n}@x.com', mobile_number=f'555-{n}',
+            email=f'c{n}@x.com', phones=[{'number': f'555-{n}', 'label': 'mobile'}],
         )
 
     def _make_business(self, name):

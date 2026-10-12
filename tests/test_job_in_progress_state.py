@@ -11,7 +11,7 @@ class JobInProgressStateTest(TestCase):
         Configuration.objects.update_or_create(key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'})
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555-0', 'label': 'mobile'}],
         )
 
     def test_status_in_progress_constant_exists(self):
