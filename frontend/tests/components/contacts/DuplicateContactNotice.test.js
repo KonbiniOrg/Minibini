@@ -23,4 +23,21 @@ describe('DuplicateContactNotice', () => {
     const { queryByRole } = render(DuplicateContactNotice, { props: { contact: CONTACT } });
     expect(queryByRole('dialog')).toBeNull();
   });
+
+  it('offers Reactivate only for an inactive contact when onReactivate is given', async () => {
+    const onReactivate = vi.fn();
+    const inactive = { ...CONTACT, is_active: false };
+    const { getByRole, getByText } = render(DuplicateContactNotice, { props: { contact: inactive, onReactivate } });
+    expect(getByText('inactive')).toBeInTheDocument();
+    await fireEvent.click(getByRole('button', { name: 'Reactivate' }));
+    expect(onReactivate).toHaveBeenCalled();
+  });
+
+  it('shows no Reactivate without onReactivate, or for an active contact', () => {
+    const a = render(DuplicateContactNotice, { props: { contact: { ...CONTACT, is_active: false } } });
+    expect(a.queryByRole('button', { name: 'Reactivate' })).toBeNull();
+    a.unmount();
+    const b = render(DuplicateContactNotice, { props: { contact: { ...CONTACT, is_active: true }, onReactivate: vi.fn() } });
+    expect(b.queryByRole('button', { name: 'Reactivate' })).toBeNull();
+  });
 });

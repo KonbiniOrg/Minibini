@@ -21,6 +21,7 @@
   let loading = $state(true);
   let error = $state(null);
   let letterFilter = $state('');
+  let statusFilter = $state('active');
   let searchQuery = $state('');
   let showContacts = $state(true);
   let showBusinesses = $state(true);
@@ -48,6 +49,7 @@
     error = null;
     try {
       const params = new URLSearchParams({ page_size: FETCH_SIZE });
+      params.set('status', statusFilter);
       if (letterFilter) params.set('starts_with', letterFilter);
       if (searchQuery.trim()) params.set('search', searchQuery.trim());
       for (const id of selectedTagIds) params.append('tag', id);
@@ -66,6 +68,7 @@
         business_id: c.business?.business_id || null,
         email: c.email,
         phone: c.phone || '',
+        is_active: c.is_active,
         tags: c.tags || [],
         href: `#/contacts/${c.contact_id}`,
       }));
@@ -77,6 +80,7 @@
         name: b.business_name,
         email: '',
         phone: b.phone || '',
+        is_active: b.is_active,
         tags: b.tags || [],
         href: `#/businesses/${b.business_id}`,
       }));
@@ -137,6 +141,7 @@
 
   $effect(() => {
     void letterFilter;
+    void statusFilter;
     void searchQuery;
     void selectedTagIds;
     loadAll();
@@ -172,6 +177,13 @@
 <div class="type-filter">
   <label><input type="checkbox" bind:checked={showContacts}> Contacts</label>
   <label><input type="checkbox" bind:checked={showBusinesses}> Businesses</label>
+</div>
+
+<div class="status-filter" role="group" aria-label="Status">
+  {#each [['active', 'Active'], ['inactive', 'Inactive'], ['all', 'All statuses']] as [value, label]}
+    <button type="button" class:active={statusFilter === value}
+      onclick={() => { statusFilter = value; page = 1; }}>{label}</button>
+  {/each}
 </div>
 
 {#if allTags.length > 0}
@@ -244,6 +256,7 @@
 
 {#snippet nameCell(item)}
   <a href={item.href}>{item.name}</a>
+  {#if item.is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}
 {/snippet}
 
 {#snippet typeCell(item)}
@@ -288,6 +301,14 @@
     color: #fff;
     border-color: #1a3344;
   }
+
+  .status-filter { display: flex; gap: 3px; margin-bottom: 0.75rem; }
+  .status-filter button {
+    padding: 3px 9px; font-size: 13px; cursor: pointer; border: 1px solid #ccc;
+    background: #f5f5f5; border-radius: 3px; font-family: inherit;
+  }
+  .status-filter button:hover { background: #e0e0e0; }
+  .status-filter button.active { background: #1a3344; color: #fff; border-color: #1a3344; }
 
   .type-filter {
     display: flex;

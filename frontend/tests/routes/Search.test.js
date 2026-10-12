@@ -69,4 +69,17 @@ describe('Search results tables — DataTable pilot', () => {
     const jobs = container.querySelector('table.data-table');
     expect(jobs.querySelector('td[data-col="started"]').textContent.trim()).toBe('—');
   });
+
+  it('badges inactive contact and business rows', async () => {
+    api.get.mockResolvedValue({
+      ...payload,
+      results: {
+        ...payload.results,
+        contacts: [{ ...payload.results.contacts[0], is_active: false }],
+        businesses: [{ business_id: 4, business_name: 'Acme Old', is_active: false }],
+      },
+    });
+    const { findAllByText } = render(Search);
+    expect(await findAllByText('inactive')).toHaveLength(2);
+  });
 });

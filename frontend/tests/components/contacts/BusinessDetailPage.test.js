@@ -42,7 +42,7 @@ function wire(biz, { pos = [] } = {}) {
 beforeEach(() => {
   clearMessage();
   push.mockReset();
-  api.get.mockReset(); api.patch.mockReset(); api.delete.mockReset();
+  api.get.mockReset(); api.patch.mockReset(); api.delete.mockReset(); api.post.mockReset();
   viewMode.set('full');
   user.set({ id: 1, permissions: ['can_manage_jobs'] });
   wire(mockBusiness());
@@ -73,18 +73,18 @@ describe('BusinessDetailPage banner', () => {
     expect(push).toHaveBeenCalledWith('/contacts');
   });
 
-  it('shows the Deactivate placeholder instead when the business has jobs, POs or several contacts', async () => {
+  it('shows an enabled Deactivate instead of Delete… when the business has jobs, POs or several contacts', async () => {
     wire(mockBusiness({ contacts: [BOSS, WORKER] }));
     render(BusinessDetailPage, { props: { params: { id: '1' } } });
     const deactivate = await screen.findByRole('button', { name: 'Deactivate' });
-    expect(deactivate).toBeDisabled();
+    expect(deactivate).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Delete…' })).toBeNull();
   });
 
   it('a PO alone blocks Delete', async () => {
     wire(mockBusiness(), { pos: [{ po_id: 1, po_number: 'PO-1', status: 'issued' }] });
     render(BusinessDetailPage, { props: { params: { id: '1' } } });
-    expect(await screen.findByRole('button', { name: 'Deactivate' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Deactivate' })).toBeEnabled();
   });
 
   it('New Job in the banner opens the job modal; a Contacts row New job does too', async () => {
@@ -134,5 +134,55 @@ describe('BusinessDetailPage edit modal', () => {
     });
     expect(push).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('BusinessDetailPage deactivate', () => {
+  it('Deactivate fetches the impact, confirms in a modal, then POSTs', async () => {
+    wire(mockBusiness({ business_id: 7, is_active: true }));
+    const base = api.get.getMockImplementation();
+    api.get.mockImplementation((url) => {
+      if (url === '/api/businesses/7/') return Promise.resolve(mockBusiness({ business_id: 7, is_active: true }));
+      if (url === '/api/businesses/7/deactivate-impact/') {
+        return Promise.resolve({ contact_count: 2, contact_names: ['Boss', 'Worker'], blockers: [] });
+      }
+      return base(url);
+    });
+    api.post.mockResolvedValueOnce({});
+    render(BusinessDetailPage, { props: { params: { id: '7' } } });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Deactivate' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Deactivate business' });
+    expect(dialog.textContent).toContain('This will deactivate Acme and its 2 contact(s)');
+    expect(api.post).not.toHaveBeenCalled();
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await vi.waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/businesses/7/deactivate/', {}));
+  });
+
+  it('blockers skip the modal and render under the actions', async () => {
+    const base = (wire(mockBusiness({ business_id: 7, is_active: true })), api.get.getMockImplementation());
+    api.get.mockImplementation((url) => {
+      if (url === '/api/businesses/7/') return Promise.resolve(mockBusiness({ business_id: 7, is_active: true }));
+      if (url === '/api/businesses/7/deactivate-impact/') {
+        return Promise.resolve({ contact_count: 1, contact_names: ['Boss'], blockers: ['1 open job (JOB-1)'] });
+      }
+      return base(url);
+    });
+    render(BusinessDetailPage, { props: { params: { id: '7' } } });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Deactivate' }));
+    expect(await screen.findByText('Cannot deactivate Acme: 1 open job (JOB-1).')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Deactivate business' })).toBeNull();
+  });
+
+  it('inactive business: badge, Reactivate, no Edit / New Job / row actions', async () => {
+    wire(mockBusiness({ is_active: false, contacts: [BOSS, WORKER] }));
+    api.post.mockResolvedValueOnce({});
+    render(BusinessDetailPage, { props: { params: { id: '1' } } });
+    expect(await screen.findByText('inactive')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New Job' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New job' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Set as default' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Reactivate' }));
+    expect(api.post).toHaveBeenCalledWith('/api/businesses/1/reactivate/', {});
   });
 });

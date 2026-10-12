@@ -399,13 +399,13 @@
 {#snippet jobPoCell(g)}{@html hl(g.job.customer_po_number)}{/snippet}
 {#snippet jobTasksCell(g)}{@html hlt(g.tasks.map(t => t.name).join(', ') || null)}{/snippet}
 
-{#snippet contactNameCell(c)}<a href="#/contacts/{c.contact_id}">{@html hl(c.name)}</a>{/snippet}
+{#snippet contactNameCell(c)}<a href="#/contacts/{c.contact_id}">{@html hl(c.name)}</a>{#if c.is_active === false} <span class="status-badge status-inactive">inactive</span>{/if}{/snippet}
 {#snippet contactBusinessCell(c)}{#if c.business_name}{@html hl(c.business_name)}{:else}—{/if}{/snippet}
 {#snippet contactEmailCell(c)}{@html hl(c.email)}{/snippet}
 {#snippet contactPhoneCell(c)}{@html hl(c.phone)}{/snippet}
 {#snippet contactCityCell(c)}{@html hl(c.city)}{/snippet}
 
-{#snippet bizNameCell(b)}<a href="#/businesses/{b.business_id}">{@html hl(b.business_name)}</a>{/snippet}
+{#snippet bizNameCell(b)}<a href="#/businesses/{b.business_id}">{@html hl(b.business_name)}</a>{#if b.is_active === false} <span class="status-badge status-inactive">inactive</span>{/if}{/snippet}
 {#snippet bizCodeCell(b)}{@html hl(b.our_reference_code)}{/snippet}
 {#snippet bizAddressCell(b)}{@html hl(b.business_address)}{/snippet}
 {#snippet bizPhoneCell(b)}{@html hl(b.phone)}{/snippet}

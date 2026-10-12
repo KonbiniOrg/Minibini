@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
 vi.mock('@/lib/api.js', () => ({
@@ -127,5 +127,23 @@ describe('ContactListPage — New Business button (BusinessFormModal host)', () 
     expect(queryByRole('link', { name: 'New Business' })).toBeNull();
     await fireEvent.click(btn);
     expect(await findByRole('dialog', { name: 'New business' })).toBeInTheDocument();
+  });
+});
+
+describe('ContactListPage status', () => {
+  it('sends status=active by default and switches to inactive / all from the toggle', async () => {
+    mockLists({ contacts: [jane], businesses: [acme] });
+    const { getByRole } = render(ContactListPage);
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith(expect.stringContaining('status=active')));
+    await fireEvent.click(getByRole('button', { name: 'Inactive' }));
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/api\/contacts\/\?.*status=inactive/)));
+    await fireEvent.click(getByRole('button', { name: 'All statuses' }));
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/api\/contacts\/\?.*status=all/)));
+  });
+
+  it('badges inactive rows', async () => {
+    mockLists({ contacts: [{ ...jane, is_active: false }], businesses: [] });
+    const { findByText } = render(ContactListPage);
+    expect(await findByText('inactive')).toBeInTheDocument();
   });
 });

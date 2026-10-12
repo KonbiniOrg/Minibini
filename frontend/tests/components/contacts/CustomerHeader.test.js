@@ -9,6 +9,13 @@ const FIN = {
 };
 
 describe('CustomerHeader', () => {
+  it('renders the inactive badge next to the name only when inactive', () => {
+    const { queryByText, rerender } = render(CustomerHeader, { props: { name: 'Jane Doe' } });
+    expect(queryByText('inactive')).toBeNull();
+    rerender({ name: 'Jane Doe', inactive: true });
+    expect(queryByText('inactive')).toBeInTheDocument();
+  });
+
   it('renders the name', () => {
     const { getByText } = render(CustomerHeader, { props: { name: 'Jane Doe' } });
     expect(getByText('Jane Doe')).toBeInTheDocument();

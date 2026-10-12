@@ -83,17 +83,17 @@ describe('ContactDetailPage delete / deactivate', () => {
     expect(document.querySelector('.error-overlay')).toBeNull();
   });
 
-  it('a contact with jobs gets the disabled Deactivate placeholder', async () => {
+  it('a contact with jobs gets an enabled Deactivate but no Delete…', async () => {
     wire(mockContact({ jobs: [{ job_id: 1, job_number: 'JOB-1', name: 'x', status: 'draft', contact: 1, contact_name: 'Jane', created_date: '2026-01-01T00:00:00Z' }] }));
     render(ContactDetailPage, { props: { params: { id: '1' } } });
-    expect(await screen.findByRole('button', { name: 'Deactivate' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Deactivate' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Delete…' })).toBeNull();
   });
 
   it('the only contact of a business cannot be deleted; with a sibling it can', async () => {
     wire(mockContact({ business: BIZ_SUMMARY }), { ...BIZ_DETAIL, contacts: [{ contact_id: 1, name: 'Jane' }], jobs: [] });
     const first = render(ContactDetailPage, { props: { params: { id: '1' } } });
-    expect(await screen.findByRole('button', { name: 'Deactivate' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Deactivate' })).toBeEnabled();
     first.unmount();
 
     wire(mockContact({ business: BIZ_SUMMARY }));
@@ -134,5 +134,28 @@ describe('ContactDetailPage edit modal', () => {
     });
     expect(push).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('ContactDetailPage status actions', () => {
+  it('active contact: Deactivate posts and reloads; a blocker renders under the actions', async () => {
+    wire(mockContact({ is_active: true }));
+    api.post.mockRejectedValueOnce({ status: 400, data: { detail: 'Cannot deactivate Jane: 1 open job (JOB-1).' } });
+    render(ContactDetailPage, { props: { params: { id: '1' } } });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Deactivate' }));
+    expect(api.post).toHaveBeenCalledWith('/api/contacts/1/deactivate/', {});
+    expect(await screen.findByText('Cannot deactivate Jane: 1 open job (JOB-1).')).toBeInTheDocument();
+  });
+
+  it('inactive contact: badge, Reactivate instead of Edit/New Job, no tag editor or note form', async () => {
+    wire(mockContact({ is_active: false }));
+    api.post.mockResolvedValueOnce({});
+    render(ContactDetailPage, { props: { params: { id: '1' } } });
+    expect(await screen.findByText('inactive')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New Job', exact: true })).toBeNull();
+    expect(screen.queryByPlaceholderText(/note/i)).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Reactivate' }));
+    expect(api.post).toHaveBeenCalledWith('/api/contacts/1/reactivate/', {});
   });
 });

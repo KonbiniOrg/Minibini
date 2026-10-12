@@ -1,5 +1,7 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import FormMessage from '../../components/FormMessage.svelte';
   import { showError, showSuccess } from '../../stores/messages.js';
   import { canManageJobs } from '../../stores/permissions.js';
   import { canDeleteContact } from '../../lib/customerActivity.js';
@@ -27,6 +29,7 @@
   let newJobOpen = $state(false);
   let deleteImpact = $state(null);
   let deleting = $state(false);
+  let actionError = $state('');
 
   const asList = (r) => (r?.results ?? r ?? []);
 
@@ -65,6 +68,21 @@
     }
   }
 
+  // Deactivate / Reactivate are reversible: no confirm. A refused flip is a
+  // 400 {detail} that renders under the header actions.
+  async function setActive(verb) {
+    actionError = '';
+    try {
+      await api.post(`/api/contacts/${params.id}/${verb}/`, {});
+      await loadContact();
+    } catch (e) {
+      const t = triageError(e);
+      if (t.overlay) showError(t.overlay); else actionError = t.message;
+    }
+  }
+  const deactivate = () => setActive('deactivate');
+  const reactivate = () => setActive('reactivate');
+
   async function requestDelete() {
     try {
       const result = await api.delete(`/api/contacts/${params.id}/`);
@@ -93,6 +111,7 @@
     }
   }
 
+  let active = $derived(contact?.is_active !== false);
   let isDefaultContact = $derived(
     !!contact?.business && contact.business.default_contact?.contact_id === contact.contact_id
   );
@@ -117,18 +136,22 @@
     kind="contact"
     business={contact.business}
     {isDefaultContact}
+    inactive={!active}
     {financials}
   >
     {#snippet actions()}
       {#if $canManageJobs}
-        <button type="button" class="banner-btn" onclick={() => { newJobOpen = true; }}>New Job</button>
-        <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
+        {#if active}
+          <button type="button" class="banner-btn" onclick={() => { newJobOpen = true; }}>New Job</button>
+          <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
+          <button type="button" class="edit-link header-action" onclick={deactivate}>Deactivate</button>
+        {:else}
+          <button type="button" class="edit-link header-action" onclick={reactivate}>Reactivate</button>
+        {/if}
         {#if canDelete}
           <button type="button" class="edit-link header-action danger" onclick={requestDelete}>Delete…</button>
-        {:else}
-          <!-- Placeholder: the active flag + Reactivate path ship separately (external tracker). -->
-          <button type="button" class="edit-link header-action danger" disabled title="Not available yet">Deactivate</button>
         {/if}
+        <FormMessage error={actionError} />
       {/if}
     {/snippet}
   </CustomerHeader>
@@ -139,7 +162,8 @@
     {invoices}
     {purchaseOrders}
     {history}
-    onAddNote={handleAddNote}
+    onAddNote={active ? handleAddNote : null}
+    readonly={!active}
   />
 
   <ContactFormModal

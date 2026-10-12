@@ -17,6 +17,7 @@
     purchaseOrders = [],
     history = null,
     onAddNote = null,
+    readonly = false,
   } = $props();
 
   let siblings = $derived(siblingJobCounts(business, contact.contact_id));
@@ -91,7 +92,7 @@
     <div class="panel">
       <div class="panel-head">Tags</div>
       <TagEditor endpoint="/api/contacts/{contact.contact_id}" initialTags={contact.tags || []}
-        readonly={!$canManageJobs} />
+        readonly={!$canManageJobs || readonly} />
     </div>
   </aside>
 

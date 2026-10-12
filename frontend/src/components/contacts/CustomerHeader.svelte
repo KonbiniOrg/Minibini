@@ -6,7 +6,7 @@
   // Left: name, subtitle (counterpart link — the contact's business or the
   // business's default contact — plus the "default contact" chip / contact
   // count), then the action row the page supplies via the `actions` snippet
-  // (New Job button, Edit, Delete…/Deactivate). Right: the facts line
+  // (New Job button, Edit, Deactivate/Reactivate, Delete…). Right: the facts line
   // ("Customer since … · Last job started … · Net 30") over the numbers box
   // (open jobs / outstanding / invoiced / profit) — all from the financials
   // endpoint's rollup; see lib/customerActivity.js for the facts rule.
@@ -23,6 +23,7 @@
     terms = null,
     financials = null,
     actions = null,
+    inactive = false,
   } = $props();
 
   const money = (v) => (v == null || v === '' ? '$—' : formatMoney(v));
@@ -34,6 +35,7 @@
 <div class="customer-header">
   <div class="titleblock">
     <h2 class="ch-name" title={name}>{name}</h2>
+    {#if inactive}<span class="status-badge status-inactive">inactive</span>{/if}
     {#if business}
       <p class="ch-subtitle">
         at <a href="#/businesses/{business.business_id}">{business.business_name}</a>
@@ -100,7 +102,7 @@
     font-size: 11px; font-weight: 600; background: #fde68a; color: #78350f;
   }
   /* The action row. The page's snippet supplies: one `.banner-btn` (New Job)
-     and quiet `.edit-link .header-action` buttons (Edit, Delete…/Deactivate). */
+     and quiet `.edit-link .header-action` buttons (Edit, Deactivate/Reactivate, Delete…). */
   .ch-actions { margin-top: 10px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
   .ch-actions :global(.banner-btn) {
     font: inherit; font-size: 13px; font-weight: 600;

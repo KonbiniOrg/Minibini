@@ -8,6 +8,7 @@
     contact = null,
     onViewExisting = () => {},
     onBack = () => {},
+    onReactivate = null,
   } = $props();
 </script>
 
@@ -16,7 +17,8 @@
 {#if contact}
   <p>A contact with this email address is already in the system:</p>
   <p>
-    <strong>{contact.name}</strong><br>
+    <strong>{contact.name}</strong>
+    {#if contact.is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}<br>
     {contact.email}<br>
     {#if contact.phones?.[0]?.number}
       {contact.phones[0].number}<br>
@@ -29,6 +31,7 @@
 
 <p>
   <button type="button" onclick={onViewExisting}>View Existing Contact</button>
+  {#if contact?.is_active === false && onReactivate}<button type="button" onclick={onReactivate}>Reactivate</button>{/if}
   <button type="button" onclick={onBack}>Go Back and Edit</button>
 </p>
 

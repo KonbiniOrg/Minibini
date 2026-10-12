@@ -192,6 +192,7 @@
 {#snippet contactNameCell(c)}
   <a href="#/contacts/{c.contact_id}">{c.name}</a>
   {#if c.contact_id === defaultContactId}<span class="chip-default">default</span>{/if}
+  {#if c.is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}
 {/snippet}
 {#snippet contactEmailCell(c)}{#if c.email}<a href="mailto:{c.email}">{c.email}</a>{/if}{/snippet}
 {#snippet contactPhoneCell(c)}{c.phone || '—'}{/snippet}
