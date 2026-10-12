@@ -160,6 +160,7 @@ def _assert_job_allows_blep(job, allowed_statuses, action):
     work should not be recorded against it. The hold check is explicit — the
     allow-lists describe pipeline position, and a held job keeps its true
     status underneath, so omission can't cover it."""
+    _assert_job_not_frozen(job, action)
     if job.on_hold:
         raise ValidationError(f"Cannot {action}: the job is on hold.")
     if job.status not in allowed_statuses:
@@ -180,6 +181,22 @@ def _assert_party_active(contact, field='contact'):
     business = contact.business
     if business is not None and not business.is_active:
         raise ValidationError({field: [f'{business.business_name} is inactive.']})
+
+
+def _assert_job_not_frozen(job, action):
+    """Spec 5.1: a job whose contact is inactive accepts no user-driven
+    mutation. Mirrors _assert_job_not_on_hold; system transitions never
+    call this."""
+    contact = job.contact
+    if contact.is_active:
+        return
+    business = contact.business
+    hint = (f', or move the job to an active contact at {business.business_name},'
+            if business is not None and business.is_active else ',')
+    raise ValidationError(
+        f"Cannot {action}: this job's contact, {contact.name}, is inactive. "
+        f"Reactivate the contact{hint} before making changes."
+    )
 
 
 def _assert_job_not_on_hold(job, action):
@@ -394,6 +411,7 @@ class BlepService:
         """Update a blep. Only `start_time` and `end_time` are editable here."""
         from apps.invoicing.claims import InvoiceClaimService
         from apps.invoicing.models import InvoiceLineItemSource
+        _assert_job_not_frozen(blep.task.job, 'edit this timeslip')
         # Billed actuals are frozen for everyone — the same rule `delete`
         # enforces, for the same reason: moving a blep's times under an
         # invoiced task silently changes the basis of a number already
@@ -468,6 +486,7 @@ class BlepService:
     def delete(blep, actor):
         from apps.invoicing.claims import InvoiceClaimService
         from apps.invoicing.models import InvoiceLineItemSource
+        _assert_job_not_frozen(blep.task.job, 'delete this timeslip')
         # Billed actuals are frozen for everyone: deleting a blep under an
         # invoiced task would silently change the basis of a number already
         # charged. (Estimate claims never block — estimates bill est_qty.)
@@ -562,6 +581,18 @@ class JobService:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
+        if not system_transition:
+            new_contact = kwargs.get('contact')
+            swap_only = set(kwargs) == {'contact'}
+            if new_contact is not None:
+                _assert_party_active(new_contact)          # never onto an inactive party
+            same_business_swap = (
+                swap_only and new_contact is not None
+                and job.contact.business_id is not None
+                and new_contact.business_id == job.contact.business_id
+                and new_contact.business.is_active)
+            if not same_business_swap:
+                _assert_job_not_frozen(job, 'edit this job')
         old_status = job.status
         for field, value in kwargs.items():
             setattr(job, field, value)
@@ -698,11 +729,16 @@ class JobService:
         )
 
     @staticmethod
+    def assert_mutable(job, action='change this job'):
+        _assert_job_not_frozen(job, action)
+
+    @staticmethod
     def release_loose_materials(job):
         """Restock (release) any task-less PENDING materials still committed
         to the job. Returns a list of {'description', 'quantity'} captured
         before restock removes the rows — used for an audit record."""
         from apps.inventory.services import MaterialService
+        _assert_job_not_frozen(job, 'release materials on this job')
         released = []
         for material in list(JobService._loose_pending_materials(job)):
             released.append({
@@ -739,6 +775,7 @@ class JobService:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
+        _assert_job_not_frozen(job, 'hold this job')
         if job.on_hold:
             raise ValidationError('Job is already on hold.')
         if job.status not in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
@@ -765,6 +802,7 @@ class JobService:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
+        _assert_job_not_frozen(job, 'release this job')
         if not job.on_hold:
             raise ValidationError('Job is not on hold.')
         JobService._assert_no_live_change_order(job)
@@ -783,6 +821,7 @@ class JobService:
         """
         from apps.estimates.models import ChangeOrder, Estimate
         from apps.invoicing.models import Invoice
+        _assert_job_not_frozen(job, 'delete this job')
         if Blep.objects.filter(task__job=job).exists():
             raise ValidationError(
                 'This job has recorded time and cannot be deleted. '
@@ -1087,6 +1126,7 @@ class TaskService:
         """
         from apps.jobs.models import SchemeInactiveError
 
+        _assert_job_not_frozen(job, 'add a task to this job')
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
@@ -1150,6 +1190,7 @@ class TaskService:
             for key in ('rate', 'unit_label', 'accounting_category')
             if key in task_fields
         }
+        _assert_job_not_frozen(job, 'add a task to this job')
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not rate_scheme_id:
             raise ValidationError({'rate_scheme': 'Required.'})
@@ -1216,6 +1257,7 @@ class TaskService:
             task = Task.objects.get(pk=pk)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {pk} not found')
+        _assert_job_not_frozen(task.job, 'edit this task')
         _assert_job_not_on_hold(task.job, 'edit this task')
         # A terminal task is frozen: its work and billing inputs are settled.
         # sort_order is cosmetic (list position) and stays editable so a
@@ -1331,6 +1373,7 @@ class TaskService:
             task = Task.objects.get(pk=task_pk)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_pk} not found')
+        _assert_job_not_frozen(task.job, 'delete this task')
         _assert_job_not_on_hold(task.job, 'delete this task')
         if task.job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED,
                                Job.STATUS_REJECTED):
@@ -1373,6 +1416,7 @@ class TaskService:
             task = Task.objects.get(pk=task_id)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_id} not found')
+        _assert_job_not_frozen(task.job, 'reorder tasks on this job')
         _assert_job_not_on_hold(task.job, 'reorder tasks on this job')
 
         items_qs = Task.objects.filter(job=task.job)
@@ -1395,6 +1439,7 @@ class TaskService:
         is the actual enforcer of the invariant. Unassigning (`assignee_id`
         falsy) has no such requirement.
         """
+        _assert_job_not_frozen(task.job, "change this task's assignment")
         _assert_job_not_on_hold(task.job, "change this task's assignment")
         if assignee_id and est_worker_time is None and not task.est_worker_time:
             raise TaskWorkerTimeRequired()
@@ -1471,6 +1516,7 @@ class TaskLifecycleService:
         from decimal import Decimal, InvalidOperation
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'record a quantity on this task')
             if task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
                 raise ValidationError('Task is already settled.')
             if task.qty_source != Task.QTY_ENTERED:
@@ -1505,6 +1551,7 @@ class TaskLifecycleService:
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'complete this task')
             _assert_job_not_on_hold(task.job, 'complete this task')
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED):
                 raise ValidationError(
@@ -1604,6 +1651,7 @@ class TaskLifecycleService:
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'block this task')
             _assert_job_not_on_hold(task.job, 'block this task')
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
                 raise ValidationError(
@@ -1647,6 +1695,7 @@ class TaskLifecycleService:
         """Transition task from blocked -> in_progress."""
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'unblock this task')
             _assert_job_not_on_hold(task.job, 'unblock this task')
             if task.status != Task.STATUS_BLOCKED:
                 raise ValidationError(
@@ -1673,6 +1722,7 @@ class TaskLifecycleService:
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'cancel this task')
             _assert_job_not_on_hold(task.job, 'cancel this task')
             allowed = (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED)
             if task.status not in allowed:
@@ -1902,6 +1952,7 @@ class TaskLifecycleService:
             )
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'stop work on this task')
             if (on_behalf_of is None and not prior_qty_handled
                     and task.qty_source == Task.QTY_ENTERED
                     and Blep.objects.filter(
@@ -1955,6 +2006,7 @@ class TaskLifecycleService:
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'cancel work on this task')
             blep = (
                 Blep.objects
                 .filter(task=task, user=user, end_time__isnull=True)

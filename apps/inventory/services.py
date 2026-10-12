@@ -619,7 +619,8 @@ class MaterialService:
         No permission check: open to any authenticated user (deliberate carve-out
         from can_manage_financials per design).
         """
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'edit this material')
         _assert_job_not_on_hold(material.job, 'edit this material')
         if sell_price is not None and sell_price != material.sell_price:
             MaterialService._assert_not_invoiced(material)
@@ -658,7 +659,8 @@ class MaterialService:
                       inventory_item=None, accounting_category=None, units='none',
                       cost_source=None, customer_supplied=False):
         from django.core.exceptions import ValidationError
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
+        _assert_job_not_frozen(job, 'add a material to this job')
         _assert_job_not_on_hold(job, 'add a material to this job')
         from django.db import transaction
         if customer_supplied and (
@@ -742,12 +744,13 @@ class MaterialService:
         """
         from django.core.exceptions import ValidationError
         from django.db import transaction
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
         if {'quantity', 'released_qty'} & set(fields):
             raise ValidationError(
                 'Quantity changes must use the draw-more or restock actions.')
         # Every mutation path below (establish, PLI pricing, metadata) edits the
         # material, so the on-hold guard applies uniformly up front.
+        _assert_job_not_frozen(material.job, 'edit this material')
         _assert_job_not_on_hold(material.job, 'edit this material')
         # Locked before either pricing route below (the provisional-establish
         # branch and the PLI-backed pricing carve-out) can be reached: a
@@ -1008,7 +1011,8 @@ class MaterialService:
         """
         from django.db import transaction
         from django.core.exceptions import ValidationError
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'restock this material')
         _assert_job_not_on_hold(material.job, 'restock this material')
         if qty <= Decimal('0.00') or qty > material.quantity:
             raise ValidationError('restock qty must be > 0 and <= quantity')
