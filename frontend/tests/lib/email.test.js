@@ -37,6 +37,16 @@ describe('resolveSenderToContact', () => {
     expect(api.post).toHaveBeenCalledWith('/api/contacts/', expect.objectContaining({ name: 'Bob', phones: [] }));
   });
 
+  it('new mode: drops blank-number phone rows from the POST payload, keeps filled ones', async () => {
+    api.post.mockResolvedValueOnce({ contact_id: 3 });
+    await resolveSenderToContact({
+      mode: 'new',
+      contactForm: { name: 'Bob', phones: [{ number: '', label: 'x' }, { number: '555', label: 'cell' }, { number: '  ', label: '' }] },
+      businessMode: 'none',
+    });
+    expect(api.post.mock.calls[0][1].phones).toEqual([{ number: '555', label: 'cell' }]);
+  });
+
   it('new mode + existing business: requires a selected business', async () => {
     await expect(
       resolveSenderToContact({

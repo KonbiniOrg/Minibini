@@ -33,6 +33,7 @@ export async function resolveSenderToContact(state) {
 
   // mode === 'new'
   const contactPayload = { ...state.contactForm };
+  contactPayload.phones = (contactPayload.phones || []).filter((p) => (p.number || '').trim());
 
   let businessId = null;
   let newBusinessName = null;
