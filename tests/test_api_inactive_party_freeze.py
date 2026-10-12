@@ -247,3 +247,36 @@ class DocumentFreezeBypassAndFunnelTest(BaseTestCase):
         self.assertIn(FREEZE, r.json().get('detail', ''))
         self.est.refresh_from_db()
         self.assertEqual(self.est.status, Estimate.STATUS_OPEN)
+
+
+class POFreezeTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        from apps.purchasing.models import PurchaseOrder
+        self.client = APIClient()
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+        self.biz, self.dc, (self.other,) = make_business('PoFrz')
+        self.po = PurchaseOrder.objects.create(po_number='PO-FRZ-1', business=self.biz, contact=self.other,
+                                               status=PurchaseOrder.STATUS_RECEIVED_IN_FULL)
+        ContactService.deactivate_contact(self.other)
+
+    def _assert_frozen(self, response):
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn(FREEZE, response.data.get('detail', ''))
+
+    def test_flags_and_edit_refused(self):
+        d = self.client.get(f'/api/purchase-orders/{self.po.pk}/').data
+        self.assertFalse(d['contact_is_active']); self.assertTrue(d['business_is_active'])
+        self._assert_frozen(self.client.patch(f'/api/purchase-orders/{self.po.pk}/', {'requested_date': '2026-11-01'}, format='json'))
+        self._assert_frozen(self.client.post(f'/api/purchase-orders/{self.po.pk}/line-items/',
+                                             {'description': 'x', 'qty': '1', 'price': '1.00'}, format='json'))
+
+    def test_swap_contact_same_vendor_ok_then_edit_works(self):
+        r = self.client.patch(f'/api/purchase-orders/{self.po.pk}/', {'contact': self.dc.pk}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(self.client.patch(f'/api/purchase-orders/{self.po.pk}/', {'requested_date': '2026-11-01'}, format='json').status_code, 200)
+
+    def test_inactive_vendor_business_freezes_without_swap(self):
+        ContactService.reactivate_contact(self.other)
+        ContactService.deactivate_business(self.biz)
+        self._assert_frozen(self.client.patch(f'/api/purchase-orders/{self.po.pk}/', {'contact': self.dc.pk}, format='json'))

@@ -13,6 +13,23 @@ from apps.purchasing.models import (
 from apps.core.services import NotFoundError, NumberGenerationService
 
 
+def _assert_po_not_frozen(po, action):
+    """Spec §5.2: a PO whose vendor business or vendor contact is inactive
+    accepts no user-driven mutation."""
+    business = po.business
+    if business is not None and not business.is_active:
+        raise ValidationError(
+            f"Cannot {action}: this PO's vendor, {business.business_name}, is inactive. "
+            f"Reactivate the vendor before making changes.")
+    contact = po.contact
+    if contact is not None and not contact.is_active:
+        hint = (f', or move the PO to an active contact at {business.business_name},'
+                if business is not None else ',')
+        raise ValidationError(
+            f"Cannot {action}: this PO's contact, {contact.name}, is inactive. "
+            f"Reactivate the contact{hint} before making changes.")
+
+
 class PurchaseOrderService:
     """Service for purchase order operations."""
 
@@ -50,6 +67,17 @@ class PurchaseOrderService:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {pk} not found')
+        from apps.jobs.services import _assert_party_active
+        new_contact = kwargs.get('contact')
+        same_vendor_swap = (set(kwargs) == {'contact'} and new_contact is not None
+                            and po.business_id is not None
+                            and new_contact.business_id == po.business_id
+                            and po.business.is_active)
+        if not same_vendor_swap:
+            # Freeze first so a frozen PO reports the freeze, not the new contact.
+            _assert_po_not_frozen(po, 'edit this purchase order')
+        if new_contact is not None:
+            _assert_party_active(new_contact)
         for field, value in kwargs.items():
             setattr(po, field, value)
         po.full_clean()
@@ -63,6 +91,7 @@ class PurchaseOrderService:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {pk} not found')
+        _assert_po_not_frozen(po, 'change this purchase order')
         if new_status == PurchaseOrder.STATUS_ISSUED and po.business_id is None:
             raise ValidationError(
                 {'business': ['A purchase order needs a vendor before it can be issued.']})
@@ -135,6 +164,7 @@ class PurchaseOrderService:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
+        _assert_po_not_frozen(po, 'reconcile this purchase order')
 
         if po.status == PurchaseOrder.STATUS_DRAFT:
             raise ValidationError(
@@ -407,6 +437,7 @@ class PurchaseOrderService:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {pk} not found')
+        _assert_po_not_frozen(po, 'cancel this purchase order')
         if po.status != PurchaseOrder.STATUS_ISSUED:
             raise ValidationError(
                 f'Cannot cancel PO {po.po_number}. Only issued POs can be cancelled.'
@@ -439,6 +470,7 @@ class PurchaseOrderService:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {pk} not found')
+        _assert_po_not_frozen(po, 'delete this purchase order')
         if po.status != PurchaseOrder.STATUS_DRAFT:
             raise ValidationError(
                 f'Cannot delete PO {po.po_number}. Only draft POs can be deleted.'
@@ -548,6 +580,7 @@ class PurchaseOrderService:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
+        _assert_po_not_frozen(po, 'edit this purchase order')
         PurchaseOrderService._validate_draft(po)
 
         if 'invoice_only' in kwargs:
@@ -594,6 +627,7 @@ class PurchaseOrderService:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
+        _assert_po_not_frozen(po, 'edit this purchase order')
         PurchaseOrderService._validate_draft(po)
         PurchaseOrderService._reject_task_with_procurement(task, job, material_id)
         try:
@@ -640,6 +674,7 @@ class PurchaseOrderService:
             li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
         except PurchaseOrderLineItem.DoesNotExist:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
+        _assert_po_not_frozen(li.purchase_order, 'edit this purchase order')
         if li.purchase_order.status == PurchaseOrder.STATUS_CANCELLED:
             raise ValidationError('Cannot change job on a cancelled PO.')
         PurchaseOrderService._reject_job_change_on_task_line(li, new_job_id)
@@ -690,6 +725,7 @@ class PurchaseOrderService:
             li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
         except PurchaseOrderLineItem.DoesNotExist:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
+        _assert_po_not_frozen(li.purchase_order, 'edit this purchase order')
         PurchaseOrderService._validate_draft(li.purchase_order)
 
         if 'invoice_only' in kwargs:
@@ -717,6 +753,7 @@ class PurchaseOrderService:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
+        _assert_po_not_frozen(po, 'edit this purchase order')
         PurchaseOrderService._validate_draft(po)
         from django.db import transaction as db_transaction
         with db_transaction.atomic():
@@ -733,6 +770,7 @@ class PurchaseOrderService:
             li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
         except PurchaseOrderLineItem.DoesNotExist:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
+        _assert_po_not_frozen(li.purchase_order, 'edit this purchase order')
         if li.purchase_order.status != PurchaseOrder.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft purchase order.'
@@ -747,6 +785,7 @@ class PurchaseOrderService:
             li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
         except PurchaseOrderLineItem.DoesNotExist:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
+        _assert_po_not_frozen(li.purchase_order, 'edit this purchase order')
         if li.purchase_order.status != PurchaseOrder.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft purchase order.'
@@ -764,6 +803,7 @@ class PurchaseOrderReceivingService:
         QOH bumps by received qty for inventoried PLIs. Overage is accepted."""
         from apps.inventory.services import InventoryService
 
+        _assert_po_not_frozen(po, 'receive against this purchase order')
         if po.status not in (
             PurchaseOrder.STATUS_ISSUED,
             PurchaseOrder.STATUS_PARTLY_RECEIVED,
@@ -838,6 +878,7 @@ class PurchaseOrderReceivingService:
         lines (reconciliation-appended, e.g. freight) are excluded — they
         were never ordered/received and take no part in receiving flows.
         """
+        _assert_po_not_frozen(po, 'receive against this purchase order')
         line_items = PurchaseOrderLineItem.objects.filter(
             purchase_order=po, invoice_only=False,
         )
@@ -863,6 +904,7 @@ class PurchaseOrderReceivingService:
         ('keep'|'delete') is required.
         """
 
+        _assert_po_not_frozen(po, 'receive against this purchase order')
         if po.status not in (
             PurchaseOrder.STATUS_ISSUED,
             PurchaseOrder.STATUS_PARTLY_RECEIVED,
@@ -915,6 +957,7 @@ class PurchaseOrderReceivingService:
         from apps.inventory.models import Material
         from apps.inventory.services import InventoryService
 
+        _assert_po_not_frozen(po, 'receive against this purchase order')
         if po.status not in (
             PurchaseOrder.STATUS_ISSUED,
             PurchaseOrder.STATUS_PARTLY_RECEIVED,
@@ -1112,6 +1155,7 @@ class PurchaseOrderEmailService:
         from apps.core.services import OutboundEmailService
         from apps.purchasing.pdf import generate_purchase_order_pdf
 
+        _assert_po_not_frozen(po, 'send this purchase order')
         if not to:
             raise ValidationError('Recipient email address is required.')
         if isinstance(to, str):
