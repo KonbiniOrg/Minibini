@@ -268,6 +268,16 @@ re-raises. Accepted trade-off: a same-named-but-genuinely-different customer
 binds silently. (Vendors never gained the adopt path — the vendor push was
 retired with bills, 2026-07-23.)
 
+### Customer/Vendor Active flag — sandbox findings (2026-10-11)
+
+Status: **PENDING — RM runs the probe.** Contact/Business deactivation (status push/pull) maps onto QBO's `Active` flag on Customers. Three behaviours are unverified against a real QBO company; the disposable probe `docs/plans/2026-10-11-qbo-active-probe.py` answers them (RM runs it via `manage.py shell` against the **sandbox** company only, then does two manual sandbox steps: an unpaid invoice for the probe customer and an unpaid bill for the probe vendor, re-running just the deactivate lines).
+
+- **(a) " (deleted)" suffix.** Does inactivating a Customer/Vendor append " (deleted)" to its `DisplayName`, and does reactivation strip it? **PENDING — RM runs the probe.**
+- **(b) Refusal with open balances.** Does the API refuse to inactivate a Customer with a balance (unpaid invoice) or a Vendor with open bills, and with what exact message? **PENDING — RM runs the probe.**
+- **(c) `_adopt_id_by_name` inactive fallback.** Needed if (a) is "yes, and reactivation strips it": a push whose name collides with an inactive record should adopt-and-reactivate via an `Active=False` fallback query. Decision: **PENDING — RM runs the probe.**
+
+Tasks 17-18 (status push/pull) ship without waiting on these answers: the answers only affect this doc and the optional adopt fallback.
+
 ### DisplayName collision logic — `QBODisplayNameService`
 
 QBO requires unique `DisplayName` per entity type. The same Minibini `Business` may be both a customer (the company issues them invoices) and a vendor (the company also buys from them). Rules:
