@@ -137,6 +137,22 @@ describe('ContactDetailPage edit modal', () => {
   });
 });
 
+describe('ContactDetailPage delete eligibility vs inactive siblings', () => {
+  it('hides Delete… for the default contact when every sibling is inactive, shows it once one is active', async () => {
+    const contact = mockContact({ business: BIZ_SUMMARY });
+    const inactiveSibling = { ...BIZ_DETAIL, contacts: [{ contact_id: 1, name: 'Jane', is_active: true }, { contact_id: 2, name: 'Marcus', is_active: false }], jobs: [] };
+    wire(contact, inactiveSibling);
+    const { unmount } = render(ContactDetailPage, { props: { params: { id: '1' } } });
+    await screen.findByRole('button', { name: 'Deactivate' });
+    expect(screen.queryByRole('button', { name: 'Delete…' })).toBeNull();
+    unmount();
+    const activeSibling = { ...inactiveSibling, contacts: [{ contact_id: 1, name: 'Jane', is_active: true }, { contact_id: 2, name: 'Marcus', is_active: true }] };
+    wire(contact, activeSibling);
+    render(ContactDetailPage, { props: { params: { id: '1' } } });
+    expect(await screen.findByRole('button', { name: 'Delete…' })).toBeInTheDocument();
+  });
+});
+
 describe('ContactDetailPage status actions', () => {
   it('active contact: Deactivate posts and reloads; a blocker renders under the actions', async () => {
     wire(mockContact({ is_active: true }));

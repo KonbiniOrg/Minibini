@@ -1703,3 +1703,13 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ every job-owned write viewset either mixes in the mixin or has a
   written reason not to, and the freeze-placement decision is recorded in
   `docs/designs/contacts-and-businesses.md`.
+
+- **`PATCH /api/contacts/{id}/ {business_id: null}` is silently ignored.** — _added 2026-10-11 (found writing the default-contact e2e)_
+  `ContactViewSet.perform_update` pops `business` and only forwards it as
+  `business_pk` when non-None, so an explicit null never reaches
+  `ContactService.update_contact(business_pk=None)` — the API cannot unlink a
+  contact from its business (the service can). Pre-existing; the new
+  "move the default needs an active sibling" guard therefore only fires on
+  moves between businesses via the API.
+  _Done when:_ a null `business_id` is forwarded as `business_pk=None` (with
+  the same default-contact guard) and a test covers the unlink.

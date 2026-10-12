@@ -119,7 +119,13 @@
     ? canDeleteContact({
         jobs: contact.jobs,
         hasBusiness: !!contact.business,
-        siblingCount: business?.contacts ? business.contacts.length - 1 : 0,
+        // The default contact can only be deleted when another ACTIVE
+        // contact can take over (server rule, 2026-10-11); a non-default
+        // contact just needs the business to keep any contact at all.
+        siblingCount: business?.contacts
+          ? (business.contacts.filter((c) => c.contact_id !== contact.contact_id
+              && (!isDefaultContact || c.is_active !== false)).length)
+          : 0,
       })
     : false);
 
