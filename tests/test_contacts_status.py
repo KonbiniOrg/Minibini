@@ -297,3 +297,96 @@ class InactiveDefaultContactTest(TestCase):
         with self.assertRaises(ValidationError) as cm:
             ContactService.update_business(b.pk, default_contact=other)
         self.assertIn('is inactive', str(cm.exception))
+
+
+class DefaultContactActiveInvariantTest(TestCase):
+    """RM 2026-10-11: an active business's default contact must stay active.
+    Deleting or moving the default requires another ACTIVE contact at the
+    business; replacement defaults skip inactive contacts."""
+
+    def _biz_with_inactive_sibling(self):
+        b, dc, (other,) = make_business('Dflt', n_contacts=2)
+        ContactService.deactivate_contact(other)
+        other.refresh_from_db()
+        return b, dc, other
+
+    def test_delete_default_refused_when_only_inactive_siblings(self):
+        b, dc, other = self._biz_with_inactive_sibling()
+        with self.assertRaises(ValidationError) as cm:
+            ContactService.delete_contact(dc.pk)
+        self.assertIn('no other active contact', cm.exception.messages[0])
+        self.assertTrue(Contact.objects.filter(pk=dc.pk).exists())
+
+    def test_delete_default_picks_an_active_replacement_over_lower_pk_inactive(self):
+        b, dc, (inactive, active) = make_business('Pick', n_contacts=3)
+        ContactService.deactivate_contact(inactive)        # lower pk than `active`
+        ContactService.delete_contact(dc.pk)
+        b.refresh_from_db()
+        self.assertEqual(b.default_contact_id, active.pk)
+
+    def test_explicit_replacement_must_be_active(self):
+        b, dc, (inactive, active) = make_business('Expl', n_contacts=3)
+        ContactService.deactivate_contact(inactive)
+        with self.assertRaises(ValidationError):
+            ContactService.delete_contact(dc.pk, new_default_contact_pk=inactive.pk)
+
+    def test_move_default_refused_without_another_active_contact(self):
+        b, dc, other = self._biz_with_inactive_sibling()
+        b2, _, _ = make_business('Elsewhere', n_contacts=1)
+        with self.assertRaises(ValidationError) as cm:
+            ContactService.update_contact(dc.pk, business_pk=b2.pk)
+        self.assertIn('no other active contact', cm.exception.messages[0])
+        with self.assertRaises(ValidationError):
+            ContactService.update_contact(dc.pk, business_pk=None)   # unlink: same rule
+
+    def test_move_only_contact_refused(self):
+        b, dc, _ = make_business('Solo', n_contacts=1)
+        b2, _, _ = make_business('Dest', n_contacts=1)
+        with self.assertRaises(ValidationError):
+            ContactService.update_contact(dc.pk, business_pk=b2.pk)
+
+    def test_move_default_with_active_sibling_rehomes_default_to_the_active_one(self):
+        b, dc, (inactive, active) = make_business('Move', n_contacts=3)
+        ContactService.deactivate_contact(inactive)
+        b2, _, _ = make_business('Dest2', n_contacts=1)
+        ContactService.update_contact(dc.pk, business_pk=b2.pk)
+        b.refresh_from_db()
+        self.assertEqual(b.default_contact_id, active.pk)
+
+    def test_update_business_allows_unchanged_default_even_if_inactive(self):
+        # Legacy / pre-fix state: force an inactive default directly.
+        b, dc, (other,) = make_business('Legacy', n_contacts=2)
+        other.is_active = False
+        other.save()
+        Business.objects.filter(pk=b.pk).update(default_contact=other)
+        ContactService.update_business(b.pk, website='https://legacy.test', default_contact=other)
+        b.refresh_from_db()
+        self.assertEqual(b.website, 'https://legacy.test')
+
+    def test_update_business_refuses_changing_default_to_inactive(self):
+        b, dc, other = self._biz_with_inactive_sibling()
+        with self.assertRaises(ValidationError):
+            ContactService.update_business(b.pk, default_contact=other)
+
+
+class FrozenJobConsumptionSkipTest(TestCase):
+    """RM 2026-10-11 (#11): establish/receipt/expense paths must not raise on a
+    frozen job — consume_if_task_started leaves the material pending."""
+
+    def test_consume_if_task_started_skips_on_frozen_job(self):
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.inventory.models import Material
+        from apps.inventory.services import MaterialService
+        from apps.jobs.models import Task
+        c = Contact.objects.create(first_name='Frz', last_name='M', email='frzm@x.test')
+        job = make_job(c, Job.STATUS_CANCELLED)
+        task = Task.objects.create(job=job, name='T', status=Task.STATUS_IN_PROGRESS)
+        ac = AccountingCategory.objects.create(code='MATX', name='Material X')
+        material = Material.objects.create(job=job, task=task, description='prov',
+                                           quantity=Decimal('1.00'), accounting_category=ac)
+        Contact.objects.filter(pk=c.pk).update(is_active=False)   # force the freeze
+        material.refresh_from_db()
+        out = MaterialService.consume_if_task_started(material)    # must not raise
+        out.refresh_from_db()
+        self.assertEqual(out.consumption_state, Material.CONSUMPTION_STATE_PENDING)

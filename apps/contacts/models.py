@@ -152,14 +152,22 @@ class Contact(models.Model):
 
         # Check if this contact is the default_contact for its business
         if business and business.default_contact == self:
-            other_contacts = business.contacts.exclude(pk=self.pk)
-            if not other_contacts.exists():
+            # An active business's default must stay active: the stand-in is
+            # the lowest-pk ACTIVE sibling (RM 2026-10-11).
+            others = business.contacts.exclude(pk=self.pk)
+            if not others.exists():
                 raise PermissionDenied(
                     f'Cannot delete the only contact for business "{business}". '
                     'Delete the business or add another contact as the default first.'
                 )
-            # Reassign default_contact to another contact before deleting
-            business.default_contact = other_contacts.first()
+            replacement = others.filter(is_active=True).order_by('contact_id').first()
+            if replacement is None:
+                raise PermissionDenied(
+                    f'Cannot delete the default contact for business "{business}" '
+                    'without another active contact there. Add or reactivate one '
+                    'and make it the default first.'
+                )
+            business.default_contact = replacement
             business.save(update_fields=['default_contact'])
 
         super().delete(*args, **kwargs)
@@ -291,8 +299,11 @@ class Business(models.Model):
             # Default contact is valid, do nothing
             return
 
-        # Default contact is invalid or missing, set to contact with lowest primary key
-        lowest_pk_contact = contacts.order_by('contact_id').first()
+        # Default contact is invalid or missing: lowest-pk ACTIVE contact,
+        # falling back to any contact only when none is active (self-heal
+        # must never fail; RM 2026-10-11).
+        lowest_pk_contact = (contacts.filter(is_active=True).order_by('contact_id').first()
+                             or contacts.order_by('contact_id').first())
         self.default_contact = lowest_pk_contact
         self.save(update_fields=['default_contact'])
 

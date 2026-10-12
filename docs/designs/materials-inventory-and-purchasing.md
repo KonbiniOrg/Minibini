@@ -531,7 +531,11 @@ through `InventoryService._mutate_earmark`.
 metadata paths, and (final review) `draw_more`, `mark_on_hand`, `assign_task`,
 `consume` and `remove` (including its qty==0 branch) call `_assert_job_not_frozen(material.job, …)` (just ahead of
 the on-hold guard), so a job whose contact is inactive takes no material
-changes — see `jobs-and-tasks.md` §3.7.
+changes — see `jobs-and-tasks.md` §3.7. One deliberate exception (RM
+2026-10-11): `consume_if_task_started` — the sweep that `establish` runs for
+PO-receipt pricing and expense attach — returns the material untouched when
+its job is frozen, so booking stock or an expense against a frozen job's
+provisional material never fails; the material simply stays pending.
 
 | Operation | Effect |
 |---|---|

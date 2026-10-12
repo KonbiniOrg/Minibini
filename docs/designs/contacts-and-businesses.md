@@ -93,10 +93,20 @@ no longer points at one of its own contacts (see `Business` below).
 service-layer one (`ContactService.delete_contact`, next section): if this
 contact is its business's `default_contact` and no other contact exists on
 that business, it raises `PermissionDenied` (not `ValidationError`) rather
-than delete. If another contact exists, it reassigns `default_contact`
-before deleting. This means the guard fires even for a raw
+than delete. If other contacts exist but none is **active**, it also raises
+`PermissionDenied` (RM 2026-10-11: an active business's default must stay
+active). Otherwise it reassigns `default_contact` to the lowest-pk active
+sibling before deleting. This means the guard fires even for a raw
 `contact.delete()` call that bypasses the service — belt-and-suspenders, not
 redundant plumbing to remove.
+
+**Moving the default (2026-10-11).** `ContactService.update_contact(pk,
+business_pk=…)` — to another business or to `None` — refuses when the
+contact is its current business's `default_contact` and no other *active*
+contact exists there (`Cannot move <name>: it is the default contact for
+<business> and no other active contact exists there. …`). The only contact
+of a business therefore cannot be moved away either. When the move is
+allowed, the self-heal below re-homes the default onto an active sibling.
 
 ### `ContactService` (`apps/contacts/services.py`)
 
@@ -104,7 +114,7 @@ redundant plumbing to remove.
 |---|---|
 | `create_contact(*, business_pk=None, **kwargs)` | Pre-checks for a duplicate email (see "Duplicate detection" below) before constructing the instance. Resolves `business_pk` to a `Business` (raises `NotFoundError` if missing). Calls `full_clean()` + `save()`. |
 | `update_contact(pk, *, business_pk=_sentinel, **kwargs)` | Generic `setattr` loop. `business_pk` is a sentinel-defaulted kwarg so `None` (clear the business) is distinguishable from "not passed." Refuses an inactive contact (`assert_active`). **Does not** pre-check duplicate email — an email collision on update surfaces only as a plain `full_clean()` validation error (a field-level 400, not the rich 409); this is a deliberate narrower scope, not a gap — see "Duplicate detection" below. |
-| `delete_contact(pk, new_default_contact_pk=None)` | Raises `ValidationError` if the contact has any `Job` or `Bill` (the Bill check remains for legacy rows — the retired-but-retained schema, materials doc §13). If it's a business's sole contact, raises `ValidationError` (a friendlier message than the model's own `PermissionDenied` path, since the service checks it explicitly first via `other_contacts.exists()`). If it's the default contact with siblings, reassigns to `new_default_contact_pk` (validated as belonging to the same business) or the first sibling, then deletes. |
+| `delete_contact(pk, new_default_contact_pk=None)` | Raises `ValidationError` if the contact has any `Job` or `Bill` (the Bill check remains for legacy rows — the retired-but-retained schema, materials doc §13). If it's a business's sole contact, raises `ValidationError` (a friendlier message than the model's own `PermissionDenied` path, since the service checks it explicitly first via `other_contacts.exists()`). If it's the default contact, requires another **active** sibling (else `ValidationError` "…no other active contact exists there…"), then reassigns to `new_default_contact_pk` (validated as belonging to the same business **and active**) or the lowest-pk active sibling, then deletes. |
 
 ---
 
@@ -168,7 +178,9 @@ contacts, no-ops (can't fix — a business without any contact cannot satisfy
 the required FK, which is an inconsistent state the model doesn't actively
 prevent from arising via `SET_NULL` moves). If the current
 `default_contact` is one of the business's own contacts, no-ops. Otherwise
-reassigns to the contact with the lowest `contact_id`. Called from
+reassigns to the **active** contact with the lowest `contact_id`, falling
+back to any contact only when none is active (the self-heal never fails;
+RM 2026-10-11). Called from
 `Contact.save()`/`Contact.delete()` (both the business the contact is
 joining/leaving), so `default_contact` drift is corrected automatically as
 contacts move between businesses — no dedicated management command needed.

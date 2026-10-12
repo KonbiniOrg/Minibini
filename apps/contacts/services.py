@@ -63,6 +63,27 @@ def _vendor_po_blockers(business):
 _sentinel = object()
 
 
+def _active_replacement_default(business, exclude_pk):
+    """Lowest-pk ACTIVE contact at `business` other than `exclude_pk`, or
+    None. RM 2026-10-11: an active business's default contact must stay
+    active, so deleting/moving the default needs an active stand-in and the
+    replacement never lands on an inactive contact."""
+    return (business.contacts.filter(is_active=True).exclude(pk=exclude_pk)
+            .order_by('contact_id').first())
+
+
+def _assert_default_replaceable(contact, business, verb):
+    if business is None or business.default_contact_id != contact.pk:
+        return None
+    replacement = _active_replacement_default(business, contact.pk)
+    if replacement is None:
+        raise ValidationError(
+            f'Cannot {verb} {contact}: it is the default contact for '
+            f'{business.business_name} and no other active contact exists there. '
+            f'Add or reactivate another contact and make it the default first.')
+    return replacement
+
+
 def _push_status_to_qbo(obj, active):
     """Spec 6.6 failure policy: no QBO id or no connection -> nothing to
     push. Otherwise QBO must accept; its error becomes the user's error and
@@ -137,6 +158,9 @@ class ContactService:
             setattr(contact, field, value)
 
         if business_pk is not _sentinel:
+            old_business = contact.business
+            if old_business is not None and business_pk != old_business.pk:
+                _assert_default_replaceable(contact, old_business, 'move')
             if business_pk is None:
                 contact.business = None
             else:
@@ -180,14 +204,14 @@ class ContactService:
 
         business = contact.business
         if business and business.default_contact == contact:
-            other_contacts = business.contacts.exclude(pk=pk)
-            if not other_contacts.exists():
+            if not business.contacts.exclude(pk=pk).exists():
                 raise ValidationError(
                     f'Cannot delete "{contact}" — it is the only contact for '
                     f'business "{business.business_name}".'
                 )
+            replacement = _assert_default_replaceable(contact, business, 'delete')
 
-            # Determine new default
+            # Determine new default (explicit pick must be active too)
             if new_default_contact_pk:
                 try:
                     new_default = Contact.objects.get(
@@ -197,8 +221,9 @@ class ContactService:
                     raise NotFoundError(
                         f'Contact {new_default_contact_pk} not found in business'
                     )
+                ContactService.assert_active(new_default)
             else:
-                new_default = other_contacts.first()
+                new_default = replacement
 
             # Set new default before deleting to avoid PROTECT
             business.default_contact = new_default
@@ -296,8 +321,9 @@ class ContactService:
         except Business.DoesNotExist:
             raise NotFoundError(f'Business {pk} not found')
         ContactService.assert_active(business)
-        if kwargs.get('default_contact') is not None:
-            ContactService.assert_active(kwargs['default_contact'])
+        new_default = kwargs.get('default_contact')
+        if new_default is not None and new_default.pk != business.default_contact_id:
+            ContactService.assert_active(new_default)
 
         for field, value in kwargs.items():
             setattr(business, field, value)

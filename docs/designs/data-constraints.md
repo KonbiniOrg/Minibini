@@ -2580,7 +2580,13 @@ translations should respect the same implication. Attaching a contact to an
 already-inactive business is refused: `create_contact(business_pk=…)` and
 `update_contact(business_pk=…)` raise `ValidationError({'business_id': ['<name> is inactive.']})`.
 Likewise `update_business(default_contact=…)` refuses an inactive contact
-(`assert_active`).
+(`assert_active`) **when the default is changing**; an unchanged default is
+not re-checked, so editing other fields never locks up. The invariant
+"an active business's default contact is active" is also kept by the
+replacement paths: deleting or moving (re-homing/unlinking) the default
+requires another *active* contact at the business (service `ValidationError`
+/ model `PermissionDenied`), and both the explicit replacement and the
+self-heal (`validate_and_fix_default_contact`) skip inactive contacts.
 
 `Contact.phones` / `Business.phones` hold at most 20 entries
 (`clean_phones` → `{'phones': ['A record can hold at most 20 phone numbers.']}`).

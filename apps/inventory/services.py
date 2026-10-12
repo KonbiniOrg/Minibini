@@ -844,6 +844,10 @@ class MaterialService:
         task = material.task
         if task is None or task.status != Task.STATUS_IN_PROGRESS:
             return material
+        # Frozen job (inactive contact): the receipt/expense that got us here
+        # must not fail — leave the material pending (RM 2026-10-11, #11).
+        if material.job is not None and not material.job.contact.is_active:
+            return material
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             return material
         pli = material.inventory_item
