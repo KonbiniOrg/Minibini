@@ -213,3 +213,44 @@ class InactiveEditRefusalTest(TestCase):
     def test_delete_still_allowed(self):
         ContactService.delete_contact(self.c.pk)
         self.assertFalse(Contact.objects.filter(pk=self.c.pk).exists())
+
+
+class CreateWithInactivePartyTest(TestCase):
+    def test_create_job_with_inactive_contact(self):
+        from apps.jobs.services import JobService
+        c = Contact.objects.create(first_name='In', last_name='X', email='in@x.test', is_active=False)
+        with self.assertRaises(ValidationError) as cm:
+            JobService.create_job(name='J', contact=c)
+        self.assertIn('contact', cm.exception.message_dict)
+
+    def test_create_job_with_contact_of_inactive_business(self):
+        from apps.jobs.services import JobService
+        b, dc, _ = make_business('InCo')
+        ContactService.deactivate_business(b)
+        dc.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            JobService.create_job(name='J', contact=dc)
+
+    def test_duplicate_into_inactive_contact_refused_but_frozen_source_ok(self):
+        from apps.jobs.services import JobService
+        src_contact = Contact.objects.create(first_name='Src', last_name='X', email='src@x.test')
+        src = make_job(src_contact, Job.STATUS_COMPLETED)
+        ContactService.deactivate_contact(src_contact)       # source now frozen
+        dead = Contact.objects.create(first_name='Dead', last_name='Y', email='deady@x.test', is_active=False)
+        with self.assertRaises(ValidationError):
+            JobService.duplicate_job(src, contact=dead, path='estimate')
+        live = Contact.objects.create(first_name='Live', last_name='Y', email='livey@x.test')
+        new = JobService.duplicate_job(src, contact=live, path='estimate')
+        self.assertEqual(new.contact, live)
+
+    def test_create_po_with_inactive_vendor_or_contact(self):
+        from apps.purchasing.services import PurchaseOrderService
+        b, dc, (other,) = make_business('PoCo')
+        ContactService.deactivate_contact(other)
+        with self.assertRaises(ValidationError) as cm:
+            PurchaseOrderService.create_po(business=b, contact=other)
+        self.assertIn('contact', cm.exception.message_dict)
+        ContactService.deactivate_business(b)
+        with self.assertRaises(ValidationError) as cm:
+            PurchaseOrderService.create_po(business=b)
+        self.assertIn('business', cm.exception.message_dict)

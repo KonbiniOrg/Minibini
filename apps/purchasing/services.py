@@ -32,6 +32,11 @@ class PurchaseOrderService:
     @staticmethod
     def create_po(**kwargs):
         """Create a new PurchaseOrder with auto-generated number."""
+        business = kwargs.get('business')
+        if business is not None and not business.is_active:
+            raise ValidationError({'business': [f'{business.business_name} is inactive.']})
+        from apps.jobs.services import _assert_party_active
+        _assert_party_active(kwargs.get('contact'))
         po_number = NumberGenerationService.generate_next_number('po')
         po = PurchaseOrder(po_number=po_number, **kwargs)
         po.full_clean()

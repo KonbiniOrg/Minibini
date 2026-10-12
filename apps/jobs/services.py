@@ -170,6 +170,18 @@ def _assert_job_allows_blep(job, allowed_statuses, action):
         )
 
 
+def _assert_party_active(contact, field='contact'):
+    """A new job/PO may not point at an inactive contact, nor at a contact
+    whose business is inactive (spec §4.8)."""
+    if contact is None:
+        return
+    if not contact.is_active:
+        raise ValidationError({field: [f'{contact} is inactive.']})
+    business = contact.business
+    if business is not None and not business.is_active:
+        raise ValidationError({field: [f'{business.business_name} is inactive.']})
+
+
 def _assert_job_not_on_hold(job, action):
     """Reject task/material mutations while the job is paused (on_hold flag).
 
@@ -522,6 +534,7 @@ class JobService:
     @staticmethod
     def create_job(**kwargs):
         """Create a new Job with auto-generated number."""
+        _assert_party_active(kwargs.get('contact'))
         job_number = NumberGenerationService.generate_next_number('job')
         job = Job(job_number=job_number, **kwargs)
         job.full_clean()
