@@ -160,3 +160,90 @@ class DocumentFreezeTest(BaseTestCase):
 
     def test_invoice_open_refused(self):
         self._assert_frozen(self.client.post(f'/api/jobs/{self.job.pk}/start-invoice-wizard/', {}, format='json'))
+
+
+class DocumentFreezeBypassAndFunnelTest(BaseTestCase):
+    """Behaviour of the guard beyond the create paths: system bypass,
+    the shared wizard funnel, and the customer portal.
+
+    The documents are built while the contact is active; the contact is then
+    forced inactive with a queryset update (test-only — open jobs normally
+    block deactivation, so this reaches the frozen-with-live-document state
+    the guard must handle generically)."""
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+        from apps.estimates.models import Estimate, EstimateLineItem
+        from apps.estimates.services import EstimateService
+        from apps.jobs.services import JobService
+        self.contact = Contact.objects.create(first_name='Pat', last_name='Frz', email='patfrz@x.test')
+        self.job = JobService.create_job(name='Frz Job', contact=self.contact)
+        self.est = EstimateService.create_for_job(self.job.pk)
+        EstimateLineItem.objects.create(
+            estimate=self.est, description='Work', qty=Decimal('1'), price=Decimal('100.00'),
+            accounting_category=AccountingCategory.objects.filter(is_deposit=False).first())
+
+    def _freeze(self):
+        Contact.objects.filter(pk=self.contact.pk).update(is_active=False)
+
+    def _open_estimate(self):
+        from apps.estimates.models import Estimate
+        from apps.estimates.services import EstimateService
+        EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
+        self.est.refresh_from_db()
+
+    def test_estimate_update_status_refused_but_system_transition_allowed(self):
+        from django.core.exceptions import ValidationError
+        from apps.estimates.models import Estimate
+        from apps.estimates.services import EstimateService
+        self._open_estimate()
+        self._freeze()
+        with self.assertRaises(ValidationError) as cm:
+            EstimateService.update_status(self.est.pk, Estimate.STATUS_EXPIRED)
+        self.assertIn(FREEZE, str(cm.exception))
+        EstimateService.update_status(self.est.pk, Estimate.STATUS_EXPIRED, system_transition=True)
+        self.est.refresh_from_db()
+        self.assertEqual(self.est.status, Estimate.STATUS_EXPIRED)
+
+    def test_change_order_update_status_refused_but_system_transition_allowed(self):
+        from django.core.exceptions import ValidationError
+        from apps.estimates.change_order_service import ChangeOrderService
+        from apps.estimates.models import ChangeOrder
+        from tests.test_mark_change_orders_expired import (
+            _advance_job_to_on_hold, _make_accepted_estimate, _make_open_co_past_due)
+        from apps.estimates.models import Estimate
+        Estimate.objects.filter(pk=self.est.pk).delete()
+        _advance_job_to_on_hold(self.job)
+        est = _make_accepted_estimate(self.job)
+        co = _make_open_co_past_due(self.job, est)
+        self._freeze()
+        with self.assertRaises(ValidationError) as cm:
+            ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_EXPIRED)
+        self.assertIn(FREEZE, str(cm.exception))
+        ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_EXPIRED, system_transition=True)
+        co.refresh_from_db()
+        self.assertEqual(co.status, ChangeOrder.STATUS_EXPIRED)
+
+    def test_wizard_funnel_refuses_on_frozen_job(self):
+        from django.core.exceptions import ValidationError
+        from apps.estimates.services import EstimateWizardService
+        task = Task(job=self.job, name='T', status=Task.STATUS_PENDING)
+        task.stamp_from_scheme(RateScheme.objects.first())
+        task.save()
+        self._freeze()
+        self.est = type(self.est).objects.get(pk=self.est.pk)  # drop the cached active contact
+        with self.assertRaises(ValidationError) as cm:
+            EstimateWizardService.add_atoms_to_new_line_item(
+                self.est, [{'type': 'task', 'id': task.pk}])
+        self.assertIn(FREEZE, str(cm.exception))
+
+    def test_portal_accept_refused_on_frozen_job(self):
+        from django.test import Client
+        from apps.estimates.models import Estimate
+        self._open_estimate()
+        self._freeze()
+        r = Client().post(f'/api/portal/estimates/{self.est.public_token}/accept/')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn(FREEZE, r.json().get('detail', ''))
+        self.est.refresh_from_db()
+        self.assertEqual(self.est.status, Estimate.STATUS_OPEN)

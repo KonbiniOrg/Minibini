@@ -369,7 +369,6 @@ class EstimateService:
             parent = Estimate.objects.get(pk=pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {pk} not found')
-        from apps.jobs.services import JobService
         JobService.assert_mutable(parent.job, 'edit this estimate')
         with transaction.atomic():
             # Record the change request against the estimate the customer saw,
