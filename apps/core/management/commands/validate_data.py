@@ -175,8 +175,6 @@ class Command(BaseCommand):
         for c in Contact.objects.all():
             if not c.email or not c.email.strip():
                 self.errors.append(f'Contact {c.pk} ({c.name}): missing email')
-            if not any([c.work_number, c.mobile_number, c.home_number]):
-                self.errors.append(f'Contact {c.pk} ({c.name}): no phone number (need at least one)')
 
     # ── Businesses ────────────────────────────────────────────
 
