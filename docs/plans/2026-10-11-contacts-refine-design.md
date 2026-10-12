@@ -23,12 +23,13 @@ Two changes to `Contact` and `Business`:
 
 ## 2. Non-goals
 
-- No push of the active flag to QBO (QBO customers/vendors have their own
-  Active flag; left alone).
 - No bulk deactivate from the list page.
 - No disabling of every action button on frozen job/PO sub-pages; the server
   guard plus a header banner is the whole treatment (§6.5).
-- No change to the QBO import's *matching* logic beyond how it writes phones.
+- No change to the QBO import's *matching* logic. Status (§6.6) and phones
+  (§6.5) only change what the import writes for records it already matched.
+- Inactive QBO customers/vendors that match nothing locally are never
+  imported as new inactive records.
 - The `JobScopedPermissionMixin` coverage audit is a separate LATER item
   (added 2026-10-11); the freeze guard lives in the service layer for now and
   that decision may be revisited after the audit.
@@ -353,6 +354,54 @@ fetchable.
   of the list; otherwise leave the list alone. New records get it as the sole
   (primary) entry.
 
+### 6.6 QBO status sync (last phase of the plan)
+
+Status is mirrored to QBO in both directions, for the records that have a
+QBO counterpart: a Business (as Customer via `qbo_customer_id`, as Vendor
+via `qbo_vendor_id`, or both) and a business-less Contact (as Customer).
+Contacts that belong to a business have no QBO entity; their status is
+local only, and the docs say so.
+
+**Push (on deactivate / reactivate).** New
+`QBOCustomerSyncService.set_active(obj, active)` and
+`QBOVendorSyncService.set_active(business, active)`: fetch the QBO entity
+by ID, set `Active`, sparse-update with the current `SyncToken`, record via
+`save_and_log` (`entity_type` `customer` / `contact_customer` / `vendor`,
+action `deactivate` / `reactivate`). `deactivate_business` /
+`reactivate_business` call both services when the respective ID is set;
+`deactivate_contact` / `reactivate_contact` call the customer one when the
+contact has `qbo_customer_id`. Cascade-flipped contacts never push (they
+have no QBO entity by the mutual-exclusivity rule).
+
+**Failure policy.** The QBO write happens *inside* the deactivate /
+reactivate transaction, after the local blockers pass:
+- Record has no QBO ID, or there is no active `QBOConnection` → nothing to
+  push; proceed locally.
+- Record has a QBO ID and a connection is active → QBO must accept. A QBO
+  error (refusal, network, token) raises `ValidationError('QuickBooks
+  refused to <de|re>activate <name>: <QBO message>')` and the local flip is
+  rolled back. The two systems never silently disagree because of a push.
+
+**Pull (on import).** `QBOImportPullService.pull` also fetches customers
+and vendors with `Active=False` (second query each; rows carry
+`'active': bool`). `_contacts()` suggestions gain two states for *matched*
+rows: `qbo_inactive` (QBO inactive, local active) and `qbo_active` (QBO
+active, local inactive). Unmatched inactive rows are dropped. Committing a
+`qbo_inactive` row calls `deactivate_business` / `deactivate_contact` with
+the push skipped (QBO already agrees); the blocker sentence, if any, is
+returned per row and the row stays. Committing a `qbo_active` row calls the
+matching reactivate (symmetric cascade applies). A business with both a
+customer and a vendor row: both rows show, either commit flips the business
+(and the other row then reads as `imported` on the next diff).
+
+**Sandbox verification before implementing this phase** (recorded in the
+plan as its first task): QBO's " (deleted)" DisplayName suffix on
+inactivation and whether reactivation strips it; whether the API refuses to
+inactivate a Customer with a balance or a Vendor with open bills (our PO
+blockers cannot see QBO bill balances). Re-read `_adopt_id_by_name`'s
+inactive-collision note (`quickbooks-integration.md`) against the findings.
+Record both answers in the QBO doc.
+
 ## 7. SPA
 
 ### 7.1 `PhoneListEditor.svelte` (new, `components/contacts/`)
@@ -433,7 +482,13 @@ edit refusal per action; §4.8 create/duplicate refusal; §5 guard on a
 representative entry point per service **plus** the two carve-outs (exact
 match passes; one extra field fails; cross-business contact fails; inactive
 business fails); `status=` filtering + default; search by punctuated phone
-on both models; QBO import append-vs-skip; 409 payload carries `is_active`.
+on both models; QBO import append-vs-skip; 409 payload carries `is_active`;
+§6.6 with the QBO client mocked: push called only when ID + connection
+present, QBO error rolls back the local flip with the contract message,
+cascade contacts never push, pull includes inactive rows, both suggestion
+states, commit of `qbo_inactive` surfaces blockers per row, commit of
+`qbo_active` cascades, unmatched inactive rows dropped, customer+vendor
+business reconciles to one flip.
 
 **Vitest (`frontend/tests/`):** `PhoneListEditor` (add, remove, move-up,
 primary tag, error slot); list-page status toggle sends `status=`;
@@ -462,7 +517,9 @@ Only one agent runs Django tests at a time; always `--noinput`.
 - `docs/designs/materials-inventory-and-purchasing.md`: PO freeze + carve-out.
 - `docs/designs/data-constraints.md`: `phones` shape, `is_active` invariants,
   the ok-to-deactivate conditions, and the frozen-record invariant.
-- `docs/designs/quickbooks-integration.md`: import phone append rule.
+- `docs/designs/quickbooks-integration.md`: import phone append rule, the
+  status push/pull, the failure policy, the sandbox findings, and the
+  "business contacts have no QBO status" note.
 - `docs/designs/e2e-testing.md` only if a new persona or seed row is needed.
 - Delete this file when the branch is done.
 
@@ -477,5 +534,8 @@ Only one agent runs Django tests at a time; always `--noinput`.
   contact swap; Duplicate of a frozen job is allowed with a new contact.
 - Fixture transform authorized for this change only.
 - QBO import appends unknown numbers labeled `qbo`, never clobbers.
+- QBO status sync both ways (RM, 2026-10-11): push inside the transaction
+  with QBO refusal failing the flip; pull as import suggestions a human
+  commits; last phase of the plan so the local status work ships first.
 - Guard placement in the service layer; LATER item records the possible
   reversal after the permission-mixin audit.
