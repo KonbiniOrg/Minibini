@@ -14,6 +14,7 @@
     onClear = () => {},            // () => void     — parent clears `value`
     disabled = false,
     placeholder = 'Search…',
+    inputId = undefined,           // optional id on the text input (for <label for>)
     row,                           // optional snippet(item)
     selected,                      // optional snippet(label)
     header,                        // optional snippet(close)
@@ -131,7 +132,7 @@
   {/if}
 {:else}
   <div class="sp-wrap">
-    <input type="text" value={query} oninput={onInput} onfocus={onFocus}
+    <input type="text" id={inputId} value={query} oninput={onInput} onfocus={onFocus}
            onblur={onBlur} onkeydown={onKeydown} {disabled} {placeholder}
            aria-autocomplete="list" aria-expanded={showResults}>
     {#if showResults}

@@ -2576,9 +2576,14 @@ from it.
 
 **Data constraint:** through the service, an inactive Business has only
 inactive Contacts (a contact cannot be reactivated under it). Fixtures and
-translations should respect the same implication. (Not enforced when a contact
-is *attached* to an already-inactive business — `create_contact` /
-`update_contact(business_pk=…)` do not check the target's status.)
+translations should respect the same implication. Attaching a contact to an
+already-inactive business is refused: `create_contact(business_pk=…)` and
+`update_contact(business_pk=…)` raise `ValidationError({'business_id': ['<name> is inactive.']})`.
+Likewise `update_business(default_contact=…)` refuses an inactive contact
+(`assert_active`).
+
+`Contact.phones` / `Business.phones` hold at most 20 entries
+(`clean_phones` → `{'phones': ['A record can hold at most 20 phone numbers.']}`).
 
 ---
 

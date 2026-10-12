@@ -155,6 +155,20 @@ class DocumentFreezeTest(BaseTestCase):
         self._assert_frozen(self.client.post(f'/api/jobs/{self.job.pk}/deliverables/',
                                              {'description': 'd', 'qty_ordered': '1', 'units': 'ea'}, format='json'))
 
+    def test_make_deliverable_refused(self):
+        from decimal import Decimal
+        from apps.estimates.models import Estimate
+        from apps.estimates.services import EstimateService
+        biz, dc, (other,) = make_business('MkDelCo')
+        job = make_job(other, Job.STATUS_CANCELLED)
+        est = Estimate.objects.create(job=job, estimate_number='EST-FRZ-1', status=Estimate.STATUS_DRAFT)
+        line = EstimateService.add_line_item(
+            est.pk, description='x', qty=Decimal('1'), units='ea', price=Decimal('5.00'),
+            accounting_category=AccountingCategory.objects.first().pk)
+        ContactService.deactivate_contact(other)
+        self._assert_frozen(self.client.post(
+            f'/api/estimates/{est.pk}/line-items/{line.pk}/make-deliverable/'))
+
     def test_shipment_create_refused(self):
         self._assert_frozen(self.client.post(f'/api/jobs/{self.job.pk}/shipments/', {}, format='json'))
 
@@ -280,3 +294,51 @@ class POFreezeTest(BaseTestCase):
         ContactService.reactivate_contact(self.other)
         ContactService.deactivate_business(self.biz)
         self._assert_frozen(self.client.patch(f'/api/purchase-orders/{self.po.pk}/', {'contact': self.dc.pk}, format='json'))
+
+
+class MaterialFreezeTest(BaseTestCase):
+    """Material mutators on a closed job of an inactive contact are refused."""
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+        from apps.inventory.models import InventoryItem, Material
+        self.client = APIClient()
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+        biz, dc, (other,) = make_business('MatFrz')
+        self.job = make_job(other, Job.STATUS_CANCELLED)
+        cat = AccountingCategory.objects.first()
+        self.task = Task(job=self.job, name='T', status=Task.STATUS_PENDING)
+        self.task.stamp_from_scheme(RateScheme.objects.first())
+        self.task.save()
+        pli = InventoryItem.objects.create(code='FRZ-ITEM', accounting_category=cat,
+                                           qty_on_hand=Decimal('50'))
+        self.material = Material.objects.create(
+            job=self.job, task=self.task, description='m', quantity=Decimal('2'),
+            units='ea', accounting_category=cat, inventory_item=pli)
+        ContactService.deactivate_contact(other)
+
+    def _assert_frozen(self, response):
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn(FREEZE, response.data.get('detail', ''))
+
+    def test_draw_more_refused(self):
+        self._assert_frozen(self.client.post(
+            f'/api/materials/{self.material.pk}/draw-more/', {'quantity': '1'}, format='json'))
+
+    def test_mark_on_hand_refused(self):
+        self._assert_frozen(self.client.post(
+            f'/api/materials/{self.material.pk}/mark-on-hand/', {'quantity': '1'}, format='json'))
+
+    def test_assign_task_refused(self):
+        self._assert_frozen(self.client.post(
+            f'/api/materials/{self.material.pk}/assign-task/', {'task': None}, format='json'))
+
+    def test_consume_refused(self):
+        self._assert_frozen(self.client.post(f'/api/materials/{self.material.pk}/consume/'))
+
+    def test_remove_qty_zero_refused(self):
+        from decimal import Decimal
+        self.material.quantity = Decimal('0.00')
+        self.material.save()
+        self._assert_frozen(self.client.delete(
+            f'/api/tasks/{self.task.pk}/materials/{self.material.pk}/'))

@@ -103,3 +103,26 @@ class StatusFilterTest(BaseTestCase):
     def test_search_param_combines_with_status(self):
         ids = self._ids('/api/contacts/', status='all', search='Dead')
         self.assertIn(self.dead.pk, ids); self.assertNotIn(self.live.pk, ids)
+
+
+class InactiveAttachApiTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+
+    def test_post_contact_into_inactive_business_400(self):
+        b, dc, _ = make_business('ApiDead')
+        ContactService.deactivate_business(b)
+        r = self.client.post('/api/contacts/', {'first_name': 'N', 'last_name': 'X',
+                                                'email': 'apinx@x.test', 'business_id': b.pk}, format='json')
+        self.assertEqual(r.status_code, 400, r.data)
+        self.assertIn('business_id', r.data)
+
+    def test_patch_business_default_to_inactive_contact_400(self):
+        b, dc, (other,) = make_business('ApiDef')
+        ContactService.deactivate_contact(other)
+        r = self.client.patch(f'/api/businesses/{b.pk}/', {'default_contact_id': other.pk}, format='json')
+        self.assertEqual(r.status_code, 400, r.data)
+        b.refresh_from_db()
+        self.assertEqual(b.default_contact_id, dc.pk)

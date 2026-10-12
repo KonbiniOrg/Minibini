@@ -181,12 +181,14 @@
 <p><strong>Vendor:</strong>
   {#if po.business}
     <a href="#/businesses/{po.business}">{po.business_name}</a>
+    {#if po.business_is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}
   {:else}
     —
   {/if}
 </p>
 {#if po.contact}
-  <p><strong>Contact:</strong> <a href="#/contacts/{po.contact}">{po.contact_name || `Contact #${po.contact}`}</a></p>
+  <p><strong>Contact:</strong> <a href="#/contacts/{po.contact}">{po.contact_name || `Contact #${po.contact}`}</a>
+  {#if po.contact_is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}</p>
 {/if}
 <p><strong>Created:</strong> {formatDate(po.created_date)}</p>
 {#if po.requested_date}

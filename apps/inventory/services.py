@@ -817,6 +817,8 @@ class MaterialService:
         Returns the surviving material, or None when the row was deleted.
         """
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'remove this material')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError(
                 'A consumed or released material is job history and cannot be '
@@ -860,6 +862,8 @@ class MaterialService:
         from django.core.exceptions import ValidationError
         from django.db import transaction
         from django.db.models import F
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'receive this material')
         if material.inventory_item_id is None:
             raise ValidationError('Set pricing on this material first.')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
@@ -883,6 +887,8 @@ class MaterialService:
     def consume(material):
         from django.db import transaction
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'consume this material')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError(
                 f'consume requires pending state; got {material.consumption_state}'
@@ -1038,6 +1044,8 @@ class MaterialService:
     def draw_more(material, qty):
         from django.db import transaction
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'draw more of this material')
         if qty <= Decimal('0.00'):
             raise ValidationError('draw_more qty must be > 0')
         if material.is_expense_bound:
@@ -1063,6 +1071,8 @@ class MaterialService:
     def assign_task(material, task):
         """Move a material to a different task (or make it taskless with task=None)."""
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'reassign this material')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError('assign_task requires pending state')
         if task is not None:

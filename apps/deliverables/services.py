@@ -125,6 +125,8 @@ class DeliverableService:
         back via the `source_line` provenance FK. Provenance only — no sync;
         the FK is what suppresses re-offering the button on this line."""
         job = line_item.estimate.job
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(job, 'edit deliverables on this job')
         DeliverableService._assert_editable(job)
         if line_item.deliverables.exists():
             raise ValidationError(

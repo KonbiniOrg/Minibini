@@ -102,7 +102,7 @@
       <label for="default_contact_id"><strong>Default Contact</strong></label><br>
       <select id="default_contact_id" bind:value={form.default_contact_id}>
         <option value="">-- None --</option>
-        {#each business.contacts || [] as c}
+        {#each (business.contacts || []).filter((c) => c.is_active !== false || c.contact_id === business.default_contact?.contact_id) as c}
           <option value={c.contact_id}>{c.name}</option>
         {/each}
       </select>

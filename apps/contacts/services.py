@@ -116,6 +116,8 @@ class ContactService:
                 business = Business.objects.get(pk=business_pk)
             except Business.DoesNotExist:
                 raise NotFoundError(f'Business {business_pk} not found')
+            if not business.is_active:
+                raise ValidationError({'business_id': [f'{business.business_name} is inactive.']})
 
         contact = Contact(business=business, **kwargs)
         contact.full_clean()
@@ -139,9 +141,12 @@ class ContactService:
                 contact.business = None
             else:
                 try:
-                    contact.business = Business.objects.get(pk=business_pk)
+                    new_business = Business.objects.get(pk=business_pk)
                 except Business.DoesNotExist:
                     raise NotFoundError(f'Business {business_pk} not found')
+                if not new_business.is_active:
+                    raise ValidationError({'business_id': [f'{new_business.business_name} is inactive.']})
+                contact.business = new_business
 
         contact.full_clean()
         contact.save()
@@ -291,6 +296,8 @@ class ContactService:
         except Business.DoesNotExist:
             raise NotFoundError(f'Business {pk} not found')
         ContactService.assert_active(business)
+        if kwargs.get('default_contact') is not None:
+            ContactService.assert_active(kwargs['default_contact'])
 
         for field, value in kwargs.items():
             setattr(business, field, value)

@@ -527,7 +527,7 @@ its public wrapper for other apps.
 job-level methods the hold guard never needed):
 
 - *Jobs services:* `JobService.update_job` (non-system calls), `hold_job`,
-  `release_job`, `delete_job`, release-materials; `TaskService` add /
+  `release_job`, `assert_job_deletable` (the delete guard), release-materials; `TaskService` add /
   generate / edit / delete / reorder / change-assignment;
   `TaskLifecycleService` quantity entry, complete, block, unblock, cancel,
   stop-work, cancel-work; `BlepService` create (via

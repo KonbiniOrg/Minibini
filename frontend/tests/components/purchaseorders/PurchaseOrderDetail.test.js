@@ -23,6 +23,24 @@ beforeEach(() => {
 });
 
 describe('PurchaseOrderDetail', () => {
+  it('badges an inactive vendor and an inactive contact', () => {
+    const { container } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 5, contact_name: 'Sam', business_is_active: false, contact_is_active: false }, canManageFinancials: true },
+    });
+    const ps = Array.from(container.querySelectorAll('p'));
+    const vendor = ps.find((p) => p.textContent.includes('Vendor:'));
+    const contact = ps.find((p) => p.textContent.includes('Contact:'));
+    expect(vendor.querySelector('.status-inactive')).not.toBeNull();
+    expect(contact.querySelector('.status-inactive')).not.toBeNull();
+  });
+
+  it('shows no inactive badge for active parties', () => {
+    const { container } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 5, contact_name: 'Sam', business_is_active: true, contact_is_active: true }, canManageFinancials: true },
+    });
+    expect(container.querySelector('.status-inactive')).toBeNull();
+  });
+
   it('computes the order total', () => {
     const { getByText } = render(PurchaseOrderDetail, { props: { po: po(), canManageFinancials: true } });
     expect(getByText('$20.00')).toBeInTheDocument();

@@ -19,6 +19,13 @@ class StripPhoneTest(TestCase):
 
 
 class CleanPhonesTest(TestCase):
+    def test_cap_at_twenty_entries(self):
+        ok = [{'number': f'555-{i:04d}', 'label': ''} for i in range(20)]
+        self.assertEqual(len(clean_phones(ok)), 20)
+        with self.assertRaises(ValidationError) as cm:
+            clean_phones(ok + [{'number': '555-9999', 'label': ''}])
+        self.assertIn('at most 20', cm.exception.message_dict['phones'][0])
+
     def test_empty_and_none_become_empty_list(self):
         self.assertEqual(clean_phones(None), [])
         self.assertEqual(clean_phones([]), [])

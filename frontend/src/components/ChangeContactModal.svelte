@@ -23,7 +23,7 @@
 <Modal {open} onCancel={onClose} maxWidth="520px" label="Change contact">
   <h3 class="modal-title">Change contact</h3>
   <form onsubmit={save}>
-    <p><label><strong>New contact</strong></label><br><ContactPicker bind:value={contact} {businessId} /></p>
+    <p><label for="change-contact-picker"><strong>New contact</strong></label><br><ContactPicker bind:value={contact} {businessId} inputId="change-contact-picker" /></p>
     <p>
       <button type="submit" disabled={saving}>Save</button>
       <button type="button" onclick={onClose}>Cancel</button>

@@ -16,6 +16,9 @@ def strip_phone(number):
     return PHONE_STRIP_RE.sub('', str(number or ''))
 
 
+PHONES_MAX = 20
+
+
 def clean_phones(value):
     """Normalize a phones list: [{'number': str, 'label': str}, ...].
     Returns a fresh list; raises a field-keyed ValidationError on shape
@@ -24,6 +27,8 @@ def clean_phones(value):
         return []
     if not isinstance(value, list):
         raise ValidationError({'phones': ['Phones must be a list of {number, label} entries.']})
+    if len(value) > PHONES_MAX:
+        raise ValidationError({'phones': [f'A record can hold at most {PHONES_MAX} phone numbers.']})
     out = []
     for i, entry in enumerate(value, start=1):
         if not isinstance(entry, dict):

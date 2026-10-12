@@ -148,4 +148,18 @@ describe('CustomerActivity — Contacts (business pages)', () => {
     expect(headersOf(section(container, 'contacts').querySelector('table'))).toEqual(['Name', 'Email', 'Phone']);
     expect(queryByRole('button', { name: 'New contact' })).toBeNull();
   });
+
+  it('shows no row actions for an inactive contact', () => {
+    const contacts = [
+      { contact_id: 9, name: 'Dana Whitfield', email: 'd@x.test', phone: '1', is_active: true },
+      { contact_id: 10, name: 'Gone Away', email: '', phone: '2', is_active: false },
+    ];
+    const { container } = render(CustomerActivity, {
+      props: { jobs: JOBS, contacts, defaultContactId: 9, onNewJobFor: vi.fn(), onSetDefault: vi.fn() },
+    });
+    const rows = section(container, 'contacts').querySelectorAll('tbody tr');
+    expect(within(rows[0]).getByRole('button', { name: 'New job' })).toBeInTheDocument();
+    expect(within(rows[1]).queryByRole('button', { name: 'New job' })).toBeNull();
+    expect(within(rows[1]).queryByRole('button', { name: 'Set as default' })).toBeNull();
+  });
 });

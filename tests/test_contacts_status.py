@@ -266,3 +266,34 @@ class CreateWithInactivePartyTest(TestCase):
         with self.assertRaises(ValidationError) as cm:
             PurchaseOrderService.create_po(business=b)
         self.assertIn('business', cm.exception.message_dict)
+
+
+class InactiveBusinessAttachTest(TestCase):
+    def _inactive_business(self):
+        b, dc, _ = make_business('DeadCo')
+        ContactService.deactivate_business(b)
+        b.refresh_from_db()
+        return b
+
+    def test_create_contact_into_inactive_business_refused(self):
+        b = self._inactive_business()
+        with self.assertRaises(ValidationError) as cm:
+            ContactService.create_contact(business_pk=b.pk, first_name='N', last_name='X', email='nx@x.test')
+        self.assertIn('DeadCo is inactive.', cm.exception.message_dict['business_id'][0])
+
+    def test_update_contact_move_into_inactive_business_refused(self):
+        b = self._inactive_business()
+        c = Contact.objects.create(first_name='M', last_name='X', email='mx@x.test')
+        with self.assertRaises(ValidationError) as cm:
+            ContactService.update_contact(c.pk, business_pk=b.pk)
+        self.assertIn('business_id', cm.exception.message_dict)
+
+
+class InactiveDefaultContactTest(TestCase):
+    def test_update_business_default_to_inactive_contact_refused(self):
+        b, dc, (other,) = make_business('DefCo')
+        ContactService.deactivate_contact(other)
+        other.refresh_from_db()
+        with self.assertRaises(ValidationError) as cm:
+            ContactService.update_business(b.pk, default_contact=other)
+        self.assertIn('is inactive', str(cm.exception))

@@ -527,8 +527,9 @@ pill, the status-action endpoints, the estimate/invoice handlers).
 Material row creation and lifecycle ops. All earmark mutations route
 through `InventoryService._mutate_earmark`.
 
-**Frozen jobs (2026-10-11).** `create_on_job`, `update`/edit, restock and the
-metadata paths call `_assert_job_not_frozen(material.job, …)` (just ahead of
+**Frozen jobs (2026-10-11).** `create_on_job`, `update`/edit, restock, the
+metadata paths, and (final review) `draw_more`, `mark_on_hand`, `assign_task`,
+`consume` and `remove` (including its qty==0 branch) call `_assert_job_not_frozen(material.job, …)` (just ahead of
 the on-hold guard), so a job whose contact is inactive takes no material
 changes — see `jobs-and-tasks.md` §3.7.
 
