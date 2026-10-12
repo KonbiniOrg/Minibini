@@ -1,13 +1,11 @@
-import re
 from django.core.exceptions import ValidationError
-from django.db.models import Q, Value
+from django.db.models import Q
 from django.db.models.deletion import ProtectedError
-from django.db.models.functions import Replace
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.contacts.models import Contact, Business, PaymentTerms, Tag
+from apps.contacts.models import Contact, Business, PaymentTerms, Tag, strip_phone
 from apps.contacts.services import ContactService
 from apps.core.models import CrmHistory
 from apps.core.history import record_history
@@ -63,22 +61,7 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
 
         search = self.request.query_params.get('search', '').strip()
         if search:
-            phone_search = re.sub(r'[\s\-.()+]', '', search)
-
-            def strip_phone(field):
-                return Replace(Replace(Replace(Replace(Replace(
-                    field,
-                    Value(' '), Value('')),
-                    Value('-'), Value('')),
-                    Value('.'), Value('')),
-                    Value('('), Value('')),
-                    Value(')'), Value(''))
-
-            qs = qs.annotate(
-                mobile_clean=strip_phone('mobile_number'),
-                work_clean=strip_phone('work_number'),
-                home_clean=strip_phone('home_number'),
-            )
+            phone_search = strip_phone(search)
             q = (
                 Q(first_name__icontains=search) |
                 Q(last_name__icontains=search) |
@@ -86,11 +69,7 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
                 Q(business__business_name__icontains=search)
             )
             if phone_search:
-                q |= (
-                    Q(mobile_clean__icontains=phone_search) |
-                    Q(work_clean__icontains=phone_search) |
-                    Q(home_clean__icontains=phone_search)
-                )
+                q |= Q(phones_digits__icontains=phone_search)
             qs = qs.filter(q)
         return qs
 
@@ -234,12 +213,13 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
 
         search = self.request.query_params.get('search', '').strip()
         if search:
-            qs = qs.filter(
-                Q(business_name__icontains=search) |
-                Q(our_reference_code__icontains=search) |
-                Q(business_phone__icontains=search) |
-                Q(business_address__icontains=search)
-            )
+            q = (Q(business_name__icontains=search) |
+                 Q(our_reference_code__icontains=search) |
+                 Q(business_address__icontains=search))
+            phone_search = strip_phone(search)
+            if phone_search:
+                q |= Q(phones_digits__icontains=phone_search)
+            qs = qs.filter(q)
         return qs
 
     def get_serializer_class(self):

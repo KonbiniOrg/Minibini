@@ -219,3 +219,30 @@ class CommitContactsTest(TestCase):
         self.assertEqual(result['customers']['updated'], 1)
         business = Business.objects.get(qbo_customer_id='71')
         self.assertEqual(business.default_contact.email, 'new@acme.com')
+
+
+class ImportPhoneMergeTest(TestCase):
+    def setUp(self):
+        from tests.test_qbo_import_state import store_snapshot
+        store_snapshot()
+
+    def test_create_puts_qbo_phone_as_sole_entry(self):
+        QBOImportCommitService.commit_contacts(_payload())
+        b = Business.objects.get(qbo_customer_id='71')
+        self.assertEqual(b.phones, [{'number': '555-1000', 'label': 'qbo'}])
+        self.assertEqual(b.default_contact.phones, [{'number': '555-1000', 'label': 'qbo'}])
+
+    def test_update_appends_unknown_number_and_skips_known(self):
+        QBOImportCommitService.commit_contacts(_payload())
+        b = Business.objects.get(qbo_customer_id='71')
+        c = b.default_contact
+        c.phones = [{'number': '(555) 100-0', 'label': 'cell'}]   # strips to 5551000 == QBO's
+        c.save()
+        row = dict(_payload()['customers'][0], action='update', phone='555-1000')
+        QBOImportCommitService.commit_contacts({'customers': [row], 'vendors': []})
+        c.refresh_from_db()
+        self.assertEqual(len(c.phones), 1)                       # known -> untouched
+        row['phone'] = '555-2000'
+        QBOImportCommitService.commit_contacts({'customers': [row], 'vendors': []})
+        c.refresh_from_db()
+        self.assertEqual(c.phones[-1], {'number': '555-2000', 'label': 'qbo'})

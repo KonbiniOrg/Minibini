@@ -343,3 +343,48 @@ class BusinessTagFilterTest(BaseTestCase):
         tag_names = [t['name'] for t in target.get('tags', [])]
         self.assertIn('key-account-bf', tag_names)
         self.assertIn('local-bf', tag_names)
+
+
+class PhoneSearchTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+        self.c = Contact.objects.create(
+            first_name='Pho', last_name='Ne', email='pho@filter.com',
+            phones=[{'number': '(555) 777-1234', 'label': 'cell'},
+                    {'number': '555-888-0000', 'label': 'work'}])
+        dc = Contact.objects.create(first_name='D', last_name='C', email='dc@filter.com')
+        self.b = Business.objects.create(
+            business_name='Phoneco', default_contact=dc,
+            phones=[{'number': '555.999.1111', 'label': 'A/P'}])
+
+    def test_contact_matches_any_entry_ignoring_punctuation(self):
+        for q in ('5557771234', '555-777', '888 0000'):
+            ids = [r['contact_id'] for r in self.client.get('/api/contacts/', {'search': q}).data['results']]
+            self.assertIn(self.c.pk, ids, q)
+
+    def test_business_matches_stripped(self):
+        ids = [r['business_id'] for r in self.client.get('/api/businesses/', {'search': '(555) 999'}).data['results']]
+        self.assertIn(self.b.pk, ids)
+
+    def test_text_search_still_works(self):
+        ids = [r['contact_id'] for r in self.client.get('/api/contacts/', {'search': 'Pho'}).data['results']]
+        self.assertIn(self.c.pk, ids)
+
+    def test_phones_digits_not_exposed(self):
+        data = self.client.get(f'/api/contacts/{self.c.pk}/').data
+        self.assertNotIn('phones_digits', data)
+        self.assertEqual(data['phones'][0]['number'], '(555) 777-1234')
+        self.assertTrue(data['is_active'])
+
+    def test_is_active_is_read_only(self):
+        r = self.client.patch(f'/api/contacts/{self.c.pk}/', {'is_active': False}, format='json')
+        self.assertEqual(r.status_code, 200)
+        self.c.refresh_from_db()
+        self.assertTrue(self.c.is_active)
+
+    def test_bad_phones_payload_is_a_field_error(self):
+        r = self.client.patch(f'/api/contacts/{self.c.pk}/', {'phones': [{'label': 'x'}]}, format='json')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('phones', r.data)

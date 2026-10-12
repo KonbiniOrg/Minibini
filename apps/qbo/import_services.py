@@ -15,6 +15,25 @@ from apps.core.units import HOUR_UNIT
 _PAGE = 1000
 
 
+def _merge_qbo_phone(obj, number):
+    """Append QBO's number labeled 'qbo' unless an entry already strips to
+    the same digits. Returns True when the list changed (spec §6.5)."""
+    from apps.contacts.models import strip_phone
+    number = (number or '').strip()
+    if not number:
+        return False
+    key = strip_phone(number)
+    if any(strip_phone(p['number']) == key for p in obj.phones):
+        return False
+    obj.phones = [*obj.phones, {'number': number, 'label': 'qbo'}]
+    return True
+
+
+def _qbo_phones(number):
+    number = (number or '').strip()
+    return [{'number': number, 'label': 'qbo'}] if number else []
+
+
 def _all(sdk_class, client, **kwargs):
     """Fetch every active record of an SDK type, paginating until a short
     page. python-quickbooks caps result pages; start_position is 1-based."""
@@ -961,11 +980,11 @@ def _commit_contacts(payload):
                         first_name=row.get('given_name') or row['display_name'],
                         last_name=row.get('family_name') or '',
                         email=email,
-                        mobile_number=row.get('phone') or '',
+                        phones=_qbo_phones(row.get('phone')),
                     )
                     business = Business.objects.create(
                         business_name=row['company_name'],
-                        business_phone=row.get('phone') or '',
+                        phones=_qbo_phones(row.get('phone')),
                         default_contact=contact,
                         qbo_customer_id=row['qbo_id'],
                         terms=term,
@@ -979,7 +998,7 @@ def _commit_contacts(payload):
                         first_name=row.get('given_name') or row['display_name'],
                         last_name=row.get('family_name') or '',
                         email=email,
-                        mobile_number=row.get('phone') or '',
+                        phones=_qbo_phones(row.get('phone')),
                         qbo_customer_id=row['qbo_id'],
                     )
                 batch_emails[email.lower()] = row['display_name']
@@ -1011,6 +1030,7 @@ def _commit_contacts(payload):
                         business.business_name = row['company_name']
                     if term is not None:
                         business.terms = term
+                    _merge_qbo_phone(business, row.get('phone'))
                     business.save()
                 if contact is not None:
                     contact.first_name = (row.get('given_name')
@@ -1021,8 +1041,7 @@ def _commit_contacts(payload):
                     # blank a konbini email over that.
                     if email:
                         contact.email = email
-                    if row.get('phone'):
-                        contact.mobile_number = row['phone']
+                    _merge_qbo_phone(contact, row.get('phone'))
                     contact.save()
                 counts['customers']['updated'] += 1
 
@@ -1047,11 +1066,11 @@ def _commit_contacts(payload):
                 contact = Contact.objects.create(
                     first_name=name, last_name='',
                     email=email,
-                    mobile_number=row.get('phone') or '',
+                    phones=_qbo_phones(row.get('phone')),
                 )
                 business = Business.objects.create(
                     business_name=name,
-                    business_phone=row.get('phone') or '',
+                    phones=_qbo_phones(row.get('phone')),
                     default_contact=contact,
                     qbo_vendor_id=row['qbo_id'],
                 )

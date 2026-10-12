@@ -4,7 +4,7 @@ from django.db.models import Q, F, CharField, DecimalField
 from django.db.models.functions import Cast, Concat
 from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate, EstimateLineItem
-from apps.contacts.models import Contact, Business
+from apps.contacts.models import Contact, Business, strip_phone
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import InventoryItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
@@ -131,28 +131,28 @@ class SearchService:
     @staticmethod
     def search_businesses(query):
         """Search for businesses matching the query"""
-        return Business.objects.filter(
-            Q(business_name__icontains=query) |
-            Q(our_reference_code__icontains=query) |
-            Q(business_address__icontains=query) |
-            Q(business_phone__icontains=query)
-        )
+        q = (Q(business_name__icontains=query) |
+             Q(our_reference_code__icontains=query) |
+             Q(business_address__icontains=query))
+        digits = strip_phone(query)
+        if digits:
+            q |= Q(phones_digits__icontains=digits)
+        return Business.objects.filter(q)
 
     @staticmethod
     def search_contacts(query):
         """Search for contacts matching the query"""
-        return Contact.objects.filter(
-            Q(first_name__icontains=query) |
-            Q(middle_initial__icontains=query) |
-            Q(last_name__icontains=query) |
-            Q(email__icontains=query) |
-            Q(mobile_number__icontains=query) |
-            Q(work_number__icontains=query) |
-            Q(home_number__icontains=query) |
-            Q(addr1__icontains=query) |
-            Q(city__icontains=query) |
-            Q(postal_code__icontains=query)
-        ).select_related('business')
+        q = (Q(first_name__icontains=query) |
+             Q(middle_initial__icontains=query) |
+             Q(last_name__icontains=query) |
+             Q(email__icontains=query) |
+             Q(addr1__icontains=query) |
+             Q(city__icontains=query) |
+             Q(postal_code__icontains=query))
+        digits = strip_phone(query)
+        if digits:
+            q |= Q(phones_digits__icontains=digits)
+        return Contact.objects.filter(q).select_related('business')
 
     @staticmethod
     def search_inventory_items(query):
@@ -695,14 +695,15 @@ class SearchService:
 
         # BUSINESSES
         if 'Business' in result_ids and result_ids['Business']:
+            bq = (Q(business_name__icontains=within_query) |
+                  Q(our_reference_code__icontains=within_query) |
+                  Q(business_address__icontains=within_query))
+            digits = strip_phone(within_query)
+            if digits:
+                bq |= Q(phones_digits__icontains=digits)
             businesses = Business.objects.filter(
                 pk__in=result_ids['Business']
-            ).filter(
-                Q(business_name__icontains=within_query) |
-                Q(our_reference_code__icontains=within_query) |
-                Q(business_address__icontains=within_query) |
-                Q(business_phone__icontains=within_query)
-            )
+            ).filter(bq)
             if businesses.exists():
                 categories['businesses'] = {
                     'items': list(businesses),
@@ -711,20 +712,19 @@ class SearchService:
 
         # CONTACTS
         if 'Contact' in result_ids and result_ids['Contact']:
+            cq = (Q(first_name__icontains=within_query) |
+                  Q(middle_initial__icontains=within_query) |
+                  Q(last_name__icontains=within_query) |
+                  Q(email__icontains=within_query) |
+                  Q(addr1__icontains=within_query) |
+                  Q(city__icontains=within_query) |
+                  Q(postal_code__icontains=within_query))
+            digits = strip_phone(within_query)
+            if digits:
+                cq |= Q(phones_digits__icontains=digits)
             contacts = Contact.objects.filter(
                 pk__in=result_ids['Contact']
-            ).filter(
-                Q(first_name__icontains=within_query) |
-                Q(middle_initial__icontains=within_query) |
-                Q(last_name__icontains=within_query) |
-                Q(email__icontains=within_query) |
-                Q(mobile_number__icontains=within_query) |
-                Q(work_number__icontains=within_query) |
-                Q(home_number__icontains=within_query) |
-                Q(addr1__icontains=within_query) |
-                Q(city__icontains=within_query) |
-                Q(postal_code__icontains=within_query)
-            ).select_related('business')
+            ).filter(cq).select_related('business')
             if contacts.exists():
                 categories['contacts'] = {
                     'items': list(contacts),

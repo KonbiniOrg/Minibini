@@ -102,6 +102,12 @@ class CustomerSyncTest(TestCase):
         self.assertEqual(customer.PrimaryPhone.FreeFormNumber, '555-1234')
         self.assertEqual(customer.PrimaryEmailAddr.Address, 'john@acme.com')
 
+    def test_build_customer_phone_unset_when_no_phones(self):
+        self.business.phones = []
+        self.business.save()
+        customer = QBOCustomerSyncService._build_customer(self.business)
+        self.assertFalse(getattr(customer, 'PrimaryPhone', None))
+
 
 class ContactQBOCustomerIdConstraintTest(TestCase):
     """Test that Contact can't have both business and qbo_customer_id."""

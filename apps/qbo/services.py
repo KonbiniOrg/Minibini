@@ -222,10 +222,11 @@ class QBOCustomerSyncService:
             business, role='customer'
         )
 
-        if business.business_phone:
+        phone = business.phone()
+        if phone:
             from quickbooks.objects.base import PhoneNumber
             customer.PrimaryPhone = PhoneNumber()
-            customer.PrimaryPhone.FreeFormNumber = business.business_phone
+            customer.PrimaryPhone.FreeFormNumber = phone
 
         # Use default contact's email if available
         default_contact = business.default_contact
