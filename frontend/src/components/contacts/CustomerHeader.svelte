@@ -34,8 +34,10 @@
 
 <div class="customer-header">
   <div class="titleblock">
-    <h2 class="ch-name" title={name}>{name}</h2>
-    {#if inactive}<span class="status-badge status-inactive">inactive</span>{/if}
+    <div class="ch-title-row">
+      <h2 class="ch-name" title={name}>{name}</h2>
+      {#if inactive}<span class="status-badge status-inactive">inactive</span>{/if}
+    </div>
     {#if business}
       <p class="ch-subtitle">
         at <a href="#/businesses/{business.business_id}">{business.business_name}</a>
@@ -91,8 +93,12 @@
     padding: 14px 24px;
   }
   .titleblock { padding-left: 52px; min-width: 0; }
+  /* Name + inactive pill on one line: the pill sits to the right so the
+     heading keeps the same size and row height as on an active page. */
+  .ch-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .ch-title-row .status-badge { flex: 0 0 auto; }
   .ch-name {
-    font-size: 22px; font-weight: 700; color: #fff; margin: 0;
+    font-size: 22px; font-weight: 700; color: #fff; margin: 0; min-width: 0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .ch-subtitle { font-size: 13px; opacity: 0.85; color: #fff; margin: 2px 0 0; }
