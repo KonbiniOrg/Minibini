@@ -37,11 +37,11 @@ class DuplicateJobTestBase(BaseTestCase):
 
         self.contact = Contact.objects.create(
             first_name='Source', last_name='Customer',
-            email='src@example.com', work_number='555-0001',
+            email='src@example.com', phones=[{'number': '555-0001', 'label': 'work'}],
         )
         self.other_contact = Contact.objects.create(
             first_name='New', last_name='Customer',
-            email='new@example.com', work_number='555-0002',
+            email='new@example.com', phones=[{'number': '555-0002', 'label': 'work'}],
         )
         self.category = AccountingCategory.objects.create(name='Material', code='DUPMAT')
         self.scheme = _make_scheme('a')
@@ -351,7 +351,7 @@ class DuplicateEmptySourceTest(BaseTestCase):
             key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
             first_name='Bare', last_name='Customer',
-            email='bare@example.com', work_number='555-0009',
+            email='bare@example.com', phones=[{'number': '555-0009', 'label': 'work'}],
         )
         self.source = Job.objects.create(
             job_number='JOB-BARE-001', name='Bare job', description='',

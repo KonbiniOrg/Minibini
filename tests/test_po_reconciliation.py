@@ -39,10 +39,10 @@ class POReconciliationTestBase(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Vendor',
-            email='vendor@test.com', work_number='555-1234',
+            email='vendor@test.com', phones=[{'number': '555-1234', 'label': 'work'}],
         )
         self.business = Business.objects.create(
-            business_name='Test Vendor Co', business_phone='555-1234',
+            business_name='Test Vendor Co', phones=[{'number': '555-1234', 'label': ''}],
             default_contact=self.contact,
         )
         self.contact.business = self.business
@@ -52,7 +52,7 @@ class POReconciliationTestBase(TestCase):
         )[0]
         self.customer = Contact.objects.create(
             first_name='Cust', last_name='Omer',
-            email='cust@test.com', work_number='555-0000',
+            email='cust@test.com', phones=[{'number': '555-0000', 'label': 'work'}],
         )
         self.job_a = Job.objects.create(
             job_number='J-A', contact=self.customer, description='a',

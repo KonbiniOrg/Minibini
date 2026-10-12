@@ -529,11 +529,11 @@ class ResolveContactLinksTest(TestCase):
     def setUp(self):
         self.jane = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-1',
+            email='jane@example.com', phones=[{'number': '555-1', 'label': 'mobile'}],
         )
         self.bob = Contact.objects.create(
             first_name='Bob', last_name='Smith',
-            email='bob@example.com', mobile_number='555-2',
+            email='bob@example.com', phones=[{'number': '555-2', 'label': 'mobile'}],
         )
 
     def test_resolves_bare_email(self):

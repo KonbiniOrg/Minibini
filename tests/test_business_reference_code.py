@@ -19,7 +19,7 @@ class BusinessReferenceCodeTest(TestCase):
             first_name='Test',
             last_name='Contact',
             email='test@test.com',
-            work_number='555-1234'
+            phones=[{'number': '555-1234', 'label': 'work'}]
         )
 
     def test_auto_generates_reference_code(self):

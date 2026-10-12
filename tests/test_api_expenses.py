@@ -157,7 +157,7 @@ class ExpenseCreateWithNewMaterialTest(TestCase):
         self.user = User.objects.create_user(username='u', password='testpass')
         self.client_http.force_login(self.user)
         self.contact = Contact.objects.create(
-            first_name='A', last_name='B', email='a@b.com', mobile_number='555-0000',
+            first_name='A', last_name='B', email='a@b.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Acme', default_contact=self.contact,

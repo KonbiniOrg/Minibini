@@ -293,10 +293,10 @@ class LinkedPOVarianceTests(FixtureTestCase):
         self.contact = Contact.objects.first()
         self.vendor_contact = Contact.objects.create(
             first_name='PO', last_name='Vendor',
-            email='po-vendor@test.com', work_number='555-9999',
+            email='po-vendor@test.com', phones=[{'number': '555-9999', 'label': 'work'}],
         )
         self.vendor = Business.objects.create(
-            business_name='PO Vendor Co', business_phone='555-9999',
+            business_name='PO Vendor Co', phones=[{'number': '555-9999', 'label': ''}],
             default_contact=self.vendor_contact,
         )
         self.cat = AccountingCategory.objects.create(code='FIN-PO', name='fin-po')

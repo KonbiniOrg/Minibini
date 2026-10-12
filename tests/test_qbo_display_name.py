@@ -10,7 +10,7 @@ class DisplayNameGenerationTest(TestCase):
         """Helper: create a Business with required Contact."""
         contact = Contact.objects.create(
             first_name='Test', last_name='Contact',
-            email='test@example.com', mobile_number='555-0000',
+            email='test@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         return Business.objects.create(
             business_name=name, default_contact=contact, **kwargs

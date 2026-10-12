@@ -17,7 +17,7 @@ class EarmarkPreviewTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Contact',
-            email='test@example.com', work_number='555-0100',
+            email='test@example.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.business = Business.objects.create(
             business_name='Test Business',
@@ -169,7 +169,7 @@ class UpsertEarmarksTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Contact',
-            email='test@example.com', work_number='555-0100',
+            email='test@example.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.business = Business.objects.create(
             business_name='Test Business',

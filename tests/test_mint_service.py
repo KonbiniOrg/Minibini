@@ -24,7 +24,7 @@ class MintServiceTest(TestCase):
         AppState.objects.create(key='estimate_counter', value='0')
         self.cat = AccountingCategory.objects.create(code='LAB', name='Labor')
         contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555')
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555', 'label': 'mobile'}])
         self.job = Job.objects.create(
             contact=contact, job_number='JOB-2026-0001', status=Job.STATUS_APPROVED)
         self.scheme = RateScheme.objects.create(
@@ -146,7 +146,7 @@ class MintServiceTest(TestCase):
 
     def test_refuses_atom_from_another_job(self):
         other_contact = Contact.objects.create(
-            first_name='O', last_name='T', email='o@t.com', mobile_number='555-1')
+            first_name='O', last_name='T', email='o@t.com', phones=[{'number': '555-1', 'label': 'mobile'}])
         other_job = Job.objects.create(
             contact=other_contact, job_number='JOB-2026-0002', status=Job.STATUS_APPROVED)
         stray = self._make_task(other_job, 'stray')

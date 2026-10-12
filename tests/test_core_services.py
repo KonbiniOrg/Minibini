@@ -73,10 +73,10 @@ class EmailAssociationServiceTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
-            email='test@test.com', work_number='555-1234',
+            email='test@test.com', phones=[{'number': '555-1234', 'label': 'work'}],
         )
         self.business = Business.objects.create(
-            business_name='Test Biz', business_phone='555-1234',
+            business_name='Test Biz', phones=[{'number': '555-1234', 'label': ''}],
             default_contact=self.contact
         )
         self.contact.business = self.business

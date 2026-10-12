@@ -215,7 +215,7 @@ class EmailAPITest(BaseTestCase):
 
     def test_create_job_returns_400_on_validation_error(self):
         from apps.contacts.models import Contact
-        contact = Contact.objects.create(first_name='X', last_name='Y', email='x@y.com', mobile_number='555')
+        contact = Contact.objects.create(first_name='X', last_name='Y', email='x@y.com', phones=[{'number': '555', 'label': 'mobile'}])
         overlong = 'a' * 100  # Job.name max_length is 50
         response = self.client.post(
             f'/api/emails/{self.email.pk}/create-job/',
@@ -259,7 +259,7 @@ class EmailAPITest(BaseTestCase):
     def test_create_job_stores_description(self):
         from apps.contacts.models import Contact
         contact = Contact.objects.create(
-            first_name='X', last_name='Y', email='x@y.com', mobile_number='555',
+            first_name='X', last_name='Y', email='x@y.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         response = self.client.post(
             f'/api/emails/{self.email.pk}/create-job/',
@@ -358,11 +358,11 @@ class EmailAPITest(BaseTestCase):
         from apps.contacts.models import Contact
         jane = Contact.objects.create(
             first_name='Jane', last_name='Doe', email='jane@example.com',
-            mobile_number='555-1',
+            phones=[{'number': '555-1', 'label': 'mobile'}],
         )
         bob = Contact.objects.create(
             first_name='Bob', last_name='Smith', email='bob@example.com',
-            mobile_number='555-2',
+            phones=[{'number': '555-2', 'label': 'mobile'}],
         )
         content = self._mock_email_content(
             from_header='Jane Doe <jane@example.com>',
@@ -394,7 +394,7 @@ class EmailAPITest(BaseTestCase):
         from apps.contacts.models import Contact
         jane = Contact.objects.create(
             first_name='Jane', last_name='Doe', email='sender@example.com',
-            mobile_number='555-3',
+            phones=[{'number': '555-3', 'label': 'mobile'}],
         )
         with patch('apps.api.email.views.EmailService') as mock_service_class:
             mock_service = MagicMock()
@@ -487,7 +487,7 @@ class EmailPoAPITest(BaseTestCase):
         self.email = EmailRecord.objects.create(message_id='<po-link@example.com>')
         self.contact = Contact.objects.create(
             first_name='Vendor', last_name='Sales',
-            email='sales@vendor.com', mobile_number='555-9',
+            email='sales@vendor.com', phones=[{'number': '555-9', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Vendor Inc.', default_contact=self.contact,
@@ -610,7 +610,7 @@ class EmailReplyAPITest(BaseTestCase):
         self.client.force_authenticate(user=self.admin)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@customer.com', mobile_number='555',
+            email='jane@customer.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Customer Co', default_contact=self.contact,
@@ -849,7 +849,7 @@ class ThreadPropagationAPITest(BaseTestCase):
         self.client.force_authenticate(user=self.admin)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@customer.com', mobile_number='555',
+            email='jane@customer.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Customer Co', default_contact=self.contact,

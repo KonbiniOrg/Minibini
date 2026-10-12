@@ -311,7 +311,7 @@ class PurchaseOrderSendRetrofitTest(BaseTestCase):
         self.client.force_authenticate(user=self.admin)
         vendor_contact = Contact.objects.create(
             first_name='Vendor', last_name='Rep',
-            email='vendor-rep@example.com', mobile_number='555',
+            email='vendor-rep@example.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         vendor = Business.objects.create(
             business_name='Vendor Inc.', default_contact=vendor_contact,

@@ -32,7 +32,7 @@ class MaterialReleaseBase(TestCase):
         self.cat = AccountingCategory.objects.create(
             name='Materials', is_active=True, code='MAT')
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555-0', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED,

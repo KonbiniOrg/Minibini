@@ -22,7 +22,7 @@ class UnexpireEstimateTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Pat', last_name='Customer', email='pat@acme.com',
-            mobile_number='555-0100',
+            phones=[{'number': '555-0100', 'label': 'mobile'}],
         )
         self.ac = AccountingCategory.objects.create(
             code='SVC', name='Services', taxable=True,

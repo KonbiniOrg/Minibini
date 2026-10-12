@@ -16,7 +16,7 @@ class InvoiceDirectCreateAPITest(TestCase):
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.user = User.objects.create_user(username='fin', password='pw')
         self.user.user_permissions.add(

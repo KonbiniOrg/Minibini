@@ -401,7 +401,7 @@ class EstimateLineBackingAPITest(BaseTestCase):
         )
         self.contact = Contact.objects.create(
             first_name='Est', last_name='Backing',
-            email='estbacking@test.com', mobile_number='555-0400',
+            email='estbacking@test.com', phones=[{'number': '555-0400', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT,
@@ -678,7 +678,7 @@ class EstimateLineNeedsWorkDecisionAPITest(BaseTestCase):
         )
         self.contact = Contact.objects.create(
             first_name='Nwd', last_name='Test',
-            email='nwd@test.com', mobile_number='555-0401',
+            email='nwd@test.com', phones=[{'number': '555-0401', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED,
@@ -786,7 +786,7 @@ class EstimateUnexpireAPITest(BaseTestCase):
         self.client = APIClient()
         self.contact = Contact.objects.create(
             first_name='Ex', last_name='Piree', email='ex@piree.com',
-            mobile_number='555-0199',
+            phones=[{'number': '555-0199', 'label': 'mobile'}],
         )
         cat = AccountingCategory.objects.first() or AccountingCategory.objects.create(
             code='SVC', name='Services')

@@ -38,7 +38,7 @@ def _setup_common():
             'accounting_category': cat,
         },
     )[0]
-    c = Contact.objects.create(first_name='A', last_name='B', work_number='0')
+    c = Contact.objects.create(first_name='A', last_name='B', phones=[{'number': '0', 'label': 'work'}])
     item = InventoryItem.objects.create(
         code='AVAIL-ITEM', description='widget',
         accounting_category=cat,

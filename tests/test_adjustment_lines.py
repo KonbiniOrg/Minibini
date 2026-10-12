@@ -178,7 +178,7 @@ class RecomputeAdjustmentsHelperTest(TestCase):
             code='LAB-RH', name='Labor-RH', taxable=False,
         )
         self.contact = Contact.objects.create(
-            first_name='RH', last_name='Test', email='rh@t.com', work_number='555-1111',
+            first_name='RH', last_name='Test', email='rh@t.com', phones=[{'number': '555-1111', 'label': 'work'}],
         )
         self.job = JobService.create_job(name='RH Job', contact=self.contact)
         self.est = Estimate.objects.create(
@@ -240,7 +240,7 @@ class EstimateAutoRecomputeTest(TestCase):
             code='LAB-EA', name='Labor-EA', taxable=False,
         )
         self.contact = Contact.objects.create(
-            first_name='EA', last_name='Test', email='ea@t.com', work_number='555-2222',
+            first_name='EA', last_name='Test', email='ea@t.com', phones=[{'number': '555-2222', 'label': 'work'}],
         )
         self.job = JobService.create_job(name='EA Job', contact=self.contact)
         self.est = Estimate.objects.create(
@@ -331,7 +331,7 @@ class InvoiceAutoRecomputeTest(TestCase):
             code='LAB-IA', name='Labor-IA', taxable=False,
         )
         self.contact = Contact.objects.create(
-            first_name='IA', last_name='Test', email='ia@t.com', work_number='555-3333',
+            first_name='IA', last_name='Test', email='ia@t.com', phones=[{'number': '555-3333', 'label': 'work'}],
         )
         self.job = JobService.create_job(name='IA Job', contact=self.contact)
         Job.objects.filter(pk=self.job.pk).update(status=Job.STATUS_APPROVED)
@@ -421,7 +421,7 @@ class EstimateWizardAutoRecomputeTest(TestCase):
             code='LAB-WZ', name='Labor-WZ', taxable=False,
         )
         self.contact = Contact.objects.create(
-            first_name='WZ', last_name='Test', email='wz@t.com', work_number='555-4444',
+            first_name='WZ', last_name='Test', email='wz@t.com', phones=[{'number': '555-4444', 'label': 'work'}],
         )
         self.job = JobService.create_job(name='WZ Job', contact=self.contact)
 
@@ -483,7 +483,7 @@ class SaveLineItemChokePointTest(TestCase):
             code='LAB-CK', name='Labor-CK', taxable=False,
         )
         contact = Contact.objects.create(
-            first_name='CK', last_name='Test', email='ck@t.com', work_number='555-9999',
+            first_name='CK', last_name='Test', email='ck@t.com', phones=[{'number': '555-9999', 'label': 'work'}],
         )
         from apps.jobs.services import JobService
         job = JobService.create_job(name='CK Job', contact=contact)

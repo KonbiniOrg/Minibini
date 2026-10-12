@@ -152,7 +152,7 @@ class JobAPITest(BaseTestCase):
         from apps.contacts.models import Contact
         new_contact = Contact.objects.create(
             first_name='New', last_name='Contact',
-            email='new-job-contact@example.com', mobile_number='555-000-1111',
+            email='new-job-contact@example.com', phones=[{'number': '555-000-1111', 'label': 'mobile'}],
         )
         job = Job.objects.create(
             contact=Contact.objects.exclude(pk=new_contact.pk).first(),
@@ -169,7 +169,7 @@ class JobAPITest(BaseTestCase):
         from apps.contacts.models import Contact
         new_contact = Contact.objects.create(
             first_name='New2', last_name='Contact',
-            email='new-job-contact2@example.com', mobile_number='555-000-2222',
+            email='new-job-contact2@example.com', phones=[{'number': '555-000-2222', 'label': 'mobile'}],
         )
         job = self._get_approved_job()
         response = self.client.patch(f'/api/jobs/{job.pk}/', {

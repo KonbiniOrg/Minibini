@@ -17,7 +17,7 @@ class DepositLineCreationTest(TestCase):
             code='DEP', name='Deposits', taxable=False, is_deposit=True)
         contact = Contact.objects.create(
             first_name='J', last_name='D', email='j@d.com',
-            mobile_number='555')
+            phones=[{'number': '555', 'label': 'mobile'}])
         self.job = Job.objects.create(
             contact=contact, job_number='JOB-2026-0001',
             status=Job.STATUS_APPROVED)

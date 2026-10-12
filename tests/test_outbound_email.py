@@ -13,7 +13,7 @@ class SendTrackedTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555',
+            email='jane@example.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Acme Co', default_contact=self.contact,
@@ -193,7 +193,7 @@ class CorrelateReplyTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Bob', last_name='Smith',
-            email='bob@example.com', mobile_number='555',
+            email='bob@example.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Acme', default_contact=self.contact,
@@ -293,7 +293,7 @@ class IMAPFetchPopulatesHeadersAndCorrelatesTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Bob', last_name='Smith',
-            email='bob@example.com', mobile_number='555',
+            email='bob@example.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Acme', default_contact=self.contact,

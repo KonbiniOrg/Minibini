@@ -277,7 +277,7 @@ class ContactsSuggestionTest(TestCase):
     def test_imported_and_changed_customers(self):
         contact = Contact.objects.create(
             first_name='Jo', last_name='Acme', email='old@acme.com',
-            mobile_number='555')
+            phones=[{'number': '555', 'label': 'mobile'}])
         Business.objects.create(
             business_name='Acme Corp', default_contact=contact,
             qbo_customer_id='71')

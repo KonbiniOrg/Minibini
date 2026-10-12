@@ -16,7 +16,7 @@ class AtomUnitsFromMaterialTests(TestCase):
         Configuration.objects.create(key='estimate_counter', value='0')
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555-0', 'label': 'mobile'}],
         )
         cls.pli = InventoryItem.objects.create(
             code='PLI-1', units='sheet', description='Steel Sheet',

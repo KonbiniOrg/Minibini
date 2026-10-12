@@ -29,7 +29,7 @@ class GatePredicateTest(TestCase):
     def test_contact_unlocks_jobs_estimates_invoices(self):
         Contact.objects.create(
             first_name='A', last_name='B', email='a@b.c',
-            mobile_number='555-0000')
+            phones=[{'number': '555-0000', 'label': 'mobile'}])
         areas = gate_status()['areas']
         self.assertTrue(areas['jobs']['available'])
         self.assertTrue(areas['estimates']['available'])
@@ -47,7 +47,7 @@ class GatePredicateTest(TestCase):
     def test_business_unlocks_purchasing(self):
         contact = Contact.objects.create(
             first_name='A', last_name='B', email='a@b.c',
-            mobile_number='555-0000')
+            phones=[{'number': '555-0000', 'label': 'mobile'}])
         Business.objects.create(business_name='Acme', default_contact=contact)
         self.assertTrue(gate_status()['areas']['purchasing']['available'])
 
@@ -62,7 +62,7 @@ class GatePredicateTest(TestCase):
     def test_available_areas_have_empty_message(self):
         Contact.objects.create(
             first_name='A', last_name='B', email='a@b.c',
-            mobile_number='555-0000')
+            phones=[{'number': '555-0000', 'label': 'mobile'}])
         self.assertEqual(gate_status()['areas']['jobs']['message'], '')
 
     def test_last_pull_at_none_without_snapshot(self):

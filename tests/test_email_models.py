@@ -1197,7 +1197,7 @@ class PropagateThreadAssociationTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='J', last_name='D',
-            email='j@example.com', mobile_number='555',
+            email='j@example.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Acme', default_contact=self.contact,

@@ -18,7 +18,7 @@ class BusinessTaxMultiplierTest(TestCase):
             first_name='Test',
             last_name='Contact',
             email='test@example.com',
-            work_number='555-1234'
+            phones=[{'number': '555-1234', 'label': 'work'}]
         )
 
     def test_tax_multiplier_null_by_default(self):

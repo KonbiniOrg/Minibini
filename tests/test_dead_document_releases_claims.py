@@ -37,7 +37,7 @@ class DeadDocumentBase(TestCase):
         AppState.objects.create(key='estimate_counter', value='0')
         self.cat = AccountingCategory.objects.create(code='LAB', name='Labor')
         contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555')
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555', 'label': 'mobile'}])
         self.job = Job.objects.create(
             contact=contact, job_number='JOB-2026-0001',
             status=Job.STATUS_APPROVED)

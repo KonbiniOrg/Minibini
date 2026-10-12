@@ -13,7 +13,7 @@ class MaterialLinkToPOLineTest(TestCase):
     def setUp(self):
         Configuration.objects.get_or_create(key='po_number_sequence', defaults={'value': 'PO-{counter:04d}'})
         AppState.objects.get_or_create(key='po_counter', defaults={'value': '0'})
-        c = Contact.objects.create(first_name='V', last_name='V', work_number='5')
+        c = Contact.objects.create(first_name='V', last_name='V', phones=[{'number': '5', 'label': 'work'}])
         self.business = Business.objects.create(business_name='B', default_contact=c)
         c.business = self.business; c.save()
         self.job = Job.objects.create(job_number='J-1', contact=c, description='j')

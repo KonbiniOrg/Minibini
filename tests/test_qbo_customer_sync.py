@@ -14,11 +14,11 @@ class CustomerSyncTest(TestCase):
             first_name='John',
             last_name='Doe',
             email='john@acme.com',
-            mobile_number='555-5678',
+            phones=[{'number': '555-5678', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Acme Corp',
-            business_phone='555-1234',
+            phones=[{'number': '555-1234', 'label': ''}],
             default_contact=self.contact,
         )
         self.contact.business = self.business
@@ -109,7 +109,7 @@ class ContactQBOCustomerIdConstraintTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Solo',
-            email='jane@solo.com', mobile_number='555-0001',
+            email='jane@solo.com', phones=[{'number': '555-0001', 'label': 'mobile'}],
         )
 
     def test_contact_can_have_qbo_customer_id_without_business(self):
@@ -150,7 +150,7 @@ class IndividualContactCustomerSyncTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Solo',
-            email='jane@solo.com', mobile_number='555-0001',
+            email='jane@solo.com', phones=[{'number': '555-0001', 'label': 'mobile'}],
         )
 
     @patch('apps.qbo.services.QBOService.get_client')
@@ -225,17 +225,17 @@ class CustomerAdoptByNameTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='John', last_name='Doe',
-            email='john@acme.com', mobile_number='555-5678',
+            email='john@acme.com', phones=[{'number': '555-5678', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
-            business_name='Acme Corp', business_phone='555-1234',
+            business_name='Acme Corp', phones=[{'number': '555-1234', 'label': ''}],
             default_contact=self.contact,
         )
         self.contact.business = self.business
         self.contact.save()
         self.solo = Contact.objects.create(
             first_name='Jane', last_name='Solo', email='jane@solo.com',
-            mobile_number='555-9999',
+            phones=[{'number': '555-9999', 'label': 'mobile'}],
         )
 
     def _dup_customer(self, display_name):

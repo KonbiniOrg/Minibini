@@ -22,7 +22,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='WCG',
-            email='wcg@example.com', work_number='555-0199',
+            email='wcg@example.com', phones=[{'number': '555-0199', 'label': 'work'}],
         )
         cat = AccountingCategory.objects.create(name='WCG Cat', code='WCG1')
         self.scheme = RateScheme.objects.create(

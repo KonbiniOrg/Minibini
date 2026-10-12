@@ -20,7 +20,7 @@ class EstimateSentJobSubmittedTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
-            email='test@example.com', work_number='555-0100',
+            email='test@example.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.job = Job.objects.create(
             job_number='JOB-TEST-0001', contact=self.contact,
@@ -82,7 +82,7 @@ class LastInvoicePaidJobCompletedTest(TestCase):
 
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
-            email='test@example.com', work_number='555-0100',
+            email='test@example.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.job = Job.objects.create(
             job_number='JOB-TEST-0001', contact=self.contact,
