@@ -285,7 +285,7 @@ enabled in the gear menu). "Sync log" = Django admin → QBO → QBO sync logs.
   vendor → Deactivate B2. Per finding (b) for vendors. If refused, check
   the Customer (pushed first) — it is the **known half-push limitation**:
   if the Customer is now inactive while B2 is still active in konbini,
-  record it and file that push order needs an all-or-nothing pre-check;
+  record it; if so, the push order needs an all-or-nothing pre-check (file it);
   retry after paying the bill should succeed.
 - [ ] **12. Token refresh:** let the access token expire (or set
   `access_token_expires_at` in the past via admin) → Deactivate B3. Token

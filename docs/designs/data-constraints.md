@@ -2572,7 +2572,7 @@ from it.
   reactivating is refused while its business is inactive.
 - Consequence for dependants (no rows written): Jobs of an inactive contact
   and POs of an inactive business/contact become frozen (§1.8, §1.17);
-  reactivation thaws them. `push_to_qbo` is accepted and ignored.
+  reactivation thaws them. `push_to_qbo=True` (the default) pushes the flip to QBO before the local write (see "QBO and status" below and the QBO doc's "Active-flag push"); the import commit passes `push_to_qbo=False` because QBO already agrees.
 
 **Data constraint:** through the service, an inactive Business has only
 inactive Contacts (a contact cannot be reactivated under it). Fixtures and

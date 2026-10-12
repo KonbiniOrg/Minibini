@@ -273,9 +273,9 @@ limitation: `docs/designs/quickbooks-integration.md` "Active-flag push".
 | `assert_active(obj)` | `ValidationError('{obj} is inactive. Reactivate it before editing.')`. |
 | `add_note(obj, object_type, text)` | `assert_active`, then `record_history(entry_type='note', ...)` — the `notes` actions go through it. |
 
-`push_to_qbo` is accepted by all four flip methods and **currently
-ignored** — there is no QBO status push yet (a later phase; the keyword is
-the seam so callers need not change).
+All four flip methods accept it: `push_to_qbo=True` (the default) pushes the flip to QBO before the local
+write (see "QBO and status" below and the QBO doc's "Active-flag push"); the
+import commit passes `push_to_qbo=False` because QBO already agrees.
 
 ### What "ok to deactivate" means (blockers)
 
