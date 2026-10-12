@@ -196,9 +196,7 @@
               { id: 'name',     label: 'Name',     cell: contactNameCell },
               { id: 'business', label: 'Business', cell: contactBusinessCell },
               { id: 'email',    label: 'Email',    cell: contactEmailCell },
-              { id: 'mobile',   label: 'Mobile',   cell: contactMobileCell },
-              { id: 'work',     label: 'Work',     cell: contactWorkCell },
-              { id: 'home',     label: 'Home',     cell: contactHomeCell },
+              { id: 'phone',    label: 'Phone',    cell: contactPhoneCell },
               { id: 'city',     label: 'City',     cell: contactCityCell },
             ]}
           />
@@ -404,15 +402,13 @@
 {#snippet contactNameCell(c)}<a href="#/contacts/{c.contact_id}">{@html hl(c.name)}</a>{/snippet}
 {#snippet contactBusinessCell(c)}{#if c.business_name}{@html hl(c.business_name)}{:else}—{/if}{/snippet}
 {#snippet contactEmailCell(c)}{@html hl(c.email)}{/snippet}
-{#snippet contactMobileCell(c)}{@html hl(c.mobile_number)}{/snippet}
-{#snippet contactWorkCell(c)}{@html hl(c.work_number)}{/snippet}
-{#snippet contactHomeCell(c)}{@html hl(c.home_number)}{/snippet}
+{#snippet contactPhoneCell(c)}{@html hl(c.phone)}{/snippet}
 {#snippet contactCityCell(c)}{@html hl(c.city)}{/snippet}
 
 {#snippet bizNameCell(b)}<a href="#/businesses/{b.business_id}">{@html hl(b.business_name)}</a>{/snippet}
 {#snippet bizCodeCell(b)}{@html hl(b.our_reference_code)}{/snippet}
 {#snippet bizAddressCell(b)}{@html hl(b.business_address)}{/snippet}
-{#snippet bizPhoneCell(b)}{@html hl(b.business_phone)}{/snippet}
+{#snippet bizPhoneCell(b)}{@html hl(b.phone)}{/snippet}
 
 {#snippet invNumberCell(inv)}<a href="#/invoices/{inv.invoice_id}">{@html hl(inv.display_number)}</a>{/snippet}
 {#snippet invJobCell(inv)}{@html hl(inv.job_number)}{/snippet}

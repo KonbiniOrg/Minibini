@@ -27,11 +27,11 @@ function mockLists({ contacts, businesses }) {
 }
 
 const jane = {
-  contact_id: 1, name: 'Jane Doe', email: 'jane@example.com', work_number: '555-0100',
+  contact_id: 1, name: 'Jane Doe', email: 'jane@example.com', phone: '555-0100',
   business: { business_id: 1, business_name: 'Acme Corp' },
   tags: [{ tag_id: 3, name: 'vip' }],
 };
-const acme = { business_id: 1, business_name: 'Acme Corp', business_phone: '555-0200', tags: [] };
+const acme = { business_id: 1, business_name: 'Acme Corp', phone: '555-0200', tags: [] };
 
 function headers(container) {
   return Array.from(container.querySelectorAll('thead th')).map((th) => th.textContent.trim());

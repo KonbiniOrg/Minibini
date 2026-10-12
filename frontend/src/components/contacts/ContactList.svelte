@@ -23,5 +23,5 @@
 {/snippet}
 
 {#snippet phoneCell(contact)}
-  {contact.work_number || contact.mobile_number || contact.home_number || ''}
+  {contact.phone || ''}
 {/snippet}

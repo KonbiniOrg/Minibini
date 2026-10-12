@@ -14,8 +14,8 @@ const INVOICES = [
   { invoice_id: 6, display_number: 'INV-6', job: 2, job_number: 'JOB-2025-0391', status: 'paid', sent_date: null, total: '100.00', amount_paid: '100.00', balance: '0.00' },
 ];
 const CONTACTS = [
-  { contact_id: 9, name: 'Dana Whitfield', email: 'dana@x.test', mobile_number: '555-0162', work_number: '' },
-  { contact_id: 10, name: 'Marcus Lee', email: '', mobile_number: '', work_number: '555-0171' },
+  { contact_id: 9, name: 'Dana Whitfield', email: 'dana@x.test', phone: '555-0162' },
+  { contact_id: 10, name: 'Marcus Lee', email: '', phone: '555-0171' },
 ];
 
 const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());

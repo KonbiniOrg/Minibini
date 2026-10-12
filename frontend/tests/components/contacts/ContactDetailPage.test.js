@@ -24,7 +24,7 @@ function mockContact(overrides = {}) {
 }
 const BIZ_SUMMARY = { business_id: 7, business_name: 'Acme', default_contact: { contact_id: 1, name: 'Jane' } };
 const BIZ_DETAIL = {
-  business_id: 7, business_name: 'Acme', terms_name: null, business_phone: '', tax_exemption_number: '',
+  business_id: 7, business_name: 'Acme', terms_name: null, phone: '', tax_exemption_number: '',
   contacts: [{ contact_id: 1, name: 'Jane' }, { contact_id: 2, name: 'Marcus' }], jobs: [{ job_id: 5, contact: 2 }],
 };
 

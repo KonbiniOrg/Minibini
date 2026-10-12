@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn(), link: () => ({}) }));
 vi.mock('@/lib/api.js', () => ({
@@ -29,7 +29,9 @@ async function fillCreate(getByLabelText) {
   await fireEvent.input(getByLabelText('First Name *'), { target: { value: 'Ann' } });
   await fireEvent.input(getByLabelText('Last Name *'), { target: { value: 'Lee' } });
   await fireEvent.input(getByLabelText('Email *'), { target: { value: 'ann@acme.test' } });
-  await fireEvent.input(getByLabelText('Mobile *'), { target: { value: '555' } });
+  // Second editor on the form is the default contact's (the first is the business's).
+  await fireEvent.click(screen.getAllByRole('button', { name: 'Add phone' })[1]);
+  await fireEvent.input(getByLabelText('Phone 1 number'), { target: { value: '555' } });
 }
 
 describe('BusinessFormModal — create', () => {

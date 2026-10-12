@@ -194,7 +194,7 @@
   {#if c.contact_id === defaultContactId}<span class="chip-default">default</span>{/if}
 {/snippet}
 {#snippet contactEmailCell(c)}{#if c.email}<a href="mailto:{c.email}">{c.email}</a>{/if}{/snippet}
-{#snippet contactPhoneCell(c)}{c.mobile_number || c.work_number || '—'}{/snippet}
+{#snippet contactPhoneCell(c)}{c.phone || '—'}{/snippet}
 {#snippet contactActionsCell(c)}
   <span class="row-actions">
     {#if onNewJobFor}<button type="button" onclick={() => onNewJobFor(c.contact_id)}>New job</button>{/if}

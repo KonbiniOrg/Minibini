@@ -65,7 +65,7 @@
         business_name: c.business?.business_name || '',
         business_id: c.business?.business_id || null,
         email: c.email,
-        phone: c.work_number || c.mobile_number || c.home_number || '',
+        phone: c.phone || '',
         tags: c.tags || [],
         href: `#/contacts/${c.contact_id}`,
       }));
@@ -76,7 +76,7 @@
         _name: b.business_name,
         name: b.business_name,
         email: '',
-        phone: b.business_phone || '',
+        phone: b.phone || '',
         tags: b.tags || [],
         href: `#/businesses/${b.business_id}`,
       }));

@@ -15,8 +15,8 @@ import { viewMode } from '@/stores/viewMode.js';
 import { overlayMessage, clearMessage } from '@/stores/messages.js';
 import BusinessDetailPage from '@/routes/contacts/BusinessDetailPage.svelte';
 
-const BOSS = { contact_id: 9, name: 'Boss', email: 'b@x.test', mobile_number: '1', work_number: '' };
-const WORKER = { contact_id: 10, name: 'Worker', email: '', mobile_number: '', work_number: '2' };
+const BOSS = { contact_id: 9, name: 'Boss', email: 'b@x.test', phone: '1' };
+const WORKER = { contact_id: 10, name: 'Worker', email: '', phone: '2' };
 
 function mockBusiness(overrides = {}) {
   return {

@@ -11,12 +11,12 @@ import BusinessDetail from '@/components/contacts/BusinessDetail.svelte';
 function business() {
   return {
     business_id: 1, business_name: 'Acme', our_reference_code: 'R1',
-    business_phone: '555-0100', business_address: '1 Main St\nTown', website: 'acme.test',
+    phones: [{ number: '555-0100', label: 'main' }], business_address: '1 Main St\nTown', website: 'acme.test',
     tax_exemption_number: '', tax_multiplier: null, terms: 2, terms_name: 'Net 30',
     default_contact: { contact_id: 9, name: 'Boss' }, tags: [],
     contacts: [
-      { contact_id: 9, name: 'Boss', email: 'boss@acme.test', mobile_number: '555-1', work_number: '' },
-      { contact_id: 10, name: 'Worker', email: '', mobile_number: '', work_number: '555-2' },
+      { contact_id: 9, name: 'Boss', email: 'boss@acme.test', phone: '555-1' },
+      { contact_id: 10, name: 'Worker', email: '', phone: '555-2' },
     ],
     jobs: [
       { job_id: 1, job_number: 'JOB-1', name: 'Open', status: 'in_progress', contact: 9, contact_name: 'Boss', start_date: null, created_date: '2026-01-01T00:00:00Z', estimated_amount: '10.00' },

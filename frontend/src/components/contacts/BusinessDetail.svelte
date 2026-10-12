@@ -30,10 +30,10 @@
     <div class="panel">
       <div class="panel-head">Contact</div>
       <dl class="facts">
-        {#if business.business_phone}<dt>Phone</dt><dd>{business.business_phone}</dd>{/if}
+        {#each business.phones || [] as p}<dt>{p.label || 'Phone'}</dt><dd>{p.number}</dd>{/each}
         {#if business.website}<dt>Web</dt><dd><a href={href(business.website)} target="_blank" rel="noopener">{hostOf(business.website)}</a></dd>{/if}
         {#if business.business_address}<dt>Address</dt><dd class="preserve-breaks">{business.business_address}</dd>{/if}
-        {#if !business.business_phone && !business.website && !business.business_address}
+        {#if !(business.phones?.length) && !business.website && !business.business_address}
           <dd class="muted empty">No contact details.</dd>
         {/if}
       </dl>

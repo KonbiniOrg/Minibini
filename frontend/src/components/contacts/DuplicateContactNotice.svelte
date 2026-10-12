@@ -18,8 +18,8 @@
   <p>
     <strong>{contact.name}</strong><br>
     {contact.email}<br>
-    {#if contact.mobile_number || contact.work_number || contact.home_number}
-      {contact.mobile_number || contact.work_number || contact.home_number}<br>
+    {#if contact.phones?.[0]?.number}
+      {contact.phones[0].number}<br>
     {/if}
     {#if contact.business}
       {contact.business.business_name}

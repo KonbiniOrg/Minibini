@@ -33,13 +33,6 @@ export async function resolveSenderToContact(state) {
 
   // mode === 'new'
   const contactPayload = { ...state.contactForm };
-  if (
-    !contactPayload.work_number &&
-    !contactPayload.mobile_number &&
-    !contactPayload.home_number
-  ) {
-    throw new Error('At least one phone number (work, mobile, or home) is required.');
-  }
 
   let businessId = null;
   let newBusinessName = null;

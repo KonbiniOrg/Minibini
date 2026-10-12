@@ -28,7 +28,7 @@
       .filter(Boolean).join(' ')
   );
   let businessLine = $derived([
-    business?.business_phone || null,
+    business?.phone || null,
     business?.terms_name || null,
     business ? (business.tax_exemption_number ? 'tax exempt' : null) : null,
   ].filter(Boolean).join(' · '));
@@ -53,9 +53,7 @@
           <a href="mailto:{contact.email}">{contact.email}</a>
           <button type="button" class="copy" onclick={copyEmail}>{copied ? 'copied' : 'copy'}</button>
         </dd>
-        {#if contact.mobile_number}<dt>Mobile</dt><dd><a href="tel:{contact.mobile_number}">{contact.mobile_number}</a></dd>{/if}
-        {#if contact.work_number}<dt>Work</dt><dd><a href="tel:{contact.work_number}">{contact.work_number}</a></dd>{/if}
-        {#if contact.home_number}<dt>Home</dt><dd><a href="tel:{contact.home_number}">{contact.home_number}</a></dd>{/if}
+        {#each contact.phones || [] as p}<dt>{p.label || 'Phone'}</dt><dd><a href="tel:{p.number}">{p.number}</a></dd>{/each}
         {#if hasAddress}
           <dt>Address</dt>
           <dd>
