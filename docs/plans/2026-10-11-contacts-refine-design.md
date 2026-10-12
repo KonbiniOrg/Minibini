@@ -537,5 +537,6 @@ Only one agent runs Django tests at a time; always `--noinput`.
 - QBO status sync both ways (RM, 2026-10-11): push inside the transaction
   with QBO refusal failing the flip; pull as import suggestions a human
   commits; last phase of the plan so the local status work ships first.
+- Push runs after blockers and before the local flip (outside the transaction) so a failed push's sync-log row survives (plan refinement, 2026-10-11).
 - Guard placement in the service layer; LATER item records the possible
   reversal after the permission-mixin audit.

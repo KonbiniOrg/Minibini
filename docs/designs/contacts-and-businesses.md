@@ -35,7 +35,7 @@ rest of the system builds on.
 - `Invoice`'s relationship to a business/contact (via its Job). See
   `docs/designs/invoicing-and-expenses.md`.
 - QBO OAuth, `QBOSyncLog`, and the mechanics of `push_customer` /
-  `push_contact_as_customer` / `push_vendor`. See
+  `push_contact_as_customer` and the Active-flag push. See
   `docs/designs/quickbooks-integration.md` — this doc only states the
   mutual-exclusivity rule the sync relies on.
 
@@ -245,6 +245,20 @@ jobs/POs that point at it (jobs doc §3 "Frozen jobs"; materials doc §10 "PO
 freeze"). Deactivation is reversible and unconfirmed except for the business
 cascade. Delete is still allowed on an inactive record (it keeps its own,
 unchanged guards).
+
+### QBO and status
+
+Contacts that belong to a business have **no QBO entity** (mutual
+exclusivity, above) — their status is local only and never pushes; a
+business's cascade flips them locally. A Business and a business-less
+Contact push QBO's `Active` flag on deactivate/reactivate when
+`push_to_qbo` is true (the default): after the blockers pass and before the
+local flip, with a QBO refusal failing the flip (`QuickBooks refused to
+deactivate <name>: ...`). A record with no QBO id, or no active connection,
+just flips locally. In the other direction, the QBO contacts import
+surfaces `qbo_inactive`/`qbo_active` suggestions a human commits, applied
+with `push_to_qbo=False`. Mechanics, failure policy, and the half-push
+limitation: `docs/designs/quickbooks-integration.md` "Active-flag push".
 
 ### Service (`ContactService`, `apps/contacts/services.py`)
 
@@ -702,8 +716,10 @@ generally — not duplicated here.
 
 `Contact.qbo_customer_id`, `Business.qbo_customer_id`, and
 `Business.qbo_vendor_id` are all set by `apps/qbo/services.py`:
-`push_customer(business)`, `push_contact_as_customer(contact)` (only called
-for a business-less contact), and `push_vendor(business)` respectively. The
+`push_customer(business)` and `push_contact_as_customer(contact)` (only called
+for a business-less contact). `Business.qbo_vendor_id` is set by the setup-time
+import, not a push (the vendor push was retired 2026-07-23; the only vendor
+write now is `QBOVendorSyncService.set_active`). The
 **mutual exclusivity** rule — a contact with a `business` must not carry
 its own `qbo_customer_id` — is enforced in `Contact.clean()` (see above),
 not in the QBO service layer; the sync code relies on that invariant
@@ -712,8 +728,8 @@ the record's primary number (`business.phone()` / `contact.phone()`). On
 the **import** side a QBO phone is stored as `{number, label: 'qbo'}`, and
 for a matched customer is appended (never replacing) unless its digits
 already appear — see `docs/designs/quickbooks-integration.md` "Setup-time
-data import". Deactivation does not talk to QBO yet (`push_to_qbo` is
-accepted and ignored). Full OAuth/sync mechanics:
+data import". Deactivation/reactivation pushes QBO's `Active` flag (see "QBO and
+status" under Active / inactive status). Full OAuth/sync mechanics:
 `docs/designs/quickbooks-integration.md`.
 
 ---

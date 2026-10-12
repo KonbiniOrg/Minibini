@@ -954,9 +954,9 @@ raises a plain `ValidationError`, checking the business first:
   changes.` (the "or move…" clause only when the PO has a vendor; vendor
   inactive is caught first, so that vendor is always active here.)
 
-**16 call sites**, one per user-driven mutator: `update_po`,
+**17 call sites**, one per user-driven mutator: `update_po`,
 `update_status`, `reconcile`, `cancel_po`, `delete_po`; the line-item
-operations (add / add-from-PLI / update / change-job / reorder / delete,
+operations (add / add-from-PLI / update / change-job / reorder (both `reorder_line_items` and `reorder_line_item`) / delete,
 all worded "edit this purchase order"); the four receiving paths
 ("receive against this purchase order"); and send ("send this purchase
 order"). There is no system bypass — nothing system-driven edits a PO.

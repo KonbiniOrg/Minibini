@@ -231,6 +231,108 @@ QBO sync status **separately**.
 - [ ] **Config:** configures the QBO connection + payment accounts (§1); does not
   need Financials to do so.
 
+## 12. Customer/Vendor status sync (sandbox hand test)
+
+Contact/Business deactivate and reactivate push QBO's `Active` flag, and the
+contacts import pulls QBO-side inactive/active changes back as suggestions.
+Mechanics: `docs/designs/quickbooks-integration.md` "Active-flag push" and
+"Setup-time data import". Every "per finding" item depends on the pending
+sandbox probe (that doc, "Customer/Vendor Active flag — sandbox findings");
+record the answers there.
+
+**Run against the sandbox company only.** Preconditions: dev stack up
+(`runserver` + `npm run dev`), `.env` has `QBO_ENVIRONMENT=sandbox`,
+Settings → QuickBooks shows Connected, and a pull has been done from the
+Contacts page so the snapshot exists. Log in as a user with
+`can_manage_jobs` **and** `can_manage_config`. Keep the QBO sandbox UI open
+in a second tab (Sales → Customers, Expenses → Vendors, "Include inactive"
+enabled in the gear menu). "Sync log" = Django admin → QBO → QBO sync logs.
+
+**Push (konbini → QBO)**
+
+- [ ] **1. Business push:** business **B1** created in konbini, an invoice sent
+  once so it has `qbo_customer_id`, no vendor id, no open records → Business
+  page → **Deactivate** → Continue. Badge `inactive`; its contacts inactive;
+  history shows the flip; sync log `customer / deactivate / success`. QBO:
+  Customer inactive (name suffix per finding (a)).
+- [ ] **2. Reactivate (after 1):** Reactivate. Badge gone; contacts back; sync log
+  `customer / reactivate / success`. QBO: Customer active; record whether the
+  name is restored.
+- [ ] **3. Both roles:** business **B2** imported as both customer and vendor
+  (same-name merge) → Deactivate → Continue. Two sync log rows, `customer`
+  and `vendor`, both success. QBO: Customer **and** Vendor inactive.
+- [ ] **4. Both roles reactivate (after 3):** Reactivate. Two
+  `reactivate / success` rows; both active in QBO.
+- [ ] **5. Individual contact:** contact **C1** (no business) pushed as a customer
+  → Deactivate. Sync log `contact_customer / deactivate / success`; QBO
+  Customer inactive.
+- [ ] **6. Cascade never pushes:** business **B3** with 3 contacts and a customer
+  id → Deactivate → Continue. **One** sync log row (the business), none for
+  the 3 contacts; one Customer inactive in QBO.
+- [ ] **7. Never pushed:** business **B4** with no QBO ids → Deactivate /
+  Reactivate. Flips; **no** sync log rows; nothing in QBO.
+- [ ] **8. Disconnected:** Settings → QuickBooks → Disconnect; B1 active →
+  Deactivate B1. Flips locally; no sync log row; no error; QBO unchanged
+  (still active).
+- [ ] **9. Disconnected-push gap (after 8):** reconnect; Contacts → Pull. The B1 row
+  appears as **reactivate** (QBO active, local inactive) — the documented
+  disconnected-push gap. Apply → B1 active again, no push row.
+- [ ] **10. QBO refuses (customer), per finding (b):** create an unpaid invoice in
+  QBO for B1's customer → Deactivate B1. If QBO refuses: red message
+  "QuickBooks refused to deactivate B1: ...", B1 **stays active**, sync log
+  `deactivate / failed` carrying the QBO text. If QBO accepts: as #1.
+- [ ] **11. QBO refuses (vendor), per finding (b):** unpaid bill in QBO for B2's
+  vendor → Deactivate B2. Per finding (b) for vendors. If refused, check
+  the Customer (pushed first) — it is the **known half-push limitation**:
+  if the Customer is now inactive while B2 is still active in konbini,
+  record it and file that push order needs an all-or-nothing pre-check;
+  retry after paying the bill should succeed.
+- [ ] **12. Token refresh:** let the access token expire (or set
+  `access_token_expires_at` in the past via admin) → Deactivate B3. Token
+  refresh happens silently; success; Customer inactive.
+
+**Pull (QBO → konbini)**
+
+- [ ] **13. qbo_inactive row:** in QBO make B3's customer inactive by hand;
+  konbini: Contacts → Pull. B3 row state **deactivate**, **unchecked** by
+  default, with the hint text.
+- [ ] **14. Refusal per row (after 13):** B3 has an open job → check the row →
+  Apply. Row stays; warning "1 contact couldn't be applied: B3: Cannot
+  deactivate B3: 1 open job (...)"; B3 stays active; **no** sync log row.
+- [ ] **15. Apply after resolving (after 14):** close the job → Apply again. B3 and
+  its contacts inactive; no sync log row (QBO already agrees).
+- [ ] **16. qbo_active row:** in QBO make B3's customer active again; Pull → Apply
+  the **reactivate** row. B3 and all contacts active; no push row.
+- [ ] **17. Unmatched inactive dropped:** in QBO create a brand-new customer and
+  immediately make it inactive; Pull. It does **not** appear; the pull
+  summary counts exclude it.
+- [ ] **18. Both-roles round trip:** B2 (both roles): in QBO inactivate only the
+  Vendor; Pull. One **deactivate** row (vendor kind); the customer row
+  reads imported. Apply → B2 inactive locally; the next Pull shows the
+  customer row as **reactivate** (QBO customer still active). Record
+  whether this round trip is acceptable or needs a both-roles rule.
+
+**Edges and regressions**
+
+- [ ] **19. Inactive-name adoption, per finding (c):** a konbini business **B5**
+  whose name equals an **inactive** QBO customer; send B5's first invoice.
+  Either adopts (sync log shows which id) or errors with the duplicate-name
+  text; no 500.
+- [ ] **20. Sync failures panel:** after any of the above, Settings → QuickBooks
+  sync failures panel — status-push failures do **not** appear (money
+  pushes only) and the panel does not error with status rows in the log.
+- [ ] **21. Frozen banner:** B1 inactive → job detail of a closed job on B1's
+  contact; PO detail on B1 as vendor. Frozen banner; **Change contact...**
+  offered only if B1 itself is active (here: not).
+- [ ] **22. Phone regression:** send an invoice for an active business pushed
+  earlier. Unchanged behavior; the QBO customer's `PrimaryPhone` equals the
+  business's **first** phone entry.
+
+Record every "per finding" result and anything surprising in
+`docs/designs/quickbooks-integration.md` under the sandbox-findings
+subsection, then delete the probe customer/vendor in the sandbox (or leave
+them inactive, named "konbini probe ...").
+
 ---
 
 ## Coverage matrix
@@ -247,4 +349,5 @@ QBO sync status **separately**.
 | Bill table display | account name + reference (no method) · sync indicator per row · — when account unresolved |
 | Expense sync | business vs sync status separate · sync filter · home badge · delete refused+retained (stock not reversed) |
 | Reimbursement | batch sync badge · retry-sync re-pushes · no unwind button in SPA (gap) |
+| Status sync | push on deactivate/reactivate (customer, vendor, contact) · cascade never pushes · no id / disconnected = local only · QBO refusal blocks flip · pull rows deactivate/reactivate · per-row refusal warning · unmatched inactive dropped |
 | Persona | Viewer read-only · Financials full · Config sets up accounts |
