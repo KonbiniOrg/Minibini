@@ -162,7 +162,20 @@ endpoints in `apps/api/qbo_import/views.py`.
   `{'name', 'reason'}` and the panel renders "N contacts couldn't be
   imported:" with per-row reasons. Skipped rows stay importable after
   the user resolves the conflict. Blank QBO emails never overwrite a
-  konbini email on update. A dedupe/merge flow for skipped rows is
+  konbini email on update.
+  **Phones (2026-10-11):** QBO carries one `PrimaryPhone`; konbini holds a
+  `phones` list. New contacts/businesses/vendor-created pairs are created
+  with `[{number, label: 'qbo'}]` (nothing when QBO has no phone). For a
+  matched (update) customer, `_merge_qbo_phone` **appends** the QBO number
+  labeled `qbo` to the business and/or contact unless an existing entry
+  strips to the same digits (`strip_phone`) — QBO never reorders or
+  replaces konbini's phones, so the primary stays whatever the user set.
+  **Known gap:** the vendor *update* branch does not merge a phone (it
+  only refreshes the business name), so a QBO-side vendor phone change
+  does not reach konbini. Deactivation does not touch QBO yet:
+  `ContactService.deactivate_*`/`reactivate_*` accept `push_to_qbo=True`
+  but currently ignore it (`docs/designs/contacts-and-businesses.md`
+  "Active / inactive status"). A dedupe/merge flow for skipped rows is
   LATER.
 - **SPA**: shared `SuggestionPanel.svelte` + per-kind wrappers embedded in
   Settings → Accounting (categories), Settings → pricing/RateSchemeManager
@@ -272,7 +285,7 @@ The current logic only inspects Minibini's own QBO IDs. A pre-existing QBO custo
 | `CompanyName` (business) | `business.business_name` |
 | `DisplayName` | per the rules above |
 | `GivenName` / `FamilyName` (contact) | `contact.first_name`, `contact.last_name` |
-| `PrimaryPhone` | `business.business_phone` or `contact.phone()` |
+| `PrimaryPhone` | `business.phone()` or `contact.phone()` — the first (primary) entry of the record's `phones` list; empty list → not sent (was `business.business_phone` until 2026-10-11) |
 | `PrimaryEmailAddr` | `default_contact.email` (business) or `contact.email` |
 
 Billing address, shipping address, payment terms, tax exemption, and notes are not pushed.

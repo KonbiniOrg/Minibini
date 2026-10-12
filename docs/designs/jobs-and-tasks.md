@@ -497,6 +497,87 @@ projects the new Job's atoms (`estimates-and-prices.md` §7).
 Estimates, invoices, purchase orders, shipments, change orders,
 history entries, and bleps are never carried over to the new Job.
 
+### 3.7 Frozen jobs (inactive contact)
+
+(2026-10-11, contacts-refine; spec `docs/plans/2026-10-11-contacts-refine-design.md`
+§5.1. Companion: the PO equivalent in `materials-inventory-and-purchasing.md`;
+the party-side rules in `contacts-and-businesses.md` "Active / inactive
+status".)
+
+A job whose `contact` is inactive (the contact was deactivated, or its
+business was and the cascade took the contact with it) is **frozen**: it
+accepts no *user-driven* mutation until the contact is reactivated or the
+job is moved to an active contact. There is no stored flag — frozen is
+derived (`not job.contact.is_active`).
+
+**Guard.** `_assert_job_not_frozen(job, action)` in `apps/jobs/services.py`
+raises a plain `ValidationError` (a 400 `{detail}`):
+
+> Cannot {action}: this job's contact, {name}, is inactive. Reactivate the
+> contact, or move the job to an active contact at {business}, before making
+> changes.
+
+(the "or move the job…" clause appears only when the contact's business
+exists and is active; otherwise the sentence is `…is inactive. Reactivate
+the contact, before making changes.`). It is the sibling of
+`_assert_job_not_on_hold`, and `JobService.assert_mutable(job, action)` is
+its public wrapper for other apps.
+
+**Call sites** (each mirrors where `_assert_job_not_on_hold` sits, plus the
+job-level methods the hold guard never needed):
+
+- *Jobs services:* `JobService.update_job` (non-system calls), `hold_job`,
+  `release_job`, `delete_job`, release-materials; `TaskService` add /
+  generate / edit / delete / reorder / change-assignment;
+  `TaskLifecycleService` quantity entry, complete, block, unblock, cancel,
+  stop-work, cancel-work; `BlepService` create (via
+  `_assert_job_allows_blep`, which is also what starting work goes through),
+  edit and delete.
+- *Other domains:* material add / edit / restock
+  (`apps/inventory/services.py`); every estimate and change-order mutator,
+  status change and send (`apps/estimates/services.py`,
+  `change_order_service.py`); deliverables and shipments
+  (`apps/deliverables/services.py`); invoice create/edit/line/send paths
+  (`apps/invoicing/services.py`); the jobs API `notes` action (a frozen job
+  takes no notes).
+- *Wizard funnel:* `BaseWizardService._assert_job_mutable(container, action)`
+  (`apps/core/wizard.py`) is the one check every public wizard mutator
+  calls, so the estimate and change-order atom wizards share it.
+
+**Bypass — system transitions never call the guard.** Estimate-acceptance
+cascades and other status walks run `update_job(..., system_transition=True)`,
+which skips it. `EstimateService.update_status` and
+`ChangeOrderService.update_status` gained a keyword-only
+`system_transition=False` for the same reason: the two expiry commands
+(`mark_estimates_expired`, `mark_change_orders_expired`) pass `True`, since
+expiring a stale document on a frozen job is bookkeeping, not an edit.
+Every user/portal path leaves it `False` and is refused.
+
+**Carve-out — the swap.** `update_job` lets exactly one user edit through a
+frozen job: a PATCH whose kwargs are *exactly* `{'contact'}`, where the new
+contact is active, belongs to the **same non-null business** as the current
+contact, and that business is active. Any other kwarg alongside `contact`
+(or a business-less / cross-business swap) is refused as frozen. Whatever
+the job's state, `update_job` also rejects moving the job *onto* an
+inactive party (`_assert_party_active(new_contact)`: `{contact: ['… is
+inactive.']}`, or `['{business} is inactive.']` when the contact's business
+is). The same `_assert_party_active` guards `create_job` (hence also
+`duplicate_job`).
+
+**`Job.clean` exception.** The model rule "contact immutable once the job
+leaves draft" (data-constraints §1.8) has one exception, encoded in
+`Job._is_inactive_contact_swap(old, new)`: the old contact is inactive, the
+new contact is active, both belong to the same non-null business, and that
+business is active. Without it the swap above would pass the service and be
+rejected by `full_clean()`. (Controller ruling: the exception lives in the
+model so the invariant stays true at the model level.)
+
+**Serializer flags.** `JobSerializer` exposes read-only
+`contact_is_active`, `contact_business_id`, `contact_business_name` and
+`contact_business_is_active` (the last two are `null` for a business-less
+contact) — what the SPA needs to render the banner and scope the swap
+picker, with no extra fetch.
+
 ## 4. Task
 
 `Task` is defined at `apps/jobs/models.py`. Tasks belong to a Job
@@ -1495,11 +1576,30 @@ is the only place the `.summary-block`/`.stat-spread` markup lives.
 
 | Component | Role |
 |---|---|
+| `FrozenPartyBanner.svelte` + `ChangeContactModal.svelte` | The frozen-job treatment (2026-10-11, §3.7): see "Frozen job banner" below |
 | `JobDetail.svelte` | Composes the page (~110 lines): mounts `JobShell`, shapes the fetched payloads into lists/numbers (it derives no rules — Coverage moved into the lib 2026-07-28), renders the change-request banner + six blocks |
 | `JobHeader.svelte` | Header + status dropdown |
 | `lib/jobOverview.js` | Pure view-model — block rules, temperatures, clocks, copy (§9.1a) |
 | `components/jobs/overview/SummaryBlock.svelte` | The one dumb renderer for all six blocks (active/frozen/dormant markup) |
 | `components/jobs/overview/{Scope,Work,Materials,Spend,Invoicing,Delivery}Block.svelte` | Thin wrappers: call their `lib/jobOverview.js` function, pass the result to `SummaryBlock` |
+
+**Frozen job banner.** When `job.contact_is_active === false`,
+`JobHeader` shows an "inactive" `status-badge` beside the contact name and a
+`FrozenPartyBanner kind="job"` under the subtitle: "**Frozen:** {contact}
+is inactive." (the name links to the contact page) followed by either
+"Reactivate them, or move this job to another contact at {business}." and a
+**Change contact…** button — when the contact's business is active and the
+viewer has `can_manage_jobs` (a job's project manager counts, via the
+store flag the header already uses) — or "Reactivate them before making
+changes to this job." otherwise. The button opens
+`ChangeContactModal` (`components/ChangeContactModal.svelte`; props
+`open`, `patchUrl`, `businessId`, `onSaved`, `onClose`): a `Modal` with a
+`ContactPicker` scoped by `businessId` (= `job.contact_business_id`),
+active contacts only, whose Save PATCHes `/api/jobs/{id}/` with **`{contact}`
+and nothing else** (the only payload the §3.7 carve-out accepts) and then
+reloads the job. The rest of the page stays visible; every mutating action
+the user tries is refused server-side with the §3.7 sentence, rendered
+through the normal error triage.
 
 ### 9.3 Header financial rollups
 
