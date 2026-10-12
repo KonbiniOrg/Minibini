@@ -63,6 +63,29 @@ def _vendor_po_blockers(business):
 _sentinel = object()
 
 
+def _push_status_to_qbo(obj, active):
+    """Spec 6.6 failure policy: no QBO id or no connection -> nothing to
+    push. Otherwise QBO must accept; its error becomes the user's error and
+    the caller never reaches the local flip. Runs outside the local
+    transaction so a failed push's QBOSyncLog row survives."""
+    from apps.qbo.services import (QBOCustomerSyncService, QBOService,
+                                   QBOVendorSyncService)
+    has_customer = bool(getattr(obj, 'qbo_customer_id', None))
+    has_vendor = bool(getattr(obj, 'qbo_vendor_id', None))
+    if not (has_customer or has_vendor):
+        return
+    if QBOService.get_active_connection() is None:
+        return
+    verb = 'reactivate' if active else 'deactivate'
+    try:
+        if has_customer:
+            QBOCustomerSyncService.set_active(obj, active)
+        if has_vendor:
+            QBOVendorSyncService.set_active(obj, active)
+    except Exception as e:  # QBO/network/token - surfaced verbatim
+        raise ValidationError(f'QuickBooks refused to {verb} {obj}: {e}')
+
+
 class ContactService:
     """Service for Contact and Business CRUD operations."""
 
@@ -322,6 +345,8 @@ class ContactService:
         blockers = ContactService.contact_deactivation_blockers(contact)
         if blockers:
             raise ValidationError(f'Cannot deactivate {contact}: ' + '; '.join(blockers) + '.')
+        if push_to_qbo:
+            _push_status_to_qbo(contact, False)
         with transaction.atomic():
             contact.is_active = False
             contact.save()
@@ -336,6 +361,8 @@ class ContactService:
             raise ValidationError(
                 f'Cannot reactivate {contact}: business {business.business_name} is inactive. '
                 f'Reactivate the business first.')
+        if push_to_qbo:
+            _push_status_to_qbo(contact, True)
         with transaction.atomic():
             contact.is_active = True
             contact.save()
@@ -363,6 +390,8 @@ class ContactService:
         blockers = ContactService.business_deactivation_blockers(business)
         if blockers:
             raise ValidationError(f'Cannot deactivate {business}: ' + '; '.join(blockers) + '.')
+        if push_to_qbo:
+            _push_status_to_qbo(business, False)
         with transaction.atomic():
             business.is_active = False
             business.save()
@@ -376,6 +405,8 @@ class ContactService:
     def reactivate_business(business, *, push_to_qbo=True):
         if business.is_active:
             return business
+        if push_to_qbo:
+            _push_status_to_qbo(business, True)
         with transaction.atomic():
             business.is_active = True
             business.save()

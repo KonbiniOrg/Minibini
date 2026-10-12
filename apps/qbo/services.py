@@ -297,6 +297,41 @@ class QBOCustomerSyncService:
 
         return customer
 
+    @staticmethod
+    def set_active(obj, active):
+        """Flip the QBO Customer's Active flag for a Business (qbo_customer_id)
+        or an individual Contact. Logged as action deactivate/reactivate.
+        Raises on any QBO error (the caller decides what that means)."""
+        from quickbooks.objects.customer import Customer
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+        customer = Customer.get(obj.qbo_customer_id, qb=client)
+        customer.Active = bool(active)
+        is_business = hasattr(obj, 'business_name')
+        return QBOService.save_and_log(
+            customer, client,
+            entity_type='customer' if is_business else 'contact_customer',
+            qbo_entity_type='Customer', entity_id=obj.pk,
+            action='reactivate' if active else 'deactivate')
+
+
+class QBOVendorSyncService:
+    """Narrow vendor sync: only the Active flag (the bill-era push_vendor
+    was retired 2026-07-23; vendor IDs come from the setup-time import)."""
+
+    @staticmethod
+    def set_active(business, active):
+        from quickbooks.objects.vendor import Vendor
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+        vendor = Vendor.get(business.qbo_vendor_id, qb=client)
+        vendor.Active = bool(active)
+        return QBOService.save_and_log(
+            vendor, client, entity_type='vendor', qbo_entity_type='Vendor',
+            entity_id=business.pk, action='reactivate' if active else 'deactivate')
+
 
 class QBOInvoiceSyncService:
     """Helpers used by InvoiceEmailService.send_invoice to push an Invoice
