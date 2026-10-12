@@ -109,4 +109,20 @@ describe('PurchaseOrderDetail', () => {
       expect(getByPlaceholderText('Search jobs…')).toBeInTheDocument();
     });
   });
+
+  it('shows the frozen banner with the swap when the contact is inactive', () => {
+    const { getByText, getByRole } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 4, contact_name: 'Jo', contact_is_active: false, business_is_active: true }, canManageFinancials: true },
+    });
+    expect(getByText(/Frozen:/)).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Change contact…' })).toBeInTheDocument();
+  });
+
+  it('shows the frozen banner without the swap when the vendor is inactive', () => {
+    const { getByText, queryByRole } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 4, contact_name: 'Jo', contact_is_active: false, business_is_active: false }, canManageFinancials: true },
+    });
+    expect(getByText(/Frozen:/)).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Change contact…' })).toBeNull();
+  });
 });

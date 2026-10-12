@@ -5,6 +5,8 @@
   import Modal from '../Modal.svelte';
   import JobEditModal from './JobEditModal.svelte';
   import DuplicateJobModal from './DuplicateJobModal.svelte';
+  import FrozenPartyBanner from '../FrozenPartyBanner.svelte';
+  import ChangeContactModal from '../ChangeContactModal.svelte';
 
   const {
     job,
@@ -129,6 +131,7 @@
   // one place both are always mounted). History moved to the rail.
   let editOpen = $state(false);
   let dupOpen = $state(false);
+  let swapOpen = $state(false);
 
   // One selection = one transition: while a PATCH is in flight the pill is
   // disabled and any stray second change event is ignored, so a double-click
@@ -218,8 +221,14 @@
     <p class="customer-line">
       {#if contact}
         for <a href="#/contacts/{contact.contact_id}">{contact.name}</a>{#if contact.business}, at <a href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>{/if}
+        {#if job.contact_is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}
       {/if}
     </p>
+    {#if job.contact_is_active === false}
+      <FrozenPartyBanner kind="job" partyName={contact?.name ?? job.contact_name} partyHref={`#/contacts/${job.contact}`}
+        businessName={job.contact_business_name} businessActive={!!job.contact_business_is_active}
+        onChangeContact={canManageJobs ? () => { swapOpen = true; } : null} />
+    {/if}
     <div class="status-row">
       {#if canManageJobs}
         {#if !isTerminal}
@@ -300,6 +309,14 @@
   open={editOpen}
   onSaved={() => { editOpen = false; if (onStatusChange) onStatusChange(); }}
   onClose={() => { editOpen = false; }}
+/>
+
+<ChangeContactModal
+  open={swapOpen}
+  patchUrl={`/api/jobs/${job.job_id}/`}
+  businessId={job.contact_business_id ?? null}
+  onSaved={() => { if (onStatusChange) onStatusChange(); }}
+  onClose={() => { swapOpen = false; }}
 />
 
 <DuplicateJobModal

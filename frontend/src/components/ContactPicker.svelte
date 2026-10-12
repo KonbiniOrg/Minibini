@@ -3,10 +3,10 @@
   import { api } from '../lib/api.js';
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
   let { value = $bindable(null), selectedItem = null,
-        onSelect = () => {}, disabled = false } = $props();
+        onSelect = () => {}, disabled = false, businessId = null } = $props();
   const label = (c) => c.business ? `${c.name} — ${c.business.business_name}` : c.name;
   const search = (q) =>
-    api.get(`/api/contacts/?search=${encodeURIComponent(q)}&page_size=${PICKER_PAGE_SIZE}`)
+    api.get(`/api/contacts/?search=${encodeURIComponent(q)}&page_size=${PICKER_PAGE_SIZE}${businessId != null ? `&business=${businessId}` : ''}`)
        .then((d) => ({ rows: d.results || d, total: d.count ?? (d.results || d).length }));
   const resolveLabel = (id, item) =>
     item ? Promise.resolve(label(item))

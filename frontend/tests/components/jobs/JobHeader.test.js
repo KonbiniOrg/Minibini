@@ -347,3 +347,24 @@ describe('JobHeader per-job can_manage gating', () => {
     expect(optionValues(getByRole('combobox'))).toContain('cancelled');
   });
 });
+
+describe('JobHeader frozen banner', () => {
+  const frozen = { ...job, status: 'completed', contact: 3, contact_name: 'Jane', contact_is_active: false,
+    contact_business_id: 7, contact_business_name: 'Acme', contact_business_is_active: true };
+
+  it('offers the contact swap, PATCHing only the contact, then reloads', async () => {
+    api.get.mockResolvedValue({ results: [{ contact_id: 9, name: 'Sam Roe', business: { business_name: 'Acme' } }] });
+    const onStatusChange = vi.fn();
+    const { getByRole, getByText, getByPlaceholderText, findByRole } = render(JobHeader, { props: { job: frozen, onStatusChange } });
+    expect(getByText(/Frozen:/)).toBeInTheDocument();
+    await fireEvent.click(getByRole('button', { name: 'Change contact…' }));
+    expect(getByRole('dialog', { name: 'Change contact' })).toBeInTheDocument();
+    await fireEvent.input(getByPlaceholderText(/contact/i), { target: { value: 'sam' } });
+    await new Promise((r) => setTimeout(r, 300));
+    await fireEvent.mouseDown(await findByRole('button', { name: /Sam Roe/ }));
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { contact: 9 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onStatusChange).toHaveBeenCalled();
+  });
+});
