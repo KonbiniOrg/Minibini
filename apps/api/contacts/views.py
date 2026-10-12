@@ -155,12 +155,7 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
                 {'text': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        entry = record_history(
-            entry_type='note',
-            object_type='contact',
-            object_id=obj.pk,
-            text=text,
-        )
+        entry = ContactService.add_note(obj, 'contact', text)
         serializer = HistoryEntrySerializer(entry)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -345,12 +340,7 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
                 {'text': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        entry = record_history(
-            entry_type='note',
-            object_type='business',
-            object_id=obj.pk,
-            text=text,
-        )
+        entry = ContactService.add_note(obj, 'business', text)
         serializer = HistoryEntrySerializer(entry)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
