@@ -54,16 +54,16 @@ called from both models' `clean()`:
   back to `self.phones`.
 - Duplicate numbers are allowed (no rule).
 
-Both models expose:
+Both models expose the primary number through a plain method, keeping
+`Contact.phone()`'s existing call shape and adding the same on Business:
 
 ```python
-@property
 def phone(self):            # primary number
     return self.phones[0]['number'] if self.phones else ''
 ```
 
-`Contact.phone()` today is a method; it becomes a property. Grep every
-caller (`.phone()` → `.phone`) — templates, serializers, QBO services.
+Existing `.phone()` callers are unchanged. Serializers and templates keep
+reading it as `source='phone'` / `{{ contact.phone }}`.
 
 ### 3.2 `phones_digits` (both models, hidden)
 
@@ -345,7 +345,7 @@ fetchable.
 
 ### 6.5 QBO
 
-- `push_customer(business)`: `PrimaryPhone` ← `business.phone`.
+- `push_customer(business)`: `PrimaryPhone` ← `business.phone()`.
 - Customer import (`apps/qbo/import_services.py`), for every create/update
   site that currently writes `mobile_number` / `business_phone`: strip the QBO
   number with the §3.2 rule; if no existing entry strips to the same string,
