@@ -34,15 +34,35 @@ class PushStatusTest(TestCase):
     @patch('apps.qbo.services.QBOService.get_client', return_value=MagicMock())
     def test_business_deactivate_pushes_customer_and_vendor(self, _client):
         cust, vend = self._fake_entity(), self._fake_entity()
-        with patch('quickbooks.objects.customer.Customer.get', return_value=cust), \
+        # Give the cascade-flipped default contact a QBO id so a regression
+        # that pushed cascaded contacts would be observable.
+        self.dc.qbo_customer_id = '99'
+        self.dc.save()
+        with patch('quickbooks.objects.customer.Customer.get', return_value=cust) as cget, \
              patch('quickbooks.objects.vendor.Vendor.get', return_value=vend):
             ContactService.deactivate_business(self.biz)
         self.assertFalse(cust.Active); cust.save.assert_called_once()
         self.assertFalse(vend.Active); vend.save.assert_called_once()
         self.biz.refresh_from_db(); self.assertFalse(self.biz.is_active)
         self.assertEqual(QBOSyncLog.objects.filter(action='deactivate', status='success').count(), 2)
-        # cascade-flipped contacts never push
+        # cascade-flipped contacts never push: Customer.get hit once, with the business id
+        cget.assert_called_once()
+        self.assertEqual(cget.call_args[0][0], '71')
+        self.dc.refresh_from_db(); self.assertFalse(self.dc.is_active)
         self.assertFalse(QBOSyncLog.objects.filter(entity_type='contact_customer').exists())
+
+    @patch('apps.qbo.services.QBOService.get_client', return_value=MagicMock())
+    def test_business_reactivate_pushes_customer_and_vendor(self, _client):
+        ContactService.deactivate_business(self.biz, push_to_qbo=False)
+        cust, vend = self._fake_entity(), self._fake_entity()
+        cust.Active = vend.Active = False
+        with patch('quickbooks.objects.customer.Customer.get', return_value=cust), \
+             patch('quickbooks.objects.vendor.Vendor.get', return_value=vend):
+            ContactService.reactivate_business(self.biz)
+        self.assertTrue(cust.Active); cust.save.assert_called_once()
+        self.assertTrue(vend.Active); vend.save.assert_called_once()
+        self.biz.refresh_from_db(); self.assertTrue(self.biz.is_active)
+        self.assertEqual(QBOSyncLog.objects.filter(action='reactivate', status='success').count(), 2)
 
     @patch('apps.qbo.services.QBOService.get_client', return_value=MagicMock())
     def test_qbo_refusal_rolls_back_local_flip_and_logs_failure(self, _client):
