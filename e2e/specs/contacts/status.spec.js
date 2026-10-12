@@ -41,12 +41,14 @@ test('contact with an open job is blocked; a free contact deactivates, vanishes 
   await test.step('Default list hides it; Inactive shows it; global search shows it with the badge', async () => {
     await page.goto('/#/contacts');
     await page.getByPlaceholder(/Search all contacts/).fill(`${stamp}-1`);
+    await expect(page.getByRole('link', { name: `${stamp}-1 Status` })).toHaveCount(0);
     await expect(page.getByText('No results found.')).toBeVisible();
     await page.getByRole('button', { name: 'Inactive' }).click();
     await expect(page.getByRole('link', { name: `${stamp}-1 Status` })).toBeVisible();
     await page.goto(`/#/search?q=${encodeURIComponent(`${stamp}-1`)}`);
     await expect(page.getByRole('link', { name: `${stamp}-1 Status` })).toBeVisible();
-    await expect(page.getByText('inactive').first()).toBeVisible();
+    const row = page.locator('tr', { has: page.getByRole('link', { name: `${stamp}-1 Status` }) });
+    await expect(row.getByText('inactive', { exact: true })).toBeVisible();
   });
 });
 
