@@ -101,31 +101,36 @@ class QBOSnapshotService:
                                   Active=True, qb=client)))
 
         customers = []
-        for c in _all(Customer, client, Active=True):
-            customers.append({
-                'qbo_id': str(c.Id),
-                'display_name': str(getattr(c, 'DisplayName', '') or ''),
-                'company_name': str(getattr(c, 'CompanyName', '') or ''),
-                'given_name': str(getattr(c, 'GivenName', '') or ''),
-                'family_name': str(getattr(c, 'FamilyName', '') or ''),
-                'email': str(getattr(getattr(c, 'PrimaryEmailAddr', None),
-                                     'Address', '') or ''),
-                'phone': str(getattr(getattr(c, 'PrimaryPhone', None),
-                                     'FreeFormNumber', '') or ''),
-                'term_qbo_id': _ref_value(getattr(c, 'SalesTermRef', None)),
-            })
+        for active in (True, False):
+            for c in _all(Customer, client, Active=active):
+                customers.append({
+                    'qbo_id': str(c.Id),
+                    'display_name': str(getattr(c, 'DisplayName', '') or ''),
+                    'company_name': str(getattr(c, 'CompanyName', '') or ''),
+                    'given_name': str(getattr(c, 'GivenName', '') or ''),
+                    'family_name': str(getattr(c, 'FamilyName', '') or ''),
+                    'email': str(getattr(getattr(c, 'PrimaryEmailAddr', None),
+                                         'Address', '') or ''),
+                    'phone': str(getattr(getattr(c, 'PrimaryPhone', None),
+                                         'FreeFormNumber', '') or ''),
+                    'term_qbo_id': _ref_value(
+                        getattr(c, 'SalesTermRef', None)),
+                    'active': active,
+                })
 
         vendors = []
-        for v in _all(Vendor, client, Active=True):
-            vendors.append({
-                'qbo_id': str(v.Id),
-                'display_name': str(getattr(v, 'DisplayName', '') or ''),
-                'company_name': str(getattr(v, 'CompanyName', '') or ''),
-                'email': str(getattr(getattr(v, 'PrimaryEmailAddr', None),
-                                     'Address', '') or ''),
-                'phone': str(getattr(getattr(v, 'PrimaryPhone', None),
-                                     'FreeFormNumber', '') or ''),
-            })
+        for active in (True, False):
+            for v in _all(Vendor, client, Active=active):
+                vendors.append({
+                    'qbo_id': str(v.Id),
+                    'display_name': str(getattr(v, 'DisplayName', '') or ''),
+                    'company_name': str(getattr(v, 'CompanyName', '') or ''),
+                    'email': str(getattr(getattr(v, 'PrimaryEmailAddr', None),
+                                         'Address', '') or ''),
+                    'phone': str(getattr(getattr(v, 'PrimaryPhone', None),
+                                         'FreeFormNumber', '') or ''),
+                    'active': active,
+                })
 
         terms = [{'qbo_id': str(t.Id), 'name': str(t.Name or ''),
                   'due_days': int(getattr(t, 'DueDays', 0) or 0)}
@@ -221,6 +226,10 @@ class QBOImportSummary:
             return {}
 
         def count(rows, imported_ids):
+            # Inactive QBO rows konbini never imported are dropped from the
+            # suggestions, so they don't belong in the pull summary either.
+            rows = [r for r in rows
+                    if r.get('active', True) or r['qbo_id'] in imported_ids]
             imported = sum(1 for r in rows if r['qbo_id'] in imported_ids)
             return {'total': len(rows), 'imported': imported,
                     'new': len(rows) - imported}
@@ -576,8 +585,20 @@ class QBOSuggestionService:
             business = biz_by_customer.get(c['qbo_id'])
             contact = contact_by_customer.get(c['qbo_id'])
             if business is None and contact is None:
+                if not c.get('active', True):
+                    continue    # inactive in QBO and never imported
                 state = 'new'
             else:
+                local = business if business is not None else contact
+                qbo_active = c.get('active', True)
+                if not qbo_active and local.is_active:
+                    rows.append({'kind': 'customer', 'state': 'qbo_inactive',
+                                 **c})
+                    continue
+                if qbo_active and not local.is_active:
+                    rows.append({'kind': 'customer', 'state': 'qbo_active',
+                                 **c})
+                    continue
                 mirrored_email = (business.default_contact.email
                                   if business and business.default_contact
                                   else contact.email if contact else '')
@@ -590,8 +611,19 @@ class QBOSuggestionService:
         for v in snapshot['vendors']:
             existing = biz_by_vendor.get(v['qbo_id'])
             if existing is None:
+                if not v.get('active', True):
+                    continue    # inactive in QBO and never imported
                 state = 'new'
             else:
+                qbo_active = v.get('active', True)
+                if not qbo_active and existing.is_active:
+                    rows.append({'kind': 'vendor', 'state': 'qbo_inactive',
+                                 'merge_hint': False, **v})
+                    continue
+                if qbo_active and not existing.is_active:
+                    rows.append({'kind': 'vendor', 'state': 'qbo_active',
+                                 'merge_hint': False, **v})
+                    continue
                 state = ('changed'
                          if existing.business_name != v['display_name']
                          and v['company_name'] else 'imported')
@@ -911,9 +943,15 @@ def _commit_contacts(payload):
     {'name', 'reason'} for the panel to display."""
     from apps.contacts.models import Business, Contact, PaymentTerms
 
+    from django.core.exceptions import ValidationError
+
+    from apps.contacts.services import ContactService
+
     counts = {'terms': {'created': 0, 'updated': 0},
-              'customers': {'created': 0, 'updated': 0, 'skipped': []},
-              'vendors': {'created': 0, 'updated': 0, 'skipped': []}}
+              'customers': {'created': 0, 'updated': 0, 'deactivated': 0,
+                            'reactivated': 0, 'skipped': []},
+              'vendors': {'created': 0, 'updated': 0, 'deactivated': 0,
+                          'reactivated': 0, 'skipped': []}}
 
     batch_emails = {}   # email.lower() → earlier row's display name
     batch_names = {}    # business name.lower() → earlier row's display name
@@ -957,6 +995,30 @@ def _commit_contacts(payload):
         counts[kind]['skipped'].append(
             {'name': row['display_name'], 'reason': reason})
 
+    def apply_status(kind, row, business, contact):
+        """Deactivate/reactivate through the status services. QBO already
+        agrees, so never push back. A refusal is a skip, and the per-row
+        savepoint keeps it from aborting the batch."""
+        target = business if business is not None else contact
+        if target is None:
+            skip(kind, row, 'not found in konbini — pull again')
+            return
+        if business is not None:
+            fn = (ContactService.deactivate_business
+                  if row['action'] == 'deactivate'
+                  else ContactService.reactivate_business)
+        else:
+            fn = (ContactService.deactivate_contact
+                  if row['action'] == 'deactivate'
+                  else ContactService.reactivate_contact)
+        try:
+            with transaction.atomic():
+                fn(target, push_to_qbo=False)
+        except ValidationError as e:
+            skip(kind, row, e.messages[0])
+            return
+        counts[kind][row['action'] + 'd'] += 1
+
     with transaction.atomic():
         # The SPA's terms panel commits via commit_terms; this branch stays
         # for API-compat with payloads that still bundle terms.
@@ -968,6 +1030,14 @@ def _commit_contacts(payload):
         for row in payload.get('customers') or []:
             term = term_by_qbo.get(row.get('term_qbo_id') or '')
             email = (row.get('email') or '').strip()
+            if row['action'] in ('deactivate', 'reactivate'):
+                business = Business.objects.filter(
+                    qbo_customer_id=row['qbo_id']).first()
+                contact = (None if business is not None
+                           else Contact.objects.filter(
+                               qbo_customer_id=row['qbo_id']).first())
+                apply_status('customers', row, business, contact)
+                continue
             if row['action'] == 'create':
                 reason = reject_email(email)
                 if reason is None and row.get('company_name'):
@@ -1048,6 +1118,10 @@ def _commit_contacts(payload):
         for row in payload.get('vendors') or []:
             name = row.get('company_name') or row['display_name']
             email = (row.get('email') or '').strip()
+            if row['action'] in ('deactivate', 'reactivate'):
+                apply_status('vendors', row, Business.objects.filter(
+                    qbo_vendor_id=row['qbo_id']).first(), None)
+                continue
             if row['action'] == 'create':
                 existing = Business.objects.filter(
                     business_name__iexact=name).first()
@@ -1092,6 +1166,7 @@ def _commit_contacts(payload):
                         skip('vendors', row, reason)
                         continue
                     business.business_name = row['company_name']
+                _merge_qbo_phone(business, row.get('phone'))
                 business.save()
                 counts['vendors']['updated'] += 1
     QBOImportCommitService._auto_dismiss('contacts')

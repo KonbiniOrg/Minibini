@@ -7,10 +7,11 @@
 
   let { onCommitted = () => {} } = $props();
 
+  const ACTION = { changed: 'update', qbo_inactive: 'deactivate', qbo_active: 'reactivate' };
+  const actionOf = (r) => ACTION[r.state] || 'create';
+
   async function commit(rows) {
-    const withAction = (r) => ({
-      ...r, action: r.state === 'changed' ? 'update' : 'create',
-    });
+    const withAction = (r) => ({ ...r, action: actionOf(r) });
     const resp = await qboImportApi.commitContacts({
       customers: rows.filter((r) => r.kind === 'customer').map(withAction),
       vendors: rows.filter((r) => r.kind === 'vendor').map(withAction),
@@ -20,7 +21,7 @@
     if (!skipped.length) return resp;
     const noun = skipped.length === 1 ? 'contact' : 'contacts';
     return { warnings: [
-      `${skipped.length} ${noun} couldn't be imported:`,
+      `${skipped.length} ${noun} couldn't be applied:`,
       ...skipped.map((s) => `${s.name}: ${s.reason}`),
     ] };
   }
@@ -54,8 +55,10 @@
           <tr>
             <td>{@render checkbox(row, toggles)}</td>
             <td>{row.display_name}</td>
-            <td>{row.email || '—'}</td>
-            <td>{row.state === 'changed' ? 'update' : 'create'}</td>
+            <td>{row.email || '—'}
+              {#if row.state === 'qbo_inactive'}<br><small>inactive in QuickBooks — deactivating here checks for open jobs, invoices, and POs first</small>{/if}
+            </td>
+            <td>{actionOf(row)}</td>
           </tr>
         {/each}
       </tbody>
@@ -73,8 +76,10 @@
             <td>{row.display_name}
               {#if row.merge_hint}<small>(also a customer — will share one business)</small>{/if}
             </td>
-            <td>{row.email || '—'}</td>
-            <td>{row.state === 'changed' ? 'update' : 'create'}</td>
+            <td>{row.email || '—'}
+              {#if row.state === 'qbo_inactive'}<br><small>inactive in QuickBooks — deactivating here checks for open jobs, invoices, and POs first</small>{/if}
+            </td>
+            <td>{actionOf(row)}</td>
           </tr>
         {/each}
       </tbody>
@@ -96,4 +101,5 @@
 
 <SuggestionPanel area="contacts" title="Customers & vendors from QuickBooks"
   {table} {commit} {onCommitted}
-  rowKey={(r) => r.kind + r.qbo_id} />
+  rowKey={(r) => r.kind + r.qbo_id}
+  defaultChecked={(r) => r.state !== 'qbo_inactive'} />

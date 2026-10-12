@@ -84232,7 +84232,7 @@
       "terms": null,
       "default_contact": 193,
       "tax_multiplier": null,
-      "qbo_customer_id": null,
+      "qbo_customer_id": "e2e-inactive-1",
       "qbo_vendor_id": null,
       "tags": []
     }
@@ -95218,7 +95218,7 @@
     "model": "core.configuration",
     "pk": "qbo_import_snapshot",
     "fields": {
-      "value": "{\"version\": 1, \"fetched_at\": \"2026-07-23T12:00:00+00:00\", \"items\": [], \"income_accounts\": [], \"expense_accounts\": [], \"customers\": [{\"qbo_id\": \"9001\", \"display_name\": \"Zenith Imports E2E\", \"company_name\": \"Zenith Imports E2E\", \"given_name\": \"Zed\", \"family_name\": \"Zenith\", \"email\": \"test+zenith-e2e@robot-six.com\", \"phone\": \"\", \"term_qbo_id\": \"\"}, {\"qbo_id\": \"9002\", \"display_name\": \"Dupmail Company E2E\", \"company_name\": \"\", \"given_name\": \"Dup\", \"family_name\": \"Mail\", \"email\": \"test+aishahamilton@robot-six.com\", \"phone\": \"\", \"term_qbo_id\": \"\"}], \"vendors\": [], \"terms\": []}"
+      "value": "{\"version\": 1, \"fetched_at\": \"2026-07-23T12:00:00+00:00\", \"items\": [], \"income_accounts\": [], \"expense_accounts\": [], \"customers\": [{\"qbo_id\": \"9001\", \"display_name\": \"Zenith Imports E2E\", \"company_name\": \"Zenith Imports E2E\", \"given_name\": \"Zed\", \"family_name\": \"Zenith\", \"email\": \"test+zenith-e2e@robot-six.com\", \"phone\": \"\", \"term_qbo_id\": \"\", \"active\": true}, {\"qbo_id\": \"9002\", \"display_name\": \"Dupmail Company E2E\", \"company_name\": \"\", \"given_name\": \"Dup\", \"family_name\": \"Mail\", \"email\": \"test+aishahamilton@robot-six.com\", \"phone\": \"\", \"term_qbo_id\": \"\", \"active\": true}, {\"qbo_id\": \"e2e-inactive-1\", \"display_name\": \"Dormant Customer E2E\", \"company_name\": \"Dormant Customer E2E\", \"given_name\": \"\", \"family_name\": \"\", \"email\": \"\", \"phone\": \"\", \"term_qbo_id\": \"\", \"active\": false}], \"vendors\": [], \"terms\": []}"
     }
   }
 ]
