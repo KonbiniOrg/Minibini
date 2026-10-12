@@ -128,3 +128,35 @@ class JobContactSwapModelTest(BaseTestCase):
         stranger = Contact.objects.create(first_name='S', last_name='T', email='st2@x.test')
         with self.assertRaises(ValidationError):
             self._swap(stranger)
+
+
+class DocumentFreezeTest(BaseTestCase):
+    """One representative endpoint per document service; the service-level
+    guard covers the rest of each service's entry points."""
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+        self.biz, self.dc, (self.other,) = make_business('DocCo')
+        self.job = make_job(self.other, Job.STATUS_COMPLETED)
+        ContactService.deactivate_contact(self.other)
+
+    def _assert_frozen(self, response):
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn(FREEZE, response.data.get('detail', ''))
+
+    def test_estimate_create_refused(self):
+        self._assert_frozen(self.client.post('/api/estimates/', {'job': self.job.pk}, format='json'))
+
+    def test_change_order_create_refused(self):
+        self._assert_frozen(self.client.post('/api/change-orders/', {'job': self.job.pk}, format='json'))
+
+    def test_deliverable_create_refused(self):
+        self._assert_frozen(self.client.post(f'/api/jobs/{self.job.pk}/deliverables/',
+                                             {'description': 'd', 'qty_ordered': '1', 'units': 'ea'}, format='json'))
+
+    def test_shipment_create_refused(self):
+        self._assert_frozen(self.client.post(f'/api/jobs/{self.job.pk}/shipments/', {}, format='json'))
+
+    def test_invoice_open_refused(self):
+        self._assert_frozen(self.client.post(f'/api/jobs/{self.job.pk}/start-invoice-wizard/', {}, format='json'))

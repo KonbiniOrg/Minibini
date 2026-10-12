@@ -41,6 +41,8 @@ class EstimateService:
         Estimate number IS the job number (one estimate tree per job); the
         revision lives in the separate ``version`` field, not in the number.
         """
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(job, 'add an estimate to this job')
         version = kwargs.pop('version', 1)
         estimate_number = kwargs.pop('estimate_number', job.job_number)
         return Estimate.objects.create(
@@ -68,6 +70,8 @@ class EstimateService:
             job = Job.objects.get(pk=job_pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(job, 'add an estimate to this job')
 
         # Estimates belong to the quoting phase. A job that advanced without
         # one (hand-approved or duplicated-as-approved) is past that phase —
@@ -97,7 +101,7 @@ class EstimateService:
 
     @staticmethod
     @transaction.atomic
-    def update_status(pk, new_status, actor=None):
+    def update_status(pk, new_status, actor=None, *, system_transition=False):
         """Update estimate status. Model validates transitions.
 
         Atomic: accepting an estimate fires a synchronous signal cascade
@@ -111,11 +115,17 @@ class EstimateService:
         the portal link, e.g. ``{'contact_id': N, 'email': str,
         'reason': str|None}``), write an explicit, user-less action
         HistoryEntry recording the decision and the customer context.
+
+        ``system_transition=True`` (the expiry command) bypasses the
+        frozen-job guard — expiry is system bookkeeping, not a user edit.
         """
         try:
             estimate = Estimate.objects.get(pk=pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {pk} not found')
+        from apps.jobs.services import JobService
+        if not system_transition:
+            JobService.assert_mutable(estimate.job, 'change this estimate')
         old_status = estimate.status
         estimate.status = new_status
         estimate.save()  # Model.save() calls full_clean() and handles dates
@@ -144,6 +154,8 @@ class EstimateService:
     def update_fields(estimate, **fields):
         """Non-status field updates (status routes through mark_open /
         update_status). Exists so the viewset owns no persistence."""
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(estimate.job, 'edit this estimate')
         for k, v in fields.items():
             setattr(estimate, k, v)
         estimate.save()
@@ -202,6 +214,8 @@ class EstimateService:
             estimate = Estimate.objects.get(pk=pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(estimate.job, 'edit this estimate')
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Only draft estimates can be marked as open.')
 
@@ -240,6 +254,8 @@ class EstimateService:
             estimate = Estimate.objects.get(pk=pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(estimate.job, 'edit this estimate')
         if estimate.status != Estimate.STATUS_EXPIRED:
             raise ValidationError('Only expired estimates can be unexpired.')
 
@@ -270,6 +286,8 @@ class EstimateService:
             parent = Estimate.objects.get(pk=pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(parent.job, 'edit this estimate')
         if parent.status == Estimate.STATUS_DRAFT:
             raise ValidationError('Cannot revise a draft estimate. Edit it directly.')
 
@@ -351,6 +369,8 @@ class EstimateService:
             parent = Estimate.objects.get(pk=pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(parent.job, 'edit this estimate')
         with transaction.atomic():
             # Record the change request against the estimate the customer saw,
             # reusing the customer-action HistoryEntry shape (see update_status).
@@ -387,6 +407,8 @@ class EstimateService:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {estimate_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(estimate.job, 'edit this estimate')
         # work_declined is the acceptance-checklist mark — it answers a
         # question that doesn't exist yet for a line that hasn't been
         # created. Reject rather than silently strip: this model's field
@@ -432,6 +454,8 @@ class EstimateService:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {estimate_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(estimate.job, 'edit this estimate')
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft estimates.')
         try:
@@ -469,6 +493,8 @@ class EstimateService:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {estimate_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(estimate.job, 'edit this estimate')
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft estimates.')
         try:
@@ -506,6 +532,8 @@ class EstimateService:
             li = EstimateLineItem.objects.get(pk=line_item_id)
         except EstimateLineItem.DoesNotExist:
             raise NotFoundError(f'EstimateLineItem {line_item_id} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(li.estimate.job, 'edit this estimate')
 
         # work_declined is the acceptance-checklist "no work needed" mark —
         # uniquely among line fields it is set-able on an ACCEPTED estimate
@@ -643,6 +671,8 @@ class EstimateService:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {estimate_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(estimate.job, 'edit this estimate')
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only modify line items on draft estimates.')
         from django.db import transaction as db_transaction
@@ -660,6 +690,8 @@ class EstimateService:
             li = EstimateLineItem.objects.get(pk=line_item_id)
         except EstimateLineItem.DoesNotExist:
             raise NotFoundError(f'EstimateLineItem {line_item_id} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(li.estimate.job, 'edit this estimate')
         if li.estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft estimate.'
@@ -680,6 +712,8 @@ class EstimateService:
             li = EstimateLineItem.objects.get(pk=line_item_id)
         except EstimateLineItem.DoesNotExist:
             raise NotFoundError(f'EstimateLineItem {line_item_id} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(li.estimate.job, 'edit this estimate')
         if li.estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft estimate.'
@@ -694,6 +728,8 @@ class EstimateService:
     @staticmethod
     def discard_draft(estimate):
         """Hard-delete a draft estimate; cascades to line items and sources."""
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(estimate.job, 'edit this estimate')
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError(
                 f'Cannot discard estimate in status "{estimate.status}". '
@@ -714,6 +750,8 @@ class EstimateService:
         Raises ValidationError if the estimate is not draft or the service is
         not a PERCENTAGE algorithm.
         """
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(estimate.job, 'edit this estimate')
         from django.db.models import Max
         from apps.jobs.models import RateScheme
         if estimate.status != Estimate.STATUS_DRAFT:
@@ -982,6 +1020,8 @@ class EstimateEmailService(DocumentEmailService):
             Whatever SMTP raises (after persistence — the outbound row will
             still exist with last_send_error populated).
         """
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(estimate.job, 'send this estimate')
         return cls._send_document(
             estimate, to=to, subject=subject, body=body, cc=cc, bcc=bcc,
             extra_attachments=extra_attachments)
@@ -1055,6 +1095,8 @@ class ChangeOrderEmailService(DocumentEmailService):
         Raises ValidationError when ``to`` is empty. Re-raises SMTP errors
         after the EmailRecord is persisted (with last_send_error set).
         """
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(co.job, 'send this change order')
         return cls._send_document(
             co, to=to, subject=subject, body=body, cc=cc, bcc=bcc,
             extra_attachments=extra_attachments)

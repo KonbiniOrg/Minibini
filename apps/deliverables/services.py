@@ -102,6 +102,8 @@ class DeliverableService:
             job = Job.objects.get(pk=job_id)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_id} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(job, 'edit deliverables on this job')
         DeliverableService._assert_editable(job)
         d = Deliverable(
             job=job,
@@ -141,6 +143,8 @@ class DeliverableService:
     @staticmethod
     @transaction.atomic
     def update(*, deliverable, **fields):
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(deliverable.job, 'edit deliverables on this job')
         DeliverableService._assert_editable(deliverable.job)
         if ShipmentItem.objects.filter(deliverable=deliverable).exists():
             raise ValidationError(
@@ -158,6 +162,8 @@ class DeliverableService:
     @staticmethod
     @transaction.atomic
     def delete(*, deliverable):
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(deliverable.job, 'edit deliverables on this job')
         DeliverableService._assert_editable(deliverable.job)
         if ShipmentItem.objects.filter(deliverable=deliverable).exists():
             raise ValidationError(
@@ -177,6 +183,8 @@ class DeliverableService:
     @staticmethod
     @transaction.atomic
     def reorder(*, job, ordered_ids):
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(job, 'edit deliverables on this job')
         DeliverableService._assert_editable(job)
         for idx, pk in enumerate(ordered_ids, start=1):
             Deliverable.objects.filter(pk=pk, job=job).update(sort_order=idx * 10)
@@ -337,6 +345,8 @@ class ShipmentService:
             job = Job.objects.select_for_update().get(pk=job_id)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_id} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(job, 'edit shipments on this job')
         ShipmentService._assert_job_not_on_hold(job)
         ShipmentService._assert_d_list_locked(job)
         last = Shipment.objects.filter(job=job).order_by('-sequence').first()
@@ -352,6 +362,8 @@ class ShipmentService:
     @staticmethod
     @transaction.atomic
     def update(*, shipment, **fields):
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(shipment.job, 'edit shipments on this job')
         if shipment.status != Shipment.STATUS_PREPARED:
             raise ValidationError('Only prepared shipments can be edited.')
         allowed = {'notes'}
@@ -366,6 +378,8 @@ class ShipmentService:
     @staticmethod
     @transaction.atomic
     def delete(*, shipment):
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(shipment.job, 'edit shipments on this job')
         if shipment.status != Shipment.STATUS_PREPARED:
             raise ValidationError('Only prepared shipments can be deleted.')
         if shipment.items.exists():
@@ -386,6 +400,8 @@ class ShipmentService:
             shipment = Shipment.objects.select_for_update().get(pk=pk)
         except Shipment.DoesNotExist:
             raise NotFoundError(f'Shipment {pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(shipment.job, 'edit shipments on this job')
         if shipment.status != Shipment.STATUS_PREPARED:
             raise ValidationError('Only prepared shipments can be marked picked up.')
         shipment.status = Shipment.STATUS_PICKED_UP
@@ -425,6 +441,8 @@ class ShipmentService:
     @staticmethod
     @transaction.atomic
     def add_item(*, shipment, deliverable_id, qty):
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(shipment.job, 'edit shipments on this job')
         if shipment.status != Shipment.STATUS_PREPARED:
             raise ValidationError('Items can only be added to prepared shipments.')
         try:
@@ -442,6 +460,8 @@ class ShipmentService:
     @staticmethod
     @transaction.atomic
     def update_item(*, item, qty):
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(item.shipment.job, 'edit shipments on this job')
         if item.shipment.status != Shipment.STATUS_PREPARED:
             raise ValidationError('Items can only be edited on prepared shipments.')
         deliverable = Deliverable.objects.select_for_update().get(pk=item.deliverable_id)
@@ -456,6 +476,8 @@ class ShipmentService:
     @staticmethod
     @transaction.atomic
     def remove_item(*, item):
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(item.shipment.job, 'edit shipments on this job')
         if item.shipment.status != Shipment.STATUS_PREPARED:
             raise ValidationError('Items can only be removed from prepared shipments.')
         item.delete()

@@ -42,6 +42,8 @@ class ChangeOrderService:
             job = Job.objects.select_for_update().get(pk=job_id)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_id} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(job, 'add a change order to this job')
 
         if not job.on_hold:
             raise ValidationError(
@@ -214,7 +216,7 @@ class ChangeOrderService:
 
     @staticmethod
     @transaction.atomic
-    def update_status(pk, new_status):
+    def update_status(pk, new_status, *, system_transition=False):
         """Update a ChangeOrder's status with lifecycle side-effects.
 
         - Accepted: clear the job's hold (status preserved); write system
@@ -229,6 +231,9 @@ class ChangeOrderService:
             co = ChangeOrder.objects.select_for_update().get(pk=pk)
         except ChangeOrder.DoesNotExist:
             raise NotFoundError(f'ChangeOrder {pk} not found')
+        from apps.jobs.services import JobService
+        if not system_transition:
+            JobService.assert_mutable(co.job, 'edit this change order')
 
         old_status = co.status
         co.status = new_status
@@ -309,6 +314,8 @@ class ChangeOrderService:
 
         # 1. Record the customer's comment against the CO they saw (same shape
         #    as the estimate flow's customer-action HistoryEntry).
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(co.job, 'edit this change order')
         record_history(
             entry_type='action',
             object_type='changeorder',
@@ -379,6 +386,8 @@ class ChangeOrderService:
             src = ChangeOrder.objects.get(pk=pk)
         except ChangeOrder.DoesNotExist:
             raise NotFoundError(f'ChangeOrder {pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(src.job, 'edit this change order')
 
         new_co = ChangeOrder.objects.create(
             job=src.job,
@@ -439,6 +448,8 @@ class ChangeOrderService:
             co = ChangeOrder.objects.get(pk=pk)
         except ChangeOrder.DoesNotExist:
             raise NotFoundError(f'ChangeOrder {pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(co.job, 'edit this change order')
 
         if co.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError(
@@ -568,6 +579,8 @@ class ChangeOrderService:
         it to decide whether a `refresh_from_db()` is needed, rather than
         paying that round-trip unconditionally on every mutation.
         """
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(co.job, 'edit this change order')
         from apps.estimates.agreement import (
             adjustment_expected_amount, compose_amended_agreement,
         )
@@ -609,6 +622,8 @@ class ChangeOrderService:
             co = ChangeOrder.objects.get(pk=co_pk)
         except ChangeOrder.DoesNotExist:
             raise NotFoundError(f'ChangeOrder {co_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(co.job, 'edit this change order')
         # work_declined is an EstimateLineItem-only field (the acceptance
         # checklist's mark); ChangeOrderLineItem has no such column, so
         # forwarding it into the constructor below would TypeError into a
@@ -679,6 +694,8 @@ class ChangeOrderService:
             co = ChangeOrder.objects.get(pk=co_pk)
         except ChangeOrder.DoesNotExist:
             raise NotFoundError(f'ChangeOrder {co_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(co.job, 'edit this change order')
         if co.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft change orders.')
         try:
@@ -704,6 +721,8 @@ class ChangeOrderService:
         """Non-status field updates on a change order (status changes go
         through update_status). No extra guards today — this exists so the
         view owns no persistence and a future guard has one home."""
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(co.job, 'edit this change order')
         for k, v in fields.items():
             setattr(co, k, v)
         co.save()
@@ -728,6 +747,8 @@ class ChangeOrderService:
             co = ChangeOrder.objects.get(pk=co_pk)
         except ChangeOrder.DoesNotExist:
             raise NotFoundError(f'ChangeOrder {co_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(co.job, 'edit this change order')
         if co.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft change orders.')
         try:
@@ -761,6 +782,8 @@ class ChangeOrderService:
             li = ChangeOrderLineItem.objects.get(pk=line_item_id)
         except ChangeOrderLineItem.DoesNotExist:
             raise NotFoundError(f'ChangeOrderLineItem {line_item_id} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(li.change_order.job, 'edit this change order')
         if li.change_order.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Can only modify line items on draft change orders.')
         from apps.core.services import LineItemService
@@ -803,6 +826,8 @@ class ChangeOrderService:
             co = ChangeOrder.objects.get(pk=co_pk)
         except ChangeOrder.DoesNotExist:
             raise NotFoundError(f'ChangeOrder {co_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(co.job, 'edit this change order')
         if co.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Can only modify line items on draft change orders.')
         from django.db import transaction as db_transaction
@@ -822,6 +847,8 @@ class ChangeOrderService:
             li = ChangeOrderLineItem.objects.get(pk=line_item_id)
         except ChangeOrderLineItem.DoesNotExist:
             raise NotFoundError(f'ChangeOrderLineItem {line_item_id} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(li.change_order.job, 'edit this change order')
         if li.change_order.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Cannot modify line items on a non-draft change order.')
         co = li.change_order
