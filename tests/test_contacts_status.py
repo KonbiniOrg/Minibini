@@ -226,10 +226,22 @@ class CreateWithInactivePartyTest(TestCase):
     def test_create_job_with_contact_of_inactive_business(self):
         from apps.jobs.services import JobService
         b, dc, _ = make_business('InCo')
+        b.is_active = False
+        b.save()                      # contact stays active: business branch only
+        dc.refresh_from_db()
+        self.assertTrue(dc.is_active)
+        with self.assertRaises(ValidationError) as cm:
+            JobService.create_job(name='J', contact=dc)
+        self.assertIn('InCo is inactive.', cm.exception.message_dict['contact'][0])
+
+    def test_create_job_with_contact_of_cascade_deactivated_business(self):
+        from apps.jobs.services import JobService
+        b, dc, _ = make_business('InCo2')
         ContactService.deactivate_business(b)
         dc.refresh_from_db()
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(ValidationError) as cm:
             JobService.create_job(name='J', contact=dc)
+        self.assertIn('contact', cm.exception.message_dict)
 
     def test_duplicate_into_inactive_contact_refused_but_frozen_source_ok(self):
         from apps.jobs.services import JobService
