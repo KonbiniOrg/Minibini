@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
-def main():
+def build_parser():
     p = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -22,8 +22,18 @@ def main():
     p.add_argument('--output', default=None,
                    help='Output fixture path (default: datasets/converted.json)')
     p.add_argument('--limit', type=int, default=100,
-                   help='Approx. number of Jobs to build from recent cards')
+                   help='Approx. number of Jobs to build from recent cards '
+                        '(also caps --all-vendors)')
+    p.add_argument('--all-vendors', action='store_true',
+                   help='Also import the newest --limit vendor orgs from the '
+                        'Bills sheet even when none of their Bills yields a '
+                        'PO (default: only vendors that get a PO)')
     p.add_argument('--verbose', action='store_true')
+    return p
+
+
+def main():
+    p = build_parser()
     args = p.parse_args()
 
     datasets_dir = Path(__file__).resolve().parent / 'datasets'
@@ -39,7 +49,7 @@ def main():
     from nealsdata.converter.orchestrator import NealsDataConverter
     NealsDataConverter(
         excel_path=excel, csv_path=csv_path, output_path=output,
-        limit=args.limit, verbose=args.verbose,
+        limit=args.limit, verbose=args.verbose, all_vendors=args.all_vendors,
     ).convert()
 
 

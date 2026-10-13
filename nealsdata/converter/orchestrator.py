@@ -31,11 +31,19 @@ def _is_active_card(card):
 
 class NealsDataConverter:
     def __init__(self, excel_path, csv_path, output_path,
-                 limit=100, verbose=False, seed_path=None):
+                 limit=100, verbose=False, seed_path=None,
+                 all_vendors=False):
         self.loader = ExcelDataLoader(excel_path, verbose=verbose)
         self.csv_loader = KanbanCsvLoader(csv_path)
         self.output_path = output_path
         self.limit = limit
+        # Vendors: by default a vendor Business exists only because a Bill
+        # of theirs synthesized a PO (build_purchasing creates it on demand).
+        # all_vendors=True additionally runs build_vendors — the newest
+        # `limit` Bills-sheet orgs land in the output even without a PO.
+        self.all_vendors = all_vendors
+        self.vendor_selected_orgs = []
+        self.vendor_skipped_name_only = 0
         self.verbose = verbose
         self.seed_path = str(seed_path) if seed_path else str(_DEFAULT_SEED_PATH)
         self.fixture_data = []
@@ -125,7 +133,8 @@ class NealsDataConverter:
         build.build_inventory_items(self)
         build.build_contacts_and_businesses(self)
         build.build_jobs(self)
-        build.build_vendors(self)  # after jobs: vendor org != a job's client org
+        if self.all_vendors:
+            build.build_vendors(self)  # after jobs: vendor org != a job's client org
         build.build_estimates(self)
         build.derive_atoms(self)
         build.assign_worker_times(self)  # per-task random est_worker_time

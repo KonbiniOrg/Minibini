@@ -2802,7 +2802,11 @@ def build_purchasing(c):
        Materials) gets a received_in_full PO to that Bill's vendor carrying all
        the Job's Materials (Material.po_line_item set) plus the linked Bill.
        First matched bill/vendor wins per Job; the vendor business is created if
-       it wasn't among the imported vendors.
+       it wasn't among the imported vendors (the only way a vendor enters the
+       output unless the orchestrator's all_vendors flag ran build_vendors).
+       The PO's contact is the Bill's Contact Name — added to the vendor as a
+       further Contact when missing — falling back to the business default only
+       when the Bill names nobody.
     """
     job_status = {f['pk']: f['fields']['status']
                   for f in c.fixture_data if f['model'] == 'jobs.job'}
@@ -2838,6 +2842,7 @@ def build_purchasing(c):
         if base not in bill_for_base:
             bill_for_base[base] = {
                 'org': org,
+                'person': (row.get('Contact Name') or '').strip(),
                 'date': P.to_datetime(row.get('Date')),
                 'ref': str(row.get('Reference') or '').strip(),
             }
@@ -2908,6 +2913,8 @@ def build_purchasing(c):
         res = resolve_contact(c, bill['org'])
         if res is None:
             continue
+        person = bill['person']
+        pnorm = P.normalize_name(person) if person else ''
         ent = c.entity_map.get(res['key'])
         if ent is None:                       # vendor not imported — create it now
             if res['kind'] == 'individual':
@@ -2916,10 +2923,20 @@ def build_purchasing(c):
             else:
                 _emit_business(c, res['key'],
                                {'display': res['display'], 'fa_row': res['fa_row'],
-                                'persons': {}})
+                                'persons': {pnorm: person} if pnorm else {}})
             ent = c.entity_map[res['key']]
         if ent['kind'] != 'business':         # a PO needs a Business vendor
             continue
+        # The PO names the Bill's own contact person (attached to the vendor
+        # as another Contact if the business doesn't have them yet); only a
+        # Bill with no Contact Name falls back to the business default.
+        contact_pk = ent['default_contact']
+        if pnorm:
+            contact_pk = ent['contacts'].get(pnorm)
+            if contact_pk is None:
+                contact_pk = _emit_contact(c, ent['business'],
+                                           fallback_name=person)
+                ent['contacts'][pnorm] = contact_pk
 
         dt = bill['date']
         dstr = (dt.strftime('%Y-%m-%dT00:00:00+00:00') if dt
@@ -2929,7 +2946,7 @@ def build_purchasing(c):
         c.add_fixture('purchasing.purchaseorder', po_pk, {
             'po_number': f'PO{po_count:04d}',
             'business': ent['business'],
-            'contact': ent.get('default_contact'),
+            'contact': contact_pk,
             'status': 'received_in_full',
             'created_date': dstr,
             'requested_date': None,
