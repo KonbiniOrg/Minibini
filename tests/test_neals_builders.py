@@ -2431,6 +2431,75 @@ class ContactResolutionTest(unittest.TestCase):
                             P.normalize_name('HMC Architects'))
 
 
+
+def _bill_for_base(c):
+    """Mirror build_purchasing's bill matching: base -> the first Bills row
+    (non-empty Contact Organisation) whose Comments digits hit a job base that
+    has Materials. Lets tests assert PO provenance from the source sheet."""
+    import re as _re
+    job_number = {f['pk']: f['fields']['job_number']
+                  for f in c.fixture_data if f['model'] == 'jobs.job'}
+    bases_with_materials = {job_number[f['fields']['job']]
+                            for f in c.fixture_data
+                            if f['model'] == 'inventory.material'}
+    out = {}
+    for row in c.loader.sheets_data.get('Bills', []):
+        org = (row.get('Contact Organisation') or '').strip()
+        if not org:
+            continue
+        cands = set()
+        for m in _re.findall(r'\d{4,5}', str(row.get('Comments') or '')):
+            cands |= {m, m.zfill(5), m.lstrip('0')}
+        hit = cands & bases_with_materials
+        if hit:
+            out.setdefault(sorted(hit)[0], row)
+    return out
+
+
+def _assert_po_contacts_come_from_bills(test, c):
+    """Every PO's contact is the Contact Name on its source Bill (a Contact of
+    the PO's business), never silently the business default."""
+    f = c.fixture_data
+    jobs = {j['pk']: j['fields'] for j in f if j['model'] == 'jobs.job'}
+    contacts = {x['pk']: x['fields'] for x in f if x['model'] == 'contacts.contact'}
+    bills = _bill_for_base(c)
+    pos = [x for x in f if x['model'] == 'purchasing.purchaseorder']
+    test.assertGreater(len(pos), 0)
+    checked = 0
+    for po in pos:
+        fields = po['fields']
+        # The PO's job is the one whose materials its lines carry.
+        poli_pk = next(l['pk'] for l in f
+                       if l['model'] == 'purchasing.purchaseorderlineitem'
+                       and l['fields']['purchase_order'] == po['pk'])
+        mat = next(m['fields'] for m in f if m['model'] == 'inventory.material'
+                   and m['fields']['po_line_item'] == poli_pk)
+        base = jobs[mat['job']]['job_number']
+        name = (bills[base].get('Contact Name') or '').strip()
+        contact = contacts[fields['contact']]
+        test.assertEqual(contact['business'], fields['business'])
+        if not name:
+            continue
+        first, last = P.split_name(name)
+        test.assertEqual((contact['first_name'], contact['last_name']),
+                         (first, last), f'PO {fields["po_number"]} for {base}')
+        checked += 1
+    test.assertGreater(checked, 0)
+
+
+def _businesses_without_job_or_po(c):
+    f = c.fixture_data
+    contacts = {x['pk']: x['fields'] for x in f if x['model'] == 'contacts.contact'}
+    used = set()
+    for x in f:
+        if x['model'] == 'jobs.job':
+            used.add(contacts[x['fields']['contact']]['business'])
+        elif x['model'] == 'purchasing.purchaseorder':
+            used.add(x['fields']['business'])
+    return [b for b in f if b['model'] == 'contacts.business'
+            and b['pk'] not in used]
+
+
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
 class PurchasingBuilderTest(unittest.TestCase):
@@ -2521,6 +2590,18 @@ class PurchasingBuilderTest(unittest.TestCase):
         self.assertEqual(self._m('purchasing.billlineitem'), [])
         self.assertGreater(len(self._m('purchasing.purchaseorder')), 0)
 
+    def test_no_vendor_without_po_by_default(self):
+        # Without all_vendors, a vendor Business exists only because a Bill
+        # produced a PO to it — the bulk Bills-sheet vendor import is off.
+        self.assertFalse(self.c.all_vendors)
+        self.assertEqual(self.c.vendor_selected_orgs, [])
+        orphans = _businesses_without_job_or_po(self.c)
+        self.assertEqual([b['fields']['business_name'] for b in orphans], [])
+
+    def test_po_contact_is_the_bill_contact(self):
+        _assert_po_contacts_come_from_bills(self, self.c)
+
+
     def test_markup_config_emitted(self):
         cfg = {r['pk']: r['fields']['value']
                for r in self._m('core.configuration')}
@@ -2534,6 +2615,133 @@ class PurchasingBuilderTest(unittest.TestCase):
         self.assertNotEqual(ac_pk, 'None')
         ac_pks = {str(r['pk']) for r in self._m('core.accountingcategory')}
         self.assertIn(ac_pk, ac_pks)
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class AllVendorsConvertTest(unittest.TestCase):
+    """all_vendors=True restores the capped Bills-sheet vendor import: the
+    newest --limit vendor orgs land in the output even when no Bill of theirs
+    yields a PO. POs still name the Bill's contact, adding it to a
+    pre-imported business when that business lacks the person."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/po_av_test.json',
+                                   limit=30, all_vendors=True)
+        cls.c.convert()
+
+    def test_vendors_imported_up_to_limit(self):
+        self.assertTrue(self.c.all_vendors)
+        self.assertEqual(len(self.c.vendor_selected_orgs), 30)
+        self.assertGreater(len(_businesses_without_job_or_po(self.c)), 0)
+
+    def test_po_contact_is_the_bill_contact(self):
+        _assert_po_contacts_come_from_bills(self, self.c)
+
+
+class PurchaseOrderContactTest(unittest.TestCase):
+    """Dataset-independent: a synthesized PO names the Contact Name on its
+    source Bill — attached to the vendor business as another Contact when the
+    business doesn't already have that person — never silently the business's
+    default contact. A Bill with no Contact Name falls back to the default."""
+
+    _BASE = '00042'
+
+    def _converter(self, bills):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        class FakeLoader:
+            sheets_data = {'Contacts': [], 'Bills': bills}
+        c.loader = FakeLoader()
+        build._build_fa_indexes(c)
+        job_pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', job_pk, {
+            'job_number': self._BASE, 'status': 'in_progress',
+            'created_date': '2026-01-01T00:00:00+00:00'})
+        c.job_map = {self._BASE: job_pk}
+        item_pk = c.next_pk('inventory.inventoryitem')
+        c.add_fixture('inventory.inventoryitem', item_pk,
+                      {'qty_on_hand': '0.00', 'qty_sold': '0.00'})
+        c.add_fixture('inventory.material', c.next_pk('inventory.material'), {
+            'job': job_pk, 'task': None, 'inventory_item': item_pk,
+            'quantity': '2.00', 'units': 'ea', 'description': 'ply',
+            'unit_cost': '10.00', 'accounting_category': None})
+        return c
+
+    def _bill(self, name, org='Acme Plywood Supply Co'):
+        return {'Contact Organisation': org, 'Contact Name': name,
+                'Comments': f'for job {self._BASE}', 'Date': '2026-01-05',
+                'Reference': 'B1'}
+
+    def _rows(self, c, model):
+        return [f for f in c.fixture_data if f['model'] == model]
+
+    def _po_and_contact(self, c):
+        po = self._rows(c, 'purchasing.purchaseorder')
+        self.assertEqual(len(po), 1)
+        po = po[0]['fields']
+        contact = next(f['fields'] for f in self._rows(c, 'contacts.contact')
+                       if f['pk'] == po['contact'])
+        return po, contact
+
+    def _preimport_vendor(self, c, person):
+        key = P.normalize_name('Acme Plywood Supply Co')
+        build._emit_business(c, key, {
+            'display': 'Acme Plywood Supply Co', 'fa_row': None,
+            'persons': {P.normalize_name(person): person}})
+        return c.entity_map[key]
+
+    def test_preimported_vendor_gets_bill_contact_added_and_used(self):
+        c = self._converter([self._bill('Bill Person')])
+        ent = self._preimport_vendor(c, 'Default Person')
+        build.build_purchasing(c)
+        po, contact = self._po_and_contact(c)
+        self.assertEqual(po['business'], ent['business'])
+        self.assertNotEqual(po['contact'], ent['default_contact'])
+        self.assertEqual((contact['first_name'], contact['last_name']),
+                         ('Bill', 'Person'))
+        self.assertEqual(contact['business'], ent['business'])
+        self.assertEqual(len([f for f in self._rows(c, 'contacts.contact')
+                              if f['fields']['business'] == ent['business']]), 2)
+
+    def test_preimported_vendor_reuses_matching_contact(self):
+        c = self._converter([self._bill('Bill Person')])
+        ent = self._preimport_vendor(c, 'Bill Person')
+        build.build_purchasing(c)
+        po, contact = self._po_and_contact(c)
+        self.assertEqual(po['contact'], ent['default_contact'])
+        self.assertEqual(len(self._rows(c, 'contacts.contact')), 1)
+
+    def test_vendor_created_on_the_spot_uses_bill_contact(self):
+        c = self._converter([self._bill('Bill Person')])
+        build.build_purchasing(c)
+        po, contact = self._po_and_contact(c)
+        biz = next(f for f in self._rows(c, 'contacts.business')
+                   if f['pk'] == po['business'])
+        self.assertEqual(biz['fields']['business_name'], 'Acme Plywood Supply Co')
+        self.assertEqual((contact['first_name'], contact['last_name']),
+                         ('Bill', 'Person'))
+        self.assertEqual(contact['business'], po['business'])
+
+    def test_blank_bill_contact_falls_back_to_default(self):
+        c = self._converter([self._bill('')])
+        ent = self._preimport_vendor(c, 'Default Person')
+        build.build_purchasing(c)
+        po, _contact = self._po_and_contact(c)
+        self.assertEqual(po['contact'], ent['default_contact'])
+        self.assertEqual(len(self._rows(c, 'contacts.contact')), 1)
+
+
+class CliParserTest(unittest.TestCase):
+    def _parse(self, argv):
+        from nealsdata.convert_neals_data import build_parser
+        return build_parser().parse_args(argv)
+
+    def test_all_vendors_off_by_default(self):
+        self.assertFalse(self._parse([]).all_vendors)
+
+    def test_all_vendors_flag(self):
+        self.assertTrue(self._parse(['--all-vendors']).all_vendors)
 
 
 class InvoicedJobStatusReconcileTest(unittest.TestCase):

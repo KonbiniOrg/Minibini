@@ -83,7 +83,7 @@ If Neal renames a stage on the board, update `_STAGE_TO_JOB_STATUS` in
 ## 2. Running it
 
 ```bash
-python nealsdata/convert_neals_data.py [--limit N] [--verbose]
+python nealsdata/convert_neals_data.py [--limit N] [--all-vendors] [--verbose]
 ```
 
 The default `--limit 100` caps how many Jobs are built from the most recent
@@ -93,6 +93,11 @@ board work must never silently age out; the 2026-07-13 Barbara Freeman
 regression). Actives consume limit slots; the total exceeds the limit only
 when the actives alone do. The output is `nealsdata/datasets/converted.json`
 (the file is git-ignored — regenerate it whenever inputs change).
+
+`--all-vendors` also imports the newest `--limit` vendor orgs from the Bills
+sheet (§7a). Without it, a vendor Business appears in the output only because
+one of its Bills synthesized a PO (§4a) — so no vendor is left with neither a
+job nor a PO.
 
 Loading the result into Minibini is the user's job — the script never writes
 to a database, and it always emits **one** self-contained dataset file.
@@ -172,7 +177,9 @@ loaded after the dataset; they are not the converter's concern.)
    Accent color is round-robined through `JOB_ACCENT_COLOR_PALETTE` (mirrored
    from `apps.jobs.models`) so loaddata-emitted jobs render with the colored
    bars the SPA board expects.
-7a. **`build_vendors`**: emits Businesses/Contacts for **vendors**, drawn
+7a. **`build_vendors`** (only with `--all-vendors`; otherwise skipped, and
+    vendors enter the output solely through PO synthesis in §4a): emits
+    Businesses/Contacts for **vendors**, drawn
     *wholly* from the FreeAgent `Bills` sheet (the Kanban source has no
     concept of bills or vendors). Groups bill container rows by
     `Contact Organisation` (rows with a blank organisation — line items and
@@ -431,9 +438,13 @@ model and synthesizes Purchase Orders + Bills. See
   First matched bill/vendor wins per Job. The match emits a `received_in_full`
   `PurchaseOrder` to that Bill's vendor carrying **all** the Job's Materials
   (`PurchaseOrderLineItem` per Material, `qty_received = quantity`,
-  `Material.po_line_item` set), plus a `received` `Bill` linked to the PO (with
-  copied `BillLineItem`s). The vendor business is created on the spot if it
-  wasn't among the imported top-N vendors. PO numbers are `PO{n:04d}` and the
+  `Material.po_line_item` set). (No konbini `Bill` rows — bills live in QBO.)
+  The vendor business is created on the spot if it wasn't among the imported
+  top-N vendors (and without `--all-vendors` this is the *only* way a vendor is
+  emitted). The PO's `contact` is the Bill's **`Contact Name`**, resolved
+  against the vendor's existing Contacts by normalized name and attached as a
+  further Contact when missing — the business default is used only when the
+  Bill names nobody. PO numbers are `PO{n:04d}` and the
   `po_counter` AppState is advanced past them. Coverage is partial by design —
   most Materials have no surviving purchase record, which is expected.
 
