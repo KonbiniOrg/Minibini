@@ -1,9 +1,11 @@
-// The Pipeline column groups its cards by sub-status into ordered sections —
-// Inquiries (no estimate), Estimating (draft estimate), Awaiting Approval
-// (sent estimate), Awaiting Prep (accepted; job approved) — each under a
-// small header tinted like the cards' tab (RM, feature/pipeline 2026-10-11).
-// The expected layout is derived from the board payload itself so the spec
-// holds whatever mix the seed (plus earlier specs) leaves in the pipeline.
+// The Pipeline column groups its cards into ordered sections — Inquiries (no
+// estimate), Estimating (draft estimate), Awaiting Approval (sent estimate),
+// Awaiting Prep (accepted; job approved) — each under a small header tinted
+// like the cards' tab (RM, feature/pipeline 2026-10-11). Each card's section
+// is computed server-side and carried on the payload as `section`
+// (feature/unpaid 2026-10-14), so the expected layout is read straight off
+// the board payload and holds whatever mix the seed (plus earlier specs)
+// leaves in the pipeline.
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
@@ -15,17 +17,6 @@ const SECTIONS = [
   { key: 'awaiting-prep',     label: 'Awaiting Prep' },
 ];
 
-// Mirror of PipelineColumn.sectionKey: a held job's sub_status is 'on-hold',
-// so it is bucketed by its estimates the way the backend would unheld.
-function sectionKey(job) {
-  if (job.status === 'approved') return 'awaiting-prep';
-  if (SECTIONS.some((s) => s.key === job.sub_status)) return job.sub_status;
-  const estimates = job.estimates || [];
-  if (estimates.some((e) => e.status === 'open')) return 'awaiting-response';
-  if (estimates.some((e) => e.status === 'draft')) return 'estimating';
-  return 'needs-scoping';
-}
-
 test.use({ storageState: personas.worker.storageState });
 
 test('pipeline cards sit under ordered, colored section headers', async ({ page }) => {
@@ -34,9 +25,12 @@ test('pipeline cards sit under ordered, colored section headers', async ({ page 
   await api.dispose();
   test.skip(jobs.length === 0, 'seed gap: no pipeline jobs');
 
+  // Every payload row carries a section the column knows.
+  for (const j of jobs) expect(SECTIONS.map((s) => s.key)).toContain(j.section);
+
   const expected = [];
   for (const section of SECTIONS) {
-    const members = jobs.filter((j) => sectionKey(j) === section.key);
+    const members = jobs.filter((j) => j.section === section.key);
     if (members.length === 0) continue;
     expected.push(section.label.toUpperCase());
     for (const j of members) expected.push(j.job_number);

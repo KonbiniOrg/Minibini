@@ -1,9 +1,12 @@
-// The Unpaid column groups its cards by invoice state into ordered sections —
-// Needs Invoice (work done, nothing started), Invoice Drafted (draft, unsent),
-// Awaiting Payment (sent, still owed) — each under a small header tinted like
-// the cards' tab (RM, feature/unpaid 2026-10-13). The expected layout is
-// derived from the board payload itself so the spec holds whatever mix the
-// seed (plus earlier specs) leaves in the lane.
+// The Unpaid column groups its cards into ordered sections — Needs Invoice
+// (work done, real bill not started), Invoice Drafted (draft, unsent),
+// Awaiting Payment (sent, still owed), Needs Pickup (paid, customer hasn't
+// collected) — each under a small header tinted like the cards' tab (RM,
+// feature/unpaid 2026-10-13/14). Each card's section is computed server-side
+// (BoardService.unpaid_section — it needs deliverable fulfillment and
+// deposit-ness the card payload doesn't carry) and arrives as `section`, so
+// the expected layout is read straight off the board payload and holds
+// whatever mix the seed (plus earlier specs) leaves in the lane.
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
@@ -12,19 +15,8 @@ const SECTIONS = [
   { key: 'needs-invoice',   label: 'Needs Invoice',    color: '#64748b' },
   { key: 'invoice-prepped', label: 'Invoice Drafted',  color: '#f59e0b' },
   { key: 'invoice-sent',    label: 'Awaiting Payment', color: '#3b82f6' },
+  { key: 'needs-pickup',    label: 'Needs Pickup',     color: '#7c3aed' },
 ];
-const SENT = new Set(['open', 'partly-paid', 'defaulted']);
-
-// Mirror of lib/unpaidSections.unpaidSectionKey: a card whose sub_status is
-// not an invoice state (held, cancelled, in_progress) is bucketed by its
-// invoices the way BoardService would a work_complete job.
-function sectionKey(job) {
-  if (SECTIONS.some((s) => s.key === job.sub_status)) return job.sub_status;
-  const invoices = job.invoices || [];
-  if (invoices.some((i) => SENT.has(i.status))) return 'invoice-sent';
-  if (invoices.some((i) => i.status === 'draft')) return 'invoice-prepped';
-  return 'needs-invoice';
-}
 
 test.use({ storageState: personas.worker.storageState });
 
@@ -34,10 +26,13 @@ test('unpaid cards sit under ordered, colored section headers', async ({ page })
   await api.dispose();
   test.skip(jobs.length === 0, 'seed gap: no unpaid jobs');
 
+  // Every payload row carries a section the column knows.
+  for (const j of jobs) expect(SECTIONS.map((s) => s.key)).toContain(j.section);
+
   const expected = [];
   const present = [];
   for (const section of SECTIONS) {
-    const members = jobs.filter((j) => sectionKey(j) === section.key);
+    const members = jobs.filter((j) => j.section === section.key);
     if (members.length === 0) continue;
     present.push(section);
     expected.push(section.label.toUpperCase());
@@ -66,4 +61,8 @@ test('unpaid cards sit under ordered, colored section headers', async ({ page })
   // work_complete card wears none.
   const badged = jobs.filter((j) => j.status !== 'work_complete');
   await expect(body.locator('.status-badge')).toHaveCount(badged.length);
+
+  // Needs Pickup cards footer "Awaiting pickup" rather than an amount due.
+  const pickup = jobs.filter((j) => j.section === 'needs-pickup');
+  await expect(body.locator('.total.pickup')).toHaveCount(pickup.length);
 });

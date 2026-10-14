@@ -1,12 +1,13 @@
 <script>
-  import { unpaidSectionKey, unpaidSectionColor } from '../../lib/unpaidSections.js';
+  import { unpaidSectionColor } from '../../lib/unpaidSections.js';
   import { statusLabel } from '../../lib/customerActivity.js';
   let { job } = $props();
 
-  // The card's section bucket — shared with UnpaidColumn's headers so tab
-  // and header can never disagree (incl. held / cancelled / in_progress
-  // cards whose sub_status isn't an invoice state).
-  let section = $derived(unpaidSectionKey(job));
+  // The card's section, computed server-side (BoardService.unpaid_section)
+  // and shared with UnpaidColumn's headers so tab and header can never
+  // disagree — incl. held / cancelled / in_progress cards whose sub_status
+  // isn't an invoice state.
+  let section = $derived(job.section);
 
   // Badge text for a non-work_complete job. Title-cased to match the board's
   // own column labels ("In Progress"); statusLabel's sentence case covers
@@ -25,7 +26,8 @@
     return new Date(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
-  // Gray: needs invoice · Amber: drafted, unsent · Blue: sent, awaiting payment.
+  // Gray: needs invoice · Amber: drafted, unsent · Blue: sent, awaiting
+  // payment · Purple: paid, awaiting customer pickup.
   // TODO: Red (#dc2626) for overdue invoices, once Invoice has a due_date
   // field or PaymentTerms has net_days to compute it.
   function borderColor() {
@@ -131,7 +133,11 @@
       <div class="card-foot">
         <span>{invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}{paymentCount > 0 ? ` · ${paymentCount} payment${paymentCount !== 1 ? 's' : ''}` : ''}</span>
         <span class="spacer"></span>
-        <span class="total">{formatAmount(totalDue())} due</span>
+        {#if section === 'needs-pickup'}
+          <span class="total pickup">Awaiting pickup</span>
+        {:else}
+          <span class="total">{formatAmount(totalDue())} due</span>
+        {/if}
       </div>
     {/if}
   </div>
@@ -221,4 +227,5 @@
   }
   .spacer { flex: 1; }
   .total { font-weight: 700; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; color: #b45309; }
+  .total.pickup { color: #7c3aed; font-family: inherit; }
 </style>

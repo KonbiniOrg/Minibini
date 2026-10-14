@@ -1,15 +1,16 @@
 <script>
   import UnpaidCard from './UnpaidCard.svelte';
   import NewJobButton from './NewJobButton.svelte';
-  import { UNPAID_SECTIONS, unpaidSectionKey } from '../../lib/unpaidSections.js';
+  import { UNPAID_SECTIONS } from '../../lib/unpaidSections.js';
   let { jobs = [] } = $props();
 
   // Column order, top to bottom: Needs Invoice / Invoice Drafted / Awaiting
-  // Payment. Header colors match the card tab (UnpaidCard reads the same
-  // bucket), so a header reads as the tab of the cards beneath it.
+  // Payment / Needs Pickup. Each card's `section` is computed server-side
+  // (BoardService.unpaid_section); header colors match the card tab, so a
+  // header reads as the tab of the cards beneath it.
   let sections = $derived(
     UNPAID_SECTIONS
-      .map(s => ({ ...s, jobs: jobs.filter(j => unpaidSectionKey(j) === s.key) }))
+      .map(s => ({ ...s, jobs: jobs.filter(j => j.section === s.key) }))
       .filter(s => s.jobs.length > 0)
   );
 </script>

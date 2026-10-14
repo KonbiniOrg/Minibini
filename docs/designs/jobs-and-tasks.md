@@ -1285,56 +1285,89 @@ stored. Examples (full list in `apps/jobs/services.py`):
 - `work-ready` — all tasks pending
 - `in-progress` — at least one task in progress
 - `blocked` — at least one task blocked (takes priority)
-- `needs-invoice` / `invoice-prepped` / `invoice-sent` — for
-  `work_complete` jobs based on Invoice state, checked in that priority
-  order over the job's live (non-cancelled, non-superseded) invoices:
-  any invoice in `Invoice.UNPAID_STATUSES` (open / partly-paid /
-  defaulted — sent and still owed) → `invoice-sent`; else any draft →
-  `invoice-prepped`; else `needs-invoice`. A job whose only live invoice
-  is *paid* (a settled deposit, final invoice not yet started) falls
-  through to `needs-invoice` on purpose (RM 2026-10-13).
+- `needs-invoice` / `invoice-prepped` / `invoice-sent` / `needs-pickup`
+  — for `work_complete` jobs based on Invoice + pickup state, checked in
+  this priority order over the job's live (non-cancelled, non-superseded)
+  invoices: any invoice in `Invoice.UNPAID_STATUSES` (open / partly-paid
+  / defaulted — sent and still owed) → `invoice-sent`; else any draft →
+  `invoice-prepped`; else a **paid non-deposit invoice** exists and
+  `DeliverableService.all_deliverables_shipped` is false →
+  `needs-pickup` (the real bill is settled, the customer hasn't
+  collected — live, the paid-*and*-collected variant never reaches the
+  board because the completion gate closes the job); else
+  `needs-invoice`, which deliberately includes the job whose only paid
+  invoice is a deposit — the final invoice hasn't been started, whatever
+  the pickup state (RM 2026-10-13/14). "Deposit invoice" is the system's
+  own definition: it carries a deposit line (`InvoiceLineItem.is_deposit_line`).
 
-**Pipeline column sections (2026-10-11).** `PipelineColumn.svelte`
-groups its cards by sub-status into four ordered sections, each under a
-small uppercase header tinted with the same hex as the cards' tab
-(`JobCard.BORDER_COLORS`), so the header reads as the tab of the cards
-beneath it. Top to bottom: **Inquiries** (`needs-scoping`, grey),
-**Estimating** (`estimating`, blue), **Awaiting Approval**
-(`awaiting-response`, brown), **Awaiting Prep** (`approved` jobs, gold —
-the pre-existing section, which keeps its drop-shadow treatment). An
-empty section renders no header. A held pre-approval job reports
-`sub_status: 'on-hold'` (the hold branch wins), so the column buckets it
-client-side by its `estimates` the same way `_pipeline_sub_status` would
-unheld (open → Awaiting Approval, draft → Estimating, else Inquiries);
-a held-from-`approved` job stays in Awaiting Prep. The seed-independent
-e2e spec `e2e/specs/job-board/pipeline-sections.spec.js` derives the
-expected layout from the board payload.
+**Grouped columns carry a server-computed `section` (2026-10-14).**
+Pipeline and Unpaid are the two columns that group their cards. The
+server decides where every card lives — `BoardService.pipeline_section`
+/ `unpaid_section`, emitted as `section` on each Pipeline and Unpaid
+payload row — and the browser only maps keys to labels and colors, the
+same division of labour In Progress already has (its worker columns are
+shaped server-side). `section` is deliberately distinct from
+`sub_status`: the sub-status answers "what should the pill say" and the
+hold flag wins there (`on-hold`), while the section answers "where does
+the card sit" and ignores the hold, applying the underlying estimate or
+invoice rule. No browser re-derivation of either rule remains (RM: the
+earlier client-side fallback duplicated a backend rule and was exercised
+only on held cards, so it could drift unnoticed).
 
-**Unpaid column sections (2026-10-13).** `UnpaidColumn.svelte` groups
-its cards the same way, into three ordered sections keyed by the
-invoice sub-statuses above: **Needs Invoice** (`needs-invoice`, grey
+**Pipeline column sections (2026-10-11, server-sectioned 2026-10-14).**
+`PipelineColumn.svelte` groups its cards by `section` into four ordered
+sections, each under a small uppercase header tinted with the same hex
+as the cards' tab (`JobCard.BORDER_COLORS`), so the header reads as the
+tab of the cards beneath it. Top to bottom: **Inquiries**
+(`needs-scoping`, grey), **Estimating** (`estimating`, blue), **Awaiting
+Approval** (`awaiting-response`, brown), **Awaiting Prep**
+(`awaiting-prep` — every `approved` job, gold — the pre-existing
+section, which keeps its drop-shadow treatment). `pipeline_section`
+returns `awaiting-prep` for `approved` and otherwise
+`_pipeline_sub_status` (hold ignored); a held-from-`approved` job
+therefore sits in Awaiting Prep with an `on-hold` pill. An empty
+section renders no header. The seed-independent e2e spec
+`e2e/specs/job-board/pipeline-sections.spec.js` reads the expected
+layout off the payload's `section` values.
+
+**Unpaid column sections (2026-10-13, Needs Pickup + server-sectioned
+2026-10-14).** `UnpaidColumn.svelte` groups its cards by `section` into
+four ordered sections: **Needs Invoice** (`needs-invoice`, grey
 `#64748b`), **Invoice Drafted** (`invoice-prepped`, amber `#f59e0b`),
-**Awaiting Payment** (`invoice-sent`, blue `#3b82f6`). The bucket
-function lives in `frontend/src/lib/unpaidSections.js` and is shared by
-the column headers and `UnpaidCard.svelte`'s tab color (and its
-Needs-Invoice block), so tab and header can never disagree. The lane's
-membership is unchanged — every `work_complete` job **plus** any-status
-jobs with an invoice in draft/open/partly-paid/defaulted — so cards
-whose `sub_status` is not an invoice state do appear: a held job
-(`on-hold` wins server-side), a cancelled job carrying a receivable
-(`null`), an `in_progress` job with a deposit/progress invoice
-(`work-ready` etc.). Those are bucketed client-side from the card's
-`invoices` list by the same rule `_work_complete_sub_status` applies.
-An `in_progress` job with a live invoice therefore shows in **both**
-In Progress and Unpaid (RM 2026-10-13 — the floor's view and the
-office's receivables view; same reasoning as pre-approval jobs
-appearing in both Pipeline and In Progress), drafts included; the
-Unpaid card wears a small **status badge** (title-cased job status,
-e.g. "In Progress", "Cancelled") whenever the job is not
-`work_complete`, so the reader sees why it sits in the money column.
-An empty section renders no header. E2E:
-`e2e/specs/job-board/unpaid-sections.spec.js`, payload-derived like
-the Pipeline one.
+**Awaiting Payment** (`invoice-sent`, blue `#3b82f6`), **Needs Pickup**
+(`needs-pickup`, purple `#7c3aed` — the board's "completed" tint, since
+the job is finished in every sense but collection). The labels/colors
+table is `frontend/src/lib/unpaidSections.js`, shared by the column
+headers and `UnpaidCard.svelte`'s tab color (and its Needs-Invoice
+block / "Awaiting pickup" footer), so tab and header can never disagree.
+`unpaid_section` is `_work_complete_sub_status` applied to *any* lane
+job — the rule reads only invoices and deliverable fulfillment, never
+status or hold — which is why it has to be server-side: the fulfillment
+and per-invoice deposit-ness it needs aren't on the card payload. The
+lane's membership is unchanged — every `work_complete` job **plus**
+any-status jobs with an invoice in draft/open/partly-paid/defaulted —
+so cards whose `sub_status` is not an invoice state do appear and get a
+section like any other: a held job (`on-hold` pill), a cancelled job
+carrying a receivable (`null`), an `in_progress` job with a
+deposit/progress invoice (`work-ready` etc.). An `in_progress` job with
+a live invoice therefore shows in **both** In Progress and Unpaid (RM
+2026-10-13 — the floor's view and the office's receivables view; same
+reasoning as pre-approval jobs appearing in both Pipeline and In
+Progress), drafts included; the Unpaid card wears a small **status
+badge** (title-cased job status, e.g. "In Progress", "Cancelled")
+whenever the job is not `work_complete`, so the reader sees why it sits
+in the money column. A Needs Pickup card lists its (paid) invoice rows
+and its footer reads **"Awaiting pickup"** instead of an amount due. An
+empty section renders no header. E2E:
+`e2e/specs/job-board/unpaid-sections.spec.js`, reads the layout off
+the payload's `section` values like the Pipeline one.
+
+Converted (nealsdata) datasets can show jobs under Needs Pickup or
+Needs Invoice that the live app would have auto-completed: the
+converter writes final invoice/shipment states without replaying the
+completion gate (`JobService.maybe_complete_if_resolved`). A converter
+reconcile pass to promote such jobs is planned separately (RM
+2026-10-14).
 
 ### 8.3 Configuration
 

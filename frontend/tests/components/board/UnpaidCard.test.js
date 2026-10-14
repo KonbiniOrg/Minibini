@@ -6,7 +6,8 @@ import UnpaidCard from '@/components/board/UnpaidCard.svelte';
 // keeping the fixture minimal for these display assertions.
 const baseJob = {
   job_number: 'JOB-1', name: 'Widget', contact_id: 5, contact_name: 'Acme',
-  sub_status: 'needs-invoice', invoices: [], billed: 0, spent: 0, profit: 0,
+  status: 'work_complete', sub_status: 'needs-invoice', section: 'needs-invoice',
+  invoices: [], billed: 0, spent: 0, profit: 0,
 };
 
 describe('UnpaidCard project manager line', () => {
@@ -45,40 +46,53 @@ describe('UnpaidCard deposit banner', () => {
   });
 });
 
-describe('UnpaidCard tab color follows the section bucket', () => {
+describe('UnpaidCard tab color follows the server section', () => {
   const tab = (container) => container.querySelector('.card-border').style.background;
+  const paid = [{ invoice_id: 1, display_number: 'INV-1', status: 'paid', total: '10.00', amount_paid: '10.00' }];
 
-  it('grey for needs-invoice, amber for a draft, blue for sent', () => {
+  it('grey for needs-invoice, amber for invoice-prepped, blue for invoice-sent, purple for needs-pickup', () => {
     expect(tab(render(UnpaidCard, { props: { job: { ...baseJob } } }).container)).toBe('rgb(100, 116, 139)');
     expect(tab(render(UnpaidCard, { props: { job: {
-      ...baseJob, sub_status: 'invoice-prepped', invoices: [{ invoice_id: 1, display_number: 'INV-1', status: 'draft', total: '10.00' }],
+      ...baseJob, sub_status: 'invoice-prepped', section: 'invoice-prepped',
+      invoices: [{ invoice_id: 1, display_number: 'INV-1', status: 'draft', total: '10.00' }],
     } } }).container)).toBe('rgb(245, 158, 11)');
     expect(tab(render(UnpaidCard, { props: { job: {
-      ...baseJob, sub_status: 'invoice-sent', invoices: [{ invoice_id: 1, display_number: 'INV-1', status: 'partly-paid', total: '10.00' }],
+      ...baseJob, sub_status: 'invoice-sent', section: 'invoice-sent',
+      invoices: [{ invoice_id: 1, display_number: 'INV-1', status: 'partly-paid', total: '10.00' }],
     } } }).container)).toBe('rgb(59, 130, 246)');
+    expect(tab(render(UnpaidCard, { props: { job: {
+      ...baseJob, sub_status: 'needs-pickup', section: 'needs-pickup', invoices: paid,
+    } } }).container)).toBe('rgb(124, 58, 237)');
   });
 
-  it('derives the color from invoices when sub_status is not an invoice state (cancelled job, draft invoice → amber)', () => {
+  it('reads the section, not sub_status (held job: pill on-hold, section needs-pickup)', () => {
     const { container } = render(UnpaidCard, { props: { job: {
-      ...baseJob, status: 'cancelled', sub_status: null,
-      invoices: [{ invoice_id: 1, display_number: 'INV-1', status: 'draft', total: '10.00' }],
+      ...baseJob, sub_status: 'on-hold', on_hold: true, section: 'needs-pickup', invoices: paid,
     } } });
-    expect(tab(container)).toBe('rgb(245, 158, 11)');
+    expect(tab(container)).toBe('rgb(124, 58, 237)');
   });
 
-  it('a held work_complete job with only a paid deposit renders the Needs Invoice block, not an empty table', () => {
+  it('a needs-invoice section renders the Needs Invoice block, not an invoice table, even with a paid deposit row', () => {
     const { container, getByText } = render(UnpaidCard, { props: { job: {
-      ...baseJob, status: 'work_complete', sub_status: 'on-hold', on_hold: true,
-      invoices: [{ invoice_id: 1, display_number: 'INV-1', status: 'paid', total: '10.00' }],
+      ...baseJob, sub_status: 'on-hold', on_hold: true, section: 'needs-invoice', invoices: paid,
     } } });
     expect(getByText('Needs Invoice')).toBeInTheDocument();
     expect(container.querySelector('.line-table')).toBeNull();
+  });
+
+  it('a needs-pickup card lists its paid invoices and footers "Awaiting pickup" instead of an amount due', () => {
+    const { container, getByText, queryByText } = render(UnpaidCard, { props: { job: {
+      ...baseJob, sub_status: 'needs-pickup', section: 'needs-pickup', invoices: paid,
+    } } });
+    expect(container.querySelector('.line-table')).not.toBeNull();
+    expect(getByText('Awaiting pickup')).toBeInTheDocument();
+    expect(queryByText(/due$/)).toBeNull();
   });
 });
 
 describe('UnpaidCard job-status badge', () => {
   const sentJob = {
-    ...baseJob, sub_status: 'invoice-sent',
+    ...baseJob, sub_status: 'invoice-sent', section: 'invoice-sent',
     invoices: [{ invoice_id: 1, display_number: 'INV-1', status: 'open', total: '10.00' }],
   };
 

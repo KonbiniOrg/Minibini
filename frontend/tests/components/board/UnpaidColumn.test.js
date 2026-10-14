@@ -3,9 +3,11 @@ import { render } from '@testing-library/svelte';
 
 import UnpaidColumn from '@/components/board/UnpaidColumn.svelte';
 
-function job(id, status, sub_status, invoices = []) {
+// Payload rows carry a server-computed `section` (BoardService.unpaid_section);
+// for an unheld work_complete job it equals the sub_status.
+function job(id, status, sub_status, invoices = [], section = sub_status) {
   return {
-    job_id: id, job_number: `JOB-${id}`, name: `Job ${id}`, status, sub_status,
+    job_id: id, job_number: `JOB-${id}`, name: `Job ${id}`, status, sub_status, section,
     invoices, billed: 0, spent: 0, profit: 0,
   };
 }
@@ -19,11 +21,12 @@ function flow(container) {
 }
 
 describe('UnpaidColumn sections', () => {
-  it('groups cards by invoice state in column order, each under its header', () => {
+  it('groups cards by section in column order, each under its header', () => {
     const { container } = render(UnpaidColumn, {
       props: { jobs: [
         job(1, 'work_complete', 'invoice-sent', [inv('open')]),
         job(2, 'work_complete', 'needs-invoice'),
+        job(5, 'work_complete', 'needs-pickup', [inv('paid')]),
         job(3, 'work_complete', 'invoice-prepped', [inv('draft')]),
         job(4, 'work_complete', 'needs-invoice'),
       ] },
@@ -32,6 +35,7 @@ describe('UnpaidColumn sections', () => {
       'Needs Invoice', 'JOB-2', 'JOB-4',
       'Invoice Drafted', 'JOB-3',
       'Awaiting Payment', 'JOB-1',
+      'Needs Pickup', 'JOB-5',
     ]);
   });
 
@@ -41,21 +45,22 @@ describe('UnpaidColumn sections', () => {
     });
     expect(queryByText('Needs Invoice')).toBeNull();
     expect(queryByText('Invoice Drafted')).toBeNull();
+    expect(queryByText('Needs Pickup')).toBeNull();
     expect(flow(container)).toEqual(['Awaiting Payment', 'JOB-1']);
   });
 
-  it('buckets non-work_complete cards (in_progress, cancelled, held) by their invoices', () => {
+  it('places held / cancelled / in_progress cards by their server section, not sub_status', () => {
     const { container } = render(UnpaidColumn, {
       props: { jobs: [
-        job(1, 'in_progress', 'in-progress', [inv('draft')]),
-        job(2, 'cancelled', null, [inv('open')]),
-        job(3, 'work_complete', 'on-hold', [inv('paid')]),
+        job(1, 'in_progress', 'in-progress', [inv('draft')], 'invoice-prepped'),
+        job(2, 'cancelled', null, [inv('open')], 'invoice-sent'),
+        job(3, 'work_complete', 'on-hold', [inv('paid')], 'needs-pickup'),
       ] },
     });
     expect(flow(container)).toEqual([
-      'Needs Invoice', 'JOB-3',
       'Invoice Drafted', 'JOB-1',
       'Awaiting Payment', 'JOB-2',
+      'Needs Pickup', 'JOB-3',
     ]);
   });
 
@@ -65,11 +70,12 @@ describe('UnpaidColumn sections', () => {
         job(1, 'work_complete', 'needs-invoice'),
         job(2, 'work_complete', 'invoice-prepped', [inv('draft')]),
         job(3, 'work_complete', 'invoice-sent', [inv('open')]),
+        job(4, 'work_complete', 'needs-pickup', [inv('paid')]),
       ] },
     });
     const colors = Array.from(container.querySelectorAll('.section-divider'))
       .map(el => el.style.getPropertyValue('--section-color').trim());
-    expect(colors).toEqual(['#64748b', '#f59e0b', '#3b82f6']);
+    expect(colors).toEqual(['#64748b', '#f59e0b', '#3b82f6', '#7c3aed']);
   });
 
   it('shows the empty message and no headers when there are no jobs', () => {

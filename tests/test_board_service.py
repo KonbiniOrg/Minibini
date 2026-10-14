@@ -1112,3 +1112,218 @@ class WorkDrivenInProgressSetTest(FixtureTestCase):
             pass
         ids = self._set_ids()
         self.assertLess(ids.index(early.job_id), ids.index(late.job_id))
+
+
+class BoardSectionTest(FixtureTestCase):
+    """The board's grouped columns (Pipeline, Unpaid) carry a server-computed
+    `section` on every card. Unlike `sub_status`, the section ignores the hold
+    flag — "what the pill says" and "where the card lives" are two different
+    questions (RM 2026-10-14)."""
+
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.get_or_create(
+            key='board_closed_retention_days', defaults={'value': '14'})
+        self.contact = Contact.objects.first()
+
+    def _make_job(self, status, **kwargs):
+        return Job.objects.create(
+            job_number=f'JOB-SEC-{Job.objects.count() + 1:04d}',
+            name='Section Job', status=status, contact=self.contact, **kwargs)
+
+    def _hold(self, job):
+        """Flag the job held. The service only admits approved/in_progress
+        holds; the section rule must not lean on that, so other statuses
+        get the flag set directly."""
+        from apps.jobs.services import JobService
+        if job.status in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
+            JobService.hold_job(job.pk, 'customer rethink')
+        else:
+            job.on_hold = True
+            job.hold_reason = 'customer rethink'
+            job.save()
+        job.refresh_from_db()
+        return job
+
+    def _invoice(self, job, status, *, deposit=False, lines=True):
+        """A paid/open/draft invoice. `deposit=True` gives it a deposit line
+        (the system's definition of a deposit invoice); otherwise an ordinary
+        line, or none when lines=False."""
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.invoicing.models import Invoice, InvoiceLineItem
+        inv = Invoice.objects.create(
+            job=job, invoice_number=f'INV-SEC-{Invoice.objects.count() + 1:04d}',
+            status=Invoice.STATUS_DRAFT)
+        if lines:
+            if deposit:
+                cat, _ = AccountingCategory.objects.get_or_create(
+                    code='DEPSEC', defaults={'name': 'Deposits (section tests)',
+                                             'taxable': False, 'is_deposit': True})
+            else:
+                cat, _ = AccountingCategory.objects.get_or_create(
+                    code='SVCSEC', defaults={'name': 'Services (section tests)',
+                                             'taxable': True, 'is_deposit': False})
+            InvoiceLineItem.objects.create(
+                invoice=inv, description='line', qty=Decimal('1'),
+                price=Decimal('100.00'), accounting_category=cat)
+        Invoice.objects.filter(pk=inv.pk).update(status=status)
+        inv.refresh_from_db()
+        return inv
+
+    def _deliverable(self, job, shipped=None):
+        """One deliverable (qty 1); `shipped` None → no shipment, 'prepared'
+        → prepared-not-collected, 'picked_up' → fully picked up."""
+        from decimal import Decimal
+        from apps.deliverables.models import Deliverable, Shipment, ShipmentItem
+        d = Deliverable.objects.create(
+            job=job, description='Sign', qty_ordered=Decimal('1'), units='ea')
+        if shipped:
+            s = Shipment.objects.create(job=job, sequence=1, status=shipped)
+            ShipmentItem.objects.create(shipment=s, deliverable=d, qty=Decimal('1'))
+        return d
+
+    # --- Pipeline -----------------------------------------------------------
+
+    def test_pipeline_section_equals_sub_status_when_unheld(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job(Job.STATUS_DRAFT)
+        Estimate.objects.create(job=job, estimate_number='EST-SEC-1', status='draft')
+        self.assertEqual(BoardService.compute_sub_status(job), 'estimating')
+        self.assertEqual(BoardService.pipeline_section(job), 'estimating')
+
+    def test_pipeline_section_ignores_hold(self):
+        """A held draft with an open estimate: pill says on-hold, card lives
+        in Awaiting Approval."""
+        from apps.jobs.services import BoardService
+        job = self._make_job(Job.STATUS_SUBMITTED)
+        Estimate.objects.create(job=job, estimate_number='EST-SEC-2', status='open')
+        job = self._hold(job)
+        self.assertEqual(BoardService.compute_sub_status(job), 'on-hold')
+        self.assertEqual(BoardService.pipeline_section(job), 'awaiting-response')
+
+    def test_pipeline_section_held_approved_is_awaiting_prep(self):
+        from apps.jobs.services import BoardService
+        job = self._hold(self._make_job(Job.STATUS_APPROVED))
+        self.assertEqual(BoardService.pipeline_section(job), 'awaiting-prep')
+
+    def test_pipeline_payload_carries_section(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job(Job.STATUS_DRAFT)
+        job = self._hold(job)
+        row = next(j for j in BoardService.get_pipeline_data()['jobs']
+                   if j['job_id'] == job.job_id)
+        self.assertEqual(row['sub_status'], 'on-hold')
+        self.assertEqual(row['section'], 'needs-scoping')
+
+    # --- Unpaid: the fourth group --------------------------------------------
+
+    def test_needs_pickup_when_paid_ordinary_invoice_and_unshipped_deliverable(self):
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(Job.STATUS_WORK_COMPLETE)
+        self._invoice(job, Invoice.STATUS_PAID)
+        self._deliverable(job, shipped=None)
+        self.assertEqual(BoardService.compute_sub_status(job), 'needs-pickup')
+        self.assertEqual(BoardService.unpaid_section(job), 'needs-pickup')
+
+    def test_needs_pickup_when_shipment_prepared_but_not_collected(self):
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        from apps.deliverables.models import Shipment
+        job = self._make_job(Job.STATUS_WORK_COMPLETE)
+        self._invoice(job, Invoice.STATUS_PAID)
+        self._deliverable(job, shipped=Shipment.STATUS_PREPARED)
+        self.assertEqual(BoardService.unpaid_section(job), 'needs-pickup')
+
+    def test_needs_invoice_when_paid_and_fully_picked_up(self):
+        """Rule only — live, the completion gate closes this job; converted
+        data can leave it here."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        from apps.deliverables.models import Shipment
+        job = self._make_job(Job.STATUS_WORK_COMPLETE)
+        self._invoice(job, Invoice.STATUS_PAID)
+        self._deliverable(job, shipped=Shipment.STATUS_PICKED_UP)
+        self.assertEqual(BoardService.unpaid_section(job), 'needs-invoice')
+
+    def test_needs_invoice_when_only_a_deposit_invoice_is_paid(self):
+        """Deposit paid, work complete, final not started: the unshipped
+        deliverable doesn't make this a pickup problem — the real bill
+        hasn't gone out."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(Job.STATUS_WORK_COMPLETE)
+        self._invoice(job, Invoice.STATUS_PAID, deposit=True)
+        self._deliverable(job, shipped=None)
+        self.assertEqual(BoardService.unpaid_section(job), 'needs-invoice')
+
+    def test_needs_pickup_when_deposit_and_ordinary_invoice_both_paid(self):
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(Job.STATUS_WORK_COMPLETE)
+        self._invoice(job, Invoice.STATUS_PAID, deposit=True)
+        self._invoice(job, Invoice.STATUS_PAID)
+        self._deliverable(job, shipped=None)
+        self.assertEqual(BoardService.unpaid_section(job), 'needs-pickup')
+
+    def test_sent_invoice_outranks_needs_pickup(self):
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(Job.STATUS_WORK_COMPLETE)
+        self._invoice(job, Invoice.STATUS_PAID)
+        self._invoice(job, Invoice.STATUS_OPEN)
+        self._deliverable(job, shipped=None)
+        self.assertEqual(BoardService.unpaid_section(job), 'invoice-sent')
+
+    def test_draft_invoice_outranks_needs_pickup(self):
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(Job.STATUS_WORK_COMPLETE)
+        self._invoice(job, Invoice.STATUS_PAID)
+        self._invoice(job, Invoice.STATUS_DRAFT)
+        self._deliverable(job, shipped=None)
+        self.assertEqual(BoardService.unpaid_section(job), 'invoice-prepped')
+
+    def test_needs_pickup_routes_out_of_in_progress_column(self):
+        from apps.jobs.services import BoardService
+        self.assertIn('needs-pickup', BoardService.UNPAID_SUB_STATUSES)
+
+    # --- Unpaid: section ignores hold and job status ----------------------------
+
+    def test_unpaid_section_ignores_hold(self):
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(Job.STATUS_WORK_COMPLETE)
+        self._invoice(job, Invoice.STATUS_PAID)
+        self._deliverable(job, shipped=None)
+        job = self._hold(job)
+        self.assertEqual(BoardService.compute_sub_status(job), 'on-hold')
+        self.assertEqual(BoardService.unpaid_section(job), 'needs-pickup')
+
+    def test_unpaid_section_for_cancelled_job_with_draft_invoice(self):
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(Job.STATUS_CANCELLED)
+        self._invoice(job, Invoice.STATUS_DRAFT)
+        self.assertIsNone(BoardService.compute_sub_status(job))
+        self.assertEqual(BoardService.unpaid_section(job), 'invoice-prepped')
+
+    def test_unpaid_section_for_in_progress_job_with_open_invoice(self):
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(Job.STATUS_IN_PROGRESS)
+        self._invoice(job, Invoice.STATUS_OPEN)
+        self.assertEqual(BoardService.unpaid_section(job), 'invoice-sent')
+
+    def test_unpaid_payload_carries_section(self):
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(Job.STATUS_WORK_COMPLETE)
+        self._invoice(job, Invoice.STATUS_PAID)
+        self._deliverable(job, shipped=None)
+        job = self._hold(job)
+        row = next(j for j in BoardService.get_unpaid_data()['jobs']
+                   if j['job_id'] == job.job_id)
+        self.assertEqual(row['sub_status'], 'on-hold')
+        self.assertEqual(row['section'], 'needs-pickup')
