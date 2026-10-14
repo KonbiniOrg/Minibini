@@ -266,6 +266,47 @@ class WorkCompleteSubStatusTest(FixtureTestCase):
             BoardService.compute_sub_status(self.job), 'needs-invoice',
         )
 
+    def test_invoice_sent_when_partly_paid_invoice(self):
+        """A partly-paid invoice has been sent and is still owed — it reads
+        'invoice-sent' (the Awaiting Payment group), not 'needs-invoice'."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        Invoice.objects.create(
+            job=self.job, invoice_number='INV-WC-PARTLY',
+            status=Invoice.STATUS_PARTLY_PAID,
+        )
+        self.assertEqual(
+            BoardService.compute_sub_status(self.job), 'invoice-sent',
+        )
+
+    def test_invoice_sent_when_defaulted_invoice(self):
+        """Every Invoice.UNPAID_STATUSES member counts as sent — defaulted
+        has no transition into it today, but lands in the right group by
+        construction if it ever does."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        Invoice.objects.create(
+            job=self.job, invoice_number='INV-WC-DEFAULTED',
+            status=Invoice.STATUS_DEFAULTED,
+        )
+        self.assertEqual(
+            BoardService.compute_sub_status(self.job), 'invoice-sent',
+        )
+
+    def test_needs_invoice_when_only_paid_invoice(self):
+        """Deposit paid, work complete, no final invoice started: the paid
+        deposit invoice is settled, so the job still needs its invoice
+        (RM 2026-10-13 — the fall-through is the intended rule)."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        Invoice.objects.create(
+            job=self.job, invoice_number='INV-WC-DEP-PAID',
+            status=Invoice.STATUS_PAID,
+        )
+        self.assertEqual(
+            BoardService.compute_sub_status(self.job), 'needs-invoice',
+        )
+
 
 class InProgressColumnJobsHelperTest(FixtureTestCase):
     """The shared helper defining the board's In Progress column job set,

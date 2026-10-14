@@ -1286,7 +1286,13 @@ stored. Examples (full list in `apps/jobs/services.py`):
 - `in-progress` — at least one task in progress
 - `blocked` — at least one task blocked (takes priority)
 - `needs-invoice` / `invoice-prepped` / `invoice-sent` — for
-  `work_complete` jobs based on Invoice state
+  `work_complete` jobs based on Invoice state, checked in that priority
+  order over the job's live (non-cancelled, non-superseded) invoices:
+  any invoice in `Invoice.UNPAID_STATUSES` (open / partly-paid /
+  defaulted — sent and still owed) → `invoice-sent`; else any draft →
+  `invoice-prepped`; else `needs-invoice`. A job whose only live invoice
+  is *paid* (a settled deposit, final invoice not yet started) falls
+  through to `needs-invoice` on purpose (RM 2026-10-13).
 
 **Pipeline column sections (2026-10-11).** `PipelineColumn.svelte`
 groups its cards by sub-status into four ordered sections, each under a
@@ -1303,6 +1309,32 @@ unheld (open → Awaiting Approval, draft → Estimating, else Inquiries);
 a held-from-`approved` job stays in Awaiting Prep. The seed-independent
 e2e spec `e2e/specs/job-board/pipeline-sections.spec.js` derives the
 expected layout from the board payload.
+
+**Unpaid column sections (2026-10-13).** `UnpaidColumn.svelte` groups
+its cards the same way, into three ordered sections keyed by the
+invoice sub-statuses above: **Needs Invoice** (`needs-invoice`, grey
+`#64748b`), **Invoice Drafted** (`invoice-prepped`, amber `#f59e0b`),
+**Awaiting Payment** (`invoice-sent`, blue `#3b82f6`). The bucket
+function lives in `frontend/src/lib/unpaidSections.js` and is shared by
+the column headers and `UnpaidCard.svelte`'s tab color (and its
+Needs-Invoice block), so tab and header can never disagree. The lane's
+membership is unchanged — every `work_complete` job **plus** any-status
+jobs with an invoice in draft/open/partly-paid/defaulted — so cards
+whose `sub_status` is not an invoice state do appear: a held job
+(`on-hold` wins server-side), a cancelled job carrying a receivable
+(`null`), an `in_progress` job with a deposit/progress invoice
+(`work-ready` etc.). Those are bucketed client-side from the card's
+`invoices` list by the same rule `_work_complete_sub_status` applies.
+An `in_progress` job with a live invoice therefore shows in **both**
+In Progress and Unpaid (RM 2026-10-13 — the floor's view and the
+office's receivables view; same reasoning as pre-approval jobs
+appearing in both Pipeline and In Progress), drafts included; the
+Unpaid card wears a small **status badge** (title-cased job status,
+e.g. "In Progress", "Cancelled") whenever the job is not
+`work_complete`, so the reader sees why it sits in the money column.
+An empty section renders no header. E2E:
+`e2e/specs/job-board/unpaid-sections.spec.js`, payload-derived like
+the Pipeline one.
 
 ### 8.3 Configuration
 
@@ -1351,11 +1383,11 @@ Every board payload row (Pipeline, In Progress, Unpaid, Closed) carries a
 derived `deposit_state` (`'requested'` | `'paid'` | absent — computed by
 `BoardService._deposit_states`, one query pair per board call; see
 `invoicing-and-expenses.md` §Deposits for the underlying rule and the
-requested-wins-over-paid tie-break with multiple deposits). Today only
-`JobCard.svelte` renders it — a **"DEP REQUESTED"**/**"DEP PAID"** banner
-— so it's visible on Pipeline column cards and the In Progress
-chip-hover card (`JobChipStrip.svelte`), not on `UnpaidCard.svelte` or
-`ClosedCard.svelte`.
+requested-wins-over-paid tie-break with multiple deposits).
+`JobCard.svelte` and `UnpaidCard.svelte` render it — a **"DEP
+REQUESTED"**/**"DEP PAID"** banner — so it's visible on Pipeline column
+cards, the In Progress chip-hover card (`JobChipStrip.svelte`), and
+Unpaid cards; `ClosedCard.svelte` does not.
 
 ## 9. UI: Job Detail page
 

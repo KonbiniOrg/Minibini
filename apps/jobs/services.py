@@ -2605,12 +2605,23 @@ class BoardService:
 
     @staticmethod
     def _work_complete_sub_status(job):
-        """Sub-status for work_complete jobs: invoice lifecycle."""
+        """Sub-status for work_complete jobs: invoice lifecycle.
+
+        Priority order over the job's live (non-cancelled, non-superseded)
+        invoices: any invoice sent and still owed (`Invoice.UNPAID_STATUSES`
+        — open, partly-paid, defaulted) → 'invoice-sent'; else any draft →
+        'invoice-prepped'; else 'needs-invoice'. A job whose only live
+        invoice is *paid* (a settled deposit) falls through to
+        'needs-invoice' on purpose — the final invoice hasn't been started
+        (RM 2026-10-13). These three keys are the Unpaid column's sections;
+        `frontend/src/lib/unpaidSections.js` re-derives the same bucket from
+        the card's `invoices` list for cards that aren't `work_complete`.
+        """
         from apps.invoicing.models import Invoice
         invoices = job.invoice_set.exclude(
             status__in=[Invoice.STATUS_CANCELLED, Invoice.STATUS_SUPERSEDED]
         )
-        if invoices.filter(status=Invoice.STATUS_OPEN).exists():
+        if invoices.filter(status__in=Invoice.UNPAID_STATUSES).exists():
             return 'invoice-sent'
         if invoices.filter(status=Invoice.STATUS_DRAFT).exists():
             return 'invoice-prepped'
