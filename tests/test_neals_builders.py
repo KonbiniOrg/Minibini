@@ -1210,6 +1210,154 @@ class DowngradeCompletedJobsWithUnpaidInvoicesTest(unittest.TestCase):
         self.assertEqual(job_fields['status'], 'in_progress')
 
 
+class PromoteWorkCompleteJobsTheGateWouldCloseTest(unittest.TestCase):
+    """Reconcile pass 6.5: a work_complete Job that the app's completion gate
+    (JobService.maybe_complete_if_resolved) would have walked to `completed`
+    — every invoice resolved, deliverables all picked up — is promoted, with
+    a completed_date as if the walk had happened on the last payment
+    (RM 2026-10-14). Synthetic fixture data so we control the scenario."""
+
+    PICKED = {'Checklist': '[X] cut it\n[X] Picked up/Delivered'}
+    NOT_PICKED = {'Checklist': '[X] cut it\n[ ] Picked up/Delivered'}
+
+    def _make_converter(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.jobs = {}
+        c.job_map = {}
+        c.estimates = {}
+        return c
+
+    def _add_job(self, c, base_ref, status='work_complete', card=None, on_hold=False):
+        pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', pk, {
+            'job_number': base_ref, 'name': 'j', 'contact': 1, 'status': status,
+            'created_date': '2026-01-01T00:00:00+00:00',
+            'start_date': '2026-01-01T00:00:00+00:00',
+            'due_date': None, 'completed_date': None,
+            'customer_po_number': '', 'description': '', 'accent_color': '#f97066',
+            'on_hold': on_hold, 'hold_reason': 'x' if on_hold else '',
+        })
+        c.job_map[base_ref] = pk
+        c.jobs[base_ref] = {'job_pk': pk, 'card': card if card is not None else self.PICKED,
+                            'estimate_rows': [], 'primary_ref': base_ref}
+        return pk
+
+    def _add_invoice(self, c, job_pk, status, created='2026-02-01T00:00:00+00:00',
+                     closed=None):
+        pk = c.next_pk('invoicing.invoice')
+        c.add_fixture('invoicing.invoice', pk, {
+            'job': job_pk, 'invoice_number': f'INV-{pk}', 'status': status,
+            'created_date': created,
+            'sent_date': created if status in ('open', 'paid') else None,
+            'closed_date': closed,
+            'qbo_id': None, 'qbo_payment_status': '', 'qbo_amount_paid': None,
+        })
+        return pk
+
+    def _job(self, c, pk):
+        return next(f['fields'] for f in c.fixture_data
+                    if f['model'] == 'jobs.job' and f['pk'] == pk)
+
+    def test_paid_and_picked_up_promotes_to_completed_on_the_payment_date(self):
+        c = self._make_converter()
+        jp = self._add_job(c, '00001')
+        self._add_invoice(c, jp, 'paid', closed='2026-04-14T00:00:00+00:00')
+        reconcile.reconcile(c)
+        self.assertEqual(self._job(c, jp)['status'], 'completed')
+        self.assertEqual(self._job(c, jp)['completed_date'], '2026-04-14T00:00:00+00:00')
+
+    def test_latest_payment_wins_with_several_paid_invoices(self):
+        c = self._make_converter()
+        jp = self._add_job(c, '00002')
+        self._add_invoice(c, jp, 'paid', closed='2026-03-01T00:00:00+00:00')
+        self._add_invoice(c, jp, 'paid', closed='2026-05-09T00:00:00+00:00')
+        self._add_invoice(c, jp, 'cancelled')
+        reconcile.reconcile(c)
+        self.assertEqual(self._job(c, jp)['status'], 'completed')
+        self.assertEqual(self._job(c, jp)['completed_date'], '2026-05-09T00:00:00+00:00')
+
+    def test_missing_closed_date_falls_back_to_latest_invoice_date(self):
+        c = self._make_converter()
+        jp = self._add_job(c, '00003')
+        self._add_invoice(c, jp, 'paid', created='2026-02-20T00:00:00+00:00', closed=None)
+        reconcile.reconcile(c)
+        self.assertEqual(self._job(c, jp)['status'], 'completed')
+        self.assertEqual(self._job(c, jp)['completed_date'], '2026-02-20T00:00:00+00:00')
+
+    def test_not_picked_up_stays_work_complete(self):
+        # The gate requires all deliverables shipped; without the marker a
+        # work_complete job gets no shipment, so it stays — the board files
+        # it under Needs Pickup.
+        c = self._make_converter()
+        jp = self._add_job(c, '00004', card=self.NOT_PICKED)
+        self._add_invoice(c, jp, 'paid', closed='2026-04-14T00:00:00+00:00')
+        reconcile.reconcile(c)
+        self.assertEqual(self._job(c, jp)['status'], 'work_complete')
+        self.assertIsNone(self._job(c, jp)['completed_date'])
+
+    def test_unresolved_invoice_stays_work_complete(self):
+        c = self._make_converter()
+        jp = self._add_job(c, '00005')
+        self._add_invoice(c, jp, 'paid', closed='2026-04-14T00:00:00+00:00')
+        self._add_invoice(c, jp, 'open')
+        reconcile.reconcile(c)
+        self.assertEqual(self._job(c, jp)['status'], 'work_complete')
+
+    def test_no_invoices_stays_work_complete(self):
+        # Deliberate departure from the gate's vacuous "all invoices resolved":
+        # the Kanban Invoice stage means billing is still pending, so a
+        # picked-up but never-invoiced job must stay visible as Needs Invoice.
+        c = self._make_converter()
+        jp = self._add_job(c, '00006')
+        reconcile.reconcile(c)
+        self.assertEqual(self._job(c, jp)['status'], 'work_complete')
+
+    def test_only_cancelled_invoices_stays_work_complete(self):
+        # Resolved but nothing was ever paid: the bill still has to go out.
+        c = self._make_converter()
+        jp = self._add_job(c, '00007')
+        self._add_invoice(c, jp, 'cancelled')
+        reconcile.reconcile(c)
+        self.assertEqual(self._job(c, jp)['status'], 'work_complete')
+
+    def test_held_job_is_not_promoted(self):
+        # The gate never fires on a held job (status changes are blocked).
+        c = self._make_converter()
+        jp = self._add_job(c, '00008', on_hold=True)
+        self._add_invoice(c, jp, 'paid', closed='2026-04-14T00:00:00+00:00')
+        reconcile.reconcile(c)
+        self.assertEqual(self._job(c, jp)['status'], 'work_complete')
+
+    def test_other_statuses_are_untouched(self):
+        c = self._make_converter()
+        jp = self._add_job(c, '00009', status='in_progress')
+        self._add_invoice(c, jp, 'paid', closed='2026-04-14T00:00:00+00:00')
+        reconcile.reconcile(c)
+        self.assertEqual(self._job(c, jp)['status'], 'in_progress')
+
+    def test_promoted_job_gets_a_shipment_and_closed_out_history(self):
+        c = self._make_converter()
+        jp = self._add_job(c, '00010')
+        self._add_invoice(c, jp, 'paid', closed='2026-04-14T00:00:00+00:00')
+        c.add_fixture('deliverables.deliverable', c.next_pk('deliverables.deliverable'), {
+            'job': jp, 'description': 'Sign', 'qty_ordered': '1.00', 'units': 'ea',
+            'sort_order': 10, 'created_at': '2026-01-01T00:00:00+00:00',
+            'updated_at': '2026-01-01T00:00:00+00:00', 'source_line': None,
+        })
+        reconcile.reconcile(c)
+        build.build_shipments(c)
+        ships = [f for f in c.fixture_data if f['model'] == 'deliverables.shipment'
+                 and f['fields']['job'] == jp]
+        self.assertEqual(len(ships), 1)
+        self.assertEqual(ships[0]['fields']['status'], 'picked_up')
+        self.assertEqual(ships[0]['fields']['notes'], '')  # marker path, not synthetic
+        events = build._job_timeline(jp, self._job(c, jp), {
+            'invoicing.invoice': [f for f in c.fixture_data if f['model'] == 'invoicing.invoice'],
+            'deliverables.shipment': ships,
+        })
+        self.assertTrue(any(ch.get('_action') == 'Job closed out' for *_, ch in events))
+
+
 class BlepHorizonTest(unittest.TestCase):
     """build_bleps_and_shifts only emits bleps within three weeks of the
     dataset's "now". A FINISHED job (has completed_date) older than that is

@@ -438,3 +438,20 @@ def match_pli(description, pli_index):
     # Most keyword overlap wins; ties → shortest code, then lexically smallest.
     candidates.sort(key=lambda c: (-c[0], len(c[1]), c[1]))
     return candidates[0][1]
+
+
+def is_pickup_marker(text):
+    """True when a checklist line is the 'Picked up/Delivered' marker.
+
+    Matches with or without a trailing recipient name; ordinary
+    'pick up ...' notes fail the 'picked up/delivered' prefix test.
+    """
+    return text.strip().lower().replace(' ', '').startswith('pickedup/delivered')
+
+
+def has_pickup_done(card):
+    """True when the card's checklist has a checked 'Picked up/Delivered' item
+    — the converter's one signal that every Deliverable was collected
+    (build_shipments' marker path; reconcile's completion-promotion pass)."""
+    return any(it['completed'] and is_pickup_marker(it['text'])
+               for it in parse_checklist(card.get('Checklist')))

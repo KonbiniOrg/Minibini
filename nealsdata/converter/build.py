@@ -1335,7 +1335,7 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
     sort_order = start_sort
     for item in items:
         # The 'Picked up/Delivered' marker drives Shipments, not Tasks.
-        if _is_pickup_marker(item['text']):
+        if P.is_pickup_marker(item['text']):
             continue
         # Board status-markers (Invoice Sent, Payment Received, …) are noise.
         if _is_dropped_checklist_line(item['text']):
@@ -2143,21 +2143,6 @@ def build_invoice_line_item_sources(c):
                     })
 
 
-def _is_pickup_marker(text):
-    """True when a checklist line is the 'Picked up/Delivered' marker.
-
-    Matches with or without a trailing recipient name; ordinary
-    'pick up ...' notes fail the 'picked up/delivered' prefix test.
-    """
-    return text.strip().lower().replace(' ', '').startswith('pickedup/delivered')
-
-
-def _has_pickup_done(card):
-    """True when the card's checklist has a checked 'Picked up/Delivered' item."""
-    return any(it['completed'] and _is_pickup_marker(it['text'])
-               for it in P.parse_checklist(card.get('Checklist')))
-
-
 def build_shipments(c):
     """Emit deliverables.shipment + deliverables.shipmentitem fixtures.
 
@@ -2203,7 +2188,7 @@ def build_shipments(c):
         if job_fields is None:
             continue
 
-        marker_present = _has_pickup_done(card)
+        marker_present = P.has_pickup_done(card)
         is_completed = job_fields.get('status') == 'completed'
         # Two trigger paths: checked pickup marker, or completed status
         # without one (synthetic). Anything else: no Shipment.
