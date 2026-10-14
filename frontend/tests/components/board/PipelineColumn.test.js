@@ -10,12 +10,15 @@ function jobWith(estimate) {
     name: 'Widget',
     status: 'approved',          // accepted+amended estimates live on approved jobs
     sub_status: 'awaiting-prep',
+    section: 'awaiting-prep',
     estimates: [estimate],
   };
 }
 
-function job(id, status, sub_status, estimates = []) {
-  return { job_id: id, job_number: `JOB-${id}`, name: `Job ${id}`, status, sub_status, estimates };
+// Payload rows carry a server-computed `section`; for an unheld job it equals
+// the sub_status, so default it that way and let tests override.
+function job(id, status, sub_status, estimates = [], section = sub_status) {
+  return { job_id: id, job_number: `JOB-${id}`, name: `Job ${id}`, status, sub_status, estimates, section };
 }
 
 // Section headers + card numbers in DOM order, so ordering assertions read
@@ -90,13 +93,13 @@ describe('PipelineColumn sections', () => {
     expect(colors).toEqual(['#64748b', '#2563eb', '#b45309', '#ca8a04']);
   });
 
-  it('buckets a held pre-approval job by its estimates, like the backend would unheld', () => {
+  it('places a held card by its server-computed section, not its on-hold sub_status', () => {
     const { container } = render(PipelineColumn, {
       props: { jobs: [
-        job(1, 'draft', 'on-hold', [{ estimate_id: 1, status: 'open', total: '1.00' }]),
-        job(2, 'draft', 'on-hold', [{ estimate_id: 2, status: 'draft', total: '1.00' }]),
-        job(3, 'draft', 'on-hold'),
-        job(4, 'approved', 'on-hold'),
+        job(1, 'submitted', 'on-hold', [{ estimate_id: 1, status: 'open', total: '1.00' }], 'awaiting-response'),
+        job(2, 'draft', 'on-hold', [{ estimate_id: 2, status: 'draft', total: '1.00' }], 'estimating'),
+        job(3, 'draft', 'on-hold', [], 'needs-scoping'),
+        job(4, 'approved', 'on-hold', [], 'awaiting-prep'),
       ] },
     });
     expect(flow(container)).toEqual([
@@ -105,6 +108,13 @@ describe('PipelineColumn sections', () => {
       'Awaiting Approval', 'JOB-1',
       'Awaiting Prep', 'JOB-4',
     ]);
+  });
+
+  it('does not re-derive a section from estimates: a card with no section renders in no section', () => {
+    const { container } = render(PipelineColumn, {
+      props: { jobs: [job(1, 'draft', 'estimating', [{ estimate_id: 1, status: 'draft', total: '1.00' }], null)] },
+    });
+    expect(container.querySelectorAll('.section-divider')).toHaveLength(0);
   });
 
   it('shows the empty message when there are no jobs', () => {

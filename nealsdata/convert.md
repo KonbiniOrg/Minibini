@@ -517,7 +517,10 @@ two trigger paths:
 
 The shipment's `picked_up_date` comes from the Job's `completed_date`,
 falling back to the latest invoice date, then the Job's `created_date`.
-Pickup-marker checklist lines never become Tasks.
+Pickup-marker checklist lines never become Tasks. The marker test itself
+(`parsing.is_pickup_marker` / `parsing.has_pickup_done`) is shared with
+reconcile pass 6.5, which uses it as the "all deliverables shipped" half
+of the completion gate.
 
 ### Units mapping
 
@@ -569,6 +572,29 @@ Deliverables default to `units='ea'` (canon form of `each`).
    `work_complete` and clears `completed_date`. Must run before
    `build_shipments` so the synthesis branch doesn't fake-ship the
    downgraded job.
+6.5. **Promote `work_complete` Jobs the app would have closed** — the
+   mirror image of pass 6. Live, `JobService.maybe_complete_if_resolved`
+   walks a `work_complete` Job to `completed` when every Invoice is
+   resolved and every Deliverable is picked up; the converter writes those
+   end states without replaying the cascade, which stranded paid-and-
+   collected jobs in the board's Unpaid lane (job 07699, RM 2026-10-14).
+   A `work_complete` Job that is not on hold, has **at least one `paid`**
+   Invoice and no Invoice outside `{paid, cancelled}`, and whose card has
+   a checked `Picked up/Delivered` marker (every Job has ≥1 Deliverable,
+   and a `work_complete` Job's Shipment only comes from the marker, so
+   marker ⇔ all shipped) is promoted to `completed`, with
+   `completed_date` = the latest paid Invoice's `closed_date` (payment
+   follows pickup in this data), falling back to the latest Invoice's
+   `created_date`. Deliberate departure from the gate: no Invoices, or
+   only cancelled ones, does **not** promote — the Kanban `Invoice` stage
+   means billing is pending, so those stay visible as Needs Invoice.
+   Paid but **no** marker stays `work_complete` too; the board files it
+   under Needs Pickup. `build_history` keys "Job closed out" off the final
+   status, so the transition entry follows; `build_shipments` ships the
+   job via its marker path as before. Consequence: a promoted job is a
+   *finished* job for the blep horizon (§4), so one completed more than
+   three weeks ago loses its synthetic bleps like any other old completed
+   job.
 7. **Task status from job** — cancel ALL tasks on cancelled/rejected jobs;
    cancel still-PENDING tasks on work_complete/completed jobs (the app's
    work-complete gate forbids a non-terminal task on a closed job; checked

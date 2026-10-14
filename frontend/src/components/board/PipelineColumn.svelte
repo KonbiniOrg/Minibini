@@ -4,30 +4,20 @@
   let { jobs = [] } = $props();
 
   // Pipeline order, top to bottom. Colors match JobCard.BORDER_COLORS so a
-  // section header reads as the tab of the cards beneath it.
+  // section header reads as the tab of the cards beneath it. Each card's
+  // `section` is computed server-side (BoardService.pipeline_section) from
+  // the job's status and estimates, hold flag ignored — a held card's pill
+  // still says on-hold; its section says where it sits.
   const SECTIONS = [
     { key: 'needs-scoping',     label: 'Inquiries',         color: '#64748b' },
     { key: 'estimating',        label: 'Estimating',        color: '#2563eb' },
     { key: 'awaiting-response', label: 'Awaiting Approval', color: '#b45309' },
     { key: 'awaiting-prep',     label: 'Awaiting Prep',     color: '#ca8a04' },
   ];
-  const SECTION_KEYS = new Set(SECTIONS.map(s => s.key));
-
-  // A held job's sub_status is 'on-hold' (the hold flag wins server-side), so
-  // fall back to the same estimate-state derivation BoardService uses for an
-  // unheld pre-approval job.
-  function sectionKey(job) {
-    if (job.status === 'approved') return 'awaiting-prep';
-    if (SECTION_KEYS.has(job.sub_status)) return job.sub_status;
-    const estimates = job.estimates || [];
-    if (estimates.some(e => e.status === 'open')) return 'awaiting-response';
-    if (estimates.some(e => e.status === 'draft')) return 'estimating';
-    return 'needs-scoping';
-  }
 
   let sections = $derived(
     SECTIONS
-      .map(s => ({ ...s, jobs: jobs.filter(j => sectionKey(j) === s.key) }))
+      .map(s => ({ ...s, jobs: jobs.filter(j => j.section === s.key) }))
       .filter(s => s.jobs.length > 0)
   );
 

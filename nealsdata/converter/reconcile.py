@@ -66,6 +66,7 @@ def reconcile(c):
     _pass_estimate_dates(c, index)
     _pass_job_status_and_dates(c, index)
     _pass_downgrade_completed_with_unpaid_invoices(c, index)
+    _pass_promote_work_complete_the_gate_would_close(c)
     _pass_task_status_from_job(c)
     _pass_document_counters(c, index)
 
@@ -288,6 +289,58 @@ def _pass_downgrade_completed_with_unpaid_invoices(c, index):
         if any(s not in resolved for s in statuses):
             f['fields']['status'] = 'work_complete'
             f['fields']['completed_date'] = None
+
+
+def _pass_promote_work_complete_the_gate_would_close(c):
+    """Pass 6.5: promote a 'work_complete' Job to 'completed' when the app's
+    completion gate (JobService.maybe_complete_if_resolved) would have
+    walked it there live — the converter writes final invoice/shipment
+    states without replaying that cascade, which left paid-and-collected
+    jobs stranded in the board's Unpaid lane (RM 2026-10-14).
+
+    The gate's test, restated in converter terms:
+      - work_complete and not on hold (a held job never auto-completes);
+      - every Invoice resolved ('paid'/'cancelled') — AND at least one
+        actually paid. The gate's "all resolved" is vacuously true with no
+        invoices (or only cancelled ones), but the Kanban 'Invoice' stage
+        means billing is still pending, so those stay visible as Needs
+        Invoice — a deliberate departure;
+      - the card carries a checked 'Picked up/Delivered' marker. Every Job
+        has at least one Deliverable (a Fake one if need be) and a
+        work_complete Job's Shipment only ever comes from the marker
+        (build_shipments path 1), so marker ⇔ all deliverables shipped.
+
+    completed_date = the latest paid invoice's closed_date (the gate fires
+    on whichever of last-payment / pickup lands last; in this data payment
+    follows pickup), falling back to the latest invoice's created_date.
+    build_history keys 'Job closed out' off the final status, so the
+    transition entry follows for free; build_shipments (marker path) ships
+    the job as before. Mirror image of pass 6 — the two can't both touch
+    one job (pass 6 needs an unresolved invoice; this needs none).
+    """
+    invs_by_job = {}
+    for f in c.fixture_data:
+        if f['model'] == 'invoicing.invoice':
+            invs_by_job.setdefault(f['fields']['job'], []).append(f['fields'])
+    cards_by_pk = {info['job_pk']: info.get('card') or {}
+                   for info in c.jobs.values()}
+    for f in c.fixture_data:
+        if f['model'] != 'jobs.job':
+            continue
+        fields = f['fields']
+        if fields['status'] != 'work_complete' or fields.get('on_hold'):
+            continue
+        invs = invs_by_job.get(f['pk'], [])
+        paid = [i for i in invs if i['status'] == 'paid']
+        if not paid or any(i['status'] not in ('paid', 'cancelled') for i in invs):
+            continue
+        if not P.has_pickup_done(cards_by_pk.get(f['pk'], {})):
+            continue
+        closed = [i['closed_date'] for i in paid if i.get('closed_date')]
+        fields['status'] = 'completed'
+        fields['completed_date'] = (
+            max(closed) if closed
+            else max(i['created_date'] for i in invs if i.get('created_date')))
 
 
 def _pass_task_status_from_job(c):

@@ -1434,9 +1434,9 @@ bug.
   — deposit-source claims against them): with multiple deposits,
   **`'requested'` wins over `'paid'`** — any outstanding request shows.
   Present on every board payload's job rows (Pipeline, In Progress,
-  Unpaid, Closed), but only `JobCard.svelte` (Pipeline column cards, and
-  the In Progress chip-hover card via `JobChipStrip.svelte`) renders the
-  banner today — `UnpaidCard.svelte`/`ClosedCard.svelte` don't. The
+  Unpaid, Closed); `JobCard.svelte` (Pipeline column cards, and the In
+  Progress chip-hover card via `JobChipStrip.svelte`) and
+  `UnpaidCard.svelte` render the banner — `ClosedCard.svelte` doesn't. The
   existing manual `on_hold` + "awaiting deposit" reason remains available
   and unrelated to this derived signal.
 

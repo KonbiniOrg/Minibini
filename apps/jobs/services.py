@@ -2446,6 +2446,7 @@ class BoardService:
             })
         data['estimates'] = estimates
         data['is_revision'] = BoardService.is_revision(job)
+        data['section'] = BoardService.pipeline_section(job)
         return data
 
     @staticmethod
@@ -2490,6 +2491,7 @@ class BoardService:
                 'amount_paid': inv.qbo_amount_paid,
             })
         data['invoices'] = invoices
+        data['section'] = BoardService.unpaid_section(job)
         profitability = BoardService._compute_profitability(job)
         data.update(profitability)
         return data
@@ -2577,7 +2579,7 @@ class BoardService:
 
         return 'needs-scoping'
 
-    UNPAID_SUB_STATUSES = {'invoice-sent', 'invoice-prepped', 'needs-invoice'}
+    UNPAID_SUB_STATUSES = {'invoice-sent', 'invoice-prepped', 'needs-invoice', 'needs-pickup'}
 
     @staticmethod
     def _in_progress_sub_status(job):
@@ -2605,13 +2607,70 @@ class BoardService:
 
     @staticmethod
     def _work_complete_sub_status(job):
-        """Sub-status for work_complete jobs: invoice lifecycle."""
-        from apps.invoicing.models import Invoice
+        """Sub-status for work_complete jobs: the invoice/pickup lifecycle.
+        Also the Unpaid column's section rule — see `unpaid_section`.
+
+        Priority order over the job's live (non-cancelled, non-superseded)
+        invoices:
+
+        1. any invoice sent and still owed (`Invoice.UNPAID_STATUSES` — open,
+           partly-paid, defaulted) → 'invoice-sent' (Awaiting Payment)
+        2. else any draft → 'invoice-prepped' (Invoice Drafted)
+        3. else a *paid, non-deposit* invoice exists and the deliverables are
+           not all picked up → 'needs-pickup' (Needs Pickup): the real bill
+           is settled, the customer just hasn't collected the work. Live,
+           the paid-and-collected variant never reaches the board — the
+           completion gate (`JobService.maybe_complete_if_resolved`) closes
+           the job — so this is what "money done, job still open" means.
+        4. else 'needs-invoice' (Needs Invoice). This includes the job whose
+           only paid invoice is a deposit — the final invoice hasn't been
+           started, whatever the pickup state (RM 2026-10-13/14).
+
+        A deposit invoice is one carrying a deposit line (a line whose
+        accounting category is `is_deposit` and that is not itself a
+        deposit *deduction*) — the system's own definition, see
+        `InvoiceLineItem.is_deposit_line`.
+        """
+        from apps.deliverables.services import DeliverableService
+        from apps.invoicing.models import (
+            Invoice, InvoiceLineItem, InvoiceLineItemSource,
+        )
         invoices = job.invoice_set.exclude(
             status__in=[Invoice.STATUS_CANCELLED, Invoice.STATUS_SUPERSEDED]
         )
-        if invoices.filter(status=Invoice.STATUS_OPEN).exists():
+        if invoices.filter(status__in=Invoice.UNPAID_STATUSES).exists():
             return 'invoice-sent'
         if invoices.filter(status=Invoice.STATUS_DRAFT).exists():
             return 'invoice-prepped'
+        paid = invoices.filter(status=Invoice.STATUS_PAID)
+        deposit_invoice_ids = set(
+            InvoiceLineItem.objects
+            .filter(invoice__in=paid, accounting_category__is_deposit=True)
+            .exclude(sources__source_type=InvoiceLineItemSource.SOURCE_DEPOSIT)
+            .values_list('invoice_id', flat=True)
+        )
+        settled_bill = paid.exclude(pk__in=deposit_invoice_ids).exists()
+        if settled_bill and not DeliverableService.all_deliverables_shipped(job):
+            return 'needs-pickup'
         return 'needs-invoice'
+
+    @staticmethod
+    def pipeline_section(job):
+        """Which Pipeline column section a card lives in, from the job's
+        underlying status and estimates — the hold flag is ignored (a held
+        job's `sub_status` is 'on-hold', which is what the pill says; the
+        section is where the card sits). Keys: 'needs-scoping',
+        'estimating', 'awaiting-response', 'awaiting-prep'."""
+        if job.status == Job.STATUS_APPROVED:
+            return 'awaiting-prep'
+        return BoardService._pipeline_sub_status(job)
+
+    @staticmethod
+    def unpaid_section(job):
+        """Which Unpaid column section a card lives in. The lane admits
+        non-work_complete jobs (held, cancelled-with-receivable, in_progress
+        with a deposit/progress invoice), whose `sub_status` is not an
+        invoice state; the section applies the one invoice/pickup rule to
+        every card regardless of status or hold. Keys: 'needs-invoice',
+        'invoice-prepped', 'invoice-sent', 'needs-pickup'."""
+        return BoardService._work_complete_sub_status(job)
