@@ -102,6 +102,32 @@ class OrderPermissionTests(_Base):
         self._as(self.pm)
         self.assertEqual(self.client.post(f'/api/inventory/{self.item.pk}/order/', body, format='json').status_code, 403)
 
+    def test_pm_cannot_append_to_an_unlinked_draft(self):
+        po = PurchaseOrderService.create_po(business=self.business)
+        self._as(self.pm)
+        r = self.client.post(f'/api/materials/{self.material.pk}/order/',
+                             {'po_id': po.pk}, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(po.purchaseorderlineitem_set.count(), 0)
+
+    def test_pm_can_append_to_a_draft_already_linked_to_their_job(self):
+        po_id, _ = self._linked_po()
+        second = MaterialService.create_on_job(
+            job=self.job_a, inventory_item=self.item, description='y',
+            quantity=Decimal('1'), unit_cost=Decimal('5.00'),
+            accounting_category=self.cat, units='ea')
+        self._as(self.pm)
+        r = self.client.post(f'/api/materials/{second.pk}/order/',
+                             {'po_id': po_id}, format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_jobs_atom_can_append_to_any_draft(self):
+        po = PurchaseOrderService.create_po(business=self.business)
+        self._as(self.jobs)
+        r = self.client.post(f'/api/materials/{self.material.pk}/order/',
+                             {'po_id': po.pk}, format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+
     def test_jobs_atom_can_create_po_from_email_and_read_sender_info(self):
         email = EmailRecord.objects.create(message_id='<perm-po@example.com>')
         self._as(self.jobs)

@@ -121,6 +121,11 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         v = s.validated_data
         item = self.get_object()
         po = get_object_or_404(PurchaseOrder, pk=v['po_id']) if v.get('po_id') is not None else None
+        # po_id mode is a write on an existing PO: the linked-PM rule applies (review ruling 2026-10-15)
+        from rest_framework.exceptions import PermissionDenied
+        from apps.purchasing.services import PurchaseOrderService
+        if po is not None and not PurchaseOrderService.user_can_manage(request.user, po):
+            raise PermissionDenied('You cannot add lines to that purchase order.')
         po, li = InventoryService.order_stock(
             item, po=po, po_fields=v.get('po'), line=v.get('line'))
         return Response({'po_id': po.pk, 'po_number': po.po_number, 'line_item_id': li.pk},
@@ -230,6 +235,11 @@ class MaterialViewSet(JobScopedPermissionMixin, viewsets.ModelViewSet):
         v = s.validated_data
         m = self.get_object()
         po = get_object_or_404(PurchaseOrder, pk=v['po_id']) if v.get('po_id') is not None else None
+        # po_id mode is a write on an existing PO: the linked-PM rule applies (review ruling 2026-10-15)
+        from rest_framework.exceptions import PermissionDenied
+        from apps.purchasing.services import PurchaseOrderService
+        if po is not None and not PurchaseOrderService.user_can_manage(request.user, po):
+            raise PermissionDenied('You cannot add lines to that purchase order.')
         po, li = MaterialService.order(m, po=po, po_fields=v.get('po'), line=v.get('line'))
         return Response({'po_id': po.pk, 'po_number': po.po_number, 'line_item_id': li.pk},
                         status=status.HTTP_201_CREATED)
