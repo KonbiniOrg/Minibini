@@ -359,7 +359,7 @@ class VendorHistoryServiceTests(_Base):
         self.assertIsNone(rows[bare.pk]['business_name'])
 
     def test_earmarks_by_job_with_exclude_job(self):
-        cust = Contact.objects.create(first_name='C', last_name='C',
+        cust = Contact.objects.create(first_name='C', last_name='C', email='cust6@example.com',
                                       phones=[{'number': '1', 'label': 'work'}])
         job_a = Job.objects.create(job_number='08157', contact=cust, description='a')
         job_b = Job.objects.create(job_number='08149', contact=cust, description='b')
@@ -546,7 +546,7 @@ class OrderFromMaterialApiTests(APITestCase):
             job=self.job, description='steel', quantity=Decimal('3'),
             unit_cost=Decimal('80.00'), accounting_category=self.cat, units='ea')
         vc = Contact.objects.create(
-            first_name='V', last_name='V', phones=[{'number': '6', 'label': 'mobile'}])
+            first_name='V', last_name='V', email='vendor3@example.com', phones=[{'number': '6', 'label': 'mobile'}])
         self.business = Business.objects.create(business_name='Vendor Co', default_contact=vc)
         vc.business = self.business
         vc.save()
@@ -606,7 +606,7 @@ class OrderFromMaterialApiTests(APITestCase):
 
     def test_contact_must_belong_to_the_vendor(self):
         stranger = Contact.objects.create(
-            first_name='S', last_name='S', phones=[{'number': '7', 'label': 'mobile'}])
+            first_name='S', last_name='S', email='stranger3@example.com', phones=[{'number': '7', 'label': 'mobile'}])
         resp = self.client.post(self.url, {
             'po': {'business': self.business.pk, 'contact': stranger.pk}}, format='json')
         self.assertEqual(resp.status_code, 400)
@@ -661,7 +661,7 @@ Add `from apps.inventory.models import Material` is already imported at the top 
 ```python
     def test_order_with_po_fields_and_line_overrides(self):
         vc = Contact.objects.create(
-            first_name='V', last_name='V', phones=[{'number': '6', 'label': 'mobile'}])
+            first_name='V', last_name='V', email='vendor3@example.com', phones=[{'number': '6', 'label': 'mobile'}])
         business = Business.objects.create(business_name='Vendor Co', default_contact=vc)
         po, li = MaterialService.order(
             self.material, po_fields={'business': business},
@@ -1543,12 +1543,12 @@ class _Base(TestCase):
             key='default_material_markup_percent', defaults={'value': '25'})
         AppState.objects.update_or_create(key='po_counter', defaults={'value': '0'})
         self.cat = AccountingCategory.objects.create(name='Materials', code='MATPERM')
-        vc = Contact.objects.create(first_name='V', last_name='V',
+        vc = Contact.objects.create(first_name='V', last_name='V', email='vendor6@example.com',
                                     phones=[{'number': '5', 'label': 'work'}])
         self.business = Business.objects.create(business_name='Vendor', default_contact=vc)
         vc.business = self.business
         vc.save()
-        cust = Contact.objects.create(first_name='C', last_name='C',
+        cust = Contact.objects.create(first_name='C', last_name='C', email='cust6@example.com',
                                       phones=[{'number': '1', 'label': 'work'}])
         self.pm = User.objects.create_user('pm_a', password='p')
         self.other_pm = User.objects.create_user('pm_b', password='p')
