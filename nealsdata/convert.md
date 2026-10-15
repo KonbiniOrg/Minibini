@@ -475,7 +475,12 @@ thickness (`P.match_pli`). On a match the `inventory_item` FK is set and
 `unit_cost` is the PLI's `purchase_price`; on a miss the FK stays null and
 `unit_cost = sell_price × _COST_RATIO` (0.8333, the same factor PLIs use). The
 match is precision-first — prose with no thickness, or a material family absent
-from the price list, is an acceptable miss. As noted above, a miss then mints a
+from the price list, is an acceptable miss. Date tokens (`*price as of
+7/31/25*`, `10/13/2023`) are stripped before the fraction scan
+(`_DATE_RE`): left in, 7/31 read as a 0.226" thickness shared by every
+same-family item carrying the same suffix, and the shortest-code tie-break
+linked 3/4" MDF to `MDF.5` (33 of 56 dev materials mislinked, found
+2026-10-14). As noted above, a miss then mints a
 transient lot in `derive_atoms`, so by the time the `inventory.material`
 fixture is emitted the FK is never actually null — every Material is
 item-backed.

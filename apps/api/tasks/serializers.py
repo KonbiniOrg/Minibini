@@ -20,6 +20,10 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     qty_on_hand = serializers.SerializerMethodField()
     qty_on_order = serializers.SerializerMethodField()
     qty_available = serializers.SerializerMethodField()
+    # Catalog code of the backing item (None for freeform). The material row
+    # prints it before the description so a wrong-item link is visible.
+    item_code = serializers.CharField(
+        source='inventory_item.code', read_only=True, default=None)
     invoice = serializers.SerializerMethodField()
 
     class Meta:
@@ -31,7 +35,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'consumption_state', 'released_qty', 'cost_source',
             'is_expense_bound',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
-            'qty_on_hand', 'qty_on_order', 'qty_available',
+            'qty_on_hand', 'qty_on_order', 'qty_available', 'item_code',
             'invoice',
         ]
         read_only_fields = fields

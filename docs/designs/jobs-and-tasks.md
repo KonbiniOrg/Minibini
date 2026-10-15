@@ -1802,7 +1802,8 @@ keeps only the expense rows, section headers, and the footer.
 status chip — **Needs pricing / Needed / Ordered — PO-NNNN / Awaiting
 customer / On Hand / Consumed / Released** (`materialStatus`,
 `frontend/src/lib/materialStatus.js`), with a cost-unconfirmed ⚠ when
-`cost_source === 'estimated'`. Rows render through the shared
+`cost_source === 'estimated'`, and a catalog-backed row prints its item
+code (`item_code`) before the description (`LOT-*` suppressed). Rows render through the shared
 `MaterialRow.svelte` fragment, and the **full per-material action set is
 available on every surface that lists materials** (this page, the task
 detail page) — the old

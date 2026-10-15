@@ -50,6 +50,26 @@ describe('TaskTree', () => {
     expect(queryByText('kg', { exact: true })).toBeNull(); // no standalone cell
   });
 
+  it('prints the catalog item code before the description, but not a minted lot code', () => {
+    // RM 2026-10-14: 33 converted materials were linked to the wrong-thickness
+    // item and nothing on the row showed it — the code makes a mislink visible.
+    const t = task({
+      materials: [
+        { material_id: 11, description: 'Birch ply', quantity: '3', sell_price: '5',
+          units: 'sheet', consumption_state: 'pending', inventory_item: 7, item_code: 'BBPLY.75' },
+        { material_id: 12, description: 'Brass sheet', quantity: '1', sell_price: '5',
+          units: 'ea', consumption_state: 'pending', inventory_item: 8, item_code: 'LOT-12' },
+      ],
+    });
+    const { getByText, queryByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    const code = getByText('BBPLY.75');
+    expect(code.tagName).toBe('CODE');
+    // Code precedes the description in the same cell.
+    expect(code.closest('td').textContent.indexOf('BBPLY.75'))
+      .toBeLessThan(code.closest('td').textContent.indexOf('Birch ply'));
+    expect(queryByText('LOT-12')).toBeNull();
+  });
+
   it('badges an in-progress task waiting on understocked material', () => {
     const t = task({
       status: 'in_progress',

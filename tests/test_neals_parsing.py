@@ -220,6 +220,21 @@ class ThicknessExtractionTest(unittest.TestCase):
         self.assertNotIn('48', th)
         self.assertNotIn('96', th)
 
+    def test_dates_are_not_thicknesses(self):
+        # FreeAgent descriptions end in '*price as of m/d/yy*'. 7/31 and 31/25
+        # must not read as fractions of an inch — the shared date suffix on
+        # catalog items and estimate lines made every same-family item a
+        # thickness match and the shortest code won (MDF.5 for 3/4" MDF).
+        th = P.extract_thicknesses(
+            '4\'x8\' x 3/4" sheet(s) of MDF  *price as of 7/31/25*')
+        self.assertEqual(th, {'0.75'})
+        th = P.extract_thicknesses(
+            '4\'x8\' x 3/4" sheet(s) of prefinished Baltic Birch plywood  *price as of 5/20/24*')
+        self.assertEqual(th, {'0.75'})
+        # Four-digit years and dashed dates too.
+        self.assertEqual(P.extract_thicknesses('1/2" ply *price as of 10/13/2023*'), {'0.5'})
+        self.assertEqual(P.extract_thicknesses('1/2" ply, quoted 5/20-24'), {'0.5'})
+
 
 class MatchPliTest(unittest.TestCase):
     PLI = [
@@ -242,6 +257,24 @@ class MatchPliTest(unittest.TestCase):
         self.assertEqual(
             P.match_pli('(12) sheets 1/4" Baltic Birch plywood', self.PLI),
             'BBPLY.25')
+
+    def test_shared_date_suffix_does_not_match(self):
+        # Real dev-data shape: item and line both carry '*price as of 7/31/25*'.
+        pli = [
+            {'code': 'MDF.5', 'description': '4\'x8\' x 1/2" sheet(s) of MDF  *price as of 7/31/25*'},
+            {'code': 'MDF.75', 'description': '4\'x8\' x 3/4" sheet(s) of MDF  *price as of 7/31/25*'},
+            {'code': 'BBPLY.25', 'description': '4\'x8\' x 1/4" sheet(s) of Baltic Birch plywood  *price as of 5/20/24*'},
+            {'code': 'BBPLY.75P', 'description': '4\'x8\' x 3/4" sheet(s) of prefinished Baltic Birch plywood  *price as of 5/20/24*'},
+        ]
+        self.assertEqual(
+            P.match_pli('4\'x8\' x 3/4" sheet(s) of MDF  *price as of 7/31/25*', pli),
+            'MDF.75')
+        self.assertEqual(
+            P.match_pli('4\'x8\' x 3/4" sheet(s) of prefinished Baltic Birch plywood  *price as of 5/20/24*', pli),
+            'BBPLY.75P')
+        # A line whose only fraction is the date has no thickness → no match.
+        self.assertIsNone(
+            P.match_pli('sheet(s) of MDF  *price as of 7/31/25*', pli))
 
     def test_no_thickness_or_no_family_returns_none(self):
         self.assertIsNone(P.match_pli('Baltic birch plywood from stock', self.PLI))
