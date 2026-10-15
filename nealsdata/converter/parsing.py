@@ -363,6 +363,12 @@ _PLI_MATERIAL_KEYWORDS = (
 # inches both reduce to the same key so '3/4"' matches a PLI coded '.75'.
 _FRACTION_RE = re.compile(r'(?<!\d)(\d{1,2})\s*/\s*(\d{1,2})\s*(?:"|in\b|inch)?')
 _DECIMAL_IN_RE = re.compile(r'(?<![\d/])(\d?\.\d{1,3}|\d{1,2})\s*"')
+# Dates ('*price as of 7/31/25*', '10/13/2023', '5/20-24') are removed before
+# the fraction scan: 7/31 and 31/25 are not thicknesses. FreeAgent descriptions
+# carry the same date suffix on catalog items and estimate lines, so left in,
+# the date became a shared "thickness" for every same-family item and the
+# shortest-code tie-break linked 3/4" MDF to MDF.5 (found 2026-10-14).
+_DATE_RE = re.compile(r'(?<![\d/])\d{1,2}\s*/\s*\d{1,2}\s*[/-]\s*\d{2,4}(?!\d)')
 
 
 def _normalise_thickness_token(num):
@@ -381,6 +387,7 @@ def extract_thicknesses(text):
     so a sanity cap of < 3 inches keeps only plausible material thicknesses).
     """
     found = set()
+    text = _DATE_RE.sub(' ', text or '')
     for m in _FRACTION_RE.finditer(text):
         num, den = int(m.group(1)), int(m.group(2))
         if den == 0:

@@ -1680,6 +1680,14 @@ wires everything.) The handler halves are shared too: prompt-based ops in
 has no raw material-delete button — removal is the **release** action
 (full-quantity restock), the same vocabulary as everywhere else.
 
+**Item code on the row** (2026-10-14). Both `MaterialSerializer`s expose
+`item_code` (`inventory_item.code`, `null` for freeform), and `MaterialRow`
+prints it as a small `<code>` chip **before** the description for every
+catalog-backed material. Minted `LOT-*` codes are suppressed (an
+implementation detail, not a code anyone keys on). Motivation: 33 converted
+materials were linked to the wrong-thickness item and nothing on the row
+showed it — the description is the estimate's prose, not the item's.
+
 The job overview (2026-07-09 six-block redesign; `jobs-and-tasks.md`
 §9) does **not** mount `TaskTree` at all — it never lists rows. Its
 Materials block (`MaterialsBlock.svelte` → `materialsBlock()` in

@@ -83,6 +83,16 @@
       ? 'restock' : 'release';
   }
 
+  // Catalog code shown before the description so a material linked to the
+  // wrong item is visible on the row (RM 2026-10-14: 33 converted materials
+  // pointed at the wrong-thickness sheet and nothing showed it). Minted lots
+  // (LOT-*) are a one-off implementation detail, not a code anyone keys on.
+  function itemCode(mat) {
+    const code = mat.item_code;
+    if (!code || String(code).startsWith('LOT-')) return null;
+    return code;
+  }
+
   function matQtyAvail(mat) {
     if (!mat.inventory_item || mat.qty_available === null || mat.qty_available === undefined) return null;
     return Number(mat.qty_available);
@@ -162,7 +172,7 @@
     <td class="move-cell">{#if onMoveMaterial && isMaterialPending(material) && !isMaterialFinalized(material) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(material, selectedTaskId)}>Move</button>{/if}</td>
   {/if}
   <td class={indentClass}>
-    <span class="material-marker">&#9679;</span> {material.description || '(no description)'} {@render availBadge(material)}
+    <span class="material-marker">&#9679;</span> {#if itemCode(material)}<code class="mat-code">{itemCode(material)}</code> {/if}{material.description || '(no description)'} {@render availBadge(material)}
     {#if !showStatus}{@render matStatusChip(material)}{/if}
   </td>
   {#if taskAligned && showAssignee}<td></td>{/if}
@@ -231,6 +241,7 @@
   /* Cost-unconfirmed warning beside the unit-cost cell (estimate placeholder). */
   .cost-warn { margin-left: 3px; color: #d97706; cursor: help; }
 
+  .mat-code { font-size: 11px; color: #374151; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 3px; padding: 0 4px; margin-right: 2px; }
   .avail-ok { font-size: 11px; color: #166534; margin-left: 4px; }
   .avail-short { font-size: 11px; color: #991b1b; margin-left: 4px; }
 
