@@ -113,7 +113,7 @@ class VendorSkuTests(TestCase):
             purchase_price=Decimal('62.40'), units='sheet')
         self.lot = InventoryItem.objects.create(
             code='LOT-77', description='minted', accounting_category=self.cat,
-            purchase_price=Decimal('1.00'), is_catalog=False)
+            purchase_price=Decimal('1.00'))
         self.po = PurchaseOrder.objects.create(business=self.business, contact=c)
         self.user = User.objects.create_user('sku_admin', password='p', is_superuser=True)
         self.client = APIClient()
@@ -338,7 +338,7 @@ class VendorHistoryServiceTests(_Base):
 
     def test_lot_item_has_no_vendors_but_sees_open_drafts(self):
         lot = InventoryItem.objects.create(
-            code='LOT-9', description='lot', accounting_category=self.cat, is_catalog=False)
+            code='LOT-9', description='lot', accounting_category=self.cat)
         draft = self._po(self.rugby, status=PurchaseOrder.STATUS_DRAFT)
         data = InventoryService.vendor_history(lot)
         self.assertEqual(data['vendors'], [])
