@@ -8,7 +8,8 @@ from apps.api.permissions import CanManageFinancials, CanManageFinancialsOrConfi
 from apps.api.mixins import JSONDestroyMixin
 from .serializers import (
     InventoryItemSerializer, MaterialSerializer, MaterialOpSerializer,
-    MaterialAssignTaskSerializer, StockOrderSerializer, EarmarkSerializer,
+    MaterialAssignTaskSerializer, OrderRequestSerializer,
+    StockOrderRequestSerializer, EarmarkSerializer,
 )
 
 
@@ -108,22 +109,20 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def order(self, request, pk=None):
-        """Order this item to stock — plain PO line, no material link.
-        Optional body po_id appends to that draft (same contract as the
-        material order action)."""
+        """Order this item to stock (PO order flow §4.2): `{po_id}` appends to
+        that draft, `{po: {business, contact?, requested_date?}}` creates; `line`
+        overrides the item's defaults (qty required — nothing to default from)."""
         from django.shortcuts import get_object_or_404
         from apps.purchasing.models import PurchaseOrder
-        s = StockOrderSerializer(data=request.data)
+        s = StockOrderRequestSerializer(data=request.data)
         s.is_valid(raise_exception=True)
+        v = s.validated_data
         item = self.get_object()
-        po = None
-        if s.validated_data.get('po_id'):
-            po = get_object_or_404(PurchaseOrder, pk=s.validated_data['po_id'])
-        po, _li = InventoryService.order_stock(
-            item, s.validated_data['quantity'], po=po)
-        data = self.get_serializer(item).data
-        data['po_id'], data['po_number'] = po.pk, po.po_number
-        return Response(data)
+        po = get_object_or_404(PurchaseOrder, pk=v['po_id']) if v.get('po_id') is not None else None
+        po, li = InventoryService.order_stock(
+            item, po=po, po_fields=v.get('po'), line=v.get('line'))
+        return Response({'po_id': po.pk, 'po_number': po.po_number, 'line_item_id': li.pk},
+                        status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'], url_path='vendor-history')
     def vendor_history(self, request, pk=None):
@@ -219,20 +218,18 @@ class MaterialViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'],
             permission_classes=[IsAuthenticated, CanManageFinancials])
     def order(self, request, pk=None):
-        """Start (or append to) a draft PO with a line linked to this material
-        (spec Path 1). Optional body {"po_id": <int>} appends to that draft."""
+        """Start a PO (po) or append to a draft (po_id) with a line linked to
+        this material — PO order flow §4.2. The item is the material's."""
         from django.shortcuts import get_object_or_404
         from apps.purchasing.models import PurchaseOrder
+        s = OrderRequestSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        v = s.validated_data
         m = self.get_object()
-        po = None
-        po_id = request.data.get('po_id')
-        if po_id:
-            po = get_object_or_404(PurchaseOrder, pk=po_id)
-        po, _li = MaterialService.order(m, po=po)
-        m.refresh_from_db()
-        data = MaterialSerializer(m).data
-        data['po_id'], data['po_number'] = po.pk, po.po_number
-        return Response(data)
+        po = get_object_or_404(PurchaseOrder, pk=v['po_id']) if v.get('po_id') is not None else None
+        po, li = MaterialService.order(m, po=po, po_fields=v.get('po'), line=v.get('line'))
+        return Response({'po_id': po.pk, 'po_number': po.po_number, 'line_item_id': li.pk},
+                        status=status.HTTP_201_CREATED)
 
 
 class EarmarkViewSet(viewsets.ReadOnlyModelViewSet):

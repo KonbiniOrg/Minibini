@@ -1,5 +1,7 @@
 from decimal import Decimal
 from rest_framework import serializers
+from apps.contacts.models import Business, Contact
+from apps.core.models import AccountingCategory
 from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.core.units import UnitsField
 from apps.api.mixins import InvoiceRefMixin
@@ -137,9 +139,68 @@ class MaterialOpSerializer(serializers.Serializer):
     quantity = serializers.DecimalField(max_digits=10, decimal_places=2)
 
 
-class StockOrderSerializer(serializers.Serializer):
-    quantity = serializers.DecimalField(max_digits=10, decimal_places=2)
+class OrderPOSerializer(serializers.Serializer):
+    """`po` block of an order request (spec §4.2). A vendor is required, so
+    the one-click paths can no longer mint a vendor-less draft (path 3's
+    form still may)."""
+    business = serializers.PrimaryKeyRelatedField(queryset=Business.objects.all())
+    contact = serializers.PrimaryKeyRelatedField(
+        queryset=Contact.objects.all(), required=False, allow_null=True)
+    requested_date = serializers.DateTimeField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        contact = attrs.get('contact')
+        if contact is not None and contact.business_id != attrs['business'].pk:
+            raise serializers.ValidationError({'contact': ['Contact is not at this vendor.']})
+        return attrs
+
+
+class OrderLineSerializer(serializers.Serializer):
+    """`line` overrides for the ordered line. Every field is optional; an
+    absent/None value means "the item's (or material's) default"."""
+    qty = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, min_value=Decimal('0.01'))
+    units = UnitsField(required=False, default=None)
+    price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True,
+        min_value=Decimal('0'))
+    description = serializers.CharField(required=False, allow_blank=True)
+    vendor_sku = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, default='')
+    accounting_category = serializers.PrimaryKeyRelatedField(
+        queryset=AccountingCategory.objects.all(), required=False, allow_null=True)
+
+
+class OrderRequestSerializer(serializers.Serializer):
+    """POST /api/materials/{id}/order/ body: exactly one of `po_id` (append
+    to that draft) or `po` (create a PO), plus optional `line` overrides.
+    `line.inventory_item` is refused — the item is fixed by the URL."""
     po_id = serializers.IntegerField(required=False, allow_null=True)
+    po = OrderPOSerializer(required=False, allow_null=True)
+    line = OrderLineSerializer(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        raw_line = self.initial_data.get('line') if hasattr(self.initial_data, 'get') else None
+        if isinstance(raw_line, dict) and 'inventory_item' in raw_line:
+            raise serializers.ValidationError(
+                {'line': {'inventory_item': ['Cannot change the item here.']}})
+        has_id = attrs.get('po_id') is not None
+        has_po = attrs.get('po') is not None
+        if has_id == has_po:
+            raise serializers.ValidationError(
+                {'non_field_errors': ['Provide exactly one of po_id or po.']})
+        return attrs
+
+
+class StockOrderLineSerializer(OrderLineSerializer):
+    """Order-to-stock has no material to default the quantity from."""
+    qty = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
+
+
+class StockOrderRequestSerializer(OrderRequestSerializer):
+    """POST /api/inventory/{id}/order/ body: same as OrderRequestSerializer
+    with `line` (and `line.qty`) required."""
+    line = StockOrderLineSerializer()
 
 
 class MaterialAssignTaskSerializer(serializers.Serializer):

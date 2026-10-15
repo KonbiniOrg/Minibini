@@ -609,8 +609,12 @@ class PurchaseOrderService:
         return li
 
     @staticmethod
-    def add_line_item_from_pli(po_id, inventory_item_id, qty, job=None, material_id=None, task=None):
-        """Add a line item from a InventoryItem to a draft PO. Accepts optional job, material_id, task.
+    def add_line_item_from_pli(po_id, inventory_item_id, qty, job=None, material_id=None,
+                               task=None, *, price=None, description=None, units=None,
+                               vendor_sku='', accounting_category=None):
+        """Add a line item from a InventoryItem to a draft PO. Accepts optional
+        job, material_id, task, and per-field overrides (PO order flow §4.2):
+        None → the item's own value.
 
         `task` mirrors `add_line_item`'s exclusivity guard (PO Job/Task
         consolidation, RM 2026-09-21): rejected up front alongside
@@ -638,11 +642,13 @@ class PurchaseOrderService:
             li = PurchaseOrderLineItem(
                 purchase_order=po,
                 inventory_item=pli,
-                description=pli.description,
+                description=pli.description if description is None else description,
                 qty=qty,
-                units=pli.units,
-                price=pli.purchase_price,
-                accounting_category=pli.accounting_category,
+                units=pli.units if units is None else units,
+                price=pli.purchase_price if price is None else price,
+                accounting_category=(pli.accounting_category
+                                     if accounting_category is None else accounting_category),
+                vendor_sku=vendor_sku or '',
                 task_id=task,
             )
             li.full_clean()

@@ -262,24 +262,33 @@ class InventoryService:
         return item
 
     @staticmethod
-    def order_stock(item, quantity, po=None):
-        """Order an inventory item to stock: a plain PO line with no material
-        link and no job — legit to buy just to have the inventory. Receipt
-        lands in QOH via the normal PO receiving path. Mirrors
-        MaterialService.order's draft-append-or-create contract."""
+    def _split_order_line(line):
+        """Pop `qty` off a validated `line` block; the rest are
+        add_line_item_from_pli overrides."""
+        overrides = dict(line or {})
+        return overrides.pop('qty', None), overrides
+
+    @staticmethod
+    def order_stock(item, *, po=None, po_fields=None, line=None):
+        """Order an inventory item to stock: a plain PO line, no material link,
+        no job (PO order flow §4.2). `po` appends to that draft; otherwise a
+        PO is created from `po_fields` (the API requires a business; the
+        service tolerates an empty dict) and the line added in the same
+        transaction. `line['qty']` is required — stock has no material to
+        default from."""
         from django.core.exceptions import ValidationError
         from django.db import transaction
         from apps.purchasing.models import PurchaseOrder
         from apps.purchasing.services import PurchaseOrderService
-        if quantity is None or quantity <= 0:
-            raise ValidationError({'quantity': ['Quantity must be greater than 0.']})
+        qty, overrides = InventoryService._split_order_line(line)
+        if qty is None or qty <= 0:
+            raise ValidationError({'qty': ['Quantity must be greater than 0.']})
         if po is not None and po.status != PurchaseOrder.STATUS_DRAFT:
             raise ValidationError('Can only add lines to a draft purchase order.')
         with transaction.atomic():
             if po is None:
-                po = PurchaseOrderService.create_po()
-            li = PurchaseOrderService.add_line_item_from_pli(
-                po.pk, item.pk, quantity)
+                po = PurchaseOrderService.create_po(**(po_fields or {}))
+            li = PurchaseOrderService.add_line_item_from_pli(po.pk, item.pk, qty, **overrides)
         return po, li
 
     # --- QOH operations ---
@@ -1197,9 +1206,12 @@ class MaterialService:
                 material.delete()
 
     @staticmethod
-    def order(material, po=None):
-        """Path 1: start (or append to) a draft PO with a line linked to this
-        material. Vendor-less create is fine — vendor is required at issue."""
+    def order(material, *, po=None, po_fields=None, line=None):
+        """Path 1 (PO order flow §4.2): start a PO from `po_fields` or append
+        to draft `po`, with one line linked to this material, in one
+        transaction. `line` overrides default from the material (qty) and
+        its item (the rest). The resolver's explicit path links the material;
+        `_apply_po_line_cost` pushes the line price onto it."""
         from django.core.exceptions import ValidationError
         from django.db import transaction
         from apps.purchasing.models import PurchaseOrder
@@ -1215,12 +1227,15 @@ class MaterialService:
             raise ValidationError('Material is already on a purchase order.')
         if po is not None and po.status != PurchaseOrder.STATUS_DRAFT:
             raise ValidationError('Can only add lines to a draft purchase order.')
+        qty, overrides = InventoryService._split_order_line(line)
+        if qty is None:
+            qty = material.quantity
         with transaction.atomic():
             if po is None:
-                po = PurchaseOrderService.create_po()
+                po = PurchaseOrderService.create_po(**(po_fields or {}))
             li = PurchaseOrderService.add_line_item_from_pli(
-                po.pk, material.inventory_item_id, material.quantity,
-                job=material.job_id, material_id=material.pk)
+                po.pk, material.inventory_item_id, qty,
+                job=material.job_id, material_id=material.pk, **overrides)
         return po, li
 
     @staticmethod

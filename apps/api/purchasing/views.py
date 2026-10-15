@@ -149,6 +149,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                 task = data.pop('task', None)
                 item = service.add_line_item_from_pli(
                     parent.pk, pli_id, qty, job=job, material_id=material_id, task=task,
+                    vendor_sku=data.get('vendor_sku', ''),
                 )
             else:
                 if job is not None:
