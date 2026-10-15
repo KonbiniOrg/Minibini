@@ -104,6 +104,7 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
     variance = serializers.SerializerMethodField()
     business_is_active = serializers.SerializerMethodField()
     contact_is_active = serializers.SerializerMethodField()
+    can_manage = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseOrder
@@ -114,7 +115,7 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             'received_date', 'cancel_date', 'line_items', 'po_total',
             'bill_total', 'vendor_invoice_ref', 'reconciled', 'reconciled_date',
             'awaiting_reconciliation', 'variance',
-            'business_is_active', 'contact_is_active',
+            'business_is_active', 'contact_is_active', 'can_manage',
         ]
         read_only_fields = [
             'po_id', 'po_number', 'created_date',
@@ -122,6 +123,13 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             # action (PurchaseOrderService.reconcile) — not a bare PATCH.
             'bill_total', 'vendor_invoice_ref', 'reconciled', 'reconciled_date',
         ]
+
+    def get_can_manage(self, obj):
+        request = self.context.get('request')
+        if request is None:
+            return False
+        from apps.purchasing.services import PurchaseOrderService
+        return PurchaseOrderService.user_can_manage(request.user, obj)
 
     def get_business_is_active(self, obj):
         return obj.business.is_active if obj.business_id else None

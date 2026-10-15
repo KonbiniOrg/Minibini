@@ -19,7 +19,7 @@ from apps.core.email_utils import (
     resolve_contact_links,
 )
 from apps.contacts.models import Contact, Business
-from apps.api.permissions import CanManageJobs, CanManageFinancials
+from apps.api.permissions import CanManageJobs, CanManageFinancials, CanManageJobsOrFinancials
 from .serializers import EmailRecordSerializer
 
 
@@ -138,7 +138,7 @@ def unlink_from_po(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, CanManageFinancials])
+@permission_classes([IsAuthenticated, CanManageJobsOrFinancials])
 def create_po_from_email(request, pk):
     """Create a Purchase Order from an email and link the email to it
     (PO order flow §4.3). Body: ``{vendor_business_id, contact_id?,
@@ -221,7 +221,7 @@ def create_job_from_email(request, pk):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, CanManageJobs])
+@permission_classes([IsAuthenticated, CanManageJobsOrFinancials])
 def sender_info(request, pk):
     """Parse an email's sender + body and suggest matching contacts/businesses."""
     try:

@@ -4,8 +4,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.inventory.services import InventoryService, MaterialService
-from apps.api.permissions import CanManageFinancials, CanManageFinancialsOrConfig
-from apps.api.mixins import JSONDestroyMixin
+from apps.api.permissions import (
+    CanManageFinancialsOrConfig, CanManageJobsOrFinancials, CanManageFinancialsOrJobOrPM,
+)
+from apps.api.mixins import JSONDestroyMixin, JobScopedPermissionMixin
 from .serializers import (
     InventoryItemSerializer, MaterialSerializer, MaterialOpSerializer,
     MaterialAssignTaskSerializer, OrderRequestSerializer,
@@ -52,9 +54,9 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         if self.action in ('list', 'retrieve', 'vendor_history'):
             return [IsAuthenticated()]
         if self.action == 'order':
-            # Stock ordering is a purchasing act: financials only (matches
-            # the material order action), NOT the config atom.
-            return [IsAuthenticated(), CanManageFinancials()]
+            # Stock ordering is a purchasing act: financials or jobs, NOT
+            # the config atom.
+            return [IsAuthenticated(), CanManageJobsOrFinancials()]
         return [IsAuthenticated(), CanManageFinancialsOrConfig()]
 
     def destroy(self, request, *args, **kwargs):
@@ -140,7 +142,8 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         return Response(InventoryService.vendor_history(item, exclude_job=exclude_job))
 
 
-class MaterialViewSet(viewsets.ModelViewSet):
+class MaterialViewSet(JobScopedPermissionMixin, viewsets.ModelViewSet):
+    job_object_path = 'job'
     queryset = Material.objects.select_related('inventory_item').all()
     serializer_class = MaterialSerializer
     permission_classes = [IsAuthenticated]
@@ -163,14 +166,14 @@ class MaterialViewSet(viewsets.ModelViewSet):
         propagate = fields.pop('propagate_to_pli', False)
         instance = MaterialService.update_fields(
             instance, propagate_to_pli=propagate, **fields)
-        return Response(MaterialSerializer(instance).data)
+        return Response(MaterialSerializer(instance, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
     def consume(self, request, pk=None):
         m = self.get_object()
         MaterialService.consume(m)
         m.refresh_from_db()
-        return Response(MaterialSerializer(m).data)
+        return Response(MaterialSerializer(m, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
     def restock(self, request, pk=None):
@@ -180,7 +183,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
         MaterialService.restock(m, s.validated_data['quantity'])
         try:
             m.refresh_from_db()
-            return Response(MaterialSerializer(m).data)
+            return Response(MaterialSerializer(m, context={'request': request}).data)
         except Material.DoesNotExist:
             return Response({'deleted': True})
 
@@ -191,7 +194,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
         m = self.get_object()
         MaterialService.draw_more(m, s.validated_data['quantity'])
         m.refresh_from_db()
-        return Response(MaterialSerializer(m).data)
+        return Response(MaterialSerializer(m, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], url_path='mark-on-hand')
     def mark_on_hand(self, request, pk=None):
@@ -204,7 +207,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
         MaterialService.mark_on_hand(
             m, s.validated_data['quantity'], user=request.user)
         m.refresh_from_db()
-        return Response(MaterialSerializer(m).data)
+        return Response(MaterialSerializer(m, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], url_path='assign-task')
     def assign_task(self, request, pk=None):
@@ -213,10 +216,10 @@ class MaterialViewSet(viewsets.ModelViewSet):
         m = self.get_object()
         MaterialService.assign_task(m, s.validated_data['task'])
         m.refresh_from_db()
-        return Response(MaterialSerializer(m).data)
+        return Response(MaterialSerializer(m, context={'request': request}).data)
 
     @action(detail=True, methods=['post'],
-            permission_classes=[IsAuthenticated, CanManageFinancials])
+            permission_classes=[IsAuthenticated, CanManageFinancialsOrJobOrPM])
     def order(self, request, pk=None):
         """Start a PO (po) or append to a draft (po_id) with a line linked to
         this material — PO order flow §4.2. The item is the material's."""

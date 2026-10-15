@@ -4,7 +4,7 @@ from apps.contacts.models import Business, Contact
 from apps.core.models import AccountingCategory
 from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.core.units import UnitsField
-from apps.api.mixins import InvoiceRefMixin
+from apps.api.mixins import InvoiceRefMixin, JobScopedCanManageMixin
 
 
 class InventoryItemSerializer(serializers.ModelSerializer):
@@ -27,7 +27,8 @@ class InventoryItemSerializer(serializers.ModelSerializer):
         ]
 
 
-class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
+class MaterialSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.ModelSerializer):
+    can_manage_job_path = 'job'
     invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
     po_line_item_id = serializers.SerializerMethodField()
@@ -63,10 +64,10 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'units', 'qty_on_order', 'qty_on_hand', 'qty_available', 'item_code',
             'propagate_to_pli', 'customer_supplied',
             'invoice',
-            'claimed',
+            'claimed', 'can_manage',
         ]
         read_only_fields = [
-            'material_id', 'job', 'task',
+            'material_id', 'job', 'task', 'can_manage',
             'consumption_state', 'released_qty', 'cost_source',
             'is_expense_bound',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',

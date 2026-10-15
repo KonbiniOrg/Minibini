@@ -575,7 +575,7 @@ class EmailPoAPITest(BaseTestCase):
         # 400 from validation OR 404 — depending on service shape. Accept either.
         self.assertIn(response.status_code, (400, 404))
 
-    def test_create_po_requires_can_manage_financials(self):
+    def test_create_po_requires_jobs_or_financials(self):
         worker = User.objects.create_user(username='worker_create_po', password='pw')
         self.client.force_authenticate(user=worker)
         response = self.client.post(
