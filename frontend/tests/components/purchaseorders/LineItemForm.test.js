@@ -59,31 +59,6 @@ describe('LineItemForm', () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
-  it('prefills from an inventory item — fetches it and submits a PLI line', async () => {
-    api.get.mockImplementation((url) =>
-      url.startsWith('/api/inventory/')
-        ? Promise.resolve({ inventory_item_id: 7, code: 'FELT', description: 'grey felt', units: 'sheet', purchase_price: '4.00' })
-        : Promise.resolve([]));
-    const onSubmit = vi.fn();
-    const { getByLabelText, getByRole, findByText } = render(LineItemForm, {
-      props: { onSubmit, onCancel: vi.fn(), prefill: { inventory_item: 7 } },
-    });
-    await findByText(/FELT — grey felt/);  // switched to PLI mode + item selected
-    await fireEvent.input(getByLabelText(/Qty/), { target: { value: '2' } });
-    await fireEvent.click(getByRole('button', { name: 'Add' }));
-    expect(onSubmit).toHaveBeenCalledWith({ inventory_item: 7, qty: 2 });
-  });
-
-  it('prefills manual fields from a neutral prefill (no inventory item)', async () => {
-    const onSubmit = vi.fn();
-    const { getByLabelText, getByRole } = render(LineItemForm, {
-      props: { onSubmit, onCancel: vi.fn(), prefill: { qty: 5, description: 'misc', price: '3.00' } },
-    });
-    await vi.waitFor(() => expect(getByLabelText(/Description/).value).toBe('misc'));
-    await fireEvent.click(getByRole('button', { name: 'Add' }));
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ description: 'misc', qty: 5 }));
-  });
-
   it('omits task when no task link was picked (unchanged payload shape)', async () => {
     const onSubmit = vi.fn();
     const { getByLabelText, getByRole } = render(LineItemForm, { props: { onSubmit, onCancel: vi.fn() } });
@@ -147,27 +122,144 @@ describe('LineItemForm', () => {
     expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('material_id');
   });
 
-  it('job-only (no task): payload unchanged, sends job as before', async () => {
-    api.get.mockImplementation((url) =>
-      url.startsWith('/api/jobs/?')
-        ? Promise.resolve({ results: [{ job_id: 5, job_number: 'JOB-5', name: 'widget' }] })
-        : Promise.resolve([]));
+  it('job-only with "Create a new material" sends job (no material_id)', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/jobs/?')) return Promise.resolve({ results: [{ job_id: 5, job_number: 'JOB-5', name: 'widget' }] });
+      if (url === '/api/jobs/5/') return Promise.resolve({ job_id: 5, materials: [] });
+      return Promise.resolve([]);
+    });
     const onSubmit = vi.fn();
-    const { getByLabelText, getByRole, getByPlaceholderText, container } = render(LineItemForm, {
+    const { getByLabelText, getByRole, getByPlaceholderText, container, findByText } = render(LineItemForm, {
       props: { onSubmit, onCancel: vi.fn() },
     });
     await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Bolt' } });
     await fireEvent.input(getByLabelText(/Qty/), { target: { value: '3' } });
     await fireEvent.input(getByLabelText(/^Price/), { target: { value: '2.50' } });
-
     await fireEvent.input(getByPlaceholderText('Search jobs…'), { target: { value: 'wid' } });
     await new Promise((r) => setTimeout(r, 300));
     await fireEvent.mouseDown(await findByRole(container, 'button', { name: /JOB-5/ }));
-    await new Promise((r) => setTimeout(r));
-
+    await findByText(/No unordered materials on this job/);
     await fireEvent.click(getByRole('button', { name: 'Add' }));
     expect(onSubmit).toHaveBeenCalledWith({
       description: 'Bolt', qty: 3, units: 'none', price: 2.5, job: 5,
     });
+  });
+});
+
+describe('LineItemForm — material picker', () => {
+  const JOB = { job_id: 5, materials: [
+    { material_id: 41, description: '3/4 Baltic Birch', quantity: '4.00', units: 'sheet', item_code: 'BBPLY.75',
+      inventory_item: 7, consumption_state: 'pending', po_line_item_id: null, cost_source: 'entered' },
+    { material_id: 42, description: 'already ordered', quantity: '1.00', units: 'ea', item_code: 'X',
+      inventory_item: 8, consumption_state: 'pending', po_line_item_id: 99, cost_source: 'po' },
+    { material_id: 43, description: 'customer sends it', quantity: '1.00', units: 'ea', item_code: null,
+      inventory_item: null, consumption_state: 'pending', po_line_item_id: null, cost_source: 'customer_supplied' },
+    { material_id: 44, description: 'consumed', quantity: '1.00', units: 'ea', item_code: 'Y',
+      inventory_item: 9, consumption_state: 'consumed', po_line_item_id: null, cost_source: 'entered' },
+  ] };
+  function mockJobs(jobs = { 5: JOB }) {
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/jobs/?')) return Promise.resolve({ results: [
+        { job_id: 5, job_number: 'JOB-5', name: 'widget' }, { job_id: 6, job_number: 'JOB-6', name: 'gadget' }] });
+      const m = url.match(/^\/api\/jobs\/(\d+)\/$/);
+      if (m) return Promise.resolve(jobs[m[1]] || { job_id: Number(m[1]), materials: [] });
+      if (url === '/api/inventory/7/') return Promise.resolve({ inventory_item_id: 7, code: 'BBPLY.75', description: '3/4 Baltic Birch', units: 'sheet', purchase_price: '60.00' });
+      return Promise.resolve([]);
+    });
+  }
+  async function pickJob(container, getByPlaceholderText, label = /JOB-5/) {
+    await fireEvent.input(getByPlaceholderText('Search jobs…'), { target: { value: 'g' } });
+    await new Promise((r) => setTimeout(r, 300));
+    await fireEvent.mouseDown(await findByRole(container, 'button', { name: label }));
+    await new Promise((r) => setTimeout(r));
+  }
+
+  it('lists only pending, unlinked, non-customer materials plus "Create a new material"; nothing preselected; Add disabled', async () => {
+    mockJobs();
+    const { container, getByPlaceholderText, findByRole, getByRole, queryByText } = render(LineItemForm, {
+      props: { onSubmit: vi.fn(), onCancel: vi.fn() },
+    });
+    await pickJob(container, getByPlaceholderText);
+    await findByRole('radio', { name: /BBPLY.75 · 4 sheet · 3\/4 Baltic Birch/ });
+    expect([...container.querySelectorAll('input[name="material-choice"]')].map((r) => r.checked)).toEqual([false, false]);
+    expect(queryByText(/already ordered/)).toBeNull();
+    expect(queryByText(/customer sends it/)).toBeNull();
+    expect(queryByText(/consumed/)).toBeNull();
+    expect(getByRole('radio', { name: 'Create a new material for this line' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Add' })).toBeDisabled();
+  });
+
+  it('picking a material in From Inventory mode sets and locks the item and sends material_id (no job)', async () => {
+    mockJobs();
+    const onSubmit = vi.fn();
+    const { container, getByPlaceholderText, getByLabelText, findByRole, getByRole, findByText } = render(LineItemForm, {
+      props: { onSubmit, onCancel: vi.fn() },
+    });
+    await fireEvent.click(getByLabelText('From Inventory'));
+    await pickJob(container, getByPlaceholderText);
+    await fireEvent.click(await findByRole('radio', { name: /BBPLY.75/ }));
+    await findByText(/BBPLY.75 — 3\/4 Baltic Birch/);
+    expect(container.querySelector('input[placeholder="Search inventory items…"]')).toBeNull();   // locked chip, no input
+    await fireEvent.input(getByLabelText(/Qty/), { target: { value: '4' } });
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    expect(onSubmit).toHaveBeenCalledWith({ inventory_item: 7, qty: 4, material_id: 41 });
+  });
+
+  it('in Manual mode a picked material links without touching the line fields', async () => {
+    mockJobs();
+    const onSubmit = vi.fn();
+    const { container, getByPlaceholderText, getByLabelText, findByRole, getByRole } = render(LineItemForm, {
+      props: { onSubmit, onCancel: vi.fn() },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'ply' } });
+    await fireEvent.input(getByLabelText(/Qty/), { target: { value: '4' } });
+    await fireEvent.input(getByLabelText(/^Price/), { target: { value: '58' } });
+    await pickJob(container, getByPlaceholderText);
+    await fireEvent.click(await findByRole('radio', { name: /BBPLY.75/ }));
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    expect(onSubmit).toHaveBeenCalledWith({ description: 'ply', qty: 4, units: 'none', price: 58, material_id: 41 });
+  });
+
+  it('shows the no-materials line and sends job when the job has nothing to attach to', async () => {
+    mockJobs({ 5: { job_id: 5, materials: [] } });
+    const onSubmit = vi.fn();
+    const { container, getByPlaceholderText, getByLabelText, findByText, getByRole } = render(LineItemForm, {
+      props: { onSubmit, onCancel: vi.fn() },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'ply' } });
+    await fireEvent.input(getByLabelText(/Qty/), { target: { value: '1' } });
+    await fireEvent.input(getByLabelText(/^Price/), { target: { value: '1' } });
+    await pickJob(container, getByPlaceholderText);
+    await findByText('No unordered materials on this job — a new material will be created.');
+    expect(container.querySelector('input[name="material-choice"]')).toBeNull();
+    expect(getByRole('button', { name: 'Add' })).toBeEnabled();
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ job: 5 }));
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('material_id');
+  });
+
+  it('resets the material choice when the job changes', async () => {
+    mockJobs();
+    const { container, getByPlaceholderText, findByRole, getByRole, findByText } = render(LineItemForm, {
+      props: { onSubmit: vi.fn(), onCancel: vi.fn() },
+    });
+    await pickJob(container, getByPlaceholderText);
+    await fireEvent.click(await findByRole('radio', { name: /BBPLY.75/ }));
+    // clear and pick the other job
+    await fireEvent.click(getByRole('button', { name: 'Clear' }));
+    await pickJob(container, getByPlaceholderText, /JOB-6/);
+    await findByText(/No unordered materials on this job/);
+    expect(container.querySelector('input[name="material-choice"]:checked')).toBeNull();
+  });
+
+  it('the comment checkbox disables the Job picker and clears any job', async () => {
+    mockJobs();
+    const { container, getByPlaceholderText, getByLabelText, queryByText } = render(LineItemForm, {
+      props: { onSubmit: vi.fn(), onCancel: vi.fn() },
+    });
+    await pickJob(container, getByPlaceholderText);
+    await fireEvent.click(getByLabelText(/Comment line/));
+    expect(queryByText('Task Link (optional)')).toBeNull();
+    expect(container.querySelector('input[placeholder="Search jobs…"]')).toBeDisabled();
   });
 });
