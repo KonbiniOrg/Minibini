@@ -246,7 +246,7 @@
     { id: 'status',      label: 'Status',      cell: statusCell },
     { id: 'cost',        label: 'Cost',        cell: costCell,         align: 'right' },
     { id: 'sell',        label: 'Sell',        cell: sellCell,         align: 'right' },
-    ...(canManage ? [{ id: 'actions', label: 'Actions', cell: actionsCell }] : []),
+    ...((canManage || $canManageJobs) ? [{ id: 'actions', label: 'Actions', cell: actionsCell }] : []),
   ]}
 />
 </LoadState>
@@ -259,8 +259,8 @@
 {#snippet costCell(it)}${it.purchase_price}{/snippet}
 {#snippet sellCell(it)}${it.selling_price}{/snippet}
 {#snippet actionsCell(it)}
-  <button type="button" onclick={() => editItem(it)}>edit</button>
-  {#if Number(it.qty_on_hand) > 0}
+  {#if canManage}<button type="button" onclick={() => editItem(it)}>edit</button>{/if}
+  {#if canManage && Number(it.qty_on_hand) > 0}
     <button type="button" onclick={() => startWriteOff(it)}>write off</button>
   {/if}
   {#if $canManageFinancials || $canManageJobs}

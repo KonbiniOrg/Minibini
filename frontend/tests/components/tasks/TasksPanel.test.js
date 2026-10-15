@@ -193,12 +193,11 @@ describe('TasksPanel — material fulfillment actions', () => {
     earmarks: [], open_drafts: [],
   };
 
-  function mockApiWithMaterial(material, { drafts = [] } = {}) {
+  function mockApiWithMaterial(material) {
     api.get.mockReset();
     api.get.mockImplementation((url) => {
       if (url === '/api/tasks/10/materials/') return Promise.resolve([material]);
       if (url === '/api/tasks/10/subtasks/') return Promise.resolve([]);
-      if (url.startsWith('/api/purchase-orders/')) return Promise.resolve(drafts);
       if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
       if (url === '/api/inventory/7/') return Promise.resolve({ inventory_item_id: 7, code: 'BB34P',
         description: 'Steel', units: 'kg', purchase_price: '60.00', accounting_category: 3 });

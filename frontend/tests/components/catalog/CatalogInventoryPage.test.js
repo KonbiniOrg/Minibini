@@ -128,11 +128,20 @@ describe('CatalogInventoryPage — manage actions (financials/config)', () => {
     await vi.waitFor(() => expect(getByLabelText(/^Qty/).value).toBe('0'));
   });
 
-  it('hides the order button for a config-only user (PO creation is financials)', async () => {
+  it('config-only user sees edit / write off but no order (ordering is financials or jobs)', async () => {
     user.set({ username: 'cfg', permissions: ['can_manage_config'] });
-    const { findAllByRole, queryByRole } = render(CatalogInventoryPage);
+    const { findAllByRole, queryByRole, queryAllByRole } = render(CatalogInventoryPage);
     await findAllByRole('button', { name: 'edit' });  // config still manages items
     expect(queryByRole('button', { name: 'order' })).toBeNull();
+    expect(queryAllByRole('button', { name: 'write off' }).length).toBeGreaterThan(0);
+  });
+
+  it('a jobs-only user sees order but neither edit nor write off', async () => {
+    user.set({ username: 'pm', permissions: ['can_manage_jobs'] });
+    const { findAllByRole, queryByRole } = render(CatalogInventoryPage);
+    expect((await findAllByRole('button', { name: 'order' })).length).toBe(2);
+    expect(queryByRole('button', { name: 'edit' })).toBeNull();
+    expect(queryByRole('button', { name: 'write off' })).toBeNull();
   });
 
   it('writes off a partial quantity via the panel', async () => {

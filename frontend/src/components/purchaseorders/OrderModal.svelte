@@ -43,6 +43,7 @@
 
   let form = $state({ qty: '', units: 'none', price: '', description: '', vendor_sku: '', accounting_category: '' });
   let skuTouched = $state(false);
+  let base = { price: '' };      // the line's price before any vendor seeding
   let qtyError = $state('');
   let busy = $state(false);
   let formError = $state('');
@@ -80,6 +81,7 @@
       } else {
         form.qty = prefillQty;
       }
+      base = { price: form.price };
       history = hist;   // VendorPicker mounts now and preselects the first vendor
     } catch (e) {
       const t = triageError(e);
@@ -98,14 +100,26 @@
     if (!row) { vendorId = null; contacts = []; contactId = ''; return; }
     vendorId = row.business_id;
     const isHistory = 'vendor_sku' in row;
+    contacts = []; contactId = '';   // never post the previous vendor's contact
     if (isHistory) {
       if (!skuTouched) form.vendor_sku = row.vendor_sku || '';
-      if (row.last_price != null && row.last_price !== '') form.price = row.last_price;
+      form.price = row.last_price != null && row.last_price !== '' ? row.last_price : base.price;
+    } else {
+      // A searched vendor has no history: back to the line's own defaults.
+      if (!skuTouched) form.vendor_sku = '';
+      form.price = base.price;
     }
-    const [contactData, biz] = await Promise.all([
-      api.get(`/api/contacts/?business=${row.business_id}&page_size=100`),
-      isHistory ? api.get(`/api/businesses/${row.business_id}/`) : Promise.resolve(row),
-    ]);
+    let contactData, biz;
+    try {
+      [contactData, biz] = await Promise.all([
+        api.get(`/api/contacts/?business=${row.business_id}&page_size=100`),
+        isHistory ? api.get(`/api/businesses/${row.business_id}/`) : Promise.resolve(row),
+      ]);
+    } catch (e) {
+      const t = triageError(e);
+      showError(t.overlay || t.message || 'Could not load vendor contacts.');
+      return;
+    }
     if (vendorId !== row.business_id) return;   // vendor changed while loading
     contacts = contactData.results || contactData;
     const preferred = [isHistory ? row.contact_id : null, biz?.default_contact, contacts[0]?.contact_id]

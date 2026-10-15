@@ -137,6 +137,37 @@ describe('OrderModal — material source', () => {
     expect(getByLabelText(/Vendor SKU/).value).toBe('MINE-1');
   });
 
+  it('a search-picked vendor gets no history SKU/price: line defaults return', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/businesses/?search=')) return Promise.resolve({ results: [{ business_id: 5, business_name: 'Acme Steel', default_contact: 9 }] });
+      if (url === '/api/businesses/5/') return Promise.resolve({ business_id: 5, business_name: 'Acme Steel', default_contact: 9 });
+      if (url.startsWith('/api/contacts/?business=5')) return Promise.resolve({ results: [{ contact_id: 9, first_name: 'Sam', last_name: 'Acme' }] });
+      if (url === '/api/inventory/7/') return Promise.resolve(ITEM);
+      if (url.startsWith('/api/inventory/7/vendor-history/')) return Promise.resolve(HISTORY);
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [{ id: 3, name: 'Materials' }] });
+      if (url.startsWith('/api/contacts/?business=')) {
+        const id = Number(new URL('http://x' + url).searchParams.get('business'));
+        return Promise.resolve({ results: CONTACTS[id] || [] });
+      }
+      if (url.startsWith('/api/businesses/')) return Promise.resolve({ business_id: 5, default_contact: 9 });
+      return Promise.resolve([]);
+    });
+    const { findByRole, getByLabelText, findByPlaceholderText } = render(OrderModal, {
+      props: { source: 'material', material: MATERIAL, onDone: vi.fn(), onCancel: vi.fn() },
+    });
+    const vendor = await findByRole('combobox', { name: /Vendor/ });
+    await waitFor(() => expect(getByLabelText(/Vendor SKU/).value).toBe('BB34P-48'));
+    expect(getByLabelText(/^Price/).value).toBe('62.40');
+    await fireEvent.change(vendor, { target: { value: '__search' } });
+    const search = await findByPlaceholderText('Search business…');
+    await fireEvent.input(search, { target: { value: 'ac' } });
+    await new Promise((r) => setTimeout(r, 300));
+    await fireEvent.mouseDown(await findByRole('button', { name: /Acme Steel/ }));
+    await waitFor(() => expect(getByLabelText(/Contact/).value).toBe('9'));
+    expect(getByLabelText(/Vendor SKU/).value).toBe('');
+    expect(getByLabelText(/^Price/).value).toBe('60.00');
+  });
+
   it('a contact_id from history that is no longer at the business falls back to the first contact', async () => {
     mockApi({ history: { ...HISTORY, vendors: [{ ...HISTORY.vendors[0], contact_id: 999 }] } });
     const { findByRole, getByLabelText } = render(OrderModal, {
