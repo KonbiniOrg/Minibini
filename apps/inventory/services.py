@@ -374,6 +374,66 @@ class InventoryService:
         )
         return qty
 
+    @staticmethod
+    def vendor_history(item, *, exclude_job=None):
+        """Who has this item been bought from (PO order flow §4.1). One row per
+        business from lines on POs that are neither draft nor cancelled, newest
+        first; `last_*` / `vendor_sku` / `contact_id` come from the newest
+        line's PO. `earmarks` lists the item's committed earmarks by job
+        (minus `exclude_job`, the calling material's own job). `open_drafts`
+        is every draft PO — vendor-less ones included, flagged by
+        business_id None — so the modal can filter by vendor client-side."""
+        from django.db.models import Count
+        from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+        lines = (
+            PurchaseOrderLineItem.objects
+            .filter(inventory_item=item, purchase_order__business__isnull=False)
+            .exclude(purchase_order__status__in=[
+                PurchaseOrder.STATUS_DRAFT, PurchaseOrder.STATUS_CANCELLED])
+            .select_related('purchase_order__business')
+            .order_by('-purchase_order__issued_date', '-purchase_order__created_date', '-pk')
+        )
+        vendors, by_business, pos_seen = [], {}, {}
+        for li in lines:
+            po = li.purchase_order
+            row = by_business.get(po.business_id)
+            if row is None:
+                row = {
+                    'business_id': po.business_id,
+                    'business_name': po.business.business_name,
+                    'contact_id': po.contact_id,
+                    'last_ordered': (po.issued_date or po.created_date).date().isoformat(),
+                    'last_price': str(li.price),
+                    'vendor_sku': li.vendor_sku,
+                    'po_number': po.po_number,
+                    'times': 0,
+                }
+                by_business[po.business_id] = row
+                pos_seen[po.business_id] = set()
+                vendors.append(row)
+            if po.pk not in pos_seen[po.business_id]:
+                pos_seen[po.business_id].add(po.pk)
+                row['times'] += 1
+
+        earmark_qs = (Earmark.objects.filter(inventory_item=item, quantity__gt=0)
+                      .select_related('job').order_by('job__job_number'))
+        if exclude_job is not None:
+            earmark_qs = earmark_qs.exclude(job_id=exclude_job)
+        earmarks = [{'job_id': e.job_id, 'job_number': e.job.job_number,
+                     'quantity': str(e.quantity)} for e in earmark_qs]
+
+        drafts = (PurchaseOrder.objects.filter(status=PurchaseOrder.STATUS_DRAFT)
+                  .select_related('business')
+                  .annotate(line_count=Count('purchaseorderlineitem'))
+                  .order_by('-created_date')[:100])
+        open_drafts = [{
+            'po_id': d.pk, 'po_number': d.po_number,
+            'business_id': d.business_id,
+            'business_name': d.business.business_name if d.business_id else None,
+            'line_count': d.line_count,
+        } for d in drafts]
+        return {'vendors': vendors, 'earmarks': earmarks, 'open_drafts': open_drafts}
+
     # --- Earmark operations ---
 
     @staticmethod

@@ -48,7 +48,7 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     def get_permissions(self):
         # B7: inventory items are owned by both the money role (financials) and
         # the admin role (config) — either atom grants full CRUD + write-off/merge.
-        if self.action in ('list', 'retrieve'):
+        if self.action in ('list', 'retrieve', 'vendor_history'):
             return [IsAuthenticated()]
         if self.action == 'order':
             # Stock ordering is a purchasing act: financials only (matches
@@ -124,6 +124,21 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         data = self.get_serializer(item).data
         data['po_id'], data['po_number'] = po.pk, po.po_number
         return Response(data)
+
+    @action(detail=True, methods=['get'], url_path='vendor-history')
+    def vendor_history(self, request, pk=None):
+        """Who carries this item, its earmarks by job, and the open drafts —
+        the Order modal's one read (PO order flow §4.1)."""
+        item = self.get_object()
+        raw = request.query_params.get('exclude_job')
+        exclude_job = None
+        if raw not in (None, ''):
+            try:
+                exclude_job = int(raw)
+            except ValueError:
+                return Response({'exclude_job': ['Must be an integer.']},
+                                status=status.HTTP_400_BAD_REQUEST)
+        return Response(InventoryService.vendor_history(item, exclude_job=exclude_job))
 
 
 class MaterialViewSet(viewsets.ModelViewSet):
