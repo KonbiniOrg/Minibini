@@ -2,7 +2,7 @@
   import { api, errorMessage } from '../../lib/api.js';
   import PurchaseOrderList from '../../components/purchaseorders/PurchaseOrderList.svelte';
   import { push } from 'svelte-spa-router';
-  import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
+  import { canManageFinancials as canManageFinancialsStore, canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import { pageRange } from '../../lib/pagination.js';
   import LoadState from '../../components/LoadState.svelte';
   import Pager from '../../components/Pager.svelte';
@@ -14,7 +14,7 @@
   let statusFilter = $state('');
   let awaitingReconciliationOnly = $state(false);
 
-  let canManageFinancials = $derived($canManageFinancialsStore);
+  let canCreate = $derived($canManageFinancialsStore || $canManageJobsStore);
 
   async function loadPOs() {
     loading = true;
@@ -51,7 +51,7 @@
 <h2>Purchase Orders {purchaseOrders ? `(${purchaseOrders.count})` : ''}</h2>
 
 <p>
-  {#if canManageFinancials}
+  {#if canCreate}
     <a href="#/purchase-orders/new">New Purchase Order</a> |
   {/if}
   <label>

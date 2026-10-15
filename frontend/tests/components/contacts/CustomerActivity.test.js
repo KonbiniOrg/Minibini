@@ -102,10 +102,16 @@ describe('CustomerActivity — Open Invoices and POs', () => {
     expect(jobs.querySelector('.empty-box').textContent.trim()).toBe('No open jobs.');
   });
 
-  it('hides the New purchase order link from a user without the financials atom', () => {
-    user.set({ id: 2, permissions: ['can_manage_jobs'] });
+  it('hides the New purchase order link from a user with neither the financials nor jobs atom', () => {
+    user.set({ id: 2, permissions: [] });
     const { queryByRole } = render(CustomerActivity, { props: { purchaseOrders: [], newPOHref: '#/x' } });
     expect(queryByRole('link', { name: 'New purchase order' })).toBeNull();
+  });
+
+  it('shows the New purchase order link to a jobs-atom user', () => {
+    user.set({ id: 2, permissions: ['can_manage_jobs'] });
+    const { queryByRole } = render(CustomerActivity, { props: { purchaseOrders: [], newPOHref: '#/x' } });
+    expect(queryByRole('link', { name: 'New purchase order' })).not.toBeNull();
   });
 });
 

@@ -23,6 +23,7 @@ const PO = {
   po_id: 7,
   po_number: 'PO-7',
   status: 'draft',
+  can_manage: true,
   business_name: 'Acme',
   created_date: '2026-06-20T00:00:00Z',
   line_items: [

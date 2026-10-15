@@ -51,6 +51,7 @@
   }
 
   let canManageFinancials = $derived($canManageFinancialsStore);
+  let canManage = $derived(!!po?.can_manage);
 
   async function loadPO() {
     loading = true;
@@ -371,7 +372,7 @@
 {#if po}
   <PurchaseOrderDetail
     {po}
-    {canManageFinancials}
+    {canManage}
     {busy}
     onIssue={handleIssue}
     onCancel={handleCancel}
@@ -418,7 +419,7 @@
     />
   {/key}
 
-  {#if canManageFinancials && po.status === 'draft'}
+  {#if canManage && po.status === 'draft'}
     <p>
       {#if showAddLineItem}
         <LineItemForm

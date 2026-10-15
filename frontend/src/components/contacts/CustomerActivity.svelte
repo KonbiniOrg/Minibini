@@ -155,7 +155,7 @@
                 {showLabel(poSplit.closed.length, 'closed', expanded.pos)}
               </button>
             {/if}
-            {#if $canManageFinancials && newPOHref}
+            {#if ($canManageFinancials || $canManageJobs) && newPOHref}
               <a class="action-link" href={newPOHref}>New purchase order</a>
             {/if}
           </span>
