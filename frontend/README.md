@@ -134,6 +134,14 @@ render a plain fragment (`DuplicateContactNotice`) in its place, and pass
 an `onCancel` that backs out one level (prompt → form → closed). Revisit a
 real stack only if nested prompts multiply.
 
+**`OrderModal` (PO order flow, 2026-10-15).** `components/purchaseorders/OrderModal.svelte`
+is the one Order modal, with three `source`s: `material` (MaterialRow Order),
+`item` (catalog Inventory/Earmarks "order") and `email` (email action panel "Create
+new" PO — sender resolution as in-modal sub-states, like `EmailCreateJobModal`).
+It creates nothing until Submit. It replaces `StockOrderDialog` (deleted) and
+`EmailCreatePOPage` (deleted; `/email/:id/create-po` is a `RedirectTo` stub).
+Picks a vendor with `VendorPicker`; see materials doc §15.
+
 **Record forms are modals; create navigates, edit stays.** Since 2026-10-10
 the contact, business, job, user, email create-job/link, document send,
 reply, expense, catalog merge/write-off, service item, accounting

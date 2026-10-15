@@ -330,8 +330,11 @@ params, and row/selected rendering:
 | `PurchaseOrderPicker` | `/api/purchase-orders/?search=` | Global (po_number, vendor name) |
 | `InventoryItemPicker` | `/api/inventory/?search=` | Accepts `params` prop; "None (freeform)" via `header` snippet |
 | `CustomerPicker` | dual-source contacts + businesses | Emits `{type, id}` (not a plain id) |
+| `VendorPicker` | `GET /api/inventory/{id}/vendor-history/` (recent vendors) → `BusinessPicker` search | Not a `SearchPicker` wrapper: a recent-vendors `<select>` with a "Search all businesses…" escape into `BusinessPicker`; used by `OrderModal` (materials doc §15) |
 
 **Shared single-model picker contract:** `value` (bindable entity id), `onSelect(fullRow|null)`, optional `selectedItem` for id-based prefill. `CustomerPicker` deviates: its `value` is `{type, id}`.
+
+**Inventory sub-endpoints** beyond CRUD: `POST /api/inventory/{id}/order/` (order to stock), `GET /api/inventory/{id}/vendor-history/` (`IsAuthenticated`; vendors, earmarks and open drafts for the Order modal) — materials doc §11.
 
 **Backend `?search=`** is hand-rolled in `get_queryset` for purchase-orders (po_number, vendor name) and inventory items (code, description) — the same pattern as contacts/jobs. DRF `SearchFilter` is not used.
 
@@ -1601,8 +1604,9 @@ Disassociate `<button>`; when unlinked it shows two `<a>`s styled like
 buttons — *Create new* and *Link existing* — that route to the
 respective Create-from-Email and Associate-with-Existing pages. Each
 section is hidden when the viewer lacks the relevant permission atom
-(`can_manage_jobs` for the Job section; `can_manage_financials` for
-PO).
+(`can_manage_jobs` for the Job section; `can_manage_jobs` **or**
+`can_manage_financials` for PO — "Create new" shows for either, while
+Link existing / Disassociate stay financials-only).
 
 The Create-from-Email pages share `SenderResolutionForm.svelte`
 (`frontend/src/components/email/`), the sender-info + contact-picker /
@@ -1625,8 +1629,10 @@ their old routes are `RedirectTo` stubs bouncing to `/email/:id`):
   a create lands on the new job)
 - Job / PO "Link existing" → `EmailLinkModal.svelte` with `kind: 'job' |
   'po'` (`JobPicker` / `PurchaseOrderPicker`; links in place and reloads)
-- `/email/:id/create-po` → `EmailCreatePOPage.svelte` (still a page — PO
-  work is parked)
+- PO "Create new" → `OrderModal.svelte` with `source='email'`
+  (`components/purchaseorders/`; sender resolution + optional first line;
+  materials doc §15). `/email/:id/create-po` is a `RedirectTo` stub to
+  `/email/:id`; `EmailCreatePOPage.svelte` was deleted 2026-10-15
 
 (The create-bill / associate-bill routes and pages were deleted with the
 2026-07-23 bill retirement.)

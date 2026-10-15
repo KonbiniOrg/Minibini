@@ -789,7 +789,7 @@ then `InventoryService.create_earmarks_for_job(job)`.
 | Field | Type | Notes |
 |---|---|---|
 | `po_number` | `CharField(50)` unique | Auto-generated via `NumberGenerationService` (see `CLAUDE.md`) |
-| `business` | FK PROTECT **nullable** | Vendor. **Nullable so a draft can be started vendor-less** (the Order-from-material flow, §11) — but `PurchaseOrder.clean()` **requires it at issue**: transitioning out of `draft` with no `business` raises. Contact still must belong to it when both are set |
+| `business` | FK PROTECT **nullable** | Vendor. **Nullable so a draft can be started vendor-less** (the PO list/Business/Contact "New purchase order" form still can; the Order modal paths — material, catalog, email — require a vendor, 2026-10-15) — but `PurchaseOrder.clean()` **requires it at issue**: transitioning out of `draft` with no `business` raises. Contact still must belong to it when both are set |
 | `contact` | FK PROTECT nullable | Optional; must belong to `business` if provided |
 | `status` | choices | See state machine below |
 | `created_date` | datetime | Immutable after first save |
@@ -872,7 +872,10 @@ not deletion, is the path for issued POs).
 | `receipt_note` | text | For problem cases |
 | `qty_cancelled` | `Decimal(10,2)` default 0 | Outstanding cancelled quantity |
 | `final_price` | `Decimal(10,2)` nullable | §10a — reconciliation-owned; `None` = "as ordered". Read-only on the line serializer, writable only through `reconcile()` |
+| `vendor_sku` | `CharField(100)` blank default `''` | The vendor's part number for this line (PO order flow, 2026-10-15). Lives on the line only — never on `InventoryItem` or `Business`; vendor history *suggests* it, the quote overrides it. Editable on draft lines through the line PATCH; read-only after issue like the other ordering fields; **not** a reconciliation field. Shown as a SKU column on the PO page and PDF |
 | `invoice_only` | `BooleanField` default `False` | §10a — a line appended during reconciliation that was never ordered/received (freight, tax, etc.); excluded from every receiving flow. Read-only on the line serializer |
+
+`POLineItemSerializer` also exposes `vendor_sku` and a read-only `item_code` (`inventory_item.code`, `null` for freeform lines); the PO page and PDF (`templates/purchasing/purchase_order_pdf.html`) render **Code** and **SKU** columns, blank when empty.
 
 `linked_material` property:
 
@@ -928,8 +931,9 @@ the `Configuration` keys `po_number_sequence` / `po_counter`.
 | `create_po(**kwargs)` | Create with auto-numbered `po_number`; refuses an inactive `business` (`{business: ['{name} is inactive.']}`) or an inactive contact / a contact whose business is inactive (`{contact: [...]}`, via `_assert_party_active`) |
 | `update_po(pk, **kwargs)` | Update header fields; frozen-PO guard with the same-vendor contact-swap carve-out (§10 "PO freeze") |
 | `update_status(pk, new_status)` | Direct status change |
-| `add_line_item(po_id, **kwargs)` | Add manual line; accepts transient `job`, `material_id` |
-| `add_line_item_from_pli(po_id, pli_id, qty, job=None, material_id=None)` | Add line from PLI; same transient kwargs |
+| `add_line_item(po_id, **kwargs)` | Add manual line; accepts transient `job`, `material_id`. Refuses `is_comment` together with `job`/`material_id` (`{'job': ['A comment line cannot be attributed to a job.']}`) — it used to mint a 0-qty material |
+| `add_line_item_from_pli(po_id, pli_id, qty, job=None, material_id=None, task=None, *, price=None, description=None, units=None, vendor_sku='', accounting_category=None)` | Add line from an InventoryItem; same transient kwargs. The keyword-only overrides replace the item's defaults (`None` → the item's own value); `vendor_sku` has no item default |
+| `user_can_manage(user, po)` | The PO-write rule: financials atom, jobs atom, or `project_manager` of any job linked to a line on the PO (§ users-and-permissions). Backs `PurchaseOrderSerializer.can_manage` and the `po_id` append check on the order endpoints |
 | `update_line_item(line_item_id, **kwargs)` | Draft-only field updates |
 | `change_line_job(line_item_id, new_job_id, sever_decision=None)` | Reassign a line's job; runs sever then resolver |
 | `reorder_line_items(po_id, item_ids)` | Bulk reorder via position list |
@@ -1320,7 +1324,10 @@ inventory_item=None, qty, unit_cost, description,
 accounting_category=None, material_id=None)`:
 
 1. **Explicit** — if `material_id` is given, link that Material
-   (validates: same job if both supplied, pending, unlinked).
+   (validates: same job if both supplied, pending, unlinked, and — when both the
+   material and the line have an `inventory_item` — the same item:
+   `{'material_id': ['This material needs <code>, not <code>.']}`; receipt
+   bumps the *line's* item, so a mismatched link could never be satisfied).
 2. **Claim** — if `job` and `inventory_item` given, look for pending
    Materials on `(job, pli)` with no `po_line_item`. If exactly one
    matches, link it.
@@ -1340,8 +1347,11 @@ planned consumption.
 **A PO line supplies/overrides cost and establishes freeform materials**
 (`MaterialService._apply_po_line_cost`, run on every resolver path):
 
-- **Provisional (lot-less) material** → the PO line **establishes** it: mints a
-  QOH-0 `LOT-{pk}` lot at the line price, stamps `cost_source='po'`, and — when
+- **Provisional (lot-less) material** → the PO line **establishes** it: when the
+  line carries an `inventory_item` the material is established **onto that
+  item** (`establish(material, inventory_item=line.inventory_item, ...)`, so
+  material and line share one item — no stray lot); otherwise it mints a
+  QOH-0 `LOT-{pk}` lot at the line price. Either way stamps `cost_source='po'`, and — when
   the **PO line itself carries no `inventory_item`** (a freeform PO line) —
   **repoints the line at the minted lot** so `receive_items`' `li.inventory_item.qty_on_hand
   += qty` bump lands on that lot. Without the repoint a freeform-PO material
@@ -1383,42 +1393,68 @@ column on the PO line itself.
 
 ### Order — generate a PO from a material (Path 1)
 
-`MaterialService.order(material, po=None)` is the material-side entry to
-procurement, surfaced as the **Order** action on the task view page (§16):
+`MaterialService.order(material, *, po=None, po_fields=None, line=None)` is
+the material-side entry to procurement, surfaced as the **Order** action on
+material rows (§16) via `OrderModal` (§15):
 
-- **Append-or-create.** With a draft `po`, appends a line for the material to
-  it (must be `draft`). With `po=None`, creates a **new draft PO with no vendor**
-  (`PurchaseOrderService.create_po()`) and adds the line — supplier-unknown stays
-  painless; the vendor is filled in before issue (the `clean()` gate, §9).
-- The line is added via `add_line_item_from_pli(..., job=material.job_id,
-  material_id=material.pk)`, so the resolver's **explicit** path links this exact
-  material and stamps `cost_source='po'` on it. Receipt then Just Works.
-- Refuses provisional (no lot), non-pending, customer-supplied, or
-  already-PO-linked materials. Endpoint: `POST /api/materials/{id}/order/`
-  (`CanManageFinancials`), body optionally `{po_id}`; also feeds the SPA's
-  "add to draft PO-NNNN vs start new" choice.
+- **Whole-PO contract, one transaction.** `po` (a draft) appends; otherwise a
+  PO is created from `po_fields` (`PurchaseOrderService.create_po(**po_fields)`)
+  and the line added — both inside `transaction.atomic()`, so a failing line
+  add rolls the new PO back. Nothing is created until the modal submits.
+- The line is added via `add_line_item_from_pli(po.pk,
+  material.inventory_item_id, qty, job=material.job_id, material_id=material.pk,
+  **line_overrides)`; the resolver's **explicit** path links this exact
+  material and `_apply_po_line_cost` pushes the line price onto it
+  (`cost_source='po'`). `qty` defaults to `material.quantity`.
+- Refuses provisional (no item), non-pending, customer-supplied,
+  already-PO-linked materials, and a non-draft `po`.
+- Endpoint: `POST /api/materials/{id}/order/`, permission
+  `CanManageFinancialsOrJobOrPM` (financials atom, jobs atom, or PM of the
+  material's job). Body is **exactly one of** `po_id` (append) **xor** `po`
+  (`{business, contact?, requested_date?}` — `business` required, so this path
+  can no longer mint a vendor-less PO), plus optional `line`
+  (`qty, units, price, description, vendor_sku, accounting_category`; every
+  field defaults from the material/item). `line.inventory_item` is refused
+  (`{'line': {'inventory_item': ['Cannot change the item here.']}}`) — the
+  item is the material's. Neither/both of `po_id`/`po` → `non_field_errors`.
+  **`po_id` mode additionally requires `PurchaseOrderService.user_can_manage(user,
+  po)`** (atom holder or already-linked PM) → 403 otherwise: appending is a
+  write on an existing PO. Response 201 `{po_id, po_number, line_item_id}`.
 
 ### Order to stock — no material, no job (`InventoryService.order_stock`)
 
-`InventoryService.order_stock(item, quantity, po=None)` is the item-side
-counterpart to `MaterialService.order` above: ordering an `InventoryItem`
-**to stock**, with no job needing it and no `Material` created. A plain PO
-line — `add_line_item_from_pli(po.pk, item.pk, quantity)` with no `job`, no
+`InventoryService.order_stock(item, *, po=None, po_fields=None, line=None)` is
+the item-side counterpart: ordering an `InventoryItem` **to stock**, with no job
+needing it and no `Material` created. A plain PO line —
+`add_line_item_from_pli(po.pk, item.pk, qty, **overrides)` with no `job`, no
 `material_id` — receipt bumps QOH via the normal PO-receiving path.
 
-- Same **append-or-create** contract as the material Order flow: given a
-  draft `po`, appends; given `po=None`, creates a new draft PO
-  (`PurchaseOrderService.create_po()`) and adds the line. Refuses a
-  non-draft `po`. Wrapped in `transaction.atomic()`.
-- Endpoint: `POST /api/inventory/{id}/order/` (`CanManageFinancials`), body
-  `{"quantity": "5", "po_id": <optional draft>}`; response echoes the item
-  plus `po_id`/`po_number`.
-- Surfaced by the shared `StockOrderDialog.svelte` component on both the
-  Catalog **Inventory** tab (per-row Order button, `canManageFinancials`
-  only — replaced the old navigate-to-`/purchase-orders/new?inventory_item=N`
-  link) and the Catalog **Earmarks** tab (§17). The quantity prompt
-  pre-fills with the item-level shortfall — `max(0, qty_earmarked_total −
-  qty_on_hand − qty_on_order)` — editable before submit.
+- Same `po` xor `po_fields` contract and single transaction as above; refuses
+  a non-draft `po`. `line.qty` is **required** (stock has no material to
+  default from; `StockOrderLineSerializer`).
+- Endpoint: `POST /api/inventory/{id}/order/`, permission
+  `CanManageJobsOrFinancials` (no job in play, so PM scoping has nothing to
+  scope to; **not** config). Same body, same `po_id`-needs-`user_can_manage`
+  403, same `line.inventory_item` refusal, same 201 `{po_id, po_number,
+  line_item_id}`.
+- Surfaced by `OrderModal` with `source='item'` on the Catalog **Inventory**
+  tab (per-row **order** button) and the **Earmarks** tab (§17). The modal's
+  qty pre-fills with the item-level shortfall — `max(0, qty_earmarked_total −
+  qty_on_hand − qty_on_order)`. (`StockOrderDialog.svelte` was deleted
+  2026-10-15.)
+
+### Vendor history — `GET /api/inventory/{id}/vendor-history/`
+
+`IsAuthenticated`. `InventoryService.vendor_history(item, *, exclude_job=None)`
+returns `vendors` (one row per business from lines on non-draft,
+non-cancelled POs, newest first: `business_id, business_name, contact_id,
+last_ordered, last_price, vendor_sku, po_number, times`), `earmarks` (the
+item's committed earmarks by job, minus `?exclude_job`), and `open_drafts`
+(every draft PO, vendor-less ones flagged by `business_id: null`, capped at
+100). This is the Order modal's one read; vendor knowledge is derived from
+PO history, never curated (RM 2026-10-14) — there is no vendor-item table,
+preferred-vendor flag, or "is vendor" marker. Minted `LOT-*` items return
+empty `vendors` but still return `open_drafts`.
 
 ### Materials are created at line-add time
 
@@ -1447,7 +1483,15 @@ The one bill-adjacent capability konbini keeps (2026-07-23): an inbound
 vendor-invoice email is linked to the **PurchaseOrder** via the existing
 link-to-po / associate-po / create-po-from-email flows and the
 `EmailRecord.purchase_order` association, so the PO's email panel shows
-that the vendor invoice arrived. Everything downstream (entry, payment,
+that the vendor invoice arrived.
+
+`POST /api/emails/{id}/create-po/` (`CanManageJobsOrFinancials`) takes
+`{vendor_business_id, contact_id?, requested_date?, line?}` where `line` is the
+order `line` shape **plus** `inventory_item` (nullable — the email path has no
+fixed item; a freeform line needs a `description`). It creates the PO with
+`business` **and `contact`**, links the email, and adds the line if given, in
+one transaction. The legacy header-only `{vendor_business_id}` body still works.
+The SPA drives it from `OrderModal` with `source='email'` (§15). Everything downstream (entry, payment,
 reconciliation) happens in QBO.
 
 ---
@@ -1577,9 +1621,32 @@ Components in `frontend/src/components/purchaseorders/`:
   "Awaiting Reconciliation" badge (§10a) when `po.awaiting_reconciliation`
 - `PurchaseOrderForm.svelte` — header form (business, contact, requested
   date)
-- `PurchaseOrderDetail.svelte` — header, line items table, status
-  actions, history; per-line "Change Job" action; consolidated sever
+- `PurchaseOrderDetail.svelte` — header, line items table (**Code** and **SKU**
+  columns; SKU editable in the draft line-edit row), status
+  actions, history; every write button gates on the `canManage` prop, fed from
+  `po.can_manage` (`PurchaseOrderSerializer`, the §10 `user_can_manage` rule —
+  not `$canManageFinancials`), so the page re-renders read-only if a PM's
+  linking line is removed; per-line "Change Job" action; consolidated sever
   modal on cancel-PO / cancel-line / delete-PO / line-job-change
+- `OrderModal.svelte` — **the** Order modal (2026-10-15), replacing the old
+  one-click `StockOrderDialog` and the `EmailCreatePOPage` page. A PO header
+  plus one line; **creates nothing until Submit**, then one call to
+  `POST /api/materials/{id}/order/`, `POST /api/inventory/{id}/order/` or
+  `POST /api/emails/{id}/create-po/` (§11) and `push('/purchase-orders/{po_id}')`.
+  Three `source`s: `material` (MaterialRow Order; item fixed to the material's),
+  `item` (catalog Inventory/Earmarks "order"; item fixed), `email` (email
+  action panel "Create new" PO; sender resolution via `SenderResolutionForm`
+  with in-modal duplicate contact/business sub-states, optional line with an
+  `InventoryItemPicker`). Layout: `VendorPicker` → contact → requested date →
+  an explicit **append-or-new radio** (shown only when `open_drafts` has a
+  draft for the chosen vendor; no default, Submit disabled until chosen) →
+  line (qty, units, price, description, vendor SKU, accounting category; an
+  "Also needed" line from `earmarks`). Changing vendor re-seeds SKU/price from
+  that vendor's history row unless the SKU was hand-edited. All data from one
+  read, `GET /api/inventory/{id}/vendor-history/`.
+- `VendorPicker.svelte` — recent-vendors `<select>` (history rows, newest first,
+  with "Search all businesses…") over the `BusinessPicker` search mode; Clear
+  returns to recent when history exists.
 - `LineItemForm.svelte` — line entry; ONE `JobPicker` (typeahead against
   active jobs, built on `SearchPicker`) feeds both material procurement
   and, once a job is picked, a `TaskLinkPicker.svelte` (§10a) cascading
@@ -1588,6 +1655,16 @@ Components in `frontend/src/components/purchaseorders/`:
   without `job`/`material_id` (PO Job/Task consolidation, RM 2026-09-21).
   Also includes `InventoryItemPicker` (server-side `?search=`, also built
   on `SearchPicker`) for From-Inventory mode.
+  **Explicit material picker:** once a Job is chosen (and no task), the form
+  reads the job's `materials` from `GET /api/jobs/{id}/`, filters to pending,
+  unlinked, not customer-supplied, and shows a radio list (each material, plus
+  "Create a new material for this line"; none → a "a new material will be
+  created" note). **No preselection**; Submit is disabled until one is chosen.
+  Payload sends `material_id` when attaching, `job` only for create-new. In
+  From-Inventory mode picking a material sets and locks the Inventory Item to
+  the material's (the §11 mismatch guard backs this). The `is_comment` checkbox
+  disables the Job picker. The old `defaultJob`/`materialId`/`prefill` props
+  are gone.
   `TaskLinkPicker.svelte` (`frontend/src/components/TaskLinkPicker.svelte`)
   takes an optional `job` prop: passed (even `null`) →  **controlled**,
   the caller's job drives the cascade and the picker's own internal
@@ -1624,11 +1701,11 @@ opening `ChangeContactModal` — a `ContactPicker` scoped to the PO's business
 `{contact}` only (the §10 carve-out) and reloads. Same components as the job
 banner (`jobs-and-tasks.md` §9.2).
 
-The PO form supports two arrival query params:
-
-- `?job=X` — pre-fills the Job picker on each new line
-- `?material=Y` — pre-fills the first line-item entry from a Material
-  (used by the "Order this" action on Job detail)
+The PO form's only arrival query params are `?business=` and `?contact=`
+(from the Business/Contact pages' "New purchase order"). The former
+`?job=` / `?material=` / `?inventory_item=` / `prefill_*` / `default_job`
+plumbing had no producers and was deleted (2026-10-15); ordering a material
+or item goes through `OrderModal`.
 
 ---
 
@@ -1669,14 +1746,16 @@ Attach expense / Mark on-hand / Mark received / mark used / restock–release
 / draw more / edit / Move–detach / PO link) is available on ALL of those
 surfaces — the old "actions live on the task view page only" venue rule
 was retired 2026-07-13. Gating is by **material status, permissions, and
-job state only**: the per-status action table above, `can_manage_financials`
-for Order, and the held-job freeze-plan-not-procurement rule. (Mechanically,
+job state only**: the per-status action table above, `$canManageFinancials || material.can_manage`
+for Order (`can_manage` on both `MaterialSerializer`s via
+`JobScopedCanManageMixin` — the jobs atom or the job's PM; the Order button opens
+`OrderModal` with `source='material'`), and the held-job freeze-plan-not-procurement rule. (Mechanically,
 each button still renders only when its callback prop is wired — a
 deliberately read-only mount stays passive — but every current surface
 wires everything.) The handler halves are shared too: prompt-based ops in
 `lib/materialOps.js`, and the Order / Mark-received dialogs in
 `components/materials/MaterialFulfillmentModals.svelte`
-(`startOrder`/`startReceipt` via `bind:this`). Note the task detail page
+(`startOrder` opens `OrderModal`; `startReceipt` the receipt dialog; both via `bind:this`). Note the task detail page
 has no raw material-delete button — removal is the **release** action
 (full-quantity restock), the same vocabulary as everywhere else.
 
@@ -1738,10 +1817,12 @@ the old Inventory link.
 ### Inventory tab
 
 Inventory-item CRUD + browse UI, unchanged from the old `#/inventory` page
-except the per-row **Order** button now opens the shared
-`StockOrderDialog.svelte` (§10) instead of navigating to
-`/purchase-orders/new?inventory_item=N`; still rendered only for
-`canManageFinancials`. Item pickers across the SPA use
+except the per-row **order** button now opens `OrderModal` with
+`source='item'` (§15) instead of navigating to
+`/purchase-orders/new?inventory_item=N`. Permissions (2026-10-15): the Actions
+column renders for config, financials, **or** jobs users; **edit** and
+**write off** stay financials-or-config; **order** is financials-or-jobs
+(matching `CanManageJobsOrFinancials` on the endpoint). Item pickers across the SPA use
 `frontend/src/components/InventoryItemPicker.svelte`, built on `SearchPicker`.
 
 **Nothing hidden** (`is_catalog` drop). The list and pickers show every active
@@ -1787,9 +1868,9 @@ outstanding-PO links, Order button.
   the item-level number reads "to cover every commitment you need N more,"
   the number you'd actually purchase. Self-correcting: ordering from one row
   raises on-order, so the sibling row's shortfall drops after reload.
-- **Order button**: `canManageFinancials` only; opens the same
-  `StockOrderDialog.svelte` as the Inventory tab, quantity pre-filled with
-  the item-level shortfall (§10).
+- **Order button**: financials or jobs; opens the same `OrderModal`
+  (`source='item'`) as the Inventory tab, quantity pre-filled with the
+  item-level shortfall (§11).
 
 `EarmarkSerializer` shape per row: `earmark_id`, `inventory_item`,
 `item_code`, `item_description`, `units`, `job`, `job_number`, `quantity`,
