@@ -16,13 +16,18 @@
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
   import VendorPicker from './VendorPicker.svelte';
+  import { emailApi, resolveSenderToContact } from '../../lib/email.js';
+  import SenderResolutionForm from '../email/SenderResolutionForm.svelte';
+  import DuplicateContactNotice from '../contacts/DuplicateContactNotice.svelte';
+  import DuplicateBusinessNotice from '../contacts/DuplicateBusinessNotice.svelte';
+  import InventoryItemPicker from '../InventoryItemPicker.svelte';
 
   let {
     source,                 // 'material' | 'item' | 'email'
     material = null,        // source === 'material'
     item = null,            // source === 'item': { inventory_item_id, code, description? }
     prefillQty = '',        // source === 'item'
-    emailRecordId = null,   // source === 'email' (Task 9)
+    emailRecordId = null,   // source === 'email'
     onDone = () => {},
     onCancel = () => {},
   } = $props();
@@ -49,15 +54,40 @@
   let formError = $state('');
   let fieldErrs = $state({});
 
+  // Email source: the vendor is the sender's business, resolved on submit.
+  let senderInfo = $state(null);
+  let resolutionState = $state(null);
+  let duplicateContact = $state(null);
+  let duplicateBusiness = $state(null);
+  let addLine = $state(false);
+  let pickedItem = $state(null);
+  const noticeShowing = $derived(!!duplicateContact || !!duplicateBusiness);
+
   const draftsForVendor = $derived(
     vendorId == null ? [] : (history?.open_drafts || []).filter((d) => d.business_id === vendorId));
   const appendTarget = $derived(
     draftChoice && draftChoice !== 'new' ? draftsForVendor.find((d) => d.po_id === draftChoice) : null);
   const choiceNeeded = $derived(draftsForVendor.length > 0 && draftChoice == null);
-  const canSubmit = $derived(!busy && !loading && vendorId != null && !choiceNeeded);
+  const canSubmit = $derived(!busy && !loading &&
+    (source === 'email' ? !!resolutionState : vendorId != null && !choiceNeeded));
 
   async function load() {
     loading = true;
+    if (source === 'email') {
+      try {
+        const [info, cats] = await Promise.all([
+          emailApi.senderInfo(emailRecordId),
+          api.get('/api/accounting-categories/?page_size=100'),
+        ]);
+        senderInfo = info;
+        categories = cats.results || cats;
+      } catch (e) {
+        const t = triageError(e);
+        showError(t.overlay || t.message || 'Could not load email.');
+        onCancel();
+      } finally { loading = false; }
+      return;
+    }
     try {
       const excl = source === 'material' && material?.job ? `?exclude_job=${material.job}` : '';
       const [it, hist, cats] = await Promise.all([
@@ -91,7 +121,7 @@
       loading = false;
     }
   }
-  $effect(() => { void itemId; load(); });
+  $effect(() => { void itemId; void emailRecordId; load(); });
 
   async function handleVendor(row) {
     vendorRow = row;
@@ -138,9 +168,59 @@
     };
   }
 
+  function handleItemPick(it) {
+    pickedItem = it;
+    if (!it) return;
+    form.description = it.description || '';
+    form.units = it.units || 'none';
+    form.price = it.purchase_price ?? '';
+    form.accounting_category = it.accounting_category ?? '';
+  }
+
+  function handleCancel() {
+    if (noticeShowing) { duplicateContact = null; duplicateBusiness = null; }
+    else onCancel();
+  }
+
   async function submit(e) {
     e.preventDefault();
     qtyError = ''; formError = ''; fieldErrs = {};
+    if (source === 'email') {
+      duplicateContact = null; duplicateBusiness = null;
+      if (addLine && (!String(form.qty).trim() || Number(form.qty) <= 0)) {
+        qtyError = 'Enter a quantity greater than 0.';
+        return;
+      }
+      if (!canSubmit) return;
+      busy = true;
+      try {
+        const { contactId: cid, businessId } = await resolveSenderToContact(resolutionState);
+        let vendorBusinessId = businessId;
+        if (!vendorBusinessId) {
+          const c = await api.get(`/api/contacts/${cid}/`);
+          vendorBusinessId = c.business?.business_id ?? c.business ?? c.business_id ?? null;
+        }
+        if (!vendorBusinessId) {
+          formError = 'A vendor business is required to create a PO. Pick or create one for this contact.';
+          return;
+        }
+        const body = { vendor_business_id: vendorBusinessId, contact_id: cid, requested_date: requestedDate || null };
+        if (addLine) body.line = { inventory_item: pickedItem?.inventory_item_id ?? null, ...linePayload() };
+        const resp = await emailApi.createPo(emailRecordId, body);
+        showSuccess('Added to', { href: `#/purchase-orders/${resp.po_id}`, label: resp.po_number });
+        onDone(resp);
+        push(`/purchase-orders/${resp.po_id}`);
+      } catch (err) {
+        if (err?.status === 409 && err.data?.code === 'duplicate_email') duplicateContact = err.data.existing_contact;
+        else if (err?.status === 409 && err.data?.code === 'duplicate_business_name') duplicateBusiness = err.data.existing_business;
+        else {
+          const t = triageError(err);
+          if (t.overlay) showError(t.overlay);
+          else { formError = t.message; fieldErrs = { ...(t.fields.line || {}), ...t.fields }; }
+        }
+      } finally { busy = false; }
+      return;
+    }
     if (!String(form.qty).trim() || Number(form.qty) <= 0) {
       qtyError = 'Enter a quantity greater than 0.';
       return;
@@ -177,10 +257,48 @@
 </script>
 
 <!-- Native <form> owns Enter; the shell wires Escape. -->
-<Modal open={true} onCancel={onCancel} busy={busy} maxWidth="720px" label="Order">
-  <h3 class="modal-title">Order — {itemCode || itemDetail?.description || material?.description || ''}</h3>
+<Modal open={true} onCancel={handleCancel} busy={busy} maxWidth="720px" label="Order">
+  <h3 class="modal-title">{source === 'email' ? 'Order — new PO from email'
+    : `Order — ${itemCode || itemDetail?.description || material?.description || ''}`}</h3>
   {#if loading}
     <p>Loading…</p>
+  {:else if source === 'email' && senderInfo}
+    {#if duplicateContact}
+      <DuplicateContactNotice contact={duplicateContact}
+        onViewExisting={() => { onCancel(); push(`/contacts/${duplicateContact.contact_id}`); }}
+        onReactivate={async () => { await api.post(`/api/contacts/${duplicateContact.contact_id}/reactivate/`, {}); onCancel(); push(`/contacts/${duplicateContact.contact_id}`); }}
+        onBack={() => { duplicateContact = null; }} />
+    {:else if duplicateBusiness}
+      <DuplicateBusinessNotice business={duplicateBusiness}
+        onViewExisting={() => { onCancel(); push(`/businesses/${duplicateBusiness.business_id}`); }}
+        onBack={() => { duplicateBusiness = null; }} />
+    {/if}
+    <div hidden={noticeShowing}>
+      <form onsubmit={submit}>
+        <SenderResolutionForm {senderInfo} bind:state={resolutionState} />
+        <p>
+          <label for="order-date"><strong>Requested date</strong></label><br>
+          <input id="order-date" type="date" bind:value={requestedDate}>
+        </p>
+        <p><label><input type="checkbox" bind:checked={addLine}> Add a first line</label></p>
+        {#if addLine}
+          <fieldset class="line">
+            <legend>Line</legend>
+            <p>
+              <strong>Item</strong><br>
+              <InventoryItemPicker value={pickedItem?.inventory_item_id} selectedItem={pickedItem}
+                onSelect={handleItemPick} params={{ is_active: true }} />
+            </p>
+            {@render lineFields()}
+          </fieldset>
+        {/if}
+        <p class="dialog-actions">
+          <button type="submit" disabled={!canSubmit}>Create PO</button>
+          <button type="button" onclick={onCancel} disabled={busy}>Cancel</button>
+        </p>
+        <FormMessage error={formError} />
+      </form>
+    </div>
   {:else if history}
     <form onsubmit={submit}>
       <p>
@@ -221,45 +339,7 @@
       <fieldset class="line">
         <legend>Line</legend>
         <p><strong>Item:</strong> {#if itemCode}<code class="mat-code">{itemCode}</code>{/if} {itemDetail.description}</p>
-        <p>
-          <label for="order-qty"><strong>Qty *</strong></label><br>
-          <input id="order-qty" type="number" step="any" min="0" bind:value={form.qty} oninput={() => qtyError = ''}>
-          {#if qtyError}<span class="field-error">{qtyError}</span>{/if}
-          <FieldError errors={fieldErrs} field="qty" />
-          {#if history.earmarks.length}
-            <br><small class="earmarks">Also needed: {history.earmarks.map((e) => `${e.job_number} ×${String(Number(e.quantity))}`).join(', ')}</small>
-          {/if}
-        </p>
-        <p>
-          <label for="order-units"><strong>Units</strong></label><br>
-          <UnitsSelect id="order-units" bind:value={form.units} />
-          <FieldError errors={fieldErrs} field="units" />
-        </p>
-        <p>
-          <label for="order-price"><strong>Price</strong></label><br>
-          <input id="order-price" type="number" step="0.01" min="0" bind:value={form.price}>
-          <FieldError errors={fieldErrs} field="price" />
-        </p>
-        <p>
-          <label for="order-description"><strong>Description</strong></label><br>
-          <input id="order-description" type="text" bind:value={form.description}>
-          <FieldError errors={fieldErrs} field="description" />
-        </p>
-        <p>
-          <label for="order-sku"><strong>Vendor SKU</strong></label><br>
-          <input id="order-sku" type="text" maxlength="100" bind:value={form.vendor_sku} oninput={() => skuTouched = true}>
-          <FieldError errors={fieldErrs} field="vendor_sku" />
-        </p>
-        <p>
-          <label for="order-category"><strong>Category</strong></label><br>
-          <select id="order-category" bind:value={form.accounting_category}>
-            <option value="">-- None --</option>
-            {#each categories.filter((c) => !c.is_fallback) as cat (cat.id)}
-              <option value={cat.id}>{cat.name}</option>
-            {/each}
-          </select>
-          <FieldError errors={fieldErrs} field="accounting_category" />
-        </p>
+        {@render lineFields()}
       </fieldset>
 
       <p class="dialog-actions">
@@ -270,6 +350,48 @@
     </form>
   {/if}
 </Modal>
+
+{#snippet lineFields()}
+  <p>
+    <label for="order-qty"><strong>Qty *</strong></label><br>
+    <input id="order-qty" type="number" step="any" min="0" bind:value={form.qty} oninput={() => qtyError = ''}>
+    {#if qtyError}<span class="field-error">{qtyError}</span>{/if}
+    <FieldError errors={fieldErrs} field="qty" />
+    {#if history?.earmarks?.length}
+      <br><small class="earmarks">Also needed: {history.earmarks.map((e) => `${e.job_number} ×${String(Number(e.quantity))}`).join(', ')}</small>
+    {/if}
+  </p>
+  <p>
+    <label for="order-units"><strong>Units</strong></label><br>
+    <UnitsSelect id="order-units" bind:value={form.units} />
+    <FieldError errors={fieldErrs} field="units" />
+  </p>
+  <p>
+    <label for="order-price"><strong>Price</strong></label><br>
+    <input id="order-price" type="number" step="0.01" min="0" bind:value={form.price}>
+    <FieldError errors={fieldErrs} field="price" />
+  </p>
+  <p>
+    <label for="order-description"><strong>Description</strong></label><br>
+    <input id="order-description" type="text" bind:value={form.description}>
+    <FieldError errors={fieldErrs} field="description" />
+  </p>
+  <p>
+    <label for="order-sku"><strong>Vendor SKU</strong></label><br>
+    <input id="order-sku" type="text" maxlength="100" bind:value={form.vendor_sku} oninput={() => skuTouched = true}>
+    <FieldError errors={fieldErrs} field="vendor_sku" />
+  </p>
+  <p>
+    <label for="order-category"><strong>Category</strong></label><br>
+    <select id="order-category" bind:value={form.accounting_category}>
+      <option value="">-- None --</option>
+      {#each categories.filter((c) => !c.is_fallback) as cat (cat.id)}
+        <option value={cat.id}>{cat.name}</option>
+      {/each}
+    </select>
+    <FieldError errors={fieldErrs} field="accounting_category" />
+  </p>
+{/snippet}
 
 <style>
   .modal-title { margin: 0 0 12px; font-size: 16px; }

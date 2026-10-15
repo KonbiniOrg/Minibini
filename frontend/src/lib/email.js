@@ -11,8 +11,7 @@ export const emailApi = {
     api.post(`/api/emails/${id}/create-job/`, { contact, name, description }),
   linkToPo: (id, poId) => api.post(`/api/emails/${id}/link-to-po/`, { po_id: poId }),
   unlinkFromPo: (id) => api.post(`/api/emails/${id}/unlink-from-po/`, {}),
-  createPo: (id, { vendor_business_id }) =>
-    api.post(`/api/emails/${id}/create-po/`, { vendor_business_id }),
+  createPo: (id, body) => api.post(`/api/emails/${id}/create-po/`, body),
   replyDefaults: (id) => api.get(`/api/emails/${id}/reply-defaults/`),
   reply: (id, formData) => api.postMultipart(`/api/emails/${id}/reply/`, formData),
 };

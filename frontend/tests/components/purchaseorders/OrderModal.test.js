@@ -9,7 +9,13 @@ vi.mock('@/lib/api.js', () => ({
 }));
 vi.mock('@/stores/messages.js', () => ({ showSuccess: vi.fn(), showError: vi.fn() }));
 
+vi.mock('@/lib/email.js', () => ({
+  emailApi: { senderInfo: vi.fn(), createPo: vi.fn() },
+  resolveSenderToContact: vi.fn(),
+}));
+
 import { push } from 'svelte-spa-router';
+import { emailApi, resolveSenderToContact } from '@/lib/email.js';
 import { api } from '@/lib/api.js';
 import { showSuccess } from '@/stores/messages.js';
 import OrderModal from '@/components/purchaseorders/OrderModal.svelte';
@@ -259,5 +265,94 @@ describe('OrderModal — item source', () => {
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
     expect(api.post).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrderModal — email source', () => {
+  const SENDER = { sender_name: 'Jack Moore', sender_email: 'jack@mnh.com', subject: 'Invoice MNH-20441',
+    matching_contacts: [{ id: 100, name: 'Jack Moore' }], matching_businesses: [] };
+
+  beforeEach(() => {
+    emailApi.senderInfo.mockReset(); emailApi.createPo.mockReset(); resolveSenderToContact.mockReset();
+    emailApi.senderInfo.mockResolvedValue(SENDER);
+    emailApi.createPo.mockResolvedValue({ po_id: 300, po_number: 'PO0300', line_item_id: null });
+    api.get.mockImplementation((url) => {
+      if (url === '/api/contacts/100/') return Promise.resolve({ contact_id: 100, business: 61 });
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [{ id: 3, name: 'Materials' }] });
+      if (url.startsWith('/api/inventory/?')) return Promise.resolve({ results: [ITEM] });
+      return Promise.resolve([]);
+    });
+  });
+
+  it('shows the sender-resolution form, no vendor picker, and creates a header-only PO from the matched contact', async () => {
+    resolveSenderToContact.mockResolvedValue({ contactId: 100, businessId: null });
+    const onDone = vi.fn();
+    const { findByRole, getByRole, queryByPlaceholderText, queryByLabelText } = render(OrderModal, {
+      props: { source: 'email', emailRecordId: 10, onDone, onCancel: vi.fn() },
+    });
+    await findByRole('dialog', { name: 'Order' });
+    await findByRole('heading', { name: 'Sender' });
+    expect(queryByPlaceholderText('Search business…')).toBeNull();
+    expect(queryByLabelText(/^Qty/)).toBeNull();            // line is opt-in
+    await fireEvent.click(getByRole('button', { name: 'Create PO' }));
+    await waitFor(() => expect(emailApi.createPo).toHaveBeenCalledWith(10, {
+      vendor_business_id: 61, contact_id: 100, requested_date: null,
+    }));
+    expect(onDone).toHaveBeenCalled();
+    expect(push).toHaveBeenCalledWith('/purchase-orders/300');
+  });
+
+  it('"Add a first line" reveals an item picker and the line fields; the line rides along', async () => {
+    resolveSenderToContact.mockResolvedValue({ contactId: 100, businessId: 61 });
+    const { findByRole, getByRole, getByLabelText, findByPlaceholderText } = render(OrderModal, {
+      props: { source: 'email', emailRecordId: 10, onDone: vi.fn(), onCancel: vi.fn() },
+    });
+    await findByRole('dialog', { name: 'Order' });
+    await findByRole('heading', { name: 'Sender' });
+    await fireEvent.click(getByLabelText('Add a first line'));
+    const picker = await findByPlaceholderText('Search inventory items…');
+    await fireEvent.input(picker, { target: { value: 'bb' } });
+    await new Promise((r) => setTimeout(r, 300));
+    await fireEvent.mouseDown(await findByRole('button', { name: /BB34P/ }));
+    await waitFor(() => expect(getByLabelText(/^Price/).value).toBe('60.00'));
+    await fireEvent.input(getByLabelText(/^Qty/), { target: { value: '2' } });
+    await fireEvent.input(getByLabelText(/Vendor SKU/), { target: { value: 'MNH-1' } });
+    await fireEvent.click(getByRole('button', { name: 'Create PO' }));
+    await waitFor(() => expect(emailApi.createPo).toHaveBeenCalledWith(10, expect.objectContaining({
+      vendor_business_id: 61,
+      line: { inventory_item: 7, qty: '2', units: 'sheet', price: '60.00', description: '3/4 Baltic Birch',
+              vendor_sku: 'MNH-1', accounting_category: 3 },
+    })));
+  });
+
+  it('a sender with no business is reported in the footer, not sent', async () => {
+    resolveSenderToContact.mockResolvedValue({ contactId: 100, businessId: null });
+    api.get.mockImplementation((url) => url === '/api/contacts/100/'
+      ? Promise.resolve({ contact_id: 100, business: null })
+      : Promise.resolve({ results: [] }));
+    const { findByRole, getByRole, findByText } = render(OrderModal, {
+      props: { source: 'email', emailRecordId: 10, onDone: vi.fn(), onCancel: vi.fn() },
+    });
+    await findByRole('dialog', { name: 'Order' });
+    await findByRole('heading', { name: 'Sender' });
+    await fireEvent.click(getByRole('button', { name: 'Create PO' }));
+    expect(await findByText(/vendor business is required/i)).toBeInTheDocument();
+    expect(emailApi.createPo).not.toHaveBeenCalled();
+  });
+
+  it('duplicate contact → in-modal notice; Go Back returns to the form', async () => {
+    emailApi.senderInfo.mockResolvedValue({ ...SENDER, matching_contacts: [] });
+    resolveSenderToContact.mockRejectedValue({ status: 409, data: { code: 'duplicate_email',
+      existing_contact: { contact_id: 9, name: 'Jack Moore', email: 'jack@mnh.com' } } });
+    const { findByRole, getByRole, findByText } = render(OrderModal, {
+      props: { source: 'email', emailRecordId: 10, onDone: vi.fn(), onCancel: vi.fn() },
+    });
+    await findByRole('dialog', { name: 'Order' });
+    await findByRole('heading', { name: 'Sender' });
+    await fireEvent.click(getByRole('button', { name: 'Create PO' }));
+    expect(await findByText('This contact may already exist')).toBeInTheDocument();
+    expect(document.querySelectorAll('[role="dialog"]').length).toBe(1);
+    await fireEvent.click(getByRole('button', { name: 'Go Back and Edit' }));
+    expect(await findByRole('heading', { name: 'Sender' })).toBeInTheDocument();
   });
 });
