@@ -328,11 +328,34 @@ Purchase Order", the Business/Contact "New purchase order", and the email
 panel's "Create new" show when `$canManageFinancials || $canManageJobs`.
 (`stores/permissions.js` already derives both.)
 
-**Stated assumption, pending RM:** everything *after* creation — adding or
-editing lines on the PO page, header edits, issue, delete, cancel,
-reconcile — stays `CanManageFinancials`. A jobs-only user who creates a PO
-through the modal lands on a PO page they can read but not change. See the
-open question in §9.
+**PO-level writes open the same way (RM 2026-10-15).** Every write on an
+existing PO that is financials-only today — header edit, add / edit /
+delete / cancel line, issue, cancel PO, delete draft, change line job,
+send — becomes `CanManageFinancialsOrJobsOrLinkedPM`:
+
+- financials atom → allowed; jobs atom → allowed;
+- else allowed when the user is `project_manager` of **any job linked to
+  any line on this PO**, where "linked" means a Material whose
+  `po_line_item` is on the PO (`Material.job`) or a line whose `task` is on
+  the user's job (`task.job`). Resolved per request from the PO the URL
+  names (`view.get_object()`), so no stored flag.
+
+Known and accepted: a PM's access is only as durable as the link. Removing
+or re-jobbing the one line that ties their job to the PO drops their
+access to that PO on the next request. The SPA doesn't try to warn about
+this; the PO page simply re-renders read-only after the mutation.
+
+`PurchaseOrderSerializer` exposes `can_manage` (same three-way rule) and
+the PO page gates its buttons on `po.can_manage` instead of
+`$canManageFinancials`. The PO **list's** "New Purchase Order" stays on
+the atom check (no PO to be linked to yet).
+
+**Stated assumption, pending RM:** `reconcile` (recording the vendor
+bill's total / reference / line finals, §10a of the materials doc) stays
+`CanManageFinancials`. The docs frame it as the bookkeeping half of the
+QBO bill; opening it to jobs/PM would let a non-financials user write
+job-costing actuals. Everything else on the PO opens. Say so if reconcile
+should open too.
 
 ## 7. Tests
 
@@ -350,6 +373,12 @@ Backend (`tests/`):
 - `test_po_line_items.py` — comment+job guard, material/item mismatch
   guard, provisional material + catalog line establishes onto the line's
   item (no stray lot).
+- `test_po_permissions.py` — create: jobs atom allowed, PM-only denied;
+  material order: PM of the material's job allowed, PM of another job
+  denied; PO writes: PM linked via Material allowed, via `task.job`
+  allowed, unlinked PM denied, and **access drops after the linking line
+  is deleted / re-jobbed**; reconcile stays financials-only;
+  `can_manage` on PO and material serializers matches the view rule.
 - PDF test: SKU + code columns render, blank for freeform.
 
 Frontend (Vitest, `frontend/tests/`):
@@ -381,11 +410,3 @@ if the vendor-history route is listed; `data-constraints.md` for
 `vendor_sku`; `frontend/README.md` Modals list. LATER: remove "Show a
 material's earmarks on the PO", "PO line items should show the inventory
 item's code"; fix the stale "create-PO-from-email not built" fragment.
-
-## 9. Open question
-
-Should the follow-on edits on a PO (add lines, edit header, issue) open to
-manage-jobs/PM as well, at least while the PO is a draft, so the modal's
-"lands on the PO in case they want to add more" promise holds for those
-users? Or is "jobs people start the PO, financials people finish it" the
-intended hand-off?
