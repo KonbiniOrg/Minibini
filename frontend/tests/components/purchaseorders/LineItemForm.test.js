@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, findByRole } from '@testing-library/svelte';
+import { render, fireEvent, findByRole, waitFor } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
 
@@ -236,6 +236,25 @@ describe('LineItemForm — material picker', () => {
     await fireEvent.click(getByRole('button', { name: 'Add' }));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ job: 5 }));
     expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('material_id');
+  });
+
+  it('keeps Add disabled while the job\'s materials are still loading', async () => {
+    let resolveJob;
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/jobs/?')) return Promise.resolve({ results: [{ job_id: 5, job_number: 'JOB-5', name: 'widget' }] });
+      if (url === '/api/jobs/5/') return new Promise((r) => { resolveJob = r; });
+      return Promise.resolve([]);
+    });
+    const { container, getByPlaceholderText, getByLabelText, getByRole } = render(LineItemForm, {
+      props: { onSubmit: vi.fn(), onCancel: vi.fn() },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'ply' } });
+    await fireEvent.input(getByLabelText(/Qty/), { target: { value: '1' } });
+    await fireEvent.input(getByLabelText(/^Price/), { target: { value: '1' } });
+    await pickJob(container, getByPlaceholderText);
+    expect(getByRole('button', { name: 'Add' })).toBeDisabled();
+    resolveJob({ job_id: 5, materials: [] });
+    await waitFor(() => expect(getByRole('button', { name: 'Add' })).toBeEnabled());
   });
 
   it('resets the material choice when the job changes', async () => {

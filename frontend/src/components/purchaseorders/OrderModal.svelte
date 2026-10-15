@@ -123,7 +123,11 @@
   }
   $effect(() => { void itemId; void emailRecordId; load(); });
 
+  let vendorSeeded = false;   // the first handleVendor is the mount-time preselect
+
   async function handleVendor(row) {
+    const initial = !vendorSeeded;
+    vendorSeeded = true;
     vendorRow = row;
     draftChoice = null;
     fieldErrs = {};
@@ -133,7 +137,11 @@
     contacts = []; contactId = '';   // never post the previous vendor's contact
     if (isHistory) {
       if (!skuTouched) form.vendor_sku = row.vendor_sku || '';
-      form.price = row.last_price != null && row.last_price !== '' ? row.last_price : base.price;
+      // The material's own cost survives the initial preselect (spec §5.1);
+      // an explicit vendor change re-seeds from that vendor's last price.
+      if (!(initial && source === 'material')) {
+        form.price = row.last_price != null && row.last_price !== '' ? row.last_price : base.price;
+      }
     } else {
       // A searched vendor has no history: back to the line's own defaults.
       if (!skuTouched) form.vendor_sku = '';
@@ -152,7 +160,10 @@
     }
     if (vendorId !== row.business_id) return;   // vendor changed while loading
     contacts = contactData.results || contactData;
-    const preferred = [isHistory ? row.contact_id : null, biz?.default_contact, contacts[0]?.contact_id]
+    // Detail GET nests default_contact as an object; search rows carry a plain pk.
+    const dc = biz?.default_contact;
+    const dcId = dc != null && typeof dc === 'object' ? dc.contact_id : dc;
+    const preferred = [isHistory ? row.contact_id : null, dcId, contacts[0]?.contact_id]
       .find((id) => id != null && contacts.some((c) => c.contact_id === id));
     contactId = preferred ?? '';
   }

@@ -69,7 +69,10 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         pk = self.kwargs.get(self.lookup_url_kwarg or self.lookup_field)
         if pk is None:
             return None
-        return PurchaseOrder.objects.filter(pk=pk).first()
+        try:
+            return PurchaseOrder.objects.filter(pk=pk).first()
+        except (ValueError, TypeError):
+            return None   # a malformed pk denies; it must not 500
 
     def get_queryset(self):
         qs = super().get_queryset()

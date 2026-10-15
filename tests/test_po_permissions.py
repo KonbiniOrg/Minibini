@@ -141,6 +141,20 @@ class OrderPermissionTests(_Base):
 
 
 class PoWritePermissionTests(_Base):
+    def test_non_numeric_pk_denies_instead_of_500(self):
+        self._as(self.pm)
+        r = self.client.patch('/api/purchase-orders/abc/', {'requested_date': '2026-11-01'}, format='json')
+        self.assertIn(r.status_code, (403, 404))
+
+    def test_config_atom_cannot_create_po_or_order_stock(self):
+        cfg = grant_atoms(User.objects.create_user('cfg', password='p'), 'can_manage_config')
+        self._as(cfg)
+        r = self.client.post('/api/purchase-orders/', {'business': self.business.pk}, format='json')
+        self.assertEqual(r.status_code, 403)
+        r = self.client.post(f'/api/inventory/{self.item.pk}/order/',
+                             {'po': {'business': self.business.pk}, 'line': {'qty': '1'}}, format='json')
+        self.assertEqual(r.status_code, 403)
+
     def test_pm_linked_via_material_can_write_the_po(self):
         po_id, _ = self._linked_po()
         self._as(self.pm)

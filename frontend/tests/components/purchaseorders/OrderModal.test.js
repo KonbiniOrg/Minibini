@@ -40,7 +40,7 @@ const CONTACTS = {
   59: [{ contact_id: 98, first_name: 'Denis', last_name: 'Schneider' }],
 };
 const MATERIAL = { material_id: 55, job: 39, description: 'ply for cabinets', quantity: '4', units: 'sheet',
-  unit_cost: '60.00', accounting_category: 3, inventory_item: 7, item_code: 'BB34P', qty_on_hand: '0',
+  unit_cost: '58.00', accounting_category: 3, inventory_item: 7, item_code: 'BB34P', qty_on_hand: '0',
   po_line_item_id: null, consumption_state: 'pending', cost_source: 'entered' };
 
 function mockApi({ history = HISTORY } = {}) {
@@ -53,7 +53,8 @@ function mockApi({ history = HISTORY } = {}) {
       const id = Number(new URL('http://x' + url).searchParams.get('business'));
       return Promise.resolve({ results: CONTACTS[id] || [] });
     }
-    if (url.startsWith('/api/businesses/')) return Promise.resolve({ business_id: 5, business_name: 'Acme', default_contact: 9 });
+    if (url.startsWith('/api/businesses/')) return Promise.resolve({ business_id: 17, business_name: 'Rugby Architectural',
+      default_contact: { contact_id: 89, first_name: 'Bob', last_name: 'Rugby' } });
     if (url.startsWith('/api/units')) return Promise.resolve(['none', 'sheet', 'ea']);
     return Promise.resolve([]);
   });
@@ -76,7 +77,7 @@ describe('OrderModal — material source', () => {
     expect((await findByRole('combobox', { name: /Vendor/ })).value).toBe('17');
     await waitFor(() => expect(getByLabelText(/Contact/).value).toBe('88'));
     expect(getByLabelText(/Vendor SKU/).value).toBe('BB34P-48');
-    expect(getByLabelText(/^Price/).value).toBe('62.40');
+    expect(getByLabelText(/^Price/).value).toBe('58.00');   // the material's own cost, not history's
     expect(getByLabelText(/^Qty/).value).toBe('4');
     expect(getByText('BB34P')).toBeInTheDocument();
     expect(queryByPlaceholderText('Search inventory items…')).toBeNull();
@@ -100,7 +101,7 @@ describe('OrderModal — material source', () => {
     await fireEvent.click(getByRole('button', { name: 'Add to PO0131' }));
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/materials/55/order/', {
       po_id: 131,
-      line: { qty: '4', units: 'sheet', price: '62.40', description: 'ply for cabinets',
+      line: { qty: '4', units: 'sheet', price: '58.00', description: 'ply for cabinets',
               vendor_sku: 'BB34P-48', accounting_category: 3 },
     }));
   });
@@ -163,7 +164,7 @@ describe('OrderModal — material source', () => {
     });
     const vendor = await findByRole('combobox', { name: /Vendor/ });
     await waitFor(() => expect(getByLabelText(/Vendor SKU/).value).toBe('BB34P-48'));
-    expect(getByLabelText(/^Price/).value).toBe('62.40');
+    expect(getByLabelText(/^Price/).value).toBe('58.00');
     await fireEvent.change(vendor, { target: { value: '__search' } });
     const search = await findByPlaceholderText('Search business…');
     await fireEvent.input(search, { target: { value: 'ac' } });
@@ -171,11 +172,23 @@ describe('OrderModal — material source', () => {
     await fireEvent.mouseDown(await findByRole('button', { name: /Acme Steel/ }));
     await waitFor(() => expect(getByLabelText(/Contact/).value).toBe('9'));
     expect(getByLabelText(/Vendor SKU/).value).toBe('');
-    expect(getByLabelText(/^Price/).value).toBe('60.00');
+    expect(getByLabelText(/^Price/).value).toBe('58.00');
+  });
+
+  it('history vendor without a PO contact falls back to the business default contact', async () => {
+    mockApi({ history: { ...HISTORY, vendors: [{ ...HISTORY.vendors[0], contact_id: null }] } });
+    const { findByRole, getByLabelText } = render(OrderModal, {
+      props: { source: 'material', material: MATERIAL, onDone: vi.fn(), onCancel: vi.fn() },
+    });
+    await findByRole('dialog', { name: 'Order' });
+    await waitFor(() => expect(getByLabelText(/Contact/).value).toBe('89'));
   });
 
   it('a contact_id from history that is no longer at the business falls back to the first contact', async () => {
     mockApi({ history: { ...HISTORY, vendors: [{ ...HISTORY.vendors[0], contact_id: 999 }] } });
+    const base = api.get.getMockImplementation();
+    api.get.mockImplementation((url) => url.startsWith('/api/businesses/')
+      ? Promise.resolve({ business_id: 17, default_contact: null }) : base(url));
     const { findByRole, getByLabelText } = render(OrderModal, {
       props: { source: 'material', material: MATERIAL, onDone: vi.fn(), onCancel: vi.fn() },
     });
@@ -213,6 +226,14 @@ describe('OrderModal — material source', () => {
 });
 
 describe('OrderModal — item source', () => {
+  it('opens with the history last price for the preselected vendor', async () => {
+    const { findByRole, getByLabelText } = render(OrderModal, {
+      props: { source: 'item', item: { inventory_item_id: 7, code: 'BB34P' }, prefillQty: '1', onDone: vi.fn(), onCancel: vi.fn() },
+    });
+    await findByRole('dialog', { name: 'Order' });
+    await waitFor(() => expect(getByLabelText(/^Price/).value).toBe('62.40'));
+  });
+
   it('with no history opens in search mode, prefills qty from the host, and posts to the inventory endpoint', async () => {
     mockApi({ history: { vendors: [], earmarks: [], open_drafts: [] } });
     api.get.mockImplementation((url) => {

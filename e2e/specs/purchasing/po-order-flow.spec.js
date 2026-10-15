@@ -37,7 +37,7 @@ test('§11 order a material with history → Create PO → order again → Add t
       const vendor = dialog.getByRole('combobox', { name: /Vendor/ });
       await expect(vendor).toHaveValue(String(newest.business_id));
       await expect(vendor.locator('option').first()).toContainText(newest.business_name);
-      await expect(dialog.getByLabel(/^Price/)).toHaveValue(Number(newest.last_price).toFixed(2));
+      await expect(dialog.getByLabel(/^Price/)).toHaveValue(Number(material.unit_cost).toFixed(2));
       await expect(dialog.getByText(/Open drafts for this vendor/)).toHaveCount(0);   // seed has no drafts
     });
 

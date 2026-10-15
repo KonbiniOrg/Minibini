@@ -65,7 +65,7 @@
   }
 
   const materialChoiceNeeded = $derived(
-    !isComment && !!jobId && !taskId && (jobMaterials?.length ?? 0) > 0 && materialChoice == null);
+    !isComment && !!jobId && !taskId && (jobMaterials === null || jobMaterials.length > 0) && materialChoice == null);
 
   function handlePLISelect(item) {
     selectedPLI = item;
