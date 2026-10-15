@@ -187,6 +187,12 @@ describe('TasksPanel — material fulfillment actions', () => {
     });
   }
 
+  const ORDER_HISTORY = {
+    vendors: [{ business_id: 17, business_name: 'Rugby Architectural', contact_id: 88, last_ordered: '2026-08-02',
+      last_price: '62.40', vendor_sku: 'BB34P-48', po_number: 'PO0120', times: 6 }],
+    earmarks: [], open_drafts: [],
+  };
+
   function mockApiWithMaterial(material, { drafts = [] } = {}) {
     api.get.mockReset();
     api.get.mockImplementation((url) => {
@@ -194,7 +200,13 @@ describe('TasksPanel — material fulfillment actions', () => {
       if (url === '/api/tasks/10/subtasks/') return Promise.resolve([]);
       if (url.startsWith('/api/purchase-orders/')) return Promise.resolve(drafts);
       if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
-      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
+      if (url === '/api/inventory/7/') return Promise.resolve({ inventory_item_id: 7, code: 'BB34P',
+        description: 'Steel', units: 'kg', purchase_price: '60.00', accounting_category: 3 });
+      if (url.startsWith('/api/inventory/7/vendor-history/')) return Promise.resolve(ORDER_HISTORY);
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [{ id: 3, name: 'Materials' }] });
+      if (url.startsWith('/api/contacts/?business=')) return Promise.resolve({ results: [{ contact_id: 88, first_name: 'Ann', last_name: 'Rugby' }] });
+      if (url.startsWith('/api/businesses/')) return Promise.resolve({ business_id: 17, business_name: 'Rugby Architectural', default_contact: 88 });
+      if (url.startsWith('/api/units')) return Promise.resolve(['none', 'kg']);
       return Promise.resolve([]);
     });
   }
@@ -205,41 +217,16 @@ describe('TasksPanel — material fulfillment actions', () => {
     qty_on_hand: '0', po_line_item_id: null, po_number: null, job: 3, task: 10,
   };
 
-  it('Order with zero drafts POSTs immediately and links to the PO', async () => {
+  it('Order opens the Order modal seeded from the material and its vendor history', async () => {
     user.set({ id: 1, permissions: ['can_manage_financials'] });
-    mockApiWithMaterial(neededMat, { drafts: [] });
-    api.post.mockResolvedValueOnce({ po_id: 9, po_number: 'PO-2026-0007' });
+    mockApiWithMaterial(neededMat);
+    api.post.mockReset();
     const { findByRole } = render(TasksPanel, { props: { job: jobWithMaterial() } });
     await fireEvent.click(await findByRole('button', { name: 'Order' }));
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/materials/55/order/', {}));
-    await waitFor(() => expect(get(overlayMessage)).toEqual({
-      kind: 'success', text: 'Added to',
-      link: { href: '#/purchase-orders/9', label: 'PO-2026-0007' },
-    }));
-  });
-
-  it('Order with drafts opens the chooser and posts the picked po_id', async () => {
-    user.set({ id: 1, permissions: ['can_manage_financials'] });
-    mockApiWithMaterial(neededMat, {
-      drafts: [{ po_id: 5, po_number: 'PO-5', business_name: 'Acme' }],
-    });
-    api.post.mockResolvedValueOnce({ po_number: 'PO-5' });
-    const { findByRole, getByRole } = render(TasksPanel, { props: { job: jobWithMaterial() } });
-    await fireEvent.click(await findByRole('button', { name: 'Order' }));
-    // chooser dialog lists the draft with its vendor
-    await waitFor(() => getByRole('dialog'));
-    await fireEvent.click(await findByRole('button', { name: /PO-5 — Acme/ }));
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/materials/55/order/', { po_id: 5 }));
-  });
-
-  it('a draft with no vendor renders "no vendor"', async () => {
-    user.set({ id: 1, permissions: ['can_manage_financials'] });
-    mockApiWithMaterial(neededMat, {
-      drafts: [{ po_id: 6, po_number: 'PO-6', business_name: null }],
-    });
-    const { findByRole } = render(TasksPanel, { props: { job: jobWithMaterial() } });
-    await fireEvent.click(await findByRole('button', { name: 'Order' }));
-    expect(await findByRole('button', { name: /PO-6 — no vendor/ })).toBeInTheDocument();
+    const dialog = await findByRole('dialog', { name: 'Order' });
+    expect(dialog).toBeInTheDocument();
+    expect((await findByRole('combobox', { name: /Vendor/ })).value).toBe('17');
+    expect(api.post).not.toHaveBeenCalled();     // nothing is created until Submit
   });
 
   it('Mark received opens a qty prompt and POSTs mark-on-hand', async () => {

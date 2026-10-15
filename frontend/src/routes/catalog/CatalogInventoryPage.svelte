@@ -1,8 +1,8 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
-  import { canManageFinancials, canManageConfig } from '../../stores/permissions.js';
+  import { canManageFinancials, canManageConfig, canManageJobs } from '../../stores/permissions.js';
   import InventoryItemForm from '../../components/inventory/InventoryItemForm.svelte';
-  import StockOrderDialog from '../../components/inventory/StockOrderDialog.svelte';
+  import OrderModal from '../../components/purchaseorders/OrderModal.svelte';
   import { stockShortfall } from '../../lib/stockShortfall.js';
   import Modal from '../../components/Modal.svelte';
   import FormMessage from '../../components/FormMessage.svelte';
@@ -218,7 +218,7 @@
 {/if}
 
 {#if orderItem}
-  <StockOrderDialog item={orderItem} prefillQty={stockShortfall(orderItem)}
+  <OrderModal source="item" item={orderItem} prefillQty={stockShortfall(orderItem)}
     onDone={() => { orderItem = null; load(); }}
     onCancel={() => orderItem = null} />
 {/if}
@@ -263,7 +263,7 @@
   {#if Number(it.qty_on_hand) > 0}
     <button type="button" onclick={() => startWriteOff(it)}>write off</button>
   {/if}
-  {#if $canManageFinancials}
+  {#if $canManageFinancials || $canManageJobs}
     <button type="button" onclick={() => orderItem = it}>order</button>
   {/if}
 {/snippet}

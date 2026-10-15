@@ -146,7 +146,7 @@
     {#if onEditMaterial && !jobOnHold}<button type="button" onclick={() => onEditMaterial(mat, ownerTask)}>Set pricing</button>{/if}
     {#if onAttachExpense}<button type="button" onclick={() => onAttachExpense(mat)}>Attach expense</button>{/if}
   {:else if s.key === 'needed'}
-    {#if onOrderMaterial && $canManageFinancials && mat.po_line_item_id == null}<button type="button" onclick={() => onOrderMaterial(mat)}>Order</button>{/if}
+    {#if onOrderMaterial && ($canManageFinancials || mat.can_manage) && mat.po_line_item_id == null}<button type="button" onclick={() => onOrderMaterial(mat)}>Order</button>{/if}
     {#if onAttachExpense}<button type="button" onclick={() => onAttachExpense(mat)}>Attach expense</button>{/if}
     {#if onMarkOnHand}<button type="button" onclick={() => onMarkOnHand(mat)}>Mark on-hand</button>{/if}
   {:else if s.key === 'awaiting-customer'}

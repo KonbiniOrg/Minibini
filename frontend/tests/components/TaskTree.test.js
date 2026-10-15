@@ -327,7 +327,7 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
     expect(onEditMaterial).toHaveBeenCalledWith(expect.objectContaining({ material_id: 2 }), expect.anything());
   });
 
-  it('needed material gates the Order button behind can_manage_financials', () => {
+  it('needed material gates the Order button behind can_manage_financials or the material\'s can_manage', () => {
     const mat = {
       material_id: 3, description: 'Ply', quantity: '4', sell_price: '5', units: 'sheet',
       consumption_state: 'pending', inventory_item: 7, cost_source: 'entered', qty_on_hand: '0',
@@ -347,6 +347,11 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
     user.set({ id: 1, permissions: ['can_manage_financials'] });
     const fin = render(TaskTree, { props: { tasks: [matTask(mat)], canManage: true, ...wired } });
     expect(fin.getByRole('button', { name: 'Order' })).toBeInTheDocument();
+    fin.unmount();
+    // a PM of the material's job (no atom) sees it too — the row's own can_manage flag
+    user.set({ id: 1, permissions: [] });
+    const pm = render(TaskTree, { props: { tasks: [matTask({ ...mat, can_manage: true })], canManage: true, ...wired } });
+    expect(pm.getByRole('button', { name: 'Order' })).toBeInTheDocument();
   });
 
   it('renders NO fulfillment or material-op buttons when callbacks are not wired (passive surface)', () => {

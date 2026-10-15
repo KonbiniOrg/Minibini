@@ -1,9 +1,9 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api, errorMessage } from '../../lib/api.js';
-  import { canManageFinancials } from '../../stores/permissions.js';
+  import { canManageFinancials, canManageJobs } from '../../stores/permissions.js';
   import CatalogTabs from '../../components/CatalogTabs.svelte';
-  import StockOrderDialog from '../../components/inventory/StockOrderDialog.svelte';
+  import OrderModal from '../../components/purchaseorders/OrderModal.svelte';
   import { stockShortfall } from '../../lib/stockShortfall.js';
   import LoadState from '../../components/LoadState.svelte';
   import DataTable from '../../components/DataTable.svelte';
@@ -71,14 +71,14 @@
     { id: 'onorder',     label: 'On order',    field: 'qty_on_order', header: sortHeader, sortKey: 'qty_on_order', align: 'right' },
     { id: 'shortfall',   label: 'Shortfall',   cell: shortfallCell,   header: sortHeader, sortKey: 'shortfall',    align: 'right' },
     { id: 'pos',         label: 'POs',         cell: posCell },
-    ...($canManageFinancials ? [{ id: 'actions', label: '', cell: actionsCell }] : []),
+    ...(($canManageFinancials || $canManageJobs) ? [{ id: 'actions', label: '', cell: actionsCell }] : []),
   ]}
 />
 </LoadState>
 
 {#if orderRow}
-  <StockOrderDialog
-    item={{ inventory_item_id: orderRow.inventory_item, code: orderRow.item_code }}
+  <OrderModal source="item"
+    item={{ inventory_item_id: orderRow.inventory_item, code: orderRow.item_code, description: orderRow.item_description }}
     prefillQty={stockShortfall(orderRow)}
     onDone={() => { orderRow = null; load(); }}
     onCancel={() => orderRow = null} />

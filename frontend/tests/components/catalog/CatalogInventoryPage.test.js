@@ -112,14 +112,20 @@ describe('CatalogInventoryPage — manage actions (financials/config)', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
-  it('shows an order button on every row that opens the stock-order dialog', async () => {
-    api.get.mockResolvedValue({ results: ITEMS });  // load(), then the dialog's draft lookup
-    const { findAllByRole, getByLabelText, getByText } = render(CatalogInventoryPage);
+  it('shows an order button on every row that opens the Order modal prefilled with the shortfall', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/inventory/1/') return Promise.resolve(ITEMS[0]);
+      if (url.startsWith('/api/inventory/1/vendor-history/')) return Promise.resolve({ vendors: [], earmarks: [], open_drafts: [] });
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+      if (url.startsWith('/api/units')) return Promise.resolve(['none', 'sheet']);
+      return Promise.resolve({ results: ITEMS });
+    });
+    const { findAllByRole, findByRole, getByLabelText } = render(CatalogInventoryPage);
     const orderBtns = await findAllByRole('button', { name: 'order' });
     expect(orderBtns.length).toBe(2);  // one per ITEMS row
     await fireEvent.click(orderBtns[0]);  // FELT: earmarked 2, on hand 5 -> shortfall 0
-    getByText(/Order — FELT/);
-    expect(getByLabelText(/Quantity/).value).toBe('0');
+    await findByRole('dialog', { name: 'Order' });
+    await vi.waitFor(() => expect(getByLabelText(/^Qty/).value).toBe('0'));
   });
 
   it('hides the order button for a config-only user (PO creation is financials)', async () => {
