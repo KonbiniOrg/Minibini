@@ -140,43 +140,53 @@ def unlink_from_po(request, pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, CanManageFinancials])
 def create_po_from_email(request, pk):
-    """Create a Purchase Order from an email and link the email to it.
-
-    Body: ``{vendor_business_id}``. Only the vendor (Business) is required;
-    line items are added on the PO detail page after creation. Mirrors
-    create_job_from_email.
-    """
+    """Create a Purchase Order from an email and link the email to it
+    (PO order flow §4.3). Body: ``{vendor_business_id, contact_id?,
+    requested_date?, line?}`` — the PO, the link and the optional first
+    line land in one transaction. The old ``{vendor_business_id}`` body
+    still works."""
+    from django.db import transaction
     from apps.purchasing.services import PurchaseOrderService
-    from apps.contacts.models import Business
+    from .serializers import EmailCreatePOSerializer
     try:
         EmailRecord.objects.get(pk=pk)
     except EmailRecord.DoesNotExist:
         return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    vendor_id = request.data.get('vendor_business_id')
-    if not vendor_id:
-        return Response(
-            {'vendor_business_id': ['This field is required.']},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    s = EmailCreatePOSerializer(data=request.data)
+    s.is_valid(raise_exception=True)
+    v = s.validated_data
     try:
-        vendor_id = int(vendor_id)
-    except (TypeError, ValueError):
-        return Response(
-            {'vendor_business_id': ['Must be an integer.']},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-    try:
-        business = Business.objects.get(pk=vendor_id)
+        business = Business.objects.get(pk=v['vendor_business_id'])
     except Business.DoesNotExist:
         return Response(
-            {'vendor_business_id': [f'Business {vendor_id} not found.']},
+            {'vendor_business_id': [f'Business {v["vendor_business_id"]} not found.']},
             status=status.HTTP_404_NOT_FOUND,
         )
-    po = PurchaseOrderService.create_po(business=business)
-    EmailService.associate_with(pk, 'purchase_order', po.pk)
+    contact = None
+    if v.get('contact_id') is not None:
+        contact = Contact.objects.filter(pk=v['contact_id']).first()
+        if contact is None or contact.business_id != business.pk:
+            return Response({'contact_id': ['Contact is not at this vendor.']},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+    line = dict(v.get('line') or {})
+    with transaction.atomic():
+        po = PurchaseOrderService.create_po(
+            business=business, contact=contact, requested_date=v.get('requested_date'))
+        EmailService.associate_with(pk, 'purchase_order', po.pk)
+        line_item_id = None
+        if line:
+            item = line.pop('inventory_item', None)
+            qty = line.pop('qty')
+            if item is not None:
+                li = PurchaseOrderService.add_line_item_from_pli(po.pk, item.pk, qty, **line)
+            else:
+                manual = {k: val for k, val in line.items() if val is not None}
+                li = PurchaseOrderService.add_line_item(po.pk, qty=qty, **manual)
+            line_item_id = li.pk
     return Response(
-        {'po_id': po.pk, 'po_number': po.po_number},
+        {'po_id': po.pk, 'po_number': po.po_number, 'line_item_id': line_item_id},
         status=status.HTTP_201_CREATED,
     )
 
