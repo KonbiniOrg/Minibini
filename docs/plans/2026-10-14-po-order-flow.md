@@ -300,12 +300,39 @@ Add **Code** (item code, blank for freeform) and **SKU** columns to the
 draft/issued line table in `PurchaseOrderDetail.svelte` and the PDF
 template. SKU is editable in the draft line-edit row.
 
-## 6. Permissions
+## 6. Permissions (RM 2026-10-15: making a PO opens to manage-jobs, incl. PM)
 
-Unchanged: Order endpoints and the email create-PO stay
-`CanManageFinancials`; vendor-history and the job pending-materials list
-are `IsAuthenticated` (read). The Order button's `$canManageFinancials`
-gate on MaterialRow stays.
+Creating a PO is no longer financials-only. Two new composites in
+`apps/api/permissions.py`:
+
+- `CanManageJobsOrFinancials` — either atom (superuser bypasses as
+  always). **Not** config: the existing inventory comment is right that
+  purchasing is not an admin act.
+- `CanManageFinancialsOrJobOrPM` — the financials atom, else defer to
+  `CanManageJobOrPM` (jobs atom, or PM of the request's target job via
+  `view.get_permission_target_job`).
+
+| Endpoint | Was | Now |
+|---|---|---|
+| `POST /api/materials/{id}/order/` | financials | `CanManageFinancialsOrJobOrPM`, target job = the material's job (the material viewset gains `get_permission_target_job` via `JobScopedPermissionMixin` if it lacks it) |
+| `POST /api/inventory/{id}/order/` | financials | `CanManageJobsOrFinancials` — no job in play, so PM scoping has nothing to scope to |
+| `POST /api/emails/{id}/create-po/` | financials | `CanManageJobsOrFinancials` |
+| `POST /api/purchase-orders/` (create) | financials | `CanManageJobsOrFinancials` |
+| `GET /api/inventory/{id}/vendor-history/` | — | `IsAuthenticated` |
+
+Buttons follow the same split. MaterialRow's Order button shows when
+`$canManageFinancials || material.can_manage`; both `MaterialSerializer`s
+gain `can_manage` from `JobScopedCanManageMixin` (the same flag Task and
+Job already expose). The catalog "order" buttons, the PO list's "New
+Purchase Order", the Business/Contact "New purchase order", and the email
+panel's "Create new" show when `$canManageFinancials || $canManageJobs`.
+(`stores/permissions.js` already derives both.)
+
+**Stated assumption, pending RM:** everything *after* creation — adding or
+editing lines on the PO page, header edits, issue, delete, cancel,
+reconcile — stays `CanManageFinancials`. A jobs-only user who creates a PO
+through the modal lands on a PO page they can read but not change. See the
+open question in §9.
 
 ## 7. Tests
 
@@ -354,3 +381,11 @@ if the vendor-history route is listed; `data-constraints.md` for
 `vendor_sku`; `frontend/README.md` Modals list. LATER: remove "Show a
 material's earmarks on the PO", "PO line items should show the inventory
 item's code"; fix the stale "create-PO-from-email not built" fragment.
+
+## 9. Open question
+
+Should the follow-on edits on a PO (add lines, edit header, issue) open to
+manage-jobs/PM as well, at least while the PO is a draft, so the modal's
+"lands on the PO in case they want to add more" promise holds for those
+users? Or is "jobs people start the PO, financials people finish it" the
+intended hand-off?
