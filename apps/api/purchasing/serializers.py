@@ -18,12 +18,17 @@ class POLineItemSerializer(serializers.ModelSerializer):
     effective_job_number = serializers.SerializerMethodField()
     material = serializers.SerializerMethodField()
     task_detail = serializers.SerializerMethodField()
+    # Catalog code of the line's item (None for freeform). The PO table and
+    # PDF print it beside the vendor SKU.
+    item_code = serializers.CharField(
+        source='inventory_item.code', read_only=True, default=None)
 
     class Meta:
         model = PurchaseOrderLineItem
         fields = [
             'line_item_id', 'line_number', 'task', 'task_detail', 'inventory_item',
             'qty', 'units', 'description', 'price', 'is_comment',
+            'vendor_sku', 'item_code',
             'effective_job_id', 'effective_job_number', 'material',
             'accounting_category',
             'qty_received', 'received_by', 'received_by_name',
@@ -31,7 +36,7 @@ class POLineItemSerializer(serializers.ModelSerializer):
             'final_price', 'invoice_only',
         ]
         read_only_fields = [
-            'line_item_id', 'qty_received', 'received_by', 'received_by_name',
+            'line_item_id', 'item_code', 'qty_received', 'received_by', 'received_by_name',
             'received_date', 'receipt_note', 'qty_cancelled',
             'effective_job_id', 'effective_job_number', 'material', 'task_detail',
             # `final_price` and `invoice_only` are reconciliation-owned
