@@ -1242,8 +1242,8 @@ class MaterialService:
     def _apply_po_line_cost(material, po_line, price):
         """Supply/override a PO-linked material's cost from the PO line price.
 
-        - Provisional (lot-less) material → ESTABLISH it: mint a QOH-0 lot at
-          `price`, stamp cost_source='po', and (when the PO line itself has no
+        - Provisional (lot-less) material → ESTABLISH it: onto the line's item
+          when the line has one, else mint a QOH-0 lot, at `price`, stamp cost_source='po', and (when the PO line itself has no
           inventory_item) repoint the line at the minted lot so
           PurchaseOrderReceivingService.receive_items' `li.inventory_item.qty_on_hand
           += qty` bump lands on that lot. establish is the SOLE earmark writer
@@ -1257,8 +1257,13 @@ class MaterialService:
         if price is None:
             return material
         if material.inventory_item_id is None:
+            # A catalog line establishes the material ONTO the line's item
+            # (PO order flow §4.4) so receipt lands on the item the material
+            # consumes from; only a freeform line mints a lot and repoints the
+            # line at it.
             MaterialService.establish(
-                material, unit_cost=price, cost_source=Material.COST_SOURCE_PO)
+                material, inventory_item=po_line.inventory_item,
+                unit_cost=price, cost_source=Material.COST_SOURCE_PO)
             if po_line.inventory_item_id is None:
                 po_line.inventory_item = material.inventory_item
                 po_line.save(update_fields=['inventory_item'])
@@ -1297,6 +1302,11 @@ class MaterialService:
                     raise ValidationError(f'Material {material_id} not found')
                 if job is not None and mat.job_id != job.pk:
                     raise ValidationError('Material is not on the requested job')
+                if (mat.inventory_item_id is not None and inventory_item is not None
+                        and mat.inventory_item_id != inventory_item.pk):
+                    raise ValidationError({'material_id': [
+                        f'This material needs {mat.inventory_item.code}, '
+                        f'not {inventory_item.code}.']})
                 MaterialService.link_to_po_line(mat, po_line)
                 # The PO write supplies/overrides the material's cost (a
                 # hand-built PO line may name a provisional material).

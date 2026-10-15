@@ -597,6 +597,8 @@ class PurchaseOrderService:
         # Pop transient params before they hit the model constructor
         job_id = kwargs.pop('job', None)
         material_id = kwargs.pop('material_id', None)
+        if kwargs.get('is_comment') and (job_id is not None or material_id is not None):
+            raise ValidationError({'job': ['A comment line cannot be attributed to a job.']})
         PurchaseOrderService._reject_task_with_procurement(
             kwargs.get('task'), job_id, material_id)
 
