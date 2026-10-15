@@ -152,7 +152,7 @@ test('§11 catalog order with no history opens in search mode', async ({ page })
 
 test('§11 email → Create new (PO) with a matched sender carries the contact', async ({ page }) => {
   const api = await apiAs(personas.finjobs);
-  let emailId = null, poId = null, createdContactId = null;
+  let emailId = null, poId = null, createdContactId = null, attachedContactId = null;
   try {
     const list = await api.get('/api/emails/?page_size=50');
     const emails = list.results || list;
@@ -174,7 +174,16 @@ test('§11 email → Create new (PO) with a matched sender carries the contact',
       createdContactId = created.contact_id;
       contact = { id: created.contact_id };
     }
-    const contactBusinessId = (await api.get(`/api/contacts/${contact.id}/`)).business?.business_id;
+    let fetched = await api.get(`/api/contacts/${contact.id}/`);
+    if (!fetched.business) {
+      // Order-independence: an earlier spec (email/create-job-modal) may have
+      // created a business-less contact for this sender. Attach the seed
+      // vendor for the duration of this test; restored in finally.
+      await api.patch(`/api/contacts/${contact.id}/`, { business_id: 61 });
+      if (!createdContactId) attachedContactId = contact.id;
+      fetched = await api.get(`/api/contacts/${contact.id}/`);
+    }
+    const contactBusinessId = fetched.business?.business_id;
     expect(contactBusinessId).toBeTruthy();
 
     await page.goto(`/#/email/${emailId}`);
@@ -198,6 +207,8 @@ test('§11 email → Create new (PO) with a matched sender carries the contact',
     if (poId) await attempt(() => api.del(`/api/purchase-orders/${poId}/?confirm=true`));
     // Only a contact THIS run created — never a seed match.
     if (createdContactId) await attempt(() => api.del(`/api/contacts/${createdContactId}/?confirm=true`));
+    // A business this run attached to a pre-existing, business-less contact.
+    if (attachedContactId) await attempt(() => api.patch(`/api/contacts/${attachedContactId}/`, { business_id: null }));
     await api.dispose();
   }
 });
