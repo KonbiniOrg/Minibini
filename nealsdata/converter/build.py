@@ -271,7 +271,7 @@ def build_configuration(c):
         ('email_smtp_host',    'smtp.gmail.com'),
         ('email_smtp_port',    '587'),
         ('business_email',     'minibini.test@gmail.com'),
-        ('our_public_url',     'minbini.me'),
+        ('our_public_url',     'minibini.me'),
         ('our_domain',         'robot-six.com'),
         # Mirror apps.core.units.DEFAULT_UNITS so every emitted line-item /
         # material / deliverable row validates against the running app's
